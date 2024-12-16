@@ -1,5 +1,6 @@
 import React from "react";
 import Menu from "../components/Menu";
+import { UserWelcome } from "../components/Header/UserWelcome";
 
 const MainPage = () => {
   // Mockovaný přihlášený uživatel (trenér nebo sportovec)
@@ -11,7 +12,7 @@ const MainPage = () => {
       <div className="w-64">
         <Menu loggedInUserId={loggedInUserId} />
       </div>
-
+<UserWelcome />
       {/* Hlavní obsah */}
       <div className="flex-grow p-6">
         <h1 className="text-4xl font-bold text-gray-800 mb-4">

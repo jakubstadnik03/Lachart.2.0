@@ -8,9 +8,8 @@ const TestingPage = () => {
   return (
     <div className="flex min-h-screen bg-gray-100">
       {/* Menu vlevo */}
-      <div className="w-64">
-        <Menu loggedInUserId={loggedInUserId} />
-      </div>
+ 
+ 
 
       {/* Obsah stránky */}
       <div className="flex-grow p-6">
