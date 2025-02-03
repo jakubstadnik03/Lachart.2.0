@@ -12,7 +12,7 @@ const Layout = () => {
         <div style={{width: "17rem"}}>
             <Menu loggedInUserId={loggedInUserId} isActive={true}/>
             </div>
-          <div className="w-full">
+          <div className="w-full full-desctop">
               <Header />
               <div className="content">
              <Outlet />

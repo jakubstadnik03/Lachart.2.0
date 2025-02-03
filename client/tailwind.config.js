@@ -7,6 +7,9 @@ module.exports = {
       },
       colors: {
         primary: '#7755FF', // Fialová barva pro aktivní odkazy
+        zinc: {
+          150: '#e5e5e5', // Mírně tmavší než bg-zinc-100
+        },
       },
     },
   },

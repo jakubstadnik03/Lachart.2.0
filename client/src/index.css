@@ -6,3 +6,11 @@
 body{
     background-color: #F6F6F6;
 }
+
+@media (min-width: 768px){
+
+    .full-desctop{
+        width: calc(100vw - 220px);
+        margin-left: auto;
+    }
+}

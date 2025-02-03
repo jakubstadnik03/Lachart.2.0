@@ -11,7 +11,10 @@ export const mockTests = [
       results: [
         { power: 100, heartRate: 110, lactate: 1.0, glucose: 4.5, RPE: 5 },
         { power: 130, heartRate: 130, lactate: 1.5, glucose: 5.0, RPE: 6 },
-        { power: 220, heartRate: 150, lactate: 2.5, glucose: 5.5, RPE: 8 },
+        { power: 220, heartRate: 135, lactate: 2.5, glucose: 5.5, RPE: 8 },
+        { power: 260, heartRate: 149, lactate: 3.5, glucose: 5.5, RPE: 10 },
+        { power: 280, heartRate: 156, lactate: 4.5, glucose: 5.5, RPE: 8 },
+        { power: 320, heartRate: 180, lactate: 5.5, glucose: 5.5, RPE: 8 },
       ],
     },   {
       _id: "test2",
