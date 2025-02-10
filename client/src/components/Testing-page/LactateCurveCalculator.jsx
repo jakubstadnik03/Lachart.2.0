@@ -138,7 +138,7 @@ const colorMap = {
         {legendItems.map((item, index) => (
           <div
             key={index}
-            className={`cursor-pointer ${hiddenDatasets[item.dsLabel] ? 'line-through text-gray-400' : ''} ${index > 0 ? 'mt-2' : ''}`}
+            className={`cursor-pointer ${hiddenDatasets[item.dsLabel] ? 'line-through text-gray-400' : ''} ${index > 0 ? 'pt-1, pb-1' : ''}`}
             onClick={() => handleToggle(item.dsLabel)}
             onMouseEnter={() => handleMouseEnter(item.dsLabel)}
             onMouseLeave={handleMouseLeave}
@@ -242,12 +242,24 @@ const LactateCurveCalculator = ({ mockData }) => {
         min: minPower - 10,
         max: maxPower + 10,
         title: { display: true, text: 'Power (W)' },
+        border: { dash: [6, 6] },
+        grid: {
+          color: "rgba(0, 0, 0, 0.15)",
+          borderDash: [4, 4],
+          drawTicks: true,
+        },
       },
       y: {
         type: 'linear',
         min: 0,
-        max: Math.max(...yVals) + 1,
+        max: Math.ceil(Math.max(...yVals) + 1)        ,
         title: { display: true, text: 'Lactate (mmol/L)' },
+        border: { dash: [6, 6] },
+        grid: {
+          color: "rgba(0, 0, 0, 0.15)",
+          borderDash: [4, 4],
+          drawTicks: true,
+        },
       },
     },
     plugins: {
