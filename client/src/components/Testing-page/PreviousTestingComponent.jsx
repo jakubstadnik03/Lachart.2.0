@@ -1,13 +1,48 @@
-import React from 'react'
+import React, { useState, useEffect } from "react";
+import { fetchMockTrainings } from "../../mock/mockApi";
+import LactateCurve from "./LactateCurve";
+import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
+import LactateCurveCalculator from "./LactateCurveCalculator";
 
 const PreviousTestingComponent = () => {
+  const [trainings, setTrainings] = useState([]);
+  const [selectedTraining, setSelectedTraining] = useState(null);
+console.log(selectedTraining);
+
+  useEffect(() => {
+    const loadData = async () => {
+      const data = await fetchMockTrainings();
+      setTrainings(data);
+      setSelectedTraining(data[0]); // Vybereme první trénink jako default
+    };
+
+    loadData();
+  }, []);
+
   return (
-    <>
-      <DateSelector />
+    <div>
+      <DateSelector
+        dates={trainings.map((training) => training.date)}
+        onSelectDate={(date) => {
+          const foundTraining = trainings.find((training) => training.date === date);
+          setSelectedTraining(foundTraining);
+        }}
+      />
 
-    </>
-  )
-}
+      {selectedTraining ? (
+        <div className="flex flex-wrap lg:flex-nowrap gap-6 mt-5 ml-5 mr-5">
+          <LactateCurve mockData={selectedTraining} />
+          <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
+            <TestingForm testData={selectedTraining} onTestDataChange={setSelectedTraining}/>
+          </div>
+        </div>
+      ) : (
+        <p className="text-center mt-4">Loading...</p>
+      )}
+      <LactateCurveCalculator mockData={selectedTraining}/>
+    </div>
+  );
+};
 
-export default PreviousTestingComponent
+export default PreviousTestingComponent;

@@ -2,6 +2,7 @@ import React from "react";
 import { Outlet } from "react-router-dom";
 import { Header } from "./Header/Header";
 import Menu from "./Menu";
+import Footer from "./Footer";
 
 const Layout = () => {
     const loggedInUserId = "user1"; // Mockovaný přihlášený uživatel
@@ -9,7 +10,7 @@ const Layout = () => {
   return (
  <>
         <div className="flex min-h-screen ">
-        <div style={{width: "17rem"}}>
+        <div>
             <Menu loggedInUserId={loggedInUserId} isActive={true}/>
             </div>
           <div className="w-full full-desctop">
@@ -17,8 +18,9 @@ const Layout = () => {
               <div className="content">
              <Outlet />
            </div>
+           <Footer />
+
           </div>
-         
         </div>
         
  </>

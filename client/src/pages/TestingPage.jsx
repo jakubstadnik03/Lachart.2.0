@@ -1,16 +1,24 @@
-// src/pages/TestingPage.js
-import React from "react";
+import React, { useState } from "react";
 import Menu from "../components/Menu";
-import NewTestingButton from "../components/Testing-page/NewTestingButton";
+import NewTestingButton from "../components/Testing-page/NotificationBadge";
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
+import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
+import NotificationBadge from "../components/Testing-page/NotificationBadge";
+
 const TestingPage = () => {
-  const loggedInUserId = "user1"; // Mockovaný přihlášený uživatel
+  const [showNewTesting, setShowNewTesting] = useState(false);
 
   return (
     <div>
       <SportsSelector />
-      <NewTestingButton />
+      {/* Tlačítko pro zapnutí/vypnutí testování */}
+      <NotificationBadge
+        isActive={showNewTesting}
+        onToggle={() => setShowNewTesting((prev) => !prev)}
+      />
+      {/* Zobrazíme jen pokud je aktivní */}
+      {showNewTesting && <NewTestingComponent />}
       <PreviousTestingComponent />
     </div>
   );

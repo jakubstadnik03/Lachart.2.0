@@ -1,172 +1,150 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Trash, Plus, X } from 'lucide-react';
 
-function TestingForm() {
-  const [rows, setRows] = useState([
-    { interval: 1, power: 60, heartRate: 110, lactate: 1, glucose: 1, rpe: 3 },
-    { interval: 2, power: 120, heartRate: 110, lactate: 1, glucose: 1, rpe: 5 },
-    { interval: 3, power: 180, heartRate: 110, lactate: 1, glucose: 1, rpe: 8 },
-    { interval: 4, power: 200, heartRate: 110, lactate: 1, glucose: 1, rpe: 12 },
-    { interval: 5, power: 220, heartRate: 110, lactate: 1, glucose: 1, rpe: 13 },
-    { interval: 6, power: 240, heartRate: 110, lactate: 1, glucose: 1, rpe: 16 }
-  ]);
-
+function TestingForm({ testData, onTestDataChange }) {
+  const [rows, setRows] = useState(testData.results || []);
   const [formData, setFormData] = useState({
-    description: '',
-    weight: '',
-    sport: '',
-    baseLa: ''
+    description: testData.description || '',
+    weight: testData.weight || '',
+    sport: testData.sport || '',
+    baseLa: testData.baseLactate || '',
+    date: testData.date || new Date().toISOString().split('T')[0],
   });
+  const [showGlucose, setShowGlucose] = useState(true);
+  const [hoverGlucose, setHoverGlucose] = useState(false);
+
+  const convertPaceToSeconds = (pace) => {
+    const [minutes, seconds] = pace.split(":").map(Number);
+    return minutes * 60 + seconds;
+  };
+
+  const convertSecondsToPace = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+  };
+
+  useEffect(() => {
+    if (testData) {
+      setRows(testData.results || []);
+      setFormData({
+        description: testData.description || '',
+        weight: testData.weight || '',
+        sport: testData.sport || '',
+        baseLa: testData.baseLactate || '',
+        date: testData.date || new Date().toISOString().split('T')[0],
+      });
+    }
+  }, [testData]);
 
   const handleValueChange = (rowIndex, field, value) => {
-    const updatedRows = rows.map((row, index) => {
-      if (index === rowIndex) {
-        return { ...row, [field]: value };
-      }
-      return row;
-    });
+    if (value === "") {
+      value = ""; // Pokud je prázdné, nastavíme prázdný řetězec
+    } else if (value && value.includes(":")) {
+      // Pokud je tempo ve formátu mm:ss, převedeme ho na sekundy
+      value = convertPaceToSeconds(value);
+    }
+  
+    const updatedRows = rows.map((row, index) =>
+      index === rowIndex ? { ...row, [field]: value } : row
+    );
     setRows(updatedRows);
+    onTestDataChange({ ...testData, results: updatedRows });
+  };
+  
+
+  const handleDeleteRow = (rowIndex) => {
+    const updatedRows = rows.filter((_, index) => index !== rowIndex);
+    updatedRows.forEach((row, index) => (row.interval = index + 1));
+    setRows(updatedRows);
+    onTestDataChange({ ...testData, results: updatedRows });
   };
 
-  const handleFormChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+  const handleAddRow = () => {
+    const newRow = { power: '', heartRate: '', lactate: '', glucose: '', RPE: '' };
+    setRows([...rows, newRow]);
+    onTestDataChange({ ...testData, results: [...rows, newRow] });
   };
-
-  const handleSave = () => {
-    const testingData = {
-      rows,
-      ...formData
-    };
-    console.log('Saving testing data:', testingData);
-  };
-
-  const sports = ['Run', 'Bike', 'Swim'];
-
-  const renderHeader = () => (
-    <div className="flex gap-4 items-center whitespace-nowrap bg-white rounded-lg">
-      <div className="self-stretch my-auto text-center w-[19px]">Int.</div>
-      <div className="self-stretch my-auto w-[55px]">Power</div>
-      <div className="self-stretch my-auto w-[54px]">HeartRate</div>
-      <div className="self-stretch my-auto w-[54px]">Lactate</div>
-      <div className="self-stretch my-auto w-14">Glucoze</div>
-      <div className="self-stretch my-auto w-[60px]">RPE</div>
-    </div>
-  );
-
-  const renderRow = (row, rowIndex) => (
-    <div key={row.interval} className="flex gap-2 items-center mt-3 bg-white rounded-lg">
-      <div className="flex flex-col self-stretch my-auto font-semibold text-center whitespace-nowrap rounded-lg w-[26px]">
-        <div className="px-1 bg-white rounded-lg h-[26px] w-[26px]">{row.interval}</div>
-      </div>
-      <div className="flex flex-col self-stretch my-auto w-16 rounded-lg">
-        <input
-          type="number"
-          value={row.power}
-          onChange={(e) => handleValueChange(rowIndex, 'power', e.target.value)}
-          className="px-1.5 py-1 bg-white rounded-lg max-md:pr-5 w-full"
-          aria-label={`Power for interval ${row.interval}`}
-        />
-      </div>
-      <div className="flex flex-col self-stretch my-auto w-16 rounded-lg">
-        <input
-          type="number"
-          value={row.heartRate}
-          onChange={(e) => handleValueChange(rowIndex, 'heartRate', e.target.value)}
-          className="px-1.5 py-1 bg-white rounded-lg w-full"
-          aria-label={`Heart rate for interval ${row.interval}`}
-        />
-      </div>
-      <div className="flex flex-col self-stretch my-auto w-16 rounded-lg">
-        <input
-          type="number"
-          value={row.lactate}
-          onChange={(e) => handleValueChange(rowIndex, 'lactate', e.target.value)}
-          className="px-1.5 py-1 bg-white rounded-lg w-full"
-          aria-label={`Lactate for interval ${row.interval}`}
-        />
-      </div>
-      <div className="flex flex-col self-stretch my-auto w-16 rounded-lg">
-        <input
-          type="number"
-          value={row.glucose}
-          onChange={(e) => handleValueChange(rowIndex, 'glucose', e.target.value)}
-          className="px-1.5 py-1 bg-white rounded-lg w-full"
-          aria-label={`Glucose for interval ${row.interval}`}
-        />
-      </div>
-      <div className="flex flex-col self-stretch my-auto whitespace-nowrap rounded-lg w-[26px]">
-        <input
-          type="number"
-          value={row.rpe}
-          onChange={(e) => handleValueChange(rowIndex, 'rpe', e.target.value)}
-          className="px-1 bg-white rounded-lg h-[26px] w-[26px]"
-          aria-label={`RPE for interval ${row.interval}`}
-        />
-      </div>
-    </div>
-  );
 
   return (
-    <div className="flex flex-col w-full bg-white rounded-lg" role="table">
-      {renderHeader()}
-      {rows.map((row, index) => renderRow(row, index))}
-      
-      <div className="flex gap-2 items-start self-start mt-3 bg-white rounded-lg">
-        <div className="flex flex-col rounded-lg min-w-[240px] w-[327px]">
-          <textarea
-            value={formData.description}
-            onChange={(e) => handleFormChange('description', e.target.value)}
-            className="px-2.5 pt-2 pb-12 bg-white rounded-lg max-md:pr-5"
-            placeholder="Description of this testing....."
-            aria-label="Testing description"
-          />
-        </div>
+    <div className="flex flex-col w-full max-w-4xl mx-auto p-4 bg-gray-50 rounded-lg">
+      <div className="grid grid-cols-7 gap-2 items-center p-2 text-sm font-semibold bg-gray-100 rounded-lg">
+        <div style={{paddingLeft: '12px'}}>Int.</div>
+        <div>{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
+        <div>Heart Rate</div>
+        <div>Lactate</div>
+        {showGlucose && (
+          <div
+            className="relative"
+            onMouseEnter={() => setHoverGlucose(true)}
+            onMouseLeave={() => setHoverGlucose(false)}
+          >
+            Glucose
+            {hoverGlucose && (
+              <button className="absolute -top-2 -right-2 text-red-600" onClick={() => setShowGlucose(false)}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+        <div>RPE</div>
+        <div>Actions</div>
       </div>
 
-      <div className="flex gap-2 items-start self-start mt-3 bg-white rounded-lg">
-        <div className="flex flex-col whitespace-nowrap rounded-lg w-[74px]">
-          <input
-            type="text"
-            value={formData.weight}
-            onChange={(e) => handleFormChange('weight', e.target.value)}
-            className="px-2 py-1 bg-white rounded-lg max-md:pr-5"
-            placeholder="Weight"
-            aria-label="Weight"
+      {rows.map((row, index) => (
+        <div key={index} className="grid grid-cols-7 gap-2 items-center mt-2 p-2 bg-white rounded-lg">
+          <div className="text-center">{index + 1}</div>
+          <input 
+            type="text" 
+            value={formData.sport === 'run' || formData.sport === 'swim' ? convertSecondsToPace(row.power) : row.power}
+            onChange={(e) => handleValueChange(index, 'power', e.target.value)} 
+            className="p-1 border rounded-lg"
           />
-        </div>
-        <div className="flex flex-col whitespace-nowrap rounded-none w-[74px]">
-          <select
-            value={formData.sport}
-            onChange={(e) => handleFormChange('sport', e.target.value)}
-            className="px-2 py-1 bg-white rounded-lg"
-            aria-label="Sport"
-          >
-            <option value="">Select</option>
-            {sports.map(sport => (
-              <option key={sport} value={sport}>{sport}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col rounded-lg w-[74px]">
-          <input
-            type="text"
-            value={formData.baseLa}
-            onChange={(e) => handleFormChange('baseLa', e.target.value)}
-            className="px-2 py-1 bg-white rounded-lg max-md:pr-5"
-            placeholder="Base La"
-            aria-label="Base La"
+          <input 
+            type="number" 
+            value={row.heartRate} 
+            onChange={(e) => handleValueChange(index, 'heartRate', e.target.value)} 
+            className="p-1 border rounded-lg" 
           />
+          <input 
+            type="number" 
+            value={row.lactate} 
+            onChange={(e) => handleValueChange(index, 'lactate', e.target.value)} 
+            className="p-1 border rounded-lg" 
+          />
+          {showGlucose && <input 
+            type="number" 
+            value={row.glucose} 
+            onChange={(e) => handleValueChange(index, 'glucose', e.target.value)} 
+            className="p-1 border rounded-lg" 
+          />}
+          <input 
+            type="number" 
+            value={row.RPE} 
+            onChange={(e) => handleValueChange(index, 'RPE', e.target.value)} 
+            className="p-1 border rounded-lg" 
+          />
+          <button onClick={() => handleDeleteRow(index)} className="p-1 text-red-600"><Trash size={20} /></button>
         </div>
-        <button
-          onClick={handleSave}
-          className="flex flex-col font-semibold rounded-lg w-[116px]"
-          aria-label="Save testing data"
-        >
-          <div className="z-10 px-3 py-2 bg-white rounded-lg border border-emerald-400 border-solid max-md:px-5">
-            Save testing
-          </div>
+      ))}
+
+      <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full p-2 border rounded-lg mt-4" placeholder="Description of this testing..." />
+
+      <div className="flex gap-4 mt-4">
+        <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="p-2 border rounded-lg" />
+        <input type="text" value={formData.weight} onChange={(e) => setFormData({ ...formData, weight: e.target.value })} className="p-2 border rounded-lg w-12" placeholder="Weight (kg)" />
+        <select value={formData.sport} onChange={(e) => setFormData({ ...formData, sport: e.target.value })} className="p-2 border rounded-lg">
+          <option value="">Select sport</option>
+          <option value="run">Run</option>
+          <option value="bike">Bike</option>
+          <option value="swim">Swim</option>
+        </select>
+        <input type="text" value={formData.baseLa} onChange={(e) => setFormData({ ...formData, baseLa: e.target.value })} className="p-2 border rounded-lg w-12" placeholder="Base La (mmol/L)" />
+      </div>
+
+      <div className="flex items-center justify-between mt-4">
+        <button onClick={handleAddRow} className="flex items-center gap-2 px-4 py-2 text-white bg-green-500 rounded-lg">
+          <Plus size={20} /> Add Interval
         </button>
       </div>
     </div>
