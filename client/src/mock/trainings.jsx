@@ -70,6 +70,103 @@ export const mockTrainings = [
     weather: { temperature: 18, conditions: "clear" },
   },
   {
+    trainingId: "training4",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2024-02-29",
+    scenario: "Perfektní den - progresivní výkon",
+    results: [
+      { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.4, RPE: 7 },
+      { interval: 2, duration: "15:00", power: 365, heartRate: 167, lactate: 2.6, RPE: 7 },
+      { interval: 3, duration: "15:00", power: 365, heartRate: 170, lactate: 2.9, RPE: 8 },
+      { interval: 4, duration: "15:00", power: 360, heartRate: 173, lactate: 3.2, RPE: 8 },
+    ],
+    comments: "Perfektní den, ukázka skvělé formy. Možnost zvýšit cílový výkon."
+  },
+  {
+    trainingId: "training21",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2024-04-29",
+    scenario: "Špatný den - únava, pokles výkonu",
+    results: [
+      { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.5, RPE: 7 },
+      { interval: 2, duration: "15:00", power: 365, heartRate: 168, lactate: 2.8, RPE: 8 },
+      { interval: 3, duration: "15:00", power: 380, heartRate: 172, lactate: 3.2, RPE: 9 },
+      { interval: 4, duration: "15:00", power: 375, heartRate: 175, lactate: 3.6, RPE: 10 },
+    ],
+    comments: "Únava, možná nutnost regenerace. Doporučení: odpočinek a sledování formy."
+  },
+  {
+    trainingId: "training61",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2024-06-29",
+    scenario: "Špatný den - únava, pokles výkonu",
+    results: [
+      { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.5, RPE: 7 },
+      { interval: 2, duration: "15:00", power: 355, heartRate: 168, lactate: 2.8, RPE: 8 },
+      { interval: 3, duration: "15:00", power: 350, heartRate: 172, lactate: 3.2, RPE: 9 },
+      { interval: 4, duration: "15:00", power: 345, heartRate: 175, lactate: 3.6, RPE: 10 },
+    ],
+    comments: "Únava, možná nutnost regenerace. Doporučení: odpočinek a sledování formy."
+  },
+  {
+    trainingId: "training17",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2024-07-29",
+    scenario: "Průměrný výkon - konzistentní, ale žádná extra síla",
+    results: [
+      { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.4, RPE: 7 },
+      { interval: 2, duration: "15:00", power: 360, heartRate: 166, lactate: 2.5, RPE: 7 },
+      { interval: 3, duration: "15:00", power: 360, heartRate: 168, lactate: 2.6, RPE: 8 },
+      { interval: 4, duration: "15:00", power: 360, heartRate: 170, lactate: 2.8, RPE: 8 },
+    ],
+    comments: "Stabilní výkon, ale bez rezervy na zvýšení."
+  },
+  {
+    trainingId: "training61",
+    athleteId: "user2",
+    date: "2024-08-29",
+    scenario: "Špatný den - únava, pokles výkonu",
+    results: [
+      { interval: 1, duration: "15:00", power: 380, heartRate: 165, lactate: 2.5, RPE: 7 },
+      { interval: 2, duration: "15:00", power: 380, heartRate: 168, lactate: 2.8, RPE: 8 },
+      { interval: 3, duration: "15:00", power: 385, heartRate: 172, lactate: 3.2, RPE: 9 },
+      { interval: 4, duration: "15:00", power: 385, heartRate: 175, lactate: 3.6, RPE: 10 },
+    ],
+    comments: "Únava, možná nutnost regenerace. Doporučení: odpočinek a sledování formy."
+  },
+  {
+    trainingId: "training41",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2024-10-29",
+    scenario: "Extrémní den - překvapivě vysoký výkon",
+    results: [
+      { interval: 1, duration: "15:00", power: 365, heartRate: 163, lactate: 2.2, RPE: 6 },
+      { interval: 2, duration: "15:00", power: 370, heartRate: 165, lactate: 2.4, RPE: 6 },
+      { interval: 3, duration: "15:00", power: 380, heartRate: 167, lactate: 2.7, RPE: 7 },
+      { interval: 4, duration: "15:00", power: 385, heartRate: 170, lactate: 3.0, RPE: 8 },
+    ],
+    comments: "Den jako z pohádky, možná signál k navýšení tréninkových zón."
+  },
+  {
+    trainingId: "training41",
+    athleteId: "user2",
+    title: "4x15min LT2 p:2min",
+    date: "2025-01-29",
+    scenario: "Extrémní den - překvapivě vysoký výkon",
+    results: [
+      { interval: 1, duration: "15:00", power: 390, heartRate: 163, lactate: 2.2, RPE: 6 },
+      { interval: 2, duration: "15:00", power: 400, heartRate: 165, lactate: 2.4, RPE: 6 },
+      { interval: 3, duration: "15:00", power: 395, heartRate: 167, lactate: 2.7, RPE: 7 },
+      { interval: 4, duration: "15:00", power: 395, heartRate: 170, lactate: 3.0, RPE: 8 },
+    ],
+    comments: "Den jako z pohádky, možná signál k navýšení tréninkových zón."
+  },
+  {
     _id: "training5",
     athleteId: "user2",
     coachId: "user1",

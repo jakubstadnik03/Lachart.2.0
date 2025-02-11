@@ -1,16 +1,15 @@
 import React, { useState } from "react";
 
 const trainingOptions = [
-  "4x15min LT2",
+  "4x15min LT2 p:2min",
   "5x10min FTP",
   "3x20min Z3",
   "6x5min VO2 Max",
   "8x3min Anaerobic Capacity",
 ];
 
-export function DropdownMenu() {
+export function DropdownMenu({ selectedTraining, setSelectedTraining }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedTraining, setSelectedTraining] = useState(trainingOptions[0]);
 
   const toggleMenu = () => setIsOpen(!isOpen);
 

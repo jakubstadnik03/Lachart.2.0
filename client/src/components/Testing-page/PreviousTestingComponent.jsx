@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { fetchMockTrainings } from "../../mock/mockApi";
+import { fetchMockTestings } from "../../mock/mockApi";
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
@@ -12,7 +12,7 @@ console.log(selectedTraining);
 
   useEffect(() => {
     const loadData = async () => {
-      const data = await fetchMockTrainings();
+      const data = await fetchMockTestings();
       setTrainings(data);
       setSelectedTraining(data[0]); // Vybereme první trénink jako default
     };
@@ -31,7 +31,7 @@ console.log(selectedTraining);
       />
 
       {selectedTraining ? (
-        <div className="flex flex-wrap lg:flex-nowrap gap-6 mt-5 ml-5 mr-5">
+        <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5 ml-5 mr-5">
           <LactateCurve mockData={selectedTraining} />
           <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
             <TestingForm testData={selectedTraining} onTestDataChange={setSelectedTraining}/>
