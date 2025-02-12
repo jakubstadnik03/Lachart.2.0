@@ -12,7 +12,7 @@ const NewTestingComponent = () => {
     });
   
     return (
-      <div className="flex flex-wrap lg:flex-nowrap gap-6 mt-5 ml-5 mr-5">
+      <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5 ml-5 mr-5">
         <LactateCurve mockData={testData} />
         <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
           <TestingForm testData={testData} onTestDataChange={setTestData} />

@@ -8,7 +8,7 @@ interface VerticalBarProps {
 }
  function StatCard({ stats }) {
   return (
-    <div className="flex flex-col text-xs rounded-none max-w-[192px]">
+    <div className="flex flex-col text-xs rounded-none max-w-[192px]" >
       <div className="flex z-10 flex-col justify-center items-center px-3 py-2 text-center bg-white rounded-lg border border-solid border-slate-100 shadow-[0px_12px_20px_rgba(0,0,0,0.1)] text-stone-500">
         {stats.map((stat, index) => (
           <div
@@ -30,6 +30,7 @@ export function VerticalBar({ height, color, power, heartRate, lactate }: Vertic
     <div
       className="relative flex justify-end shrink-0 w-3 rounded-md"
       style={{ height: `${height}px`, backgroundColor: color }}
+      style={{ zIndex: 23 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
