@@ -28,9 +28,8 @@ export function VerticalBar({ height, color, power, heartRate, lactate }: Vertic
 
   return (
     <div
-      className="relative flex justify-end shrink-0 w-3 rounded-md"
+      className="relative flex justify-end shrink-0 w-3 rounded-md z-10"
       style={{ height: `${height}px`, backgroundColor: color }}
-      style={{ zIndex: 23 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >

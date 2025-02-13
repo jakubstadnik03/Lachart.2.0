@@ -30,31 +30,40 @@ export function TrainingStats() {
     });
   }, [selectedTraining]);
 
-  const { powerValues, heartRateValues, avgPowerData, minPower, maxPower } = useMemo(() => {
-    if (trainings.length === 0) return { powerValues: [], heartRateValues: [], avgPowerData: [], minPower: 0, maxPower: 100 };
-
+  const { powerValues, heartRateValues, avgPowerData, avgHeartRateData, minPower, maxPower, minHeartRate, maxHeartRate } = useMemo(() => {
+    if (trainings.length === 0) return { powerValues: [], heartRateValues: [], avgPowerData: [], avgHeartRateData: [], minPower: 0, maxPower: 100, minHeartRate: 0, maxHeartRate: 200 };
+  
     const allPowers = trainings.flatMap((t) => t.results.map((r) => r.power));
     const allHeartRates = trainings.flatMap((t) => t.results.map((r) => r.heartRate));
-
+  
     const minPower = Math.floor(Math.min(...allPowers) / 10) * 10;
     const maxPower = Math.ceil(Math.max(...allPowers) / 10) * 10;
     const minHeartRate = Math.min(...allHeartRates);
     const maxHeartRate = Math.ceil(Math.max(...allHeartRates) / 10) * 10;
-
-    const avgPowerData = trainings.map((training, index) => {
-      const avgPower = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
-      return { x: index + 0.5, y: avgPower }; // Posunutí bodů na střed intervalů
-    });
-
+  
+    const avgPowerData = trainings.map((training) => ({
+      x: training.trainingId, // Ujisti se, že se shoduje se sloupci!
+      y: training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length
+    }));
+    
+    const avgHeartRateData = trainings.map((training) => ({
+      x: training.trainingId,
+      y: training.results.reduce((sum, r) => sum + r.heartRate, 0) / training.results.length
+    }));
+    
+  
     return {
       powerValues: Array.from({ length: 6 }, (_, i) => Math.round(minPower + (i * (maxPower - minPower)) / 5)).reverse(),
       heartRateValues: Array.from({ length: 6 }, (_, i) => Math.round(minHeartRate + (i * (maxHeartRate - minHeartRate)) / 5)).reverse(),
       avgPowerData,
+      avgHeartRateData,
       minPower,
-      maxPower
+      maxPower,
+      minHeartRate,
+      maxHeartRate
     };
   }, [trainings]);
-
+  
   const barColors = ["bg-violet-100", "bg-violet-200", "bg-violet-300", "bg-violet-400", "bg-violet-500"];
 
   return (
@@ -86,14 +95,40 @@ export function TrainingStats() {
               <div className="text-sm text-zinc-500 mt-1">{new Date(training.date).toLocaleDateString("cs-CZ").replace(/\s/g, "").replace(/\d{4}$/, "24")}</div>
             </div>
           ))}
-          <ResponsiveContainer width="100%" height={maxGraphHeight} className="absolute top-0 left-0 z-20">
-            <LineChart data={avgPowerData}>
-              <CartesianGrid strokeDasharray="3 3" className="z-0" />
-              <YAxis domain={[minPower, maxPower]} hide />
-              <Line type="monotone" dataKey="y" stroke="#3b82f6" strokeWidth={2} dot={true} />
-              <Scatter data={avgPowerData} fill="#3b82f6" />
-            </LineChart>
-          </ResponsiveContainer>
+{/* Mřížka (za sloupci, ale přes celý graf) */}
+<ResponsiveContainer
+  width="100%"
+  height={maxGraphHeight}
+  className="absolute top-0 left-0 z-0 pointer-events-none"
+>
+  <LineChart>
+    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#d1d5db" />
+  </LineChart>
+</ResponsiveContainer>
+
+{/* Hlavní graf s čarami */}
+<ResponsiveContainer
+  width="100%"
+  height={maxGraphHeight}
+  className="absolute top-0 left-0 z-20 pointer-events-none"
+>
+  <LineChart data={avgPowerData}>
+    <YAxis domain={[minPower, maxPower]} ticks={powerValues} hide />
+    <YAxis domain={[minHeartRate, maxHeartRate]} ticks={heartRateValues} hide yAxisId="right" />
+
+    {/* Výkonová křivka */}
+    <Line type="monotone" dataKey="y" stroke="#3b82f6" strokeWidth={2} dot={true} />
+
+    {/* Tepová křivka */}
+    <Line type="monotone" data={avgHeartRateData} dataKey="y" stroke="#ef4444" strokeWidth={2} dot={true} yAxisId="right" />
+
+    {/* Body */}
+    <Scatter data={avgPowerData} fill="#3b82f6" />
+    <Scatter data={avgHeartRateData} fill="#ef4444" yAxisId="right" />
+  </LineChart>
+</ResponsiveContainer>
+
+
         </div>
         <Scale values={heartRateValues} unit="Bpm" />
       </div>
