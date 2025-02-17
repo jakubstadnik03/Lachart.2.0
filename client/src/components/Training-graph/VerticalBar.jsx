@@ -1,11 +1,5 @@
 import React, { useState } from "react";
 
-interface VerticalBarProps {
-  height: number;
-  color: string;
-  power: number;
-  heartRate: number;
-}
  function StatCard({ stats }) {
   return (
     <div className="flex flex-col text-xs rounded-none max-w-[192px]" >
@@ -23,7 +17,7 @@ interface VerticalBarProps {
     </div>
   );
 }
-export function VerticalBar({ height, color, power, heartRate, lactate }: VerticalBarProps) {
+export function VerticalBar({ height, color, power, heartRate, lactate }) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -33,10 +27,6 @@ export function VerticalBar({ height, color, power, heartRate, lactate }: Vertic
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-         <div
-      className={`flex justify-end shrink-0 w-3 rounded-md ${color}`}
-      style={{ height: `${height}px` }} // Inline styl pro výšku
-    />
       {/* Tooltip se zobrazuje jen při hover */}
       {isHovered && (
         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 z-50 " style={{marginBottom: "-10px", minWidth: "120px" }}>
@@ -49,6 +39,11 @@ export function VerticalBar({ height, color, power, heartRate, lactate }: Vertic
           />
         </div>
       )}
+         <div
+      className={`flex justify-end shrink-0 w-3 rounded-md ${color}`}
+      style={{ height: `${height}px` }} // Inline styl pro výšku
+    />
+      
     </div>
   );
 }

@@ -139,7 +139,7 @@ export const mockTrainings = [
     comments: "Únava, možná nutnost regenerace. Doporučení: odpočinek a sledování formy."
   },
   {
-    trainingId: "training41",
+    trainingId: "training40",
     athleteId: "user2",
     title: "4x15min LT2 p:2min",
     date: "2024-10-29",

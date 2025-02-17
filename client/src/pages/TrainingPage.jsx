@@ -1,8 +1,11 @@
 import React from 'react'
+import UserTrainingsTable from '../components/Training-log/UserTrainingsTable'
 
 const TrainingPage = () => {
   return (
-    <div>TrainingPage</div>
+    <div>
+      <UserTrainingsTable />
+    </div>
   )
 }
 

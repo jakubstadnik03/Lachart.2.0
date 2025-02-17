@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect } from "react";
 import { VerticalBar } from "./VerticalBar";
 import { DropdownMenu } from "../DropDownMenu";
 import { fetchMockTrainings } from "../../mock/mockApi";
-import { Line, LineChart, ResponsiveContainer, Scatter, YAxis, CartesianGrid } from "recharts";
 
 const maxGraphHeight = 250;
 
@@ -95,40 +94,6 @@ export function TrainingStats() {
               <div className="text-sm text-zinc-500 mt-1">{new Date(training.date).toLocaleDateString("cs-CZ").replace(/\s/g, "").replace(/\d{4}$/, "24")}</div>
             </div>
           ))}
-{/* Mřížka (za sloupci, ale přes celý graf) */}
-<ResponsiveContainer
-  width="100%"
-  height={maxGraphHeight}
-  className="absolute top-0 left-0 z-0 pointer-events-none"
->
-  <LineChart>
-    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#d1d5db" />
-  </LineChart>
-</ResponsiveContainer>
-
-{/* Hlavní graf s čarami */}
-<ResponsiveContainer
-  width="100%"
-  height={maxGraphHeight}
-  className="absolute top-0 left-0 z-20 pointer-events-none"
->
-  <LineChart data={avgPowerData}>
-    <YAxis domain={[minPower, maxPower]} ticks={powerValues} hide />
-    <YAxis domain={[minHeartRate, maxHeartRate]} ticks={heartRateValues} hide yAxisId="right" />
-
-    {/* Výkonová křivka */}
-    <Line type="monotone" dataKey="y" stroke="#3b82f6" strokeWidth={2} dot={true} />
-
-    {/* Tepová křivka */}
-    <Line type="monotone" data={avgHeartRateData} dataKey="y" stroke="#ef4444" strokeWidth={2} dot={true} yAxisId="right" />
-
-    {/* Body */}
-    <Scatter data={avgPowerData} fill="#3b82f6" />
-    <Scatter data={avgHeartRateData} fill="#ef4444" yAxisId="right" />
-  </LineChart>
-</ResponsiveContainer>
-
-
         </div>
         <Scale values={heartRateValues} unit="Bpm" />
       </div>
