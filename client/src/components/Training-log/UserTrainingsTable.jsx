@@ -18,7 +18,7 @@ const UserTrainingsTable = () => {
   }
 
   return (
-    <div className="training-table">
+    <div className="training-table rounded-2xl shadow-lg">
       {trainings.map((training) => (
         <TrainingItem key={training.id} training={training} />
       ))}
