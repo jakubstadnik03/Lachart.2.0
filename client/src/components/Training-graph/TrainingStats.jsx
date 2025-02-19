@@ -64,12 +64,18 @@ export function TrainingStats() {
   }, [trainings]);
   
   const barColors = ["bg-violet-100", "bg-violet-200", "bg-violet-300", "bg-violet-400", "bg-violet-500"];
-
+  const trainingOptions = [
+    "4x15min LT2",
+    "5x10min FTP",
+    "3x20min Z3",
+    "6x5min VO2 Max",
+    "8x3min Anaerobic Capacity",
+  ];
   return (
     <div className="flex flex-col p-5 bg-white rounded-3xl m-5 max-w-[704px] shadow-md relative">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold text-zinc-900">{selectedTraining}</h2>
-        <DropdownMenu selectedTraining={selectedTraining} setSelectedTraining={setSelectedTraining} />
+        <DropdownMenu selectedTraining={selectedTraining} setSelectedTraining={setSelectedTraining} trainingOptions={trainingOptions}/>
       </div>
       <div className="text-sm text-gray-600 mt-2">
         {trainings.length > 0 && <p>{trainings[0].scenario}</p>}

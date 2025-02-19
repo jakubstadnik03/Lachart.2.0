@@ -133,7 +133,7 @@ export default function TrainingTable() {
       });
   
       // Sort by date and limit to the last 5
-      const sortedData = formattedData.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+      const sortedData = formattedData.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
   
       setTrainings(sortedData);
     } catch (error) {
@@ -146,7 +146,7 @@ export default function TrainingTable() {
   }, []);
 
   return (
-    <div className="flex flex-col justify-center p-5 max-w-2xl bg-white rounded-3xl m-5 shadow-md">
+    <div className="flex flex-col justify-center p-5 max-w-2xl bg-white rounded-3xl shadow-md">
       <div className="flex flex-col w-full max-md:max-w-full">
         <div className="flex flex-col px-5 pb-3.5 w-full max-md:max-w-full">
           <div className="flex flex-wrap gap-10 items-center w-full max-md:max-w-full">
