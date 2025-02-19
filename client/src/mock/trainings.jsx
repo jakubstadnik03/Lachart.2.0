@@ -11,10 +11,10 @@ export const mockTrainings = [
     duration: "90 min",
     intensity: "LT2",
     results: [
-      { interval: 1, duration: "1km", rest: "01:00", intensity: "LT2", power: "3:30", heartRate: 170, lactate: 3.2, RPE: 7 },
-      { interval: 4,duration: "1km", rest: "01:00", intensity: "LT2", power: "3:35", heartRate: 170, lactate: 2.5, RPE: 9 },
-      { interval: 6,duration: "1km", rest: "01:00", intensity: "LT2", power: "3:30", heartRate: 170, lactate: 2.9, RPE: 12 },
-      { interval: 10,duration: "1km", rest: "01:00", intensity: "LT2", power: "3:20", heartRate: 190, lactate: 3.9, RPE: 17 },
+      { interval: 1, duration: "1km", rest: "01:00", intensity: "LT2", power: 210, heartRate: 170, lactate: 3.2, RPE: 7 },
+      { interval: 4,duration: "1km", rest: "01:00", intensity: "LT2", power: 215, heartRate: 170, lactate: 2.5, RPE: 9 },
+      { interval: 6,duration: "1km", rest: "01:00", intensity: "LT2", power: 210, heartRate: 170, lactate: 2.9, RPE: 12 },
+      { interval: 10,duration: "1km", rest: "01:00", intensity: "LT2", power: 200, heartRate: 190, lactate: 3.9, RPE: 17 },
     ],
     specifics: { specific: "track", weather: "Nike Vaporfly" },
     comments: "Perfektní den, ukázka skvělé formy. Možnost zvýšit cílový tempo."
@@ -40,7 +40,7 @@ export const mockTrainings = [
     trainingId: "training4",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2024-02-29",
     scenario: "Perfektní den - progresivní výkon",
     results: [
@@ -56,7 +56,7 @@ export const mockTrainings = [
     trainingId: "training21",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2024-04-29",
     scenario: "Špatný den - únava, pokles výkonu",
     results: [
@@ -72,7 +72,7 @@ export const mockTrainings = [
     trainingId: "training61",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2024-06-29",
     scenario: "Špatný den - únava, pokles výkonu",
     results: [
@@ -89,13 +89,13 @@ export const mockTrainings = [
     trainingId: "training17",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2024-07-29",
     scenario: "Průměrný výkon - konzistentní, ale žádná extra síla",
     results: [
       { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.4, RPE: 7 },
       { interval: 2, duration: "15:00", power: 360, heartRate: 166, lactate: 2.5, RPE: 7 },
-      { interval: 3, duration: "15:00", power: 1200, heartRate: 168, lactate: 2.6, RPE: 8 },
+      { interval: 3, duration: "15:00", power: 365, heartRate: 168, lactate: 2.6, RPE: 8 },
       { interval: 4, duration: "15:00", power: 360, heartRate: 170, lactate: 2.8, RPE: 8 },
     ],
     specifics: { specific: "Smart trainer", weather: "Indoor" },
@@ -104,6 +104,7 @@ export const mockTrainings = [
   {
     trainingId: "training61",
     athleteId: "user2",
+    title: "4x15min LT2",
     sport: "bike",
     date: "2024-08-29",
     scenario: "Špatný den - únava, pokles výkonu",
@@ -120,7 +121,7 @@ export const mockTrainings = [
     trainingId: "training40",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2024-10-29",
     scenario: "Extrémní den - překvapivě vysoký výkon",
     results: [
@@ -136,7 +137,7 @@ export const mockTrainings = [
     trainingId: "training41",
     athleteId: "user2",
     sport: "bike",
-    title: "4x15min LT2 p:2min",
+    title: "4x15min LT2",
     date: "2025-01-29",
     scenario: "Extrémní den - překvapivě vysoký výkon",
     results: [

@@ -1,7 +1,7 @@
 // src/pages/DashboardPage.js
 import React from "react";
 import SportsSelector from "../components/Header/SportsSelector";
-import TrainingTable from "../components/TrainingTable/TrainingTable";
+import TrainingTable from "../components/DashboardPage/TrainingTable";
 import { TrainingStats } from "../components/Training-graph/TrainingStats";
 import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 

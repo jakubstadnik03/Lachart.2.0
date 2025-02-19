@@ -20,7 +20,7 @@ function Scale({ values, unit }) {
 
 export function TrainingStats() {
   const [trainings, setTrainings] = useState([]);
-  const [selectedTraining, setSelectedTraining] = useState("4x15min LT2 p:2min");
+  const [selectedTraining, setSelectedTraining] = useState("4x15min LT2");
 
   useEffect(() => {
     fetchMockTrainings().then((data) => {

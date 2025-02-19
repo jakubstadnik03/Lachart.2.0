@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 const trainingOptions = [
-  "4x15min LT2 p:2min",
+  "4x15min LT2",
   "5x10min FTP",
   "3x20min Z3",
   "6x5min VO2 Max",
