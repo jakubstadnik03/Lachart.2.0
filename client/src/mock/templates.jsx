@@ -64,7 +64,7 @@ export const mockTemplates = [
   {
     _id: "template6",
     sport: "cycling",
-    title: "4x20min LT2 p:2min",
+    title: "4x20min LT2",
     description: "Dlouhé úseky na laktátovém prahu s krátkým odpočinkem.",
     duration: "100 min",
     intensity: "LT2",
