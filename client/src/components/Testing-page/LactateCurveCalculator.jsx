@@ -294,7 +294,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   
 
   return (
-    <div className="flex flex-wrap gap-4 px-5 py-5 bg-white rounded-2xl shadow-lg m-5">
+    <div className="flex flex-wrap gap-4 px-5 py-5 bg-white rounded-2xl shadow-lg mt-5">
       <div className="flex-grow min-w-[500px]">
         <h2 className="text-2xl font-bold">
           Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>

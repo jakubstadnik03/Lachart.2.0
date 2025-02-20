@@ -3,7 +3,7 @@ import UserTrainingsTable from '../components/Training-log/UserTrainingsTable'
 
 const TrainingPage = () => {
   return (
-    <div>
+    <div className="flex justify-center">
       <UserTrainingsTable />
     </div>
   )

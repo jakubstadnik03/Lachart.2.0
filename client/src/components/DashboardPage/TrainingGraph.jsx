@@ -163,7 +163,7 @@ const TrainingGraph = ({ trainingId }) => {
   };
 
   return (
-        <div className="relative w-full max-w-3xl p-6 bg-white rounded-2xl shadow-lg m-5">
+        <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-md ">
        <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold">
             {training.title} <span className="text-xl text-gray-600 ml-4">({training.date})</span>

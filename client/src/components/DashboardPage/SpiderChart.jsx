@@ -7,13 +7,12 @@ import {
   RadialLinearScale,
   PointElement,
   LineElement,
-  Filler,
   Tooltip,
   Legend,
 } from "chart.js";
 
 // Registrace modulů pro Chart.js
-ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Tooltip, Legend);
 
 export default function SpiderChart({ trainings = [] }) {
   const [selectedSport, setSelectedSport] = useState("bike");
@@ -24,27 +23,30 @@ export default function SpiderChart({ trainings = [] }) {
 
   // Filtrování podle sportu
   const filteredTrainings = trainings.filter((t) => t.sport === selectedSport);
+  
+  // Získání unikátních měsíců ze vstupních dat
+  const months = [...new Set(filteredTrainings.map(t => new Date(t.date).toLocaleString('default', { month: 'long' })))];
+  const monthColors = ["#00AC07", "#7755FF", "#AC0000", "#3F8CFE"];
 
-  const labels = filteredTrainings.map((t) => t.title || "Unknown");
-
-  const dataValues = filteredTrainings.map((t) => {
-    if (!t.results || t.results.length === 0) return 0;
-    const totalPower = t.results.reduce((sum, res) => sum + res.power, 0);
-    return Math.round(totalPower / t.results.length); // Průměrný výkon
-  });
+  // Strukturování dat podle měsíců
+  const transformedData = filteredTrainings.reduce((acc, training) => {
+    const month = new Date(training.date).toLocaleString('default', { month: 'long' });
+    if (!acc[month]) acc[month] = { label: month };
+    
+    acc[month][training.title] = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
+    return acc;
+  }, {});
 
   const data = {
-    labels,
-    datasets: [
-      {
-        label: "Power (W)",
-        data: dataValues,
-        backgroundColor: "rgba(75,192,192,0.2)",
-        borderColor: "rgba(75,192,192,1)",
-        borderWidth: 2,
-        pointBackgroundColor: "rgba(75,192,192,1)",
-      },
-    ],
+    labels: [...new Set(filteredTrainings.map((t) => t.title))],
+    datasets: months.map((month, index) => ({
+      label: month,
+      data: Object.values(transformedData[month] || {}).slice(1),
+      borderColor: monthColors[index],
+      borderWidth: 2,
+      pointBackgroundColor: monthColors[index],
+      fill: false, // Zakázání vyplňování plochy
+    })),
   };
 
   const options = {
@@ -52,36 +54,31 @@ export default function SpiderChart({ trainings = [] }) {
     maintainAspectRatio: false,
     scales: {
       r: {
-        beginAtZero: true,
-        suggestedMin: 0,
+        beginAtZero: false,
+        suggestedMin: 300,
         ticks: {
-          font: { size: 14 }, // Zvětšení čísel na osách
+          font: { size: 14 },
         },
       },
     },
     plugins: {
       legend: {
         labels: {
-          font: { size: 16 }, // Zvětšení popisků legendy
+          font: { size: 16 },
+          usePointStyle: true, // Použití koleček místo čtverečků
         },
       },
     },
   };
-  const trainingOptions = ["bike", "swim", "run"]
+
+  const trainingOptions = ["bike", "swim", "run"];
 
   return (
     <div className="w-full h-[500px] flex flex-col items-center justify-center bg-white p-8 rounded-3xl shadow-md relative">
-      {/* Titulek */}
       <h2 className="text-2xl font-semibold text-gray-900 mb-4">Training Power Chart</h2>
-
-      {/* Dropdown pro výběr sportu */}
       <div className="absolute top-5 right-5">
-       
-      <DropdownMenu selectedTraining={selectedSport} setSelectedTraining={setSelectedSport} trainingOptions={trainingOptions}/>
+        <DropdownMenu selectedTraining={selectedSport} setSelectedTraining={setSelectedSport} trainingOptions={trainingOptions}/>
       </div>
-
-
-      {/* Větší graf */}
       {filteredTrainings.length > 0 ? (
         <div className="w-[600px] h-[400px]">
           <Radar data={data} options={options} />

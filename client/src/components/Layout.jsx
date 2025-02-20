@@ -9,7 +9,7 @@ const Layout = () => {
 
   return (
  <>
-        <div className="flex min-h-screen ">
+        <div className="flex min-h-screen overflow-hidden ">
         <div>
             <Menu loggedInUserId={loggedInUserId} isActive={true}/>
             </div>

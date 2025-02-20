@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { VerticalBar } from "./VerticalBar";
-import { DropdownMenu } from "../DropDownMenu";
-import { fetchMockTrainings } from "../../mock/mockApi";
+import { DropdownMenu } from "../../DropDownMenu";
+import { fetchMockTrainings } from "../../../mock/mockApi";
 
 const maxGraphHeight = 250;
 
@@ -72,9 +72,9 @@ export function TrainingStats() {
     "8x3min Anaerobic Capacity",
   ];
   return (
-    <div className="flex flex-col p-5 bg-white rounded-3xl m-5 max-w-[704px] shadow-md relative">
+    <div className="flex flex-col p-5 bg-white rounded-3xl shadow-md relative">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-zinc-900">{selectedTraining}</h2>
+        <h2 className="text-xl font-semibold text-zinc-900">Training {selectedTraining}</h2>
         <DropdownMenu selectedTraining={selectedTraining} setSelectedTraining={setSelectedTraining} trainingOptions={trainingOptions}/>
       </div>
       <div className="text-sm text-gray-600 mt-2">

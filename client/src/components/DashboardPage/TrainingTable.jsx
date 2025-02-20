@@ -24,22 +24,22 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
   return (
     <>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-        <div className="self-stretch py-2.5 pr-4 pl-5 w-full border-b border-gray-200 max-sm:px-2 max-sm:text-xs">
+        <div className="self-stretch py-2.5 pr-4 pl-5 w-full border-b text-center border-gray-200 max-sm:px-2">
           {training}
         </div>
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto whitespace-nowrap basis-0">
-        <div className="self-stretch px-4 py-2.5 w-full border-b border-gray-200">
+        <div className="self-stretch px-4 py-2.5 w-full border-b text-center border-gray-200">
           {sport.substring(0, 4)}
         </div>
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-        <div className="self-stretch px-4 py-2.5 w-full border-b border-gray-200">
+        <div className="self-stretch px-4 py-2.5 w-full border-b text-center border-gray-200">
           {date}
         </div>
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto text-sm text-green-600 basis-0">
-        <div className="flex justify-center items-center py-2 w-full text-center border-b border-gray-200">
+        <div className="flex justify-center items-center py-2 w-full text-center border-b text-center border-gray-200">
           <div
             className={`flex gap-1 items-center self-stretch p-1 my-auto rounded-md ${getBackgroundColor(
               status
@@ -64,8 +64,8 @@ function TableHeader() {
   
   return headers.map((header) => (
     <div key={header} className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-      <div className="flex gap-2.5 items-center py-2.5 pr-4 pl-5 w-full font-medium text-gray-900 whitespace-nowrap bg-white border-t border-b border-gray-200 max-sm:px-2">
-        <div className="gap-1 self-stretch my-auto">{header}</div>
+      <div className="flex gap-2.5 items-center py-2.5 pr-4 pl-5 w-full font-medium text-gray-900 whitespace-nowrap bg-white border-t border-b text-center justify-center border-gray-200 max-sm:px-2">
+        <div className="gap-1 self-stretch my-auto ">{header}</div>
       </div>
     </div>
   ));
@@ -146,7 +146,7 @@ export default function TrainingTable() {
   }, []);
 
   return (
-    <div className="flex flex-col justify-center p-5 max-w-2xl bg-white rounded-3xl shadow-md">
+    <div className="flex flex-col justify-center p-5 bg-white rounded-3xl shadow-md">
       <div className="flex flex-col w-full max-md:max-w-full">
         <div className="flex flex-col px-5 pb-3.5 w-full max-md:max-w-full">
           <div className="flex flex-wrap gap-10 items-center w-full max-md:max-w-full">

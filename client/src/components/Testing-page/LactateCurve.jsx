@@ -169,7 +169,7 @@ const LactateCurve = ({ mockData }) => {
   };
 
   return (
-    <div className="relative w-full max-w-2xl p-6 bg-white rounded-2xl shadow-lg">
+    <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
       <h2 className="text-2xl font-bold">
         Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>
       </h2>

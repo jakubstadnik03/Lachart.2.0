@@ -7,7 +7,7 @@ const UserTrainingsTable = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: "date", direction: "asc" });
-  const rowsPerPage = 5;
+  const rowsPerPage = 4;
 
   useEffect(() => {
     const loadTrainings = async () => {
@@ -62,28 +62,29 @@ const UserTrainingsTable = () => {
   }
 
   return (
-    <div className="training-table rounded-2xl shadow-lg p-5 bg-white">
+    <div className="training-table rounded-2xl shadow-lg p-5 bg-white m-5 max-w-[1600px]  text-[#686868]">
       {/* Vyhledávací pole */}
       <div className="mb-4 flex justify-between items-center">
+        <h2 className="text-2xl font-semibold text-gray-900">Training Log</h2>
         <input
           type="text"
-          placeholder="Hledat tréninky..."
+          placeholder="Find training by title"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-1/3 p-2 border border-gray-300 rounded-md"
+          className="w-1/3 p-2 border border-gray-300 rounded-2xl"
         />
       </div>
 
       {/* Hlavička tabulky */}
-      <div className="grid grid-cols-11 bg-gray-100 font-semibold p-2 border-b border-gray-300 text-sm">
+      <div className="grid grid-cols-11 bg-gray-100 justify-items-center p-2 border-b border-gray-300 text-sm rounded-t-2xl">
         <div className="cursor-pointer" onClick={() => handleSort("date")}>
-          Datum {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
+          Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
         <div className="cursor-pointer" onClick={() => handleSort("sport")}>
           Sport {sortConfig.key === "sport" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
         <div className="cursor-pointer" onClick={() => handleSort("title")}>
-          Název {sortConfig.key === "title" && (sortConfig.direction === "asc" ? "↑" : "↓")}
+          Title {sortConfig.key === "title" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
         <div>Interval</div>
         <div>Power/Pace</div>
@@ -91,8 +92,8 @@ const UserTrainingsTable = () => {
         <div>RPE</div>
         <div>Lactate</div>
         <div>Terrain</div>
-        <div>Specifika</div>
-        <div>Popis</div>
+        <div>Specifications</div>
+        <div>Description</div>
       </div>
 
       {/* Řádky tabulky */}
