@@ -1,7 +1,46 @@
 import React, { useEffect, useState } from "react";
 import { fetchMockTrainings } from "../../mock/mockApi";
 import TrainingItem from "./TrainingItem";
-
+const Pagination = ({ currentPage, totalPages, onPageChange }) => {
+    return (
+      <nav
+        className="flex flex-wrap justify-between items-center py-2.5"
+        aria-label="Pagination navigation"
+      >
+        <section className="flex gap-2 text-xs text-gray-700">
+          <p>
+            Showing {(currentPage - 1) * 10 + 1} to {Math.min(currentPage * 10, totalPages * 10)} of {totalPages * 10} entries
+          </p>
+        </section>
+  
+        <section className="flex gap-2 items-center" role="navigation" aria-label="Page navigation">
+          <button
+            className={`px-3 py-2 rounded-full transition-all ${currentPage === 1 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+          >
+            ◀
+          </button>
+          {[currentPage, Math.min(currentPage + 1, totalPages)].map((page) => (
+            <button
+              key={page}
+              className={`w-9 h-9 rounded-full text-sm font-semibold transition-all ${currentPage === page ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              onClick={() => onPageChange(page)}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            className={`px-3 py-2 rounded-full transition-all ${currentPage === totalPages ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+          >
+            ▶
+          </button>
+        </section>
+      </nav>
+    );
+  };
 const UserTrainingsTable = () => {
   const [trainings, setTrainings] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -17,7 +56,6 @@ const UserTrainingsTable = () => {
     loadTrainings();
   }, []);
 
-  // Funkce pro řazení dat
   const sortData = (trainings, config) => {
     return [...trainings].sort((a, b) => {
       const aValue = a[config.key] ?? "";
@@ -31,14 +69,12 @@ const UserTrainingsTable = () => {
 
   const sortedTrainings = sortData(trainings, sortConfig);
 
-  // Funkce pro filtrování podle title, sportu a specifik
   const filteredTrainings = sortedTrainings.filter((training) =>
     (training.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     training.sport?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     training.specifics?.specific?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Řazení při kliknutí na hlavičku
   const handleSort = (key) => {
     setSortConfig((prevConfig) => {
       const direction = prevConfig.key === key && prevConfig.direction === "asc" ? "desc" : "asc";
@@ -46,12 +82,6 @@ const UserTrainingsTable = () => {
     });
   };
 
-  // Změna stránky
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-  };
-
-  // Stránkování dat
   const paginatedTrainings = filteredTrainings.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
@@ -62,8 +92,7 @@ const UserTrainingsTable = () => {
   }
 
   return (
-    <div className="training-table rounded-2xl shadow-lg p-5 bg-white m-5 max-w-[1600px]  text-[#686868]">
-      {/* Vyhledávací pole */}
+    <div className="training-table rounded-2xl shadow-lg p-5 bg-white m-5 max-w-[1600px] text-[#686868]">
       <div className="mb-4 flex justify-between items-center">
         <h2 className="text-2xl font-semibold text-gray-900">Training Log</h2>
         <input
@@ -75,7 +104,6 @@ const UserTrainingsTable = () => {
         />
       </div>
 
-      {/* Hlavička tabulky */}
       <div className="grid grid-cols-11 bg-gray-100 justify-items-center p-2 border-b border-gray-300 text-sm rounded-t-2xl">
         <div className="cursor-pointer" onClick={() => handleSort("date")}>
           Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
@@ -96,31 +124,15 @@ const UserTrainingsTable = () => {
         <div>Description</div>
       </div>
 
-      {/* Řádky tabulky */}
       {paginatedTrainings.map((training) => (
         <TrainingItem key={training.id} training={training} />
       ))}
 
-      {/* Stránkování */}
-      <div className="flex justify-center mt-4 space-x-4">
-        <button
-          className="px-4 py-2 bg-blue-500 text-white rounded-md"
-          onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
-          disabled={currentPage === 1}
-        >
-          Předchozí
-        </button>
-        <span className="px-4 py-2 text-lg font-semibold">
-          {currentPage} / {Math.ceil(filteredTrainings.length / rowsPerPage)}
-        </span>
-        <button
-          className="px-4 py-2 bg-blue-500 text-white rounded-md"
-          onClick={() => handlePageChange(Math.min(currentPage + 1, Math.ceil(filteredTrainings.length / rowsPerPage)))}
-          disabled={currentPage >= Math.ceil(filteredTrainings.length / rowsPerPage)}
-        >
-          Další
-        </button>
-      </div>
+      <Pagination
+        currentPage={currentPage}
+        totalPages={Math.ceil(filteredTrainings.length / rowsPerPage)}
+        onPageChange={setCurrentPage}
+      />
     </div>
   );
 };

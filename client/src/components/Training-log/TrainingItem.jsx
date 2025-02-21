@@ -100,7 +100,7 @@ const TrainingItem = ({ training }) => {
 
         <div className="self-stretch my-auto ">{specifics.specific}</div>
         <div className="self-stretch my-auto ">{specifics.weather}</div>
-        <div className="my-auto w-[104px]">{comments}</div>
+        <div className="my-auto text-sm">{comments}</div>
 
     </div>
   );

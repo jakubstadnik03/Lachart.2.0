@@ -7,7 +7,6 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
     const icons = {
       up: "https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/ca42b61d339a69e3bb2cc02efb61369c67cfc2f39658e99e5d576df14fcdfcd9?",
       down: "https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/03f5e1c239b86d526fe7a81e7008e0b47bb861a21531b26f903e6750497c90ce?",
-      same: "https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/5624a86d3c88d3562872dd0f15221eca4dabce973c1983cf98dd06cde908b9ee?"
     };
     return icons[status];
   };
@@ -45,12 +44,14 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
               status
             )}`}
           >
-            <img
-              loading="lazy"
-              src={getStatusIcon(status)}
-              alt=""
-              className="object-contain shrink-0 self-stretch my-auto w-3 aspect-square"
-            />
+            {status !== "same" && (
+              <img
+                loading="lazy"
+                src={getStatusIcon(status)}
+                alt=""
+                className="object-contain shrink-0 self-stretch my-auto w-3 aspect-square"
+              />
+            )}
             <div className="self-stretch my-auto">{averagePace}</div>
           </div>
         </div>

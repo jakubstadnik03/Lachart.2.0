@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@headlessui/react": "^2.2.0",
+    "@heroicons/react": "^2.2.0",
     "@shadcn/ui": "^0.0.4",
     "@tanstack/react-table": "^8.21.2",
     "chart.js": "^4.4.7",
