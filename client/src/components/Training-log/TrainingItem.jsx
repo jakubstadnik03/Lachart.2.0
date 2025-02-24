@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const TrainingItem = ({ training }) => {
-  console.log(training);
+  const [isExpanded, setIsExpanded] = useState(false);
   if (!training) return null;
   const { date, title, specifics, comments, results, sport } = training;
 
@@ -30,78 +30,131 @@ const TrainingItem = ({ training }) => {
     return current > previous ? "up" : current < previous ? "down" : "same";
   };
   
+  const getPowerUnit = (sport) => {
+    switch (sport) {
+      case 'run':
+        return '/km';
+      case 'swim':
+        return '/100m';
+      case 'bike':
+        return 'W';
+      default:
+        return '';
+    }
+  };
+
+  const renderIntervalsHeader = () => (
+    <div className="grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-2 bg-gray-50 text-gray-600 text-xs sm:text-sm font-medium border-b border-gray-200">
+      <div className="text-center w-8">#</div>
+      <div className="text-center w-12 sm:w-16">Power {getPowerUnit(sport)}</div>
+      <div className="w-16">HR (bpm)</div>
+      <div className="w-12">RPE</div>
+      <div className="w-12 sm:w-16">Lactate</div>
+    </div>
+  );
+
   const renderWorkoutRow = (workout, index, array) => {
     const isLastRow = index === array.length - 1;
     const borderClass = isLastRow ? '' : 'border-solid border-b-[0.3px] border-b-[#686868]';
     
     const prevLactate = index > 0 ? array[index - 1].lactate : undefined;
     const lactateStatus = getLactateStatus(workout.lactate, prevLactate);
-    const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null; // Skryje ikonu pokud je "same"
+    const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null;
   
-    // Nastavení barvy podle trendu laktátu
     const efficiencyColor = lactateStatus === "down" 
-      ? "text-red-700 bg-red-600"  // Laktát roste → červená
+      ? "text-red-700 bg-red-600"
       : lactateStatus === "up"
-      ? "text-green-600 bg-green-600"  // Laktát klesá → zelená
-      : "text-gray-500 bg-gray-400"; // Stejný → šedá
+      ? "text-green-600 bg-green-600"
+      : "text-gray-500 bg-gray-400";
   
     return (
-      <div key={workout.interval} className={`grid grid-cols-5 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868]`}>
-        <div className="self-stretch my-auto w-20 text-center">{workout.interval}</div>
-        <div className="self-stretch my-auto w-20 text-center">{workout.power}</div>
-        <div className="flex gap-0.5 items-center self-stretch my-auto">
+      <div key={workout.interval} className={`grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
+        <div className="text-center w-8">{workout.interval}</div>
+        <div className="text-center w-12 sm:w-16">{workout.power}</div>
+        <div className="flex gap-0.5 items-center w-16">
           <img
             loading="lazy"
             src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/a8b365ad7ccf1466c38d227be8da3cc68edda93357cc91f89de840d723c70bb4?"
-            className="object-contain shrink-0 self-stretch my-auto aspect-square w-[18px]"
+            className="w-3 h-3 sm:w-4 sm:h-4"
             alt=""
           />
-          <div className="self-stretch my-auto ">{workout.heartRate}</div>
+          <div>{workout.heartRate}</div>
         </div>
-        <div className="flex gap-0.5 items-center self-stretch my-auto text-blue-500">
+        <div className="flex gap-0.5 items-center text-blue-500 w-12">
           <img
             loading="lazy"
             src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/560435bfa3d998398c37040f6c6463c35a70154d9fd9cd3f0f8d73ae6ed91ab4?"
-            className="object-contain shrink-0 self-stretch my-auto aspect-square w-[18px]"
+            className="w-3 h-3 sm:w-4 sm:h-4"
             alt=""
           />
-          <div className="self-stretch my-auto">{workout.RPE}</div>
+          <div>{workout.RPE}</div>
         </div>
-        <div className={`flex gap-1 items-center self-stretch p-1 my-auto w-12 text-xs justify-end text-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
-        {lactateIcon &&  <img
+        <div className={`flex gap-1 items-center p-1 w-12 sm:w-16 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
+          {lactateIcon && <img
             loading="lazy"
-            src={lactateIcon} // Dynamická šipka podle trendu laktátu
-            className="object-contain shrink-0 self-stretch my-auto w-3 aspect-square"
+            src={lactateIcon}
+            className="w-2 h-2 sm:w-3 sm:h-3"
             alt=""
-          /> }
-          <div className="self-stretch my-auto w-6 ">{workout.lactate}</div>
+          />}
+          <div>{workout.lactate}</div>
         </div>
       </div>
     );
   };
   
-  
-  
   return (
-    <div className="grid justify-items-center grid-cols-11 flex-wrap p-2 items-center w-full border-solid bg-custom-gray border-b-[0.3px] border-b-[#686868] text-[#686868]">
-      <div className=" shrink self-stretch my-auto">{date}</div>
-      <div className="  shrink self-stretch  my-auto ">
+    <div className="flex flex-col w-full bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
+      {/* Header - vždy viditelný */}
+      <div 
+        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center cursor-pointer hover:bg-gray-50"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="text-sm">{date}</div>
+        <div className="flex justify-center">
           <img
-            loading="lazy"
             src={getSportIcon(sport)}
-            className="object-fill overflow-hidden w-8 h-8 aspect-square"
+            className="w-6 h-6 sm:w-8 sm:h-8"
             alt={sport}
           />
-      </div>
-      <div className=" shrink self-stretch my-auto">{title}</div>
-      <div className="flex flex-col col-span-5 w-full shrink justify-center self-stretch my-auto whitespace-nowrap min-w-[240px] ">
-      {results.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
+        </div>
+        <div className="text-sm font-medium truncate">{title}</div>
+        
+        {/* Detaily viditelné pouze na větších obrazovkách */}
+        <div className="hidden sm:flex col-span-3 items-center justify-center">
+          {results.length} intervals
+        </div>
+        <div className="hidden sm:block truncate">{specifics.specific}</div>
+        <div className="hidden sm:block truncate">{specifics.weather}</div>
       </div>
 
-        <div className="self-stretch my-auto ">{specifics.specific}</div>
-        <div className="self-stretch my-auto ">{specifics.weather}</div>
-        <div className="my-auto text-sm">{comments}</div>
-
+      {/* Expandovaný obsah */}
+      {isExpanded && (
+        <div className="p-4 border-t border-gray-200">
+          {/* Intervaly s hlavičkou */}
+          <div className="space-y-0.5">
+            {renderIntervalsHeader()}
+            {results.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
+          </div>
+          
+          {/* Dodatečné informace - nyní pro všechny velikosti obrazovek */}
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="font-medium">Terrain/Pool:</span>
+              <span>{specifics.specific}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium">Weather:</span>
+              <span>{specifics.weather}</span>
+            </div>
+            {comments && (
+              <div className="flex flex-col">
+                <span className="font-medium">Comments:</span>
+                <span className="text-gray-600">{comments}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

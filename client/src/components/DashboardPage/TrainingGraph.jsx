@@ -23,82 +23,120 @@ const CustomTooltip = ({ tooltip, datasets }) => {
   if (index === undefined) return null;
 
   const label = tooltip.dataPoints[0]?.label || "N/A";
-  const bpm = datasets[1]?.data?.[index] ?? "N/A";
-  const w = datasets[0]?.data?.[index] ?? "N/A";
+  const power = tooltip.dataPoints[0]?.raw || "N/A";
+  const heartRate = tooltip.dataPoints[1]?.raw || "N/A";
+  const lactate = datasets[index]?.lactate || "N/A";
 
   return (
     <div
-      className="absolute bg-white shadow-md p-2 rounded-md text-xs text-gray-800 border border-gray-200"
+      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
       style={{
         left: tooltip.caretX,
         top: tooltip.caretY,
-        minWidth: "110px",
         transform: "translate(-50%, -120%)",
         position: "absolute",
         pointerEvents: "none",
         whiteSpace: "nowrap",
       }}
     >
-      <div className="font-semibold text-gray-900">{label}</div>
-      <div className="text-blue-500">Power: {w} W</div>
-      <div className="text-red-500">Heart Rate: {bpm} Bpm</div>
+      <div className="font-bold text-gray-900 mb-1">Interval {label}</div>
+      <div className="flex items-center gap-2 text-blue-600">
+        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+        Power: {power} W
+      </div>
+      <div className="flex items-center gap-2 text-red-600">
+        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+        Heart Rate: {heartRate} Bpm
+      </div>
+      <div className="flex items-center gap-2 text-purple-600">
+        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+        Lactate: {lactate} mmol/L
+      </div>
     </div>
   );
 };
 
 const TrainingGraph = () => {
   const [trainings, setTrainings] = useState([]);
+  const [titles, setTitles] = useState([]);
+  const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState(null);
+  const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
 
   useEffect(() => {
-    fetchMockTrainings().then((data) => {
-      setTrainings(data);
-      if (data.length > 0) {
-        setSelectedTraining(data[0].trainingId);
+    const loadTrainings = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchMockTrainings();
+        if (data && data.length > 0) {
+          setTrainings(data);
+          // Získání unikátních titulů
+          const uniqueTitles = [...new Set(data.map(t => t.title))];
+          setTitles(uniqueTitles);
+          setSelectedTitle(uniqueTitles[0]);
+          // Nastavení prvního tréninku s vybraným titulem
+          const firstTrainingWithTitle = data.find(t => t.title === uniqueTitles[0]);
+          if (firstTrainingWithTitle) {
+            setSelectedTraining(firstTrainingWithTitle.trainingId);
+          }
+        } else {
+          setError("No trainings found");
+        }
+      } catch (err) {
+        console.error("Error loading trainings:", err);
+        setError("Failed to load trainings");
+      } finally {
+        setLoading(false);
       }
-    });
+    };
+    loadTrainings();
   }, []);
 
-  const training = trainings.find((t) => t.trainingId === selectedTraining);
+  // Když se změní vybraný titul, aktualizujeme vybraný trénink
+  useEffect(() => {
+    if (selectedTitle && trainings.length > 0) {
+      const trainingsWithTitle = trainings.filter(t => t.title === selectedTitle);
+      if (trainingsWithTitle.length > 0) {
+        setSelectedTraining(trainingsWithTitle[0].trainingId);
+      }
+    }
+  }, [selectedTitle, trainings]);
 
-  if (!training || !training.results) {
-    return <div className="w-full max-w-2xl p-6 bg-white rounded-2xl shadow-lg text-center">No data available.</div>;
+  // Přepočítání rozsahů při změně vybraného tréninku
+  useEffect(() => {
+    if (selectedTraining && trainings.length > 0) {
+      const selectedData = trainings.find(t => t.trainingId === selectedTraining);
+      if (selectedData && selectedData.results) {
+        const powers = selectedData.results.map(r => r.power);
+        const heartRates = selectedData.results.map(r => r.heartRate);
+
+        setRanges({
+          power: {
+            min: Math.floor(Math.min(...powers) / 20) * 20,
+            max: Math.ceil(Math.max(...powers) / 20) * 20
+          },
+          heartRate: {
+            min: Math.floor(Math.min(...heartRates) / 5) * 5,
+            max: Math.ceil(Math.max(...heartRates) / 5) * 5
+          }
+        });
+      }
+    }
+  }, [selectedTraining, trainings]);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error}</div>;
+  if (!trainings.length) return <div>No trainings available</div>;
+
+  const selectedTrainingData = trainings.find(t => t.trainingId === selectedTraining);
+  const trainingsWithSelectedTitle = trainings.filter(t => t.title === selectedTitle);
+  
+  if (!selectedTrainingData || !selectedTrainingData.results) {
+    return <div>No data available for selected training</div>;
   }
-
-  const filteredResults = training.results.filter(result => result.power && result.heartRate);
-
-  if (filteredResults.length === 0) {
-    return <div className="w-full max-w-2xl p-6 bg-white rounded-2xl shadow-lg text-center">Enter data to generate a graph.</div>;
-  }
-
-  const labels = filteredResults.map(result => `Interval ${result.interval}`);
-  const powerData = filteredResults.map(result => result.power);
-  const heartRateData = filteredResults.map(result => result.heartRate);
-
-  const datasets = [
-    {
-      label: "Power (W)",
-      data: powerData,
-      borderColor: "#3F8CFE",
-      pointStyle: "circle",
-      pointRadius: 5,
-      pointBackgroundColor: "#3F8CFE",
-      tension: 0.4,
-    },
-    {
-      label: "Heart Rate (BPM)",
-      data: heartRateData,
-      borderColor: "#E7515A",
-      pointStyle: "circle",
-      pointRadius: 5,
-      pointBackgroundColor: "#E7515A",
-      yAxisID: "y1",
-      tension: 0.4,
-    },
-  ];
-
-  const data = { labels, datasets };
 
   const options = {
     responsive: true,
@@ -106,12 +144,14 @@ const TrainingGraph = () => {
     plugins: {
       legend: {
         position: "top",
+        align: "center",
         labels: {
           usePointStyle: true,
           pointStyle: "circle",
-          pointRadius: 4,
-          font: { size: 12 },
-        },
+          boxWidth: 10,
+          padding: 20,
+          font: { size: 14 },
+        }
       },
       tooltip: {
         enabled: false,
@@ -126,35 +166,115 @@ const TrainingGraph = () => {
     },
     scales: {
       y: {
-        title: { display: true, text: "Power (W)" },
-        min: Math.min(...powerData) - 20,
-        max: Math.max(...powerData) + 20,
+        position: 'left',
+        title: { display: false },
+        min: ranges.power.min,
+        max: ranges.power.max,
+        ticks: {
+          stepSize: 20,
+          callback: (value) => `${value}W`,
+          display: true,
+          autoSkip: false,
+        },
+        grid: {
+          color: 'rgba(0,0,0,0.1)',
+          drawTicks: false,
+        },
+        border: {
+          display: false,
+        }
       },
       y1: {
-        title: { display: true, text: "Heart Rate (BPM)" },
-        min: Math.min(...heartRateData) - 10,
-        max: Math.max(...heartRateData) + 10,
-        position: "right",
+        position: 'right',
+        title: { display: false },
+        min: ranges.heartRate.min,
+        max: ranges.heartRate.max,
+        ticks: {
+          stepSize: 5,
+          callback: (value) => `${value}Bpm`,
+          display: true,
+          autoSkip: false,
+        },
+        grid: {
+          display: false,
+        },
+        border: {
+          display: false,
+        }
       },
+      x: {
+        grid: {
+          display: false,
+        },
+        border: {
+          display: false,
+        },
+        ticks: {
+          font: { size: 14 },
+        }
+      }
     },
   };
 
   return (
-    <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-md ">
-      <div className="flex justify-between items-center">
-        <DropdownMenu 
-          selectedTraining={selectedTraining} 
-          setSelectedTraining={setSelectedTraining} 
-          trainingOptions={trainings.map(t => t.trainingId)} 
-        />
-        <h2 className="text-2xl font-bold">
-          {training.title} <span className="text-xl text-gray-600 ml-4">({training.date})</span>
-        </h2>
+    <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg border border-blue-100">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex gap-4 items-center">
+          <select 
+            className="border rounded-lg px-3 py-1 text-gray-600"
+            value={selectedTitle}
+            onChange={(e) => setSelectedTitle(e.target.value)}
+          >
+            {titles.map((title, index) => (
+              <option key={`title-${index}-${title}`} value={title}>
+                {title}
+              </option>
+            ))}
+          </select>
+          <select 
+            className="border rounded-lg px-3 py-1 text-gray-600"
+            value={selectedTraining}
+            onChange={(e) => setSelectedTraining(e.target.value)}
+          >
+            {trainingsWithSelectedTitle.map(training => (
+              <option key={`training-${training.trainingId}-${training.date}`} value={training.trainingId}>
+                {training.date}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <p className="text-lg text-gray-500">{training.scenario}</p>
-      <div className="relative" style={{ width: '100%', height: '400px' }}>
-        <Line data={data} options={options} />
-        {tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} />}
+      <div className="relative" style={{ height: '400px' }}>
+        <Line 
+          data={{
+            labels: selectedTrainingData.results.map(r => r.interval.toString()),
+            datasets: [
+              {
+                label: "Power",
+                data: selectedTrainingData.results.map(r => r.power),
+                borderColor: "#3B82F6",
+                backgroundColor: "#3B82F6",
+                pointStyle: "circle",
+                pointRadius: 6,
+                borderWidth: 2,
+                tension: 0.4,
+              },
+              {
+                label: "Heartrate",
+                data: selectedTrainingData.results.map(r => r.heartRate),
+                borderColor: "#EF4444",
+                backgroundColor: "#EF4444",
+                pointStyle: "circle",
+                pointRadius: 6,
+                borderWidth: 2,
+                yAxisID: "y1",
+                tension: 0.4,
+              }
+            ]
+          }} 
+          options={options} 
+        />
+        {tooltip && <CustomTooltip tooltip={tooltip} datasets={selectedTrainingData.results} />}
       </div>
     </div>
   );

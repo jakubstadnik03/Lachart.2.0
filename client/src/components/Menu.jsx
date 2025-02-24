@@ -1,26 +1,51 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { mockUsers } from "../mock/users";
+import { useAuth } from '../context/AuthProvider';
 
-const Menu = ({ loggedInUserId }) => {
+const Menu = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(true); // Stav menu (otevřené/skryté)
+  const { logout, currentUser } = useAuth();
+  const menuRef = useRef(null);
 
-  const loggedInUser = mockUsers.find((user) => user._id === loggedInUserId);
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Pokud je menu otevřené a kliknutí je mimo menu a mimo toggle tlačítko
+      if (
+        isMenuOpen &&
+        menuRef.current &&
+        !menuRef.current.contains(event.target) &&
+        !event.target.closest('.menu-toggle-button')
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
 
-  if (!loggedInUser) {
+    // Přidáme event listener
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+
+    // Cleanup při unmount
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
+  if (!currentUser) {
     return <p>No user found. Please log in.</p>;
   }
 
   const athleteList =
-    loggedInUser.role === "coach"
-      ? mockUsers.filter((user) => user.coachId === loggedInUserId)
+    currentUser.role === "coach"
+      ? mockUsers.filter((user) => user.coachId === currentUser._id)
       : [];
 
   return (
-    <div className="absolute md:fixed z-[999]">
+    <div className="fixed z-[999]">
       {/* Tlačítko Toggle pro mobil */}
       <button
-        className="absolute top-4 left-4 z-50 bg-white p-2 rounded-md shadow-md md:hidden"
+        className="menu-toggle-button absolute top-4 left-4 z-50 bg-white p-2 rounded-md shadow-md md:hidden"
         onClick={() => setIsMenuOpen(!isMenuOpen)}
       >
         <img src="/icon/toggle.svg" alt="Toggle Menu" className="w-6 h-6" />
@@ -28,6 +53,7 @@ const Menu = ({ loggedInUserId }) => {
 
       {/* Menu */}
       <div
+        ref={menuRef}
         className={`h-screen w-m-64 bg-white shadow-md flex flex-col font-sans transform transition-transform duration-300 ${
           isMenuOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
@@ -51,9 +77,9 @@ const Menu = ({ loggedInUserId }) => {
           />
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-800">
-              {loggedInUser.name} {loggedInUser.surname}
+              {currentUser.name} {currentUser.surname}
             </p>
-            <p className="text-xs text-gray-500">{loggedInUser.email}</p>
+            <p className="text-xs text-gray-500">{currentUser.email}</p>
           </div>
         </div>
 
@@ -122,7 +148,7 @@ const Menu = ({ loggedInUserId }) => {
         </div>
 
         {/* Seznam sportovců */}
-        {loggedInUser.role === "coach" && (
+        {currentUser.role === "coach" && (
           <div className="p-4">
             <h2 className="text-sm font-bold text-gray-700 mb-3">
               Athletes List
@@ -193,20 +219,22 @@ const Menu = ({ loggedInUserId }) => {
           </ul>
         </div>
 
-        {/* Tlačítko Logout */}
-        <div className="p-4 mt-auto space-y-2">
-          <ul>
-            <li>
-              <NavLink className="flex items-center w-full text-sm font-medium p-3 rounded-lg hover:text-red-600">
-                <img
-                  src="/icon/logout.svg"
-                  alt="Logout"
-                  className="w-5 h-5 mr-3"
-                />
-                Log Out
-              </NavLink>
-            </li>
-          </ul>
+        {/* Přidáme logout tlačítko na konec menu */}
+        <div className="mt-auto pt-4 border-t border-gray-200">
+          <button
+            onClick={() => {
+              logout();
+              setIsMenuOpen(false); // Zavřeme menu po odhlášení
+            }}
+            className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
+          >
+            <img
+              src="/icon/logout.svg"
+              alt="Logout Icon"
+              className="w-5 h-5 mr-3"
+            />
+            Odhlásit se
+          </button>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ console.log(selectedTraining);
   }, []);
 
   return (
-    <div>
+    <div className="mx-6">
       <DateSelector
         dates={trainings.map((training) => training.date)}
         onSelectDate={(date) => {
@@ -31,7 +31,7 @@ console.log(selectedTraining);
       />
 
       {selectedTraining ? (
-        <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5 ">
+        <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5  ">
           <LactateCurve mockData={selectedTraining} />
           <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
             <TestingForm testData={selectedTraining} onTestDataChange={setSelectedTraining}/>

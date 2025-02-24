@@ -10,7 +10,7 @@ const TestingPage = () => {
   const [showNewTesting, setShowNewTesting] = useState(false);
 
   return (
-    <div className="max-w-[1600px] mx-auto px-6 ">
+    <div className="max-w-[1600px] mx-auto mx-6 ">
       <SportsSelector />
       {/* Tlačítko pro zapnutí/vypnutí testování */}
       <NotificationBadge

@@ -3,27 +3,24 @@ import { Outlet } from "react-router-dom";
 import { Header } from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
+import { useAuth } from '../context/AuthProvider';
 
-const Layout = () => {
-    const loggedInUserId = "user1"; // Mockovaný přihlášený uživatel
+const Layout = ({ children }) => {
+  const { currentUser } = useAuth();
 
   return (
- <>
-        <div className="flex min-h-screen overflow-hidden ">
-        <div>
-            <Menu loggedInUserId={loggedInUserId} isActive={true}/>
-            </div>
-          <div className="w-full full-desctop">
-              <Header />
-              <div className="content">
-             <Outlet />
-           </div>
-           <Footer />
-
-          </div>
-        </div>
-        
- </>
+    <div className="flex min-h-screen overflow-hidden">
+      <div>
+        <Menu />
+      </div>
+      <div className="w-full full-desctop">
+        <Header />
+        <main className="content">
+          {children}
+        </main>
+        <Footer />
+      </div>
+    </div>
   );
 };
 

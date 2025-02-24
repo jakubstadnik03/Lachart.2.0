@@ -10,7 +10,7 @@ body{
 @media (min-width: 768px){
 
     .full-desctop{
-        width: calc(100vw - 220px);
+        width: calc(100vw - 230px);
         margin-left: auto;
     }
 }

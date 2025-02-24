@@ -7,7 +7,7 @@ export const mockTrainings = [
     type: "interval",
     title: "10x1km LT2",
     description: "Intervalový běžecký trénink na hranici LT2.",
-    date: "2024-11-20",
+    date: "2025-11-20",
     duration: "90 min",
     intensity: "LT2",
     results: [
@@ -18,7 +18,6 @@ export const mockTrainings = [
     ],
     specifics: { specific: "track", weather: "Nike Vaporfly" },
     comments: "Perfektní den, ukázka skvělé formy. Možnost zvýšit cílový tempo."
-
   },
   {
     _id: "training4",
@@ -28,7 +27,7 @@ export const mockTrainings = [
     type: "tempo",
     title: "5x10min Tempo",
     description: "Trénink na tempo zóně.",
-    date: "2024-11-15",
+    date: "2025-11-15",
     duration: "75 min",
     intensity: "Tempo",
     results: [
@@ -41,7 +40,7 @@ export const mockTrainings = [
     athleteId: "user2",
     sport: "bike",
     title: "4x15min LT2",
-    date: "2024-02-29",
+    date: "2025-02-29",
     scenario: "Perfektní den - progresivní výkon",
     results: [
       { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.4, RPE: 7 },
@@ -57,7 +56,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-01-19",
+    "date": "2025-01-19",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -96,7 +95,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-01-03",
+    "date": "2025-01-03",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -135,7 +134,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-01-28",
+    "date": "2025-01-28",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -174,7 +173,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-02-28",
+    "date": "2025-02-28",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -213,7 +212,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-02-17",
+    "date": "2025-02-17",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -252,7 +251,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-02-18",
+    "date": "2025-02-18",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -291,7 +290,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-03-28",
+    "date": "2025-03-28",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -330,7 +329,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-03-01",
+    "date": "2025-03-01",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -369,7 +368,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x20min LT2",
-    "date": "2024-03-11",
+    "date": "2025-03-11",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -408,7 +407,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-01-15",
+    "date": "2025-01-15",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -447,7 +446,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-01-28",
+    "date": "2025-01-28",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -486,7 +485,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-01-05",
+    "date": "2025-01-05",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -525,7 +524,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-02-19",
+    "date": "2025-02-19",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -564,7 +563,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-02-07",
+    "date": "2025-02-07",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -603,7 +602,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-02-09",
+    "date": "2025-02-09",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -642,7 +641,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-03-08",
+    "date": "2025-03-08",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -681,7 +680,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-03-11",
+    "date": "2025-03-11",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -720,7 +719,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "3x30min LT1",
-    "date": "2024-03-28",
+    "date": "2025-03-28",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -759,7 +758,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-01-18",
+    "date": "2025-01-18",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -822,7 +821,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-01-26",
+    "date": "2025-01-26",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -885,7 +884,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-01-05",
+    "date": "2025-01-05",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -948,7 +947,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-02-25",
+    "date": "2025-02-25",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1011,7 +1010,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-02-28",
+    "date": "2025-02-28",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -1074,7 +1073,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-02-07",
+    "date": "2025-02-07",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -1137,7 +1136,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-03-17",
+    "date": "2025-03-17",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1200,7 +1199,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-03-16",
+    "date": "2025-03-16",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -1263,7 +1262,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x10min LT2",
-    "date": "2024-03-07",
+    "date": "2025-03-07",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -1326,7 +1325,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-01-28",
+    "date": "2025-01-28",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1389,7 +1388,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-01-22",
+    "date": "2025-01-22",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -1452,7 +1451,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-01-19",
+    "date": "2025-01-19",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -1515,7 +1514,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-02-19",
+    "date": "2025-02-19",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1578,7 +1577,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-02-05",
+    "date": "2025-02-05",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -1641,7 +1640,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-02-16",
+    "date": "2025-02-16",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -1704,7 +1703,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-03-22",
+    "date": "2025-03-22",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1767,7 +1766,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-03-19",
+    "date": "2025-03-19",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -1830,7 +1829,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x5min Vo2",
-    "date": "2024-03-28",
+    "date": "2025-03-28",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -1893,7 +1892,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-01-12",
+    "date": "2025-01-12",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -1956,7 +1955,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-01-03",
+    "date": "2025-01-03",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -2019,7 +2018,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-01-23",
+    "date": "2025-01-23",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -2082,7 +2081,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-02-28",
+    "date": "2025-02-28",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -2145,7 +2144,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-02-19",
+    "date": "2025-02-19",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -2208,7 +2207,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-02-04",
+    "date": "2025-02-04",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -2271,7 +2270,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-03-02",
+    "date": "2025-03-02",
     "scenario": "Špatný den - únava, pokles výkonu",
     "results": [
       {
@@ -2334,7 +2333,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-03-11",
+    "date": "2025-03-11",
     "scenario": "Průměrný den - stabilní výkon",
     "results": [
       {
@@ -2397,7 +2396,7 @@ export const mockTrainings = [
     "athleteId": "user2",
     "sport": "bike",
     "title": "6x1min Vo2",
-    "date": "2024-03-12",
+    "date": "2025-03-12",
     "scenario": "Skvělý den - výborný výkon, dobré pocity",
     "results": [
       {
@@ -2460,7 +2459,7 @@ export const mockTrainings = [
     athleteId: "user2",
     sport: "bike",
     title: "4x15min LT2",
-    date: "2024-04-29",
+    date: "2025-04-29",
     scenario: "Špatný den - únava, pokles výkonu",
     results: [
       { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.5, RPE: 7 },
@@ -2472,11 +2471,11 @@ export const mockTrainings = [
     comments: "Únava, možná nutnost regenerace. Doporučení: odpočinek a sledování formy."
   },
   {
-    trainingId: "training61",
+    trainingId: "training69",
     athleteId: "user2",
     sport: "bike",
     title: "4x15min LT2",
-    date: "2024-06-29",
+    date: "2025-06-29",
     scenario: "Špatný den - únava, pokles výkonu",
     results: [
       { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.5, RPE: 7 },
@@ -2493,7 +2492,7 @@ export const mockTrainings = [
     athleteId: "user2",
     sport: "bike",
     title: "4x15min LT2",
-    date: "2024-07-29",
+    date: "2025-07-29",
     scenario: "Průměrný výkon - konzistentní, ale žádná extra síla",
     results: [
       { interval: 1, duration: "15:00", power: 360, heartRate: 165, lactate: 2.4, RPE: 7 },
@@ -2509,7 +2508,7 @@ export const mockTrainings = [
     athleteId: "user2",
     title: "4x15min LT2",
     sport: "bike",
-    date: "2024-08-29",
+    date: "2025-08-29",
     scenario: "Špatný den - únava, pokles výkonu",
     results: [
       { interval: 1, duration: "15:00", power: 380, heartRate: 165, lactate: 2.5, RPE: 7 },
@@ -2525,7 +2524,7 @@ export const mockTrainings = [
     athleteId: "user2",
     sport: "bike",
     title: "4x15min LT2",
-    date: "2024-10-29",
+    date: "2025-10-29",
     scenario: "Extrémní den - překvapivě vysoký výkon",
     results: [
       { interval: 1, duration: "15:00", power: 365, heartRate: 163, lactate: 2.2, RPE: 6 },

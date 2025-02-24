@@ -23,9 +23,7 @@ export const fetchMockTrainings = async () => {
       if (!user) {
         resolve([]); // Pokud není uživatel přihlášený, vrátíme prázdné pole
       } else {
-        resolve(mockTrainings.filter(t => t.athleteId === user.userID));
-      console.log("going");
-      
+        resolve(mockTrainings.filter(t => t.athleteId === user.userID));      
       }
     }, 100);
   });
@@ -47,6 +45,7 @@ export const fetchTrainingTitles = async () => {
         resolve([]);
       } else {
         const titles = [...new Set(mockTrainings.filter((t) => t.athleteId === user.userID).map((t) => t.title))];
+        
         resolve(titles);
       }
     }, 100);

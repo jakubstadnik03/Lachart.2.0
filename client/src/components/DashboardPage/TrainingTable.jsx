@@ -101,12 +101,8 @@ export default function TrainingTable() {
 
   async function fetchTrainings() {
     try {
-      const data = await fetchMockTrainings();
-  
-      console.log(data);
-  
+      const data = await fetchMockTrainings();  
       const previousTrainings = {};
-  
       const formattedData = data.map((item) => {
         const averagePower = Math.round(
           item.results.reduce((sum, r) => sum + r.power, 0) / item.results.length
