@@ -8,7 +8,6 @@ import LactateCurveCalculator from "./LactateCurveCalculator";
 const PreviousTestingComponent = () => {
   const [trainings, setTrainings] = useState([]);
   const [selectedTraining, setSelectedTraining] = useState(null);
-console.log(selectedTraining);
 
   useEffect(() => {
     const loadData = async () => {

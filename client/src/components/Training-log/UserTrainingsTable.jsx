@@ -137,7 +137,10 @@ const UserTrainingsTable = () => {
 
       <div className="space-y-2">
         {paginatedTrainings.map((training) => (
-          <TrainingItem key={training.id} training={training} />
+          <TrainingItem 
+            key={training._id || `${training.date}-${training.title}`}
+            training={training} 
+          />
         ))}
       </div>
 

@@ -68,6 +68,8 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+              <Route path="/dashboard/:athleteId" element={<Dashboard />} />
+
       <Route
         path="/testing"
         element={

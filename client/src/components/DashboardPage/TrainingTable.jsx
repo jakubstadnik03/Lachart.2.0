@@ -23,7 +23,7 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
   return (
     <>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-        <div className="self-stretch py-2.5 pr-4 pl-5 w-full border-b text-center border-gray-200 max-sm:px-2">
+        <div className="self-stretch py-2.5 pr-4 pl-5 w-full text-lg font-semibold border-b text-center border-gray-200 max-sm:px-2">
           {training}
         </div>
       </div>
@@ -143,7 +143,7 @@ export default function TrainingTable() {
   }, []);
 
   return (
-    <div className="flex flex-col justify-center p-5 bg-white rounded-3xl shadow-md">
+    <div className="flex flex-col justify-center p-5 bg-white rounded-3xl shadow-md h-full">
       <div className="flex flex-col w-full max-md:max-w-full">
         <div className="flex flex-col px-5 pb-3.5 w-full max-md:max-w-full">
           <div className="flex flex-wrap gap-10 items-center w-full max-md:max-w-full">

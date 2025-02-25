@@ -1,10 +1,55 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { VerticalBar } from "./VerticalBar";
-import { DropdownMenu } from "../../DropDownMenu";
-import { fetchMockTrainings } from "../../../mock/mockApi";
+import { DropdownMenu } from "../DropDownMenu";
+import { fetchMockTrainings } from "../../mock/mockApi";
 
 const maxGraphHeight = 250;
+function StatCard({ stats }) {
+  return (
+    <div className="flex flex-col text-xs rounded-none max-w-[192px]" >
+      <div className="flex z-10 flex-col justify-center items-center px-3 py-2 text-center bg-white rounded-lg border border-solid border-slate-100 shadow-[0px_12px_20px_rgba(0,0,0,0.1)] text-stone-500">
+        {stats.map((stat, index) => (
+          <div
+            key={index}
+            className={stat.unit === "W" ? "font-semibold text-gray-900" : ""}
+          >
+            {stat.label}: {stat.value} {stat.unit}
+          </div>
+        ))}
+      </div>
+      <div className="flex shrink-0 self-center mt-3 w-3.5 h-3.5 bg-violet-500 rounded-full border-solid border-[3px] border-zinc-50" />
+    </div>
+  );
+}
+ function VerticalBar({ height, color, power, heartRate, lactate }) {
+  const [isHovered, setIsHovered] = useState(false);
 
+  return (
+    <div
+      className="relative flex justify-end shrink-0 w-3 rounded-md z-10"
+      style={{ height: `${height}px`, backgroundColor: color }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Tooltip se zobrazuje jen při hover */}
+      {isHovered && (
+        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 z-50 " style={{marginBottom: "-10px", minWidth: "120px" }}>
+          <StatCard
+            stats={[
+              { label: "Avg", value: `${power}`, unit: "W" },
+              { label: "Avg", value: `${heartRate}`, unit: "Bpm" },
+              { label: "Avg", value: `${lactate}`, unit: "mmol/L" }, // Fiktivní hodnota
+            ]}
+          />
+        </div>
+      )}
+         <div
+      className={`flex justify-end shrink-0 w-3 rounded-md ${color}`}
+      style={{ height: `${height}px` }} // Inline styl pro výšku
+    />
+      
+    </div>
+  );
+}
 function Scale({ values, unit }) {
   return (
     <div className="relative flex flex-col justify-between py-4 w-12 text-sm text-right whitespace-nowrap min-h-[287px] text-zinc-500">
@@ -72,13 +117,13 @@ export function TrainingStats() {
     "8x3min Anaerobic Capacity",
   ];
   return (
-    <div className="flex flex-col p-5 bg-white rounded-3xl shadow-md relative">
+    <div className="flex flex-col p-5 bg-white rounded-3xl shadow-md relative h-full">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold text-zinc-900">Training {selectedTraining}</h2>
         <DropdownMenu selectedTraining={selectedTraining} setSelectedTraining={setSelectedTraining} trainingOptions={trainingOptions}/>
       </div>
-      <div className="text-sm text-gray-600 mt-2">
-        {trainings.length > 0 && <p>{trainings[0].scenario}</p>}
+      <div className="text-sm text-gray-600 mt-4">
+        {trainings.length > 0 && <p>📝 {trainings[0].comments}</p>}
       </div>
       <div className="flex gap-2 items-end px-1.5 mt-5 relative w-full" style={{ minHeight: `${maxGraphHeight + 50}px` }}>
         <Scale values={powerValues} unit="W" />
@@ -103,9 +148,7 @@ export function TrainingStats() {
         </div>
         <Scale values={heartRateValues} unit="Bpm" />
       </div>
-      <div className="text-sm text-gray-600 mt-4">
-        {trainings.length > 0 && <p>📝 {trainings[0].comments}</p>}
-      </div>
+      
     </div>
   );
 }

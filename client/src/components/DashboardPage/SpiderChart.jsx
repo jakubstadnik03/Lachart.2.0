@@ -80,9 +80,9 @@ export default function SpiderChart({ trainings = [], maxMonths = 4}) {
   const trainingOptions = ["bike", "swim", "run"];
 
   return (
-    <div className="w-full h-[500px] flex flex-col items-center  bg-white p-5 rounded-3xl shadow-md relative">
+    <div className="w-full h-[500px] flex flex-col items-center  bg-white p-5 rounded-3xl shadow-md relative h-full">
      <div className="flex items-center w-full justify-between">
-      <h2 className="text-2xl font-semibold text-gray-900">Training Power Chart</h2>
+      <h2 className="text-lg font-semibold">Training Power Chart</h2>
       <div className="flex items-center ">
           <DropdownMenu selectedTraining={selectedSport} setSelectedTraining={setSelectedSport} trainingOptions={trainingOptions}/>
     

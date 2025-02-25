@@ -220,7 +220,7 @@ const Menu = () => {
         </div>
 
         {/* Přidáme logout tlačítko na konec menu */}
-        <div className="mt-auto pt-4 border-t border-gray-200">
+        <div className="mt-auto pt-4 border-t border-gray-200 px-4">
           <button
             onClick={() => {
               logout();

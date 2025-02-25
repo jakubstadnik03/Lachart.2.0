@@ -13,9 +13,9 @@ const Layout = ({ children }) => {
       <div>
         <Menu />
       </div>
-      <div className="w-full full-desctop">
+      <div className="w-full flex flex-col full-desctop">
         <Header />
-        <main className="content">
+        <main className="content flex-grow">
           {children}
         </main>
         <Footer />
