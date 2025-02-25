@@ -1,12 +1,26 @@
 import React, { useState, useEffect, useRef } from "react";
-import { NavLink } from "react-router-dom";
-import { mockUsers } from "../mock/users";
+import { NavLink, useNavigate } from "react-router-dom";
+import { fetchMockAthletes } from "../mock/mockApi";
 import { useAuth } from '../context/AuthProvider';
 
 const Menu = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(true); // Stav menu (otevřené/skryté)
+  const [athletes, setAthletes] = useState([]); // Nový state pro atlety
   const { logout, currentUser } = useAuth();
   const menuRef = useRef(null);
+  const navigate = useNavigate(); // Hook pro navigaci
+
+  // Načtení atletů pro trenéra
+  useEffect(() => {
+    const loadAthletes = async () => {
+      if (currentUser?.role === "coach") {
+        const athletesList = await fetchMockAthletes();
+        setAthletes(athletesList);
+      }
+    };
+    loadAthletes();
+  }, [currentUser]);
+
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -36,10 +50,11 @@ const Menu = () => {
     return <p>No user found. Please log in.</p>;
   }
 
-  const athleteList =
-    currentUser.role === "coach"
-      ? mockUsers.filter((user) => user.coachId === currentUser._id)
-      : [];
+  // Funkce pro navigaci na profil atleta
+  const handleAthleteClick = (athleteId) => {
+    navigate(`/athlete-profile/${athleteId}`);
+    setIsMenuOpen(false); // Zavře menu na mobilních zařízeních
+  };
 
   return (
     <div className="fixed z-[999]">
@@ -147,19 +162,24 @@ const Menu = () => {
           </ul>
         </div>
 
-        {/* Seznam sportovců */}
-        {currentUser.role === "coach" && (
-          <div className="p-4">
-            <h2 className="text-sm font-bold text-gray-700 mb-3">
-              Athletes List
-            </h2>
+        {/* Seznam atletů - zobrazí se pouze pro trenéry */}
+        {currentUser.role === "coach" && athletes.length > 0 && (
+          <div className="p-4 border-t border-gray-200">
+            <h2 className="text-sm font-bold text-gray-700 mb-3">Athletes</h2>
             <ul className="space-y-2">
-              {athleteList.map((athlete) => (
-                <li
-                  key={athlete._id}
-                  className="text-sm font-medium text-gray-700 hover:text-purple-600 cursor-pointer"
-                >
-                  {athlete.name} {athlete.surname}
+              {athletes.map((athlete) => (
+                <li key={athlete._id}>
+                  <button
+                    onClick={() => handleAthleteClick(athlete._id)}
+                    className="w-full text-left flex items-center p-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    <img
+                      src="/icon/user-avatar.svg"
+                      alt="Athlete"
+                      className="w-6 h-6 rounded-full mr-2"
+                    />
+                    {athlete.name} {athlete.surname}
+                  </button>
                 </li>
               ))}
             </ul>
