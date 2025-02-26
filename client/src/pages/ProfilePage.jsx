@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { getMockUser, fetchMockTrainings } from '../mock/mockApi';
+import SpiderChart from "../components/DashboardPage/SpiderChart";
+import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 
 const ProfilePage = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -56,7 +58,7 @@ const ProfilePage = () => {
   return (
     <div className="p-6 space-y-6">
       {/* Horní část s profilem */}
-      <div className="flex gap-6">
+      <div className="flex gap-6 mx-auto max-w-[1600px] justify-between">
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden min-w-[400px] rounded-3xl shadow-lg">
   
           <div className="h-32 bg-gradient-to-r from-purple-100 to-purple-50" />
@@ -109,9 +111,13 @@ const ProfilePage = () => {
           </div>
         
         </div>
-        <TrainingGraph 
+        <SpiderChart 
             trainings={trainings}
             selectedSport={selectedSport}
+          />
+        <TrainingGraph 
+                  trainingList={trainings}
+                  selectedSport={selectedSport}
             selectedTitle={selectedTitle}
             setSelectedTitle={setSelectedTitle}
             selectedTraining={selectedTraining}
@@ -119,6 +125,7 @@ const ProfilePage = () => {
           />
       </div>
       <UserTrainingsTable />
+      <PreviousTestingComponent />
     </div>
   );
 };

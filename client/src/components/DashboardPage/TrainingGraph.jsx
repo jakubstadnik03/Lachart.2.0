@@ -11,7 +11,6 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { fetchMockTrainings } from "../../mock/mockApi";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 
@@ -57,7 +56,7 @@ const CustomTooltip = ({ tooltip, datasets }) => {
   );
 };
 
-const TrainingGraph = () => {
+const TrainingGraph = ({ trainingList }) => {
   const [trainings, setTrainings] = useState([]);
   const [sports, setSports] = useState(['bike', 'run', 'swim']);
   const [selectedSport, setSelectedSport] = useState('bike');
@@ -75,11 +74,10 @@ const TrainingGraph = () => {
     const loadTrainings = async () => {
       try {
         setLoading(true);
-        const data = await fetchMockTrainings();
-        if (data && data.length > 0) {
-          setTrainings(data);
+        if (trainingList && trainingList.length > 0) {
+          setTrainings(trainingList);
           // Filtrujeme tréninky podle vybraného sportu
-          const sportTrainings = data.filter(t => t.sport === selectedSport);
+          const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
           const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
           setTitles(uniqueTitles);
           setSelectedTitle(uniqueTitles[0]);

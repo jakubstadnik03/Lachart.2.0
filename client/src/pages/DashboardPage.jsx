@@ -51,7 +51,7 @@ const DashboardPage = () => {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div className="mx-6 m-auto max-w-[1600px]">
+    <div className="mx-6 m-auto max-w-[1600px] mx-auto ">
       {/* Výběr sportu */}
       <SportsSelector 
         selectedSport={selectedSport}
@@ -87,7 +87,7 @@ const DashboardPage = () => {
         {/* Training Graph */}
         <div className="lg:col-span-2 md:col-span-2">
           <TrainingGraph 
-            trainings={trainings}
+            trainingList={trainings}
             selectedSport={selectedSport}
             selectedTitle={selectedTitle}
             setSelectedTitle={setSelectedTitle}

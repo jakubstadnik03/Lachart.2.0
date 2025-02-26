@@ -20,7 +20,7 @@ const PreviousTestingComponent = () => {
   }, []);
 
   return (
-    <div className="mx-6">
+    <div className="mx-6 max-w-[1600px] mx-auto">
       <DateSelector
         dates={trainings.map((training) => training.date)}
         onSelectDate={(date) => {
