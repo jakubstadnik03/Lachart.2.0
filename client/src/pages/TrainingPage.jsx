@@ -1,9 +1,44 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
+import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
+import SpiderChart from "../components/DashboardPage/SpiderChart";
+import TrainingGraph from '../components/DashboardPage/TrainingGraph';
+import { getMockUser, fetchMockTrainings } from '../mock/mockApi';
 
 const TrainingPage = () => {
+  const [trainings, setTrainings] = useState([]);
+  const [selectedSport, setSelectedSport] = useState('bike');
+  const [selectedTitle, setSelectedTitle] = useState(null);
+  const [selectedTraining, setSelectedTraining] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
+
+  useEffect(() => {
+    // Načtení tréninků
+    const loadTrainings = async () => {
+      try {
+        setLoading(true);
+        const data = await fetchMockTrainings();
+        setTrainings(data);
+        
+        // Inicializace výchozích hodnot pro graf
+        if (data.length > 0) {
+          const sportTrainings = data.filter(t => t.sport === selectedSport);
+          const firstTitle = sportTrainings[0]?.title;
+          setSelectedTitle(firstTitle);
+          setSelectedTraining(sportTrainings[0]?.trainingId);
+        }
+      } catch (error) {
+        console.error('Error loading trainings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTrainings();
+  }, [selectedSport]);
+  if (loading) return <div>Loading...</div>;
 
   return (
     <div className="px-6 max-w-[1600px] mx-auto">
@@ -30,7 +65,22 @@ const TrainingPage = () => {
           Add Training
         </button>
       </div>
-
+      <div className="flex gap-6 flex-1">
+          <SpiderChart 
+            trainings={trainings}
+            selectedSport={selectedSport}
+            className="w-[400px]"
+          />
+          <TrainingGraph 
+            trainingList={trainings}
+            selectedSport={selectedSport}
+            selectedTitle={selectedTitle}
+            setSelectedTitle={setSelectedTitle}
+            selectedTraining={selectedTraining}
+            setSelectedTraining={setSelectedTraining}
+            className="flex-1"
+          />
+        </div>
       {/* Tabulka tréninků */}
       <UserTrainingsTable />
 

@@ -80,7 +80,7 @@ export default function SpiderChart({ trainings = [], maxMonths = 4}) {
   const trainingOptions = ["bike", "swim", "run"];
 
   return (
-    <div className="w-full h-[500px] flex flex-col items-center  bg-white p-5 rounded-3xl shadow-md relative h-full">
+    <div className="w-full h-full flex flex-col items-center bg-white p-5 rounded-3xl shadow-md relative">
      <div className="flex items-center w-full justify-between">
       <h2 className="text-lg font-semibold">Training Power Chart</h2>
       <div className="flex items-center ">
@@ -118,7 +118,7 @@ export default function SpiderChart({ trainings = [], maxMonths = 4}) {
       </div>
       </div>
       {filteredTrainings.length > 0 ? (
-        <div className="w-[600px] h-[400px]">
+        <div className="w-[400px] h-[400px]">
           <Radar data={data} options={options} />
         </div>
       ) : (

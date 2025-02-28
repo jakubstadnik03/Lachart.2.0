@@ -59,7 +59,7 @@ const ProfilePage = () => {
     <div className="p-6 space-y-6">
       {/* Horní část s profilem */}
       <div className="flex gap-6 mx-auto max-w-[1600px] justify-between">
-        <div className="bg-white rounded-3xl shadow-sm overflow-hidden min-w-[400px] rounded-3xl shadow-lg">
+        <div className="bg-white rounded-3xl shadow-md  overflow-hidden min-w-[400px] rounded-3xl shadow-lg">
   
           <div className="h-32 bg-gradient-to-r from-purple-100 to-purple-50" />
           <div className="px-6 pb-6">
@@ -111,18 +111,23 @@ const ProfilePage = () => {
           </div>
         
         </div>
-        <SpiderChart 
+        
+        <div className="flex gap-6 flex-1">
+          <SpiderChart 
             trainings={trainings}
             selectedSport={selectedSport}
+            className="w-[400px]"
           />
-        <TrainingGraph 
-                  trainingList={trainings}
-                  selectedSport={selectedSport}
+          <TrainingGraph 
+            trainingList={trainings}
+            selectedSport={selectedSport}
             selectedTitle={selectedTitle}
             setSelectedTitle={setSelectedTitle}
             selectedTraining={selectedTraining}
             setSelectedTraining={setSelectedTraining}
+            className="flex-1"
           />
+        </div>
       </div>
       <UserTrainingsTable />
       <PreviousTestingComponent />
