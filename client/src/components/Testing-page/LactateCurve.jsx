@@ -10,14 +10,9 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { convertPowerToPace } from '../../utils/paceConverter';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-const convertPowerToPace = (power) => {
-  const minutes = Math.floor(power / 60);
-  const seconds = power % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-};
 
 const CustomTooltip = ({ tooltip, datasets }) => {
   if (!tooltip?.dataPoints) return null;
@@ -75,7 +70,7 @@ const LactateCurve = ({ mockData }) => {
   }
 
   const labels = filteredResults.map((result) =>
-    mockData.sport === "run" ? convertPowerToPace(result.power) : `${result.power}W`
+    mockData.sport === "run" ? convertPowerToPace(result.power, mockData.sport) : `${result.power}W`
   );
 
   const lactateData = filteredResults.map((result) => result.lactate);
@@ -127,6 +122,12 @@ const LactateCurve = ({ mockData }) => {
             setTooltip(context.tooltip);
           }
         },
+        callbacks: {
+          title: function(context) {
+            const value = context[0].parsed.x;
+            return `${mockData.sport === 'bike' ? 'Power' : 'Pace'}: ${convertPowerToPace(value, mockData.sport)}`;
+          }
+        }
       },
     },
     scales: {
@@ -157,13 +158,18 @@ const LactateCurve = ({ mockData }) => {
       x: {
         title: {
           display: true,
-          text: mockData.sport === "run" ? "Pace (min/km)" : "Power (W)"
+          text: mockData.sport === 'bike' ? "Power (W)" : "Pace (min/km)"
         },
         border: { dash: [6, 6] },
         grid: {
           color: "rgba(0, 0, 0, 0.15)",
           borderDash: [4, 4],
         },
+        ticks: {
+          callback: function(value) {
+            return convertPowerToPace(value, mockData.sport);
+          }
+        }
       },
     },
   };

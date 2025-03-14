@@ -1,0 +1,206 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-03-14T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.4.5",
+  "resources": [
+    {
+      "_id": "wrk_lachart",
+      "parentId": null,
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "LaChart API",
+      "description": "",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:5000/api"
+      },
+      "_type": "environment"
+    },
+    {
+      "_id": "env_dev",
+      "parentId": "env_base",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Development",
+      "data": {
+        "base_url": "http://localhost:5000/api",
+        "token": ""
+      },
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_auth",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Auth",
+      "description": "",
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_auth_google",
+      "parentId": "fld_auth",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Google Login",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/google",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"token\": \"google_oauth_token\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "fld_users",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Users",
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_get_profile",
+      "parentId": "fld_users",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Get Profile",
+      "method": "GET",
+      "url": "{{ _.base_url }}/user/me",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_athletes",
+      "parentId": "fld_users",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Get Athletes",
+      "method": "GET",
+      "url": "{{ _.base_url }}/user/athletes",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "fld_trainings",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Trainings",
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_get_trainings",
+      "parentId": "fld_trainings",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Get All Trainings",
+      "method": "GET",
+      "url": "{{ _.base_url }}/training",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_training",
+      "parentId": "fld_trainings",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Create Training",
+      "method": "POST",
+      "url": "{{ _.base_url }}/training",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"athleteId\": \"athleteId123\",\n\t\"sport\": \"cycling\",\n\t\"title\": \"4x15min LT2\",\n\t\"date\": \"2024-03-14\",\n\t\"intervals\": [\n\t\t{\n\t\t\t\"duration\": \"15:00\",\n\t\t\t\"rest\": \"02:00\",\n\t\t\t\"intensity\": \"LT2\",\n\t\t\t\"power\": 280,\n\t\t\t\"heartRate\": 165,\n\t\t\t\"lactate\": 2.4\n\t\t}\n\t]\n}"
+      },
+      "_type": "request"
+    },
+    {
+      "_id": "fld_tests",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Tests",
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_get_tests",
+      "parentId": "fld_tests",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Get Athlete Tests",
+      "method": "GET",
+      "url": "{{ _.base_url }}/test/{{ _.athleteId }}",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_test",
+      "parentId": "fld_tests",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Create Test",
+      "method": "POST",
+      "url": "{{ _.base_url }}/test",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"athleteId\": \"{{ _.athleteId }}\",\n\t\"sport\": \"cycling\",\n\t\"description\": \"Laktátový test na trenažeru\",\n\t\"baseLactate\": 1.2,\n\t\"weight\": 75,\n\t\"results\": [\n\t\t{\n\t\t\t\"power\": 200,\n\t\t\t\"heartRate\": 150,\n\t\t\t\"lactate\": 2.5,\n\t\t\t\"glucose\": 5.5,\n\t\t\t\"RPE\": 8\n\t\t}\n\t]\n}"
+      },
+      "_type": "request"
+    }
+  ]
+} 

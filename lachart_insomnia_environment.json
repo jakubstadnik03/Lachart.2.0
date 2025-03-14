@@ -1,0 +1,236 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-03-14T10:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.4.5",
+  "resources": [
+    {
+      "_id": "req_root",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "url": "{{ _.base_url }}",
+      "name": "Root",
+      "description": "",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1710408000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "wrk_lachart",
+      "parentId": null,
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "LaChart API",
+      "description": "",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_lachart_base",
+      "parentId": "wrk_lachart",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:5000/api",
+        "token": "",
+        "test_user": {
+          "email": "test@example.com",
+          "password": "test123"
+        },
+        "test_athlete": {
+          "id": "65f2d1234567890abcdef123",
+          "name": "Test Athlete",
+          "email": "athlete@example.com"
+        },
+        "test_coach": {
+          "id": "65f2d1234567890abcdef124",
+          "name": "Test Coach",
+          "email": "coach@example.com"
+        },
+        "test_training": {
+          "id": "65f2d1234567890abcdef125",
+          "title": "4x15min LT2",
+          "sport": "cycling"
+        },
+        "test_test": {
+          "id": "65f2d1234567890abcdef126",
+          "sport": "cycling",
+          "description": "Laktátový test"
+        }
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "token",
+          "test_user",
+          "test_athlete",
+          "test_coach",
+          "test_training",
+          "test_test"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1710408000000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_lachart_dev",
+      "parentId": "env_lachart_base",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Development",
+      "data": {
+        "base_url": "http://localhost:5000/api",
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NWYyZDEyMzQ1Njc4OTBhYmNkZWYxMjMiLCJpYXQiOjE3MTA0MDgwMDAsImV4cCI6MTcxMTAxMjgwMH0.example_token"
+      },
+      "dataPropertyOrder": {
+        "&": ["base_url", "token"]
+      },
+      "color": "#7d69cb",
+      "isPrivate": false,
+      "metaSortKey": 1710408000000,
+      "_type": "environment"
+    },
+    {
+      "_id": "env_lachart_prod",
+      "parentId": "env_lachart_base",
+      "modified": 1710408000000,
+      "created": 1710408000000,
+      "name": "Production",
+      "data": {
+        "base_url": "https://api.lachart.com",
+        "token": ""
+      },
+      "dataPropertyOrder": {
+        "&": ["base_url", "token"]
+      },
+      "color": "#09cb13",
+      "isPrivate": false,
+      "metaSortKey": 1710408000100,
+      "_type": "environment"
+    },
+    {
+      "_id": "req_auth_google_login",
+      "type": "request",
+      "data": {
+        "name": "Google Login",
+        "url": "{{base_url}}/auth/google",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "token": "google_oauth_token"
+        }
+      }
+    },
+    {
+      "_id": "req_get_trainings",
+      "type": "request",
+      "data": {
+        "name": "Get Trainings",
+        "url": "{{base_url}}/training",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {{token}}"
+        }
+      }
+    },
+    {
+      "_id": "req_create_training",
+      "type": "request",
+      "data": {
+        "name": "Create Training",
+        "url": "{{base_url}}/training",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{token}}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "athleteId": "{{athleteId}}",
+          "sport": "cycling",
+          "title": "4x15min LT2",
+          "date": "2024-03-14",
+          "intervals": [
+            {
+              "duration": "15:00",
+              "rest": "02:00",
+              "intensity": "LT2",
+              "power": 280,
+              "heartRate": 165,
+              "lactate": 2.4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "_id": "req_get_tests",
+      "type": "request",
+      "data": {
+        "name": "Get Tests",
+        "url": "{{base_url}}/test/{{athleteId}}",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {{token}}"
+        }
+      }
+    },
+    {
+      "_id": "req_create_test",
+      "type": "request",
+      "data": {
+        "name": "Create Test",
+        "url": "{{base_url}}/test",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{token}}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "athleteId": "{{athleteId}}",
+          "sport": "cycling",
+          "description": "Laktátový test na trenažeru",
+          "baseLactate": 1.2,
+          "weight": 75,
+          "results": [
+            {
+              "power": 200,
+              "heartRate": 150,
+              "lactate": 2.5,
+              "glucose": 5.5,
+              "RPE": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "_id": "req_get_user_profile",
+      "type": "request",
+      "data": {
+        "name": "Get User Profile",
+        "url": "{{base_url}}/user/me",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {{token}}"
+        }
+      }
+    }
+  ]
+} 

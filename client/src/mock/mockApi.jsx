@@ -3,34 +3,39 @@ import { mockTrainings } from "./trainings"
 import Cookies from "js-cookie";
 import { mockUsers } from "./users";
 
-// Nastavíme mockUser jako prvního trenéra z mockUsers
-const mockUser = { 
-  userID: "user2",  // Toto musí odpovídat _id trenéra v mockUsers
-  _id: "user2",     // Přidáno pro kompatibilitu
+// Výchozí mockUser
+const defaultMockUser = { 
+  userID: "user2",
+  _id: "user2",
   role: "athlete",
-      name: "Petr",
-      surname: "Dvořák",
-      dateOfBirth: "1995-03-21",
-      address: "Brno",
-      email: "petr.dvorak@example.com",
-      phone: "+420987654321",
-      height: 175,
-      weight: 70,
-      sport: "cycling",
-      specialization: "time trial",
-      bio: "Profesionální cyklista zaměřený na časovky.",
-      coachId: "coach1",
+  name: "Petr",
+  surname: "Dvořák",
+  dateOfBirth: "1995-03-21",
+  address: "Brno",
+  email: "petr.dvorak@example.com",
+  phone: "+420987654321",
+  height: 175,
+  weight: 70,
+  sport: "cycling",
+  specialization: "time trial",
+  bio: "Profesionální cyklista zaměřený na časovky.",
+  coachId: "coach1",
 };
 
-// Uloží uživatele do cookies (simuluje přihlášení)
+// Uloží uživatele do cookies
 export const setMockUser = () => {
-  Cookies.set("user", JSON.stringify(mockUser), { expires: 7 });
+  Cookies.set("user", JSON.stringify(defaultMockUser), { expires: 7 });
 };
 
-// Získá přihlášeného uživatele
+// Získá přihlášeného uživatele nebo vrátí výchozího
 export const getMockUser = () => {
   const userCookie = Cookies.get("user");
-  return userCookie ? JSON.parse(userCookie) : null;
+  if (!userCookie) {
+    // Pokud není uživatel v cookies, nastavíme výchozího
+    setMockUser();
+    return defaultMockUser;
+  }
+  return JSON.parse(userCookie);
 };
 
 // Získá tréninky pouze pro přihlášeného uživatele
@@ -114,4 +119,42 @@ export const fetchMockAthletes = async () => {
       }
     }, 100);
   });
+};
+
+// Získá všechny testy
+export const getMockTests = () => {
+  const user = getMockUser();
+  if (!user) return [];
+  
+  // Pro trenéra vrátíme testy všech jeho atletů
+  if (user.role === "coach") {
+    const athleteIds = mockUsers
+      .filter(u => u.role === "athlete" && u.coachId === user.userID)
+      .map(a => a.userID);
+    return mockTests.filter(test => athleteIds.includes(test.athleteId));
+  }
+  
+  // Pro atleta vrátíme jen jeho testy
+  return mockTests.filter(test => test.athleteId === user.userID);
+};
+
+// Získá konkrétní test podle ID
+export const getMockTest = (testId) => {
+  return mockTests.find(test => test.id === testId);
+};
+
+// Přidá nový test
+export const addMockTest = (newTest) => {
+  const user = getMockUser();
+  if (!user) return null;
+
+  const test = {
+    ...newTest,
+    id: `test${mockTests.length + 1}`,
+    athleteId: user.userID,
+    date: new Date().toISOString(),
+  };
+  
+  mockTests.push(test);
+  return test;
 };

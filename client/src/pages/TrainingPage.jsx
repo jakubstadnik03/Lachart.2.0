@@ -41,7 +41,7 @@ const TrainingPage = () => {
   if (loading) return <div>Loading...</div>;
 
   return (
-    <div className="px-6 max-w-[1600px] mx-auto">
+    <div className="p-6 max-w-[1600px] mx-auto">
       {/* Header s tlačítkem */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold">Training Log</h1>
