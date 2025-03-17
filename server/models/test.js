@@ -18,6 +18,10 @@ const testSchema = new mongoose.Schema({
         enum: ['run', 'bike', 'swim'],
         required: true
     },
+    title: {
+        type: String,
+        required: true
+    },
     date: {
         type: Date,
         required: true
@@ -25,7 +29,19 @@ const testSchema = new mongoose.Schema({
     description: String,
     baseLactate: Number,
     weight: Number,
-    results: [testResultSchema]
+    specifics: {
+        specific: String,
+        weather: String
+    },
+    comments: String,
+    results: [{
+        interval: Number,
+        power: Number,
+        heartRate: Number,
+        lactate: Number,
+        glucose: Number,
+        RPE: Number
+    }]
 }, {
     timestamps: true,
 });

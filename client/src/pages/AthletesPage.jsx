@@ -3,6 +3,8 @@ import { fetchMockAthletes } from '../mock/mockApi';
 import { useAuth } from '../context/AuthProvider';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
+import { getAllAthletes, updateUser } from '../services/api';
+import api from '../services/api';
 
 const AthletesPage = () => {
   const [athletes, setAthletes] = useState([]);
@@ -27,12 +29,16 @@ const AthletesPage = () => {
 
   useEffect(() => {
     const loadAthletes = async () => {
-      const data = await fetchMockAthletes();
-      
-      setAthletes(data);
+      try {
+        const response = await getAllAthletes();
+        setAthletes(response.data);
+      } catch (error) {
+        console.error('Error loading athletes:', error);
+        // Handle error appropriately
+      }
     };
+
     loadAthletes();
-    
   }, []);
 
   const filteredAthletes = athletes.filter(athlete => 
@@ -102,24 +108,33 @@ const AthletesPage = () => {
     setDropdownOpen(null);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (selectedAthlete) {
-      // Editace existujícího atleta
-      setAthletes(athletes.map(athlete => 
-        athlete._id === selectedAthlete._id ? { ...athlete, ...formData } : athlete
-      ));
-    } else {
-      // Přidání nového atleta
-      const newAthlete = {
-        _id: Date.now().toString(),
-        ...formData
-      };
-      setAthletes([...athletes, newAthlete]);
+    try {
+      if (selectedAthlete) {
+        // Update existing athlete
+        await updateUser(selectedAthlete._id, formData);
+        setAthletes(athletes.map(athlete => 
+          athlete._id === selectedAthlete._id ? { ...athlete, ...formData } : athlete
+        ));
+      } else {
+        // Add new athlete
+        const response = await api.post('/users/register', {
+          ...formData,
+          role: 'athlete'
+        });
+        setAthletes([...athletes, response.data]);
+      }
+      setIsModalOpen(false);
+      setSelectedAthlete(null);
+      resetForm();
+    } catch (error) {
+      console.error('Error submitting athlete:', error);
+      // Handle error appropriately
     }
-    console.log('Athlete Data:', formData);
-    setIsModalOpen(false);
-    setSelectedAthlete(null);
+  };
+
+  const resetForm = () => {
     setFormData({
       name: '',
       surname: '',
@@ -256,18 +271,7 @@ const AthletesPage = () => {
                 onClick={() => {
                   setIsModalOpen(false);
                   setSelectedAthlete(null);
-                  setFormData({
-                    name: '',
-                    surname: '',
-                    dateOfBirth: '',
-                    email: '',
-                    phone: '',
-                    address: '',
-                    weight: '',
-                    height: '',
-                    sport: '',
-                    notes: '',
-                  });
+                  resetForm();
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >

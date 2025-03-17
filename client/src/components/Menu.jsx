@@ -66,24 +66,31 @@ const Menu = () => {
   }
 
   const handleAthleteClick = (athleteId) => {
-    navigate(`/athlete-profile/${athleteId}`);
+    navigate(`/athlete/${athleteId}`);
     setIsMenuOpen(false);
   };
 
   const handleLogout = async () => {
+    console.log('Logout started');
     try {
-      const response = await fetch(API_ENDPOINTS.LOGOUT, {
+      const authToken = token;
+      console.log('Token:', authToken);
+
+      const response = await fetch('http://localhost:8000/user/logout', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
         }
       });
+
+      console.log('Logout response:', response);
 
       if (!response.ok) {
         throw new Error('Logout failed');
       }
 
+      // Vyčistit lokální stav
       logout();
       setIsMenuOpen(false);
       navigate('/login');

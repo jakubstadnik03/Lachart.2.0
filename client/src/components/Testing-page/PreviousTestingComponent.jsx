@@ -1,37 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { fetchMockTestings, getMockTests } from "../../mock/mockApi";
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
 import LactateCurveCalculator from "./LactateCurveCalculator";
 import TestComparison from "./TestComparison";
+import api from '../../services/api';
 
-const PreviousTestingComponent = ({ selectedSport }) => {
-  const [trainings, setTrainings] = useState([]);
-  const [selectedTraining, setSelectedTraining] = useState(null);
-  const [tests, setTests] = useState([]);
+const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      const data = await fetchMockTestings();
-      setTrainings(data);
-      setSelectedTraining(data[0]); // Vybereme první trénink jako default
-    };
+    if (!tests || tests.length === 0) return;
 
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    const allTests = getMockTests();
     const filteredTests = selectedSport === 'all' 
-      ? allTests 
-      : allTests.filter(test => test.sport === selectedSport);
-    setTests(filteredTests);
-    setSelectedTests([]); // Reset porovnání při změně sportu
+      ? tests 
+      : tests.filter(test => test.sport === selectedSport);
 
-    // Automaticky vyber nejnovější test z filtrovaných testů
     if (filteredTests.length > 0) {
       const sortedTests = [...filteredTests].sort(
         (a, b) => new Date(b.date) - new Date(a.date)
@@ -40,7 +25,9 @@ const PreviousTestingComponent = ({ selectedSport }) => {
     } else {
       setCurrentTest(null);
     }
-  }, [selectedSport]);
+    
+    setSelectedTests([]);
+  }, [selectedSport, tests]);
 
   const handleDateSelect = (date) => {
     const selectedTest = tests.find(test => test.date === date);
@@ -50,7 +37,6 @@ const PreviousTestingComponent = ({ selectedSport }) => {
   };
 
   const handleTestSelect = (test) => {
-    // Kontrola, zda lze přidat test do porovnání
     const canAddTest = selectedTests.length === 0 || selectedTests[0].sport === test.sport;
     
     setSelectedTests(prev => {
@@ -60,35 +46,52 @@ const PreviousTestingComponent = ({ selectedSport }) => {
       } else if (canAddTest) {
         return [...prev, test];
       } else {
-        // Pokud se pokusíme přidat test jiného sportu, vrátíme původní stav
         alert('You can only compare tests of the same sport type');
         return prev;
       }
     });
   };
 
+  const handleTestUpdate = async (updatedTest) => {
+    try {
+      const response = await api.put(`/test/${updatedTest._id}`, updatedTest);
+      setTests(prev => prev.map(t => 
+        t._id === updatedTest._id ? response.data : t
+      ));
+      setCurrentTest(response.data);
+    } catch (err) {
+      console.error('Error updating test:', err);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <DateSelector
-        dates={tests.map(test => test.date)}
-        onSelectDate={handleDateSelect}
-      />
+      {tests && tests.length > 0 ? (
+        <DateSelector
+          dates={tests.map(test => test.date)}
+          onSelectDate={handleDateSelect}
+        />
+      ) : (
+        <div className="text-center py-4 text-gray-500">
+          No tests available
+        </div>
+      )}
 
-      {currentTest && (
+      {currentTest && currentTest.results && (
         <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
           <LactateCurve mockData={currentTest} />
           <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
             <TestingForm 
               testData={currentTest} 
-              onTestDataChange={(updatedTest) => {
-                setCurrentTest(updatedTest);
-              }}
+              onTestDataChange={handleTestUpdate}
             />
           </div>
         </div>
       )}
 
-      <LactateCurveCalculator mockData={currentTest}/>
+      {currentTest && currentTest.results && (
+        <LactateCurveCalculator mockData={currentTest} />
+      )}
 
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex justify-between items-center mb-4">

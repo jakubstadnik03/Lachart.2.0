@@ -16,21 +16,29 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
 // Registrace modulů pro Chart.js
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Tooltip, Legend);
 
-export default function SpiderChart({ trainings = [], maxMonths = 4}) {
-  const [selectedSport, setSelectedSport] = useState("bike");
+export default function SpiderChart({ trainings = [], selectedSport, setSelectedSport }) {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   if (!Array.isArray(trainings) || trainings.length === 0) {
     return <div className="text-gray-500 text-center">No data available</div>;
   }
 
-  // Filtrování podle sportu
+  // Připravíme options pro dropdown sportu
+  const sportOptions = [
+    { value: 'bike', label: 'Bike' },
+    { value: 'swim', label: 'Swim' },
+    { value: 'run', label: 'Run' }
+  ];
+
+  // Filtrování podle sportu a roku
   const filteredTrainings = trainings.filter(
-    (t) => t.sport === selectedSport && new Date(t.date).getFullYear() === selectedYear
-  );  
+    (t) => t.sport === selectedSport && 
+    new Date(t.date).getFullYear() === selectedYear
+  );
+
   // Získání unikátních měsíců ze vstupních dat a omezení jejich počtu
   const uniqueMonths = [...new Set(filteredTrainings.map(t => new Date(t.date).toLocaleString('default', { month: 'long' })))];
-  const months = uniqueMonths.slice(0, maxMonths);
+  const months = uniqueMonths.slice(0, 4);
   const monthColors = ["#00AC07", "#7755FF", "#AC0000", "#3F8CFE"];
 
   // Strukturování dat podle měsíců
@@ -77,45 +85,51 @@ export default function SpiderChart({ trainings = [], maxMonths = 4}) {
     },
   };
 
-  const trainingOptions = ["bike", "swim", "run"];
-
   return (
     <div className="w-full h-full flex flex-col items-center bg-white p-5 rounded-3xl shadow-md relative">
-     <div className="flex items-center w-full justify-between">
-      <h2 className="text-lg font-semibold">Training Power Chart</h2>
-      <div className="flex items-center ">
-          <DropdownMenu selectedTraining={selectedSport} setSelectedTraining={setSelectedSport} trainingOptions={trainingOptions}/>
-    
+      <div className="flex items-center w-full justify-between">
+        <h2 className="text-lg font-semibold">Training Power Chart</h2>
+        <div className="flex items-center gap-2">
+          {/* Dropdown pro výběr sportu */}
+          <DropdownMenu
+            selectedValue={selectedSport}
+            options={sportOptions}
+            onChange={setSelectedSport} // Zjednodušeno - přímo předáváme setSelectedSport
+            displayKey="label"
+            valueKey="value"
+          />
+          
+          {/* Menu pro výběr roku */}
           <Menu as="div" className="relative inline-block text-left">
-              <Menu.Button className="p-2 rounded-full hover:bg-gray-200">
-                <EllipsisVerticalIcon className="h-6 w-6 text-gray-600" />
-              </Menu.Button>
-              <Transition
-                as={Fragment}
-                enter="transition ease-out duration-100"
-                enterFrom="transform opacity-0 scale-95"
-                enterTo="transform opacity-100 scale-100"
-                leave="transition ease-in duration-75"
-                leaveFrom="transform opacity-100 scale-100"
-                leaveTo="transform opacity-0 scale-95"
-              >
-                <Menu.Items className="absolute right-0 mt-2 w-48 bg-white border border-gray-300 rounded-md shadow-lg focus:outline-none">
-                  <div className="p-2">
-                    <label className="block text-sm font-medium text-gray-700">Select Year</label>
-                    <select
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring focus:ring-indigo-200"
-                      value={selectedYear}
-                      onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    >
-                      {[2022, 2023, 2024, 2025].map((year) => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>                
-                  </div>
-                </Menu.Items>
-              </Transition>
-            </Menu>
-      </div>
+            <Menu.Button className="p-2 rounded-full hover:bg-gray-200">
+              <EllipsisVerticalIcon className="h-6 w-6 text-gray-600" />
+            </Menu.Button>
+            <Transition
+              as={Fragment}
+              enter="transition ease-out duration-100"
+              enterFrom="transform opacity-0 scale-95"
+              enterTo="transform opacity-100 scale-100"
+              leave="transition ease-in duration-75"
+              leaveFrom="transform opacity-100 scale-100"
+              leaveTo="transform opacity-0 scale-95"
+            >
+              <Menu.Items className="absolute right-0 mt-2 w-48 bg-white border border-gray-300 rounded-md shadow-lg focus:outline-none">
+                <div className="p-2">
+                  <label className="block text-sm font-medium text-gray-700">Select Year</label>
+                  <select
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring focus:ring-indigo-200"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  >
+                    {[2022, 2023, 2024, 2025].map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>                
+                </div>
+              </Menu.Items>
+            </Transition>
+          </Menu>
+        </div>
       </div>
       {filteredTrainings.length > 0 ? (
         <div className="w-[400px] h-[400px]">

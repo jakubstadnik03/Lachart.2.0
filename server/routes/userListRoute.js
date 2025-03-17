@@ -4,8 +4,10 @@ const registerAbl = require("../abl/user-abl/register-abl");
 const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
 const UserDao = require("../dao/userDao");
+const TrainingDao = require("../dao/trainingDao");
 
 const userDao = new UserDao();
+const trainingDao = new TrainingDao();
 
 // Register endpoint
 router.post("/register", async (req, res) => {
@@ -265,25 +267,68 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
     }
 });
 
-// Get athlete's profile (for coach)
-router.get("/coach/athlete/:athleteId", verifyToken, async (req, res) => {
+// Get athlete's trainings
+router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
     try {
-        const coachId = req.user.userId;
+        const userId = req.user.userId;
         const { athleteId } = req.params;
 
-        // Kontrola, zda je uživatel trenér
-        const coach = await userDao.findById(coachId);
-        if (!coach || coach.role !== 'coach') {
-            return res.status(403).json({ error: "Přístup povolen pouze pro trenéry" });
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "Uživatel nenalezen" });
         }
 
-        // Načtení atleta
+        // Povolíme přístup buď trenérovi daného atleta, nebo atletovi k jeho vlastním tréninkům
+        if (user.role === 'coach') {
+            const athlete = await userDao.findById(athleteId);
+            if (!athlete) {
+                return res.status(404).json({ error: "Atlet nenalezen" });
+            }
+            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+                return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
+            }
+        } else if (user.role === 'athlete' && userId !== athleteId) {
+            return res.status(403).json({ error: "Nemáte oprávnění k zobrazení těchto tréninků" });
+        }
+
+        // Načtení tréninků atleta
+        const trainings = await trainingDao.findByAthleteId(athleteId);
+        res.status(200).json(trainings);
+    } catch (error) {
+        console.error("Error getting athlete trainings:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get athlete's profile
+router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { athleteId } = req.params;
+
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "Uživatel nenalezen" });
+        }
+
+        // Povolíme přístup buď trenérovi daného atleta, nebo atletovi k jeho vlastnímu profilu
+        if (user.role === 'coach') {
+            // Kontrola pro trenéra
+            const athlete = await userDao.findById(athleteId);
+            if (!athlete) {
+                return res.status(404).json({ error: "Atlet nenalezen" });
+            }
+            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+                return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
+            }
+        } else if (user.role === 'athlete' && userId !== athleteId) {
+            // Atlet může vidět pouze svůj vlastní profil
+            return res.status(403).json({ error: "Nemáte oprávnění k zobrazení tohoto profilu" });
+        }
+
         const athlete = await userDao.findById(athleteId);
         if (!athlete) {
             return res.status(404).json({ error: "Atlet nenalezen" });
-        }
-        if (!athlete.coachId || athlete.coachId.toString() !== coachId) {
-            return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
         }
 
         // Vrátíme data bez citlivých informací
@@ -300,12 +345,97 @@ router.get("/coach/athlete/:athleteId", verifyToken, async (req, res) => {
             weight: athlete.weight,
             sport: athlete.sport,
             specialization: athlete.specialization,
-            bio: athlete.bio
+            bio: athlete.bio,
+            coachId: athlete.coachId
         };
 
         res.status(200).json(athleteResponse);
     } catch (error) {
         console.error("Error getting athlete profile:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user profile
+router.get("/profile", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const user = await userDao.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ error: "Uživatel nenalezen" });
+        }
+
+        // Vrátíme data bez citlivých informací
+        const userResponse = {
+            _id: user._id,
+            name: user.name,
+            surname: user.surname,
+            email: user.email,
+            role: user.role,
+            dateOfBirth: user.dateOfBirth,
+            address: user.address,
+            phone: user.phone,
+            height: user.height,
+            weight: user.weight,
+            sport: user.sport,
+            specialization: user.specialization,
+            bio: user.bio,
+            coachId: user.coachId
+        };
+
+        res.status(200).json(userResponse);
+    } catch (error) {
+        console.error("Error getting user profile:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Logout endpoint
+router.post("/logout", verifyToken, async (req, res) => {
+    try {
+        // Získat token z hlavičky
+        const token = req.headers.authorization.split(' ')[1];
+        
+        // Zde můžete přidat token do blacklistu, pokud implementujete blacklist
+        // await blacklistToken(token);
+        
+        res.status(200).json({ message: "Logout successful" });
+    } catch (error) {
+        console.error("Logout error:", error);
+        res.status(500).json({ error: "Chyba při odhlášení" });
+    }
+});
+
+// Get athlete's tests
+router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { athleteId } = req.params;
+
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "Uživatel nenalezen" });
+        }
+
+        // Povolíme přístup buď trenérovi daného atleta, nebo atletovi k jeho vlastním testům
+        if (user.role === 'coach') {
+            const athlete = await userDao.findById(athleteId);
+            if (!athlete) {
+                return res.status(404).json({ error: "Atlet nenalezen" });
+            }
+            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+                return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
+            }
+        } else if (user.role === 'athlete' && userId !== athleteId) {
+            return res.status(403).json({ error: "Nemáte oprávnění k zobrazení těchto testů" });
+        }
+
+        // Načtení testů atleta
+        const tests = await userDao.getAthleteTests(athleteId);
+        res.status(200).json(tests);
+    } catch (error) {
+        console.error("Error getting athlete tests:", error);
         res.status(500).json({ error: error.message });
     }
 });

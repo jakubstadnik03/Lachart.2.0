@@ -11,6 +11,7 @@ import Settings from './pages/SettingsPage';
 import Support from './pages/SupportPage';
 import SignUpPage from './pages/SignUpPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import AthleteProfile from './components/AthleteProfile';
 
 function App() {
   return (
@@ -39,6 +40,15 @@ function App() {
             <Route path="/athlete-profile/:id" element={<Profile />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Route>
+
+          <Route 
+            path="/athlete/:athleteId" 
+            element={
+              <ProtectedRoute allowedRoles={['coach']}>
+                <AthleteProfile />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       </AuthProvider>
     </Router>

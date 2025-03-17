@@ -2,55 +2,51 @@
 const Training = require("../models/training");
 
 class TrainingDao {
-  async createTraining(data) {
+  async findByAthleteId(athleteId) {
     try {
-      console.log('Creating training with data:', data);
-      const newTraining = new Training(data);
-      return await newTraining.save();
+      return await Training.find({ athleteId: athleteId });
     } catch (error) {
-      console.error('Error in createTraining:', error);
+      console.error('Error in findByAthleteId:', error);
       throw error;
     }
   }
 
-  async getTrainingsByAthlete(athleteId) {
+  async create(trainingData) {
     try {
-      return await Training.find({ athleteId });
+      const training = new Training(trainingData);
+      return await training.save();
     } catch (error) {
-      console.error('Error in getTrainingsByAthlete:', error);
+      console.error('Error in create:', error);
       throw error;
     }
   }
 
-  async getTrainingById(id) {
+  async findById(id) {
     try {
       return await Training.findById(id);
     } catch (error) {
-      console.error('Error in getTrainingById:', error);
+      console.error('Error in findById:', error);
       throw error;
     }
   }
 
-  async updateTraining(id, updateData) {
+  async update(id, updateData) {
     try {
-      return await Training.findByIdAndUpdate(id, updateData, { 
-        new: true,
-        runValidators: true 
-      });
+      return await Training.findByIdAndUpdate(id, updateData, { new: true });
     } catch (error) {
-      console.error('Error in updateTraining:', error);
+      console.error('Error in update:', error);
       throw error;
     }
   }
 
-  async deleteTraining(id) {
+  async delete(id) {
     try {
       return await Training.findByIdAndDelete(id);
     } catch (error) {
-      console.error('Error in deleteTraining:', error);
+      console.error('Error in delete:', error);
       throw error;
     }
   }
 }
 
-module.exports = new TrainingDao();
+module.exports = TrainingDao;

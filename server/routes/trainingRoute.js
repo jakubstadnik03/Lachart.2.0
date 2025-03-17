@@ -7,7 +7,6 @@ const verifyToken = require("../middleware/verifyToken");
 // Create a new training
 router.post("/", verifyToken, async (req, res) => {
   try {
-    // Kontrola, zda jsou data ve správném formátu
     if (typeof req.body === 'string') {
       req.body = JSON.parse(req.body);
     }
@@ -22,6 +21,15 @@ router.post("/", verifyToken, async (req, res) => {
       });
     }
 
+    // Validace specifics objektu
+    if (req.body.specifics) {
+      if (typeof req.body.specifics !== 'object') {
+        return res.status(400).json({
+          error: 'Specifics musí být objekt'
+        });
+      }
+    }
+
     // Formátování data
     if (req.body.date) {
       req.body.date = new Date(req.body.date);
@@ -31,12 +39,10 @@ router.post("/", verifyToken, async (req, res) => {
     if (req.body.results) {
       req.body.results = req.body.results.map(result => ({
         interval: Number(result.interval),
-        duration: String(result.duration),
-        rest: String(result.rest),
-        intensity: String(result.intensity),
         power: Number(result.power),
         heartRate: Number(result.heartRate),
         lactate: Number(result.lactate),
+        glucose: Number(result.glucose),
         RPE: Number(result.RPE)
       }));
     }

@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthProvider';
 import { API_ENDPOINTS } from '../config/api.config';
 
 const LoginPage = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -14,7 +17,6 @@ const LoginPage = () => {
     password: '',
     rememberMe: false
   });
-  const [error, setError] = useState('');
 
   // Získáme původní cíl navigace, pokud existuje
   const from = location.state?.from?.pathname || "/dashboard";
@@ -24,52 +26,13 @@ const LoginPage = () => {
     setError('');
     
     try {
-      console.log('Sending login request:', {
-        email: formData.email,
-        password: formData.password
-      });
-
-      const response = await fetch(API_ENDPOINTS.LOGIN, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      console.log('Response status:', response.status);
-      const contentType = response.headers.get('content-type');
-      console.log('Response content type:', contentType);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        throw new Error(
-          contentType?.includes('application/json') 
-            ? JSON.parse(errorText).error 
-            : 'Přihlášení selhalo'
-        );
+      const result = await login(email, password);
+      if (!result.success) {
+        setError(result.error || 'Login failed');
       }
-
-      const data = await response.json();
-      console.log('Login successful:', { ...data, token: '***' });
-
-      // Uložení tokenu do localStorage nebo sessionStorage podle rememberMe
-      const storage = formData.rememberMe ? localStorage : sessionStorage;
-      storage.setItem('token', data.token);
-      storage.setItem('user', JSON.stringify(data.user));
-
-      // Volání login funkce z AuthContext a přesměrování
-      await login(data.token, data.user);
-      navigate(from, { replace: true });
-
-    } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message || 'Přihlášení selhalo');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred');
     }
   };
 
@@ -110,8 +73,8 @@ const LoginPage = () => {
                     required
                     className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
                     placeholder="Email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />
                  
                 </div>
@@ -125,8 +88,8 @@ const LoginPage = () => {
                     required
                     className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
                     placeholder="Password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                   />
                   <button
                     type="button"

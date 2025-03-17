@@ -59,135 +59,155 @@ const LactateCurve = ({ mockData }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltip, setTooltip] = useState(null);
 
-  if (!mockData || !mockData.results) {
-    return <div className="w-full max-w-2xl p-6 bg-white rounded-2xl shadow-lg text-center">No data available.</div>;
+  if (!mockData || !mockData.results || mockData.results.length === 0) {
+    return <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
+      <p className="text-gray-500 text-center">Add test results to see the lactate curve</p>
+    </div>;
   }
 
-  const filteredResults = mockData.results.filter(result => result.power && result.lactate && result.heartRate);
-
-  if (filteredResults.length === 0) {
-    return <div className="w-full max-w-2xl p-6 bg-white rounded-2xl shadow-lg text-center">Enter data to generate a graph.</div>;
-  }
-
-  const labels = filteredResults.map((result) =>
-    mockData.sport === "run" ? convertPowerToPace(result.power, mockData.sport) : `${result.power}W`
+  // Filter out rows with empty or invalid values
+  const validResults = mockData.results.filter(result => 
+    result &&
+    result.power !== '' &&
+    result.lactate !== '' &&
+    !isNaN(Number(result.power)) &&
+    !isNaN(Number(result.lactate))
   );
 
-  const lactateData = filteredResults.map((result) => result.lactate);
-  const heartRateData = filteredResults.map((result) => result.heartRate);
+  if (validResults.length < 2) {
+    return <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
+      <p className="text-gray-500 text-center">Need at least 2 valid data points to create the curve</p>
+    </div>;
+  }
 
-  const datasets = [
-    {
-      label: "Lactate (mmol/L)",
-      data: lactateData,
-      borderColor: "#3F8CFE",
-      backgroundColor: "#3F8CFE",
-      pointStyle: "circle",
-      pointRadius: 5,
-      pointBackgroundColor: "#3F8CFE",
-    },
-    {
-      label: "Heart Rate (BPM)",
-      data: heartRateData,
-      borderColor: "#E7515A",
-      backgroundColor: "#E7515A",
-      pointStyle: "circle",
-      pointRadius: 5,
-      pointBackgroundColor: "#E7515A",
-      yAxisID: "y1",
-    },
-  ];
+  try {
+    const labels = validResults.map((result) =>
+      mockData.sport === "run" ? convertPowerToPace(result.power, mockData.sport) : `${result.power}W`
+    );
 
-  const data = { labels, datasets };
+    const lactateData = validResults.map((result) => result.lactate);
+    const heartRateData = validResults.map((result) => result.heartRate);
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: "top",
-        labels: {
-          usePointStyle: true,
-          pointStyle: "circle",
-          pointRadius: 4,
-          font: { size: 12 },
-        },
+    const datasets = [
+      {
+        label: "Lactate (mmol/L)",
+        data: lactateData,
+        borderColor: "#3F8CFE",
+        backgroundColor: "#3F8CFE",
+        pointStyle: "circle",
+        pointRadius: 5,
+        pointBackgroundColor: "#3F8CFE",
       },
-      tooltip: {
-        enabled: false,
-        external: (context) => {
-          if (context.tooltip.opacity === 0) {
-            setTooltip(null);
-          } else {
-            setTooltip(context.tooltip);
+      {
+        label: "Heart Rate (BPM)",
+        data: heartRateData,
+        borderColor: "#E7515A",
+        backgroundColor: "#E7515A",
+        pointStyle: "circle",
+        pointRadius: 5,
+        pointBackgroundColor: "#E7515A",
+        yAxisID: "y1",
+      },
+    ];
+
+    const data = { labels, datasets };
+
+    const options = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "top",
+          labels: {
+            usePointStyle: true,
+            pointStyle: "circle",
+            pointRadius: 4,
+            font: { size: 12 },
+          },
+        },
+        tooltip: {
+          enabled: false,
+          external: (context) => {
+            if (context.tooltip.opacity === 0) {
+              setTooltip(null);
+            } else {
+              setTooltip(context.tooltip);
+            }
+          },
+          callbacks: {
+            title: function(context) {
+              const value = context[0].parsed.x;
+              return `${mockData.sport === 'bike' ? 'Power' : 'Pace'}: ${convertPowerToPace(value, mockData.sport)}`;
+            }
           }
         },
-        callbacks: {
-          title: function(context) {
-            const value = context[0].parsed.x;
-            return `${mockData.sport === 'bike' ? 'Power' : 'Pace'}: ${convertPowerToPace(value, mockData.sport)}`;
+      },
+      scales: {
+        y: {
+          title: { display: true, text: "Lactate (mmol/L)" },
+          min: 0,
+          max: Math.ceil(Math.max(...lactateData) + 1),
+          ticks: { display: true },
+          border: { dash: [6, 6] },
+          grid: {
+            color: "rgba(0, 0, 0, 0.15)",
+            borderDash: [4, 4],
+            drawTicks: true,
+          },
+        },
+        y1: {
+          title: { display: true, text: "Heart Rate (BPM)" },
+          min: 100,
+          max: Math.max(...heartRateData) + 10,
+          position: "right",
+          ticks: { display: true },
+          grid: {
+            drawOnChartArea: true,
+            color: "rgba(0, 0, 0, 0)",
+            borderDash: [4, 4],
+          },
+        },
+        x: {
+          title: {
+            display: true,
+            text: mockData.sport === 'bike' ? "Power (W)" : "Pace (min/km)"
+          },
+          border: { dash: [6, 6] },
+          grid: {
+            color: "rgba(0, 0, 0, 0.15)",
+            borderDash: [4, 4],
+          },
+          ticks: {
+            callback: function(value) {
+              return convertPowerToPace(value, mockData.sport);
+            }
           }
-        }
-      },
-    },
-    scales: {
-      y: {
-        title: { display: true, text: "Lactate (mmol/L)" },
-        min: 0,
-        max: Math.ceil(Math.max(...lactateData) + 1),
-        ticks: { display: true },
-        border: { dash: [6, 6] },
-        grid: {
-          color: "rgba(0, 0, 0, 0.15)",
-          borderDash: [4, 4],
-          drawTicks: true,
         },
       },
-      y1: {
-        title: { display: true, text: "Heart Rate (BPM)" },
-        min: 100,
-        max: Math.max(...heartRateData) + 10,
-        position: "right",
-        ticks: { display: true },
-        grid: {
-          drawOnChartArea: true,
-          color: "rgba(0, 0, 0, 0)",
-          borderDash: [4, 4],
-        },
-      },
-      x: {
-        title: {
-          display: true,
-          text: mockData.sport === 'bike' ? "Power (W)" : "Pace (min/km)"
-        },
-        border: { dash: [6, 6] },
-        grid: {
-          color: "rgba(0, 0, 0, 0.15)",
-          borderDash: [4, 4],
-        },
-        ticks: {
-          callback: function(value) {
-            return convertPowerToPace(value, mockData.sport);
-          }
-        }
-      },
-    },
-  };
+    };
 
-  return (
-    <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
-      <h2 className="text-2xl font-bold">
-        Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>
-      </h2>
-      <p className="text-lg text-gray-500">
-        Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
-      </p>
-      <div className="relative" style={{ width: '100%', height: '400px' }}>
-        <Line data={data} options={options} />
-        {tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} />}
+    return (
+      <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
+        <h2 className="text-2xl font-bold">
+          Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>
+        </h2>
+        <p className="text-lg text-gray-500">
+          Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
+        </p>
+        <div className="relative" style={{ width: '100%', height: '400px' }}>
+          <Line data={data} options={options} />
+          {tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} />}
+        </div>
       </div>
-    </div>
-  );
+    );
+  } catch (error) {
+    console.error('Error calculating lactate curve:', error);
+    return (
+      <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
+        <p className="text-red-500 text-center">Error calculating lactate curve</p>
+      </div>
+    );
+  }
 };
 
 export default LactateCurve;

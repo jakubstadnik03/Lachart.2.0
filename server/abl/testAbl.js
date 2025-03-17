@@ -1,6 +1,7 @@
 // abl/measurementABL.js
 const UserDao = require("../dao/userDao");
 const TestDao = require("../dao/testDao");
+const Test = require('../models/test');
 
 async function createMeasurement(measurementData) {
   return measurementDAO.createMeasurement(measurementData);
@@ -27,36 +28,84 @@ class TestAbl {
         this.userDao = new UserDao();
     }
 
-    async createTest(req, res) {
+    static async getTestsByAthleteId(athleteId) {
         try {
-            const { athleteId, coachId, date, type, description, results } = req.body;
-
-            // Validace existence atleta
-            const athlete = await this.userDao.findById(athleteId);
-            if (!athlete) {
-                return res.status(404).json({ error: "Atlet nenalezen" });
-            }
-
-            // Validace existence trenéra
-            const coach = await this.userDao.findById(coachId);
-            if (!coach) {
-                return res.status(404).json({ error: "Trenér nenalezen" });
-            }
-
-            const testData = {
-                athleteId,
-                coachId,
-                date,
-                type,
-                description,
-                results
-            };
-
-            const newTest = await this.testDao.createTest(testData);
-            res.status(201).json(newTest);
+            const tests = await Test.find({ athleteId: athleteId });
+            return tests;
         } catch (error) {
-            console.error("Error in createTest:", error);
-            res.status(500).json({ error: error.message });
+            throw {
+                status: 500,
+                error: `Chyba při získávání testů: ${error.message}`
+            };
+        }
+    }
+
+    static async createTest(testData) {
+        try {
+            const test = new Test(testData);
+            return await test.save();
+        } catch (error) {
+            throw {
+                status: 400,
+                error: `Chyba při vytváření testu: ${error.message}`
+            };
+        }
+    }
+
+    static async getTestById(id) {
+        try {
+            const test = await Test.findById(id);
+            if (!test) {
+                throw {
+                    status: 404,
+                    error: 'Test nenalezen'
+                };
+            }
+            return test;
+        } catch (error) {
+            throw {
+                status: error.status || 500,
+                error: error.error || `Chyba při získávání testu: ${error.message}`
+            };
+        }
+    }
+
+    static async updateTest(id, testData) {
+        try {
+            const test = await Test.findByIdAndUpdate(id, testData, { 
+                new: true,
+                runValidators: true 
+            });
+            if (!test) {
+                throw {
+                    status: 404,
+                    error: 'Test nenalezen'
+                };
+            }
+            return test;
+        } catch (error) {
+            throw {
+                status: error.status || 500,
+                error: error.error || `Chyba při aktualizaci testu: ${error.message}`
+            };
+        }
+    }
+
+    static async deleteTest(id) {
+        try {
+            const test = await Test.findByIdAndDelete(id);
+            if (!test) {
+                throw {
+                    status: 404,
+                    error: 'Test nenalezen'
+                };
+            }
+            return test;
+        } catch (error) {
+            throw {
+                status: error.status || 500,
+                error: error.error || `Chyba při mazání testu: ${error.message}`
+            };
         }
     }
 
@@ -80,10 +129,6 @@ class TestAbl {
         }
     }
 
-    async getTestById(id) {
-        return await this.testDao.getTestById(id);
-    }
-
     async updateTest(id, updateData) {
         return await this.testDao.updateTest(id, updateData);
     }
@@ -93,4 +138,4 @@ class TestAbl {
     }
 }
 
-module.exports = new TestAbl();
+module.exports = TestAbl;

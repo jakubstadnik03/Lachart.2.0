@@ -112,6 +112,16 @@ class UserDao {
       throw error;
     }
   }
+
+  async getAthleteTests(athleteId) {
+    try {
+      const athlete = await this.findById(athleteId);
+      return athlete.tests || [];
+    } catch (error) {
+      console.error('Error in getAthleteTests:', error);
+      throw error;
+    }
+  }
 }
 
 // Exportujeme třídu, ne instanci

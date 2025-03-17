@@ -1,8 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { fetchMockTrainings } from "../../mock/mockApi";
+import React, { useState } from "react";
 import TrainingItem from "./TrainingItem";
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
+  const pageNumbers = [];
+  for (let i = 1; i <= totalPages; i++) {
+    pageNumbers.push(i);
+  }
+
+  const getVisiblePages = () => {
+    if (totalPages <= 5) return pageNumbers;
+    
+    if (currentPage <= 3) return pageNumbers.slice(0, 5);
+    if (currentPage >= totalPages - 2) return pageNumbers.slice(totalPages - 5);
+    
+    return pageNumbers.slice(currentPage - 3, currentPage + 2);
+  };
+
   return (
     <nav className="flex flex-wrap justify-between items-center py-2.5 px-2">
       <div className="flex items-center gap-4">
@@ -23,7 +36,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
 
       <div className="flex items-center gap-4">
         <p className="text-sm text-gray-700">
-          Showing {(currentPage - 1) * rowsPerPage + 1} to {Math.min(currentPage * rowsPerPage, totalItems)} of {totalItems} entries
+          Showing {totalItems === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1} to {Math.min(currentPage * rowsPerPage, totalItems)} of {totalItems} entries
         </p>
         
         <div className="flex gap-2 items-center">
@@ -34,7 +47,8 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
           >
             ◀
           </button>
-          {[currentPage, Math.min(currentPage + 1, totalPages)].map((page) => (
+          
+          {getVisiblePages().map((page) => (
             <button
               key={page}
               className={`w-9 h-9 rounded-full text-sm font-semibold transition-all ${currentPage === page ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
@@ -43,6 +57,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
               {page}
             </button>
           ))}
+          
           <button
             className={`px-3 py-2 rounded-full transition-all ${currentPage === totalPages ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
             onClick={() => onPageChange(currentPage + 1)}
@@ -56,23 +71,31 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
   );
 };
 
-const UserTrainingsTable = () => {
-  const [trainings, setTrainings] = useState([]);
+const UserTrainingsTable = ({ trainings = [] }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [sortConfig, setSortConfig] = useState({ key: "date", direction: "asc" });
 
-  useEffect(() => {
-    const loadTrainings = async () => {
-      const data = await fetchMockTrainings();
-      setTrainings(data);
-    };
-    loadTrainings();
-  }, []);
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('cs-CZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit'
+    });
+  };
 
   const sortData = (trainings, config) => {
     return [...trainings].sort((a, b) => {
+      if (config.key === 'date') {
+        const dateA = new Date(a[config.key]);
+        const dateB = new Date(b[config.key]);
+        return config.direction === "asc" 
+          ? dateA - dateB 
+          : dateB - dateA;
+      }
+
       const aValue = a[config.key] ?? "";
       const bValue = b[config.key] ?? "";
       
@@ -102,8 +125,8 @@ const UserTrainingsTable = () => {
     currentPage * rowsPerPage
   );
 
-  if (trainings.length === 0) {
-    return <div className="text-center text-lg font-semibold mt-5">Žádné tréninky k zobrazení.</div>;
+  if (!trainings || trainings.length === 0) {
+    return <div className="text-center text-lg font-semibold mt-5">No trainings available.</div>;
   }
 
   return (
@@ -119,7 +142,6 @@ const UserTrainingsTable = () => {
         />
       </div>
 
-      {/* Header zarovnaný s TrainingItem */}
       <div className="hidden sm:grid grid-cols-8 bg-gray-100 p-4 border-b border-gray-300 text-sm rounded-t-2xl">
         <div className="cursor-pointer" onClick={() => handleSort("date")}>
           Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
@@ -138,8 +160,11 @@ const UserTrainingsTable = () => {
       <div className="space-y-2">
         {paginatedTrainings.map((training) => (
           <TrainingItem 
-            key={training._id || `${training.date}-${training.title}`}
-            training={training} 
+            key={training._id}
+            training={{
+              ...training,
+              date: formatDate(training.date)
+            }}
           />
         ))}
       </div>

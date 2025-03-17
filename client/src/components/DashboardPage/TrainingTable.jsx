@@ -1,4 +1,4 @@
-import * as React from "react";
+import React from "react";
 import { useState, useEffect } from "react";
 import { fetchMockTrainings } from "../../mock/mockApi";
 
@@ -94,53 +94,47 @@ function convertPowerToPace(seconds, sport) {
   }
 }
 
-
-
-export default function TrainingTable() {
-  const [trainings, setTrainings] = useState([]);
-
-  async function fetchTrainings() {
-    try {
-      const data = await fetchMockTrainings();  
-      const previousTrainings = {};
-      const formattedData = data.map((item) => {
-        const averagePower = Math.round(
-          item.results.reduce((sum, r) => sum + r.power, 0) / item.results.length
-        );
-  
-        const previousPower = previousTrainings[item.title] || null;
-  
-        let status = "same";
-        if (previousPower !== null) {
-          if (averagePower > previousPower) status = "up";
-          else if (averagePower < previousPower) status = "down";
-        }
-  
-        previousTrainings[item.title] = averagePower;
-
-        const pace = convertPowerToPace(averagePower, item.sport);
-  
-        return {
-          training: item.title,
-          sport: item.sport,
-          date: item.date.replace(/-/g, "."),
-          averagePace: pace,
-          status,
-        };
-      });
-  
-      // Sort by date and limit to the last 5
-      const sortedData = formattedData.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
-  
-      setTrainings(sortedData);
-    } catch (error) {
-      console.error("Chyba při načítání dat:", error);
-    }
+export default function TrainingTable({ trainings, selectedSport }) {
+  if (!trainings || trainings.length === 0) {
+    return <div className="text-center py-4">No trainings available</div>;
   }
 
-  useEffect(() => {
-    fetchTrainings();
-  }, []);
+  // Filtrujeme tréninky podle sportu a seřadíme podle data
+  const filteredTrainings = trainings
+    .filter(t => selectedSport === 'all' || t.sport === selectedSport)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 6);  // Omezíme na posledních 6 tréninků
+
+  const formattedTrainings = filteredTrainings.map((item, index, array) => {
+    const averagePower = Math.round(
+      item.results.reduce((sum, r) => sum + r.power, 0) / item.results.length
+    );
+
+    // Porovnání s předchozím tréninkem stejného typu
+    const previousTraining = array
+      .slice(index + 1)
+      .find(t => t.title === item.title);
+    
+    let status = "same";
+    if (previousTraining) {
+      const previousPower = Math.round(
+        previousTraining.results.reduce((sum, r) => sum + r.power, 0) / 
+        previousTraining.results.length
+      );
+      if (averagePower > previousPower) status = "up";
+      else if (averagePower < previousPower) status = "down";
+    }
+
+    const pace = convertPowerToPace(averagePower, item.sport);
+
+    return {
+      training: item.title,
+      sport: item.sport,
+      date: new Date(item.date).toLocaleDateString(),
+      averagePace: pace,
+      status,
+    };
+  });
 
   return (
     <div className="flex flex-col justify-center p-5 bg-white rounded-3xl shadow-md h-full">
@@ -151,7 +145,7 @@ export default function TrainingTable() {
               View last trainings
             </div>
             <button 
-              onClick={() => window.location.href = "/training"} // Navigate to training page
+              onClick={() => window.location.href = "/training"}
               className="flex overflow-hidden gap-1 items-center self-stretch py-0.5 pl-3.5 my-auto text-base text-blue-500 bg-white rounded min-h-[28px]"
             >
               <div className="self-stretch my-auto">View more</div>
@@ -166,11 +160,9 @@ export default function TrainingTable() {
         </div>
         <div className="grid grid-cols-4 gap-y-4 w-full text-base text-gray-600">
           <TableHeader />
-          {trainings.length > 0 ? (
-            trainings.map((training, index) => <TrainingRow key={index} {...training} />)
-          ) : (
-            <div className="col-span-4 text-center py-4 text-gray-500">Loading...</div>
-          )}
+          {formattedTrainings.map((training, index) => (
+            <TrainingRow key={index} {...training} />
+          ))}
         </div>
       </div>
     </div>

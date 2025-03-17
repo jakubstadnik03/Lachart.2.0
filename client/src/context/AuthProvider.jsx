@@ -1,79 +1,78 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_ENDPOINTS } from '../config/api.config';
+import api from '../services/api';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('userData');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Kontrola existujícího tokenu při načtení
-    const storedToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
-    
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-      navigate('/dashboard'); // Přesměrování na dashboard pokud je uživatel přihlášen
-    }
-    setIsLoading(false);
+  const saveToken = useCallback((token) => {
+    localStorage.setItem('authToken', token);
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   }, []);
 
-  const login = async (newToken, userData) => {
-    setToken(newToken);
-    setUser(userData);
-    console.log('Navigating to dashboard after login');
-    navigate('/dashboard'); // Přesměrování na dashboard po přihlášení
-  };
+  const removeToken = useCallback(() => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userData');
+    delete api.defaults.headers.common['Authorization'];
+  }, []);
 
-  const logout = () => {
-    // Odstranění tokenu z obou úložišť
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-    localStorage.removeItem('user');
-    sessionStorage.removeItem('user');
-    
-    setToken(null);
-    setUser(null);
-    navigate('/login');
-  };
-
-  const checkTokenExpiration = async () => {
-    if (!token) return;
-
+  const login = useCallback(async (email, password) => {
     try {
-      const response = await fetch('http://localhost:8000/user/verify-token', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      setLoading(true);
+      const response = await api.post('/user/login', { email, password });
 
-      if (!response.ok) {
-        logout();
+      if (response.data && response.data.token) {
+        saveToken(response.data.token);
+        setUser(response.data.user);
+        localStorage.setItem('userData', JSON.stringify(response.data.user));
+        navigate('/dashboard', { replace: true });
+        return { success: true };
       }
+      return { success: false, error: 'Invalid response from server' };
     } catch (error) {
-      console.error('Token verification error:', error);
-      logout();
+      console.error('Login failed:', error);
+      removeToken();
+      setUser(null);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Login failed'
+      };
+    } finally {
+      setLoading(false);
     }
+  }, [saveToken, removeToken, navigate]);
+
+  const logout = useCallback(async () => {
+    try {
+      await api.post('/user/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      removeToken();
+      setUser(null);
+      navigate('/login', { replace: true });
+    }
+  }, [navigate, removeToken]);
+
+  const value = {
+    user,
+    login,
+    logout,
+    loading,
+    isAuthenticated: !!user,
+    token: localStorage.getItem('authToken')
   };
-
-  useEffect(() => {
-    // Kontrola platnosti tokenu každých 5 minut
-    const interval = setInterval(checkTokenExpiration, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [token]);
-
-  if (isLoading) {
-    return <div>Loading...</div>; // nebo váš loading komponent
-  }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -82,7 +81,9 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth musí být použit uvnitř AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};
+
+export default AuthProvider;

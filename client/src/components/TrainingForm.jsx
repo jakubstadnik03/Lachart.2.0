@@ -47,7 +47,7 @@ const parseMMSSToSeconds = (mmss) => {
   return mins * 60 + (secs || 0);
 };
 
-const TrainingForm = ({ onClose }) => {
+const TrainingForm = ({ onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     sport: "bike",
     type: "interval",
@@ -106,21 +106,7 @@ const TrainingForm = ({ onClose }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const trainingData = {
-      _id: `training_${Date.now()}`,
-      athleteId: "user2", // TODO: Get from auth context
-      coachId: "user2",   // TODO: Get from auth context
-      ...formData,
-      results: formData.results.map(result => ({
-        ...result,
-        // Převedeme pace na sekundy při odeslání
-        power: (formData.sport === "run" || formData.sport === "swim") 
-          ? parseMMSSToSeconds(result.power)
-          : result.power
-      }))
-    };
-    console.log("Training created:", trainingData);
-    onClose();
+    onSubmit(formData);
   };
 
   const handleAddInterval = () => {

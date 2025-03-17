@@ -1,49 +1,123 @@
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-const USE_MOCK = process.env.REACT_APP_USE_MOCK === 'true';
+import axios from 'axios';
+import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
 
-import { fetchMockTrainings } from '../mock/mockApi';
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
 
-export const api = {
-  // Auth
-  async login(email, password) {
-    if (USE_MOCK) {
-      return { token: 'mock-token', user: { id: '1', email, name: 'Mock User' } };
-    }
-    
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    return await response.json();
-  },
-
-  // Trainings
-  async getTrainings() {
-    if (USE_MOCK) {
-      return await fetchMockTrainings();
-    }
-
-    const response = await fetch(`${API_URL}/training`, {
+// Auth endpoints
+export const login = async (credentials) => {
+  try {
+    const response = await api.post('/user/login', credentials, {
       headers: {
-        'x-auth-token': localStorage.getItem('token')
+        'Content-Type': 'application/json',
       }
     });
-    return await response.json();
-  },
-
-  async addTraining(trainingData) {
-    if (USE_MOCK) {
-      return trainingData;
-    }
-
-    const response = await fetch(`${API_URL}/training`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(trainingData)
-    });
-    return await response.json();
+    console.log('Login response:', response);
+    return response;
+  } catch (error) {
+    console.error('Login error:', error);
+    throw error;
   }
-}; 
+};
+
+export const logout = () => api.post('/user/logout');
+export const register = (userData) => api.post('/user/register', userData);
+
+// User endpoints
+export const getCurrentUser = () => api.get('/user/current');
+export const updateUser = (id, userData) => api.put(`/user/${id}`, userData);
+export const getAllAthletes = () => api.get('/user/athletes');
+
+// Training endpoints
+export const getTrainingsByAthleteId = async (athleteId) => {
+  try {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new Error('No token found');
+    }
+    
+    const response = await api.get(`/training/athlete/${athleteId}`);
+    return response;
+  } catch (error) {
+    console.error('Error fetching trainings:', error);
+    throw error;
+  }
+};
+
+export const getAllTrainings = () => api.get('/training');
+export const getTrainingById = (id) => api.get(`/training/${id}`);
+export const addTraining = (trainingData) => api.post('/training', trainingData);
+export const updateTraining = (id, trainingData) => api.put(`/training/${id}`, trainingData);
+export const deleteTraining = (id) => api.delete(`/training/${id}`);
+
+// Test endpoints
+export const getUserTests = () => api.get('/test/user');
+export const getAllTests = () => api.get('/test');
+export const getTestById = (id) => api.get(`/test/${id}`);
+export const addTest = (testData) => api.post('/test', testData);
+export const updateTest = (id, testData) => api.put(`/test/${id}`, testData);
+export const deleteTest = (id) => api.delete(`/test/${id}`);
+
+export const getTestingsByAthleteId = async (athleteId) => {
+  try {
+    const response = await api.get(API_ENDPOINTS.ATHLETE_TESTS(athleteId));
+    console.log('Tests response:', response.data); // Pro debug
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching athlete tests:', error);
+    throw error;
+  }
+};
+
+// Přidáme interceptor pro přidání tokenu do každého requestu
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Interceptor pro zpracování chyb
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error);
+    if (error.response?.status === 401) {
+      localStorage.removeItem('authToken');
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const updateUserProfile = async (userData) => {
+  try {
+    const response = await api.put('/user/edit-profile', userData);
+    return response;
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+};
+
+export const changePassword = async (passwordData) => {
+  try {
+    const response = await api.post('/user/change-password', passwordData);
+    return response;
+  } catch (error) {
+    console.error('Error changing password:', error);
+    throw error;
+  }
+};
+
+export default api; 

@@ -56,13 +56,14 @@ const CustomTooltip = ({ tooltip, datasets }) => {
   );
 };
 
-const TrainingGraph = ({ trainingList }) => {
-  const [trainings, setTrainings] = useState([]);
-  const [sports, setSports] = useState(['bike', 'run', 'swim']);
-  const [selectedSport, setSelectedSport] = useState('bike');
-  const [titles, setTitles] = useState([]);
-  const [selectedTitle, setSelectedTitle] = useState(null);
-  const [selectedTraining, setSelectedTraining] = useState(null);
+const TrainingGraph = ({ 
+  trainingList = [],
+  selectedSport, 
+  selectedTitle, 
+  setSelectedTitle, 
+  selectedTraining, 
+  setSelectedTraining 
+}) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState(null);
@@ -71,68 +72,45 @@ const TrainingGraph = ({ trainingList }) => {
   const settingsRef = useRef(null);
 
   useEffect(() => {
-    const loadTrainings = async () => {
-      try {
-        setLoading(true);
-        if (trainingList && trainingList.length > 0) {
-          setTrainings(trainingList);
-          // Filtrujeme tréninky podle vybraného sportu
-          const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
-          const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-          setTitles(uniqueTitles);
-          setSelectedTitle(uniqueTitles[0]);
-          const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
-          if (firstTrainingWithTitle) {
-            setSelectedTraining(firstTrainingWithTitle.trainingId);
-          }
-        } else {
-          setError("No trainings found");
-        }
-      } catch (err) {
-        console.error("Error loading trainings:", err);
-        setError("Failed to load trainings");
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadTrainings();
-  }, [selectedSport]);
-
-  // Když se změní sport, aktualizujeme tituly
-  useEffect(() => {
-    if (trainings.length > 0) {
-      const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+    if (!trainingList) return;
+    
+    if (trainingList.length > 0) {
+      setLoading(false);
+      const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
       const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-      setTitles(uniqueTitles);
-      setSelectedTitle(uniqueTitles[0]);
-      const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
-      if (firstTrainingWithTitle) {
-        setSelectedTraining(firstTrainingWithTitle.trainingId);
+      
+      if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
+        setSelectedTitle(uniqueTitles[0]);
+        const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
+        if (firstTrainingWithTitle) {
+          setSelectedTraining(firstTrainingWithTitle._id);
+        }
       }
     }
-  }, [selectedSport, trainings]);
+  }, [selectedSport, trainingList, selectedTitle, setSelectedTitle, setSelectedTraining]);
 
-  // Přepočítání rozsahů při změně vybraného tréninku
   useEffect(() => {
-    if (selectedTraining && trainings.length > 0) {
-      const selectedData = trainings.find(t => t.trainingId === selectedTraining);
-      if (selectedData && selectedData.results) {
+    if (!trainingList) return;
+    
+    if (selectedTraining && trainingList.length > 0) {
+      const selectedData = trainingList.find(t => t._id === selectedTraining);
+      if (selectedData?.results) {
         const powers = selectedData.results.map(r => r.power);
         const heartRates = selectedData.results.map(r => r.heartRate);
 
         setRanges({
           power: {
-            min: Math.floor(Math.min(...powers) - 50) ,
-            max: Math.ceil(Math.max(...powers) + 50) 
+            min: Math.floor(Math.min(...powers) - 50),
+            max: Math.ceil(Math.max(...powers) + 50)
           },
           heartRate: {
-            min: Math.floor(Math.min(...heartRates) - 10) ,
-            max: Math.ceil(Math.max(...heartRates) + 10) 
+            min: Math.floor(Math.min(...heartRates) - 10),
+            max: Math.ceil(Math.max(...heartRates) + 10)
           }
         });
       }
     }
-  }, [selectedTraining, trainings]);
+  }, [selectedTraining, trainingList]);
 
   // Přidáme useEffect pro zachycení kliknutí mimo menu
   useEffect(() => {
@@ -148,15 +126,59 @@ const TrainingGraph = ({ trainingList }) => {
     };
   }, []);
 
+  if (!trainingList) return <div>Loading trainings...</div>;
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;
-  if (!trainings.length) return <div>No trainings available</div>;
+  if (!trainingList.length) return <div>No trainings available</div>;
 
-  const selectedTrainingData = trainings.find(t => t.trainingId === selectedTraining);
-  const trainingsWithSelectedTitle = trainings.filter(t => t.title === selectedTitle);
-  const trainingDates = trainingsWithSelectedTitle.map(t => t.date);
+  const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
+  if (!selectedTrainingData?.results) return <div>No data available for selected training</div>;
+
+  // Filtrujeme tréninky podle vybraného sportu
+  const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
   
-  const selectedDate = selectedTrainingData?.date || '';
+  // Získáme unikátní názvy tréninků pro vybraný sport
+  const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
+
+  // Filtrujeme tréninky podle vybraného názvu
+  const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
+  
+  // Formátujeme data pro dropdown
+  const trainingOptions = trainingsWithSelectedTitle?.map(training => ({
+    value: training._id,
+    label: new Date(training.date).toLocaleDateString('cs-CZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  })) || [];
+
+  // Přidáme debug log
+  console.log('Training options:', trainingOptions);
+
+  // Handler pro změnu sportu
+  const handleSportChange = (newSport) => {
+    const sportTrainings = trainingList.filter(t => t.sport === newSport);
+    const firstTitle = sportTrainings[0]?.title;
+    const firstTraining = sportTrainings[0]?._id;
+    
+    setSelectedTitle(firstTitle);
+    setSelectedTraining(firstTraining);
+  };
+
+  // Handler pro změnu názvu tréninku
+  const handleTitleChange = (newTitle) => {
+    const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
+    const firstTraining = trainingsWithTitle[0]?._id;
+    
+    setSelectedTitle(newTitle);
+    setSelectedTraining(firstTraining);
+  };
+
+  // Handler pro změnu konkrétního tréninku podle data
+  const handleTrainingChange = (trainingId) => {
+    setSelectedTraining(trainingId);
+  };
 
   const options = {
     responsive: true,
@@ -250,17 +272,15 @@ const TrainingGraph = ({ trainingList }) => {
   };
 
   return (
-    <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg ">
+    <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-semibold">{selectedTitle}</h2>
         <div className="flex items-center gap-4">
+          {/* Dropdown pro výběr data tréninku */}
           <DropdownMenu
-            selectedTraining={selectedDate}
-            setSelectedTraining={(date) => {
-              const training = trainingsWithSelectedTitle.find(t => t.date === date);
-              if (training) setSelectedTraining(training.trainingId);
-            }}
-            trainingOptions={trainingDates}
+            selectedValue={selectedTraining}
+            options={trainingOptions}
+            onChange={handleTrainingChange}
           />
           
           {/* Settings menu */}
@@ -275,17 +295,15 @@ const TrainingGraph = ({ trainingList }) => {
             {isSettingsOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                 <div className="p-2">
+                  {/* Sport selector */}
                   <div className="mb-3">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
                     <select 
                       className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
                       value={selectedSport}
-                      onChange={(e) => {
-                        setSelectedSport(e.target.value);
-                        setIsSettingsOpen(false);
-                      }}
+                      onChange={(e) => handleSportChange(e.target.value)}
                     >
-                      {sports.map((sport) => (
+                      {['bike', 'run', 'swim'].map((sport) => (
                         <option key={sport} value={sport}>
                           {sport.charAt(0).toUpperCase() + sport.slice(1)}
                         </option>
@@ -293,18 +311,16 @@ const TrainingGraph = ({ trainingList }) => {
                     </select>
                   </div>
                   
+                  {/* Training title selector */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Training</label>
                     <select 
                       className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
                       value={selectedTitle}
-                      onChange={(e) => {
-                        setSelectedTitle(e.target.value);
-                        setIsSettingsOpen(false);
-                      }}
+                      onChange={(e) => handleTitleChange(e.target.value)}
                     >
-                      {titles.map((title, index) => (
-                        <option key={`title-${index}-${title}`} value={title}>
+                      {uniqueTitles.map((title) => (
+                        <option key={title} value={title}>
                           {title}
                         </option>
                       ))}
