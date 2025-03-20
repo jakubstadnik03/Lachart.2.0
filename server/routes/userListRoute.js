@@ -410,29 +410,12 @@ router.post("/logout", verifyToken, async (req, res) => {
 // Get athlete's tests
 router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
     try {
-        const userId = req.user.userId;
         const { athleteId } = req.params;
+        console.log('Fetching tests for athlete:', athleteId); // Debug log
 
-        const user = await userDao.findById(userId);
-        if (!user) {
-            return res.status(404).json({ error: "Uživatel nenalezen" });
-        }
-
-        // Povolíme přístup buď trenérovi daného atleta, nebo atletovi k jeho vlastním testům
-        if (user.role === 'coach') {
-            const athlete = await userDao.findById(athleteId);
-            if (!athlete) {
-                return res.status(404).json({ error: "Atlet nenalezen" });
-            }
-            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
-                return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
-            }
-        } else if (user.role === 'athlete' && userId !== athleteId) {
-            return res.status(403).json({ error: "Nemáte oprávnění k zobrazení těchto testů" });
-        }
-
-        // Načtení testů atleta
         const tests = await userDao.getAthleteTests(athleteId);
+        console.log('Found tests:', tests); // Debug log
+
         res.status(200).json(tests);
     } catch (error) {
         console.error("Error getting athlete tests:", error);

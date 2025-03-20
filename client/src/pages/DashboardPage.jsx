@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import SportsSelector from "../components/Header/SportsSelector";
 import TrainingTable from "../components/DashboardPage/TrainingTable";
 import { TrainingStats } from "../components/DashboardPage/TrainingStats";
@@ -7,8 +7,11 @@ import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
+import AthleteSelector from "../components/AthleteSelector";
 
 const DashboardPage = () => {
+  const { athleteId } = useParams();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -29,12 +32,9 @@ const DashboardPage = () => {
         setLoading(true);
         setError(null);
         
-        if (!user?._id) {
-          throw new Error('Uživatel není přihlášen');
-        }
-
-        // Upravená cesta k API
-        const response = await api.get(`/user/athlete/${user._id}/trainings`);
+        // Použijeme ID vybraného atleta nebo přihlášeného uživatele
+        const targetId = selectedAthleteId || user._id;
+        const response = await api.get(`/user/athlete/${targetId}/trainings`);
         
         if (response && response.data) {
           setTrainings(response.data);
@@ -48,7 +48,7 @@ const DashboardPage = () => {
     };
 
     loadTrainings();
-  }, [user, isAuthenticated, navigate]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId]);
 
   useEffect(() => {
     if (trainings.length > 0) {
@@ -64,6 +64,11 @@ const DashboardPage = () => {
       }
     }
   }, [selectedSport, trainings]);
+
+  const handleAthleteChange = (newAthleteId) => {
+    setSelectedAthleteId(newAthleteId);
+    navigate(`/dashboard/${newAthleteId}`);
+  };
 
   if (loading) {
     return <div className="flex justify-center items-center h-screen">
@@ -85,11 +90,12 @@ const DashboardPage = () => {
 
   return (
     <div className="mx-6 m-auto max-w-[1600px] mx-auto p-6">
-      <SportsSelector 
-        selectedSport={selectedSport}
-        onSportChange={setSelectedSport}
-      />
-
+      {user?.role === 'coach' && (
+        <AthleteSelector
+          selectedAthleteId={selectedAthleteId}
+          onAthleteChange={handleAthleteChange}
+        />
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3 md:col-span-2">
           <TrainingTable 

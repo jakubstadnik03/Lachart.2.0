@@ -2,10 +2,10 @@ import React, { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 
-export function UserDropdown({ user, isOpen, setIsOpen }) {
+export function UserDropdown({isOpen, setIsOpen }) {
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -18,6 +18,23 @@ export function UserDropdown({ user, isOpen, setIsOpen }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [setIsOpen]);
 
+  // Funkce pro určení avataru podle role a sportu
+  const getAvatar = (user) => {
+    if (user.role === 'coach') {
+      return '/images/coach-avatar.webp';
+    }
+    
+    // Pro atlety podle sportu
+    const sportAvatars = {
+      triathlon: '/images/triathlete-avatar.jpg',
+      running: '/images/runner-avatar.jpg',
+      cycling: '/images/cyclist-avatar.webp',
+      swimming: '/images/swimmer-avatar.jpg'
+    };
+
+    return user.avatar || sportAvatars[user.sport?.toLowerCase()] || '/images/triathlete-avatar.jpg';
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* User Avatar Button */}
@@ -26,7 +43,7 @@ export function UserDropdown({ user, isOpen, setIsOpen }) {
         className="flex items-center gap-2 hover:bg-gray-100 rounded-full p-1"
       >
         <img
-          src={user.avatar || "/icon/user-avatar.svg"}
+          src={getAvatar(user)}
           alt="User"
           className="w-8 h-8 rounded-full"
         />

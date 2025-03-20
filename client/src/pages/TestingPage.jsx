@@ -5,8 +5,12 @@ import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import NotificationBadge from "../components/Testing-page/NotificationBadge";
+import AthleteSelector from "../components/AthleteSelector";
+import { useParams } from 'react-router-dom';
 
 const TestingPage = () => {
+  const { athleteId } = useParams();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
@@ -26,25 +30,12 @@ const TestingPage = () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await api.get(`/test/list/${user._id}`);
-        
-        // Ensure all test results have valid numeric values
-        const processedTests = response.data.map(test => ({
-          ...test,
-          results: test.results.map(result => ({
-            ...result,
-            power: Number(result.power) || 0,
-            heartRate: Number(result.heartRate) || 0,
-            lactate: Number(result.lactate) || 0,
-            glucose: Number(result.glucose) || 0,
-            RPE: Number(result.RPE) || 0
-          }))
-        }));
-        
-        setTests(processedTests);
+        const targetId = selectedAthleteId || user._id;
+        const response = await api.get(`/test/list/${targetId}`);
+        setTests(response.data);
       } catch (err) {
         console.error('Error loading tests:', err);
-        setError('Failed to load tests. Please try again later.');
+        setError('Failed to load tests');
       } finally {
         setLoading(false);
       }
@@ -53,7 +44,7 @@ const TestingPage = () => {
     if (user?._id) {
       loadTests();
     }
-  }, [user?._id]);
+  }, [user?._id, selectedAthleteId]);
 
   const handleAddTest = async (newTest) => {
     try {
@@ -80,6 +71,10 @@ const TestingPage = () => {
     }
   };
 
+  const handleAthleteChange = (newAthleteId) => {
+    setSelectedAthleteId(newAthleteId);
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
@@ -94,6 +89,12 @@ const TestingPage = () => {
 
   return (
     <div className="max-w-[1600px] mx-auto p-6">
+      {user?.role === 'coach' && (
+        <AthleteSelector
+          selectedAthleteId={selectedAthleteId}
+          onAthleteChange={handleAthleteChange}
+        />
+      )}
       <div className="flex items-center justify-between mb-6">
         <div className="flex-1">
           <SportsSelector

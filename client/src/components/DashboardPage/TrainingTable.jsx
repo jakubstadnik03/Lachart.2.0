@@ -23,7 +23,7 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
   return (
     <>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-        <div className="self-stretch py-2.5 pr-4 pl-5 w-full text-lg font-semibold border-b text-center border-gray-200 max-sm:px-2">
+        <div className="self-stretch py-2.5 pr-1 pl-1 w-full text font-semibold border-b text-center border-gray-200 max-sm:px-2">
           {training}
         </div>
       </div>
@@ -158,7 +158,7 @@ export default function TrainingTable({ trainings, selectedSport }) {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-y-4 w-full text-base text-gray-600">
+        <div className="grid grid-cols-4 gap-y-2 w-full text-base text-gray-600">
           <TableHeader />
           {formattedTrainings.map((training, index) => (
             <TrainingRow key={index} {...training} />

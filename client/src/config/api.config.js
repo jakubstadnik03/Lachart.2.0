@@ -27,7 +27,8 @@ export const API_ENDPOINTS = {
     PROFILE: `${API_BASE_URL}/user/profile`,
     ATHLETE_DETAIL: (id) => `${API_BASE_URL}/user/athlete/${id}`,
     ATHLETE_TRAININGS: (id) => `${API_BASE_URL}/user/athlete/${id}/trainings`,
-    ATHLETE_TESTS: (id) => `${API_BASE_URL}/user/athlete/${id}/tests`,
+    ATHLETE_TESTS: (id) => `/test/list/${id}`,
     ADD_TRAINING: `${API_BASE_URL}/user/training`,
+    ATHLETE: (id) => `/user/athlete/${id}`,
     // další endpointy...
 }; 

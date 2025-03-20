@@ -6,8 +6,12 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { getTrainingsByAthleteId, addTraining } from '../services/api';
+import { useParams } from 'react-router-dom';
+import AthleteSelector from '../components/AthleteSelector';
 
 const TrainingPage = () => {
+  const { athleteId } = useParams();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
   const [trainings, setTrainings] = useState([]);
   const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTitle, setSelectedTitle] = useState(null);
@@ -32,7 +36,8 @@ const TrainingPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`/user/athlete/${user._id}/trainings`);
+      const targetId = selectedAthleteId || user._id;
+      const response = await api.get(`/user/athlete/${targetId}/trainings`);
       setTrainings(response.data);
       
       // Nastavení výchozího vybraného tréninku
@@ -64,31 +69,11 @@ const TrainingPage = () => {
       setLoading(true);
       setError(null);
 
-      // Příprava dat pro odeslání na backend
+      const targetId = selectedAthleteId || user._id;
       const trainingData = {
-        athleteId: user._id,
-        coachId: user.coachId || user._id,
-        sport: formData.sport,
-        type: formData.type,
-        title: formData.isCustomTitle ? formData.customTitle : formData.title,
-        date: new Date(formData.date).toISOString(),
-        description: formData.description || "",
-        specifics: {
-          specific: formData.isCustomSpecific ? formData.specifics.customSpecific : formData.specifics.specific,
-          weather: formData.isCustomWeather ? formData.specifics.customWeather : formData.specifics.weather,
-        },
-        results: formData.results.map(result => ({
-          interval: parseInt(result.interval),
-          power: (formData.sport === 'run' || formData.sport === 'swim') 
-            ? parseMMSSToSeconds(result.power)
-            : parseFloat(result.power),
-          heartRate: result.heartRate ? parseInt(result.heartRate) : null,
-          lactate: result.lactate ? parseFloat(result.lactate) : null,
-          RPE: result.RPE ? parseInt(result.RPE) : null,
-          duration: result.duration || null,
-          durationType: result.durationType || 'time'
-        })),
-        comments: formData.comments || ""
+        ...formData,
+        athleteId: targetId,
+        coachId: user._id
       };
 
       console.log('Sending training data:', trainingData); // Uvidíme finální data
@@ -142,6 +127,12 @@ const TrainingPage = () => {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
+      {user?.role === 'coach' && (
+        <AthleteSelector
+          selectedAthleteId={selectedAthleteId}
+          onAthleteChange={setSelectedAthleteId}
+        />
+      )}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold">Training Log</h1>
         <button

@@ -1,33 +1,25 @@
 import React, { useState, useEffect, useRef } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
-import { API_ENDPOINTS } from '../config/api.config';
+import api from '../services/api';
 
-const Menu = () => {
-  const [isMenuOpen, setIsMenuOpen] = useState(true);
+const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
   const [athletes, setAthletes] = useState([]);
+  const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const { user, token, logout } = useAuth();
   const menuRef = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Načtení atletů pro trenéra
   useEffect(() => {
     const loadAthletes = async () => {
       if (user?.role === "coach") {
         try {
-          const response = await fetch(API_ENDPOINTS.COACH_ATHLETES, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to fetch athletes');
+          const response = await api.get('/user/coach/athletes');
+          setAthletes(response.data);
+          if (!selectedAthleteId && response.data.length > 0) {
+            setSelectedAthleteId(response.data[0]._id);
           }
-
-          const data = await response.json();
-          setAthletes(data);
         } catch (error) {
           console.error('Error loading athletes:', error);
         }
@@ -37,60 +29,31 @@ const Menu = () => {
     if (user && token) {
       loadAthletes();
     }
-  }, [user, token]);
+  }, [user, token, selectedAthleteId]);
 
-  // Kliknutí mimo menu
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        isMenuOpen &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target) &&
-        !event.target.closest('.menu-toggle-button')
-      ) {
-        setIsMenuOpen(false);
-      }
-    };
+    if (window.innerWidth < 768) {
+      setIsMenuOpen(false);
+    }
+  }, [location.pathname, setIsMenuOpen]);
 
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', handleClickOutside);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
-    };
-  }, [isMenuOpen]);
-
-  if (!user) {
-    return null;
-  }
+  const handleMenuItemClick = () => {
+    if (window.innerWidth < 768) {
+      setIsMenuOpen(false);
+    }
+  };
 
   const handleAthleteClick = (athleteId) => {
-    navigate(`/athlete/${athleteId}`);
-    setIsMenuOpen(false);
+    setSelectedAthleteId(athleteId);
+    navigate(`/dashboard/${athleteId}`);
+    if (window.innerWidth < 768) {
+      setIsMenuOpen(false);
+    }
   };
 
   const handleLogout = async () => {
-    console.log('Logout started');
     try {
-      const authToken = token;
-      console.log('Token:', authToken);
-
-      const response = await fetch('http://localhost:8000/user/logout', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log('Logout response:', response);
-
-      if (!response.ok) {
-        throw new Error('Logout failed');
-      }
-
-      // Vyčistit lokální stav
+      await api.post('/user/logout');
       logout();
       setIsMenuOpen(false);
       navigate('/login');
@@ -99,25 +62,41 @@ const Menu = () => {
     }
   };
 
-  // Definice položek menu
+  // Funkce pro určení avataru podle role a sportu
+  const getAvatar = (user) => {
+    if (user.role === 'coach') {
+      return '/images/coach-avatar.webp';
+    }
+    
+    const sportAvatars = {
+      triathlon: '/images/triathlete-avatar.jpg',
+      running: '/images/runner-avatar.jpg',
+      cycling: '/images/cyclist-avatar.webp',
+      swimming: '/images/swimmer-avatar.jpg'
+    };
+
+    return user.avatar || sportAvatars[user.sport?.toLowerCase()] || '/images/triathlete-avatar.jpg';
+  };
+
+  // Definice položek menu s dynamickými cestami pro trenéra
   const menuItems = [
     {
       name: "Dashboard",
-      path: "/dashboard",
+      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/dashboard/${athleteId}` : "/dashboard",
       icon: "/icon/dashboard.svg",
       iconWhite: "/icon/dashboard-white.svg",
       showFor: ["coach", "athlete"]
     },
     {
       name: "Training",
-      path: "/training",
+      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",
       icon: "/icon/training.svg",
       iconWhite: "/icon/training-white.svg",
       showFor: ["coach", "athlete"]
     },
     {
       name: "Testing",
-      path: "/testing",
+      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
       icon: "/icon/testing.svg",
       iconWhite: "/icon/testing-white.svg",
       showFor: ["coach", "athlete"]
@@ -139,24 +118,15 @@ const Menu = () => {
   ];
 
   return (
-    <div className="h-screen sticky top-0">
-      {/* Tlačítko Toggle pro mobil */}
-      <button
-        className="menu-toggle-button absolute top-4 left-4 z-50 bg-white p-2 rounded-md shadow-md md:hidden"
-        onClick={() => setIsMenuOpen(!isMenuOpen)}
-      >
-        <img src="/icon/toggle.svg" alt="Toggle Menu" className="w-6 h-6" />
-      </button>
-
-      {/* Menu */}
-      <div
+    <>
+      <div 
         ref={menuRef}
-        className={`h-full w-64 bg-white shadow-md flex flex-col font-sans fixed transform transition-transform duration-300 ${
+        className={`fixed md:sticky top-0 left-0 h-screen w-64 bg-white shadow-md flex flex-col font-sans transform transition-transform duration-300 ease-in-out z-40 ${
           isMenuOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
         {/* Logo a název */}
-        <div className="flex items-center justify-center h-16">
+        <div className="flex items-center justify-center h-16 border-b border-gray-200">
           <img src="/icon/logo.svg" alt="LaChart Logo" className="w-8 h-8 mr-2" />
           <h1 className="text-xl font-bold text-primary">LaChart</h1>
         </div>
@@ -164,7 +134,7 @@ const Menu = () => {
         {/* Profil uživatele */}
         <div className="p-4 flex items-center border-b border-gray-200">
           <img
-            src={user.avatar || "/icon/user-avatar.svg"}
+            src={getAvatar(user)}
             alt="User Avatar"
             className="w-12 h-12 rounded-full"
           />
@@ -185,7 +155,8 @@ const Menu = () => {
               .map((item) => (
                 <li key={item.name}>
                   <NavLink
-                    to={item.path}
+                    to={item.getPath ? item.getPath(selectedAthleteId) : item.path}
+                    onClick={handleMenuItemClick}
                     className={({ isActive }) =>
                       `flex items-center text-sm font-medium p-3 rounded-lg ${
                         isActive
@@ -219,10 +190,14 @@ const Menu = () => {
                 <li key={athlete._id}>
                   <button
                     onClick={() => handleAthleteClick(athlete._id)}
-                    className="w-full text-left flex items-center p-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                    className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium ${
+                      selectedAthleteId === athlete._id
+                        ? "bg-violet-100 text-violet-700"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
                   >
                     <img
-                      src={athlete.avatar || "/icon/user-avatar.svg"}
+                      src={getAvatar(athlete)}
                       alt="Athlete"
                       className="w-6 h-6 rounded-full mr-2"
                     />
@@ -303,7 +278,15 @@ const Menu = () => {
           </div>
         </div>
       </div>
-    </div>
+      
+      {/* Overlay pro mobilní menu */}
+      {isMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30"
+          onClick={() => setIsMenuOpen(false)}
+        />
+      )}
+    </>
   );
 };
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -11,12 +11,9 @@ import { useAuth } from '../context/AuthProvider';
 import { PencilIcon, KeyIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../config/api.config';
-import { useParams } from 'react-router-dom';
-import api from '../services/api';
 
 const ProfilePage = () => {
   const { user, updateUser, token } = useAuth();
-  const { athleteId } = useParams();
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
@@ -71,74 +68,46 @@ const ProfilePage = () => {
     }
   };
 
-  // Formátování data
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Not set';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Not set';
-    
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear().toString().slice(-2);
-    return `${day}.${month}.${year}`;
-  };
-
-  const loadProfileData = async () => {
+  const loadInitialData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
-      const profileResponse = await api.get(`/user/profile`);
-      const profileData = profileResponse.data;
-      console.log('Profile data:', profileData);
-
-      // Určení avataru podle role
-      const defaultAvatar = profileData.role === 'coach' 
-        ? '/images/coach-avatar.webp'  // Avatar pro trenéra
-        : '/images/triathlete-avatar.jpg';  // Avatar pro atleta
-
+      const profileData = await getUserProfile();
       setUserInfo({
         name: `${profileData.name} ${profileData.surname}`,
         email: profileData.email,
-        phone: profileData.phone || 'Not set',
-        weight: profileData.weight || 'Not set',
-        height: profileData.height || 'Not set',
-        bio: profileData.bio || 'Not set',
-        dateOfBirth: profileData.dateOfBirth ? formatDate(profileData.dateOfBirth) : 'Not set',
-        address: profileData.address || 'Not set',
-        sport: profileData.sport || 'Not set',
-        specialization: profileData.specialization || 'Not set',
-        title: profileData.role === 'coach' ? 'Coach' : profileData.specialization || 'Not set',
-        avatar: profileData.avatar || defaultAvatar,  // Použití defaultního avataru podle role
-        _id: profileData._id,
-        role: profileData.role
+        phone: profileData.phone,
+        weight: profileData.weight,
+        height: profileData.height,
+        bio: profileData.bio,
+        dateOfBirth: profileData.dateOfBirth,
+        address: profileData.address,
+        sport: profileData.sport,
+        specialization: profileData.specialization,
+        title: profileData.specialization,
+        avatar: profileData.avatar || '/images/triathlete-avatar.jpg'
       });
-
-      // Pokud je to trenér, nemusíme načítat tréninky a testy
-      if (profileData.role !== 'coach') {
-        const [trainingsResponse, testsResponse] = await Promise.all([
-          api.get(`/user/athlete/${profileData._id}/trainings`),
-          api.get(`/test/list/${profileData._id}`)
+      
+      if (profileData.role === 'athlete') {
+        const [trainingsData, testsData] = await Promise.all([
+          getTrainingsByAthleteId(profileData._id),
+          getAthleteTests(profileData._id)
         ]);
-
-        setTrainings(trainingsResponse.data || []);
-        setTests(testsResponse.data || []);
-      } else {
-        setTrainings([]);
-        setTests([]);
+        setTrainings(trainingsData);
+        console.log(profileData);
+        
+        setTests(testsData);
       }
-
+      
+      setLoading(false);
     } catch (error) {
       console.error('Error loading profile data:', error);
-      setError(error.message || 'Failed to load profile data');
-    } finally {
+      setError(error.message);
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProfileData();
-  }, [user?._id]);
+    loadInitialData();
+  }, []);
 
   // Přidáme efekt pro změnu sportu
   useEffect(() => {
@@ -247,7 +216,7 @@ const ProfilePage = () => {
                 { label: 'Sport', value: userInfo.sport || 'Not set' },
                 { label: 'Specialization', value: userInfo.specialization || 'Not set' },
                 { label: 'Address', value: userInfo.address || 'Not set' },
-                { label: 'Date of Birth', value: userInfo.dateOfBirth || 'Not set' },
+                { label: 'Date of Birth', value: userInfo.dateOfBirth ? new Date(userInfo.dateOfBirth).toLocaleDateString() : 'Not set' },
               ].map((item, index) => (
                 <div key={index} className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg">
                   <p className="text-gray-600 text-sm sm:w-1/3">{item.label}</p>
@@ -259,44 +228,40 @@ const ProfilePage = () => {
         </div>
       </div>
 
-      {/* Zobrazení grafů a tabulek pouze pro atlety */}
-      {userInfo.role !== 'coach' && (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-            <div>
-              <SpiderChart 
-                trainings={trainings}
-                selectedSport={selectedSport}
-                className="w-[400px]"
-              />
-            </div>
-            <TrainingGraph 
-              trainingList={trainings}
-              selectedSport={selectedSport}
-              selectedTitle={selectedTitle}
-              setSelectedTitle={setSelectedTitle}
-              selectedTraining={selectedTraining}
-              setSelectedTraining={setSelectedTraining}
-            />
+      {/* Spodní část s grafy a tabulkou */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <div>
+          <SpiderChart 
+            trainings={trainings}
+            selectedSport={selectedSport}
+            className="w-[400px]"
+          />
+        </div>
+        <TrainingGraph 
+          trainingList={trainings}
+          selectedSport={selectedSport}
+          selectedTitle={selectedTitle}
+          setSelectedTitle={setSelectedTitle}
+          selectedTraining={selectedTraining}
+          setSelectedTraining={setSelectedTraining}
+        />
 
-            <div className='lg:col-span-2'>
-              <UserTrainingsTable trainings={trainings} />
-            </div>
-          </div>
+        <div className='lg:col-span-2'>
+          <UserTrainingsTable trainings={trainings} />
+        </div>
+      </div>
 
-          <div className="lg:col-span-2">
-            <div className="mb-4">
-              <SportsSelector onSportChange={setSelectedTestingSport} />
-            </div>
-            <PreviousTestingComponent 
-              selectedSport={selectedTestingSport}
-              tests={tests}
-              setTests={setTests}
-              athleteId={userInfo._id}
-            />
-          </div>
-        </>
-      )}
+      {/* Previous Testing Component */}
+      <div className="lg:col-span-2">
+        <div className="mb-4">
+          <SportsSelector onSportChange={setSelectedTestingSport} />
+        </div>
+        <PreviousTestingComponent 
+          selectedSport={selectedTestingSport}
+          tests={tests}
+          setTests={setTests}
+        />
+      </div>
 
       {/* Modals */}
       <EditProfileModal

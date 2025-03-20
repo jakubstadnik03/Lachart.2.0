@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMockAthletes } from '../mock/mockApi';
 import { useAuth } from '../context/AuthProvider';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
-import { getAllAthletes, updateUser } from '../services/api';
 import api from '../services/api';
 
 const AthletesPage = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [athletes, setAthletes] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,13 +24,15 @@ const AthletesPage = () => {
     sport: '',
     notes: '',
   });
-  const { currentUser } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     const loadAthletes = async () => {
+      if (user?.role !== 'coach') {
+        return;
+      }
+      
       try {
-        const response = await getAllAthletes();
+        const response = await api.get('/user/coach/athletes');
         setAthletes(response.data);
       } catch (error) {
         console.error('Error loading athletes:', error);
@@ -39,22 +41,31 @@ const AthletesPage = () => {
     };
 
     loadAthletes();
-  }, []);
+  }, [user?.role]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownOpen && !event.target.closest('.dropdown-container')) {
+        setDropdownOpen(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [dropdownOpen]);
 
   const filteredAthletes = athletes.filter(athlete => 
     `${athlete.name} ${athlete.surname}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Upravená kontrola role - použijeme getMockUser přímo
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  console.log("ahoj", user);
-  
-  if (user.role !== 'coach') {
-    // return (
-    //   <div className="flex items-center justify-center h-[calc(100vh-190px)]">
-    //     <p className="text-gray-500">This page is only available for coaches.</p>
-    //   </div>
-    // );
+  if (user?.role !== 'coach') {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-190px)]">
+        <p className="text-gray-500">This page is only available for coaches.</p>
+      </div>
+    );
   }
 
   const getAvatarBySport = (sport) => {
@@ -90,36 +101,42 @@ const AthletesPage = () => {
     setFormData({
       name: athlete.name,
       surname: athlete.surname,
-      dateOfBirth: athlete.dateOfBirth,
+      dateOfBirth: formatDate(athlete.dateOfBirth),
       email: athlete.email,
-      phone: athlete.phone,
-      address: athlete.address,
-      weight: athlete.weight,
-      height: athlete.height,
-      sport: athlete.sport,
-      notes: athlete.notes,
+      phone: athlete.phone || '',
+      address: athlete.address || '',
+      weight: athlete.weight || '',
+      height: athlete.height || '',
+      sport: athlete.sport || '',
+      notes: athlete.notes || '',
     });
     setIsModalOpen(true);
     setDropdownOpen(null);
   };
 
-  const handleRemoveAthlete = (athleteId) => {
-    setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
-    setDropdownOpen(null);
+  const handleRemoveAthlete = async (athleteId) => {
+    try {
+      await api.delete(`/user/athlete/${athleteId}`);
+      setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
+      setDropdownOpen(null);
+    } catch (error) {
+      console.error('Error removing athlete:', error);
+      // TODO: Přidat notifikaci o chybě
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (selectedAthlete) {
-        // Update existing athlete
-        await updateUser(selectedAthlete._id, formData);
+        // Update existujícího atleta
+        const response = await api.put(`/user/athlete/${selectedAthlete._id}`, formData);
         setAthletes(athletes.map(athlete => 
-          athlete._id === selectedAthlete._id ? { ...athlete, ...formData } : athlete
+          athlete._id === selectedAthlete._id ? response.data : athlete
         ));
       } else {
-        // Add new athlete
-        const response = await api.post('/users/register', {
+        // Přidání nového atleta
+        const response = await api.post('/user/athlete/register', {
           ...formData,
           role: 'athlete'
         });
@@ -130,7 +147,7 @@ const AthletesPage = () => {
       resetForm();
     } catch (error) {
       console.error('Error submitting athlete:', error);
-      // Handle error appropriately
+      // TODO: Přidat notifikaci o chybě
     }
   };
 
@@ -149,19 +166,17 @@ const AthletesPage = () => {
     });
   };
 
-  // Přidáme useEffect pro zavření dropdown menu při kliknutí mimo
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownOpen && !event.target.closest('.dropdown-container')) {
-        setDropdownOpen(null);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [dropdownOpen]);
+  // Funkce pro formátování data
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString; // Pokud není validní datum, vrátí původní string
+    
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear().toString();
+    return `${day}.${month}.${year}`;
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -242,7 +257,7 @@ const AthletesPage = () => {
                   <div className="text-gray-500 text-sm mt-1">{athlete.specialization}</div>
                 </div>
                 <div className="bg-purple-50 rounded-2xl p-4">
-                  <div className="text-xl font-semibold text-purple-900">{athlete.dateOfBirth}</div>
+                  <div className="text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
                   <div className="text-gray-500 text-sm mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
                 </div>
               </div>
@@ -344,7 +359,7 @@ const AthletesPage = () => {
                       value={formData.dateOfBirth}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder="DD/MM/YY"
+                      placeholder="DD.MM.YY"
                     />
                   </div>
                 </div>
@@ -461,19 +476,23 @@ const AthletesPage = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-4 mt-4 pt-3 border-t">
+              <div className="flex justify-end gap-3 mt-6">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-1.5 border border-orange-500 text-orange-500 rounded-lg hover:bg-orange-50"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setSelectedAthlete(null);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
                 >
-                  Save
+                  {selectedAthlete ? 'Save Changes' : 'Add Athlete'}
                 </button>
               </div>
             </form>

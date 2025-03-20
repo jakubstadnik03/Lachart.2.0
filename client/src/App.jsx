@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthProvider';
 import Layout from './components/Layout';
@@ -14,6 +15,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AthleteProfile from './components/AthleteProfile';
 
 function App() {
+  const [isMenuOpen, setIsMenuOpen] = useState(true);
+
   return (
     <Router>
       <AuthProvider>
@@ -26,12 +29,13 @@ function App() {
           <Route
             element={
               <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
+        <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+        </ProtectedRoute>
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:athleteId" element={<Profile />} />
             <Route path="/training" element={<Training />} />
             <Route path="/testing" element={<Testing />} />
             <Route path="/athletes" element={<Athletes />} />
@@ -39,7 +43,6 @@ function App() {
             <Route path="/support" element={<Support />} />
             <Route path="/athlete-profile/:id" element={<Profile />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Route>
 
           <Route 
             path="/athlete/:athleteId" 
@@ -49,6 +52,10 @@ function App() {
               </ProtectedRoute>
             } 
           />
+          <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
+          <Route path="/training/:athleteId?" element={<Training />} />
+          <Route path="/testing/:athleteId?" element={<Testing />} />
+          </Route>
         </Routes>
       </AuthProvider>
     </Router>
