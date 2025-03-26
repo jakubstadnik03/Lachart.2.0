@@ -263,7 +263,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           </div>
 
           {/* Logout tlačítko */}
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-200" style={{ paddingTop: '0.35rem', paddingBottom: '0.35rem' }}>
             <button
               onClick={handleLogout}
               className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
@@ -273,7 +273,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                 alt="Logout"
                 className="w-5 h-5 mr-3"
               />
-              Odhlásit se
+              Log out
             </button>
           </div>
         </div>

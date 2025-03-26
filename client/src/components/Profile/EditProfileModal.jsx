@@ -5,19 +5,67 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
 
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return ''; // Invalid date
+      
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      
+      return `${day}.${month}.${year}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
+  };
+
+  const parseDateForSubmit = (dateString) => {
+    if (!dateString) return '';
+    try {
+      const [day, month, year] = dateString.split('.');
+      if (!day || !month || !year) return '';
+      
+      const date = new Date(year, month - 1, day);
+      if (isNaN(date.getTime())) return ''; // Invalid date
+      
+      return date.toISOString().split('T')[0];
+    } catch (error) {
+      console.error('Error parsing date:', error);
+      return '';
+    }
+  };
+
   useEffect(() => {
     if (userData) {
-      setFormData({
-        name: userData.name,
-        dateOfBirth: userData.dateOfBirth ? new Date(userData.dateOfBirth).toISOString().split('T')[0] : '',
-        address: userData.address || '',
-        phone: userData.phone || '',
-        height: userData.height || '',
-        weight: userData.weight || '',
-        sport: userData.sport || '',
-        specialization: userData.specialization || '',
-        bio: userData.bio || ''
-      });
+      try {
+        setFormData({
+          name: userData.name || '',
+          dateOfBirth: formatDateForInput(userData.dateOfBirth),
+          address: userData.address || '',
+          phone: userData.phone || '',
+          height: userData.height || '',
+          weight: userData.weight || '',
+          sport: userData.sport || '',
+          specialization: userData.specialization || '',
+          bio: userData.bio || ''
+        });
+      } catch (error) {
+        console.error('Error setting form data:', error);
+        setFormData({
+          name: userData.name || '',
+          dateOfBirth: '',
+          address: userData.address || '',
+          phone: userData.phone || '',
+          height: userData.height || '',
+          weight: userData.weight || '',
+          sport: userData.sport || '',
+          specialization: userData.specialization || '',
+          bio: userData.bio || ''
+        });
+      }
     }
   }, [userData]);
 
@@ -31,7 +79,13 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       return;
     }
 
-    onSubmit(formData);
+    // Převedení data zpět do ISO formátu před odesláním
+    const dataToSubmit = {
+      ...formData,
+      dateOfBirth: parseDateForSubmit(formData.dateOfBirth)
+    };
+
+    onSubmit(dataToSubmit);
   };
 
   return (
@@ -47,9 +101,10 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           <div>
             <label className="block text-sm font-medium text-gray-700">Date of Birth</label>
             <input
-              type="date"
+              type="text"
               value={formData.dateOfBirth || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+              placeholder="DD.MM.YYYY"
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
             />
           </div>

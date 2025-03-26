@@ -5,6 +5,7 @@ const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
+const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -420,6 +421,26 @@ router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error getting athlete tests:", error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Forgot password endpoint
+router.post("/forgot-password", async (req, res) => {
+    try {
+        await forgotPasswordAbl.forgotPassword(req, res);
+    } catch (error) {
+        console.error("Forgot password route error:", error);
+        res.status(500).json({ error: "Chyba při zpracování požadavku na reset hesla" });
+    }
+});
+
+// Reset password endpoint
+router.post("/reset-password", async (req, res) => {
+    try {
+        await forgotPasswordAbl.resetPassword(req, res);
+    } catch (error) {
+        console.error("Reset password route error:", error);
+        res.status(500).json({ error: "Chyba při resetu hesla" });
     }
 });
 

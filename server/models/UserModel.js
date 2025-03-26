@@ -39,7 +39,9 @@ const userSchema = new mongoose.Schema({
   athletes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }]
+  }],
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
 }, {
   timestamps: true
 });
@@ -50,7 +52,6 @@ mongoose.connection.on('connected', async () => {
     await mongoose.connection.db.collection('users').dropIndex('id_1');
     console.log('Starý index byl odstraněn');
   } catch (error) {
-    console.log('Index neexistuje nebo již byl odstraněn');
   }
 });
 

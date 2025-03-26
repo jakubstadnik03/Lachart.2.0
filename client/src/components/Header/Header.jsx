@@ -16,7 +16,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen }) => {
 
   return (
     <div className="flex flex-col w-full">
-      <div className="flex relative justify-between z-[1] items-center py-4 px-6 w-full border-b border-solid bg-zinc-50 border-b-stone-300">
+      <div className="flex relative justify-between z-[1] items-center px-6 w-full border-b border-solid bg-zinc-50 border-b-stone-300 custom-padding">
         {/* Menu Toggle Button */}
         <button
           onClick={handleMenuToggle}

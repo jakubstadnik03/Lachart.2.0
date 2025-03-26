@@ -13,6 +13,8 @@ import Support from './pages/SupportPage';
 import SignUpPage from './pages/SignUpPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import AthleteProfile from './components/AthleteProfile';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -22,8 +24,11 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* Veřejné routy */}
+          <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
           {/* Chráněné routy s Layoutem */}
           <Route
