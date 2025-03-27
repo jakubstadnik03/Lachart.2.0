@@ -1,29 +1,36 @@
-// dao/TestingDAO.js
+// dao/trainingDao.js
 const Training = require("../models/training");
 
 class TrainingDao {
+  constructor() {
+    this.Training = Training;
+  }
+
   async findByAthleteId(athleteId) {
     try {
-      return await Training.find({ athleteId: athleteId });
+      return await this.Training.find({ athleteId: athleteId });
     } catch (error) {
       console.error('Error in findByAthleteId:', error);
       throw error;
     }
   }
 
-  async create(trainingData) {
+  async createTraining(trainingData) {
     try {
-      const training = new Training(trainingData);
+      // Validace dat
+      this.validateTrainingData(trainingData);
+      
+      const training = new this.Training(trainingData);
       return await training.save();
     } catch (error) {
-      console.error('Error in create:', error);
+      console.error('Error in createTraining:', error);
       throw error;
     }
   }
 
   async findById(id) {
     try {
-      return await Training.findById(id);
+      return await this.Training.findById(id);
     } catch (error) {
       console.error('Error in findById:', error);
       throw error;
@@ -32,7 +39,7 @@ class TrainingDao {
 
   async update(id, updateData) {
     try {
-      return await Training.findByIdAndUpdate(id, updateData, { new: true });
+      return await this.Training.findByIdAndUpdate(id, updateData, { new: true });
     } catch (error) {
       console.error('Error in update:', error);
       throw error;
@@ -41,12 +48,26 @@ class TrainingDao {
 
   async delete(id) {
     try {
-      return await Training.findByIdAndDelete(id);
+      return await this.Training.findByIdAndDelete(id);
     } catch (error) {
       console.error('Error in delete:', error);
       throw error;
     }
   }
+
+  validateTrainingData(trainingData) {
+    if (!trainingData.athleteId) {
+      throw new Error('athleteId is required');
+    }
+    if (!trainingData.sport) {
+      throw new Error('sport is required');
+    }
+    if (!trainingData.date) {
+      throw new Error('date is required');
+    }
+    return true;
+  }
 }
 
+// Exportujeme třídu, ne instanci
 module.exports = TrainingDao;

@@ -62,7 +62,7 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
       // Call the onSubmit prop with the processed data
       const processedData = {
         ...testData,
-        title: testData.title.trim(),
+        title: testData.title,
         sport: testData.sport,
         date: testData.date,
         description: testData.description?.trim() || '',

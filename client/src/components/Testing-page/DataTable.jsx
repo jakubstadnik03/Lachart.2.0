@@ -8,73 +8,176 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return x0 + ((targetY - y0) * (x1 - x0)) / (y1 - y0);
   };
   
-  // Funkce, která spočítá a vrátí thresholds (OBLA, Bsln + 0.5, LTP1, LTP2, …)
+  // Pomocná funkce pro výpočet derivací
+  const calculateDerivatives = (points) => {
+    if (!points || points.length < 3) {
+      return { firstDerivative: [], secondDerivative: [] };
+    }
+
+    const firstDerivative = [];
+    const secondDerivative = [];
+  
+    for (let i = 1; i < points.length - 1; i++) {
+      // První derivace (změna laktátu / změna výkonu)
+      const d1 = (points[i + 1].lactate - points[i - 1].lactate) / 
+                 (points[i + 1].power - points[i - 1].power);
+      firstDerivative.push({ power: points[i].power, value: d1 });
+    }
+  
+    // Výpočet druhé derivace
+    for (let i = 0; i < firstDerivative.length - 1; i++) {
+      const d2 = (firstDerivative[i + 1].value - firstDerivative[i].value) /
+                 (firstDerivative[i + 1].power - firstDerivative[i].power);
+      secondDerivative.push({ power: firstDerivative[i].power, value: d2 });
+    }
+  
+    return { firstDerivative, secondDerivative };
+  };
+  
+  // Funkce pro výpočet Log-log thresholdu
+  const calculateLogLogThreshold = (results) => {
+    if (!results || results.length < 3) {
+      return null;
+    }
+
+    try {
+      // Transformace dat do logaritmického prostoru
+      const logData = results.map(r => ({
+        logPower: Math.log(r.power),
+        logLactate: Math.log(r.lactate)
+      }));
+
+      let maxDeltaSlope = -Infinity;
+      let breakpointIndex = 0;
+
+      // Najít bod s největší změnou směrnice (druhá derivace)
+      for (let i = 1; i < logData.length - 1; i++) {
+        // Výpočet směrnic před a po bodu
+        const slopeBefore = (logData[i].logLactate - logData[i-1].logLactate) /
+                           (logData[i].logPower - logData[i-1].logPower);
+        const slopeAfter = (logData[i+1].logLactate - logData[i].logLactate) /
+                          (logData[i+1].logPower - logData[i].logPower);
+        
+        // Změna směrnice
+        const deltaSlope = slopeAfter - slopeBefore;
+        
+        if (deltaSlope > maxDeltaSlope) {
+          maxDeltaSlope = deltaSlope;
+          breakpointIndex = i;
+        }
+      }
+
+      return results[breakpointIndex].power;
+    } catch (error) {
+      console.error('Error in Log-log calculation:', error);
+      return null;
+    }
+  };
+  
+  // Funkce pro nalezení LTP bodů
+const findLactateThresholds = (results, baseLactate) => {
+  if (!results || results.length < 3) {
+    return { ltp1: null, ltp2: null };
+  }
+
+  const { secondDerivative } = calculateDerivatives(results);
+
+  if (secondDerivative.length === 0) {
+    return { ltp1: null, ltp2: null };
+  }
+
+  // Najít maximum druhé derivace jako LTP2 (nejprudší zrychlení růstu laktátu)
+  const maxD2 = secondDerivative.reduce((max, curr) =>
+    curr.value > max.value ? curr : max, secondDerivative[0]);
+
+  // Najít první významný kladný bod druhé derivace jako LTP1
+  const ltp1Candidate = secondDerivative.find(d => d.value > 0.0005);
+
+  const ltp1 = ltp1Candidate ? ltp1Candidate.power : null;
+  const ltp2 = maxD2 ? maxD2.power : null;
+
+  return { ltp1, ltp2 };
+};
+
+  
+  // Hlavní funkce pro výpočet všech thresholdů
   const calculateThresholds = (mockData) => {
     const baseLactate = mockData.baseLactate;
     const { results } = mockData;
   
-    // Pojmenované prahy, včetně LTP1, LTP2 a LTRatio.
-    const thresholdKeys = [
-      'OBLA 2.0', 'OBLA 2.5', 'OBLA 3.0', 'OBLA 3.5',
-      'Bsln + 0.5', 'Bsln + 1.0', 'Bsln + 1.5',
-      'LTP1', 'LTP2', 'LTRatio'
-    ];
+    if (!results || results.length < 3) {
+      return {
+        heartRates: {},
+        lactates: {}
+      };
+    }
   
-    // Objekt, kam budeme ukládat výsledky
+    // Seřadit výsledky podle výkonu
+    const sortedResults = [...results].sort((a, b) => a.power - b.power);
+  
+    // Objekt pro ukládání výsledků
     const thresholds = {
-      // "Log-log" jen příklad; tady si bereme střed z naměřených bodů
-      'Log-log': results[Math.floor(results.length / 2)].power,
-      // Ukládáme HR a lactates do samostatných objektů
       heartRates: {},
       lactates: {}
     };
   
-    // Definice cílových laktátů, 1:1 s thresholdKeys (kromě LTRatio)
-    const ltp1Target = baseLactate * 1.5;  // LTP1
-    const ltp2Target = baseLactate * 3.0;  // LTP2
+    // Log-log threshold
+    const logLogThreshold = calculateLogLogThreshold(sortedResults);
+    if (logLogThreshold) {
+      thresholds['Log-log'] = logLogThreshold;
+    }
+  
+    // Najít LTP body
+    const { ltp1, ltp2 } = findLactateThresholds(sortedResults, baseLactate);
+    
+    // Definice cílových laktátů
     const targets = [
-      2.0, 2.5, 3.0, 3.5, 
-      baseLactate + 0.5, baseLactate + 1.0, baseLactate + 1.5,
-      ltp1Target, ltp2Target
-      // LTRatio nevstupuje jako "target lactate", spočteme až nakonec
+      2.0, 2.5, 3.0, 3.5,  // OBLA hodnoty
+      baseLactate + 0.5, baseLactate + 1.0, baseLactate + 1.5,  // Baseline + delta
+      baseLactate * 1.5,  // LTP1 target
+      baseLactate * 3.0   // LTP2 target
     ];
   
-    // Projdeme dvojice sousedních naměřených bodů
-    for (let i = 1; i < results.length; i++) {
-      const prev = results[i - 1];
-      const curr = results[i];
+    // Projít všechny sousední body a najít thresholdy
+    for (let i = 1; i < sortedResults.length; i++) {
+      const prev = sortedResults[i - 1];
+      const curr = sortedResults[i];
   
-      // Každý cíl (OBLA, LTP1, LTP2) zkusíme najít mezi prev a curr
       targets.forEach((target, index) => {
-        // thresholdKeys[index] = "OBLA 2.0" | "LTP1" | atd.
         if (prev.lactate <= target && curr.lactate >= target) {
-          const key = thresholdKeys[index];
-          
+          const key = [
+            'OBLA 2.0', 'OBLA 2.5', 'OBLA 3.0', 'OBLA 3.5',
+            'Bsln + 0.5', 'Bsln + 1.0', 'Bsln + 1.5',
+            'LTP1', 'LTP2'
+          ][index];
+  
           // Interpolovaný výkon
           thresholds[key] = interpolate(
             prev.power, prev.lactate,
             curr.power, curr.lactate,
             target
           );
-          
-          // Interpolovaný heartRate
+  
+          // Interpolovaný HR
           thresholds.heartRates[key] = interpolate(
             prev.heartRate, prev.lactate,
             curr.heartRate, curr.lactate,
             target
           );
-          
-          // Cílový lactate (target)
+  
+          // Uložit cílový laktát
           thresholds.lactates[key] = target;
         }
       });
     }
   
-    // Pokud LTP1 a LTP2 existují, dopočítáme LTRatio
-    if (thresholds['LTP1'] && thresholds['LTP2']) {
-      thresholds['LTRatio'] = (
-        thresholds['LTP2'] / thresholds['LTP1']
-      ).toFixed(2);
+    // Výpočet LTRatio pouze pokud máme oba LTP body
+    if (ltp1 && ltp2 && ltp1 > 0 && ltp2 > 0) {
+      const ratio = ltp2 / ltp1;
+      // Kontrola, zda je poměr v rozumném rozsahu (typicky 1.1 - 1.3)
+      if (ratio >= 1.1 && ratio <= 1.3) {
+        thresholds['LTRatio'] = ratio.toFixed(2);
+      }
     }
   
     return thresholds;

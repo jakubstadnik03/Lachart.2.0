@@ -1,6 +1,6 @@
 import React from "react";
 import { useState, useEffect } from "react";
-import { fetchMockTrainings } from "../../mock/mockApi";
+import { useTrainings } from "../../context/TrainingContext";
 
 function TrainingRow({ training, sport, date, averagePace, status }) {
   const getStatusIcon = (status) => {
@@ -94,7 +94,17 @@ function convertPowerToPace(seconds, sport) {
   }
 }
 
-export default function TrainingTable({ trainings, selectedSport }) {
+export default function TrainingTable({ selectedSport = 'all' }) {
+  const { trainings, loading, error } = useTrainings();
+
+  if (loading) {
+    return <div className="text-center py-4">Loading trainings...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-4 text-red-500">Error loading trainings: {error}</div>;
+  }
+
   if (!trainings || trainings.length === 0) {
     return <div className="text-center py-4">No trainings available</div>;
   }
@@ -107,7 +117,8 @@ export default function TrainingTable({ trainings, selectedSport }) {
 
   const formattedTrainings = filteredTrainings.map((item, index, array) => {
     const averagePower = Math.round(
-      item.results.reduce((sum, r) => sum + r.power, 0) / item.results.length
+      item.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
+      item.results.length
     );
 
     // Porovnání s předchozím tréninkem stejného typu
@@ -118,7 +129,7 @@ export default function TrainingTable({ trainings, selectedSport }) {
     let status = "same";
     if (previousTraining) {
       const previousPower = Math.round(
-        previousTraining.results.reduce((sum, r) => sum + r.power, 0) / 
+        previousTraining.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
         previousTraining.results.length
       );
       if (averagePower > previousPower) status = "up";

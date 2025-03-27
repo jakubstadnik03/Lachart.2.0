@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import TrainingItem from "./TrainingItem";
+import TrainingForm from "../TrainingForm";
+import { deleteTraining, updateTraining } from "../../services/api";
+import { useTrainings } from "../../context/TrainingContext"; // Předpokládám, že máte kontext pro správu tréninků
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
   const pageNumbers = [];
@@ -76,6 +79,26 @@ const UserTrainingsTable = ({ trainings = [] }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [sortConfig, setSortConfig] = useState({ key: "date", direction: "asc" });
+  const [trainingToEdit, setTrainingToEdit] = useState(null);
+  const [trainingToDelete, setTrainingToDelete] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // Předpokládám, že máte kontext pro správu tréninků
+  const { fetchTrainings, deleteTraining: removeTrainingFromContext } = useTrainings();
+
+  // Přidáme nový state pro sledování rozbalených položek
+  const [expandedItems, setExpandedItems] = useState({});
+
+  // Funkce pro přepínání rozbalení položky
+  const toggleExpand = (trainingId) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [trainingId]: !prev[trainingId]
+    }));
+  };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -125,6 +148,75 @@ const UserTrainingsTable = ({ trainings = [] }) => {
     currentPage * rowsPerPage
   );
 
+  const handleEditTraining = (training) => {
+    setTrainingToEdit(training);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteTraining = (training) => {
+    setTrainingToDelete(training);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!trainingToDelete || !trainingToDelete._id) {
+      setError("Nelze smazat trénink bez ID");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Volání API pro smazání tréninku
+      await deleteTraining(trainingToDelete._id);
+      
+      // Aktualizace kontextu
+      removeTrainingFromContext(trainingToDelete._id);
+      
+      // Znovu načíst tréninky ze serveru
+      await fetchTrainings();
+      
+      // Zavřít modální okno
+      setShowDeleteModal(false);
+      setTrainingToDelete(null);
+      
+    } catch (error) {
+      console.error("Error deleting training:", error);
+      setError("Nepodařilo se smazat trénink. " + (error.response?.data?.message || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditSubmit = async (updatedTraining) => {
+    console.log('Edit submission started in UserTrainingsTable');
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log('Training data to update:', updatedTraining);
+      
+      // Volání API pro aktualizaci tréninku
+      await updateTraining(updatedTraining._id, updatedTraining);
+      console.log('API call successful');
+      
+      // Aktualizace kontextu nebo znovu načtení dat
+      await fetchTrainings();
+      console.log('Trainings refreshed');
+      
+      // Zavření modálního okna
+      setShowEditModal(false);
+      setTrainingToEdit(null);
+      
+    } catch (error) {
+      console.error("Error updating training:", error);
+      setError("Nepodařilo se aktualizovat trénink. " + (error.response?.data?.message || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!trainings || trainings.length === 0) {
     return <div className="text-center text-lg font-semibold mt-5">No trainings available.</div>;
   }
@@ -142,7 +234,7 @@ const UserTrainingsTable = ({ trainings = [] }) => {
         />
       </div>
 
-      <div className="hidden sm:grid grid-cols-8 bg-gray-100 p-4 border-b border-gray-300 text-sm rounded-t-2xl">
+      <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 bg-gray-100 border-b border-gray-300 text-sm font-medium rounded-t-2xl">
         <div className="cursor-pointer" onClick={() => handleSort("date")}>
           Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
@@ -152,20 +244,49 @@ const UserTrainingsTable = ({ trainings = [] }) => {
         <div className="cursor-pointer" onClick={() => handleSort("title")}>
           Title {sortConfig.key === "title" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
-        <div className="col-span-3 text-center">Intervals</div>
-        <div>Terrain</div>
-        <div>Weather</div>
+        <div className="hidden sm:block col-span-3 text-center">Intervals</div>
+        <div className="hidden sm:block">Terrain</div>
+        <div className="hidden sm:block">Weather</div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2 mt-2">
         {paginatedTrainings.map((training) => (
-          <TrainingItem 
-            key={training._id}
-            training={{
-              ...training,
-              date: formatDate(training.date)
-            }}
-          />
+          <div key={training._id} className="relative group">
+            <TrainingItem 
+              training={{
+                ...training,
+                date: formatDate(training.date)
+              }}
+              isExpanded={expandedItems[training._id] || false}
+              onToggleExpand={() => toggleExpand(training._id)}
+            />
+            <div className="absolute right-4 top-4 transform flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
+                  handleEditTraining(training);
+                }}
+                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-100 rounded-full bg-white shadow-sm"
+                title="Edit training"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
+                  handleDeleteTraining(training);
+                }}
+                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full bg-white shadow-sm"
+                title="Delete training"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
         ))}
       </div>
 
@@ -177,6 +298,69 @@ const UserTrainingsTable = ({ trainings = [] }) => {
         onRowsPerPageChange={setRowsPerPage}
         totalItems={filteredTrainings.length}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && trainingToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold mb-4">Delete Training</h3>
+            <p className="mb-6">
+              Are you sure you want to delete the training "{trainingToDelete.title}" from {formatDate(trainingToDelete.date)}? 
+              This action cannot be undone.
+            </p>
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                {error}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setTrainingToDelete(null);
+                  setError(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:bg-red-300"
+                disabled={isLoading}
+              >
+                {isLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && trainingToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          {error && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
+              {error}
+            </div>
+          )}
+          
+          <TrainingForm 
+            onClose={() => {
+              setShowEditModal(false);
+              setTrainingToEdit(null);
+              setError(null);
+            }}
+            onSubmit={handleEditSubmit}
+            initialData={trainingToEdit}
+            isEditing={true}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
     </div>
   );
 };

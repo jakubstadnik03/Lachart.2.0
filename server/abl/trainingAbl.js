@@ -1,10 +1,10 @@
-// abl/TestingABL.js
-const trainingDao = require('../dao/trainingDao');
+// abl/TrainingAbl.js
+const TrainingDao = require('../dao/trainingDao');
 const UserDao = require('../dao/userDao');
 
 class TrainingAbl {
     constructor() {
-        this.trainingDao = trainingDao;
+        this.trainingDao = new TrainingDao();
         this.userDao = new UserDao();
     }
 
@@ -32,19 +32,19 @@ class TrainingAbl {
     }
 
     async getTrainingsByAthlete(athleteId) {
-        return await this.trainingDao.getTrainingsByAthlete(athleteId);
+        return await this.trainingDao.findByAthleteId(athleteId);
     }
 
     async getTrainingById(id) {
-        return await this.trainingDao.getTrainingById(id);
+        return await this.trainingDao.findById(id);
     }
 
     async updateTraining(id, updateData) {
-        return await this.trainingDao.updateTraining(id, updateData);
+        return await this.trainingDao.update(id, updateData);
     }
 
     async deleteTraining(id) {
-        return await this.trainingDao.deleteTraining(id);
+        return await this.trainingDao.delete(id);
     }
 }
 

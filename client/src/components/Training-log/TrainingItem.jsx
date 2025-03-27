@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 
-const TrainingItem = ({ training }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   if (!training) return null;
-  const { date, title, specifics, comments, results, sport } = training;
+  const { date, title, specifics, comments, results, sport, description } = training;
 
   const getSportIcon = (sport) => {
     switch (sport) {
@@ -40,6 +39,25 @@ const TrainingItem = ({ training }) => {
         return 'W';
       default:
         return '';
+    }
+  };
+
+  // Funkce pro převod sekund na formát MM:SS
+  const formatSecondsToMMSS = (seconds) => {
+    if (!seconds) return "";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Funkce pro formátování power/pace podle typu sportu
+  const formatPower = (power, sport) => {
+    if (!power) return "";
+    if (sport === 'bike') {
+      return `${power}W`;
+    } else {
+      // Pro run a swim převedeme sekundy na MM:SS
+      return formatSecondsToMMSS(power);
     }
   };
 
@@ -103,11 +121,11 @@ const TrainingItem = ({ training }) => {
   };
   
   return (
-    <div className="flex flex-col w-full bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
-      {/* Header - vždy viditelný */}
+    <div className="flex flex-col w-full bg-white rounded-lg shadow-sm mb-4 overflow-hidden hover:shadow-md transition-shadow">
+      {/* Header - vždy viditelný - upravený pro lepší zarovnání s hlavičkou tabulky */}
       <div 
         className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center cursor-pointer hover:bg-gray-50"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={onToggleExpand}
       >
         <div className="text-sm">{date}</div>
         <div className="flex justify-center">
@@ -130,6 +148,14 @@ const TrainingItem = ({ training }) => {
       {/* Expandovaný obsah */}
       {isExpanded && (
         <div className="p-4 border-t border-gray-200">
+          {/* Popis tréninku - přidáno */}
+          {description && (
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <h4 className="font-medium text-gray-900 mb-1">Description:</h4>
+              <p className="text-gray-700">{description}</p>
+            </div>
+          )}
+          
           {/* Intervaly s hlavičkou */}
           <div className="space-y-0.5">
             {renderIntervalsHeader()}
