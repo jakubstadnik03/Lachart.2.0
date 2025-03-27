@@ -1,0 +1,116 @@
+[{
+  "_id": {
+    "$oid": "67e5022b758032413803a8f5"
+  },
+  "athleteId": "67e3faa618d9575f877a8442",
+  "sport": "bike",
+  "title": "8x6min–prvnít-test",
+  "date": {
+    "$date": "2023-01-10T00:00:00.000Z"
+  },
+  "description": "Náš první vstupní test",
+  "baseLactate": 0.9,
+  "weight": 83.2,
+  "specifics": {
+    "specific": "Indoor",
+    "weather": ""
+  },
+  "comments": "",
+  "results": [
+    {
+      "interval": 1,
+      "power": 200,
+      "heartRate": 110,
+      "lactate": 0.9,
+      "glucose": 0,
+      "RPE": 8,
+      "_id": {
+        "$oid": "67e5022b758032413803a8f6"
+      }
+    },
+    {
+      "interval": 2,
+      "power": 230,
+      "heartRate": 117,
+      "lactate": 0.5,
+      "glucose": 0,
+      "RPE": 9,
+      "_id": {
+        "$oid": "67e5022b758032413803a8f7"
+      }
+    },
+    {
+      "interval": 3,
+      "power": 260,
+      "heartRate": 126,
+      "lactate": 1.1,
+      "glucose": 0,
+      "RPE": 10,
+      "_id": {
+        "$oid": "67e5022b758032413803a8f8"
+      }
+    },
+    {
+      "interval": 4,
+      "power": 290,
+      "heartRate": 133,
+      "lactate": 1.4,
+      "glucose": 0,
+      "RPE": 12,
+      "_id": {
+        "$oid": "67e5022b758032413803a8f9"
+      }
+    },
+    {
+      "interval": 5,
+      "power": 320,
+      "heartRate": 146,
+      "lactate": 1.6,
+      "glucose": 0,
+      "RPE": 13,
+      "_id": {
+        "$oid": "67e5022b758032413803a8fa"
+      }
+    },
+    {
+      "interval": 6,
+      "power": 350,
+      "heartRate": 154,
+      "lactate": 2.7,
+      "glucose": 0,
+      "RPE": 15,
+      "_id": {
+        "$oid": "67e5022b758032413803a8fb"
+      }
+    },
+    {
+      "interval": 7,
+      "power": 380,
+      "heartRate": 160,
+      "lactate": 5.7,
+      "glucose": 0,
+      "RPE": 17,
+      "_id": {
+        "$oid": "67e5022b758032413803a8fc"
+      }
+    },
+    {
+      "interval": 8,
+      "power": 410,
+      "heartRate": 165,
+      "lactate": 8.4,
+      "glucose": 0,
+      "RPE": 19,
+      "_id": {
+        "$oid": "67e5022b758032413803a8fd"
+      }
+    }
+  ],
+  "createdAt": {
+    "$date": "2025-03-27T07:45:47.346Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-27T07:58:11.104Z"
+  },
+  "__v": 0
+}]

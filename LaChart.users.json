@@ -1,0 +1,29 @@
+[{
+  "_id": {
+    "$oid": "67e3faa618d9575f877a8442"
+  },
+  "name": "Jakub",
+  "surname": "Stádník",
+  "email": "jakub.stadnik@seznam.cz",
+  "password": "$2a$10$ddMGIxMJY2eXcECaJ75sSOXGc2iHd/nrjKxBZDCYPh0v3Cl6KiojO",
+  "role": "athlete",
+  "athletes": [],
+  "createdAt": {
+    "$date": "2025-03-26T13:01:26.442Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-26T15:34:22.109Z"
+  },
+  "__v": 0,
+  "address": "Minkovická 170, Šimonovice",
+  "dateOfBirth": {
+    "$date": "2003-09-20T00:00:00.000Z"
+  },
+  "height": 192,
+  "phone": "775 716 452",
+  "specialization": "IM 70.3, IM",
+  "sport": "Not set",
+  "weight": 83,
+  "resetPasswordExpires": null,
+  "resetPasswordToken": null
+}]

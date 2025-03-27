@@ -1,0 +1,206 @@
+[{
+  "_id": {
+    "$oid": "67e51e17afdb6811b1c48e2a"
+  },
+  "athleteId": "67e3faa618d9575f877a8442",
+  "sport": "bike",
+  "type": "interval",
+  "title": "3x30min LT1",
+  "description": "Road bike. Teplo, Tenerife. hezky se jelo. ",
+  "date": {
+    "$date": "2025-03-15T08:52:00.000Z"
+  },
+  "results": [
+    {
+      "interval": 1,
+      "power": 320,
+      "heartRate": 144,
+      "lactate": 2.1,
+      "RPE": 12,
+      "_id": {
+        "$oid": "67e51e17afdb6811b1c48e2b"
+      }
+    },
+    {
+      "interval": 2,
+      "power": 330,
+      "heartRate": 145,
+      "lactate": 1.8,
+      "RPE": 12,
+      "_id": {
+        "$oid": "67e51e17afdb6811b1c48e2c"
+      }
+    },
+    {
+      "interval": 3,
+      "power": 332,
+      "heartRate": 148,
+      "lactate": 0,
+      "RPE": 14,
+      "_id": {
+        "$oid": "67e51e17afdb6811b1c48e2d"
+      }
+    }
+  ],
+  "specifics": {
+    "specific": "road",
+    "weather": "indoor",
+    "_id": {
+      "$oid": "67e51e17afdb6811b1c48e2e"
+    }
+  },
+  "createdAt": {
+    "$date": "2025-03-27T09:44:55.441Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-27T09:45:10.636Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67e5276ce2ff3622af8e1ec4"
+  },
+  "sport": "run",
+  "type": "interval",
+  "title": "12x800 Upper LT2 p:1min",
+  "customTitle": "12x800 Upper LT2 p:1min",
+  "description": "Double treshold day. Běželo se dobře. Lichý lehce z kopce. Sudý lehce do kopce. ",
+  "date": {
+    "$date": "2025-03-15T15:50:00.000Z"
+  },
+  "specifics": {
+    "specific": "road",
+    "weather": "sunny",
+    "_id": {
+      "$oid": "67e55754afdb6811b1c490ea"
+    }
+  },
+  "results": [
+    {
+      "interval": 1,
+      "duration": "800m",
+      "power": 200,
+      "heartRate": 149,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490eb"
+      }
+    },
+    {
+      "interval": 2,
+      "duration": "800m",
+      "heartRate": 155,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490ec"
+      }
+    },
+    {
+      "interval": 3,
+      "duration": "800m",
+      "heartRate": 157,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490ed"
+      }
+    },
+    {
+      "interval": 4,
+      "duration": "800m",
+      "heartRate": 156,
+      "lactate": 4.5,
+      "RPE": 15,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490ee"
+      }
+    },
+    {
+      "interval": 5,
+      "duration": "800m",
+      "heartRate": 149,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490ef"
+      }
+    },
+    {
+      "interval": 6,
+      "duration": "800m",
+      "heartRate": 150,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f0"
+      }
+    },
+    {
+      "interval": 7,
+      "duration": "800m",
+      "heartRate": 154,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f1"
+      }
+    },
+    {
+      "interval": 8,
+      "duration": "800m",
+      "heartRate": 152,
+      "lactate": 3.8,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f2"
+      }
+    },
+    {
+      "interval": 9,
+      "duration": "800m",
+      "heartRate": 153,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f3"
+      }
+    },
+    {
+      "interval": 10,
+      "duration": "800m",
+      "heartRate": 155,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f4"
+      }
+    },
+    {
+      "interval": 11,
+      "duration": "800m",
+      "heartRate": 157,
+      "lactate": null,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f5"
+      }
+    },
+    {
+      "interval": 12,
+      "duration": "800m",
+      "heartRate": 156,
+      "lactate": 4,
+      "RPE": null,
+      "_id": {
+        "$oid": "67e55754afdb6811b1c490f6"
+      }
+    }
+  ],
+  "athleteId": "67e3faa618d9575f877a8442",
+  "updatedAt": {
+    "$date": "2025-03-27T13:53:48.013Z"
+  }
+}]
