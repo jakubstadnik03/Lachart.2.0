@@ -159,6 +159,16 @@ const colorMap = {
 const LactateCurveCalculator = ({ mockData }) => {
   const chartRef = useRef(null);
 
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('cs-CZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).replace(/\//g, '-');
+  };
+
   if (!mockData || !mockData.results) {
     console.error('mockData nebo mockData.results nejsou definovány');
     return null;
@@ -294,22 +304,28 @@ const LactateCurveCalculator = ({ mockData }) => {
   
 
   return (
-    <div className="flex flex-wrap gap-4 px-5 py-5 bg-white rounded-2xl shadow-lg mt-5">
-      <div className="flex-grow min-w-[500px]">
-        <h2 className="text-2xl font-bold">
-          Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>
+    <div className="flex flex-col gap-4 p-4 sm:p-5 bg-white rounded-2xl shadow-lg mt-5">
+      <div className="w-full">
+        <h2 className="text-xl sm:text-2xl font-bold">
+          Lactate Curve <span className="text-lg sm:text-xl text-gray-600 ml-2 sm:ml-4">({formatDate(mockData.date)})</span>
         </h2>
-        <p className="text-lg text-gray-500">
+        <p className="text-base sm:text-lg text-gray-500">
           Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
         </p>
-        <div className="mt-3 min-h-[320px]" style={{ width: '100%', height: '400px' }}>
+        <div className="mt-3" style={{ width: '100%', height: '250px', minHeight: '250px' }}>
           <Line ref={chartRef} data={data} options={options} />
         </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="w-full sm:w-auto">
+          <Legend chartRef={chartRef} />
         </div>
 
-        <Legend chartRef={chartRef} />
-
-      <div className=" rounded-3xl my-auto"><DataTable mockData={mockData} /></div>
+        <div className="w-full sm:w-auto">
+          <DataTable mockData={mockData} />
+        </div>
+      </div>
     </div>
   );
 };

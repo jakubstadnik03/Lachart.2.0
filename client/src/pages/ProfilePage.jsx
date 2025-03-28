@@ -197,7 +197,7 @@ const ProfilePage = () => {
   if (!userInfo) return <div>No user data available</div>;
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
+    <div className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
       {/* Horní část s profilem */}
       <div className="bg-white rounded-3xl shadow-sm overflow-hidden relative">
         {/* Edit buttons */}

@@ -176,7 +176,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
   };
 
   return (
-    <div className="flex flex-col w-full max-w-4xl mx-auto p-4 bg-gray-50 rounded-lg">
+    <div className="flex flex-col w-full max-w-4xl mx-auto p-2 sm:px-4 sm:py-4 bg-gray-50 rounded-lg">
       <input 
         type="text"
         value={formData.title}
@@ -186,7 +186,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         required
       />
 
-      <div className="flex gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-4">
         <input 
           type="text"
           value={formData.specifics.specific}
@@ -194,7 +194,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
             ...formData.specifics, 
             specific: e.target.value 
           })}
-          className="flex-1 p-2 border rounded-lg"
+          className="w-full p-2 border rounded-lg"
           placeholder="Specific (e.g., Indoor, Outdoor)"
         />
         <input 
@@ -204,19 +204,18 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
             ...formData.specifics, 
             weather: e.target.value 
           })}
-          className="flex-1 p-2 border rounded-lg"
+          className="w-full p-2 border rounded-lg"
           placeholder="Weather"
         />
       </div>
 
-      <div className="grid grid-cols-7 gap-2 items-center p-2 text-sm font-semibold bg-gray-100 rounded-lg">
-        <div style={{paddingLeft: '12px'}}>Int.</div>
-        <div>{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
-        <div>Heart Rate</div>
-        <div>Lactate</div>
+      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 sm:gap-2 items-center p-2 text-xs sm:text-sm font-semibold bg-gray-100 rounded-lg">
+        <div className="text-center">Int.</div>
+        <div className="text-center">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
+        <div className="text-center">HR</div>
+        <div className="text-center">La</div>
         {showGlucose && (
-          <div
-            className="relative"
+          <div className="hidden sm:block text-center relative"
             onMouseEnter={() => setHoverGlucose(true)}
             onMouseLeave={() => setHoverGlucose(false)}
           >
@@ -228,44 +227,44 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
             )}
           </div>
         )}
-        <div>RPE</div>
-        <div>Actions</div>
+        <div className="hidden sm:block text-center">RPE</div>
+        <div className="hidden sm:block text-center">Actions</div>
       </div>
 
       {rows.map((row, index) => (
-        <div key={index} className="grid grid-cols-7 gap-2 items-center mt-2 p-2 bg-white rounded-lg">
-          <div className="text-center">{index + 1}</div>
+        <div key={index} className="grid grid-cols-4 sm:grid-cols-7 gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg">
+          <div className="text-center text-sm">{index + 1}</div>
           <input 
             type="text" 
             value={formData.sport === 'run' || formData.sport === 'swim' ? convertSecondsToPace(row.power) : row.power}
             onChange={(e) => handleValueChange(index, 'power', e.target.value)} 
-            className="p-1 border rounded-lg"
+            className="p-1 text-sm border rounded-lg"
           />
           <input 
             type="number" 
             value={row.heartRate} 
             onChange={(e) => handleValueChange(index, 'heartRate', e.target.value)} 
-            className="p-1 border rounded-lg" 
+            className="p-1 text-sm border rounded-lg" 
           />
           <input 
             type="number" 
             value={row.lactate} 
             onChange={(e) => handleValueChange(index, 'lactate', e.target.value)} 
-            className="p-1 border rounded-lg" 
+            className="p-1 text-sm border rounded-lg" 
           />
           {showGlucose && <input 
             type="number" 
             value={row.glucose} 
             onChange={(e) => handleValueChange(index, 'glucose', e.target.value)} 
-            className="p-1 border rounded-lg" 
+            className="hidden sm:block p-1 text-sm border rounded-lg" 
           />}
           <input 
             type="number" 
             value={row.RPE} 
             onChange={(e) => handleValueChange(index, 'RPE', e.target.value)} 
-            className="p-1 border rounded-lg" 
+            className="hidden sm:block p-1 text-sm border rounded-lg" 
           />
-          <button onClick={() => handleDeleteRow(index)} className="p-1 text-red-600"><Trash size={20} /></button>
+          <button onClick={() => handleDeleteRow(index)} className="hidden sm:block p-1 text-red-600"><Trash size={20} /></button>
         </div>
       ))}
 
@@ -276,24 +275,24 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         placeholder="Description of this testing..." 
       />
 
-      <div className="flex gap-4 mt-4">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mt-4">
         <input 
           type="date" 
           value={formData.date}
           onChange={(e) => handleFormDataChange('date', e.target.value)} 
-          className="p-2 border rounded-lg" 
+          className="p-2 border rounded-lg w-full sm:w-auto" 
         />
         <input 
           type="number" 
           value={formData.weight} 
           onChange={(e) => handleFormDataChange('weight', e.target.value)} 
-          className="p-2 border rounded-lg w-24" 
+          className="p-2 border rounded-lg w-full sm:w-24" 
           placeholder="Weight (kg)" 
         />
         <select 
           value={formData.sport} 
           onChange={(e) => handleFormDataChange('sport', e.target.value)} 
-          className="p-2 border rounded-lg"
+          className="p-2 border rounded-lg w-full sm:w-auto"
         >
           <option value="">Select sport *</option>
           <option value="run">Run</option>
@@ -304,7 +303,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
           type="number" 
           value={formData.baseLa} 
           onChange={(e) => handleFormDataChange('baseLa', e.target.value)} 
-          className="p-2 border rounded-lg w-24" 
+          className="p-2 border rounded-lg w-full sm:w-24" 
           placeholder="Base La" 
         />
       </div>
@@ -316,17 +315,17 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         placeholder="Comments"
       />
 
-      <div className="flex items-center justify-between mt-4">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
         <button 
           onClick={handleAddRow} 
-          className="flex items-center gap-2 px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600"
         >
           <Plus size={20} /> Add Interval
         </button>
 
         <button 
           onClick={handleSaveChanges}
-          className="flex items-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-blue-600"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-blue-600"
         >
           <Save size={20} /> Save Changes
         </button>

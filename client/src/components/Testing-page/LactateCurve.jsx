@@ -59,6 +59,16 @@ const LactateCurve = ({ mockData }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltip, setTooltip] = useState(null);
 
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('cs-CZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).replace(/\//g, '-');
+  };
+
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
       <p className="text-gray-500 text-center">Add test results to see the lactate curve</p>
@@ -82,11 +92,12 @@ const LactateCurve = ({ mockData }) => {
 
   try {
     const labels = validResults.map((result) =>
-      mockData.sport === "run" ? convertPowerToPace(result.power, mockData.sport) : `${result.power}W`
+      mockData.sport === "bike" ? `${result.power}W` : convertPowerToPace(result.power, mockData.sport)
     );
 
     const lactateData = validResults.map((result) => result.lactate);
     const heartRateData = validResults.map((result) => result.heartRate);
+    const powerData = validResults.map((result) => result.power);
 
     const datasets = [
       {
@@ -110,7 +121,12 @@ const LactateCurve = ({ mockData }) => {
       },
     ];
 
-    const data = { labels, datasets };
+    const data = { 
+      labels: powerData.map(power => 
+        mockData.sport === "bike" ? `${power}W` : convertPowerToPace(power, mockData.sport)
+      ), 
+      datasets 
+    };
 
     const options = {
       responsive: true,
@@ -136,8 +152,8 @@ const LactateCurve = ({ mockData }) => {
           },
           callbacks: {
             title: function(context) {
-              const value = context[0].parsed.x;
-              return `${mockData.sport === 'bike' ? 'Power' : 'Pace'}: ${convertPowerToPace(value, mockData.sport)}`;
+              const value = powerData[context[0].dataIndex];
+              return mockData.sport === 'bike' ? `Power: ${value}W` : `Pace: ${convertPowerToPace(value, mockData.sport)}`;
             }
           }
         },
@@ -178,8 +194,9 @@ const LactateCurve = ({ mockData }) => {
             borderDash: [4, 4],
           },
           ticks: {
-            callback: function(value) {
-              return convertPowerToPace(value, mockData.sport);
+            callback: function(value, index) {
+              const power = powerData[index];
+              return mockData.sport === 'bike' ? `${power}W` : convertPowerToPace(power, mockData.sport);
             }
           }
         },
@@ -187,14 +204,14 @@ const LactateCurve = ({ mockData }) => {
     };
 
     return (
-      <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
-        <h2 className="text-2xl font-bold">
-          Lactate Curve <span className="text-xl text-gray-600 ml-4">({mockData.date})</span>
+      <div className="w-full p-4 sm:p-6 bg-white rounded-2xl shadow-lg">
+        <h2 className="text-xl sm:text-2xl font-bold">
+          Lactate Curve <span className="text-lg sm:text-xl text-gray-600 ml-2 sm:ml-4">({formatDate(mockData.date)})</span>
         </h2>
-        <p className="text-lg text-gray-500">
+        <p className="text-base sm:text-lg text-gray-500">
           Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
         </p>
-        <div className="relative" style={{ width: '100%', height: '400px' }}>
+        <div className="mt-4" style={{ width: '100%', height: '250px', minHeight: '250px' }}>
           <Line data={data} options={options} />
           {tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} />}
         </div>

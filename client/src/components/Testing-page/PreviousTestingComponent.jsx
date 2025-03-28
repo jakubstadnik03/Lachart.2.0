@@ -18,10 +18,16 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
       : tests.filter(test => test.sport === selectedSport);
 
     if (filteredTests.length > 0) {
-      const sortedTests = [...filteredTests].sort(
-        (a, b) => new Date(b.date) - new Date(a.date)
-      );
-      setCurrentTest(sortedTests[0]);
+      if (currentTest) {
+        const updatedCurrentTest = filteredTests.find(test => test._id === currentTest._id);
+        if (updatedCurrentTest) {
+          setCurrentTest(updatedCurrentTest);
+        } else {
+          setCurrentTest(filteredTests[0]);
+        }
+      } else {
+        setCurrentTest(filteredTests[0]);
+      }
     } else {
       setCurrentTest(null);
     }

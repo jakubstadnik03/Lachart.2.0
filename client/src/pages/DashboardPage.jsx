@@ -89,7 +89,7 @@ const DashboardPage = () => {
   }
 
   return (
-    <div className="mx-6 m-auto max-w-[1600px] mx-auto p-6">
+    <div className="mx-6 m-auto max-w-[1600px] mx-auto  py-4 md:p-6">
       {user?.role === 'coach' && (
         <AthleteSelector
           selectedAthleteId={selectedAthleteId}

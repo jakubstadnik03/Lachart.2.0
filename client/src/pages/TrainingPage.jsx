@@ -126,7 +126,7 @@ const TrainingPage = () => {
   );
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="py-2 md:p-6 max-w-[1600px] mx-auto">
       {user?.role === 'coach' && (
         <AthleteSelector
           selectedAthleteId={selectedAthleteId}

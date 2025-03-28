@@ -88,15 +88,17 @@ const TestingPage = () => {
   );
 
   return (
-    <div className="max-w-[1600px] mx-auto p-6">
+    <div className="w-full max-w-[1600px] mx-auto px-1 sm:px-4 lg:px-6 overflow-x-hidden">
       {user?.role === 'coach' && (
-        <AthleteSelector
-          selectedAthleteId={selectedAthleteId}
-          onAthleteChange={handleAthleteChange}
-        />
+        <div className="mb-2 sm:mb-4">
+          <AthleteSelector
+            selectedAthleteId={selectedAthleteId}
+            onAthleteChange={handleAthleteChange}
+          />
+        </div>
       )}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6">
+        <div className="w-full sm:w-auto sm:flex-1 min-w-0">
           <SportsSelector
             sports={sports}
             selectedSport={selectedSport}
@@ -104,7 +106,7 @@ const TestingPage = () => {
           />
         </div>
 
-        <div className="ml-4">
+        <div className="w-full sm:w-auto min-w-0">
           <NotificationBadge
             isActive={showNewTesting}
             onToggle={() => setShowNewTesting((prev) => !prev)}
@@ -113,7 +115,7 @@ const TestingPage = () => {
       </div>
 
       {showNewTesting && (
-        <div className="mb-6">
+        <div className="mb-3 sm:mb-6 w-full">
           <NewTestingComponent 
             selectedSport={selectedSport}
             onSubmit={handleAddTest}
@@ -121,11 +123,13 @@ const TestingPage = () => {
         </div>
       )}
 
-      <PreviousTestingComponent 
-        selectedSport={selectedSport}
-        tests={tests}
-        setTests={setTests}
-      />
+      <div className="w-full min-w-0 overflow-x-hidden">
+        <PreviousTestingComponent 
+          selectedSport={selectedSport}
+          tests={tests}
+          setTests={setTests}
+        />
+      </div>
     </div>
   );
 };
