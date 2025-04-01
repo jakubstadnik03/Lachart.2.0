@@ -21,34 +21,44 @@ const DashboardPage = () => {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
+  const loadTrainings = async (targetId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/user/athlete/${targetId}/trainings`);
+      if (response && response.data) {
+        setTrainings(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading trainings:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', { replace: true });
       return;
     }
 
-    const loadTrainings = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Použijeme ID vybraného atleta nebo přihlášeného uživatele
-        const targetId = selectedAthleteId || user._id;
-        const response = await api.get(`/user/athlete/${targetId}/trainings`);
-        
-        if (response && response.data) {
-          setTrainings(response.data);
-        }
-      } catch (error) {
-        console.error('Error loading trainings:', error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
-      }
+    // Použijeme ID vybraného atleta nebo přihlášeného uživatele
+    const targetId = selectedAthleteId || user._id;
+    loadTrainings(targetId);
+  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+
+  // Posluchač pro změnu atleta
+  useEffect(() => {
+    const handleAthleteChange = (event) => {
+      const { athleteId, trainings } = event.detail;
+      setSelectedAthleteId(athleteId);
+      setTrainings(trainings);
     };
 
-    loadTrainings();
-  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+    window.addEventListener('athleteChanged', handleAthleteChange);
+    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
+  }, []);
 
   useEffect(() => {
     if (trainings.length > 0) {
@@ -108,6 +118,7 @@ const DashboardPage = () => {
           <SpiderChart 
             trainings={trainings}
             selectedSport={selectedSport}
+            setSelectedSport={setSelectedSport}
           />
         </div>
 

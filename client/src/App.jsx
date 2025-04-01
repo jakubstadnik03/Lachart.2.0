@@ -15,6 +15,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AthleteProfile from './components/AthleteProfile';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import CompleteRegistrationPage from './pages/CompleteRegistrationPage';
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -29,13 +30,14 @@ function App() {
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
 
           {/* Chráněné routy s Layoutem */}
           <Route
             element={
               <ProtectedRoute>
-        <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
-        </ProtectedRoute>
+                <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+              </ProtectedRoute>
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
@@ -48,18 +50,17 @@ function App() {
             <Route path="/support" element={<Support />} />
             <Route path="/athlete-profile/:id" element={<Profile />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-          <Route 
-            path="/athlete/:athleteId" 
-            element={
-              <ProtectedRoute allowedRoles={['coach']}>
-                <AthleteProfile />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
-          <Route path="/training/:athleteId?" element={<Training />} />
-          <Route path="/testing/:athleteId?" element={<Testing />} />
+            <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
+            <Route path="/training/:athleteId?" element={<Training />} />
+            <Route path="/testing/:athleteId?" element={<Testing />} />
+            <Route 
+              path="/athlete/:athleteId" 
+              element={
+                <ProtectedRoute allowedRoles={['coach']}>
+                  <AthleteProfile />
+                </ProtectedRoute>
+              } 
+            />
           </Route>
         </Routes>
       </AuthProvider>

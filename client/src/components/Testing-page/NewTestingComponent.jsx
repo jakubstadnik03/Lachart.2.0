@@ -88,14 +88,18 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
     };
   
     return (
-      <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
-        <LactateCurve mockData={testData} />
-        <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg p-6">
-          <TestingForm 
-            testData={testData} 
-            onTestDataChange={handleTestDataChange}
-            onSave={handleSaveTest}
-          />
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 mt-4 lg:mt-5">
+        <div className="w-full lg:w-1/2">
+          <LactateCurve mockData={testData} />
+        </div>
+        <div className="w-full lg:w-1/2">
+          <div className="bg-white rounded-2xl shadow-lg p-4 lg:p-6">
+            <TestingForm 
+              testData={testData} 
+              onTestDataChange={handleTestDataChange}
+              onSave={handleSaveTest}
+            />
+          </div>
         </div>
       </div>
     );

@@ -90,10 +90,28 @@ const AthletesPage = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    
+    if (name === 'dateOfBirth') {
+      // Převod data z HTML date input (YYYY-MM-DD) na formát DD.MM.YYYY
+      if (value) {
+        const [year, month, day] = value.split('-');
+        const formattedDate = `${day}.${month}.${year}`;
+        setFormData(prev => ({
+          ...prev,
+          [name]: formattedDate
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          [name]: ''
+        }));
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   const handleEditAthlete = (athlete) => {
@@ -125,29 +143,76 @@ const AthletesPage = () => {
     }
   };
 
+  const handleResendInvitation = async (athleteId) => {
+    try {
+      const response = await api.post(`/user/coach/resend-invitation/${athleteId}`);
+      if (response.data.success) {
+        alert('Pozvánka byla úspěšně znovu odeslána');
+        // Aktualizovat stav atleta v seznamu
+        setAthletes(athletes.map(athlete => 
+          athlete._id === athleteId 
+            ? { ...athlete, isRegistrationComplete: false }
+            : athlete
+        ));
+      } else {
+        alert('Chyba při odesílání pozvánky: ' + response.data.message);
+      }
+      setDropdownOpen(null);
+    } catch (error) {
+      console.error('Error resending invitation:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Nastala neočekávaná chyba';
+      alert('Chyba při odesílání pozvánky: ' + errorMessage);
+      setDropdownOpen(null);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Konverze data z DD.MM.YYYY na YYYY-MM-DD
+      const formattedDate = formData.dateOfBirth ? 
+        formData.dateOfBirth.split('.').reverse().join('-') : 
+        null;
+
       if (selectedAthlete) {
         // Update existujícího atleta
-        const response = await api.put(`/user/athlete/${selectedAthlete._id}`, formData);
+        const response = await api.put(`/user/coach/edit-athlete/${selectedAthlete._id}`, {
+          ...formData,
+          dateOfBirth: formattedDate
+        });
         setAthletes(athletes.map(athlete => 
-          athlete._id === selectedAthlete._id ? response.data : athlete
+          athlete._id === selectedAthlete._id ? response.data.athlete : athlete
         ));
+        alert('Atlet byl úspěšně aktualizován');
       } else {
         // Přidání nového atleta
-        const response = await api.post('/user/athlete/register', {
-          ...formData,
-          role: 'athlete'
+        const response = await api.post('/user/coach/add-athlete', {
+          name: formData.name,
+          surname: formData.surname,
+          email: formData.email,
+          dateOfBirth: formattedDate,
+          address: formData.address,
+          phone: formData.phone,
+          height: formData.height ? Number(formData.height) : null,
+          weight: formData.weight ? Number(formData.weight) : null,
+          sport: formData.sport,
+          specialization: formData.notes // Použijeme notes jako specialization
         });
-        setAthletes([...athletes, response.data]);
+        
+        if (response.data.success) {
+          setAthletes([...athletes, response.data.athlete]);
+          alert('Atlet byl úspěšně přidán a pozvánka byla odeslána na jeho email');
+        } else {
+          alert('Chyba při přidávání atleta: ' + response.data.message);
+        }
       }
       setIsModalOpen(false);
       setSelectedAthlete(null);
       resetForm();
     } catch (error) {
       console.error('Error submitting athlete:', error);
-      // TODO: Přidat notifikaci o chybě
+      const errorMessage = error.response?.data?.message || error.message || 'Nastala neočekávaná chyba';
+      alert('Chyba při přidávání atleta: ' + errorMessage);
     }
   };
 
@@ -222,6 +287,14 @@ const AthletesPage = () => {
                     >
                       Edit Athlete
                     </button>
+                    {!athlete.isRegistrationComplete && (
+                      <button
+                        onClick={() => handleResendInvitation(athlete._id)}
+                        className="block w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100"
+                      >
+                        Resend Invitation
+                      </button>
+                    )}
                     <button
                       onClick={() => handleRemoveAthlete(athlete._id)}
                       className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
@@ -353,13 +426,13 @@ const AthletesPage = () => {
                       Date of Birth<span className="text-orange-500">*</span>
                     </label>
                     <input
-                      type="text"
+                      type="date"
                       name="dateOfBirth"
                       required
-                      value={formData.dateOfBirth}
+                      value={formData.dateOfBirth ? formData.dateOfBirth.split('.').reverse().join('-') : ''}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder="DD.MM.YY"
+                      max={new Date().toISOString().split('T')[0]} // Maximální datum je dnešní den
                     />
                   </div>
                 </div>

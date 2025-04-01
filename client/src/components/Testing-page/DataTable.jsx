@@ -258,7 +258,7 @@ const findLactateThresholds = (results, baseLactate) => {
   };
   
   const TableCell = ({ children, isHeader, description, methodName }) => {
-    const baseClasses = "py-1 pr-4 pl-5 w-full border-b border-gray-200";
+    const baseClasses = "py-1 pr-4 sm:pr-2 sm:pl-2 pl-5 w-full border-b border-gray-200";
     const headerClasses = isHeader ? "text-sm font-semibold text-gray-900 bg-white border-t" : "";
     
     if (description) {

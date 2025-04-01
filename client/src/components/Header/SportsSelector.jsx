@@ -16,7 +16,7 @@ function SportButton({ sport, isSelected, onClick }) {
 
   return (
     <div
-      className="gap-3 self-stretch px-3 py-1.5 my-auto rounded-md cursor-pointer"
+      className="flex-1 sm:flex-none px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded-md cursor-pointer text-center"
       onClick={() => onClick(sport)}
       tabIndex={0}
       role="button"
@@ -57,7 +57,7 @@ const SportsSelector = ({ onSportChange }) => {
   };
 
   return (
-    <div className="flex gap-1.5 items-center self-stretch p-1.5 my-auto ml-5 text-xs text-center whitespace-nowrap rounded-md bg-zinc-100 min-w-[240px] text-stone-500 w-[247px]">
+    <div className="flex gap-1 sm:gap-1.5 items-center p-1.5 rounded-md bg-zinc-100 w-full sm:w-auto min-w-[240px] text-stone-500">
       {availableSports.map((sport) => (
         <SportButton
           key={sport}

@@ -6,7 +6,7 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { getTrainingsByAthleteId, addTraining } from '../services/api';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import AthleteSelector from '../components/AthleteSelector';
 
 const TrainingPage = () => {
@@ -19,24 +19,16 @@ const TrainingPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   // Přidáme debug log pro user objekt
   console.log('Current user:', user);
 
-  // Načtení tréninků
-  useEffect(() => {
-    if (user?._id) {
-      loadTrainings();
-    }
-  }, [user?._id]);
-
-  // Funkce pro načtení tréninků
-  const loadTrainings = async () => {
+  const loadTrainings = async (targetId) => {
     try {
       setLoading(true);
       setError(null);
-      const targetId = selectedAthleteId || user._id;
       const response = await api.get(`/user/athlete/${targetId}/trainings`);
       setTrainings(response.data);
       
@@ -54,6 +46,42 @@ const TrainingPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    const targetId = selectedAthleteId || user._id;
+    loadTrainings(targetId);
+  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+
+  // Posluchač pro změnu atleta
+  useEffect(() => {
+    const handleAthleteChange = (event) => {
+      const { athleteId, trainings } = event.detail;
+      setSelectedAthleteId(athleteId);
+      setTrainings(trainings);
+      
+      // Nastavení výchozího vybraného tréninku pro nového atleta
+      if (trainings.length > 0) {
+        const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+        if (sportTrainings.length > 0) {
+          setSelectedTitle(sportTrainings[0].title);
+          setSelectedTraining(sportTrainings[0]._id);
+        }
+      }
+    };
+
+    window.addEventListener('athleteChanged', handleAthleteChange);
+    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
+  }, [selectedSport]);
+
+  const handleAthleteChange = (newAthleteId) => {
+    setSelectedAthleteId(newAthleteId);
+    navigate(`/training/${newAthleteId}`);
   };
 
   // Funkce pro přidání nového tréninku
@@ -83,7 +111,7 @@ const TrainingPage = () => {
       console.log('Training created:', response.data);
 
       // Aktualizace lokálního stavu
-      await loadTrainings();
+      await loadTrainings(targetId);
 
       // Nastavení nově přidaného tréninku jako vybraného
       setSelectedSport(response.data.sport);
@@ -130,7 +158,7 @@ const TrainingPage = () => {
       {user?.role === 'coach' && (
         <AthleteSelector
           selectedAthleteId={selectedAthleteId}
-          onAthleteChange={setSelectedAthleteId}
+          onAthleteChange={handleAthleteChange}
         />
       )}
       <div className="flex justify-between items-center mb-6">

@@ -8,11 +8,36 @@ const ForgotPasswordPage = () => {
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [emailError, setEmailError] = useState('');
+
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) {
+      return 'Email je povinný';
+    }
+    if (!emailRegex.test(email)) {
+      return 'Zadejte platnou emailovou adresu';
+    }
+    return '';
+  };
+
+  const handleEmailChange = (e) => {
+    const newEmail = e.target.value;
+    setEmail(newEmail);
+    setEmailError(validateEmail(newEmail));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const validationError = validateEmail(email);
+    if (validationError) {
+      setEmailError(validationError);
+      return;
+    }
+
     setIsSubmitting(true);
     setStatus({ type: '', message: '' });
+    setEmailError('');
 
     try {
       const response = await axios.post(`${API_BASE_URL}/user/forgot-password`, 
@@ -29,9 +54,17 @@ const ForgotPasswordPage = () => {
       setEmail('');
     } catch (error) {
       console.error('Error details:', error.response?.data || error.message);
+      let errorMessage = 'Došlo k chybě při zpracování požadavku. Zkuste to prosím znovu.';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Uživatel s tímto emailem nebyl nalezen. Zkontrolujte prosím správnost emailové adresy.';
+      }
+      
       setStatus({
         type: 'error',
-        message: error.response?.data?.error || 'There was an error processing your request. Please try again.'
+        message: errorMessage
       });
       setShowConfirmation(false);
     } finally {
@@ -40,7 +73,15 @@ const ForgotPasswordPage = () => {
   };
 
   const handleResend = async () => {
+    const validationError = validateEmail(email);
+    if (validationError) {
+      setEmailError(validationError);
+      return;
+    }
+
     setIsSubmitting(true);
+    setEmailError('');
+    
     try {
       const response = await axios.post(`${API_BASE_URL}/user/forgot-password`, 
         { email },
@@ -53,13 +94,21 @@ const ForgotPasswordPage = () => {
       
       setStatus({
         type: 'success',
-        message: 'Reset instructions have been resent to your email.'
+        message: 'Instrukce pro reset hesla byly znovu odeslány na váš email.'
       });
     } catch (error) {
       console.error('Resend error:', error.response?.data || error.message);
+      let errorMessage = 'Došlo k chybě při opakovaném odesílání. Zkuste to prosím znovu.';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Uživatel s tímto emailem nebyl nalezen. Zkontrolujte prosím správnost emailové adresy.';
+      }
+      
       setStatus({
         type: 'error',
-        message: error.response?.data?.error || 'Failed to resend. Please try again.'
+        message: errorMessage
       });
     } finally {
       setIsSubmitting(false);
@@ -79,10 +128,10 @@ const ForgotPasswordPage = () => {
             <>
               <div>
                 <h2 className="text-center text-3xl font-bold text-gray-900">
-                  Forgot Password
+                  Zapomenuté heslo
                 </h2>
                 <p className="mt-2 text-center text-sm text-gray-600">
-                  Enter the email address associated with your account and we will send you a link to reset your password.
+                  Zadejte emailovou adresu spojenou s vaším účtem a my vám zašleme odkaz pro reset hesla.
                 </p>
               </div>
 
@@ -102,10 +151,12 @@ const ForgotPasswordPage = () => {
                       name="email"
                       type="email"
                       required
-                      className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 pl-10"
-                      placeholder="Enter email"
+                      className={`appearance-none rounded-lg relative block w-full px-3 py-2 border ${
+                        emailError ? 'border-red-300' : 'border-gray-300'
+                      } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 pl-10`}
+                      placeholder="Zadejte email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={handleEmailChange}
                     />
                     <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
                       <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -114,14 +165,19 @@ const ForgotPasswordPage = () => {
                       </svg>
                     </span>
                   </div>
+                  {emailError && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {emailError}
+                    </p>
+                  )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  disabled={isSubmitting || !!emailError}
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue
+                  {isSubmitting ? 'Odesílám...' : 'Pokračovat'}
                 </button>
               </form>
             </>
@@ -133,23 +189,24 @@ const ForgotPasswordPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold mb-4">Verify your Email</h2>
+              <h2 className="text-2xl font-bold mb-4">Zkontrolujte svůj email</h2>
               <p className="text-gray-600 mb-8">
-                Thank you, check your email for instructions to reset your password
+                Děkujeme, zkontrolujte svůj email pro instrukce k resetu hesla
               </p>
               <button
                 onClick={() => setShowConfirmation(false)}
                 className="w-full mb-4 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
               >
-                Skip
+                Zpět
               </button>
               <p className="text-sm text-gray-600">
-                Don't receive an email?{' '}
+                Neobdrželi jste email?{' '}
                 <button
                   onClick={handleResend}
-                  className="text-blue-600 hover:text-blue-500 font-medium"
+                  disabled={isSubmitting || !!emailError}
+                  className="text-blue-600 hover:text-blue-500 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Resend
+                  {isSubmitting ? 'Odesílám...' : 'Znovu odeslat'}
                 </button>
               </p>
             </div>
@@ -160,7 +217,7 @@ const ForgotPasswordPage = () => {
               to="/login"
               className="font-medium text-blue-600 hover:text-blue-500"
             >
-              Back to Sign In
+              Zpět na přihlášení
             </Link>
           </div>
         </div>

@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { DropdownMenu } from "../DropDownMenu";
-import { fetchMockTrainings } from "../../mock/mockApi";
 
 const maxGraphHeight = 250;
 function StatCard({ stats }) {

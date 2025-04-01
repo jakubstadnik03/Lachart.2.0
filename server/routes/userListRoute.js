@@ -6,6 +6,9 @@ const verifyToken = require("../middleware/verifyToken");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
+const bcrypt = require("bcrypt");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -50,37 +53,99 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
 // Add athlete to coach
 router.post("/coach/add-athlete", verifyToken, async (req, res) => {
     try {
-        const { athleteEmail } = req.body;
+        console.log("Received add-athlete request:", req.body);
+        const { 
+            name, 
+            surname, 
+            email, 
+            dateOfBirth, 
+            address, 
+            phone, 
+            height, 
+            weight, 
+            sport, 
+            specialization 
+        } = req.body;
         
-        if (!athleteEmail) {
-            return res.status(400).json({ error: "Email atleta je povinný" });
+        // Validace povinných polí
+        if (!email || !name || !surname) {
+            console.log("Missing required fields");
+            return res.status(400).json({ error: "Email, jméno a příjmení jsou povinné" });
         }
 
+        console.log("Looking up coach with ID:", req.user.userId);
         const coach = await userDao.findById(req.user.userId);
         
         if (!coach || coach.role !== 'coach') {
+            console.log("User is not a coach:", coach);
             return res.status(403).json({ error: "Přístup povolen pouze pro trenéry" });
         }
 
-        // Najít atleta podle emailu
-        const athlete = await userDao.findByEmail(athleteEmail);
-        if (!athlete) {
-            return res.status(404).json({ error: "Atlet nenalezen" });
-        }
-        if (athlete.role !== 'athlete') {
-            return res.status(400).json({ error: "Uživatel není atlet" });
-        }
-        if (athlete.coachId) {
-            return res.status(400).json({ error: "Atlet již má přiřazeného trenéra" });
+        // Kontrola, zda email již není registrován
+        const existingUser = await userDao.findByEmail(email);
+        if (existingUser) {
+            console.log("Email already registered:", email);
+            return res.status(400).json({ error: "Email je již registrován" });
         }
 
-        // Přidat atleta k trenérovi
+        // Generování dočasného hesla
+        const tempPassword = Math.random().toString(36).slice(-8);
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+        // Vytvoření nového atleta
+        const athleteData = {
+            name,
+            surname,
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            role: 'athlete',
+            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+            address,
+            phone,
+            height: height ? Number(height) : undefined,
+            weight: weight ? Number(weight) : undefined,
+            sport,
+            specialization,
+            coachId: coach._id,
+            isRegistrationComplete: false,
+            registrationToken: crypto.randomBytes(32).toString('hex'),
+            registrationTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 dní
+        };
+
+        const athlete = await userDao.createUser(athleteData);
+
+        // Přidání atleta k trenérovi
         await userDao.addAthleteToCoach(coach._id, athlete._id);
-        // Nastavit trenéra atletovi
-        await userDao.updateUser(athlete._id, { coachId: coach._id });
 
-        res.status(200).json({ 
-            message: "Atlet úspěšně přidán",
+        // Odeslání emailu s instrukcemi
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${athlete.registrationToken}`;
+        
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Dokončení registrace v LaChart',
+            html: `
+                <h2>Vítejte v LaChart!</h2>
+                <p>Váš trenér ${coach.name} ${coach.surname} vás zaregistroval do systému LaChart.</p>
+                <p>Pro dokončení registrace a nastavení vašeho hesla klikněte na následující odkaz:</p>
+                <a href="${registrationLink}">Dokončit registraci</a>
+                <p>Odkaz je platný 7 dní.</p>
+                <p>Pokud jste tento email nevyžadovali, můžete ho ignorovat.</p>
+            `
+        });
+
+        console.log("Successfully created athlete and sent registration email");
+        res.status(201).json({ 
+            message: "Atlet byl úspěšně zaregistrován a byl mu odeslán email s instrukcemi",
             athlete: {
                 _id: athlete._id,
                 name: athlete.name,
@@ -90,6 +155,71 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         });
     } catch (error) {
         console.error("Error adding athlete:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Complete athlete registration
+router.post("/complete-registration/:token", async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        if (!password) {
+            return res.status(400).json({ error: "Heslo je povinné" });
+        }
+
+        // Najít atleta podle tokenu
+        const athlete = await userDao.findByRegistrationToken(token);
+        if (!athlete) {
+            return res.status(404).json({ error: "Neplatný nebo expirovaný registrační token" });
+        }
+
+        if (athlete.isRegistrationComplete) {
+            return res.status(400).json({ error: "Registrace již byla dokončena" });
+        }
+
+        if (athlete.registrationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "Registrační token vypršel" });
+        }
+
+        // Aktualizace hesla a dokončení registrace
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        await userDao.updateUser(athlete._id, {
+            password: hashedPassword,
+            isRegistrationComplete: true,
+            registrationToken: null,
+            registrationTokenExpires: null
+        });
+
+        // Odeslání potvrzovacího emailu
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: athlete.email,
+            subject: 'Registrace v LaChart byla dokončena',
+            html: `
+                <h2>Vítejte v LaChart!</h2>
+                <p>Vážený/á ${athlete.name} ${athlete.surname},</p>
+                <p>Vaše registrace v systému LaChart byla úspěšně dokončena.</p>
+                <p>Nyní se můžete přihlásit do systému pomocí vašeho emailu a hesla.</p>
+                <p>Pro přihlášení navštivte: <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+                <p>Pokud jste tento email nevyžadovali, kontaktujte prosím podporu.</p>
+            `
+        });
+
+        res.status(200).json({ message: "Registrace byla úspěšně dokončena" });
+    } catch (error) {
+        console.error("Error completing registration:", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -441,6 +571,114 @@ router.post("/reset-password", async (req, res) => {
     } catch (error) {
         console.error("Reset password route error:", error);
         res.status(500).json({ error: "Chyba při resetu hesla" });
+    }
+});
+
+// Přidání nového endpointu pro opakované odeslání pozvánky
+router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res) => {
+  try {
+    const { athleteId } = req.params;
+    const coachId = req.user.userId;
+
+    // Najít atleta
+    const athlete = await userDao.findById(athleteId);
+    if (!athlete) {
+      return res.status(404).json({ success: false, message: 'Athlete not found' });
+    }
+
+    // Zkontrolovat, zda je atlet přiřazen k trenérovi
+    if (!athlete.coachId || athlete.coachId.toString() !== coachId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized to resend invitation' });
+    }
+
+    // Zkontrolovat, zda je registrace dokončena
+    if (athlete.isRegistrationComplete) {
+      return res.status(400).json({ success: false, message: 'Athlete has already completed registration' });
+    }
+
+    // Generovat nový token
+    const registrationToken = crypto.randomBytes(32).toString('hex');
+    const registrationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hodin
+
+    // Aktualizovat token v databázi
+    await userDao.updateUser(athlete._id, {
+      registrationToken: registrationToken,
+      registrationTokenExpires: registrationTokenExpires
+    });
+
+    // Odeslat nový email
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_APP_PASSWORD
+      }
+    });
+
+    const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${registrationToken}`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: athlete.email,
+      subject: 'Dokončení registrace v LaChart',
+      html: `
+        <h2>Vítejte v LaChart!</h2>
+        <p>Váš trenér vás znovu pozval do systému LaChart.</p>
+        <p>Pro dokončení registrace a nastavení vašeho hesla klikněte na následující odkaz:</p>
+        <a href="${registrationLink}">Dokončit registraci</a>
+        <p>Odkaz je platný 24 hodin.</p>
+        <p>Pokud jste tento email nevyžadovali, můžete ho ignorovat.</p>
+      `
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: 'Pozvánka byla úspěšně znovu odeslána',
+      athlete: {
+        _id: athlete._id,
+        name: athlete.name,
+        surname: athlete.surname,
+        email: athlete.email
+      }
+    });
+  } catch (error) {
+    console.error('Error resending invitation:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Chyba při opakovaném odesílání pozvánky',
+      error: error.message 
+    });
+  }
+});
+
+// Verify registration token
+router.get("/verify-registration-token/:token", async (req, res) => {
+    try {
+        const { token } = req.params;
+        const athlete = await userDao.findByRegistrationToken(token);
+        
+        if (!athlete) {
+            return res.status(404).json({ error: "Neplatný nebo expirovaný registrační token" });
+        }
+
+        if (athlete.isRegistrationComplete) {
+            return res.status(400).json({ error: "Registrace již byla dokončena" });
+        }
+
+        if (athlete.registrationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "Registrační token vypršel" });
+        }
+
+        // Vrátíme pouze potřebné informace
+        res.status(200).json({
+            _id: athlete._id,
+            email: athlete.email,
+            name: athlete.name,
+            surname: athlete.surname
+        });
+    } catch (error) {
+        console.error("Error verifying registration token:", error);
+        res.status(500).json({ error: error.message });
     }
 });
 

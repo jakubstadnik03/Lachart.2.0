@@ -304,25 +304,28 @@ const LactateCurveCalculator = ({ mockData }) => {
   
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-5 bg-white rounded-2xl shadow-lg mt-5">
-      <div className="w-full">
-        <h2 className="text-xl sm:text-2xl font-bold">
-          Lactate Curve <span className="text-lg sm:text-xl text-gray-600 ml-2 sm:ml-4">({formatDate(mockData.date)})</span>
-        </h2>
-        <p className="text-base sm:text-lg text-gray-500">
-          Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
-        </p>
-        <div className="mt-3" style={{ width: '100%', height: '250px', minHeight: '250px' }}>
-          <Line ref={chartRef} data={data} options={options} />
+    <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5">
+      <div className="w-full overflow-x-auto">
+        <div className="min-w-[1000px]">
+          <h2 className="text-lg sm:text-xl font-bold">
+            Lactate Curve <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
+          </h2>
+          <p className="text-sm sm:text-base text-gray-500">
+            Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 mt-2 sm:mt-3 md:min-w-[700px] max-w-[1000px]" style={{ height: '300px', minHeight: '200px' }}>
+              <Line ref={chartRef} data={data} options={options} />
+            </div>
+            <div className="w-[200px] mt-2 sm:mt-3">
+              <Legend chartRef={chartRef} />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="w-full sm:w-auto">
-          <Legend chartRef={chartRef} />
-        </div>
-
-        <div className="w-full sm:w-auto">
+      <div className="w-full overflow-x-auto">
+        <div className="min-w-[1000px]">
           <DataTable mockData={mockData} />
         </div>
       </div>

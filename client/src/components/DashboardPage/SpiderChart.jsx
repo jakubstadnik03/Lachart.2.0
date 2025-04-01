@@ -94,7 +94,7 @@ export default function SpiderChart({ trainings = [], selectedSport, setSelected
           <DropdownMenu
             selectedValue={selectedSport}
             options={sportOptions}
-            onChange={setSelectedSport} // Zjednodušeno - přímo předáváme setSelectedSport
+            onChange={(value) => setSelectedSport(value)}
             displayKey="label"
             valueKey="value"
           />

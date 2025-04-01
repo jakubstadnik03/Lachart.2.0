@@ -1,5 +1,4 @@
 import React from "react";
-import { useState, useEffect } from "react";
 import { useTrainings } from "../../context/TrainingContext";
 
 function TrainingRow({ training, sport, date, averagePace, status }) {
@@ -94,17 +93,7 @@ function convertPowerToPace(seconds, sport) {
   }
 }
 
-export default function TrainingTable({ selectedSport = 'all' }) {
-  const { trainings, loading, error } = useTrainings();
-
-  if (loading) {
-    return <div className="text-center py-4">Loading trainings...</div>;
-  }
-
-  if (error) {
-    return <div className="text-center py-4 text-red-500">Error loading trainings: {error}</div>;
-  }
-
+export default function TrainingTable({ trainings = [], selectedSport = 'all' }) {
   if (!trainings || trainings.length === 0) {
     return <div className="text-center py-4">No trainings available</div>;
   }

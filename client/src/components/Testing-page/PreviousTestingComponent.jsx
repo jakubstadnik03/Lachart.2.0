@@ -10,6 +10,12 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
 
+  // Reset stavu při změně tests
+  useEffect(() => {
+    setSelectedTests([]);
+    setCurrentTest(null);
+  }, [tests]);
+
   useEffect(() => {
     if (!tests || tests.length === 0) return;
 
@@ -31,9 +37,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
     } else {
       setCurrentTest(null);
     }
-    
-    setSelectedTests([]);
-  }, [selectedSport, tests]);
+  }, [selectedSport, tests, currentTest]);
 
   const handleDateSelect = (date) => {
     const selectedTest = tests.find(test => test.date === date);

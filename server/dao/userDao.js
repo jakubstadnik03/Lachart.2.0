@@ -122,6 +122,13 @@ class UserDao {
       throw error;
     }
   }
+
+  async findByRegistrationToken(token) {
+    return await UserModel.findOne({ 
+      registrationToken: token,
+      registrationTokenExpires: { $gt: new Date() }
+    });
+  }
 }
 
 // Exportujeme třídu, ne instanci

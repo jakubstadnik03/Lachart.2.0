@@ -5,23 +5,25 @@ import api from '../services/api';
 
 const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
   const [athletes, setAthletes] = useState([]);
-  const [selectedAthleteId, setSelectedAthleteId] = useState(null);
+  const [loading, setLoading] = useState(true);
   const { user, token, logout } = useAuth();
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const currentPath = location.pathname.split('/')[1];
+  const currentAthleteId = location.pathname.split('/')[2];
 
   useEffect(() => {
     const loadAthletes = async () => {
       if (user?.role === "coach") {
         try {
+          setLoading(true);
           const response = await api.get('/user/coach/athletes');
           setAthletes(response.data);
-          if (!selectedAthleteId && response.data.length > 0) {
-            setSelectedAthleteId(response.data[0]._id);
-          }
         } catch (error) {
           console.error('Error loading athletes:', error);
+        } finally {
+          setLoading(false);
         }
       }
     };
@@ -29,7 +31,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
     if (user && token) {
       loadAthletes();
     }
-  }, [user, token, selectedAthleteId]);
+  }, [user, token]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {
@@ -43,11 +45,56 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   };
 
-  const handleAthleteClick = (athleteId) => {
-    setSelectedAthleteId(athleteId);
-    navigate(`/dashboard/${athleteId}`);
-    if (window.innerWidth < 768) {
-      setIsMenuOpen(false);
+  const handleAthleteClick = async (athleteId) => {
+    try {
+      if (window.innerWidth < 768) {
+        setIsMenuOpen(false);
+      }
+
+      // Pokud jsme na stránce athletes nebo profile, přesměrujeme na profil atleta
+      if (currentPath === 'athletes' || currentPath === 'profile') {
+        navigate(`/athlete/${athleteId}`, { replace: true });
+        return;
+      }
+
+      // Pokud klikneme na stejného atleta, zrušíme výběr
+      if (currentAthleteId === athleteId) {
+        navigate(`/${currentPath}`, { replace: true });
+        return;
+      }
+
+      // Pro ostatní stránky přidáme ID atleta do URL
+      navigate(`/${currentPath}/${athleteId}`, { replace: true });
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      if (currentPath === 'dashboard') {
+        const response = await api.get(`/user/athlete/${athleteId}/trainings`);
+        window.dispatchEvent(new CustomEvent('athleteChanged', { 
+          detail: { 
+            athleteId,
+            trainings: response.data 
+          }
+        }));
+      } else if (currentPath === 'training') {
+        const response = await api.get(`/training/athlete/${athleteId}`);
+        window.dispatchEvent(new CustomEvent('athleteChanged', { 
+          detail: { 
+            athleteId,
+            trainings: response.data 
+          }
+        }));
+      } else if (currentPath === 'testing') {
+        const response = await api.get(`/testing/athlete/${athleteId}`);
+        window.dispatchEvent(new CustomEvent('athleteChanged', { 
+          detail: { 
+            athleteId,
+            tests: response.data 
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error changing athlete:', error);
     }
   };
 
@@ -155,7 +202,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
               .map((item) => (
                 <li key={item.name}>
                   <NavLink
-                    to={item.getPath ? item.getPath(selectedAthleteId) : item.path}
+                    to={item.getPath ? item.getPath(currentAthleteId) : item.path}
                     onClick={handleMenuItemClick}
                     className={({ isActive }) =>
                       `flex items-center text-sm font-medium p-3 rounded-lg ${
@@ -182,30 +229,36 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
         </div>
 
         {/* Seznam atletů - pouze pro trenéry */}
-        {user.role === "coach" && athletes.length > 0 && (
+        {user.role === "coach" && (
           <div className="p-4 border-t border-gray-200">
             <h2 className="text-sm font-bold text-gray-700 mb-3">Athletes</h2>
-            <ul className="space-y-2">
-              {athletes.map((athlete) => (
-                <li key={athlete._id}>
-                  <button
-                    onClick={() => handleAthleteClick(athlete._id)}
-                    className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium ${
-                      selectedAthleteId === athlete._id
-                        ? "bg-violet-100 text-violet-700"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    <img
-                      src={getAvatar(athlete)}
-                      alt="Athlete"
-                      className="w-6 h-6 rounded-full mr-2"
-                    />
-                    {athlete.name} {athlete.surname}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {loading ? (
+              <div className="text-sm text-gray-500">Načítání atletů...</div>
+            ) : athletes.length > 0 ? (
+              <ul className="space-y-2">
+                {athletes.map((athlete) => (
+                  <li key={athlete._id}>
+                    <button
+                      onClick={() => handleAthleteClick(athlete._id)}
+                      className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium ${
+                        currentAthleteId === athlete._id && currentPath !== 'athletes'
+                          ? "bg-violet-100 text-violet-700"
+                          : "text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <img
+                        src={getAvatar(athlete)}
+                        alt="Athlete"
+                        className="w-6 h-6 rounded-full mr-2"
+                      />
+                      {athlete.name} {athlete.surname}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-gray-500">Žádní atleti nejsou k dispozici</div>
+            )}
           </div>
         )}
 

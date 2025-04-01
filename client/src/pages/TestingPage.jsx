@@ -6,7 +6,7 @@ import PreviousTestingComponent from "../components/Testing-page/PreviousTesting
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import NotificationBadge from "../components/Testing-page/NotificationBadge";
 import AthleteSelector from "../components/AthleteSelector";
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -16,7 +16,8 @@ const TestingPage = () => {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   const sports = [
     { id: "all", name: "All Sports" },
@@ -25,33 +26,55 @@ const TestingPage = () => {
     { id: "swim", name: "Swimming" },
   ];
 
+  const loadTests = async (targetId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/test/list/${targetId}`);
+      setTests(response.data);
+    } catch (err) {
+      console.error('Error loading tests:', err);
+      setError('Failed to load tests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Synchronizace selectedAthleteId s URL parametrem
   useEffect(() => {
-    const loadTests = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const targetId = selectedAthleteId || user._id;
-        const response = await api.get(`/test/list/${targetId}`);
-        setTests(response.data);
-      } catch (err) {
-        console.error('Error loading tests:', err);
-        setError('Failed to load tests');
-      } finally {
-        setLoading(false);
-      }
+    if (athleteId) {
+      setSelectedAthleteId(athleteId);
+    }
+  }, [athleteId]);
+
+  // Načtení dat při prvním načtení stránky nebo změně atleta
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    const targetId = selectedAthleteId || user._id;
+    loadTests(targetId);
+  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+
+  // Posluchač pro změnu atleta z menu
+  useEffect(() => {
+    const handleAthleteChange = (event) => {
+      const { athleteId } = event.detail;
+      setSelectedAthleteId(athleteId);
+      navigate(`/testing/${athleteId}`, { replace: true });
     };
 
-    if (user?._id) {
-      loadTests();
-    }
-  }, [user?._id, selectedAthleteId]);
+    window.addEventListener('athleteChanged', handleAthleteChange);
+    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
+  }, [navigate]);
 
   const handleAddTest = async (newTest) => {
     try {
-      // Ensure numeric values in results
       const processedTest = {
         ...newTest,
-        athleteId: user._id,
+        athleteId: selectedAthleteId || user._id,
         results: newTest.results.map(result => ({
           ...result,
           power: Number(result.power) || 0,
@@ -73,6 +96,7 @@ const TestingPage = () => {
 
   const handleAthleteChange = (newAthleteId) => {
     setSelectedAthleteId(newAthleteId);
+    navigate(`/testing/${newAthleteId}`, { replace: true });
   };
 
   if (loading) return (
@@ -90,14 +114,14 @@ const TestingPage = () => {
   return (
     <div className="w-full max-w-[1600px] mx-auto px-1 sm:px-4 lg:px-6 overflow-x-hidden">
       {user?.role === 'coach' && (
-        <div className="mb-2 sm:mb-4">
+        <div className="mb-2 sm:mb-4 md:mt-6">
           <AthleteSelector
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
           />
         </div>
       )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6 md:mt-5 sm:mt-1">
         <div className="w-full sm:w-auto sm:flex-1 min-w-0">
           <SportsSelector
             sports={sports}

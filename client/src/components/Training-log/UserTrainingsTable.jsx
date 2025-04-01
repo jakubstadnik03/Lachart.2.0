@@ -92,6 +92,20 @@ const UserTrainingsTable = ({ trainings = [] }) => {
   // Přidáme nový state pro sledování rozbalených položek
   const [expandedItems, setExpandedItems] = useState({});
 
+  const getStatusIcon = (status) => {
+    const icons = {
+      up: "/icon/arrow-up.svg",
+      down: "/icon/arrow-down.svg",
+      same: "/icon/arrow-same.svg"
+    };
+    return icons[status];
+  };
+
+  const getLactateStatus = (current, previous) => {
+    if (previous === undefined) return "same"; // První hodnota nemá s čím srovnat
+    return current > previous ? "up" : current < previous ? "down" : "same";
+  };
+
   // Funkce pro přepínání rozbalení položky
   const toggleExpand = (trainingId) => {
     setExpandedItems(prev => ({
@@ -215,6 +229,55 @@ const UserTrainingsTable = ({ trainings = [] }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const renderWorkoutRow = (workout, index, array) => {
+    const isLastRow = index === array.length - 1;
+    const borderClass = isLastRow ? '' : 'border-solid border-b-[0.3px] border-b-[#686868]';
+    
+    const prevLactate = index > 0 ? array[index - 1].lactate : undefined;
+    const lactateStatus = getLactateStatus(workout.lactate, prevLactate);
+    const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null;
+  
+    const efficiencyColor = lactateStatus === "down" 
+      ? "text-red-700 bg-red-600"
+      : lactateStatus === "up"
+      ? "text-green-600 bg-green-600"
+      : "text-gray-500 bg-gray-400";
+  
+    return (
+      <div key={workout.interval} className={`grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
+        <div className="text-center w-8">{workout.interval}</div>
+        <div className="text-center w-12 sm:w-16">{workout.power}</div>
+        <div className="flex gap-0.5 items-center w-16">
+          <img
+            loading="lazy"
+            src="/icon/heart-rate.svg"
+            className="w-3 h-3 sm:w-4 sm:h-4"
+            alt="Heart rate"
+          />
+          <div>{workout.heartRate}</div>
+        </div>
+        <div className="flex gap-0.5 items-center text-blue-500 w-12">
+          <img
+            loading="lazy"
+            src="/icon/rpe.svg"
+            className="w-3 h-3 sm:w-4 sm:h-4"
+            alt="RPE"
+          />
+          <div>{workout.RPE}</div>
+        </div>
+        <div className={`flex gap-1 items-center p-1 w-12 sm:w-16 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
+          {lactateIcon && <img
+            loading="lazy"
+            src={lactateIcon}
+            className="w-2 h-2 sm:w-3 sm:h-3"
+            alt="Lactate status"
+          />}
+          <div>{workout.lactate}</div>
+        </div>
+      </div>
+    );
   };
 
   if (!trainings || trainings.length === 0) {

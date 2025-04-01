@@ -42,6 +42,12 @@ const userSchema = new mongoose.Schema({
   }],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+  isRegistrationComplete: {
+    type: Boolean,
+    default: false
+  },
+  registrationToken: String,
+  registrationTokenExpires: Date
 }, {
   timestamps: true
 });

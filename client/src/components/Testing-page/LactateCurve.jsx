@@ -91,13 +91,9 @@ const LactateCurve = ({ mockData }) => {
   }
 
   try {
-    const labels = validResults.map((result) =>
-      mockData.sport === "bike" ? `${result.power}W` : convertPowerToPace(result.power, mockData.sport)
-    );
-
+    const powerData = validResults.map((result) => result.power);
     const lactateData = validResults.map((result) => result.lactate);
     const heartRateData = validResults.map((result) => result.heartRate);
-    const powerData = validResults.map((result) => result.power);
 
     const datasets = [
       {
@@ -204,14 +200,14 @@ const LactateCurve = ({ mockData }) => {
     };
 
     return (
-      <div className="w-full p-4 sm:p-6 bg-white rounded-2xl shadow-lg">
-        <h2 className="text-xl sm:text-2xl font-bold">
-          Lactate Curve <span className="text-lg sm:text-xl text-gray-600 ml-2 sm:ml-4">({formatDate(mockData.date)})</span>
+      <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
+        <h2 className="text-2xl font-bold">
+          Lactate Curve <span className="text-xl text-gray-600 ml-4">({formatDate(mockData.date)})</span>
         </h2>
-        <p className="text-base sm:text-lg text-gray-500">
+        <p className="text-lg text-gray-500">
           Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
         </p>
-        <div className="mt-4" style={{ width: '100%', height: '250px', minHeight: '250px' }}>
+        <div className="relative" style={{ width: '100%', height: '400px' }}>
           <Line data={data} options={options} />
           {tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} />}
         </div>
