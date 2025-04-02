@@ -88,7 +88,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
     return (
       <div key={workout.interval} className={`grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
         <div className="text-center w-8">{workout.interval}</div>
-        <div className="text-center w-12 sm:w-16">{workout.power}</div>
+        <div className="text-center w-12 sm:w-16">{formatPower(workout.power, sport)}</div>
         <div className="flex gap-0.5 items-center w-16">
           <img
             loading="lazy"
