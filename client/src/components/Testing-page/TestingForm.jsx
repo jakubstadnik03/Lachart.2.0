@@ -8,7 +8,10 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     return date.toISOString().split('T')[0];
   };
 
-  const [rows, setRows] = useState(testData.results || []);
+  const [rows, setRows] = useState(testData?.results?.map(row => ({
+    ...row,
+    power: row.power || ''
+  })) || []);
   const [formData, setFormData] = useState({
     title: testData.title || '',
     description: testData.description || '',
@@ -60,9 +63,9 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
       ...testData,
       title: newFormData.title,
       description: newFormData.description,
-      weight: newFormData.weight,
+      weight: newFormData.weight ? Number(newFormData.weight) : '',
       sport: newFormData.sport,
-      baseLactate: newFormData.baseLa,
+      baseLactate: newFormData.baseLa ? Number(newFormData.baseLa) : '',
       date: newFormData.date,
       specifics: newFormData.specifics,
       comments: newFormData.comments,
@@ -72,23 +75,37 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     onTestDataChange(updatedTestData);
   };
 
-  const handleValueChange = (rowIndex, field, value) => {
-    // Ensure value is a valid number or empty string
-    let processedValue = value;
-    if (value !== '') {
-      if (field === 'power' && (testData.sport === 'run' || testData.sport === 'swim')) {
-        processedValue = value; // Keep pace format for run/swim
-      } else {
-        processedValue = Number(value) || 0;
+  const handlePaceChange = (index, value) => {
+    // Povolíme pouze čísla a dvojtečku
+    const cleanValue = value.replace(/[^\d:]/g, '');
+    
+    // Automatické formátování
+    let formattedValue = cleanValue;
+    
+    // Pokud uživatel zadá číslo bez dvojtečky
+    if (!cleanValue.includes(':')) {
+      if (cleanValue.length === 2) {
+        formattedValue = `${cleanValue}:`;
+      } else if (cleanValue.length > 2) {
+        formattedValue = `${cleanValue.slice(0, 2)}:${cleanValue.slice(2, 4)}`;
+      }
+    } else {
+      const [minutes, seconds] = cleanValue.split(':');
+      if (seconds && seconds.length > 2) {
+        formattedValue = `${minutes}:${seconds.slice(0, 2)}`;
       }
     }
 
-    const updatedRows = rows.map((row, index) =>
-      index === rowIndex ? { ...row, [field]: processedValue } : row
+    // Validace formátu MM:SS
+    const paceRegex = /^([0-5]?[0-9]):?([0-5]?[0-9])?$/;
+    if (formattedValue && !paceRegex.test(formattedValue)) return;
+
+    const updatedRows = rows.map((row, i) =>
+      i === index ? { ...row, power: formattedValue } : row
     );
     setRows(updatedRows);
 
-    // Propagate changes to parent component with processed numeric values
+    // Propagate changes to parent component
     const updatedTestData = {
       ...testData,
       title: formData.title,
@@ -99,13 +116,38 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
       date: formData.date,
       specifics: formData.specifics,
       comments: formData.comments,
-      results: updatedRows.map(row => ({
-        power: row.power !== '' ? Number(row.power) || 0 : '',
-        heartRate: row.heartRate !== '' ? Number(row.heartRate) || 0 : '',
-        lactate: row.lactate !== '' ? Number(row.lactate) || 0 : '',
-        glucose: row.glucose !== '' ? Number(row.glucose) || 0 : '',
-        RPE: row.RPE !== '' ? Number(row.RPE) || 0 : ''
-      }))
+      results: updatedRows
+    };
+    
+    setIsDirty(true);
+    onTestDataChange(updatedTestData);
+  };
+
+  const handleValueChange = (rowIndex, field, value) => {
+    if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
+      handlePaceChange(rowIndex, value);
+      return;
+    }
+
+    let processedValue = value;
+
+    const updatedRows = rows.map((row, index) =>
+      index === rowIndex ? { ...row, [field]: processedValue } : row
+    );
+    setRows(updatedRows);
+
+    // Propagate changes to parent component
+    const updatedTestData = {
+      ...testData,
+      title: formData.title,
+      description: formData.description,
+      weight: formData.weight ? Number(formData.weight) : '',
+      sport: formData.sport,
+      baseLactate: formData.baseLa ? Number(formData.baseLa) : '',
+      date: formData.date,
+      specifics: formData.specifics,
+      comments: formData.comments,
+      results: updatedRows
     };
     
     setIsDirty(true);
@@ -117,18 +159,18 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
       ...testData,
       title: formData.title,
       description: formData.description,
-      weight: Number(formData.weight) || 0,
+      weight: formData.weight ? Number(formData.weight) : '',
       sport: formData.sport,
-      baseLactate: Number(formData.baseLa) || 0,
+      baseLactate: formData.baseLa ? Number(formData.baseLa) : '',
       date: formData.date,
       specifics: formData.specifics,
       comments: formData.comments,
       results: rows.map(row => ({
-        power: Number(row.power) || 0,
-        heartRate: Number(row.heartRate) || 0,
-        lactate: Number(row.lactate) || 0,
-        glucose: Number(row.glucose) || 0,
-        RPE: Number(row.RPE) || 0
+        power: formData.sport === 'run' || formData.sport === 'swim' ? row.power : (row.power ? Number(row.power) : ''),
+        heartRate: row.heartRate ? Number(row.heartRate) : '',
+        lactate: row.lactate ? Number(row.lactate) : '',
+        glucose: row.glucose ? Number(row.glucose) : '',
+        RPE: row.RPE ? Number(row.RPE) : ''
       }))
     };
     
@@ -236,31 +278,34 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
           <div className="text-center text-sm">{index + 1}</div>
           <input 
             type="text" 
-            value={formData.sport === 'run' || formData.sport === 'swim' ? convertSecondsToPace(row.power) : row.power}
+            value={formData.sport === 'run' || formData.sport === 'swim' ? 
+              (row.power ? convertSecondsToPace(row.power) : '') : 
+              (row.power === 0 ? '' : row.power)}
             onChange={(e) => handleValueChange(index, 'power', e.target.value)} 
             className="p-1 text-sm border rounded-lg"
+            placeholder={formData.sport === 'run' || formData.sport === 'swim' ? "MM:SS" : "Power"}
           />
           <input 
             type="number" 
-            value={row.heartRate} 
+            value={row.heartRate === 0 ? '' : row.heartRate}
             onChange={(e) => handleValueChange(index, 'heartRate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           <input 
             type="number" 
-            value={row.lactate} 
+            value={row.lactate === 0 ? '' : row.lactate}
             onChange={(e) => handleValueChange(index, 'lactate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           {showGlucose && <input 
             type="number" 
-            value={row.glucose} 
+            value={row.glucose === 0 ? '' : row.glucose}
             onChange={(e) => handleValueChange(index, 'glucose', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />}
           <input 
             type="number" 
-            value={row.RPE} 
+            value={row.RPE === 0 ? '' : row.RPE}
             onChange={(e) => handleValueChange(index, 'RPE', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />
