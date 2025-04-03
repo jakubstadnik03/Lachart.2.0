@@ -129,6 +129,15 @@ class UserDao {
       registrationTokenExpires: { $gt: new Date() }
     });
   }
+
+  // Find user by invitation token
+  async findByInvitationToken(token) {
+    try {
+      return await UserModel.findOne({ invitationToken: token });
+    } catch (error) {
+      throw new Error("Error finding user by invitation token: " + error.message);
+    }
+  }
 }
 
 // Exportujeme třídu, ne instanci

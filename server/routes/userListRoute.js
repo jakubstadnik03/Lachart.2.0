@@ -682,4 +682,179 @@ router.get("/verify-registration-token/:token", async (req, res) => {
     }
 });
 
+// Invite existing athlete to coach's team
+router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
+    try {
+        const { email } = req.body;
+        const coachId = req.user.userId;
+
+        if (!email) {
+            return res.status(400).json({ error: "Email je povinný" });
+        }
+
+        // Kontrola, zda je uživatel trenér
+        const coach = await userDao.findById(coachId);
+        if (!coach || coach.role !== 'coach') {
+            return res.status(403).json({ error: "Přístup povolen pouze pro trenéry" });
+        }
+
+        // Najít atleta podle emailu
+        const athlete = await userDao.findByEmail(email);
+        if (!athlete) {
+            return res.status(404).json({ error: "Atlet s tímto emailem nebyl nalezen" });
+        }
+
+        if (athlete.role !== 'athlete') {
+            return res.status(400).json({ error: "Uživatel s tímto emailem není atlet" });
+        }
+
+        // Kontrola, zda už atlet nemá trenéra
+        if (athlete.coachId) {
+            return res.status(400).json({ error: "Tento atlet už má přiřazeného trenéra" });
+        }
+
+        // Generovat token pro potvrzení pozvánky
+        const invitationToken = crypto.randomBytes(32).toString('hex');
+        const invitationTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dní
+
+        // Uložit token a ID trenéra do databáze
+        await userDao.updateUser(athlete._id, {
+            invitationToken,
+            invitationTokenExpires,
+            pendingCoachId: coachId
+        });
+
+        // Odeslat email s pozvánkou
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        const invitationLink = `${process.env.CLIENT_URL}/accept-invitation/${invitationToken}`;
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Pozvánka do týmu v LaChart',
+            html: `
+                <h2>Pozvánka do týmu</h2>
+                <p>Váš trenér ${coach.name} ${coach.surname} vás pozval do svého týmu v systému LaChart.</p>
+                <p>Pro potvrzení pozvánky klikněte na následující odkaz:</p>
+                <a href="${invitationLink}">Potvrdit pozvánku</a>
+                <p>Odkaz je platný 7 dní.</p>
+                <p>Pokud jste tento email nevyžadovali, můžete ho ignorovat.</p>
+            `
+        });
+
+        res.status(200).json({ 
+            message: "Pozvánka byla úspěšně odeslána",
+            athlete: {
+                _id: athlete._id,
+                name: athlete.name,
+                surname: athlete.surname,
+                email: athlete.email,
+                invitationPending: true
+            }
+        });
+    } catch (error) {
+        console.error("Error inviting athlete:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Accept invitation endpoint
+router.post("/accept-invitation/:token", verifyToken, async (req, res) => {
+    try {
+        const { token } = req.params;
+        const athleteId = req.user.userId;
+
+        // Najít atleta podle tokenu
+        const athlete = await userDao.findByInvitationToken(token);
+        if (!athlete) {
+            return res.status(404).json({ error: "Neplatná nebo expirovaná pozvánka" });
+        }
+
+        if (athlete._id.toString() !== athleteId.toString()) {
+            return res.status(403).json({ error: "Nemáte oprávnění k přijetí této pozvánky" });
+        }
+
+        if (athlete.invitationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "Pozvánka vypršela" });
+        }
+
+        // Přidat atleta k trenérovi
+        await userDao.addAthleteToCoach(athlete.pendingCoachId, athlete._id);
+        await userDao.updateUser(athlete._id, { 
+            coachId: athlete.pendingCoachId,
+            invitationToken: null,
+            invitationTokenExpires: null,
+            pendingCoachId: null
+        });
+
+        // Odeslat potvrzovací email trenérovi
+        const coach = await userDao.findById(athlete.pendingCoachId);
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: coach.email,
+            subject: 'Atlet přijal pozvánku do týmu',
+            html: `
+                <h2>Pozvánka byla přijata</h2>
+                <p>Atlet ${athlete.name} ${athlete.surname} přijal vaši pozvánku do týmu.</p>
+                <p>Nyní se zobrazí ve vašem seznamu atletů.</p>
+            `
+        });
+
+        res.status(200).json({ 
+            message: "Pozvánka byla úspěšně přijata",
+            athlete: {
+                _id: athlete._id,
+                name: athlete.name,
+                surname: athlete.surname,
+                email: athlete.email
+            }
+        });
+    } catch (error) {
+        console.error("Error accepting invitation:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Verify invitation token
+router.get("/verify-invitation-token/:token", async (req, res) => {
+    try {
+        const { token } = req.params;
+        const athlete = await userDao.findByInvitationToken(token);
+        
+        if (!athlete) {
+            return res.status(404).json({ error: "Neplatná nebo expirovaná pozvánka" });
+        }
+
+        if (athlete.invitationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "Pozvánka vypršela" });
+        }
+
+        // Vrátíme pouze potřebné informace
+        res.status(200).json({
+            _id: athlete._id,
+            email: athlete.email,
+            name: athlete.name,
+            surname: athlete.surname
+        });
+    } catch (error) {
+        console.error("Error verifying invitation token:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;

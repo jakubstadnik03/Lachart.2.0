@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 const resultSchema = new mongoose.Schema({
     interval: Number,
     duration: String,
+    durationType: {
+        type: String,
+        enum: ['time', 'distance'],
+        default: 'time'
+    },
     rest: String,
     intensity: String,
     power: Number,

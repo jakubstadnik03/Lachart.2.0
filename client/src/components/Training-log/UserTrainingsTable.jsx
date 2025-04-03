@@ -74,11 +74,11 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
   );
 };
 
-const UserTrainingsTable = ({ trainings = [] }) => {
+const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [sortConfig, setSortConfig] = useState({ key: "date", direction: "asc" });
+  const [sortConfig, setSortConfig] = useState({ key: "date", direction: "desc" });
   const [trainingToEdit, setTrainingToEdit] = useState(null);
   const [trainingToDelete, setTrainingToDelete] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -86,8 +86,7 @@ const UserTrainingsTable = ({ trainings = [] }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  // Předpokládám, že máte kontext pro správu tréninků
-  const { fetchTrainings, deleteTraining: removeTrainingFromContext } = useTrainings();
+  const { deleteTraining: removeTrainingFromContext } = useTrainings();
 
   // Přidáme nový state pro sledování rozbalených položek
   const [expandedItems, setExpandedItems] = useState({});
@@ -102,8 +101,12 @@ const UserTrainingsTable = ({ trainings = [] }) => {
   };
 
   const getLactateStatus = (current, previous) => {
-    if (previous === undefined) return "same"; // První hodnota nemá s čím srovnat
-    return current > previous ? "up" : current < previous ? "down" : "same";
+    // Převedeme prázdné hodnoty na 0
+    const currentValue = current === '' || current === null || current === undefined ? 0 : Number(current);
+    const previousValue = previous === '' || previous === null || previous === undefined ? 0 : Number(previous);
+    
+    if (previousValue === 0) return "same"; // První hodnota nemá s čím srovnat
+    return currentValue > previousValue ? "up" : currentValue < previousValue ? "down" : "same";
   };
 
   // Funkce pro přepínání rozbalení položky
@@ -188,8 +191,8 @@ const UserTrainingsTable = ({ trainings = [] }) => {
       // Aktualizace kontextu
       removeTrainingFromContext(trainingToDelete._id);
       
-      // Znovu načíst tréninky ze serveru
-      await fetchTrainings();
+      // Aktualizace lokálního stavu
+      const updatedTrainings = trainings.filter(training => training._id !== trainingToDelete._id);
       
       // Zavřít modální okno
       setShowDeleteModal(false);
@@ -212,12 +215,18 @@ const UserTrainingsTable = ({ trainings = [] }) => {
       console.log('Training data to update:', updatedTraining);
       
       // Volání API pro aktualizaci tréninku
-      await updateTraining(updatedTraining._id, updatedTraining);
+      const response = await updateTraining(updatedTraining._id, updatedTraining);
       console.log('API call successful');
       
       // Aktualizace kontextu nebo znovu načtení dat
-      await fetchTrainings();
-      console.log('Trainings refreshed');
+      if (onTrainingUpdate) {
+        await onTrainingUpdate();
+      }
+      
+      // Aktualizace lokálního stavu
+      const updatedTrainings = trainings.map(training => 
+        training._id === updatedTraining._id ? response : training
+      );
       
       // Zavření modálního okna
       setShowEditModal(false);
@@ -244,9 +253,21 @@ const UserTrainingsTable = ({ trainings = [] }) => {
       : lactateStatus === "up"
       ? "text-green-600 bg-green-600"
       : "text-gray-500 bg-gray-400";
+
+    const getDurationUnit = (durationType, duration) => {
+      if (!duration) return '';
+      
+      // Kontrola, zda hodnota obsahuje něco jiného než čísla a dvojtečku
+      const hasNonNumeric = /[^\d:]/.test(duration);
+      
+      // Pokud obsahuje něco jiného než čísla a dvojtečku, nezobrazujeme jednotku
+      if (hasNonNumeric) return '';
+      
+      return durationType === 'time' ? 'min' : 'm';
+    };
   
     return (
-      <div key={workout.interval} className={`grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
+      <div key={workout.interval} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
         <div className="text-center w-8">{workout.interval}</div>
         <div className="text-center w-12 sm:w-16">{workout.power}</div>
         <div className="flex gap-0.5 items-center w-16">
@@ -274,7 +295,10 @@ const UserTrainingsTable = ({ trainings = [] }) => {
             className="w-2 h-2 sm:w-3 sm:h-3"
             alt="Lactate status"
           />}
-          <div>{workout.lactate}</div>
+          <div>{workout.lactate || ''}</div>
+        </div>
+        <div className="w-16">
+          {workout.duration} {getDurationUnit(workout.durationType, workout.duration)}
         </div>
       </div>
     );

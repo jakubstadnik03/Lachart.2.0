@@ -62,12 +62,13 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   };
 
   const renderIntervalsHeader = () => (
-    <div className="grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-2 bg-gray-50 text-gray-600 text-xs sm:text-sm font-medium border-b border-gray-200">
+    <div className="grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-2 bg-gray-50 text-gray-600 text-xs sm:text-sm font-medium border-b border-gray-200">
       <div className="text-center w-8">#</div>
       <div className="text-center w-12 sm:w-16">Power {getPowerUnit(sport)}</div>
       <div className="w-16">HR (bpm)</div>
       <div className="w-12">RPE</div>
       <div className="w-12 sm:w-16">Lactate</div>
+      <div className="w-16">Duration</div>
     </div>
   );
 
@@ -79,14 +80,28 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
     const lactateStatus = getLactateStatus(workout.lactate, prevLactate);
     const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null;
   
-    const efficiencyColor = lactateStatus === "down" 
-      ? "text-red-700 bg-red-600"
-      : lactateStatus === "up"
-      ? "text-green-600 bg-green-600"
-      : "text-gray-500 bg-gray-400";
+    const efficiencyColor = workout.lactate ? (
+      lactateStatus === "down" 
+        ? "text-red-700 bg-red-600"
+        : lactateStatus === "up"
+        ? "text-green-600 bg-green-600"
+        : "text-gray-500 bg-gray-400"
+    ) : "text-gray-500 bg-gray-400";
+
+    const getDurationUnit = (durationType, duration) => {
+      if (!duration) return '';
+      
+      // Kontrola, zda hodnota obsahuje něco jiného než čísla a dvojtečku
+      const hasNonNumeric = /[^\d:]/.test(duration);
+      
+      // Pokud obsahuje něco jiného než čísla a dvojtečku, nezobrazujeme jednotku
+      if (hasNonNumeric) return '';
+      
+      return durationType === 'time' ? 'min' : 'm';
+    };
   
     return (
-      <div key={workout.interval} className={`grid grid-cols-5 sm:grid-cols-5 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
+      <div key={workout.interval} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
         <div className="text-center w-8">{workout.interval}</div>
         <div className="text-center w-12 sm:w-16">{formatPower(workout.power, sport)}</div>
         <div className="flex gap-0.5 items-center w-16">
@@ -108,13 +123,16 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           <div>{workout.RPE}</div>
         </div>
         <div className={`flex gap-1 items-center p-1 w-12 sm:w-16 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
-          {lactateIcon && <img
+          {workout.lactate && lactateIcon && <img
             loading="lazy"
             src={lactateIcon}
             className="w-2 h-2 sm:w-3 sm:h-3"
             alt=""
           />}
-          <div>{workout.lactate}</div>
+          <div>{workout.lactate || ''}</div>
+        </div>
+        <div className="w-16">
+          {workout.duration} {getDurationUnit(workout.durationType, workout.duration)}
         </div>
       </div>
     );

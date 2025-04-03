@@ -65,6 +65,19 @@ class TrainingDao {
     if (!trainingData.date) {
       throw new Error('date is required');
     }
+
+    // Validace výsledků
+    if (trainingData.results && Array.isArray(trainingData.results)) {
+      trainingData.results.forEach((result, index) => {
+        if (result.duration && !result.durationType) {
+          throw new Error(`durationType is required for interval ${index + 1}`);
+        }
+        if (result.durationType && !['time', 'distance'].includes(result.durationType)) {
+          throw new Error(`Invalid durationType for interval ${index + 1}`);
+        }
+      });
+    }
+
     return true;
   }
 }

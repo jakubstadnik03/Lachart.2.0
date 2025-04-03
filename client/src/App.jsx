@@ -16,6 +16,7 @@ import AthleteProfile from './components/AthleteProfile';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import CompleteRegistrationPage from './pages/CompleteRegistrationPage';
+import AcceptInvitationPage from './pages/AcceptInvitationPage';
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -31,6 +32,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
           <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
+          <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
 
           {/* Chráněné routy s Layoutem */}
           <Route

@@ -16,8 +16,26 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
 // Registrace modulů pro Chart.js
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Tooltip, Legend);
 
-export default function SpiderChart({ trainings = [], selectedSport, setSelectedSport }) {
+export default function SpiderChart({ trainings = [] }) {
+  const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  // Funkce pro formátování času do formátu mm:ss
+  const formatPace = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
+  };
+
+  // Funkce pro formátování hodnoty podle sportu
+  const formatValue = (value, sport) => {
+    const roundedValue = Math.round(value);
+    if (sport === 'bike') {
+      return `${roundedValue}W`;
+    } else {
+      return formatPace(roundedValue);
+    }
+  };
 
   if (!Array.isArray(trainings) || trainings.length === 0) {
     return <div className="text-gray-500 text-center">No data available</div>;
@@ -58,7 +76,7 @@ export default function SpiderChart({ trainings = [], selectedSport, setSelected
       borderColor: monthColors[index % monthColors.length],
       borderWidth: 2,
       pointBackgroundColor: monthColors[index % monthColors.length],
-      fill: false, // Zakázání vyplňování plochy
+      fill: false,
     })),
   };
 
@@ -71,17 +89,37 @@ export default function SpiderChart({ trainings = [], selectedSport, setSelected
         suggestedMin: 200,
         ticks: {
           font: { size: 14 },
+          callback: (value) => formatValue(value, selectedSport),
         },
       },
     },
     plugins: {
       legend: {
-        position: 'bottom', // Přesunutí legendy dolů
+        position: 'bottom',
         labels: {
-          font: { size: 12 }, // Zmenšení fontu legendy
-          usePointStyle: true, // Použití koleček místo čtverečků
+          font: { size: 12 },
+          usePointStyle: true,
         },
       },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            return `${context.dataset.label}: ${formatValue(context.raw, selectedSport)}`;
+          }
+        },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        backdropFilter: 'blur(4px)',
+        titleColor: '#111827',
+        bodyColor: '#111827',
+        borderColor: '#E5E7EB',
+        borderWidth: 1,
+        padding: 12,
+        boxPadding: 4,
+        usePointStyle: true,
+        boxWidth: 8,
+        boxHeight: 8,
+        displayColors: true
+      }
     },
   };
 

@@ -27,8 +27,8 @@ const DURATION_TYPES = [
 ];
 
 const TERRAIN_OPTIONS = {
-  bike: ["track", "road", "trail"],
-  run: ["track", "road", "trail"],
+  bike: ["track", "road", "trail", "indoor"],
+  run: ["track", "road", "trail", "indoor"],
   swim: [] // pro plavání používáme poolLength
 };
 
@@ -68,6 +68,8 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
   const [isCustomTitle, setIsCustomTitle] = useState(initialData?.customTitle ? true : false);
   const [isCustomWeather, setIsCustomWeather] = useState(initialData?.specifics?.customWeather ? true : false);
   const [isCustomSpecific, setIsCustomSpecific] = useState(initialData?.specifics?.customSpecific ? true : false);
+  const [editingIntervalIndex, setEditingIntervalIndex] = useState(null);
+  const [tempRepeatCount, setTempRepeatCount] = useState("");
 
   useEffect(() => {
     const loadTrainingTitles = async () => {
@@ -124,9 +126,25 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
     try {
       const dataToSubmit = { ...formData };
       
+      // Rozepsání opakujících se intervalů
+      if (dataToSubmit.results) {
+        const expandedResults = [];
+        dataToSubmit.results.forEach((interval, index) => {
+          const repeatCount = parseInt(interval.repeatCount) || 1;
+          for (let i = 0; i < repeatCount; i++) {
+            expandedResults.push({
+              ...interval,
+              interval: expandedResults.length + 1,
+              repeatCount: undefined // Odstraníme pole repeatCount z rozepsaných intervalů
+            });
+          }
+        });
+        dataToSubmit.results = expandedResults;
+      }
+      
       // Převod pace na sekundy pro run a swim
-      if ((formData.sport === 'run' || formData.sport === 'swim') && formData.results) {
-        dataToSubmit.results = formData.results.map(interval => {
+      if ((formData.sport === 'run' || formData.sport === 'swim') && dataToSubmit.results) {
+        dataToSubmit.results = dataToSubmit.results.map(interval => {
           const updatedInterval = { ...interval };
           
           // Převod power (pace) z MM:SS na sekundy
@@ -180,10 +198,31 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           lactate: "",
           RPE: "",
           duration: "",
-          durationType: "time"
+          durationType: "time",
+          repeatCount: 1 // Přidáme výchozí hodnotu pro počet opakování
         }
       ]
     }));
+  };
+
+  const handleEditRepeatCount = (index) => {
+    setEditingIntervalIndex(index);
+    setTempRepeatCount(formData.results[index].repeatCount.toString());
+  };
+
+  const handleSaveRepeatCount = () => {
+    if (editingIntervalIndex !== null && tempRepeatCount) {
+      const newResults = [...formData.results];
+      newResults[editingIntervalIndex].repeatCount = Math.max(1, parseInt(tempRepeatCount) || 1);
+      setFormData(prev => ({ ...prev, results: newResults }));
+      setEditingIntervalIndex(null);
+      setTempRepeatCount("");
+    }
+  };
+
+  const handleCancelEditRepeatCount = () => {
+    setEditingIntervalIndex(null);
+    setTempRepeatCount("");
   };
 
   return (
@@ -231,7 +270,11 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                   w-full
                 `}
               >
-                <img src={activity.icon} alt="" className="w-5 h-5 sm:w-6 sm:h-6" />
+                <img 
+                  src={activity.icon} 
+                  alt="" 
+                  className={`w-5 h-5 sm:w-6 sm:h-6 ${formData.sport === activity.id ? 'brightness-0 invert' : ''}`}
+                />
                 <span>{activity.label}</span>
               </button>
             ))}
@@ -430,21 +473,43 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
               {formData.results.map((interval, index) => (
                 <div key={index} className="border border-gray-200 rounded-lg">
                   <div className="flex justify-between items-center px-4 py-2 border-b border-gray-200">
-                    <h3 className="font-medium text-gray-700">{interval.interval}. interval</h3>
-                    <button 
-                      type="button" 
-                      className="text-red-500 hover:text-red-700 text-2xl font-bold w-8 h-8 flex items-center justify-center"
-                      onClick={() => {
-                        const newResults = formData.results.filter((_, i) => i !== index);
-                        const updatedResults = newResults.map((res, i) => ({
-                          ...res,
-                          interval: i + 1
-                        }));
-                        setFormData(prev => ({ ...prev, results: updatedResults }));
-                      }}
-                    >
-                      −
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-gray-700">
+                        {interval.repeatCount > 1 
+                          ? `${index + 1}-${index + parseInt(interval.repeatCount)} interval`
+                          : `${index + 1}. interval`}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => handleEditRepeatCount(index)}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {interval.repeatCount > 1 && (
+                        <span className="text-sm text-gray-500">
+                          {interval.repeatCount}x
+                        </span>
+                      )}
+                      <button 
+                        type="button" 
+                        className="text-red-500 hover:text-red-700 text-2xl font-bold w-8 h-8 flex items-center justify-center"
+                        onClick={() => {
+                          const newResults = formData.results.filter((_, i) => i !== index);
+                          const updatedResults = newResults.map((res, i) => ({
+                            ...res,
+                            interval: i + 1
+                          }));
+                          setFormData(prev => ({ ...prev, results: updatedResults }));
+                        }}
+                      >
+                        −
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:flex md:items-center gap-4">
@@ -555,11 +620,28 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                       <div className="relative flex-1">
                         <input
                           type="text"
-                          placeholder={interval.durationType === "time" ? "MM:SS" : "Distance"}
+                          placeholder={interval.durationType === "time" ? "MM:SS" : "Distance (e.g. 1 km, 400m)"}
                           value={interval.duration}
                           onChange={(e) => {
                             const newResults = [...formData.results];
-                            newResults[index].duration = e.target.value;
+                            let value = e.target.value;
+                            
+                            // Pokud je typ distance, povolíme formát s km nebo m
+                            if (interval.durationType === "distance") {
+                              // Povolíme čísla, tečku, mezeru a jednotky km/m
+                              value = value.replace(/[^\d\s.km]/g, '');
+                              
+                              // Automatické přidání jednotky pokud není zadána
+                              if (value && !value.includes('km') && !value.includes('m')) {
+                                // Pokud je číslo větší než 1, použijeme km, jinak m
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  value = numValue >= 1 ? `${value} km` : `${value}m`;
+                                }
+                              }
+                            }
+                            
+                            newResults[index].duration = value;
                             setFormData(prev => ({ ...prev, results: newResults }));
                           }}
                           className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
@@ -569,6 +651,10 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                           onClick={() => {
                             const newResults = [...formData.results];
                             newResults[index].durationType = interval.durationType === "time" ? "distance" : "time";
+                            // Při přepnutí na time vymažeme hodnotu
+                            if (newResults[index].durationType === "time") {
+                              newResults[index].duration = "";
+                            }
                             setFormData(prev => ({ ...prev, results: newResults }));
                           }}
                           className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
@@ -616,6 +702,43 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           </button>
         </div>
       </div>
+
+      {editingIntervalIndex !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium mb-4">Set Number of Repetitions</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Number of repetitions:</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={tempRepeatCount}
+                  onChange={(e) => setTempRepeatCount(e.target.value)}
+                  className="w-full border rounded-lg p-2"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancelEditRepeatCount}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRepeatCount}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -10,8 +10,11 @@ const AthletesPage = () => {
   const [athletes, setAthletes] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteError, setInviteError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     surname: '',
@@ -22,6 +25,7 @@ const AthletesPage = () => {
     weight: '',
     height: '',
     sport: '',
+    specialization: '',
     notes: '',
   });
 
@@ -126,6 +130,7 @@ const AthletesPage = () => {
       weight: athlete.weight || '',
       height: athlete.height || '',
       sport: athlete.sport || '',
+      specialization: athlete.specialization || '',
       notes: athlete.notes || '',
     });
     setIsModalOpen(true);
@@ -196,7 +201,7 @@ const AthletesPage = () => {
           height: formData.height ? Number(formData.height) : null,
           weight: formData.weight ? Number(formData.weight) : null,
           sport: formData.sport,
-          specialization: formData.notes // Použijeme notes jako specialization
+          specialization: formData.specialization
         });
         
         if (response.data.success) {
@@ -227,6 +232,7 @@ const AthletesPage = () => {
       weight: '',
       height: '',
       sport: '',
+      specialization: '',
       notes: '',
     });
   };
@@ -241,6 +247,23 @@ const AthletesPage = () => {
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear().toString();
     return `${day}.${month}.${year}`;
+  };
+
+  const handleInviteAthlete = async (e) => {
+    e.preventDefault();
+    setInviteError('');
+    
+    try {
+      const response = await api.post('/user/coach/invite-athlete', { email: inviteEmail });
+      if (response.data.athlete) {
+        setAthletes([...athletes, response.data.athlete]);
+        alert('Atlet byl úspěšně přidán do týmu a byla mu odeslána pozvánka');
+        setIsInviteModalOpen(false);
+        setInviteEmail('');
+      }
+    } catch (error) {
+      setInviteError(error.response?.data?.error || 'Chyba při přidávání atleta');
+    }
   };
 
   return (
@@ -258,13 +281,22 @@ const AthletesPage = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 hover:bg-purple-700 transition-colors"
-          >
-            <span className="text-lg">+</span>
-            Add New Athlete
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsInviteModalOpen(true)}
+              className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 hover:bg-purple-700 transition-colors"
+            >
+              <span className="text-lg">+</span>
+              Add Existing Athlete
+            </button>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 hover:bg-purple-700 transition-colors"
+            >
+              <span className="text-lg">+</span>
+              Add New Athlete
+            </button>
+          </div>
         </div>
       </div>
 
@@ -303,6 +335,17 @@ const AthletesPage = () => {
                     </button>
                   </div>
                 )}
+              </div>
+       
+              <div className="absolute bottom-4 left-4 right-4">
+                <div className="flex justify-between items-center">
+                  
+                  {athlete.invitationPending && (
+                    <span className="px-2 py-1 text-xs font-medium text-yellow-800 bg-yellow-100 rounded-full">
+                      Čeká na potvrzení
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="px-6 pb-6">
@@ -536,6 +579,20 @@ const AthletesPage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Specialization
+                  </label>
+                  <input
+                    type="text"
+                    name="specialization"
+                    value={formData.specialization}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                    placeholder="Enter specialization (e.g., Sprint, Long Distance)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Notes
                   </label>
                   <textarea
@@ -566,6 +623,69 @@ const AthletesPage = () => {
                   className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
                 >
                   {selectedAthlete ? 'Save Changes' : 'Add Athlete'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Athlete Modal */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-4 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Přidat existujícího atleta</h2>
+              <button 
+                onClick={() => {
+                  setIsInviteModalOpen(false);
+                  setInviteEmail('');
+                  setInviteError('');
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleInviteAthlete} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email atleta<span className="text-orange-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                  placeholder="Zadejte email atleta"
+                />
+              </div>
+
+              {inviteError && (
+                <div className="text-red-500 text-sm text-center">
+                  {inviteError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsInviteModalOpen(false);
+                    setInviteEmail('');
+                    setInviteError('');
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Zrušit
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                >
+                  Odeslat pozvánku
                 </button>
               </div>
             </form>
