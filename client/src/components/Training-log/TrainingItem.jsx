@@ -166,7 +166,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
       {/* Expandovaný obsah */}
       {isExpanded && (
         <div className="p-4 border-t border-gray-200">
-          {/* Popis tréninku - přidáno */}
+          {/* Training description */}
           {description && (
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
               <h4 className="font-medium text-gray-900 mb-1">Description:</h4>
@@ -174,13 +174,13 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
             </div>
           )}
           
-          {/* Intervaly s hlavičkou */}
+          {/* Intervals with header */}
           <div className="space-y-0.5">
             {renderIntervalsHeader()}
             {results.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
           </div>
           
-          {/* Dodatečné informace - nyní pro všechny velikosti obrazovek */}
+          {/* Additional information - now for all screen sizes */}
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="font-medium">Terrain/Pool:</span>

@@ -68,10 +68,10 @@ const ResetPasswordPage = () => {
         <div className="max-w-md w-full space-y-8">
           <div>
             <h2 className="text-center text-3xl font-bold text-gray-900">
-              Reset hesla
+              Reset Password
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
-              Zadejte své nové heslo
+              Enter your new password
             </p>
           </div>
 

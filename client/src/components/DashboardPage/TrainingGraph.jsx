@@ -391,7 +391,7 @@ const TrainingGraph = ({
   // Formátujeme data pro dropdown
   const trainingOptions = trainingsWithSelectedTitle?.map(training => ({
     value: training._id,
-    label: new Date(training.date).toLocaleDateString('cs-CZ', {
+    label: new Date(training.date).toLocaleDateString('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'

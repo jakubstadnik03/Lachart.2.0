@@ -22,7 +22,7 @@ const CompleteRegistrationPage = () => {
         setAthlete(response.data);
         setLoading(false);
       } catch (error) {
-        setError('Neplatný nebo expirovaný registrační odkaz');
+        setError('Invalid or expired registration link');
         setLoading(false);
       }
     };
@@ -33,7 +33,7 @@ const CompleteRegistrationPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
-      setError("Hesla se neshodují");
+      setError("Passwords do not match");
       return;
     }
     try {
@@ -42,11 +42,11 @@ const CompleteRegistrationPage = () => {
       });
       navigate('/login', { 
         state: { 
-          message: 'Registrace byla úspěšně dokončena. Můžete se přihlásit.' 
+          message: 'Registration completed successfully. You can now log in.' 
         }
       });
     } catch (error) {
-      setError(error.response?.data?.message || 'Chyba při dokončování registrace');
+      setError(error.response?.data?.message || 'Error completing registration');
     }
   };
 
@@ -55,7 +55,7 @@ const CompleteRegistrationPage = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Načítání...</p>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -67,7 +67,7 @@ const CompleteRegistrationPage = () => {
         <div className="text-center">
           <div className="text-red-500 text-xl mb-4">{error}</div>
           <a href="/login" className="text-violet-600 hover:text-violet-500">
-            Přejít na přihlášení
+            Go to login
           </a>
         </div>
       </div>
@@ -78,7 +78,7 @@ const CompleteRegistrationPage = () => {
     <div className="min-h-screen flex">
       {/* Left side - Background */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent">
-        {/* Zde můžete přidat obrázek nebo grafiku */}
+        {/* You can add an image or graphics here */}
       </div>
 
       {/* Right side - Form */}
@@ -91,32 +91,15 @@ const CompleteRegistrationPage = () => {
               alt="LaChart Logo"
             />
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
-              Dokončení registrace
+              Complete Registration
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
-              Nastavte si heslo pro dokončení registrace
+              Set your password to complete registration
             </p>
           </div>
 
-          <form className="mt-6 sm:mt-8 space-y-4 sm:space-y-6" onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              {/* Email (readonly) */}
-              <div className="relative">
-                <input
-                  type="email"
-                  value={athlete?.email || ''}
-                  readOnly
-                  className="appearance-none rounded-lg relative block w-full pl-10 pr-3 py-2 border border-gray-300 bg-gray-50 text-gray-500"
-                />
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-                  </svg>
-                </span>
-              </div>
-
-              {/* Password */}
+          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+            <div className="rounded-md shadow-sm -space-y-px">
               <div className="relative">
                 <input
                   id="password"
@@ -124,7 +107,7 @@ const CompleteRegistrationPage = () => {
                   type={showPassword ? "text" : "password"}
                   required
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
-                  placeholder="Heslo"
+                  placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 />
@@ -151,7 +134,6 @@ const CompleteRegistrationPage = () => {
                 </button>
               </div>
 
-              {/* Confirm Password */}
               <div className="relative">
                 <input
                   id="confirmPassword"
@@ -159,7 +141,7 @@ const CompleteRegistrationPage = () => {
                   type={showConfirmPassword ? "text" : "password"}
                   required
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
-                  placeholder="Potvrzení hesla"
+                  placeholder="Confirm password"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 />
@@ -188,7 +170,7 @@ const CompleteRegistrationPage = () => {
             </div>
 
             <p className="text-xs text-gray-500">
-              Heslo musí mít alespoň 8 znaků
+              Password must be at least 8 characters long
             </p>
 
             {error && (
@@ -202,7 +184,7 @@ const CompleteRegistrationPage = () => {
                 type="submit"
                 className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-violet-600 hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500"
               >
-                Dokončit registraci
+                Complete Registration
               </button>
             </div>
           </form>

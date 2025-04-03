@@ -3,13 +3,13 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Hind Vadodara', 'sans-serif'], // Nastavení Hind Vadodara jako výchozího fontu
+        sans: ['Hind Vadodara', 'sans-serif'], // Setting Hind Vadodara as the default font
       },
       colors: {
-          'custom-gray': '#FCFCFC', // Přidáš novou barvu
-        primary: '#7755FF', // Fialová barva pro aktivní odkazy
+        'custom-gray': '#FCFCFC', // Adding new color
+        primary: '#7755FF', // Purple color for active links
         zinc: {
-          150: '#e5e5e5', // Mírně tmavší než bg-zinc-100
+          150: '#e5e5e5', // Slightly darker than bg-zinc-100
         },
       },
     },

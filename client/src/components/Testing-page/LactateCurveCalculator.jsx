@@ -162,7 +162,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('cs-CZ', {
+    return date.toLocaleDateString('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
@@ -170,7 +170,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   };
 
   if (!mockData || !mockData.results) {
-    console.error('mockData nebo mockData.results nejsou definovány');
+    console.error('mockData or mockData.results is not defined');
     return null;
   }
 

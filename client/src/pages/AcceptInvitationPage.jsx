@@ -51,13 +51,13 @@ const AcceptInvitationPage = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="text-red-500 text-xl mb-4">Chyba</div>
+          <div className="text-red-500 text-xl mb-4">Error</div>
           <p className="text-gray-600">{error}</p>
           <button
             onClick={() => navigate('/login')}
             className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
           >
-            Přejít na přihlášení
+            Go to login
           </button>
         </div>
       </div>
@@ -67,14 +67,14 @@ const AcceptInvitationPage = () => {
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="bg-white p-8 rounded-3xl shadow-sm max-w-md w-full">
-        <h2 className="text-2xl font-bold text-center mb-6">Přijmout pozvánku do týmu</h2>
+        <h2 className="text-2xl font-bold text-center mb-6">Accept Team Invitation</h2>
         
         <div className="text-center mb-6">
           <p className="text-gray-600">
-            Byli jste pozváni do týmu trenéra.
+            You have been invited to join a coach's team.
           </p>
           <p className="text-gray-600 mt-2">
-            Pro přijetí pozvánky klikněte na tlačítko níže.
+            Click the button below to accept the invitation.
           </p>
         </div>
 
@@ -82,7 +82,7 @@ const AcceptInvitationPage = () => {
           onClick={handleAcceptInvitation}
           className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
         >
-          Přijmout pozvánku
+          Accept Invitation
         </button>
       </div>
     </div>

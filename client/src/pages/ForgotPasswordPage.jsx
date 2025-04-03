@@ -13,10 +13,10 @@ const ForgotPasswordPage = () => {
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email) {
-      return 'Email je povinný';
+      return 'Email is required';
     }
     if (!emailRegex.test(email)) {
-      return 'Zadejte platnou emailovou adresu';
+      return 'Enter a valid email address';
     }
     return '';
   };
@@ -54,12 +54,12 @@ const ForgotPasswordPage = () => {
       setEmail('');
     } catch (error) {
       console.error('Error details:', error.response?.data || error.message);
-      let errorMessage = 'Došlo k chybě při zpracování požadavku. Zkuste to prosím znovu.';
+      let errorMessage = 'An error occurred while processing the request. Please try again later.';
       
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
       } else if (error.response?.status === 404) {
-        errorMessage = 'Uživatel s tímto emailem nebyl nalezen. Zkontrolujte prosím správnost emailové adresy.';
+        errorMessage = 'User with this email was not found. Please check the correctness of the email address.';
       }
       
       setStatus({
@@ -94,16 +94,16 @@ const ForgotPasswordPage = () => {
       
       setStatus({
         type: 'success',
-        message: 'Instrukce pro reset hesla byly znovu odeslány na váš email.'
+        message: 'Password reset instructions were sent again to your email.'
       });
     } catch (error) {
       console.error('Resend error:', error.response?.data || error.message);
-      let errorMessage = 'Došlo k chybě při opakovaném odesílání. Zkuste to prosím znovu.';
+      let errorMessage = 'An error occurred while resending. Please try again later.';
       
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
       } else if (error.response?.status === 404) {
-        errorMessage = 'Uživatel s tímto emailem nebyl nalezen. Zkontrolujte prosím správnost emailové adresy.';
+        errorMessage = 'User with this email was not found. Please check the correctness of the email address.';
       }
       
       setStatus({
@@ -128,10 +128,10 @@ const ForgotPasswordPage = () => {
             <>
               <div>
                 <h2 className="text-center text-3xl font-bold text-gray-900">
-                  Zapomenuté heslo
+                  Forgot Password
                 </h2>
                 <p className="mt-2 text-center text-sm text-gray-600">
-                  Zadejte emailovou adresu spojenou s vaším účtem a my vám zašleme odkaz pro reset hesla.
+                  Enter the email address associated with your account and we'll send you a password reset link.
                 </p>
               </div>
 
@@ -172,13 +172,15 @@ const ForgotPasswordPage = () => {
                   )}
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !!emailError}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? 'Odesílám...' : 'Pokračovat'}
-                </button>
+                <div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !!emailError}
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Sending...' : 'Continue'}
+                  </button>
+                </div>
               </form>
             </>
           ) : (
@@ -189,24 +191,24 @@ const ForgotPasswordPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold mb-4">Zkontrolujte svůj email</h2>
+              <h2 className="text-2xl font-bold mb-4">Check your email</h2>
               <p className="text-gray-600 mb-8">
-                Děkujeme, zkontrolujte svůj email pro instrukce k resetu hesla
+                Thank you, check your email for password reset instructions
               </p>
               <button
                 onClick={() => setShowConfirmation(false)}
                 className="w-full mb-4 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
               >
-                Zpět
+                Back
               </button>
               <p className="text-sm text-gray-600">
-                Neobdrželi jste email?{' '}
+                Didn't receive an email?{' '}
                 <button
                   onClick={handleResend}
                   disabled={isSubmitting || !!emailError}
                   className="text-blue-600 hover:text-blue-500 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSubmitting ? 'Odesílám...' : 'Znovu odeslat'}
+                  {isSubmitting ? 'Sending...' : 'Resend'}
                 </button>
               </p>
             </div>
@@ -217,7 +219,7 @@ const ForgotPasswordPage = () => {
               to="/login"
               className="font-medium text-blue-600 hover:text-blue-500"
             >
-              Zpět na přihlášení
+              Back to login
             </Link>
           </div>
         </div>

@@ -169,7 +169,7 @@ export function TrainingStats({ trainings, selectedSport }) {
                 ))}
               </div>
               <div className="text-sm text-zinc-500 mt-1">
-                {new Date(training.date).toLocaleDateString("cs-CZ").replace(/\s/g, "").replace(/\d{4}$/, "24")}
+                {new Date(training.date).toLocaleDateString("en-US").replace(/\s/g, "").replace(/\d{4}$/, "24")}
               </div>
             </div>
           ))}
