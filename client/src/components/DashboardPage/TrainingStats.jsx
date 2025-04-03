@@ -19,33 +19,52 @@ function StatCard({ stats }) {
     </div>
   );
 }
- function VerticalBar({ height, color, power, heartRate, lactate }) {
+ function VerticalBar({ height, color, power, heartRate, lactate, duration, index }) {
   const [isHovered, setIsHovered] = useState(false);
+
+  // Calculate width based on duration
+  const getWidth = (duration) => {
+    if (!duration) return 12; // Default width if no duration
+    // Convert duration to minutes if it's in seconds
+    const minutes = duration.includes(':') ? 
+      parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
+      parseFloat(duration);
+    // Scale width between 8px and 24px based on duration
+    return Math.max(8, Math.min(24, minutes * 2));
+  };
 
   return (
     <div
-      className="relative flex justify-end shrink-0 w-3 rounded-md z-10"
-      style={{ height: `${height}px`, backgroundColor: color }}
+      className="relative flex justify-end shrink-0 z-10"
+      style={{ 
+        height: `${height}px`,
+        width: `${getWidth(duration)}px`
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Tooltip se zobrazuje jen při hover */}
+      {/* Tooltip positioned above the bar with higher z-index */}
       {isHovered && (
-        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 z-50" style={{marginBottom: "-10px", minWidth: "120px"}}>
+        <div 
+          className="absolute bottom-full left-1/2 transform -translate-x-1/2 z-[100]" 
+          style={{marginBottom: "10px", minWidth: "160px"}}
+        >
           <StatCard
             stats={[
-              { label: "Avg", value: `${power}`, unit: "W" },
-              { label: "Avg", value: `${heartRate}`, unit: "Bpm" },
-              { label: "Avg", value: `${lactate}`, unit: "mmol/L" },
+              { label: "Interval", value: `#${index + 1}`, unit: "" },
+              { label: "Duration", value: duration, unit: "" },
+              { label: "Power", value: `${power}`, unit: "W" },
+              { label: "Heart Rate", value: `${heartRate}`, unit: "Bpm" },
+              { label: "Lactate", value: `${lactate}`, unit: "mmol/L" },
             ]}
           />
         </div>
       )}
-         <div
-      className={`flex justify-end shrink-0 w-3 rounded-md ${color}`}
-      style={{ height: `${height}px` }} // Inline styl pro výšku
-    />
       
+      <div
+        className={`flex justify-end shrink-0 rounded-md ${color}`}
+        style={{ height: `${height}px`, width: '100%' }}
+      />
     </div>
   );
 }
@@ -148,9 +167,9 @@ export function TrainingStats({ trainings, selectedSport }) {
       <div className="text-sm text-gray-600 mt-4">
         {filteredTrainings.length > 0 && <p>📝 {filteredTrainings[0].comments}</p>}
       </div>
-      <div className="flex gap-2 items-end px-1.5 mt-5 relative w-full" style={{ minHeight: `${maxGraphHeight + 50}px` }}>
+      <div className="flex gap-2 items-end px-1.5 mt-5 relative w-full overflow-x-auto" style={{ minHeight: `${maxGraphHeight + 50}px` }}>
         <Scale values={powerValues} unit="W" />
-        <div className="relative flex flex-wrap justify-between w-full">
+        <div className="relative flex flex-wrap justify-between w-full min-w-0">
           {filteredTrainings.map((training, trainingIndex) => (
             <div 
               key={`training-${training._id || training.id || trainingIndex}`} 
@@ -165,6 +184,8 @@ export function TrainingStats({ trainings, selectedSport }) {
                     power={result.power}
                     lactate={result.lactate}
                     heartRate={result.heartRate}
+                    duration={result.duration}
+                    index={resultIndex}
                   />
                 ))}
               </div>
