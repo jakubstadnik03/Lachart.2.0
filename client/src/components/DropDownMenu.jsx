@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 export function DropdownMenu({ 
   selectedValue,
@@ -8,6 +8,7 @@ export function DropdownMenu({
   valueKey = "value"
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   const toggleMenu = () => setIsOpen(!isOpen);
 
@@ -16,8 +17,22 @@ export function DropdownMenu({
     ? options.find(opt => opt[valueKey] === selectedValue)
     : null;
 
+  // Přidáme useEffect pro zachycení kliknutí mimo menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block" ref={dropdownRef}>
       {/* Hlavní tlačítko */}
       <div
         className="flex gap-3.5 items-center px-4 py-2 bg-zinc-100 rounded-[91px] cursor-pointer"

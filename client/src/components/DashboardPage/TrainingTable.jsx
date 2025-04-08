@@ -1,7 +1,11 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useTrainings } from "../../context/TrainingContext";
+import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 
 function TrainingRow({ training, sport, date, averagePace, status }) {
+  // Omezíme délku názvu tréninku na 20 znaků
+  const truncatedTraining = training.length > 18 ? training.substring(0, 18) + '..' : training;
+
   const getStatusIcon = (status) => {
     const icons = {
       up: "https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/ca42b61d339a69e3bb2cc02efb61369c67cfc2f39658e99e5d576df14fcdfcd9?",
@@ -23,7 +27,7 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
     <>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
         <div className="self-stretch py-2.5 pr-1 pl-1 w-full text font-semibold border-b text-center border-gray-200 max-sm:px-2">
-          {training}
+          {truncatedTraining}
         </div>
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto whitespace-nowrap basis-0">
@@ -93,7 +97,28 @@ function convertPowerToPace(seconds, sport) {
   }
 }
 
-export default function TrainingTable({ trainings = [], selectedSport = 'all' }) {
+export default function TrainingTable({ trainings = [], selectedSport = 'all', onSportChange }) {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [displayCount, setDisplayCount] = useState(6);
+  const settingsRef = useRef(null);
+
+  const handleSportChange = (sport) => {
+    if (onSportChange) {
+      onSportChange(sport);
+    }
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+        setIsSettingsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!trainings || trainings.length === 0) {
     return <div className="text-center py-4">No trainings available</div>;
   }
@@ -102,7 +127,7 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all' })
   const filteredTrainings = trainings
     .filter(t => selectedSport === 'all' || t.sport === selectedSport)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 6);  // Omezíme na posledních 6 tréninků
+    .slice(0, displayCount);  // Použijeme nastavený počet tréninků
 
   const formattedTrainings = filteredTrainings.map((item, index, array) => {
     const averagePower = Math.round(
@@ -144,18 +169,66 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all' })
             <div className="flex-1 shrink self-stretch my-auto text-lg font-semibold leading-loose text-gray-900 basis-3.5">
               View last trainings
             </div>
-            <button 
-              onClick={() => window.location.href = "/training"}
-              className="flex overflow-hidden gap-1 items-center self-stretch py-0.5 pl-3.5 my-auto text-base text-blue-500 bg-white rounded min-h-[28px]"
-            >
-              <div className="self-stretch my-auto">View more</div>
-              <img
-                loading="lazy"
-                src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/d5620c00b89d258c2df851956089e1cf63163537c904e90b0ae529b03aba7f72?"
-                alt=""
-                className="object-contain shrink-0 self-stretch my-auto w-4 aspect-square"
-              />
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="relative" ref={settingsRef}>
+                <button
+                  onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                  className="p-2 hover:bg-gray-100 rounded-full"
+                >
+                  <EllipsisVerticalIcon className="w-5 h-5 text-gray-600" />
+                </button>
+                
+                {isSettingsOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="p-2">
+                      {/* Sport selector */}
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                        <select 
+                          className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                          value={selectedSport}
+                          onChange={(e) => handleSportChange(e.target.value)}
+                        >
+                          <option value="all">All Sports</option>
+                          {['bike', 'run', 'swim'].map((sport) => (
+                            <option key={sport} value={sport}>
+                              {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Number of trainings selector */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
+                        <select 
+                          className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                          value={displayCount}
+                          onChange={(e) => setDisplayCount(Number(e.target.value))}
+                        >
+                          {[3, 6, 9, 12].map((count) => (
+                            <option key={count} value={count}>
+                              {count} trainings
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={() => window.location.href = "/training"}
+                className="flex overflow-hidden gap-1 items-center self-stretch py-0.5 pl-3.5 my-auto text-base text-blue-500 bg-white rounded min-h-[28px]"
+              >
+                <div className="self-stretch my-auto">View more</div>
+                <img
+                  loading="lazy"
+                  src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/d5620c00b89d258c2df851956089e1cf63163537c904e90b0ae529b03aba7f72?"
+                  alt=""
+                  className="object-contain shrink-0 self-stretch my-auto w-4 aspect-square"
+                />
+              </button>
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-4 gap-y-2 w-full text-base text-gray-600">

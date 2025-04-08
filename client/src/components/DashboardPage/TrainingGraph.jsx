@@ -54,7 +54,7 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
 
   return (
     <div
-      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
+      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100 h-full"
       style={{
         left: tooltip.caretX,
         top: tooltip.caretY,
@@ -209,12 +209,12 @@ const TrainingGraph = ({
 
         setRanges({
           power: {
-            min: Math.floor(Math.min(...powers) - 50),
-            max: Math.ceil(Math.max(...powers) + 50)
+            min: Math.floor(Math.min(...powers) - 20),
+            max: Math.ceil(Math.max(...powers) + 20)
           },
           heartRate: {
-            min: Math.floor(Math.min(...heartRates) - 10),
-            max: Math.ceil(Math.max(...heartRates) + 10)
+            min: Math.floor(Math.min(...heartRates) - 5),
+            max: Math.ceil(Math.max(...heartRates) + 5)
           }
         });
       }
@@ -432,7 +432,7 @@ const TrainingGraph = ({
         min: ranges.power.min,
         max: ranges.power.max,
         ticks: {
-          stepSize: 20,
+          stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
           callback: (value) => formatPowerValue(value, selectedSport),
           display: true,
           autoSkip: false,
@@ -440,6 +440,8 @@ const TrainingGraph = ({
         grid: {
           color: 'rgba(0,0,0,0.1)',
           drawTicks: false,
+          borderDash: [2, 4],
+          borderDashOffset: 0,
         },
         border: {
           display: false,
@@ -451,7 +453,7 @@ const TrainingGraph = ({
         min: ranges.heartRate.min,
         max: ranges.heartRate.max,
         ticks: {
-          stepSize: 5,
+          stepSize: Math.round((ranges.heartRate.max - ranges.heartRate.min) / 4),
           callback: (value) => `${value}Bpm`,
           display: true,
           autoSkip: false,
@@ -595,7 +597,7 @@ const TrainingGraph = ({
       </div>
 
       {/* Popis tréninku */}
-      <div className="mt-6 border-t border-gray-100 pt-4">
+      <div className="mt-3 border-t border-gray-100 pt-3">
         <div className="">
           
           <div className="flex items-center gap-2">
