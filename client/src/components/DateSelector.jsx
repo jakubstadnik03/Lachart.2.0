@@ -45,7 +45,7 @@ function DateSelector({ dates, onSelectDate }) {
   return (
     <div
       className="flex flex-col text-center rounded-md ml-5"
-      style={{ width: `${dates?.length * 84}px` }}
+      style={{ width: `${dates?.length * 84 + 4}px` }}
       role="region"
       aria-label="Previous testing dates"
     >

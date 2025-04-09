@@ -8,72 +8,50 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     return date.toISOString().split('T')[0];
   };
 
-  const convertPaceToSeconds = (pace) => {
-    if (!pace) return '';
-    const [minutes, seconds] = pace.split(':').map(Number);
-    return minutes * 60 + seconds;
-  };
-
-  const convertSecondsToPace = (seconds) => {
-    if (!seconds && seconds !== 0) return '';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const [formData, setFormData] = useState({
-    title: testData?.title || '',
-    description: testData?.description || '',
-    weight: testData?.weight || '',
-    sport: testData?.sport || '',
-    baseLa: testData?.baseLactate || '',
-    date: formatDate(testData?.date),
-    specifics: testData?.specifics || { specific: '', weather: '' },
-    comments: testData?.comments || ''
-  });
-
   const [rows, setRows] = useState(testData?.results?.map(row => ({
     ...row,
-    power: formData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
+    power: row.power || ''
   })) || []);
-
+  const [formData, setFormData] = useState({
+    title: testData.title || '',
+    description: testData.description || '',
+    weight: testData.weight || '',
+    sport: testData.sport || '',
+    baseLa: testData.baseLactate || '',
+    date: formatDate(testData.date),
+    specifics: testData.specifics || { specific: '', weather: '' },
+    comments: testData.comments || ''
+  });
   const [showGlucose, setShowGlucose] = useState(true);
   const [hoverGlucose, setHoverGlucose] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  const handlePaceChange = (index, value) => {
-    const updatedRows = rows.map((row, i) =>
-      i === index ? { ...row, power: value } : row
-    );
-    setRows(updatedRows);
+  const convertPaceToSeconds = (pace) => {
+    const [minutes, seconds] = pace.split(":").map(Number);
+    return minutes * 60 + seconds;
   };
 
-  const handleValueChange = (rowIndex, field, value) => {
-    if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
-      handlePaceChange(rowIndex, value);
-      return;
-    }
-
-    let processedValue = value;
-
-    if (value !== '' && field !== 'power') {
-      processedValue = Number(value);
-    }
-
-    const updatedRows = rows.map((row, index) =>
-      index === rowIndex ? { ...row, [field]: processedValue } : row
-    );
-    setRows(updatedRows);
+  const convertSecondsToPace = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
   };
 
   useEffect(() => {
     if (testData) {
-      setRows(testData.results?.map(row => ({
-        ...row,
-        power: formData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
-      })) || []);
+      setRows(testData.results || []);
+      setFormData({
+        title: testData.title || '',
+        description: testData.description || '',
+        weight: testData.weight || '',
+        sport: testData.sport || '',
+        baseLa: testData.baseLactate || '',
+        date: formatDate(testData.date),
+        specifics: testData.specifics || { specific: '', weather: '' },
+        comments: testData.comments || ''
+      });
     }
-  }, [testData, formData.sport]);
+  }, [testData]);
 
   const handleFormDataChange = (field, value) => {
     const newFormData = { ...formData, [field]: value };
@@ -97,6 +75,49 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     onTestDataChange(updatedTestData);
   };
 
+  const handlePaceChange = (index, value) => {
+    const updatedRows = rows.map((row, i) =>
+      i === index ? { ...row, power: value } : row
+    );
+    setRows(updatedRows);
+  };
+
+  const handleValueChange = (rowIndex, field, value) => {
+    if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
+      handlePaceChange(rowIndex, value);
+      return;
+    }
+
+    let processedValue = value;
+
+    // For other fields, convert to number if not empty
+    if (value !== '' && field !== 'power') {
+      processedValue = Number(value);
+    }
+
+    const updatedRows = rows.map((row, index) =>
+      index === rowIndex ? { ...row, [field]: processedValue } : row
+    );
+    setRows(updatedRows);
+
+    // Propagate changes to parent component
+    const updatedTestData = {
+      ...testData,
+      title: formData.title,
+      description: formData.description,
+      weight: formData.weight ? Number(formData.weight) : '',
+      sport: formData.sport,
+      baseLactate: formData.baseLa ? Number(formData.baseLa) : '',
+      date: formData.date,
+      specifics: formData.specifics,
+      comments: formData.comments,
+      results: updatedRows
+    };
+    
+    setIsDirty(true);
+    onTestDataChange(updatedTestData);
+  };
+
   const handleSaveChanges = () => {
     const updatedTest = {
       ...testData,
@@ -108,28 +129,14 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
       date: formData.date,
       specifics: formData.specifics,
       comments: formData.comments,
-      results: rows.map(row => {
-        let power = row.power;
-        if ((formData.sport === 'run' || formData.sport === 'swim') && power) {
-          // Convert pace (MM:SS) to seconds
-          const [minutes, seconds] = power.split(':').map(Number);
-          if (!isNaN(minutes) && !isNaN(seconds)) {
-            power = minutes * 60 + seconds;
-          } else {
-            power = ''; // If conversion fails, set to empty
-          }
-        }
-        return {
-          power: power ? Number(power) : '',
-          heartRate: row.heartRate ? Number(row.heartRate) : '',
-          lactate: row.lactate ? Number(row.lactate) : '',
-          glucose: row.glucose ? Number(row.glucose) : '',
-          RPE: row.RPE ? Number(row.RPE) : ''
-        };
-      })
+      results: rows.map(row => ({
+        power: formData.sport === 'run' || formData.sport === 'swim' ? row.power : (row.power ? Number(row.power) : ''),
+        heartRate: row.heartRate ? Number(row.heartRate) : '',
+        lactate: row.lactate ? Number(row.lactate) : '',
+        glucose: row.glucose ? Number(row.glucose) : '',
+        RPE: row.RPE ? Number(row.RPE) : ''
+      }))
     };
-    
-    console.log('Saving test data:', updatedTest);
     
     if (onSave) {
       onSave(updatedTest);
@@ -155,7 +162,23 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     
     const newRows = [...rows, newRow];
     setRows(newRows);
+
+    // Propagate changes to parent component
+    const updatedTestData = {
+      ...testData,
+      title: formData.title,
+      description: formData.description,
+      weight: formData.weight ? Number(formData.weight) : '',
+      sport: formData.sport,
+      baseLactate: formData.baseLa ? Number(formData.baseLa) : '',
+      date: formData.date,
+      specifics: formData.specifics,
+      comments: formData.comments,
+      results: newRows
+    };
+    
     setIsDirty(true);
+    onTestDataChange(updatedTestData);
   };
 
   return (
@@ -218,36 +241,35 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         <div key={index} className="grid grid-cols-4 sm:grid-cols-7 gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg">
           <div className="text-center text-sm">{index + 1}</div>
           <input 
-            type={formData.sport === 'bike' ? "number" : "text"}
-            value={row.power || ''}
-            onChange={(e) => {
-              console.log('Input change:', e.target.value);
-              handleValueChange(index, 'power', e.target.value);
-            }}
+            type="text" 
+            value={formData.sport === 'run' || formData.sport === 'swim' ? 
+              (row.power ? convertSecondsToPace(row.power) : '') : 
+              (row.power === 0 ? '' : row.power)}
+            onChange={(e) => handleValueChange(index, 'power', e.target.value)} 
             className="p-1 text-sm border rounded-lg"
-            placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
+            placeholder={formData.sport === 'run' || formData.sport === 'swim' ? "MM:SS" : "Power"}
           />
           <input 
             type="number" 
-            value={row.heartRate || ''}
+            value={row.heartRate === 0 ? '' : row.heartRate}
             onChange={(e) => handleValueChange(index, 'heartRate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           <input 
             type="number" 
-            value={row.lactate || ''}
+            value={row.lactate === 0 ? '' : row.lactate}
             onChange={(e) => handleValueChange(index, 'lactate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           {showGlucose && <input 
             type="number" 
-            value={row.glucose || ''}
+            value={row.glucose === 0 ? '' : row.glucose}
             onChange={(e) => handleValueChange(index, 'glucose', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />}
           <input 
             type="number" 
-            value={row.RPE || ''}
+            value={row.RPE === 0 ? '' : row.RPE}
             onChange={(e) => handleValueChange(index, 'RPE', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />

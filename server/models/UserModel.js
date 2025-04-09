@@ -47,7 +47,20 @@ const userSchema = new mongoose.Schema({
     default: false
   },
   registrationToken: String,
-  registrationTokenExpires: Date
+  registrationTokenExpires: Date,
+  invitationToken: {
+    type: String,
+    default: null
+  },
+  invitationTokenExpires: {
+    type: Date,
+    default: null
+  },
+  pendingCoachId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  }
 }, {
   timestamps: true
 });

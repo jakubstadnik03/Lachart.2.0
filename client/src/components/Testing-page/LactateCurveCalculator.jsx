@@ -305,28 +305,31 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   return (
     <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5">
-      <div className="w-full overflow-x-auto">
-        <div className="min-w-[1000px]">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg sm:text-xl font-bold">
             Lactate Curve <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
           </h2>
           <p className="text-sm sm:text-base text-gray-500">
             Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
           </p>
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 mt-2 sm:mt-3 md:min-w-[700px] max-w-[1000px]" style={{ height: '300px', minHeight: '200px' }}>
+        </div>
+        
+        <div className="flex flex-row gap-4 w-full">
+          {/* Chart and Legend container */}
+          <div className="flex flex-row gap-4 flex-1">
+            <div className="flex-1 min-w-0" style={{ height: '300px', minHeight: '200px' }}>
               <Line ref={chartRef} data={data} options={options} />
             </div>
-            <div className="w-[200px] mt-2 sm:mt-3">
+            <div className="w-[200px] shrink-0">
               <Legend chartRef={chartRef} />
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="w-full overflow-x-auto">
-        <div className="min-w-[1000px]">
-          <DataTable mockData={mockData} />
+          
+          {/* DataTable */}
+          <div className="w-[400px] shrink-0">
+            <DataTable mockData={mockData} />
+          </div>
         </div>
       </div>
     </div>
