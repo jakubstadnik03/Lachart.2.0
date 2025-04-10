@@ -25,17 +25,40 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings }) {
+function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower }) {
   const getWidth = (duration, totalTrainings) => {
-    const baseWidth = Math.max(4, Math.min(8, 16 - totalTrainings));
+    // Base width is smaller on mobile and larger on desktop
+    const baseWidth = window.innerWidth < 640 ? 4 : 8;
     
     if (!duration) return baseWidth;
     
+    // Convert duration to minutes
     const minutes = duration.includes(':') ? 
       parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
       parseFloat(duration);
       
-    return Math.max(baseWidth, Math.min(8, minutes));
+    // Calculate width based on duration ratio
+    // Find the shortest duration in the current training
+    const durations = visibleTrainings.flatMap(t => 
+      t.results
+        .filter(r => r.duration) // Filter out undefined durations
+        .map(r => {
+          const dur = r.duration;
+          return dur.includes(':') ? 
+            parseInt(dur.split(':')[0]) + parseInt(dur.split(':')[1]) / 60 : 
+            parseFloat(dur);
+        })
+    );
+    
+    if (durations.length === 0) return baseWidth;
+    
+    const shortestDuration = Math.min(...durations);
+    
+    // Calculate ratio and apply to base width
+    const ratio = minutes / shortestDuration;
+    const maxWidth = window.innerWidth < 640 ? 16 : 32;
+    
+    return Math.min(maxWidth, Math.max(baseWidth, baseWidth * ratio));
   };
 
   return (
@@ -79,7 +102,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
 
 function Scale({ values, unit }) {
   return (
-    <div className="relative flex flex-col justify-between py-2 sm:py-4 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap min-h-[150px] sm:min-h-[200px] text-zinc-500">
+    <div className="relative flex flex-col justify-between py-2 sm:py-2 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap min-h-[150px] sm:min-h-[200px] text-zinc-500">
       {values.map((value, index) => (
         <div key={`scale-${unit}-${index}`} className="relative flex items-center w-full">
           <div className="absolute left-0 right-0 h-px border-t border-dashed border-gray-200" />
@@ -422,44 +445,86 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
 
           {/* Bars */}
           <div className="relative flex justify-between w-full z-10 items-end px-2 sm:px-4">
-            {visibleTrainings.map((training, trainingIndex) => (
-              <div 
-                key={`training-${training._id || training.id || trainingIndex}`} 
-                className="flex flex-col relative"
-                style={{ width: getColumnWidth(), height: `${maxGraphHeight}px` }}
-              >
-                <div className="flex gap-0.5 h-full mb-1 sm:mb-2 justify-center items-end">
-                  {training.results.map((result, resultIndex) => {
-                    const powerValue = Number(result.power);
-                    const height = !isNaN(powerValue) && powerValue > 0 ? 
-                      ((powerValue - minPower) / (maxPower - minPower)) * maxGraphHeight : 0;
+            {visibleTrainings.map((training, trainingIndex) => {
+              // Calculate width of the first bar in the first training
+              const getBarWidth = (duration) => {
+                if (!duration) return window.innerWidth < 640 ? 4 : 8;
+                
+                const minutes = duration.includes(':') ? 
+                  parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
+                  parseFloat(duration);
+                  
+                const durations = visibleTrainings.flatMap(t => 
+                  t.results
+                    .filter(r => r.duration)
+                    .map(r => {
+                      const dur = r.duration;
+                      return dur.includes(':') ? 
+                        parseInt(dur.split(':')[0]) + parseInt(dur.split(':')[1]) / 60 : 
+                        parseFloat(dur);
+                    })
+                );
+                
+                if (durations.length === 0) return window.innerWidth < 640 ? 4 : 8;
+                
+                const shortestDuration = Math.min(...durations);
+                const ratio = minutes / shortestDuration;
+                const maxWidth = window.innerWidth < 640 ? 16 : 32;
+                const baseWidth = window.innerWidth < 640 ? 4 : 8;
+                
+                return Math.min(maxWidth, Math.max(baseWidth, baseWidth * ratio));
+              };
 
-                    return (
-                      <VerticalBar
-                        key={`result-${training._id || training.id || trainingIndex}-${resultIndex}`}
-                        height={height}
-                        color={barColors[resultIndex % barColors.length]}
-                        power={result.power}
-                        lactate={result.lactate}
-                        heartRate={result.heartRate}
-                        duration={result.duration}
-                        index={resultIndex}
-                        isHovered={hoveredBar?.trainingIndex === trainingIndex && hoveredBar?.intervalIndex === resultIndex}
-                        onHover={(isHovered) => setHoveredBar(isHovered ? { trainingIndex, intervalIndex: resultIndex } : null)}
-                        totalTrainings={displayCount}
-                      />
-                    );
-                  })}
+              // Calculate total width of all bars in the first training
+              const totalBarsWidth = trainingIndex === 0 ? 
+                training.results.reduce((total, result) => total + getBarWidth(result.duration), 0) : 0;
+              
+              return (
+                <div 
+                  key={`training-${training._id || training.id || trainingIndex}`} 
+                  className="flex flex-col relative"
+                  style={{ 
+                    width: getColumnWidth(), 
+                    height: `${maxGraphHeight}px`,
+                    marginLeft: trainingIndex === 0 ? `${totalBarsWidth}px` : '0'
+                  }}
+                >
+                  <div className="flex gap-0.5 h-full justify-center items-end">
+                    {training.results.map((result, resultIndex) => {
+                      const powerValue = Number(result.power);
+                      const height = !isNaN(powerValue) && powerValue > 0 ? 
+                        ((powerValue - minPower) / (maxPower - minPower)) * maxGraphHeight : 0;
+
+                      return (
+                        <VerticalBar
+                          key={`result-${training._id || training.id || trainingIndex}-${resultIndex}`}
+                          height={height}
+                          color={barColors[resultIndex % barColors.length]}
+                          power={result.power}
+                          lactate={result.lactate}
+                          heartRate={result.heartRate}
+                          duration={result.duration}
+                          index={resultIndex}
+                          isHovered={hoveredBar?.trainingIndex === trainingIndex && hoveredBar?.intervalIndex === resultIndex}
+                          onHover={(isHovered) => setHoveredBar(isHovered ? { trainingIndex, intervalIndex: resultIndex } : null)}
+                          totalTrainings={displayCount}
+                          visibleTrainings={visibleTrainings}
+                          minPower={minPower}
+                          maxPower={maxPower}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
+                    {new Date(training.date).toLocaleDateString('en-US', {
+                      day: 'numeric',
+                      month: 'numeric',
+                      year: '2-digit'
+                    })}
+                  </div>
                 </div>
-                <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
-                  {new Date(training.date).toLocaleDateString('en-US', {
-                    day: 'numeric',
-                    month: 'numeric',
-                    year: '2-digit'
-                  })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
