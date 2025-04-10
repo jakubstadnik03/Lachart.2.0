@@ -192,9 +192,23 @@ const ProfilePage = () => {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
-  if (!userInfo) return <div>No user data available</div>;
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
+    </div>
+  );
+
+  if (error) return (
+    <div className="p-6 text-red-600">
+      {error}
+    </div>
+  );
+
+  if (!userInfo) return (
+    <div className="p-6 text-gray-600">
+      No user data available
+    </div>
+  );
 
   return (
     <div className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">

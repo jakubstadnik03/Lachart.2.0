@@ -43,22 +43,9 @@ const DashboardPage = () => {
       return;
     }
 
-    // Použijeme ID vybraného atleta nebo přihlášeného uživatele
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
   }, [user, isAuthenticated, navigate, selectedAthleteId]);
-
-  // Posluchač pro změnu atleta
-  useEffect(() => {
-    const handleAthleteChange = (event) => {
-      const { athleteId, trainings } = event.detail;
-      setSelectedAthleteId(athleteId);
-      setTrainings(trainings);
-    };
-
-    window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, []);
 
   useEffect(() => {
     if (trainings.length > 0) {
@@ -80,23 +67,23 @@ const DashboardPage = () => {
     navigate(`/dashboard/${newAthleteId}`);
   };
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-screen">
-      <p>Loading...</p>
-    </div>;
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
+    </div>
+  );
 
-  if (error) {
-    return <div className="flex justify-center items-center h-screen">
-      <p className="text-red-500">Error: {error}</p>
-    </div>;
-  }
+  if (error) return (
+    <div className="p-6 text-red-600">
+      {error}
+    </div>
+  );
 
-  if (!user) {
-    return <div className="flex justify-center items-center h-screen">
-      <p>Please log in to view this page</p>
-    </div>;
-  }
+  if (!user) return (
+    <div className="p-6 text-gray-600">
+      Please log in to view this page
+    </div>
+  );
 
   return (
     <div className="mx-6 m-auto max-w-[1600px] mx-auto  py-4 md:p-6">

@@ -168,18 +168,18 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
     <>
       <div 
         ref={menuRef}
-        className={`fixed md:sticky top-0 left-0 h-screen w-64 bg-white shadow-md flex flex-col font-sans transform transition-transform duration-300 ease-in-out z-40 ${
+        className={`fixed md:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans transform transition-transform duration-300 ease-in-out z-40 ${
           isMenuOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
         {/* Logo a název */}
-        <div className="flex items-center justify-center h-16 border-b border-gray-200">
+        <div className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0">
           <img src="/icon/logo.svg" alt="LaChart Logo" className="w-8 h-8 mr-2" />
           <h1 className="text-xl font-bold text-primary">LaChart</h1>
         </div>
 
         {/* Profil uživatele */}
-        <div className="p-4 flex items-center border-b border-gray-200">
+        <div className="p-4 flex items-center border-b border-gray-200 flex-shrink-0">
           <img
             src={getAvatar(user)}
             alt="User Avatar"
@@ -194,7 +194,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
         </div>
 
         {/* Menu navigace */}
-        <div className="p-4">
+        <div className="p-4 flex-shrink-0">
           <h2 className="text-lg text-gray-700 mb-3">Menu</h2>
           <ul className="space-y-2">
             {menuItems
@@ -230,7 +230,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
 
         {/* Seznam atletů - pouze pro trenéry */}
         {user.role === "coach" && (
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-200 flex-1 overflow-y-auto">
             <h2 className="text-sm font-bold text-gray-700 mb-3">Athletes</h2>
             {loading ? (
               <div className="text-sm text-gray-500">Načítání atletů...</div>
@@ -263,7 +263,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
         )}
 
         {/* Další odkazy */}
-        <div className="mt-auto">
+        <div className="mt-auto flex-shrink-0">
           <div className="p-4 border-t border-gray-200">
             <ul className="space-y-2">
               <li>
