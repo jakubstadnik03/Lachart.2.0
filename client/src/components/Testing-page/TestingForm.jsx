@@ -295,12 +295,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         />
       </div>
 
-      <textarea 
-        value={formData.comments}
-        onChange={(e) => handleFormDataChange('comments', e.target.value)}
-        className="w-full p-2 border rounded-lg mt-4"
-        placeholder="Comments"
-      />
+
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
         <button 

@@ -25,26 +25,30 @@ const CustomTooltip = ({ tooltip, datasets }) => {
   const bpm = datasets[1]?.data?.[index] ?? "N/A";
   const mmol = datasets[0]?.data?.[index] ?? "N/A";
 
-  const isNearRightEdge = tooltip.caretX > window.innerWidth * 0.7;
-
   return (
     <div
-      className="absolute bg-white shadow-md p-2 rounded-md text-xs text-gray-800 border border-gray-200"
+      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
       style={{
         left: tooltip.caretX,
         top: tooltip.caretY,
-        minWidth: "110px",
-        transform: isNearRightEdge ? "translate(-100%, -120%)" : "translate(-50%, -120%)",
+        transform: "translate(-50%, -120%)",
         position: "absolute",
         pointerEvents: "none",
         whiteSpace: "nowrap",
+        zIndex: 50
       }}
     >
-      <div className="font-semibold text-gray-900">{interval}. {label}</div>
-      <div className="text-blue-500">Lactate: {mmol} mmol/L</div>
-      <div className="text-red-500">Heart Rate: {bpm} Bpm</div>
+      <div className="font-bold text-gray-900 mb-1">Interval {interval}</div>
+      <div className="flex items-center gap-2 text-blue-600">
+        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+        Lactate: {mmol} mmol/L
+      </div>
+      <div className="flex items-center gap-2 text-red-600">
+        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+        Heart Rate: {bpm} Bpm
+      </div>
       <div
-        className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-gray-200"
+        className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
         style={{
           left: "50%",
           bottom: "-8px",

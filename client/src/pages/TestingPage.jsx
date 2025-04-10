@@ -112,7 +112,7 @@ const TestingPage = () => {
   );
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-1 sm:px-4 lg:px-6 overflow-x-hidden">
+    <div className="w-full max-w-[1600px] mx-auto overflow-x-hidden md:p-6">
       {user?.role === 'coach' && (
         <div className="mb-2 sm:mb-4 md:mt-6">
           <AthleteSelector

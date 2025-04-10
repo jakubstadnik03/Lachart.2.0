@@ -8,6 +8,8 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import AthleteSelector from "../components/AthleteSelector";
+import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
+import DateSelector from "../components/DateSelector";
 
 const DashboardPage = () => {
   const { athleteId } = useParams();
@@ -18,6 +20,9 @@ const DashboardPage = () => {
   const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
+  const [currentTest, setCurrentTest] = useState(null);
+  const [tests, setTests] = useState([]);
+
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -37,6 +42,22 @@ const DashboardPage = () => {
     }
   };
 
+  const loadTests = async (targetId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/test/list/${targetId}`);
+      if (response && response.data) {
+        setTests(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading tests:', error);
+      setError('Failed to load tests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', { replace: true });
@@ -45,6 +66,7 @@ const DashboardPage = () => {
 
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
+    loadTests(targetId);
   }, [user, isAuthenticated, navigate, selectedAthleteId]);
 
   useEffect(() => {
@@ -61,6 +83,11 @@ const DashboardPage = () => {
       }
     }
   }, [selectedSport, trainings]);
+
+  const handleDateSelect = (date) => {
+    const selectedTest = tests.find(test => new Date(test.date).toISOString() === new Date(date).toISOString());
+    setCurrentTest(selectedTest);
+  };
 
   const handleAthleteChange = (newAthleteId) => {
     setSelectedAthleteId(newAthleteId);
@@ -86,7 +113,7 @@ const DashboardPage = () => {
   );
 
   return (
-    <div className="mx-6 m-auto max-w-[1600px] mx-auto  py-4 md:p-6">
+    <div className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6">
       {user?.role === 'coach' && (
         <AthleteSelector
           selectedAthleteId={selectedAthleteId}
@@ -125,6 +152,24 @@ const DashboardPage = () => {
             selectedTraining={selectedTraining}
             setSelectedTraining={setSelectedTraining}
           />
+        </div>
+
+        <div className="lg:col-span-5 md:col-span-2">
+          <div className="space-y-6">
+            {tests && tests.length > 0 ? (
+              <DateSelector
+                dates={tests.map(test => test.date)}
+                onSelectDate={handleDateSelect}
+              />
+            ) : (
+              <div className="text-center py-4 text-gray-500">
+                No tests available
+              </div>
+            )}
+            {currentTest && currentTest.results && (
+              <LactateCurveCalculator mockData={currentTest} />
+            )}
+          </div>
         </div>
       </div>
     </div>

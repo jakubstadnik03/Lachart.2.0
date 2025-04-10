@@ -7,10 +7,10 @@ const maxGraphHeight = 200;
 
 function StatCard({ stats }) {
   return (
-    <div className="flex flex-col text-xs rounded-none max-w-[192px]" >
-      <div className="flex z-10 flex-col justify-center items-center px-3 py-2 text-center bg-white rounded-lg border border-solid border-slate-100 shadow-[0px_12px_20px_rgba(0,0,0,0.1)] text-stone-500">
+    <div className="flex flex-col text-[10px] sm:text-xs rounded-none max-w-[160px] sm:max-w-[192px]" >
+      <div className="flex z-10 flex-col justify-center items-center px-2 sm:px-3 py-1.5 sm:py-2 text-center bg-white rounded-lg border border-solid border-slate-100 shadow-[0px_12px_20px_rgba(0,0,0,0.1)] text-stone-500">
         {stats
-          .filter(stat => stat.value && stat.value !== "-") // Filter out empty or "-" values
+          .filter(stat => stat.value && stat.value !== "-")
           .map((stat, index) => (
             <div
               key={`stat-${index}`}
@@ -20,16 +20,14 @@ function StatCard({ stats }) {
             </div>
           ))}
       </div>
-      <div className="flex shrink-0 self-center mt-3 w-3.5 h-3.5 bg-violet-500 rounded-full border-solid border-[3px] border-zinc-50" />
+      <div className="flex shrink-0 self-center mt-2 sm:mt-3 w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 bg-violet-500 rounded-full border-solid border-[2px] sm:border-[3px] border-zinc-50" />
     </div>
   );
 }
 
 function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings }) {
-  // Calculate width based on duration and total number of trainings
   const getWidth = (duration, totalTrainings) => {
-    // Base width gets smaller as number of trainings increases
-    const baseWidth = Math.max(6, Math.min(12, 20 - totalTrainings));
+    const baseWidth = Math.max(4, Math.min(8, 16 - totalTrainings));
     
     if (!duration) return baseWidth;
     
@@ -37,7 +35,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
       parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
       parseFloat(duration);
       
-    return Math.max(baseWidth, Math.min(10, minutes));
+    return Math.max(baseWidth, Math.min(8, minutes));
   };
 
   return (
@@ -50,7 +48,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
       <div
         className={`w-full rounded-sm ${color} transition-all duration-200 absolute bottom-0 cursor-pointer hover:opacity-90`}
         style={{ 
-          height: `${Math.max(height, 4)}px`,
+          height: `${Math.max(height, 3)}px`,
           opacity: isHovered ? 1 : 0.7,
           zIndex: 20
         }}
@@ -60,8 +58,8 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
         <div 
           className="absolute left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"
           style={{
-            bottom: `${height - 5}px`,
-            minWidth: "160px"
+            bottom: `${height - 4}px`,
+            minWidth: "140px"
           }}  
         >
           <StatCard
@@ -81,11 +79,11 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
 
 function Scale({ values, unit }) {
   return (
-    <div className="relative flex flex-col justify-between py-4 w-12 text-sm text-right whitespace-nowrap min-h-[200px] text-zinc-500">
+    <div className="relative flex flex-col justify-between py-2 sm:py-4 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap min-h-[150px] sm:min-h-[200px] text-zinc-500">
       {values.map((value, index) => (
         <div key={`scale-${unit}-${index}`} className="relative flex items-center w-full">
           <div className="absolute left-0 right-0 h-px border-t border-dashed border-gray-200" />
-          <span className="relative z-10 bg-white px-1">{value}{unit}</span>
+          <span className="relative z-10 bg-white px-0.5 sm:px-1">{value}{unit}</span>
         </div>
       ))}
     </div>
@@ -115,23 +113,23 @@ function TrainingComparison({ training, previousTraining }) {
   };
 
   return (
-    <div className="flex items-center gap-2 py-1.5 px-3 bg-gray-50 rounded-lg">
+    <div className="flex items-center gap-1.5 sm:gap-2 py-1 sm:py-1.5 px-2 sm:px-3 bg-gray-50 rounded-lg">
       <div className="flex-1">
-        <div className="text-sm font-medium text-gray-900">
-          {new Date(training.date).toLocaleDateString('cs-CZ', {
+        <div className="text-xs sm:text-sm font-medium text-gray-900">
+          {new Date(training.date).toLocaleDateString('en-US', {
             day: 'numeric',
             month: 'numeric',
             year: '2-digit'
           })}
         </div>
-        <div className="text-xs text-gray-500 truncate max-w-[150px]">{training.title}</div>
+        <div className="text-[10px] sm:text-xs text-gray-500 truncate max-w-[120px] sm:max-w-[150px]">{training.title}</div>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="text-sm whitespace-nowrap">
+      <div className="flex items-center gap-2 sm:gap-4">
+        <div className="text-xs sm:text-sm whitespace-nowrap">
           <span className="text-gray-500">Avg: </span>
           <span className="font-medium">{currentAvgPower}W</span>
           {previousTraining && (
-            <span className={`ml-2 ${getTrendColor(powerDiff)}`}>
+            <span className={`ml-1 sm:ml-2 ${getTrendColor(powerDiff)}`}>
               {getTrendIcon(powerDiff)} {Math.abs(powerDiff)}W
             </span>
           )}
@@ -303,35 +301,35 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
   };
 
   return (
-    <div className="flex flex-col p-5 bg-white rounded-3xl shadow-md relative h-full">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-zinc-900">
+    <div className="flex flex-col p-3 sm:p-5 bg-white rounded-3xl shadow-md relative h-full">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <h2 className="text-base sm:text-xl font-semibold text-zinc-900">
             Last {filteredTrainings.length} trainings
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={handleNavigateLeft}
               disabled={!canNavigateLeft}
-              className={`p-2 rounded-full ${canNavigateLeft ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
+              className={`p-1.5 sm:p-2 rounded-full ${canNavigateLeft ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
             >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <button
               onClick={handleNavigateRight}
               disabled={!canNavigateRight}
-              className={`p-2 rounded-full ${canNavigateRight ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
+              className={`p-1.5 sm:p-2 rounded-full ${canNavigateRight ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
             >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-        <DropdownMenu
+        <div className="flex items-center gap-2 sm:gap-4">
+          <DropdownMenu
             selectedValue={selectedTraining}
             options={trainingOptions}
             onChange={setSelectedTraining}
@@ -341,19 +339,18 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
           <div className="relative" ref={settingsRef}>
             <button
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className="p-2 hover:bg-gray-100 rounded-full"
+              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full"
             >
-              <EllipsisVerticalIcon className="w-5 h-5 text-gray-600" />
+              <EllipsisVerticalIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
             </button>
             
             {isSettingsOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+              <div className="absolute right-0 mt-2 w-40 sm:w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                 <div className="p-2">
-                  {/* Sport selector */}
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                  <div className="mb-2 sm:mb-3">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Sport</label>
                     <select 
-                      className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                      className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
                       value={selectedSport}
                       onChange={(e) => onSportChange(e.target.value)}
                     >
@@ -365,15 +362,14 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
                       ))}
                     </select>
                   </div>
-                  {/* Number of trainings selector */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
                     <select 
-                      className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                      className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
                       value={displayCount}
                       onChange={(e) => {
                         setDisplayCount(Number(e.target.value));
-                        setVisibleTrainingIndex(0); // Reset index when changing display count
+                        setVisibleTrainingIndex(0);
                       }}
                     >
                       {[3, 6, 9, 12].map((count) => (
@@ -387,12 +383,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
               </div>
             )}
           </div>
-         
         </div>
       </div>
 
-      <div className="flex gap-2 items-stretch px-1.5 relative w-full" 
-           style={{ height: `${maxGraphHeight + 50}px` }}>
+      <div className="flex gap-1 sm:gap-2 items-stretch px-1 sm:px-1.5 relative w-full" 
+           style={{ height: `${maxGraphHeight + 30}px` }}>
         <Scale values={powerValues} unit="W" />
         
         <div className="relative flex-1 flex items-stretch justify-between min-w-0">
@@ -402,7 +397,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
               <div key={`grid-line-${index}`} 
                    className="border-t border-dashed border-gray-200" 
                    style={{
-                     top: `${(index * maxGraphHeight) / (powerValues.length - 1) + 25}px`,
+                     top: `${(index * maxGraphHeight) / (powerValues.length - 1) + 15}px`,
                      position: 'absolute',
                      width: '100%',
                      zIndex: 10
@@ -413,7 +408,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
 
           {/* Average lines */}
           <svg className="absolute inset-0 z-30 pointer-events-none">
-            {/* Power average line */}
             <path
               d={`M ${averagePower.map((avg, i) => {
                 const x = (i * (100 / (averagePower.length - 1)))+ '%';
@@ -427,14 +421,14 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
           </svg>
 
           {/* Bars */}
-          <div className="relative flex justify-between w-full z-10 items-end px-4">
+          <div className="relative flex justify-between w-full z-10 items-end px-2 sm:px-4">
             {visibleTrainings.map((training, trainingIndex) => (
               <div 
                 key={`training-${training._id || training.id || trainingIndex}`} 
                 className="flex flex-col relative"
                 style={{ width: getColumnWidth(), height: `${maxGraphHeight}px` }}
               >
-                <div className="flex gap-0.5 h-full mb-2 justify-center items-end">
+                <div className="flex gap-0.5 h-full mb-1 sm:mb-2 justify-center items-end">
                   {training.results.map((result, resultIndex) => {
                     const powerValue = Number(result.power);
                     const height = !isNaN(powerValue) && powerValue > 0 ? 
@@ -457,8 +451,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
                     );
                   })}
                 </div>
-                <div className="text-xs text-zinc-500 whitespace-nowrap text-center">
-                  {new Date(training.date).toLocaleDateString('cs-CZ', {
+                <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
+                  {new Date(training.date).toLocaleDateString('en-US', {
                     day: 'numeric',
                     month: 'numeric',
                     year: '2-digit'
@@ -470,16 +464,16 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
         </div>
       </div>
 
-      <div className="mt-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-sm font-medium text-gray-900">Training Progress</div>
-          <div className="flex items-center gap-2">
+      <div className="mt-2 sm:mt-3">
+        <div className="flex items-center justify-between mb-1 sm:mb-1.5">
+          <div className="text-xs sm:text-sm font-medium text-gray-900">Training Progress</div>
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={handleProgressNavigateLeft}
               disabled={!canNavigateProgressLeft}
               className={`p-1 rounded hover:bg-gray-100 ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
@@ -488,7 +482,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
               disabled={!canNavigateProgressRight}
               className={`p-1 rounded hover:bg-gray-100 ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>

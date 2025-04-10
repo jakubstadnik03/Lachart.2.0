@@ -40,13 +40,13 @@ export function DropdownMenu({
         aria-label="Training selector"
         onClick={toggleMenu}
       >
-        <div className="self-stretch my-auto">
+        <div className="text-xs sm:text-sm">
           {selectedOption ? selectedOption[displayKey] : 'Select training'}
         </div>
         <img
           loading="lazy"
           src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/360c5357e47d27ba69f8c2d3bda65bfea9c145ed9c2ccb0e3ef65b920f754610?apiKey=069fe6e63e3c490cb6056c51644919ef&"
-          className={`object-contain shrink-0 self-stretch my-auto w-2.5 aspect-[2] transform ${
+          className={`object-contain shrink-0 self-stretch w-2.5 aspect-[2] transform ${
             isOpen ? "rotate-180" : "rotate-0"
           } transition-transform`}
           alt="Dropdown arrow"

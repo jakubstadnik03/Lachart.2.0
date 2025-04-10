@@ -31,11 +31,9 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
   // Funkce pro formátování délky intervalu
   const formatLength = (duration) => {
     if (!duration) return "N/A";
-    // Pokud už obsahuje jednotku, vrátíme jak je
     if (duration.includes('km') || duration.includes('m') || duration.includes('min')) {
       return duration;
     }
-    // Pokud je to číslo, přidáme jednotku podle sportu
     const numDuration = parseFloat(duration);
     if (!isNaN(numDuration)) {
       switch (sport) {
@@ -54,7 +52,7 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
 
   return (
     <div
-      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100 h-full"
+      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
       style={{
         left: tooltip.caretX,
         top: tooltip.caretY,
@@ -62,6 +60,7 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
         position: "absolute",
         pointerEvents: "none",
         whiteSpace: "nowrap",
+        zIndex: 50
       }}
     >
       <div className="font-bold text-gray-900 mb-1">Interval {label}</div>
@@ -82,13 +81,13 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
         Duration: {formatLength(duration)}
       </div>
       <div
-          className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-gray-200"
-          style={{
-            left: "50%",
-            bottom: "-9px",
-            transform: "translateX(-50%)",
-          }}
-        ></div>
+        className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
+        style={{
+          left: "50%",
+          bottom: "-8px",
+          transform: "translateX(-50%)",
+        }}
+      ></div>
     </div>
   );
 };

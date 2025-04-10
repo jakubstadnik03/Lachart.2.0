@@ -24,7 +24,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         <Header isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
 
         {/* Hlavní obsah */}
-        <main className="flex-1 px-4">
+        <main className="flex-1 px-3 sm:px-3 md:px-4">
           <div className="max-w-[1600px] mx-auto">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
           </div>
