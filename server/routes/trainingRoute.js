@@ -69,6 +69,26 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
   }
 });
 
+// Get all training titles
+router.get("/titles", verifyToken, async (req, res) => {
+  try {
+    console.log('User from token:', req.user);
+    if (!req.user || !req.user.userId) {
+      console.error('No user ID found in token');
+      return res.status(401).json({ error: 'No user ID found in token' });
+    }
+    const titles = await TrainingAbl.getTrainingTitles(req.user.userId);
+    res.status(200).json(titles);
+  } catch (error) {
+    console.error('Error in /training/titles:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    });
+  }
+});
+
 // Get a specific training by ID
 router.get("/:id", verifyToken, async (req, res) => {
   try {

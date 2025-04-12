@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { fetchTrainingTitles } from "../mock/mockApi";
+import { getTrainingTitles } from "../services/api";
 
 const ACTIVITIES = [
   {
@@ -73,9 +73,14 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
 
   useEffect(() => {
     const loadTrainingTitles = async () => {
-      const titles = await fetchTrainingTitles();
-      console.log("Loaded titles:", titles);
-      setTrainingTitles(titles || []);
+      try {
+        const titles = await getTrainingTitles();
+        console.log("Loaded titles from backend:", titles);
+        setTrainingTitles(titles || []);
+      } catch (error) {
+        console.error("Error loading training titles:", error);
+        setTrainingTitles([]);
+      }
     };
     loadTrainingTitles();
   }, []);

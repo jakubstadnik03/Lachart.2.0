@@ -46,6 +46,46 @@ class TrainingAbl {
     async deleteTraining(id) {
         return await this.trainingDao.delete(id);
     }
+
+    async getTrainingTitles(userId) {
+        try {
+            console.log('Getting training titles for user:', userId);
+            
+            // Získání uživatele pro zjištění role
+            const user = await this.userDao.findById(userId);
+            if (!user) {
+                console.error('User not found:', userId);
+                throw new Error('Uživatel nenalezen');
+            }
+            console.log('Found user:', { id: user._id, role: user.role });
+
+            // Pokud je uživatel trenér, získat všechny tréninky jeho atletů
+            // Pokud je uživatel atlet, získat jen jeho tréninky
+            let trainings = [];
+            if (user.role === 'coach') {
+                // Získat ID všech atletů tohoto trenéra
+                const athletes = await this.userDao.findAthletesByCoachId(userId);
+                console.log('Found athletes:', athletes.length);
+                const athleteIds = athletes.map(athlete => athlete._id);
+                
+                // Získat tréninky všech těchto atletů
+                trainings = await this.trainingDao.findByAthleteIds(athleteIds);
+            } else {
+                // Atlet vidí jen své tréninky
+                trainings = await this.trainingDao.findByAthleteId(userId);
+            }
+            console.log('Found trainings:', trainings.length);
+
+            // Extrahovat unikátní názvy tréninků
+            const titles = [...new Set(trainings.map(training => training.title))].filter(Boolean);
+            console.log('Unique titles:', titles.length);
+            return titles.sort();
+        } catch (error) {
+            console.error('Error in getTrainingTitles:', error);
+            console.error('Stack:', error.stack);
+            throw error;
+        }
+    }
 }
 
 module.exports = new TrainingAbl();

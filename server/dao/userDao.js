@@ -1,5 +1,6 @@
 "use strict";
 const crypto = require("crypto");
+const mongoose = require('mongoose');
 const UserModel = require("../models/UserModel"); // Adjust the path as necessary
 
 class UserDao {
@@ -49,7 +50,12 @@ class UserDao {
 
   async findById(id) {
     try {
-      return await UserModel.findById(id);
+      console.log('Finding user by ID:', id);
+      // Convert string ID to MongoDB ObjectId if needed
+      const objectId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+      const user = await UserModel.findById(objectId);
+      console.log('Found user:', user ? 'yes' : 'no');
+      return user;
     } catch (error) {
       console.error("Error finding user by ID:", error);
       throw error;

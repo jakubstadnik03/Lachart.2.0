@@ -1,4 +1,5 @@
 // dao/trainingDao.js
+const mongoose = require('mongoose');
 const Training = require("../models/training");
 
 class TrainingDao {
@@ -8,9 +9,30 @@ class TrainingDao {
 
   async findByAthleteId(athleteId) {
     try {
-      return await this.Training.find({ athleteId: athleteId });
+      console.log('Finding trainings for athlete:', athleteId);
+      // Convert string ID to MongoDB ObjectId if needed
+      const objectId = mongoose.Types.ObjectId.isValid(athleteId) ? new mongoose.Types.ObjectId(athleteId) : athleteId;
+      const trainings = await this.Training.find({ athleteId: objectId });
+      console.log('Found trainings:', trainings.length);
+      return trainings;
     } catch (error) {
       console.error('Error in findByAthleteId:', error);
+      throw error;
+    }
+  }
+
+  async findByAthleteIds(athleteIds) {
+    try {
+      console.log('Finding trainings for athletes:', athleteIds);
+      // Convert string IDs to MongoDB ObjectIds if needed
+      const objectIds = athleteIds.map(id => 
+        mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id
+      );
+      const trainings = await this.Training.find({ athleteId: { $in: objectIds } });
+      console.log('Found trainings:', trainings.length);
+      return trainings;
+    } catch (error) {
+      console.error('Error in findByAthleteIds:', error);
       throw error;
     }
   }

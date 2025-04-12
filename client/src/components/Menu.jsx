@@ -172,13 +172,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           isMenuOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
-        {/* Logo a název */}
-        <div className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0">
-          <img src="/icon/logo.svg" alt="LaChart Logo" className="w-8 h-8 mr-2" />
-          <h1 className="text-xl font-bold text-primary">LaChart</h1>
-        </div>
 
-        {/* Profil uživatele */}
+          <div className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0">
+            <img src="/images/LaChart.png" alt="LaChart Logo" className="w-10 h-8 mr-2 object-contain" />
+            <h1 className="text-xl font-bold text-primary">LaChart</h1>
+          </div>
+
+          {/* Profil uživatele */}
         <div className="p-4 flex items-center border-b border-gray-200 flex-shrink-0">
           <img
             src={getAvatar(user)}

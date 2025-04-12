@@ -156,8 +156,29 @@ const colorMap = {
   };
   
   
+// Pomocné funkce pro konverzi tempa
+const formatSecondsToMMSS = (seconds) => {
+  if (!seconds) return "";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const convertPaceToSpeed = (seconds) => {
+  // Převede tempo (sekundy na km) na rychlost (km/h)
+  if (!seconds) return 0;
+  return 3600 / seconds;
+};
+
+const convertSpeedToPace = (speed) => {
+  // Převede rychlost (km/h) na tempo (sekundy na km)
+  if (!speed) return 0;
+  return 3600 / speed;
+};
+
 const LactateCurveCalculator = ({ mockData }) => {
   const chartRef = useRef(null);
+  const isRunning = mockData?.sport === 'run';
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -176,7 +197,7 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   const thresholds = calculateThresholds(mockData);
   const results = mockData.results;
-  const xVals = results.map(r => r.power);
+  const xVals = results.map(r => isRunning ? convertPaceToSpeed(r.power) : r.power);
   const yVals = results.map(r => r.lactate);
 
   // Polynomial Regression (degree 3)
@@ -205,7 +226,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   // Generate points for polynomial curve
   const minPower = Math.min(...xVals);
   const maxPower = Math.max(...xVals);
-  const step = 0.1; // Increase density of points
+  const step = (maxPower - minPower) / 100; // Adjust density of points
 
   const polyPoints = [];
   for (let x = minPower; x <= maxPower; x += step) {
@@ -214,7 +235,11 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   const measuredDataSet = {
     label: 'Measured data',
-    data: results.map(r => ({ x: r.power, y: r.lactate })),
+    data: results.map(r => ({ 
+      x: isRunning ? convertPaceToSpeed(r.power) : r.power, 
+      y: r.lactate,
+      originalPace: isRunning ? r.power : null
+    })),
     showLine: false,
     pointBackgroundColor: '#f8fafc',
     pointBorderColor: '#000000',
@@ -226,21 +251,26 @@ const LactateCurveCalculator = ({ mockData }) => {
     label: 'Polynomial Fit',
     data: polyPoints,
     borderColor: '#2196F3',
-    pointRadius: 0, // Points are invisible
+    pointRadius: 0,
     showLine: true,
   };
 
+  const thresholdDatasets = Object.keys(thresholds)
+    .filter(key => !['heartRates', 'lactates'].includes(key))
+    .map(key => ({
+      label: key,
+      data: [{
+        x: isRunning ? convertPaceToSpeed(thresholds[key]) : thresholds[key],
+        y: thresholds.lactates[key],
+        originalPace: isRunning ? thresholds[key] : null
+      }],
+      borderColor: colorMap[key] || '#2196F3',
+      backgroundColor: colorMap[key] || '#2196F3',
+      pointRadius: 6,
+      showLine: false,
+    }));
 
-  const thresholdDatasets = Object.keys(thresholds).filter(key => !['heartRates', 'lactates'].includes(key)).map(key => ({
-    label: key,
-    data: [{ x: thresholds[key], y: thresholds.lactates[key] }],
-    borderColor: colorMap[key] || '#2196F3',
-    backgroundColor: colorMap[key] || '#2196F3',
-    pointRadius: 6,
-    showLine: false,
-  }));
-
-  const allDatasets = [...thresholdDatasets, measuredDataSet, polyDataSet]; 
+  const allDatasets = [...thresholdDatasets, measuredDataSet, polyDataSet];
 
   const data = { datasets: allDatasets };
   const options = {
@@ -249,9 +279,12 @@ const LactateCurveCalculator = ({ mockData }) => {
     scales: {
       x: {
         type: 'linear',
-        min: minPower - 10,
-        max: maxPower + 10,
-        title: { display: true, text: 'Power (W)' },
+        min: minPower - (maxPower - minPower) * 0.1,
+        max: maxPower + (maxPower - minPower) * 0.1,
+        title: { 
+          display: true, 
+          text: isRunning ? 'Speed (km/h)' : 'Power (W)' 
+        },
         border: { dash: [6, 6] },
         grid: {
           color: "rgba(0, 0, 0, 0.15)",
@@ -262,7 +295,7 @@ const LactateCurveCalculator = ({ mockData }) => {
       y: {
         type: 'linear',
         min: 0,
-        max: Math.ceil(Math.max(...yVals) + 1)        ,
+        max: Math.ceil(Math.max(...yVals) + 1),
         title: { display: true, text: 'Lactate (mmol/L)' },
         border: { dash: [6, 6] },
         grid: {
@@ -283,7 +316,13 @@ const LactateCurveCalculator = ({ mockData }) => {
             const label = ctx.dataset.label;
             const xVal = ctx.parsed.x;
             const yVal = ctx.parsed.y;
-            return `${label}: ${xVal.toFixed(0)} W | ${yVal.toFixed(2)} mmol/L`;
+            const dataPoint = ctx.dataset.data[ctx.dataIndex];
+            
+            if (isRunning && dataPoint.originalPace) {
+              const paceStr = formatSecondsToMMSS(dataPoint.originalPace);
+              return `${label}: ${paceStr} min/km | ${yVal.toFixed(2)} mmol/L`;
+            }
+            return `${label}: ${xVal.toFixed(0)} ${isRunning ? 'km/h' : 'W'} | ${yVal.toFixed(2)} mmol/L`;
           }
         }
       },

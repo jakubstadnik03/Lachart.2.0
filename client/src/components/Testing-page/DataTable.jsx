@@ -103,7 +103,7 @@ const findLactateThresholds = (results, baseLactate) => {
   // Hlavní funkce pro výpočet všech thresholdů
   const calculateThresholds = (mockData) => {
     const baseLactate = mockData.baseLactate;
-    const { results } = mockData;
+    const { results, sport } = mockData;
   
     if (!results || results.length < 3) {
       return {
@@ -112,8 +112,15 @@ const findLactateThresholds = (results, baseLactate) => {
       };
     }
   
-    // Seřadit výsledky podle výkonu
-    const sortedResults = [...results].sort((a, b) => a.power - b.power);
+    // Pro běh a plavání necháme hodnoty v sekundách (nebudeme je převádět)
+    const sortedResults = [...results].sort((a, b) => {
+      if (sport === 'run' || sport === 'swim') {
+        // Pro běh a plavání řadíme sestupně (nižší čas = lepší výkon)
+        return b.power - a.power;
+      }
+      // Pro kolo řadíme vzestupně
+      return a.power - b.power;
+    });
   
     // Objekt pro ukládání výsledků
     const thresholds = {
@@ -151,7 +158,7 @@ const findLactateThresholds = (results, baseLactate) => {
             'LTP1', 'LTP2'
           ][index];
   
-          // Interpolovaný výkon
+          // Interpolovaný výkon/tempo
           thresholds[key] = interpolate(
             prev.power, prev.lactate,
             curr.power, curr.lactate,
@@ -280,9 +287,9 @@ const findLactateThresholds = (results, baseLactate) => {
   
   const DataTable = ({ mockData }) => {
     const thresholds = calculateThresholds(mockData);
+    const sport = mockData?.sport || 'bike';
   
     // Seznam metod, včetně Log-log
-    // plus cokoliv, co není heartRates / lactates
     const methods = [
       'Log-log',
       ...Object.keys(thresholds).filter(k =>
@@ -290,7 +297,7 @@ const findLactateThresholds = (results, baseLactate) => {
       )
     ];
   
-    // Definice sloupců (Method, Pwr, HR, La)
+    // Definice sloupců (Method, Power/Pace, HR, La)
     const columns = [
       {
         header: 'Method',
@@ -298,11 +305,10 @@ const findLactateThresholds = (results, baseLactate) => {
         descriptions: methods.map(method => methodDescriptions[method])
       },
       {
-        header: 'Pwr (W)',
+        header: sport === 'bike' ? 'Pwr (W)' : 'Pace (km)',
         data: methods.map((method) => {
-          return thresholds[method]
-            ? `${Math.round(thresholds[method])} W`
-            : 'N/A';
+          const value = thresholds[method];
+          return value ? formatPowerOrPace(value, sport) : 'N/A';
         })
       },
       {
@@ -343,6 +349,23 @@ const findLactateThresholds = (results, baseLactate) => {
         </div>
       </div>
     );
+  };
+  
+  // Pomocné funkce pro formátování
+  const formatSecondsToMMSS = (seconds) => {
+    if (!seconds || isNaN(seconds)) return "N/A";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatPowerOrPace = (value, sport) => {
+    if (!value || value === 'N/A') return 'N/A';
+    
+    if (sport === 'run' || sport === 'swim') {
+      return `${formatSecondsToMMSS(value)}/km`;
+    }
+    return `${Math.round(value)} W`;
   };
   
   export default DataTable;

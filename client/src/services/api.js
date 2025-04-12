@@ -120,4 +120,14 @@ export const changePassword = async (passwordData) => {
   }
 };
 
+export const getTrainingTitles = async () => {
+  try {
+    const response = await api.get('/training/titles');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching training titles:', error);
+    throw error;
+  }
+};
+
 export default api; 
