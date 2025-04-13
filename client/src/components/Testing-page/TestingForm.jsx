@@ -159,7 +159,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
   };
 
   return (
-    <div className="flex flex-col w-full max-w-4xl mx-auto p-2 sm:px-4 sm:py-4 bg-gray-50 rounded-lg">
+    <div className="flex flex-col w-full max-w-l mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg">
       <input 
         type="text"
         value={formData.title}

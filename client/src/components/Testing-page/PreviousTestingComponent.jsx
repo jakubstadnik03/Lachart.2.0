@@ -90,7 +90,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
       {currentTest && currentTest.results && (
         <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
           <LactateCurve mockData={currentTest} />
-          <div className="flex-1 max-w-xl bg-white rounded-2xl shadow-lg md:p-6 sm:p-2">
+          <div className="flex-1 max-w-l bg-white rounded-2xl shadow-lg md:p-6 sm:p-2">
             <TestingForm 
               testData={currentTest} 
               onTestDataChange={handleTestUpdate}

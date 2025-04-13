@@ -236,23 +236,23 @@ const TrainingGraph = ({
 
   // Přidáme useEffect pro aktualizaci dat při změně sportu
   useEffect(() => {
-    console.log('Sport change useEffect triggered');
-    console.log('Current selectedSport:', selectedSport);
+    // console.log('Sport change useEffect triggered');
+    // console.log('Current selectedSport:', selectedSport);
     
     if (!trainingList || !selectedSport) return;
     
     const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
-    console.log('Filtered sportTrainings in useEffect:', sportTrainings);
+    // console.log('Filtered sportTrainings in useEffect:', sportTrainings);
     
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-    console.log('Unique titles in useEffect:', uniqueTitles);
+    // console.log('Unique titles in useEffect:', uniqueTitles);
     
     if (sportTrainings.length > 0) {
       const firstTitle = uniqueTitles[0];
       const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
       
-      console.log('Setting first title in useEffect:', firstTitle);
-      console.log('Setting first training in useEffect:', firstTraining);
+      // console.log('Setting first title in useEffect:', firstTitle);
+      // console.log('Setting first training in useEffect:', firstTraining);
       
       if (firstTitle) {
         setSelectedTitle(firstTitle);
@@ -261,19 +261,19 @@ const TrainingGraph = ({
         }
       }
     } else {
-      console.log('No trainings found for sport in useEffect:', selectedSport);
+      // console.log('No trainings found for sport in useEffect:', selectedSport);
       setSelectedTitle(null);
       setSelectedTraining(null);
     }
   }, [selectedSport, trainingList]);
 
   // Přidáme useEffect pro sledování změn v props
-  useEffect(() => {
-    console.log('Props changed:', {
-      selectedTitle,
-      selectedTraining
-    });
-  }, [selectedTitle, selectedTraining]);
+  // useEffect(() => {
+  //   console.log('Props changed:', {
+  //     selectedTitle,
+  //     selectedTraining
+  //   });
+  // }, [selectedTitle, selectedTraining]);
 
   if (!trainingList) return <div>Loading trainings...</div>;
   if (loading) return <div>Loading...</div>;

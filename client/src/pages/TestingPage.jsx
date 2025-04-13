@@ -121,7 +121,7 @@ const TestingPage = () => {
           />
         </div>
       )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6 md:mt-5 sm:mt-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6 ">
         <div className="w-full sm:w-auto sm:flex-1 min-w-0">
           <SportsSelector
             sports={sports}

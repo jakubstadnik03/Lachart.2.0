@@ -75,7 +75,6 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
     const loadTrainingTitles = async () => {
       try {
         const titles = await getTrainingTitles();
-        console.log("Loaded titles from backend:", titles);
         setTrainingTitles(titles || []);
       } catch (error) {
         console.error("Error loading training titles:", error);
@@ -87,12 +86,14 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
 
   useEffect(() => {
     if (initialData) {
+      console.log('Editing training:', initialData);
       const formattedData = {
         ...initialData,
         date: new Date(initialData.date).toISOString().slice(0, 16),
         results: initialData.results.map(result => ({
           ...result,
-          power: formData.sport === 'bike' ? result.power : formatSecondsToMMSS(result.power)
+          power: formData.sport === 'bike' ? result.power : formatSecondsToMMSS(result.power),
+          duration: result.durationType === "time" ? formatSecondsToMMSS(result.duration) : result.duration
         }))
       };
       setFormData(formattedData);
@@ -156,6 +157,37 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           if (interval.power && interval.power.includes(':')) {
             const [minutes, seconds] = interval.power.split(':').map(Number);
             updatedInterval.power = (minutes * 60 + seconds).toString();
+          }
+          
+          return updatedInterval;
+        });
+      }
+      
+      // Zpracování duration pro všechny intervaly
+      if (dataToSubmit.results) {
+        dataToSubmit.results = dataToSubmit.results.map(interval => {
+          const updatedInterval = { ...interval };
+          
+          // Pokud je durationType "time"
+          if (interval.durationType === "time") {
+            // Pokud je duration prázdné, nastavíme výchozí hodnotu 0
+            if (!interval.duration) {
+              updatedInterval.duration = "0";
+            } 
+            // Pokud duration obsahuje ":", převedeme na sekundy
+            else if (interval.duration.includes(':')) {
+              const [minutes, seconds] = interval.duration.split(':').map(Number);
+              updatedInterval.duration = (minutes * 60 + (seconds || 0)).toString();
+            } 
+            // Pokud je zadáno pouze číslo bez dvojtečky, převedeme na sekundy
+            else {
+              const minutes = parseInt(interval.duration);
+              if (!isNaN(minutes)) {
+                updatedInterval.duration = (minutes * 60).toString();
+              } else {
+                updatedInterval.duration = "0";
+              }
+            }
           }
           
           return updatedInterval;
@@ -636,12 +668,18 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                               // Povolíme čísla, tečku, mezeru a jednotky km/m
                               value = value.replace(/[^\d\s.km]/g, '');
                               
-                              // Automatické přidání jednotky pokud není zadána
-                              if (value && !value.includes('km') && !value.includes('m')) {
-                                // Pokud je číslo větší než 1, použijeme km, jinak m
-                                const numValue = parseFloat(value);
-                                if (!isNaN(numValue)) {
-                                  value = numValue >= 1 ? `${value} km` : `${value}m`;
+                              // Necháme uživatele zadat vlastní jednotku
+                              // Automaticky nepřidáváme jednotku
+                            } else {
+                              // Pro typ "time" zpracujeme číselnou hodnotu
+                              // Povolíme pouze čísla a dvojtečku
+                              value = value.replace(/[^\d:]/g, '');
+                              
+                              // Pokud uživatel zadá číslo bez dvojtečky
+                              if (value.length > 0 && !value.includes(':')) {
+                                // Přidáme dvojtečku po druhém čísle
+                                if (value.length >= 2) {
+                                  value = `${value.slice(0, 2)}:${value.slice(2, 4)}`;
                                 }
                               }
                             }

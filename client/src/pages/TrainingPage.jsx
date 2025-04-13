@@ -23,7 +23,7 @@ const TrainingPage = () => {
   const navigate = useNavigate();
 
   // Přidáme debug log pro user objekt
-  console.log('Current user:', user);
+  // console.log('Current user:', user);
 
   const loadTrainings = async (targetId) => {
     try {

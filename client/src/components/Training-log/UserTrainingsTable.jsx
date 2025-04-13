@@ -44,7 +44,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
         
         <div className="flex gap-2 items-center">
           <button
-            className={`px-3 py-2 rounded-full transition-all ${currentPage === 1 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
+            className={`px-2 py-2 rounded-full transition-all ${currentPage === 1 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
             aria-label="Previous page"
@@ -65,7 +65,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
           ))}
           
           <button
-            className={`px-3 py-2 rounded-full transition-all ${currentPage === totalPages ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
+            className={`px-2 py-2 rounded-full transition-all ${currentPage === totalPages ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             aria-label="Next page"
@@ -271,6 +271,25 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       
       return durationType === 'time' ? 'min' : 'm';
     };
+
+    const formatDuration = (duration, durationType) => {
+      if (!duration) return '';
+      
+      if (durationType === 'time') {
+        // Pokud je duration ve formátu sekund, převedeme na MM:SS
+        if (!duration.includes(':')) {
+          const seconds = parseInt(duration);
+          if (!isNaN(seconds)) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+          }
+        }
+        return duration;
+      }
+      
+      return duration;
+    };
   
     return (
       <div key={workout.interval} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
@@ -294,7 +313,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           />
           <div>{workout.RPE}</div>
         </div>
-        <div className={`flex gap-1 items-center p-1 w-12 sm:w-16 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
+        <div className={`flex gap-1 items-center p-1 w-12 sm:w-22 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
           {lactateIcon && <img
             loading="lazy"
             src={lactateIcon}
@@ -304,7 +323,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           <div>{workout.lactate || ''}</div>
         </div>
         <div className="w-16">
-          {workout.duration} {getDurationUnit(workout.durationType, workout.duration)}
+          {formatDuration(workout.duration, workout.durationType)} {getDurationUnit(workout.durationType, workout.duration)}
         </div>
       </div>
     );
