@@ -170,6 +170,19 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
               View last trainings
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
+             
+              <button 
+                onClick={() => window.location.href = "/training"}
+                className="flex overflow-hidden gap-1 items-center self-stretch py-0.5  my-auto text-xs sm:text-base text-blue-500 bg-white rounded min-h-[24px] sm:min-h-[28px]"
+              >
+                <div className="self-stretch my-auto">View more</div>
+                <img
+                  loading="lazy"
+                  src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/d5620c00b89d258c2df851956089e1cf63163537c904e90b0ae529b03aba7f72?"
+                  alt=""
+                  className="object-contain shrink-0 self-stretch my-auto w-3 sm:w-4 aspect-square"
+                />
+              </button>
               <div className="relative" ref={settingsRef}>
                 <button
                   onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -214,18 +227,6 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
                   </div>
                 )}
               </div>
-              <button 
-                onClick={() => window.location.href = "/training"}
-                className="flex overflow-hidden gap-1 items-center self-stretch py-0.5 px-2 sm:px-3.5 my-auto text-xs sm:text-base text-blue-500 bg-white rounded min-h-[24px] sm:min-h-[28px]"
-              >
-                <div className="self-stretch my-auto">View more</div>
-                <img
-                  loading="lazy"
-                  src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/d5620c00b89d258c2df851956089e1cf63163537c904e90b0ae529b03aba7f72?"
-                  alt=""
-                  className="object-contain shrink-0 self-stretch my-auto w-3 sm:w-4 aspect-square"
-                />
-              </button>
             </div>
           </div>
         </div>

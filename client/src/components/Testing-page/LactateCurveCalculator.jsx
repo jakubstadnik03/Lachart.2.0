@@ -359,7 +359,7 @@ const LactateCurveCalculator = ({ mockData }) => {
             <Line ref={chartRef} data={data} options={options} />
           </div>
           
-          <div className="w-full lg:w-[200px] shrink-0">
+          <div className="w-full lg:w-[80px] shrink-0">
             <Legend chartRef={chartRef} />
           </div>
           

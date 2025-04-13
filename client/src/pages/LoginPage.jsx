@@ -63,7 +63,7 @@ const LoginPage = () => {
           <div>
             <img
               className="mx-auto h-12 w-auto"
-              src="/icon/logo.svg"
+              src="/images/LaChart.png"
               alt="Your Logo"
             />
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">

@@ -26,9 +26,9 @@ function StatCard({ stats }) {
 }
 
 function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower }) {
-  const getWidth = (duration, totalTrainings) => {
+  const getWidth = (duration) => {
     // Base width is smaller on mobile and larger on desktop
-    const baseWidth = window.innerWidth < 640 ? 4 : 8;
+    const baseWidth = window.innerWidth < 640 ? 4 : 6;
     
     if (!duration) return baseWidth;
     
@@ -37,11 +37,10 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
       parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
       parseFloat(duration);
       
-    // Calculate width based on duration ratio
     // Find the shortest duration in the current training
     const durations = visibleTrainings.flatMap(t => 
       t.results
-        .filter(r => r.duration) // Filter out undefined durations
+        .filter(r => r.duration)
         .map(r => {
           const dur = r.duration;
           return dur.includes(':') ? 
@@ -53,18 +52,17 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
     if (durations.length === 0) return baseWidth;
     
     const shortestDuration = Math.min(...durations);
-    
-    // Calculate ratio and apply to base width
     const ratio = minutes / shortestDuration;
-    const maxWidth = window.innerWidth < 640 ? 16 : 32;
     
+    // Calculate width based on ratio and screen size
+    const maxWidth = window.innerWidth < 640 ? 24 : 40;
     return Math.min(maxWidth, Math.max(baseWidth, baseWidth * ratio));
   };
 
   return (
     <div
       className="relative flex justify-center shrink-0 h-full"
-      style={{ width: `${getWidth(duration, totalTrainings)}px` }}
+      style={{ width: `${getWidth(duration)}px` }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
@@ -81,7 +79,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
         <div 
           className="absolute left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"
           style={{
-            bottom: `${height - 4}px`,
+            bottom: `${height - 10}px`,
             minWidth: "140px"
           }}  
         >
@@ -444,52 +442,22 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
           </svg>
 
           {/* Bars */}
-          <div className="relative flex justify-between w-full z-10 items-end px-2 sm:px-4">
+          <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4">
             {visibleTrainings.map((training, trainingIndex) => {
-              // Calculate width of the first bar in the first training
-              const getBarWidth = (duration) => {
-                if (!duration) return window.innerWidth < 640 ? 4 : 8;
-                
-                const minutes = duration.includes(':') ? 
-                  parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
-                  parseFloat(duration);
-                  
-                const durations = visibleTrainings.flatMap(t => 
-                  t.results
-                    .filter(r => r.duration)
-                    .map(r => {
-                      const dur = r.duration;
-                      return dur.includes(':') ? 
-                        parseInt(dur.split(':')[0]) + parseInt(dur.split(':')[1]) / 60 : 
-                        parseFloat(dur);
-                    })
-                );
-                
-                if (durations.length === 0) return window.innerWidth < 640 ? 4 : 8;
-                
-                const shortestDuration = Math.min(...durations);
-                const ratio = minutes / shortestDuration;
-                const maxWidth = window.innerWidth < 640 ? 16 : 32;
-                const baseWidth = window.innerWidth < 640 ? 4 : 8;
-                
-                return Math.min(maxWidth, Math.max(baseWidth, baseWidth * ratio));
-              };
-
-              // Calculate total width of all bars in the first training
-              const totalBarsWidth = trainingIndex === 0 ? 
-                training.results.reduce((total, result) => total + getBarWidth(result.duration), 0) : 0;
+              // Calculate fixed width for each training column
+              const columnWidth = `${100 / visibleTrainings.length}%`;
               
               return (
                 <div 
                   key={`training-${training._id || training.id || trainingIndex}`} 
                   className="flex flex-col relative"
                   style={{ 
-                    width: getColumnWidth(), 
+                    width: columnWidth,
                     height: `${maxGraphHeight}px`,
-                    marginLeft: trainingIndex === 0 ? `${totalBarsWidth}px` : '0'
+                    padding: '0 4px' // Add consistent padding between columns
                   }}
                 >
-                  <div className="flex gap-0.5 h-full justify-center items-end">
+                  <div className="flex gap-1 h-full justify-center items-end">
                     {training.results.map((result, resultIndex) => {
                       const powerValue = Number(result.power);
                       const height = !isNaN(powerValue) && powerValue > 0 ? 
