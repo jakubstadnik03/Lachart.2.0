@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
   const [athletes, setAthletes] = useState([]);
@@ -12,6 +13,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
   const location = useLocation();
   const currentPath = location.pathname.split('/')[1];
   const currentAthleteId = location.pathname.split('/')[2];
+
+  // Ensure menu is open when component mounts
+  useEffect(() => {
+    if (user && token) {
+      setIsMenuOpen(true);
+    }
+  }, [user, token, setIsMenuOpen]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -166,20 +174,47 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
 
   return (
     <>
-      <div 
+      <motion.div 
         ref={menuRef}
-        className={`fixed md:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans transform transition-transform duration-300 ease-in-out z-40 ${
-          isMenuOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0`}
+        initial={{ x: -300, opacity: 0 }}
+        animate={{ 
+          x: isMenuOpen ? 0 : -300,
+          opacity: isMenuOpen ? 1 : 0
+        }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 300, 
+          damping: 30,
+          opacity: { duration: 0.2 }
+        }}
+        className={`fixed md:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40`}
       >
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ 
+            delay: 0.2,
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+          }}
+          className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0"
+        >
+          <img src="/images/LaChart.png" alt="LaChart Logo" className="w-10 h-8 mr-2 object-contain" />
+          <h1 className="text-xl font-bold text-primary">LaChart</h1>
+        </motion.div>
 
-          <div className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0">
-            <img src="/images/LaChart.png" alt="LaChart Logo" className="w-10 h-8 mr-2 object-contain" />
-            <h1 className="text-xl font-bold text-primary">LaChart</h1>
-          </div>
-
-          {/* Profil uživatele */}
-        <div className="p-4 flex items-center border-b border-gray-200 flex-shrink-0">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ 
+            delay: 0.3,
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+          }}
+          className="p-4 flex items-center border-b border-gray-200 flex-shrink-0"
+        >
           <img
             src={getAvatar(user)}
             alt="User Avatar"
@@ -191,16 +226,32 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
             </p>
             <p className="text-xs text-gray-500">{user.email}</p>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Menu navigace */}
-        <div className="p-4 flex-shrink-0">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="p-4 flex-shrink-0"
+        >
           <h2 className="text-lg text-gray-700 mb-3">Menu</h2>
           <ul className="space-y-2">
             {menuItems
               .filter(item => item.showFor.includes(user.role))
-              .map((item) => (
-                <li key={item.name}>
+              .map((item, index) => (
+                <motion.li 
+                  key={item.name}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ 
+                    delay: 0.1 * index,
+                    type: "spring",
+                    stiffness: 200,
+                    damping: 20
+                  }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
                   <NavLink
                     to={item.getPath ? item.getPath(currentAthleteId) : item.path}
                     onClick={handleMenuItemClick}
@@ -223,24 +274,47 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                       </>
                     )}
                   </NavLink>
-                </li>
+                </motion.li>
               ))}
           </ul>
-        </div>
+        </motion.div>
 
-        {/* Seznam atletů - pouze pro trenéry */}
         {user.role === "coach" && (
-          <div className="p-4 border-t border-gray-200 flex-1 overflow-y-auto">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="p-4 border-t border-gray-200 flex-1 overflow-y-auto"
+          >
             <h2 className="text-sm font-bold text-gray-700 mb-3">Athletes</h2>
             {loading ? (
               <div className="text-sm text-gray-500">Načítání atletů...</div>
             ) : athletes.length > 0 ? (
               <ul className="space-y-2">
-                {athletes.map((athlete) => (
-                  <li key={athlete._id}>
-                    <button
+                {athletes.map((athlete, index) => (
+                  <motion.li 
+                    key={athlete._id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ 
+                      delay: 0.1 * index,
+                      type: "spring",
+                      stiffness: 200,
+                      damping: 20
+                    }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <motion.button
+                      whileHover={{ 
+                        scale: 1.02,
+                        backgroundColor: currentAthleteId === athlete._id && currentPath !== 'athletes'
+                          ? "rgb(237, 233, 254)"
+                          : "rgb(243, 244, 246)"
+                      }}
+                      whileTap={{ scale: 0.98 }}
                       onClick={() => handleAthleteClick(athlete._id)}
-                      className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium ${
+                      className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
                         currentAthleteId === athlete._id && currentPath !== 'athletes'
                           ? "bg-violet-100 text-violet-700"
                           : "text-gray-700 hover:bg-gray-100"
@@ -252,21 +326,29 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                         className="w-6 h-6 rounded-full mr-2"
                       />
                       {athlete.name} {athlete.surname}
-                    </button>
-                  </li>
+                    </motion.button>
+                  </motion.li>
                 ))}
               </ul>
             ) : (
               <div className="text-sm text-gray-500">Žádní atleti nejsou k dispozici</div>
             )}
-          </div>
+          </motion.div>
         )}
 
-        {/* Další odkazy */}
-        <div className="mt-auto flex-shrink-0">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+          className="mt-auto flex-shrink-0"
+        >
           <div className="p-4 border-t border-gray-200">
             <ul className="space-y-2">
-              <li>
+              <motion.li
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.7 }}
+              >
                 <NavLink
                   to="/settings"
                   className={({ isActive }) =>
@@ -288,8 +370,12 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                     </>
                   )}
                 </NavLink>
-              </li>
-              <li>
+              </motion.li>
+              <motion.li
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.8 }}
+              >
                 <NavLink
                   to="/support"
                   className={({ isActive }) =>
@@ -311,13 +397,20 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                     </>
                   )}
                 </NavLink>
-              </li>
+              </motion.li>
             </ul>
           </div>
 
-          {/* Logout tlačítko */}
-          <div className="p-4 border-t border-gray-200" style={{ paddingTop: '0.35rem', paddingBottom: '0.35rem' }}>
-            <button
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9 }}
+            className="p-4 border-t border-gray-200"
+            style={{ paddingTop: '0.35rem', paddingBottom: '0.35rem' }}
+          >
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={handleLogout}
               className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
             >
@@ -327,18 +420,23 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
                 className="w-5 h-5 mr-3"
               />
               Log out
-            </button>
-          </div>
-        </div>
-      </div>
+            </motion.button>
+          </motion.div>
+        </motion.div>
+      </motion.div>
       
-      {/* Overlay pro mobilní menu */}
-      {isMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30"
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30 backdrop-blur-sm"
+            onClick={() => setIsMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };

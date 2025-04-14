@@ -7,6 +7,7 @@ import NewTestingComponent from "../components/Testing-page/NewTestingComponent"
 import NotificationBadge from "../components/Testing-page/NotificationBadge";
 import AthleteSelector from "../components/AthleteSelector";
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -100,61 +101,101 @@ const TestingPage = () => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
-    </div>
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex items-center justify-center h-screen"
+    >
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+    </motion.div>
   );
 
   if (error) return (
-    <div className="p-6 text-red-600">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
+    >
       {error}
-    </div>
+    </motion.div>
   );
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto overflow-x-hidden md:p-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="w-full max-w-[1600px] mx-auto overflow-x-hidden md:p-6"
+    >
       {user?.role === 'coach' && (
-        <div className="mb-2 sm:mb-4 md:mt-6">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-2 sm:mb-4 md:mt-6"
+        >
           <AthleteSelector
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
           />
-        </div>
+        </motion.div>
       )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6 ">
-        <div className="w-full sm:w-auto sm:flex-1 min-w-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3 }}
+          className="w-full sm:w-auto sm:flex-1 min-w-0"
+        >
           <SportsSelector
             sports={sports}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
           />
-        </div>
+        </motion.div>
 
-        <div className="w-full sm:w-auto min-w-0">
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4 }}
+          className="w-full sm:w-auto min-w-0"
+        >
           <NotificationBadge
             isActive={showNewTesting}
             onToggle={() => setShowNewTesting((prev) => !prev)}
           />
-        </div>
+        </motion.div>
       </div>
 
-      {showNewTesting && (
-        <div className="mb-3 sm:mb-6 w-full">
-          <NewTestingComponent 
-            selectedSport={selectedSport}
-            onSubmit={handleAddTest}
-          />
-        </div>
-      )}
+      <AnimatePresence>
+        {showNewTesting && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+            className="mb-3 sm:mb-6 w-full"
+          >
+            <NewTestingComponent 
+              selectedSport={selectedSport}
+              onSubmit={handleAddTest}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div className="w-full min-w-0 overflow-x-hidden">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="w-full min-w-0 overflow-x-hidden"
+      >
         <PreviousTestingComponent 
           selectedSport={selectedSport}
           tests={tests}
           setTests={setTests}
         />
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 

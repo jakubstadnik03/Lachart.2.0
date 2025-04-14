@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Trash, Plus, X, Save } from 'lucide-react';
+import { useNotification } from '../../context/NotificationContext';
 
-function TestingForm({ testData, onTestDataChange, onSave }) {
+function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange }) {
+  const { addNotification } = useNotification();
+
   const formatDate = (dateString) => {
     if (!dateString) return new Date().toISOString().split('T')[0];
     const date = new Date(dateString);
@@ -40,6 +43,23 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
   const [showGlucose, setShowGlucose] = useState(true);
   const [hoverGlucose, setHoverGlucose] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Check if any row has glucose data
+  const hasGlucoseData = rows.some(row => row.glucose !== undefined && row.glucose !== null && row.glucose !== '');
+
+  // Update showGlucose based on whether there's any glucose data
+  useEffect(() => {
+    if (!hasGlucoseData) {
+      setShowGlucose(false);
+    }
+  }, [hasGlucoseData]);
+
+  // Notify parent component when glucose column visibility changes
+  useEffect(() => {
+    if (onGlucoseColumnChange) {
+      onGlucoseColumnChange(!showGlucose);
+    }
+  }, [showGlucose, onGlucoseColumnChange]);
 
   const handlePaceChange = (index, value) => {
     const updatedRows = rows.map((row, i) =>
@@ -132,7 +152,13 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     console.log('Saving test data:', updatedTest);
     
     if (onSave) {
-      onSave(updatedTest);
+      try {
+        onSave(updatedTest);
+        addNotification('Test data saved successfully', 'success');
+      } catch (error) {
+        console.error('Error saving test data:', error);
+        addNotification('Failed to save test data', 'error');
+      }
     }
     setIsDirty(false);
   };
@@ -158,8 +184,11 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
     setIsDirty(true);
   };
 
+  // Calculate grid columns based on whether glucose is shown
+  const gridCols = showGlucose ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-4 sm:grid-cols-6';
+
   return (
-    <div className="flex flex-col w-full max-w-l mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg">
+    <div className={`flex flex-col w-full max-w-l mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg ${!showGlucose ? 'w-11/12 mx-0' : ''}`}>
       <input 
         type="text"
         value={formData.title}
@@ -192,7 +221,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
         />
       </div>
 
-      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 sm:gap-2 items-center p-2 text-xs sm:text-sm font-semibold bg-gray-100 rounded-lg">
+      <div className={`grid ${gridCols} gap-1 sm:gap-2 items-center p-2 text-xs sm:text-sm font-semibold bg-gray-100 rounded-lg`}>
         <div className="text-center">Int.</div>
         <div className="text-center">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
         <div className="text-center">HR</div>
@@ -215,7 +244,7 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
       </div>
 
       {rows.map((row, index) => (
-        <div key={index} className="grid grid-cols-4 sm:grid-cols-7 gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg">
+        <div key={index} className={`grid ${gridCols} gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg`}>
           <div className="text-center text-sm">{index + 1}</div>
           <input 
             type={formData.sport === 'bike' ? "number" : "text"}
@@ -294,8 +323,6 @@ function TestingForm({ testData, onTestDataChange, onSave }) {
           placeholder="Base La" 
         />
       </div>
-
-
 
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
         <button 

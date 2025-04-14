@@ -10,6 +10,17 @@ import api from '../services/api';
 import AthleteSelector from "../components/AthleteSelector";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNotification } from '../context/NotificationContext';
+import { 
+  CalendarIcon, 
+  ClockIcon, 
+  FireIcon, 
+  HeartIcon, 
+  ChartBarIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon
+} from '@heroicons/react/24/outline';
 
 const DashboardPage = () => {
   const { athleteId } = useParams();
@@ -22,9 +33,9 @@ const DashboardPage = () => {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
-
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   const loadTrainings = async (targetId) => {
     try {
@@ -95,55 +106,97 @@ const DashboardPage = () => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
-    </div>
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex items-center justify-center h-screen"
+    >
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+    </motion.div>
   );
 
   if (error) return (
-    <div className="p-6 text-red-600">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
+    >
       {error}
-    </div>
+    </motion.div>
   );
 
   if (!user) return (
-    <div className="p-6 text-gray-600">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="p-6 text-gray-600"
+    >
       Please log in to view this page
-    </div>
+    </motion.div>
   );
 
   return (
-    <div className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6"
+    >
       {user?.role === 'coach' && (
-        <AthleteSelector
-          selectedAthleteId={selectedAthleteId}
-          onAthleteChange={handleAthleteChange}
-        />
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <AthleteSelector
+            selectedAthleteId={selectedAthleteId}
+            onAthleteChange={handleAthleteChange}
+          />
+        </motion.div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 md:col-span-2">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3 }}
+          className="lg:col-span-3 md:col-span-2"
+        >
           <TrainingTable 
             trainings={trainings}
             selectedSport={selectedSport}
           />
-        </div>
+        </motion.div>
 
-        <div className="lg:col-span-2 md:col-span-2">
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4 }}
+          className="lg:col-span-2 md:col-span-2"
+        >
           <SpiderChart 
             trainings={trainings}
             selectedSport={selectedSport}
             setSelectedSport={setSelectedSport}
           />
-        </div>
+        </motion.div>
 
-        <div className="lg:col-span-3 md:col-span-2">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="lg:col-span-3 md:col-span-2"
+        >
           <TrainingStats 
             trainings={trainings}
             selectedSport={selectedSport}
           />
-        </div>
+        </motion.div>
 
-        <div className="lg:col-span-2 md:col-span-2">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="lg:col-span-2 md:col-span-2"
+        >
           <TrainingGraph 
             trainingList={trainings}
             selectedSport={selectedSport}
@@ -152,9 +205,14 @@ const DashboardPage = () => {
             selectedTraining={selectedTraining}
             setSelectedTraining={setSelectedTraining}
           />
-        </div>
+        </motion.div>
 
-        <div className="lg:col-span-5 md:col-span-2">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="lg:col-span-5 md:col-span-2"
+        >
           <div className="space-y-6">
             {tests && tests.length > 0 ? (
               <DateSelector
@@ -170,9 +228,9 @@ const DashboardPage = () => {
               <LactateCurveCalculator mockData={currentTest} />
             )}
           </div>
-        </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

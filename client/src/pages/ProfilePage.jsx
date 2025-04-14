@@ -13,6 +13,7 @@ import axios from 'axios';
 import { API_ENDPOINTS } from '../config/api.config';
 import { useParams } from 'react-router-dom';
 import api from '../services/api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const ProfilePage = () => {
   const { user, updateUser, token } = useAuth();
@@ -193,47 +194,74 @@ const ProfilePage = () => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-600"></div>
-    </div>
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex items-center justify-center h-screen"
+    >
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+    </motion.div>
   );
 
   if (error) return (
-    <div className="p-6 text-red-600">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
+    >
       {error}
-    </div>
+    </motion.div>
   );
 
   if (!userInfo) return (
-    <div className="p-6 text-gray-600">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="p-6 text-gray-600"
+    >
       No user data available
-    </div>
+    </motion.div>
   );
 
   return (
-    <div className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
-      {/* Horní část s profilem */}
-      <div className="bg-white rounded-3xl shadow-sm overflow-hidden relative">
-        {/* Edit buttons */}
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto"
+    >
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="bg-white rounded-3xl shadow-sm overflow-hidden relative"
+      >
         <div className="absolute top-4 right-4 flex gap-2">
-          <button
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => setIsEditModalOpen(true)}
             className="p-2 rounded-full bg-white shadow-sm hover:bg-gray-50"
           >
             <PencilIcon className="w-5 h-5 text-gray-600" />
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => setIsPasswordModalOpen(true)}
             className="p-2 rounded-full bg-white shadow-sm hover:bg-gray-50"
           >
             <KeyIcon className="w-5 h-5 text-gray-600" />
-          </button>
+          </motion.button>
         </div>
 
         <div className="h-24 md:h-32 bg-gradient-to-r from-purple-100 to-purple-50" />
         <div className="px-4 md:px-6 pb-4 md:pb-6">
-          {/* Avatar a jméno */}
-          <div className="flex flex-col sm:flex-row sm:items-end -mt-12 mb-4 gap-4 sm:gap-0">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="flex flex-col sm:flex-row sm:items-end -mt-12 mb-4 gap-4 sm:gap-0"
+          >
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white overflow-hidden bg-white mx-auto sm:mx-0">
               <img
                 src={userInfo.avatar}
@@ -245,10 +273,14 @@ const ProfilePage = () => {
               <h1 className="text-xl md:text-2xl font-bold">{userInfo.name}</h1>
               <p className="text-gray-600">{userInfo.title}</p>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Osobní informace */}
-          <div className="mt-4 md:mt-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-4 md:mt-6"
+          >
             <h2 className="text-lg font-semibold mb-3 md:mb-4">Personal Info</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               {[
@@ -263,42 +295,72 @@ const ProfilePage = () => {
                 { label: 'Address', value: userInfo.address || 'Not set' },
                 { label: 'Date of Birth', value: userInfo.dateOfBirth || 'Not set' },
               ].map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg">
+                <motion.div 
+                  key={index}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 * index }}
+                  className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+                >
                   <p className="text-gray-600 text-sm sm:w-1/3">{item.label}</p>
                   <p className="font-medium text-sm sm:w-2/3">{item.value}</p>
-                </div>
+                </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Zobrazení grafů a tabulek pouze pro atlety */}
       {userInfo.role !== 'coach' && (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-            <div>
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6"
+          >
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.6 }}
+            >
               <SpiderChart 
                 trainings={trainings}
                 selectedSport={selectedSport}
                 className="w-[400px]"
               />
-            </div>
-            <TrainingGraph 
-              trainingList={trainings}
-              selectedSport={selectedSport}
-              selectedTitle={selectedTitle}
-              setSelectedTitle={setSelectedTitle}
-              selectedTraining={selectedTraining}
-              setSelectedTraining={setSelectedTraining}
-            />
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.7 }}
+            >
+              <TrainingGraph 
+                trainingList={trainings}
+                selectedSport={selectedSport}
+                selectedTitle={selectedTitle}
+                setSelectedTitle={setSelectedTitle}
+                selectedTraining={selectedTraining}
+                setSelectedTraining={setSelectedTraining}
+              />
+            </motion.div>
 
-            <div className='lg:col-span-2'>
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+              className='lg:col-span-2'
+            >
               <UserTrainingsTable trainings={trainings} />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
-          <div className="lg:col-span-2">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9 }}
+            className="lg:col-span-2"
+          >
             <div className="mb-4">
               <SportsSelector onSportChange={setSelectedTestingSport} />
             </div>
@@ -308,23 +370,28 @@ const ProfilePage = () => {
               setTests={setTests}
               athleteId={userInfo._id}
             />
-          </div>
+          </motion.div>
         </>
       )}
 
-      {/* Modals */}
-      <EditProfileModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        onSubmit={handleProfileUpdate}
-        userData={userInfo}
-      />
+      <AnimatePresence>
+        {isEditModalOpen && (
+          <EditProfileModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            onSubmit={handleProfileUpdate}
+            userData={userInfo}
+          />
+        )}
 
-      <ChangePasswordModal
-        isOpen={isPasswordModalOpen}
-        onClose={() => setIsPasswordModalOpen(false)}
-      />
-    </div>
+        {isPasswordModalOpen && (
+          <ChangePasswordModal
+            isOpen={isPasswordModalOpen}
+            onClose={() => setIsPasswordModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
 

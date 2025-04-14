@@ -3,15 +3,17 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { API_ENDPOINTS } from '../config/api.config';
+import { motion } from 'framer-motion';
+import { useNotification } from '../context/NotificationContext';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
+  const { addNotification } = useNotification();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -23,19 +25,18 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     
     try {
       const result = await login(email, password);
       if (!result.success) {
-        setError('Incorrect email or password');
+        addNotification('Incorrect email or password', 'error');
       }
     } catch (err) {
       console.error('Login error:', err);
       if (err.response?.status === 401) {
-        setError('Incorrect email or password');
+        addNotification('Incorrect email or password', 'error');
       } else {
-        setError('An unexpected error occurred. Please try again later.');
+        addNotification('An unexpected error occurred. Please try again later.', 'error');
       }
     }
   };
@@ -51,16 +52,40 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="min-h-screen flex"
+    >
       {/* Left side - Background */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent">
+      <motion.div 
+        initial={{ x: -100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+        className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent"
+      >
         {/* Zde můžete přidat obrázek nebo grafiku */}
-      </div>
+      </motion.div>
 
       {/* Right side - Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div>
+      <motion.div 
+        initial={{ x: 100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+        className="w-full lg:w-1/2 flex items-center justify-center px-8"
+      >
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="max-w-md w-full space-y-8"
+        >
+          <motion.div
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+          >
             <img
               className="mx-auto h-12 w-auto"
               src="/images/LaChart.png"
@@ -72,17 +97,25 @@ const LoginPage = () => {
             <p className="mt-2 text-center text-sm text-gray-600">
               Welcome back! please enter your detail
             </p>
-          </div>
+          </motion.div>
 
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50" role="alert">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
+          <motion.form 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.8 }}
+            className="mt-8 space-y-6" 
+            onSubmit={handleSubmit}
+          >
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.5, delay: 1 }}
+              className="space-y-4"
+            >
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                transition={{ duration: 0.2 }}
+              >
                 <input
                   id="email"
                   name="email"
@@ -93,8 +126,12 @@ const LoginPage = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
-              </div>
-              <div className="relative">
+              </motion.div>
+              <motion.div 
+                className="relative"
+                whileHover={{ scale: 1.02 }}
+                transition={{ duration: 0.2 }}
+              >
                 <input
                   id="password"
                   name="password"
@@ -105,7 +142,9 @@ const LoginPage = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   type="button"
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
                   onClick={() => setShowPassword(!showPassword)}
@@ -120,11 +159,16 @@ const LoginPage = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                     </svg>
                   )}
-                </button>
-              </div>
-            </div>
+                </motion.button>
+              </motion.div>
+            </motion.div>
 
-            <div className="flex items-center justify-between">
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.5, delay: 1.2 }}
+              className="flex items-center justify-between"
+            >
               <div className="flex items-center">
                 <input
                   id="remember-me"
@@ -144,16 +188,23 @@ const LoginPage = () => {
                   Forgot Password?
                 </Link>
               </div>
-            </div>
+            </motion.div>
 
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               type="submit"
               className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               Sign In
-            </button>
+            </motion.button>
 
-            <div className="mt-6">
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.5, delay: 1.4 }}
+              className="mt-6"
+            >
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300"></div>
@@ -164,35 +215,44 @@ const LoginPage = () => {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleGoogleLogin}
                   className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                 >
                   <img src="/icon/google.svg" alt="Google" className="h-5 w-5 mr-2" />
                   Google
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleFacebookLogin}
                   className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                 >
                   <img src="/icon/facebook.svg" alt="Facebook" className="h-5 w-5 mr-2" />
                   Facebook
-                </button>
+                </motion.button>
               </div>
-            </div>
-          </form>
+            </motion.div>
+          </motion.form>
 
-          <p className="text-center text-sm text-gray-600">
+          <motion.p 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 1.6 }}
+            className="text-center text-sm text-gray-600"
+          >
             Don't have an account?{' '}
             <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">
               Sign Up
             </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+          </motion.p>
+        </motion.div>
+      </motion.div>
+    </motion.div>
   );
 };
 

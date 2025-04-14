@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useAuth } from "../context/AuthProvider";
 import { Outlet } from "react-router-dom";
 import Header from "./Header/Header";
@@ -7,6 +7,13 @@ import Footer from "./Footer";
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
+
+  // Ensure menu is open when component mounts
+  useEffect(() => {
+    if (user) {
+      setIsMenuOpen(true);
+    }
+  }, [user, setIsMenuOpen]);
 
   // Pokud není uživatel přihlášen, nezobrazujeme Layout
   if (!user) {

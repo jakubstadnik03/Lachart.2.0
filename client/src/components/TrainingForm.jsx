@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { getTrainingTitles } from "../services/api";
+import { useNotification } from '../context/NotificationContext';
 
 const ACTIVITIES = [
   {
@@ -48,6 +49,7 @@ const parseMMSSToSeconds = (mmss) => {
 };
 
 const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false, isLoading = false }) => {
+  const { addNotification } = useNotification();
   const [formData, setFormData] = useState(initialData || {
     sport: "bike",
     type: "interval",
@@ -216,10 +218,13 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       // Počkáme krátkou chvíli, aby se data stihla aktualizovat na serveru
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      addNotification(isEditing ? 'Training updated successfully' : 'Training added successfully', 'success');
+      
       // Zavřeme formulář
       onClose();
     } catch (error) {
       console.error('Form submission error:', error);
+      addNotification('Failed to save training data', 'error');
     }
   };
 

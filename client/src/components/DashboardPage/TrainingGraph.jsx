@@ -436,15 +436,12 @@ const TrainingGraph = ({
           display: true,
           autoSkip: false,
         },
+        border: { dash: [6, 6] },
         grid: {
-          color: 'rgba(0,0,0,0.1)',
-          drawTicks: false,
-          borderDash: [2, 4],
-          borderDashOffset: 0,
+          color: "rgba(0, 0, 0, 0.15)",
+          borderDash: [4, 4],
         },
-        border: {
-          display: false,
-        }
+    
       },
       y1: {
         position: 'right',

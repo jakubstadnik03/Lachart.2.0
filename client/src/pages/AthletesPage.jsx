@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthProvider';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { motion } from 'framer-motion';
+import { useNotification } from '../context/NotificationContext';
 
 const AthletesPage = () => {
   const { user } = useAuth();
@@ -28,6 +30,7 @@ const AthletesPage = () => {
     specialization: '',
     notes: '',
   });
+  const { addNotification } = useNotification();
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -142,9 +145,10 @@ const AthletesPage = () => {
       await api.delete(`/user/athlete/${athleteId}`);
       setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
       setDropdownOpen(null);
+      addNotification('Athlete removed successfully', 'success');
     } catch (error) {
       console.error('Error removing athlete:', error);
-      // TODO: Přidat notifikaci o chybě
+      addNotification('Failed to remove athlete', 'error');
     }
   };
 
@@ -152,7 +156,7 @@ const AthletesPage = () => {
     try {
       const response = await api.post(`/user/coach/resend-invitation/${athleteId}`);
       if (response.data.success) {
-        alert('Pozvánka byla úspěšně znovu odeslána');
+        addNotification('Invitation resent successfully', 'success');
         // Aktualizovat stav atleta v seznamu
         setAthletes(athletes.map(athlete => 
           athlete._id === athleteId 
@@ -160,13 +164,13 @@ const AthletesPage = () => {
             : athlete
         ));
       } else {
-        alert('Chyba při odesílání pozvánky: ' + response.data.message);
+        addNotification('Error resending invitation: ' + response.data.message, 'error');
       }
       setDropdownOpen(null);
     } catch (error) {
       console.error('Error resending invitation:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Nastala neočekávaná chyba';
-      alert('Chyba při odesílání pozvánky: ' + errorMessage);
+      const errorMessage = error.response?.data?.message || error.message || 'An unexpected error occurred';
+      addNotification('Error resending invitation: ' + errorMessage, 'error');
       setDropdownOpen(null);
     }
   };
@@ -188,7 +192,7 @@ const AthletesPage = () => {
         setAthletes(athletes.map(athlete => 
           athlete._id === selectedAthlete._id ? response.data.athlete : athlete
         ));
-        alert('Atlet byl úspěšně aktualizován');
+        addNotification('Athlete updated successfully', 'success');
       } else {
         // Přidání nového atleta
         const response = await api.post('/user/coach/add-athlete', {
@@ -206,9 +210,9 @@ const AthletesPage = () => {
         
         if (response.data.success) {
           setAthletes([...athletes, response.data.athlete]);
-          alert('Atlet byl úspěšně přidán a pozvánka byla odeslána na jeho email');
+          addNotification('Athlete added successfully and invitation sent', 'success');
         } else {
-          alert('Chyba při přidávání atleta: ' + response.data.message);
+          addNotification('Error adding athlete: ' + response.data.message, 'error');
         }
       }
       setIsModalOpen(false);
@@ -216,8 +220,8 @@ const AthletesPage = () => {
       resetForm();
     } catch (error) {
       console.error('Error submitting athlete:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Nastala neočekávaná chyba';
-      alert('Chyba při přidávání atleta: ' + errorMessage);
+      const errorMessage = error.response?.data?.message || error.message || 'An unexpected error occurred';
+      addNotification('Error saving athlete: ' + errorMessage, 'error');
     }
   };
 
@@ -267,129 +271,173 @@ const AthletesPage = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">List of athletes</h1>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search"
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-full w-64 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setIsInviteModalOpen(true)}
-              className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 hover:bg-purple-700 transition-colors"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="min-h-screen bg-gray-100"
+    >
+      <motion.div
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8"
+      >
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="px-4 py-6 sm:px-0"
+        >
+          <motion.div
+            initial={{ scale: 0.95 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+            className="bg-white rounded-lg shadow"
+          >
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+              className="px-4 py-5 sm:p-6"
             >
-              <span className="text-lg">+</span>
-              Add Existing Athlete
-            </button>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-2 hover:bg-purple-700 transition-colors"
-            >
-              <span className="text-lg">+</span>
-              Add New Athlete
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredAthletes.map((athlete) => (
-          <div key={athlete._id} className="bg-white rounded-3xl shadow-sm overflow-hidden">
-            <div className="h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
-              <div className="absolute top-4 right-4 dropdown-container">
-                <button 
-                  onClick={() => setDropdownOpen(athlete._id)}
-                  className="text-gray-600 hover:text-gray-800"
+              <div className="flex justify-between items-center mb-8">
+                <motion.h1
+                  initial={{ y: -10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1 }}
+                  className="text-2xl font-bold text-gray-900"
                 >
-                  •••
-                </button>
-                {dropdownOpen === athlete._id && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50">
-                    <button
-                      onClick={() => handleEditAthlete(athlete)}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      Edit Athlete
-                    </button>
-                    {!athlete.isRegistrationComplete && (
-                      <button
-                        onClick={() => handleResendInvitation(athlete._id)}
-                        className="block w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100"
-                      >
-                        Resend Invitation
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleRemoveAthlete(athlete._id)}
-                      className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-                    >
-                      Remove Athlete
-                    </button>
+                  List of athletes
+                </motion.h1>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search athletes..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
                   </div>
-                )}
-              </div>
-       
-              <div className="absolute bottom-4 left-4 right-4">
-                <div className="flex justify-between items-center">
-                  
-                  {athlete.invitationPending && (
-                    <span className="px-2 py-1 text-xs font-medium text-yellow-800 bg-yellow-100 rounded-full">
-                      Čeká na potvrzení
-                    </span>
-                  )}
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setIsModalOpen(true)}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    Add New Athlete
+                  </motion.button>
                 </div>
               </div>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="flex justify-center -mt-16">
-                <div className="w-32 h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
-                  <img
-                    src={getAvatarBySport(athlete.sport)}
-                    alt={`${athlete.name}'s avatar`}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              </div>
-              <div className="text-center mt-4">
-                <h3 
-                  className="text-2xl font-bold text-gray-900 hover:text-purple-600 cursor-pointer"
-                  onClick={() => handleViewProfile(athlete._id)}
-                >
-                  {athlete.name} {athlete.surname}
-                </h3>
-                <p className="text-gray-500 mt-1">{athlete.email}</p>
-              </div>
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <div className="bg-purple-50 rounded-2xl p-4">
-                  <div className="text-xl font-semibold text-purple-900">{athlete.sport}</div>
-                  <div className="text-gray-500 text-sm mt-1">{athlete.specialization}</div>
-                </div>
-                <div className="bg-purple-50 rounded-2xl p-4">
-                  <div className="text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
-                  <div className="text-gray-500 text-sm mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
-                </div>
-              </div>
-              <button 
-                onClick={() => handleViewProfile(athlete._id)}
-                className="w-full mt-6 bg-purple-600 text-white py-3 rounded-xl hover:bg-purple-700 transition-colors text-lg font-semibold flex items-center justify-center gap-2"
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.2 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
               >
-                View Profile
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+                {filteredAthletes.map((athlete, index) => (
+                  <motion.div
+                    key={athlete._id}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 1.4 + index * 0.1 }}
+                    whileHover={{ scale: 1.02 }}
+                    className="bg-white rounded-3xl shadow-sm overflow-hidden"
+                  >
+                    <div className="h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
+                      <div className="absolute top-4 right-4 dropdown-container">
+                        <button 
+                          onClick={() => setDropdownOpen(athlete._id)}
+                          className="text-gray-600 hover:text-gray-800"
+                        >
+                          •••
+                        </button>
+                        {dropdownOpen === athlete._id && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50">
+                            <button
+                              onClick={() => handleEditAthlete(athlete)}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              Edit Athlete
+                            </button>
+                            {!athlete.isRegistrationComplete && (
+                              <button
+                                onClick={() => handleResendInvitation(athlete._id)}
+                                className="block w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100"
+                              >
+                                Resend Invitation
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleRemoveAthlete(athlete._id)}
+                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                            >
+                              Remove Athlete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+               
+                      <div className="absolute bottom-4 left-4 right-4">
+                        <div className="flex justify-between items-center">
+                          
+                          {athlete.invitationPending && (
+                            <span className="px-2 py-1 text-xs font-medium text-yellow-800 bg-yellow-100 rounded-full">
+                              Čeká na potvrzení
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-6 pb-6">
+                      <div className="flex justify-center -mt-16">
+                        <div className="w-32 h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
+                          <img
+                            src={getAvatarBySport(athlete.sport)}
+                            alt={`${athlete.name}'s avatar`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      </div>
+                      <div className="text-center mt-4">
+                        <h3 
+                          className="text-2xl font-bold text-gray-900 hover:text-purple-600 cursor-pointer"
+                          onClick={() => handleViewProfile(athlete._id)}
+                        >
+                          {athlete.name} {athlete.surname}
+                        </h3>
+                        <p className="text-gray-500 mt-1">{athlete.email}</p>
+                      </div>
+                      <div className="mt-6 grid grid-cols-2 gap-4">
+                        <div className="bg-purple-50 rounded-2xl p-4">
+                          <div className="text-xl font-semibold text-purple-900">{athlete.sport}</div>
+                          <div className="text-gray-500 text-sm mt-1">{athlete.specialization}</div>
+                        </div>
+                        <div className="bg-purple-50 rounded-2xl p-4">
+                          <div className="text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
+                          <div className="text-gray-500 text-sm mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleViewProfile(athlete._id)}
+                        className="w-full mt-6 bg-purple-600 text-white py-3 rounded-xl hover:bg-purple-700 transition-colors text-lg font-semibold flex items-center justify-center gap-2"
+                      >
+                        View Profile
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      </motion.div>
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -692,7 +740,7 @@ const AthletesPage = () => {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 

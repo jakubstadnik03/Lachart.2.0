@@ -9,6 +9,7 @@ import api from '../../services/api';
 const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
+  const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
 
   // Reset stavu při změně tests
   useEffect(() => {
@@ -74,6 +75,10 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
     }
   };
 
+  const handleGlucoseColumnChange = (hidden) => {
+    setGlucoseColumnHidden(hidden);
+  };
+
   return (
     <div className="space-y-6">
       {tests && tests.length > 0 ? (
@@ -89,11 +94,14 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
 
       {currentTest && currentTest.results && (
         <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
-          <LactateCurve mockData={currentTest} />
-          <div className="flex-1 max-w-l bg-white rounded-2xl shadow-lg md:p-6 sm:p-2">
+          <div className={`${glucoseColumnHidden ? 'flex-[1.5]' : 'flex-1'}`}>
+            <LactateCurve mockData={currentTest} />
+          </div>
+          <div className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}>
             <TestingForm 
               testData={currentTest} 
               onTestDataChange={handleTestUpdate}
+              onGlucoseColumnChange={handleGlucoseColumnChange}
             />
           </div>
         </div>

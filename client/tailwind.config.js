@@ -7,7 +7,8 @@ module.exports = {
       },
       colors: {
         'custom-gray': '#FCFCFC', // Adding new color
-        primary: '#7755FF', // Purple color for active links
+        primary: '#858cc4',
+        secondary: '#6ebae7',
         zinc: {
           150: '#e5e5e5', // Slightly darker than bg-zinc-100
         },

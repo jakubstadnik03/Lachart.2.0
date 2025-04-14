@@ -2,10 +2,10 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 
 const ProtectedRoute = ({ children }) => {
-  const { token, isLoading } = useAuth();
+  const { token, loading } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (loading) {
     return <div>Loading...</div>; // nebo váš loading komponent
   }
 
