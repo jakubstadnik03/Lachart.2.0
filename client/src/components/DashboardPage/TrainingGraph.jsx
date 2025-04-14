@@ -22,33 +22,92 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
   const index = tooltip.dataPoints[0]?.dataIndex;
   if (index === undefined) return null;
 
-  const label = tooltip.dataPoints[0]?.label || "N/A";
-  const power = datasets[index]?.power || "N/A";
-  const heartRate = datasets[index]?.heartRate || "N/A";
-  const lactate = datasets[index]?.lactate || "N/A";
-  const duration = datasets[index]?.duration || "N/A";
+  const label = tooltip.dataPoints[0]?.label;
+  const dataPoint = datasets[index];
+  
+  if (!dataPoint) return null;
+  
+  // Funkce pro formátování času do formátu mm:ss
+  const formatPace = (seconds) => {
+    if (!seconds) return null;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
+  };
 
   // Funkce pro formátování délky intervalu
   const formatLength = (duration) => {
-    if (!duration) return "N/A";
-    if (duration.includes('km') || duration.includes('m') || duration.includes('min')) {
-      return duration;
+    if (!duration) return null;
+    if (typeof duration === 'string') {
+      if (duration.includes('km') || duration.includes('m') || duration.includes('min')) {
+        return duration;
+      }
     }
     const numDuration = parseFloat(duration);
     if (!isNaN(numDuration)) {
-      switch (sport) {
-        case 'run':
-          return `${numDuration}km`;
-        case 'swim':
-          return `${numDuration}m`;
-        case 'bike':
-          return `${numDuration} min`;
-        default:
-          return duration;
-      }
+      // Převod sekund na mm:ss formát
+      const minutes = Math.floor(numDuration / 60);
+      const seconds = Math.floor(numDuration % 60);
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
-    return duration;
+    return null;
   };
+
+  // Seznam metrik k zobrazení
+  const metrics = [];
+  
+  // Power/Pace
+  if (dataPoint.power && dataPoint.power !== 0) {
+    metrics.push({
+      label: sport === 'bike' ? 'Power' : 'Pace',
+      value: dataPoint.power,
+      formattedValue: sport === 'bike' ? `${dataPoint.power}W` : formatPace(dataPoint.power),
+      color: 'blue',
+    });
+  }
+  
+  // Heart Rate
+  if (dataPoint.heartRate && dataPoint.heartRate !== 0) {
+    metrics.push({
+      label: 'Heart Rate',
+      value: dataPoint.heartRate,
+      formattedValue: `${dataPoint.heartRate} Bpm`,
+      color: 'red',
+    });
+  }
+  
+  // Duration
+  if (dataPoint.duration && dataPoint.duration !== 0) {
+    const formattedDuration = formatLength(dataPoint.duration);
+    if (formattedDuration) {
+      metrics.push({
+        label: 'Duration',
+        value: dataPoint.duration,
+        formattedValue: formattedDuration,
+        color: 'green',
+      });
+    }
+  }
+  
+  // Lactate
+  if (dataPoint.lactate && dataPoint.lactate !== 0) {
+    metrics.push({
+      label: 'Lactate',
+      value: dataPoint.lactate,
+      formattedValue: `${dataPoint.lactate} mmol/L`,
+      color: 'purple',
+    });
+  }
+  
+  // RPE
+  if (dataPoint.rpe && dataPoint.rpe !== 0) {
+    metrics.push({
+      label: 'RPE',
+      value: dataPoint.rpe,
+      formattedValue: `${dataPoint.rpe}`,
+      color: 'orange',
+    });
+  }
 
   return (
     <div
@@ -64,22 +123,14 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
       }}
     >
       <div className="font-bold text-gray-900 mb-1">Interval {label}</div>
-      <div className="flex items-center gap-2 text-blue-600">
-        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-        {sport === 'bike' ? 'Power' : 'Pace'}: {power}
-      </div>
-      <div className="flex items-center gap-2 text-red-600">
-        <span className="w-2 h-2 rounded-full bg-red-500"></span>
-        Heart Rate: {heartRate} Bpm
-      </div>
-      <div className="flex items-center gap-2 text-purple-600">
-        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-        Lactate: {lactate} mmol/L
-      </div>
-      <div className="flex items-center gap-2 text-green-600">
-        <span className="w-2 h-2 rounded-full bg-green-500"></span>
-        Duration: {formatLength(duration)}
-      </div>
+      
+      {metrics.map((metric, i) => (
+        <div key={i} className={`flex items-center gap-2 text-${metric.color}-600`}>
+          <span className={`w-2 h-2 rounded-full bg-${metric.color}-500`}></span>
+          {metric.label}: {metric.formattedValue}
+        </div>
+      ))}
+      
       <div
         className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
         style={{
@@ -185,9 +236,12 @@ const TrainingGraph = ({
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
         if (uniqueTitles.length > 0) {
           setSelectedTitle(uniqueTitles[0]);
-          const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
-          if (firstTrainingWithTitle) {
-            setSelectedTraining(firstTrainingWithTitle._id);
+          const trainingsWithTitle = sportTrainings.filter(t => t.title === uniqueTitles[0]);
+          // Seřadíme tréninky podle data od nejnovějšího
+          trainingsWithTitle.sort((a, b) => new Date(b.date) - new Date(a.date));
+          // Vybereme ten nejnovější
+          if (trainingsWithTitle.length > 0) {
+            setSelectedTraining(trainingsWithTitle[0]._id);
           }
         } else {
           setSelectedTitle(null);
@@ -388,14 +442,16 @@ const TrainingGraph = ({
   const trainingsWithSelectedTitle = sportTrainings.filter(t => t.title === selectedTitle);
   
   // Formátujeme data pro dropdown
-  const trainingOptions = trainingsWithSelectedTitle?.map(training => ({
-    value: training._id,
-    label: new Date(training.date).toLocaleDateString('en-US', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-  })) || [];
+  const trainingOptions = trainingsWithSelectedTitle
+    ?.sort((a, b) => new Date(b.date) - new Date(a.date)) // Seřadíme od nejnovějšího po nejstarší
+    .map(training => ({
+      value: training._id,
+      label: new Date(training.date).toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+    })) || [];
 
 
   const options = {

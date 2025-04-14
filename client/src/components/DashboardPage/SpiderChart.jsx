@@ -34,8 +34,27 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     const roundedValue = Math.round(value);
     if (sport === 'bike') {
       return `${roundedValue}W`;
+    } else if (sport === 'swim') {
+      return formatPace(roundedValue);
     } else {
       return formatPace(roundedValue);
+    }
+  };
+
+  // Funkce pro výpočet průměrné hodnoty tréninku
+  const calculateTrainingValue = (training, sport) => {
+    if (!training.results || training.results.length === 0) return 0;
+    
+    // Pro kolo bereme průměrný výkon
+    if (sport === 'bike') {
+      const value = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
+      console.log(`Training: ${training.title}, Value: ${value}W`);
+      return value;
+    } else {
+      // Pro běh a plavání bereme průměrný pace
+      const value = training.results.reduce((sum, r) => sum + r.pace, 0) / training.results.length;
+      console.log(`Training: ${training.title}, Value: ${value} pace`);
+      return value;
     }
   };
 
@@ -71,34 +90,91 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
   const months = uniqueMonths.slice(0, 4);
   const monthColors = ["#00AC07", "#7755FF", "#AC0000", "#3F8CFE"];
 
-  // Strukturování dat podle měsíců
-  const transformedData = filteredTrainings.reduce((acc, training) => {
+  // Strukturování dat podle měsíců a tréninků
+  const transformedData = {};
+  
+  // Inicializace struktury pro každý měsíc
+  months.forEach(month => {
+    transformedData[month] = {};
+    // Inicializace hodnot pro každý trénink v měsíci
+    trainingOptions.forEach(training => {
+      transformedData[month][training.value] = null;
+    });
+  });
+
+  console.log('Filtered trainings:', filteredTrainings);
+  console.log('Training options:', trainingOptions);
+
+  // Naplnění dat
+  filteredTrainings.forEach(training => {
     const month = new Date(training.date).toLocaleString('default', { month: 'long' });
-    if (!acc[month]) acc[month] = { label: month };
+    if (transformedData[month]) {
+      const value = calculateTrainingValue(training, selectedSport);
+      if (value > 0) {
+        transformedData[month][training.title] = value;
+      }
+    }
+  });
+
+  // Filter out months with no data (all values are null or 0)
+  const monthsWithData = months.filter(month => 
+    Object.values(transformedData[month]).some(value => value !== null && value > 0)
+  );
+
+  // Calculate minimum value for the scale
+  const getMinScaleValue = () => {
+    if (selectedSport !== 'bike') return 0;
     
-    acc[month][training.title] = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
-    return acc;
-  }, {});
+    // Get all non-null values from the data
+    const allValues = Object.values(transformedData)
+      .flatMap(month => Object.values(month))
+      .filter(value => value !== null && value > 0);
+    
+    if (allValues.length === 0) return 0;
+    
+    const minValue = Math.min(...allValues);
+    // Subtract 100W and round down to nearest hundred
+    return Math.floor((minValue - 100) / 100) * 100;
+  };
 
   const data = {
-    labels: [...new Set(filteredTrainings.map((t) => t.title))],
-    datasets: months.map((month, index) => ({
+    labels: trainingOptions.map(t => t.label),
+    datasets: monthsWithData.map((month, index) => ({
       label: month,
-      data: Object.values(transformedData[month] || {}).slice(1),
+      data: trainingOptions.map(training => transformedData[month][training.value] || null),
       borderColor: monthColors[index % monthColors.length],
+      backgroundColor: monthColors[index % monthColors.length] + '20',
       borderWidth: 2,
       pointBackgroundColor: monthColors[index % monthColors.length],
-      fill: false,
+      fill: true,
+      tension: 0.4,
+      spanGaps: true,
+      showLine: true,
+      pointRadius: 4,
+      pointHoverRadius: 8,
+      pointHitRadius: 8,
+      pointBorderWidth: 2,
+      pointStyle: 'circle',
+      borderJoinStyle: 'round',
+      borderDash: [],
     })),
   };
+
+  console.log('Chart data:', data);
 
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    elements: {
+      line: {
+        borderWidth: 2,
+        tension: 0.4,
+      }
+    },
     scales: {
       r: {
         beginAtZero: false,
-        suggestedMin: 200,
+        suggestedMin: getMinScaleValue(),
         ticks: {
           font: { size: 14 },
           callback: (value) => formatValue(value, selectedSport),
@@ -144,8 +220,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
         usePointStyle: true,
         callbacks: {
           label: (context) => {
-            const value = formatValue(context.raw, selectedSport);
-            return `${context.dataset.label}: ${value}`;
+            const value = context.raw;
+            if (value === null || value === 0) return `${context.dataset.label}: No data`;
+            return `${context.dataset.label}: ${formatValue(value, selectedSport)}`;
           },
           labelPointStyle: (context) => {
             return {

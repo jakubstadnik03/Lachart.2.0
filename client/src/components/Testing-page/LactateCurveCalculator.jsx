@@ -311,6 +311,19 @@ const LactateCurveCalculator = ({ mockData }) => {
         enabled: true,
         mode: 'nearest',
         intersect: true,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        titleColor: '#111827',
+        titleFont: { weight: 'bold', size: 14 },
+        bodyColor: '#111827',
+        bodyFont: { size: 13 },
+        borderColor: '#F3F4F6',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 12,
+        displayColors: true,
+        boxWidth: 8,
+        boxHeight: 8,
+        usePointStyle: true,
         callbacks: {
           label: (ctx) => {
             const label = ctx.dataset.label;
@@ -323,6 +336,12 @@ const LactateCurveCalculator = ({ mockData }) => {
               return `${label}: ${paceStr} min/km | ${yVal.toFixed(2)} mmol/L`;
             }
             return `${label}: ${xVal.toFixed(0)} ${isRunning ? 'km/h' : 'W'} | ${yVal.toFixed(2)} mmol/L`;
+          },
+          labelPointStyle: (context) => {
+            return {
+              pointStyle: 'circle',
+              rotation: 0
+            };
           }
         }
       },
@@ -331,13 +350,19 @@ const LactateCurveCalculator = ({ mockData }) => {
       point: {
         radius: (ctx) => {
           const hoveredIndex = ctx.chart.tooltip?.dataPoints?.[0]?.index;
-          return ctx.dataIndex === hoveredIndex ? 8 : 4; // Zvýrazní bod pod kurzorem
+          return ctx.dataIndex === hoveredIndex ? 8 : 4;
         },
         borderWidth: (ctx) => {
           const hoveredIndex = ctx.chart.tooltip?.dataPoints?.[0]?.index;
           return ctx.dataIndex === hoveredIndex ? 3 : 1;
         },
+        hoverRadius: 8,
+        hitRadius: 8,
       },
+      line: {
+        borderWidth: 2,
+        tension: 0.4,
+      }
     },
   };
   
