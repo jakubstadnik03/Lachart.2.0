@@ -3,6 +3,7 @@ import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
+import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { getTrainingsByAthleteId, addTraining } from '../services/api';
@@ -262,8 +263,21 @@ const TrainingPage = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
+        className="mb-6"
       >
         <UserTrainingsTable trainings={trainings} />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+      >
+        <TrainingStats 
+          trainings={trainings} 
+          selectedSport={selectedSport}
+          onSportChange={setSelectedSport}
+        />
       </motion.div>
 
       <AnimatePresence>
