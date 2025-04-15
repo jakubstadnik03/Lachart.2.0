@@ -15,8 +15,8 @@ const Header = ({ isMenuOpen, setIsMenuOpen }) => {
   };
 
   return (
-    <div className="flex flex-col w-full">
-      <div className="flex relative justify-between z-[1] items-center px-6 w-full border-b border-solid bg-zinc-50 border-b-stone-300 custom-padding">
+    <div className="flex flex-col w-full sticky top-0 z-[100] bg-zinc-50">
+      <div className="flex relative justify-between items-center px-6 w-full border-b border-solid border-b-stone-300 custom-padding">
         {/* Menu Toggle Button */}
         <button
           onClick={handleMenuToggle}
@@ -42,9 +42,9 @@ const Header = ({ isMenuOpen, setIsMenuOpen }) => {
       </div>
       
       {/* Mobile Search - zobrazí se pouze na mobilech */}
-      <div className="md:hidden p-4 bg-zinc-50 border-b border-stone-300">
+      {/* <div className="md:hidden p-4 bg-zinc-50 border-b border-stone-300 sticky top-[72px] z-[99]">
         <SearchInput />
-      </div>
+      </div> */}
     </div>
   );
 };
