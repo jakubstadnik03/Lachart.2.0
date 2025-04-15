@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { motion } from 'framer-motion';
+import { useNavigate, Link } from 'react-router-dom';
 
 const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
+  const navigate = useNavigate();
+
   if (!training) return null;
   const { date, title, specifics, comments, results, sport, description } = training;
+
+  // Handle click on the training item
+  const handleTrainingClick = (e) => {
+    // Prevent navigation if clicking on buttons or links
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') {
+      return;
+    }
+    navigate(`/training-history/${encodeURIComponent(title)}`);
+  };
 
   const getSportIcon = (sport) => {
     switch (sport) {
@@ -158,11 +171,20 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   };
   
   return (
-    <div className="flex flex-col w-full bg-white rounded-lg shadow-sm mb-4 overflow-hidden hover:shadow-md transition-shadow">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="bg-white rounded-lg shadow-md p-4 mb-4 cursor-pointer hover:shadow-lg transition-shadow"
+      onClick={handleTrainingClick}
+    >
       {/* Header - vždy viditelný - upravený pro lepší zarovnání s hlavičkou tabulky */}
       <div 
-        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center cursor-pointer hover:bg-gray-50"
-        onClick={onToggleExpand}
+        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center hover:bg-gray-50"
+        onClick={(e) => {
+          e.stopPropagation(); // Prevent navigation when toggling expand
+          onToggleExpand();
+        }}
       >
         <div className="text-sm">{date}</div>
         <div className="flex justify-center">
@@ -185,6 +207,21 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
       {/* Expandovaný obsah */}
       {isExpanded && (
         <div className="p-4 border-t border-gray-200">
+          {/* Compare button */}
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const urlTitle = title.replace(/\s+/g, '-');
+                window.location.href = `/training-history/${urlTitle}`;
+              }}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm"
+            >
+              Compare Training
+            </button>
+          </div>
+
           {/* Training description */}
           {description && (
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
@@ -218,7 +255,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 

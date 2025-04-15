@@ -130,4 +130,14 @@ export const getTrainingTitles = async () => {
   }
 };
 
+export const getTrainingsByTitle = async (title) => {
+  try {
+    const response = await api.get(`/training/title/${encodeURIComponent(title)}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching trainings by title:', error);
+    throw error;
+  }
+};
+
 export default api; 

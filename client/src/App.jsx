@@ -18,7 +18,9 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import CompleteRegistrationPage from './pages/CompleteRegistrationPage';
 import AcceptInvitationPage from './pages/AcceptInvitationPage';
+import TrainingDetailPage from './pages/TrainingDetailPage';
 import { useAuth } from './context/AuthProvider';
+import TrainingHistory from './components/TrainingHistory';
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -48,6 +50,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:athleteId" element={<Profile />} />
+              <Route path="/training-comparison/:title" element={<TrainingDetailPage />} />
               <Route path="/training" element={<Training />} />
               <Route path="/testing" element={<Testing />} />
               <Route path="/athletes" element={<Athletes />} />
@@ -66,6 +69,7 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+              <Route path="/training/:title" element={<TrainingHistory />} />
             </Route>
           </Routes>
         </NotificationProvider>

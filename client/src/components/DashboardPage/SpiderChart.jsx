@@ -48,12 +48,12 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     // Pro kolo bereme průměrný výkon
     if (sport === 'bike') {
       const value = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
-      console.log(`Training: ${training.title}, Value: ${value}W`);
+      // console.log(`Training: ${training.title}, Value: ${value}W`);
       return value;
     } else {
       // Pro běh a plavání bereme průměrný pace
       const value = training.results.reduce((sum, r) => sum + r.pace, 0) / training.results.length;
-      console.log(`Training: ${training.title}, Value: ${value} pace`);
+      // console.log(`Training: ${training.title}, Value: ${value} pace`);
       return value;
     }
   };
@@ -102,8 +102,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     });
   });
 
-  console.log('Filtered trainings:', filteredTrainings);
-  console.log('Training options:', trainingOptions);
+  // console.log('Filtered trainings:', filteredTrainings);
+  // console.log('Training options:', trainingOptions);
 
   // Naplnění dat
   filteredTrainings.forEach(training => {
@@ -160,7 +160,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     })),
   };
 
-  console.log('Chart data:', data);
+  // console.log('Chart data:', data);
 
   const options = {
     responsive: true,

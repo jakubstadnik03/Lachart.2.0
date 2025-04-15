@@ -86,6 +86,27 @@ class TrainingAbl {
             throw error;
         }
     }
+
+    static async getTrainingTitles(userId) {
+        try {
+            const trainings = await TrainingDao.getTrainingsByUserId(userId);
+            const titles = [...new Set(trainings.map(training => training.title))];
+            return titles;
+        } catch (error) {
+            console.error('Error in getTrainingTitles:', error);
+            throw error;
+        }
+    }
+
+    static async getTrainingsByTitle(title, userId) {
+        try {
+            const trainings = await TrainingDao.getTrainingsByUserId(userId);
+            return trainings.filter(training => training.title === title);
+        } catch (error) {
+            console.error('Error in getTrainingsByTitle:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new TrainingAbl();

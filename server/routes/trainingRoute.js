@@ -89,6 +89,18 @@ router.get("/titles", verifyToken, async (req, res) => {
   }
 });
 
+// Get trainings by title
+router.get("/title/:title", verifyToken, async (req, res) => {
+  try {
+    const decodedTitle = decodeURIComponent(req.params.title);
+    const trainings = await TrainingAbl.getTrainingsByTitle(decodedTitle, req.user.userId);
+    res.status(200).json(trainings);
+  } catch (error) {
+    console.error('Error in /training/title:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get a specific training by ID
 router.get("/:id", verifyToken, async (req, res) => {
   try {
