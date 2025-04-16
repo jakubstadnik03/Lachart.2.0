@@ -51,11 +51,14 @@ const SignUpPage = () => {
       <div className="w-full lg:w-1/2 flex items-center justify-center px-8">
         <div className="max-w-md w-full space-y-8">
           <div>
-            <img
-              className="mx-auto h-12 w-auto"
-              src="/images/LaChart.png"
-              alt="Your Logo"
-            />
+          <div className='mx-auto flex items-center gap-2 justify-center'>
+              <img
+                className=" h-12 w-auto"
+                src="/images/LaChart.png"
+                alt="Your Logo"
+              />
+              <h1 className=' text-2xl font-bold text-primary'>LaChart</h1>
+            </div>
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
               Sign Up for an Account
             </h2>

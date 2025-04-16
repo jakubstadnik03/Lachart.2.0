@@ -60,7 +60,6 @@ const CustomTooltip = ({ tooltip, datasets }) => {
 };
 
 const LactateCurve = ({ mockData }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
   const [tooltip, setTooltip] = useState(null);
 
   const formatDate = (dateString) => {
@@ -107,6 +106,7 @@ const LactateCurve = ({ mockData }) => {
         backgroundColor: "#3F8CFE",
         pointStyle: "circle",
         pointRadius: 5,
+        pointHoverRadius: 8,
         pointBackgroundColor: "#3F8CFE",
       },
       {
@@ -116,6 +116,7 @@ const LactateCurve = ({ mockData }) => {
         backgroundColor: "#E7515A",
         pointStyle: "circle",
         pointRadius: 5,
+        pointHoverRadius: 8,
         pointBackgroundColor: "#E7515A",
         yAxisID: "y1",
       },
@@ -147,7 +148,16 @@ const LactateCurve = ({ mockData }) => {
             if (context.tooltip.opacity === 0) {
               setTooltip(null);
             } else {
-              setTooltip(context.tooltip);
+              setTooltip({
+                ...context.tooltip,
+                dataPoints: context.tooltip.dataPoints.map(point => ({
+                  ...point,
+                  datasetIndex: point.datasetIndex,
+                  dataIndex: point.dataIndex,
+                  label: point.label,
+                  value: point.raw
+                }))
+              });
             }
           },
           callbacks: {
@@ -204,7 +214,7 @@ const LactateCurve = ({ mockData }) => {
     };
 
     return (
-      <div className="relative w-full  p-6 bg-white rounded-2xl shadow-lg">
+      <div className="relative w-full p-6 bg-white rounded-2xl shadow-lg">
         <h2 className="text-2xl font-bold">
           Lactate Curve <span className="text-xl text-gray-600 ml-4">({formatDate(mockData.date)})</span>
         </h2>

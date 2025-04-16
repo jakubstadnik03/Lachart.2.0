@@ -44,6 +44,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
     const selectedTest = tests.find(test => test.date === date);
     if (selectedTest) {
       setCurrentTest(selectedTest);
+      setSelectedTests([]); // Reset selected tests when changing date
     }
   };
 
@@ -70,6 +71,10 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
         t._id === updatedTest._id ? response.data : t
       ));
       setCurrentTest(response.data);
+      // Update selected tests if they include the updated test
+      setSelectedTests(prev => prev.map(t => 
+        t._id === updatedTest._id ? response.data : t
+      ));
     } catch (err) {
       console.error('Error updating test:', err);
     }
@@ -94,7 +99,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
 
       {currentTest && currentTest.results && (
         <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
-          <div className={`${glucoseColumnHidden ? 'flex-[1.5]' : 'flex-1'}`}>
+          <div className={`${glucoseColumnHidden ? 'flex-[2]' : 'flex-[2.5]'}`}>
             <LactateCurve mockData={currentTest} />
           </div>
           <div className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}>

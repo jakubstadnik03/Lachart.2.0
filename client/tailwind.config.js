@@ -7,8 +7,20 @@ module.exports = {
       },
       colors: {
         'custom-gray': '#FCFCFC', // Adding new color
-        primary: '#858cc4',
-        secondary: '#6ebae7',
+        primary: {
+          DEFAULT: '#767EB5',
+          dark: '#5E6590',
+        },
+        'secondary': {
+          DEFAULT: '#599FD0',
+          dark: '#4780A8',
+        },
+        'tertiary': '#7BC2EB',
+        white: '#F9FBFD',
+        'text': '#1D2C4C',
+        'lighterText': '#4A5E82',
+        'green': '#4BA87D',
+        red: '#E05347',
         zinc: {
           150: '#e5e5e5', // Slightly darker than bg-zinc-100
         },

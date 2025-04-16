@@ -7,6 +7,7 @@ import UserTrainingsTable from './Training-log/UserTrainingsTable';
 import PreviousTestingComponent from './Testing-page/PreviousTestingComponent';
 import SportsSelector from './Header/SportsSelector';
 import api from '../services/api';
+import { motion } from 'framer-motion';
 
 export default function AthleteProfile() {
   const { athleteId } = useParams();
@@ -126,24 +127,118 @@ export default function AthleteProfile() {
           {/* Osobní informace */}
           <div className="mt-4 md:mt-6">
             <h2 className="text-lg font-semibold mb-3 md:mb-4">Personal Info</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-              {[
-                { label: 'Full Name', value: `${athlete.name} ${athlete.surname}` },
-                { label: 'Email', value: athlete.email || 'Not set' },
-                { label: 'Phone Number', value: athlete.phone || 'Not set' },
-                { label: 'Weight', value: athlete.weight ? `${athlete.weight} kg` : 'Not set' },
-                { label: 'Height', value: athlete.height ? `${athlete.height} cm` : 'Not set' },
-                { label: 'Bio', value: athlete.bio || 'Not set' },
-                { label: 'Sport', value: athlete.sport || 'Not set' },
-                { label: 'Specialization', value: athlete.specialization || 'Not set' },
-                { label: 'Address', value: athlete.address || 'Not set' },
-                { label: 'Date of Birth', value: athlete.dateOfBirth ? formatDate(athlete.dateOfBirth) : 'Not set' },
-              ].map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg">
-                  <p className="text-gray-600 text-sm sm:w-1/3">{item.label}</p>
-                  <p className="font-medium text-sm sm:w-2/3">{item.value}</p>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 gap-2 sm:gap-4">
+              {/* Basic Info - Full width */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+              >
+                <p className="text-gray-600 text-sm sm:w-1/3">Full Name</p>
+                <p className="font-medium text-sm sm:w-2/3">{`${athlete.name} ${athlete.surname}`}</p>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+              >
+                <p className="text-gray-600 text-sm sm:w-1/3">Email</p>
+                <p className="font-medium text-sm sm:w-2/3">{athlete.email || 'Not set'}</p>
+              </motion.div>
+
+              {/* Physical Stats - Side by side on mobile */}
+              <div className="grid grid-cols-2 gap-2">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Weight</p>
+                  <p className="font-medium text-sm">{athlete.weight ? `${athlete.weight} kg` : 'Not set'}</p>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Height</p>
+                  <p className="font-medium text-sm">{athlete.height ? `${athlete.height} cm` : 'Not set'}</p>
+                </motion.div>
+              </div>
+
+              {/* Sport Info - Side by side on mobile */}
+              <div className="grid grid-cols-2 gap-2">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Sport</p>
+                  <p className="font-medium text-sm">{athlete.sport || 'Not set'}</p>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.6 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Specialization</p>
+                  <p className="font-medium text-sm">{athlete.specialization || 'Not set'}</p>
+                </motion.div>
+              </div>
+
+              {/* Contact Info - Side by side on mobile */}
+              <div className="grid grid-cols-2 gap-2">
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.7 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Phone</p>
+                  <p className="font-medium text-sm">{athlete.phone || 'Not set'}</p>
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.8 }}
+                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+                >
+                  <p className="text-gray-600 text-xs">Date of Birth</p>
+                  <p className="font-medium text-sm">{athlete.dateOfBirth ? formatDate(athlete.dateOfBirth) : 'Not set'}</p>
+                </motion.div>
+              </div>
+
+              {/* Address - Full width */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.9 }}
+                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+              >
+                <p className="text-gray-600 text-sm sm:w-1/3">Address</p>
+                <p className="font-medium text-sm sm:w-2/3">{athlete.address || 'Not set'}</p>
+              </motion.div>
+
+              {/* Bio - Full width */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 1.0 }}
+                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+              >
+                <p className="text-gray-600 text-sm sm:w-1/3">Bio</p>
+                <p className="font-medium text-sm sm:w-2/3">{athlete.bio || 'Not set'}</p>
+              </motion.div>
             </div>
           </div>
         </div>

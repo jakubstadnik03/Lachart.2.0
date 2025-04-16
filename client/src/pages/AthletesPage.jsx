@@ -275,19 +275,19 @@ const AthletesPage = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gray-100"
+      className="min-h-screen bg-gray-100 px-2 sm:px-4 md:px-6"
     >
       <motion.div
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.2 }}
-        className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8"
+        className="max-w-7xl mx-auto py-4 sm:py-6"
       >
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="px-4 py-6 sm:px-0"
+          className="px-2 sm:px-4 py-4 sm:py-6"
         >
           <motion.div
             initial={{ scale: 0.95 }}
@@ -299,33 +299,33 @@ const AthletesPage = () => {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.8 }}
-              className="px-4 py-5 sm:p-6"
+              className="px-2 sm:px-4 py-4 sm:p-6"
             >
-              <div className="flex justify-between items-center mb-8">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
                 <motion.h1
                   initial={{ y: -10, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ duration: 0.5, delay: 1 }}
-                  className="text-2xl font-bold text-gray-900"
+                  className="text-xl sm:text-2xl font-bold text-gray-900"
                 >
                   List of athletes
                 </motion.h1>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-64">
+                    <MagnifyingGlassIcon className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search athletes..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full pl-9 sm:pl-10 pr-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setIsModalOpen(true)}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                    className="w-full sm:w-auto bg-primary text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm sm:text-base"
                   >
                     Add New Athlete
                   </motion.button>
@@ -336,7 +336,7 @@ const AthletesPage = () => {
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.5, delay: 1.2 }}
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
               >
                 {filteredAthletes.map((athlete, index) => (
                   <motion.div
@@ -345,10 +345,10 @@ const AthletesPage = () => {
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 1.4 + index * 0.1 }}
                     whileHover={{ scale: 1.02 }}
-                    className="bg-white rounded-3xl shadow-sm overflow-hidden"
+                    className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden"
                   >
-                    <div className="h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
-                      <div className="absolute top-4 right-4 dropdown-container">
+                    <div className="h-24 sm:h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
+                      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 dropdown-container">
                         <button 
                           onClick={() => setDropdownOpen(athlete._id)}
                           className="text-gray-600 hover:text-gray-800"
@@ -356,45 +356,34 @@ const AthletesPage = () => {
                           •••
                         </button>
                         {dropdownOpen === athlete._id && (
-                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50">
+                          <div className="absolute right-0 mt-2 w-40 sm:w-48 bg-white rounded-lg shadow-lg py-1 z-50">
                             <button
                               onClick={() => handleEditAthlete(athlete)}
-                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                              className="block w-full text-left px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100"
                             >
                               Edit Athlete
                             </button>
                             {!athlete.isRegistrationComplete && (
                               <button
                                 onClick={() => handleResendInvitation(athlete._id)}
-                                className="block w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-gray-100"
+                                className="block w-full text-left px-3 sm:px-4 py-2 text-xs sm:text-sm text-blue-600 hover:bg-gray-100"
                               >
                                 Resend Invitation
                               </button>
                             )}
                             <button
                               onClick={() => handleRemoveAthlete(athlete._id)}
-                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                              className="block w-full text-left px-3 sm:px-4 py-2 text-xs sm:text-sm text-red-600 hover:bg-gray-100"
                             >
                               Remove Athlete
                             </button>
                           </div>
                         )}
                       </div>
-               
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <div className="flex justify-between items-center">
-                          
-                          {athlete.invitationPending && (
-                            <span className="px-2 py-1 text-xs font-medium text-yellow-800 bg-yellow-100 rounded-full">
-                              Čeká na potvrzení
-                            </span>
-                          )}
-                        </div>
-                      </div>
                     </div>
-                    <div className="px-6 pb-6">
-                      <div className="flex justify-center -mt-16">
-                        <div className="w-32 h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
+                    <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+                      <div className="flex justify-center -mt-12 sm:-mt-16">
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
                           <img
                             src={getAvatarBySport(athlete.sport)}
                             alt={`${athlete.name}'s avatar`}
@@ -402,31 +391,31 @@ const AthletesPage = () => {
                           />
                         </div>
                       </div>
-                      <div className="text-center mt-4">
+                      <div className="text-center mt-3 sm:mt-4">
                         <h3 
-                          className="text-2xl font-bold text-gray-900 hover:text-purple-600 cursor-pointer"
+                          className="text-lg sm:text-2xl font-bold text-gray-900 hover:text-purple-600 cursor-pointer"
                           onClick={() => handleViewProfile(athlete._id)}
                         >
                           {athlete.name} {athlete.surname}
                         </h3>
-                        <p className="text-gray-500 mt-1">{athlete.email}</p>
+                        <p className="text-sm sm:text-base text-gray-500 mt-1">{athlete.email}</p>
                       </div>
-                      <div className="mt-6 grid grid-cols-2 gap-4">
-                        <div className="bg-purple-50 rounded-2xl p-4">
-                          <div className="text-xl font-semibold text-purple-900">{athlete.sport}</div>
-                          <div className="text-gray-500 text-sm mt-1">{athlete.specialization}</div>
+                      <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4">
+                        <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                          <div className="text-base sm:text-xl font-semibold text-purple-900">{athlete.sport}</div>
+                          <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.specialization}</div>
                         </div>
-                        <div className="bg-purple-50 rounded-2xl p-4">
-                          <div className="text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
-                          <div className="text-gray-500 text-sm mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
+                        <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                          <div className="text-base sm:text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
+                          <div className="text-xs sm:text-sm text-gray-500 mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
                         </div>
                       </div>
                       <button 
                         onClick={() => handleViewProfile(athlete._id)}
-                        className="w-full mt-6 bg-purple-600 text-white py-3 rounded-xl hover:bg-purple-700 transition-colors text-lg font-semibold flex items-center justify-center gap-2"
+                        className="w-full mt-4 sm:mt-6 bg-primary text-white py-2 sm:py-3 rounded-xl hover:bg-purple-700 transition-colors text-sm sm:text-lg font-semibold flex items-center justify-center gap-2"
                       >
                         View Profile
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                         </svg>
                       </button>
@@ -440,8 +429,8 @@ const AthletesPage = () => {
       </motion.div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">
                 {selectedAthlete ? 'Edit Athlete' : 'Add New Athlete'}
@@ -680,8 +669,8 @@ const AthletesPage = () => {
 
       {/* Invite Athlete Modal */}
       {isInviteModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl p-4 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">Přidat existujícího atleta</h2>
               <button 

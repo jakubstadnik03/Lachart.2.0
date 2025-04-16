@@ -8,7 +8,21 @@ import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
 import { getTrainingsByAthleteId, getTestingsByAthleteId, updateUserProfile, loadUserProfile } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { PencilIcon, KeyIcon } from '@heroicons/react/24/outline';
+import { 
+  PencilIcon, 
+  KeyIcon,
+  UserIcon,
+  EnvelopeIcon,
+  PhoneIcon,
+  CalendarIcon,
+  MapPinIcon,
+  UserCircleIcon,
+  ScaleIcon,
+  ArrowTrendingUpIcon,
+  TrophyIcon,
+  AcademicCapIcon,
+  InformationCircleIcon
+} from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../config/api.config';
 import { useParams } from 'react-router-dom';
@@ -144,13 +158,15 @@ const ProfilePage = () => {
   // Přidáme efekt pro změnu sportu
   useEffect(() => {
     if (trainings.length > 0) {
-      const filteredTrainings = trainings.filter(t => t.sport === selectedSport);
-      if (filteredTrainings.length > 0) {
-        setSelectedTraining(filteredTrainings[0]._id);
-        setSelectedTitle(filteredTrainings[0].title);
-      } else {
-        setSelectedTraining(null);
-        setSelectedTitle(null);
+      const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+      const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
+      
+      if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
+        setSelectedTitle(uniqueTitles[0]);
+        const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
+        if (firstTrainingWithTitle) {
+          setSelectedTraining(firstTrainingWithTitle._id);
+        }
       }
     }
   }, [selectedSport, trainings]);
@@ -282,30 +298,142 @@ const ProfilePage = () => {
             className="mt-4 md:mt-6"
           >
             <h2 className="text-lg font-semibold mb-3 md:mb-4">Personal Info</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-              {[
-                { label: 'Full Name', value: userInfo.name || 'Not set' },
-                { label: 'Email', value: userInfo.email || 'Not set' },
-                { label: 'Phone Number', value: userInfo.phone || 'Not set' },
-                { label: 'Weight', value: userInfo.weight ? `${userInfo.weight} kg` : 'Not set' },
-                { label: 'Height', value: userInfo.height ? `${userInfo.height} cm` : 'Not set' },
-                { label: 'Bio', value: userInfo.bio || 'Not set' },
-                { label: 'Sport', value: userInfo.sport || 'Not set' },
-                { label: 'Specialization', value: userInfo.specialization || 'Not set' },
-                { label: 'Address', value: userInfo.address || 'Not set' },
-                { label: 'Date of Birth', value: userInfo.dateOfBirth || 'Not set' },
-              ].map((item, index) => (
-                <motion.div 
-                  key={index}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.1 * index }}
-                  className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-sm sm:w-1/3">{item.label}</p>
-                  <p className="font-medium text-sm sm:w-2/3">{item.value}</p>
-                </motion.div>
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4">
+              {/* Basic Info */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <UserIcon className="w-5 h-5" />
+                  <p className="text-sm">Full Name</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.name || 'Not set'}</p>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <EnvelopeIcon className="w-5 h-5" />
+                  <p className="text-sm">Email</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.email || 'Not set'}</p>
+              </motion.div>
+
+              {/* Physical Stats */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <ScaleIcon className="w-5 h-5" />
+                  <p className="text-sm">Weight</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.weight ? `${userInfo.weight} kg` : 'Not set'}</p>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <ArrowTrendingUpIcon className="w-5 h-5" />
+                  <p className="text-sm">Height</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.height ? `${userInfo.height} cm` : 'Not set'}</p>
+              </motion.div>
+
+              {/* Sport Info */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <TrophyIcon className="w-5 h-5" />
+                  <p className="text-sm">Sport</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.sport || 'Not set'}</p>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.6 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <AcademicCapIcon className="w-5 h-5" />
+                  <p className="text-sm">Specialization</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.specialization || 'Not set'}</p>
+              </motion.div>
+
+              {/* Contact Info */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.7 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <PhoneIcon className="w-5 h-5" />
+                  <p className="text-sm">Phone</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.phone || 'Not set'}</p>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.8 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <CalendarIcon className="w-5 h-5" />
+                  <p className="text-sm">Date of Birth</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.dateOfBirth || 'Not set'}</p>
+              </motion.div>
+
+              {/* Address - Full width on mobile, half width on PC */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.9 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors md:col-span-2"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <MapPinIcon className="w-5 h-5" />
+                  <p className="text-sm">Address</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.address || 'Not set'}</p>
+              </motion.div>
+
+              {/* Bio - Full width on mobile, half width on PC */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 1.0 }}
+                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors md:col-span-2"
+              >
+                <div className="flex items-center gap-2 text-gray-600 w-1/3">
+                  <InformationCircleIcon className="w-5 h-5" />
+                  <p className="text-sm">Bio</p>
+                </div>
+                <p className="font-medium text-sm w-2/3">{userInfo.bio || 'Not set'}</p>
+              </motion.div>
             </div>
           </motion.div>
         </div>

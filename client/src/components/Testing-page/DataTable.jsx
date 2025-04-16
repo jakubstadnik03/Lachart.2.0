@@ -37,15 +37,20 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   // Funkce pro výpočet Log-log thresholdu
   const calculateLogLogThreshold = (results) => {
     if (!results || results.length < 3) {
+      // console.log('Not enough data points for Log-log calculation:', results);
       return null;
     }
 
     try {
+      // console.log('Calculating Log-log threshold with data:', results);
+      
       // Transformace dat do logaritmického prostoru
       const logData = results.map(r => ({
         logPower: Math.log(r.power),
         logLactate: Math.log(r.lactate)
       }));
+
+      // console.log('Log-transformed data:', logData);
 
       let maxDeltaSlope = -Infinity;
       let breakpointIndex = 0;
@@ -61,13 +66,29 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         // Změna směrnice
         const deltaSlope = slopeAfter - slopeBefore;
         
+        // console.log(`Point ${i}:`, {
+        //   slopeBefore,
+        //   slopeAfter,
+        //   deltaSlope,
+        //   power: results[i].power,
+        //   lactate: results[i].lactate,
+        //   heartRate: results[i].heartRate
+        // });
+        
         if (deltaSlope > maxDeltaSlope) {
           maxDeltaSlope = deltaSlope;
           breakpointIndex = i;
         }
       }
 
-      return results[breakpointIndex].power;
+      const breakpoint = results[breakpointIndex];
+      // console.log('Found breakpoint:', breakpoint);
+      
+      return {
+        power: breakpoint.power,
+        lactate: breakpoint.lactate,
+        heartRate: breakpoint.heartRate
+      };
     } catch (error) {
       console.error('Error in Log-log calculation:', error);
       return null;
@@ -131,7 +152,9 @@ const findLactateThresholds = (results, baseLactate) => {
     // Log-log threshold
     const logLogThreshold = calculateLogLogThreshold(sortedResults);
     if (logLogThreshold) {
-      thresholds['Log-log'] = logLogThreshold;
+      thresholds['Log-log'] = logLogThreshold.power;
+      thresholds.heartRates['Log-log'] = logLogThreshold.heartRate;
+      thresholds.lactates['Log-log'] = logLogThreshold.lactate;
     }
   
     // Najít LTP body
