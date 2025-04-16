@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
+import { TrainingProvider } from './context/TrainingContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/DashboardPage';
@@ -28,51 +29,53 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <NotificationProvider>
-          <Routes>
-            {/* Veřejné routy */}
-            <Route path="/" element={<LoginPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignUpPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-            <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
-            <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
+        <TrainingProvider>
+          <NotificationProvider>
+            <Routes>
+              {/* Veřejné routy */}
+              <Route path="/" element={<LoginPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignUpPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
+              <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
 
-            {/* Chráněné routy s Layoutem */}
-            <Route
-              element={
-                <ProtectedRoute>
-                  <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/profile/:athleteId" element={<Profile />} />
-              <Route path="/training-comparison/:title" element={<TrainingDetailPage />} />
-              <Route path="/training" element={<Training />} />
-              <Route path="/testing" element={<Testing />} />
-              <Route path="/athletes" element={<Athletes />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/support" element={<Support />} />
-              <Route path="/athlete-profile/:id" element={<Profile />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
-              <Route path="/training/:athleteId?" element={<Training />} />
-              <Route path="/testing/:athleteId?" element={<Testing />} />
-              <Route 
-                path="/athlete/:athleteId" 
+              {/* Chráněné routy s Layoutem */}
+              <Route
                 element={
-                  <ProtectedRoute allowedRoles={['coach']}>
-                    <AthleteProfile />
+                  <ProtectedRoute>
+                    <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
                   </ProtectedRoute>
-                } 
-              />
-              <Route path="/training/:title" element={<TrainingHistory />} />
-            </Route>
-          </Routes>
-        </NotificationProvider>
+                }
+              >
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/profile/:athleteId" element={<Profile />} />
+                <Route path="/training-comparison/:title" element={<TrainingDetailPage />} />
+                <Route path="/training" element={<Training />} />
+                <Route path="/testing" element={<Testing />} />
+                <Route path="/athletes" element={<Athletes />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/support" element={<Support />} />
+                <Route path="/athlete-profile/:id" element={<Profile />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
+                <Route path="/training/:athleteId?" element={<Training />} />
+                <Route path="/testing/:athleteId?" element={<Testing />} />
+                <Route 
+                  path="/athlete/:athleteId" 
+                  element={
+                    <ProtectedRoute allowedRoles={['coach']}>
+                      <AthleteProfile />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route path="/training-history/:title" element={<TrainingHistory />} />
+              </Route>
+            </Routes>
+          </NotificationProvider>
+        </TrainingProvider>
       </AuthProvider>
     </Router>
   );
