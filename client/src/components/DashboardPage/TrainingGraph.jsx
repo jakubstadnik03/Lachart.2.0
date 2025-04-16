@@ -61,7 +61,7 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
     metrics.push({
       label: sport === 'bike' ? 'Power' : 'Pace',
       value: dataPoint.power,
-      formattedValue: sport === 'bike' ? `${dataPoint.power}W` : formatPace(dataPoint.power),
+      formattedValue: sport === 'bike' ? `${dataPoint.power}` : formatPace(dataPoint.power),
       color: 'blue',
     });
   }
@@ -176,26 +176,26 @@ const TrainingGraph = ({
 
   // Handler pro změnu sportu
   const handleSportChange = (newSport) => {
-    console.log('handleSportChange called with:', newSport);
-    console.log('Current selectedSport:', selectedSport);
+    // console.log('handleSportChange called with:', newSport);
+    // console.log('Current selectedSport:', selectedSport);
     
     // Nejprve aktualizujeme sport
     setSelectedSport(newSport);
-    console.log('setSelectedSport called with:', newSport);
+    // console.log('setSelectedSport called with:', newSport);
     
     // Pak aktualizujeme data pro nový sport
     const sportTrainings = trainingList.filter(t => t.sport === newSport);
-    console.log('Filtered sportTrainings:', sportTrainings);
+    // console.log('Filtered sportTrainings:', sportTrainings);
     
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-    console.log('Unique titles for new sport:', uniqueTitles);
+    // console.log('Unique titles for new sport:', uniqueTitles);
     
     if (sportTrainings.length > 0) {
       const firstTitle = uniqueTitles[0];
       const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
       
-      console.log('Setting first title:', firstTitle);
-      console.log('Setting first training:', firstTraining);
+      // console.log('Setting first title:', firstTitle);
+      // console.log('Setting first training:', firstTraining);
       
       if (firstTitle) {
         setSelectedTitle(firstTitle);
@@ -214,10 +214,15 @@ const TrainingGraph = ({
   const handleTitleChange = (newTitle) => {
     const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
     const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
-    const firstTraining = trainingsWithTitle[0]?._id;
+    
+    // Seřadíme tréninky podle data od nejnovějšího
+    trainingsWithTitle.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    // Vybereme nejnovější trénink
+    const newestTraining = trainingsWithTitle[0]?._id;
     
     setSelectedTitle(newTitle);
-    setSelectedTraining(firstTraining);
+    setSelectedTraining(newestTraining);
   };
 
   // Handler pro změnu konkrétního tréninku podle data
@@ -226,31 +231,34 @@ const TrainingGraph = ({
   };
 
   useEffect(() => {
-    if (!trainingList) return;
+    if (!trainingList || trainingList.length === 0) return;
     
-    if (trainingList.length > 0) {
-      setLoading(false);
-      const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
-      const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-      
-      if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
-        if (uniqueTitles.length > 0) {
-          setSelectedTitle(uniqueTitles[0]);
-          const trainingsWithTitle = sportTrainings.filter(t => t.title === uniqueTitles[0]);
-          // Seřadíme tréninky podle data od nejnovějšího
-          trainingsWithTitle.sort((a, b) => new Date(b.date) - new Date(a.date));
-          // Vybereme ten nejnovější
-          if (trainingsWithTitle.length > 0) {
-            setSelectedTraining(trainingsWithTitle[0]._id);
-          }
-        } else {
-          setSelectedTitle(null);
-          setSelectedTraining(null);
-        }
-      }
+    setLoading(false);
+    const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
+    
+    if (sportTrainings.length === 0) {
+      setSelectedTitle(null);
+      setSelectedTraining(null);
+      return;
     }
-  }, [selectedSport, trainingList, selectedTitle, setSelectedTitle, setSelectedTraining]);
 
+    // Seřadíme všechny tréninky podle data od nejnovějšího
+    const sortedTrainings = [...sportTrainings].sort((a, b) => {
+      const dateA = new Date(a.date);
+      const dateB = new Date(b.date);
+      return dateB - dateA;
+    });
+
+    const newestTraining = sortedTrainings[0];
+    
+    // Nastavíme název a trénink na nejnovější
+    if (newestTraining) {
+      setSelectedTitle(newestTraining.title);
+      setSelectedTraining(newestTraining._id);
+    }
+  }, [selectedSport, trainingList]);
+
+  // Sloučíme dva useEffects do jednoho pro optimalizaci
   useEffect(() => {
     if (!trainingList) return;
     
@@ -272,10 +280,8 @@ const TrainingGraph = ({
         });
       }
     }
-  }, [selectedTraining, trainingList]);
 
-  // Přidáme useEffect pro zachycení kliknutí mimo menu
-  useEffect(() => {
+    // Přidáme handler pro kliknutí mimo menu do stejného useEffect
     const handleClickOutside = (event) => {
       if (settingsRef.current && !settingsRef.current.contains(event.target)) {
         setIsSettingsOpen(false);
@@ -286,48 +292,7 @@ const TrainingGraph = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
-
-  // Přidáme useEffect pro aktualizaci dat při změně sportu
-  useEffect(() => {
-    // console.log('Sport change useEffect triggered');
-    // console.log('Current selectedSport:', selectedSport);
-    
-    if (!trainingList || !selectedSport) return;
-    
-    const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
-    // console.log('Filtered sportTrainings in useEffect:', sportTrainings);
-    
-    const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-    // console.log('Unique titles in useEffect:', uniqueTitles);
-    
-    if (sportTrainings.length > 0) {
-      const firstTitle = uniqueTitles[0];
-      const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
-      
-      // console.log('Setting first title in useEffect:', firstTitle);
-      // console.log('Setting first training in useEffect:', firstTraining);
-      
-      if (firstTitle) {
-        setSelectedTitle(firstTitle);
-        if (firstTraining) {
-          setSelectedTraining(firstTraining);
-        }
-      }
-    } else {
-      // console.log('No trainings found for sport in useEffect:', selectedSport);
-      setSelectedTitle(null);
-      setSelectedTraining(null);
-    }
-  }, [selectedSport, trainingList]);
-
-  // Přidáme useEffect pro sledování změn v props
-  // useEffect(() => {
-  //   console.log('Props changed:', {
-  //     selectedTitle,
-  //     selectedTraining
-  //   });
-  // }, [selectedTitle, selectedTraining]);
+  }, [selectedTraining, trainingList]);
 
   if (!trainingList) return <div>Loading trainings...</div>;
   if (loading) return <div>Loading...</div>;
@@ -618,6 +583,7 @@ const TrainingGraph = ({
                 backgroundColor: "#3B82F6",
                 pointStyle: "circle",
                 pointRadius: 6,
+                pointHoverRadius: 10,
                 borderWidth: 2,
                 tension: 0.4,
               },
@@ -628,6 +594,7 @@ const TrainingGraph = ({
                 backgroundColor: "#EF4444",
                 pointStyle: "circle",
                 pointRadius: 6,
+                pointHoverRadius: 10,
                 borderWidth: 2,
                 yAxisID: "y1",
                 tension: 0.4,

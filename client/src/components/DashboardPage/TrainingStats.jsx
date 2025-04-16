@@ -19,6 +19,7 @@ function StatCard({ stats }) {
               {stat.label}: {stat.value} {stat.unit}
             </div>
           ))}
+          
       </div>
       <div className="flex shrink-0 self-center mt-2 sm:mt-3 w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 bg-violet-500 rounded-full border-solid border-[2px] sm:border-[3px] border-zinc-50" />
     </div>
@@ -26,43 +27,47 @@ function StatCard({ stats }) {
 }
 
 function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower }) {
-  const getWidth = (duration) => {
+  const getWidth = () => {
     // Base width is smaller on mobile and larger on desktop
-    const baseWidth = window.innerWidth < 640 ? 4 : 6;
+    const baseWidth = window.innerWidth < 640 ? 4 : 8;
     
     if (!duration) return baseWidth;
     
-    // Convert duration to minutes
-    const minutes = duration.includes(':') ? 
-      parseInt(duration.split(':')[0]) + parseInt(duration.split(':')[1]) / 60 : 
-      parseFloat(duration);
+    // Convert duration from seconds to minutes
+    const totalMinutes = duration / 60;
       
     // Find the shortest duration in the current training
-    const durations = visibleTrainings.flatMap(t => 
-      t.results
-        .filter(r => r.duration)
-        .map(r => {
-          const dur = r.duration;
-          return dur.includes(':') ? 
-            parseInt(dur.split(':')[0]) + parseInt(dur.split(':')[1]) / 60 : 
-            parseFloat(dur);
-        })
+    const currentTraining = visibleTrainings.find(t => 
+      t.results.some(r => r.duration === duration)
     );
+    
+    if (!currentTraining) return baseWidth;
+    
+    const durations = currentTraining.results
+      .filter(r => r.duration)
+      .map(r => r.duration / 60);
     
     if (durations.length === 0) return baseWidth;
     
     const shortestDuration = Math.min(...durations);
-    const ratio = minutes / shortestDuration;
+    const ratio = totalMinutes / shortestDuration;
     
     // Calculate width based on ratio and screen size
-    const maxWidth = window.innerWidth < 640 ? 24 : 40;
-    return Math.min(maxWidth, Math.max(baseWidth, baseWidth * ratio));
+    const maxWidth = window.innerWidth < 640 ? 40 : 80;
+    const calculatedWidth = baseWidth * ratio;
+    return Math.min(maxWidth, Math.max(baseWidth, calculatedWidth));
+  };
+
+  const formatDuration = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   return (
     <div
       className="relative flex justify-center shrink-0 h-full"
-      style={{ width: `${getWidth(duration)}px` }}
+      style={{ width: `${getWidth()}px` }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
@@ -86,7 +91,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
           <StatCard
             stats={[
               { label: "Interval", value: `#${index + 1}`, unit: "" },
-              ...(duration ? [{ label: "Duration", value: duration, unit: "" }] : []),
+              ...(duration ? [{ label: "Duration", value: formatDuration(duration), unit: "" }] : []),
               ...(power ? [{ label: "Power", value: power, unit: "W" }] : []),
               ...(heartRate ? [{ label: "Heart Rate", value: heartRate, unit: "Bpm" }] : []),
               ...(lactate ? [{ label: "Lactate", value: lactate, unit: "mmol/L" }] : []),

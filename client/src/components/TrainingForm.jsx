@@ -307,7 +307,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                 className={`
                   flex items-center justify-center gap-2 px-4 py-2 rounded-full
                   ${formData.sport === activity.id 
-                    ? 'bg-blue-500 text-white' 
+                    ? 'bg-secondary text-white' 
                     : 'bg-gray-100 text-gray-900'}
                   w-full
                 `}
@@ -575,7 +575,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                             newResults[index].power = e.target.value;
                             setFormData(prev => ({ ...prev, results: newResults }));
                           }}
-                          className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                          className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                         />
                       ) : (
                         <input
@@ -591,7 +591,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                               handlePaceChange(index, e.target.value);
                             }
                           }}
-                          className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                          className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                         />
                       )}
                     </div>
@@ -611,7 +611,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                           newResults[index].heartRate = e.target.value;
                           setFormData(prev => ({ ...prev, results: newResults }));
                         }}
-                        className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                        className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                       />
                     </div>
 
@@ -630,7 +630,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                           newResults[index].lactate = e.target.value;
                           setFormData(prev => ({ ...prev, results: newResults }));
                         }}
-                        className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                        className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                       />
                     </div>
 
@@ -649,7 +649,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                           newResults[index].RPE = e.target.value;
                           setFormData(prev => ({ ...prev, results: newResults }));
                         }}
-                        className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                        className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                       />
                     </div>
 
@@ -692,7 +692,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                             newResults[index].duration = value;
                             setFormData(prev => ({ ...prev, results: newResults }));
                           }}
-                          className="border-b border-gray-300 focus:border-blue-500 outline-none px-2 py-1 w-full"
+                          className="border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full"
                         />
                         <button
                           type="button"
@@ -721,7 +721,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
             <button
               type="button"
               onClick={handleAddInterval}
-              className="flex items-center gap-2 text-blue-500 border border-blue-500 rounded-lg px-4 py-2"
+              className="flex items-center gap-2 text-secondary border border-secondary rounded-lg px-4 py-2"
             >
               Add step
               <span className="text-xl">+</span>
@@ -743,7 +743,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           <button
             type="submit"
             form="training-form"
-            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-blue-300"
+            className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 disabled:bg-secondary/50"
             disabled={isLoading}
           >
             {isLoading ? "Saving..." : (isEditing ? "Update Training" : "Add Training")}
@@ -778,7 +778,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                 <button
                   type="button"
                   onClick={handleSaveRepeatCount}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90"
                 >
                   Save
                 </button>

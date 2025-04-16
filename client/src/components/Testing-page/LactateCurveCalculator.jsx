@@ -331,11 +331,11 @@ const LactateCurveCalculator = ({ mockData }) => {
             const yVal = ctx.parsed.y;
             const dataPoint = ctx.dataset.data[ctx.dataIndex];
             
-            if (isRunning && dataPoint.originalPace) {
-              const paceStr = formatSecondsToMMSS(dataPoint.originalPace);
+            if (isRunning) {
+              const paceStr = formatSecondsToMMSS(convertSpeedToPace(xVal));
               return `${label}: ${paceStr} min/km | ${yVal.toFixed(2)} mmol/L`;
             }
-            return `${label}: ${xVal.toFixed(0)} ${isRunning ? 'km/h' : 'W'} | ${yVal.toFixed(2)} mmol/L`;
+            return `${label}: ${xVal.toFixed(0)} W | ${yVal.toFixed(2)} mmol/L`;
           },
           labelPointStyle: (context) => {
             return {

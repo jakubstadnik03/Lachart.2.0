@@ -85,7 +85,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           }
         }));
       } else if (currentPath === 'training') {
-        const response = await api.get(`/training/athlete/${athleteId}`);
+        const response = await api.get(`/user/athlete/${athleteId}/trainings`);
         window.dispatchEvent(new CustomEvent('athleteChanged', { 
           detail: { 
             athleteId,

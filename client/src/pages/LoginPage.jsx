@@ -86,11 +86,15 @@ const LoginPage = () => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.5, delay: 0.6 }}
           >
-            <img
-              className="mx-auto h-12 w-auto"
-              src="/images/LaChart.png"
-              alt="Your Logo"
-            />
+            <div className='mx-auto flex items-center gap-2 justify-center'>
+              <img
+                className=" h-12 w-auto"
+                src="/images/LaChart.png"
+                alt="Your Logo"
+              />
+              <h1 className=' text-2xl font-bold text-primary'>LaChart</h1>
+            </div>
+
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
               Sign In to your Account
             </h2>

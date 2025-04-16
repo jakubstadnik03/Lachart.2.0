@@ -43,7 +43,7 @@ const DashboardPage = () => {
       setError(null);
       const response = await api.get(`/user/athlete/${targetId}/trainings`);
       if (response && response.data) {
-        setTrainings(response.data);
+        return response.data;
       }
     } catch (error) {
       console.error('Error loading trainings:', error);
@@ -60,10 +60,28 @@ const DashboardPage = () => {
       const response = await api.get(`/test/list/${targetId}`);
       if (response && response.data) {
         setTests(response.data);
+        return response.data;
       }
     } catch (error) {
       console.error('Error loading tests:', error);
       setError('Failed to load tests');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAthlete = async (targetId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/user/athlete/${targetId}`);
+      if (response && response.data) {
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Error loading athlete:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -76,9 +94,30 @@ const DashboardPage = () => {
     }
 
     const targetId = selectedAthleteId || user._id;
-    loadTrainings(targetId);
-    loadTests(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+    const loadData = async () => {
+      try {
+        if (!user || !user._id) return;
+        
+        const [trainingsData, athleteData, testsData] = await Promise.all([
+          loadTrainings(user._id),
+          loadAthlete(user._id),
+          loadTests(user._id)
+        ]);
+
+        if (trainingsData) {
+          setTrainings(trainingsData);
+        }
+        if (athleteData) {
+          setSelectedAthleteId(athleteData._id);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        setError(error.message);
+      }
+    };
+
+    loadData();
+  }, [user?._id]);
 
   useEffect(() => {
     if (trainings.length > 0) {

@@ -6,9 +6,18 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const { addNotification } = useNotification();
 
   const formatDate = (dateString) => {
-    if (!dateString) return new Date().toISOString().split('T')[0];
-    const date = new Date(dateString);
-    return date.toISOString().split('T')[0];
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return '';
+    }
   };
 
   const convertPaceToSeconds = (pace) => {
@@ -45,9 +54,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [isDirty, setIsDirty] = useState(false);
 
   // Check if any row has glucose data
-  const hasGlucoseData = rows.some(row => row.glucose !== undefined && row.glucose !== null && row.glucose !== '');
+  const hasGlucoseData = rows.some(row => 
+    row.glucose !== undefined && 
+    row.glucose !== null && 
+    row.glucose !== '' && 
+    Number(row.glucose) !== 0
+  );
 
-  // Update showGlucose based on whether there's any glucose data
+  // Update showGlucose based on whether there's any non-zero glucose data
   useEffect(() => {
     if (!hasGlucoseData) {
       setShowGlucose(false);
@@ -62,13 +76,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   }, [showGlucose, onGlucoseColumnChange]);
 
   const handlePaceChange = (index, value) => {
+    console.log('Pace change:', { index, value });
     const updatedRows = rows.map((row, i) =>
       i === index ? { ...row, power: value } : row
     );
+    console.log('Updated rows after pace change:', updatedRows);
     setRows(updatedRows);
   };
 
   const handleValueChange = (rowIndex, field, value) => {
+    console.log('Value change:', { rowIndex, field, value, currentSport: formData.sport });
+    
     if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
       handlePaceChange(rowIndex, value);
       return;
@@ -83,11 +101,25 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const updatedRows = rows.map((row, index) =>
       index === rowIndex ? { ...row, [field]: processedValue } : row
     );
+    console.log('Updated rows after value change:', updatedRows);
     setRows(updatedRows);
+    setIsDirty(true);
+
+    // Update glucose visibility when glucose value changes
+    if (field === 'glucose') {
+      const hasNonZeroGlucose = updatedRows.some(row => 
+        row.glucose !== undefined && 
+        row.glucose !== null && 
+        row.glucose !== '' && 
+        Number(row.glucose) !== 0
+      );
+      setShowGlucose(hasNonZeroGlucose);
+    }
   };
 
   useEffect(() => {
     if (testData) {
+      console.log('Initial test data:', testData);
       setRows(testData.results?.map(row => ({
         ...row,
         power: formData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
@@ -96,6 +128,47 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   }, [testData, formData.sport]);
 
   const handleFormDataChange = (field, value) => {
+    console.log('Form data change:', { field, value, currentSport: formData.sport });
+    
+    if (field === 'sport') {
+      console.log('Sport changed, resetting form:', { from: formData.sport, to: value });
+      
+      // Create new form data with updated sport
+      const newFormData = {
+        ...formData,
+        sport: value
+      };
+      setFormData(newFormData);
+      
+      // Update rows with converted power values
+      const updatedRows = rows.map(row => ({
+        ...row,
+        power: value === 'bike' ? 
+          (row.power ? convertPaceToSeconds(row.power) : '') : 
+          (row.power ? convertSecondsToPace(row.power) : '')
+      }));
+      setRows(updatedRows);
+      
+      // Create complete updated test data
+      const updatedTestData = {
+        ...testData,
+        title: newFormData.title,
+        description: newFormData.description,
+        weight: newFormData.weight ? Number(newFormData.weight) : '',
+        sport: value,
+        baseLactate: newFormData.baseLa ? Number(newFormData.baseLa) : '',
+        date: newFormData.date,
+        specifics: newFormData.specifics,
+        comments: newFormData.comments,
+        results: updatedRows
+      };
+      
+      console.log('Updating test data with new sport:', updatedTestData);
+      onTestDataChange(updatedTestData);
+      return;
+    }
+
+    // For other field changes
     const newFormData = { ...formData, [field]: value };
     setFormData(newFormData);
     setIsDirty(true);
@@ -114,6 +187,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       results: rows
     };
     
+    console.log('Propagating changes to parent:', updatedTestData);
     onTestDataChange(updatedTestData);
   };
 
@@ -186,6 +260,28 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   // Calculate grid columns based on whether glucose is shown
   const gridCols = showGlucose ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-4 sm:grid-cols-6';
+
+  // Add useEffect to handle testData changes
+  useEffect(() => {
+    if (testData) {
+      console.log('Test data changed, updating form:', testData);
+      setFormData({
+        title: testData.title || '',
+        description: testData.description || '',
+        weight: testData.weight || '',
+        sport: testData.sport || '',
+        baseLa: testData.baseLactate || '',
+        date: formatDate(testData.date),
+        specifics: testData.specifics || { specific: '', weather: '' },
+        comments: testData.comments || ''
+      });
+      
+      setRows(testData.results?.map(row => ({
+        ...row,
+        power: testData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
+      })) || []);
+    }
+  }, [testData]);
 
   return (
     <div className={`flex flex-col w-full max-w-l mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg ${!showGlucose ? 'w-11/12 mx-0' : ''}`}>
@@ -327,7 +423,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
         <button 
           onClick={handleAddRow} 
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-green rounded-lg hover:bg-green-600"
         >
           <Plus size={20} /> Add Interval
         </button>
