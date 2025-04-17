@@ -29,7 +29,7 @@ function StatCard({ stats }) {
 function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower }) {
   const getWidth = () => {
     // Base width is smaller on mobile and larger on desktop
-    const baseWidth = window.innerWidth < 640 ? 4 : 8;
+    const baseWidth = window.innerWidth < 640 ? 4 : window.innerWidth < 1700 ? 7 : 8;
     
     if (!duration) return baseWidth;
     

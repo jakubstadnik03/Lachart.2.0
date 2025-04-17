@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Line } from 'react-chartjs-2';
-import { getTrainingsByTitle } from '../services/api';
+import { getTrainingsByTitle, getTrainingTitles } from '../services/api';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,6 +30,9 @@ const TrainingHistory = () => {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tooltip, setTooltip] = useState(null);
+  const [allTrainingTitles, setAllTrainingTitles] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   useEffect(() => {
     const fetchTrainings = async () => {
@@ -58,63 +61,288 @@ const TrainingHistory = () => {
       }
     };
 
+    const fetchAllTrainingTitles = async () => {
+      try {
+        const titles = await getTrainingTitles();
+        if (Array.isArray(titles)) {
+          setAllTrainingTitles(titles);
+        }
+      } catch (error) {
+        console.error('Error fetching all training titles:', error);
+      }
+    };
+
     fetchTrainings();
+    fetchAllTrainingTitles();
   }, [title]);
+
+  const handleTrainingSelect = (selectedTitle) => {
+    setIsDropdownOpen(false);
+    if (selectedTitle !== title) {
+      navigate(`/training-history/${encodeURIComponent(selectedTitle)}`);
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).replace(/\//g, '-');
+  };
+
+  // Calculate progress indicators
+  const calculateProgress = () => {
+    if (trainings.length < 2) return null;
+    
+    // Sort trainings by date (oldest first)
+    const sortedTrainings = [...trainings].sort((a, b) => 
+      new Date(a.date) - new Date(b.date)
+    );
+    
+    // Calculate average power for each training
+    const powerData = sortedTrainings.map(t => {
+      const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
+      return validPowers.length > 0 
+        ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
+        : null;
+    });
+    
+    // Calculate average heart rate for each training
+    const hrData = sortedTrainings.map(t => {
+      const validHRs = t.results.filter(r => r.heartRate > 0).map(r => r.heartRate);
+      return validHRs.length > 0 
+        ? Math.round(validHRs.reduce((sum, hr) => sum + hr, 0) / validHRs.length) 
+        : null;
+    });
+    
+    // Calculate max lactate for each training
+    const lactateData = sortedTrainings.map(t => {
+      const validLactates = t.results.filter(r => r.lactate > 0).map(r => r.lactate);
+      return validLactates.length > 0 
+        ? Math.max(...validLactates) 
+        : null;
+    });
+    
+    // Calculate progress percentages
+    const powerProgress = powerData[powerData.length - 1] && powerData[0] 
+      ? ((powerData[powerData.length - 1] - powerData[0]) / powerData[0] * 100).toFixed(1) 
+      : null;
+    
+    const hrProgress = hrData[hrData.length - 1] && hrData[0] 
+      ? ((hrData[hrData.length - 1] - hrData[0]) / hrData[0] * 100).toFixed(1) 
+      : null;
+    
+    const lactateProgress = lactateData[lactateData.length - 1] && lactateData[0] 
+      ? ((lactateData[lactateData.length - 1] - lactateData[0]) / lactateData[0] * 100).toFixed(1) 
+      : null;
+    
+    return {
+      powerProgress,
+      hrProgress,
+      lactateProgress,
+      powerData,
+      hrData,
+      lactateData,
+      dates: sortedTrainings.map(t => formatDate(t.date))
+    };
+  };
+
+  const progress = calculateProgress();
 
   // Prepare data for charts
   const chartData = {
-    labels: trainings.map(t => new Date(t.date).toLocaleDateString()),
+    labels: progress ? progress.dates : trainings.map(t => formatDate(t.date)),
     datasets: [
       {
-        label: 'Power',
-        data: trainings.map(t => {
-          // Calculate average power for all intervals
+        label: 'Power (W)',
+        data: progress ? progress.powerData : trainings.map(t => {
           const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
           return validPowers.length > 0 
-            ? validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length 
+            ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
             : null;
         }),
-        borderColor: 'rgb(75, 192, 192)',
-        tension: 0.1,
+        borderColor: 'rgb(63, 140, 254)',
+        backgroundColor: 'rgb(63, 140, 254)',
+        pointStyle: 'circle',
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: 'rgb(63, 140, 254)',
+        yAxisID: 'y',
       },
       {
-        label: 'Heart Rate',
-        data: trainings.map(t => {
-          // Calculate average heart rate for all intervals
+        label: 'Heart Rate (BPM)',
+        data: progress ? progress.hrData : trainings.map(t => {
           const validHRs = t.results.filter(r => r.heartRate > 0).map(r => r.heartRate);
           return validHRs.length > 0 
-            ? validHRs.reduce((sum, hr) => sum + hr, 0) / validHRs.length 
+            ? Math.round(validHRs.reduce((sum, hr) => sum + hr, 0) / validHRs.length) 
             : null;
         }),
-        borderColor: 'rgb(255, 99, 132)',
-        tension: 0.1,
+        borderColor: 'rgb(231, 81, 90)',
+        backgroundColor: 'rgb(231, 81, 90)',
+        pointStyle: 'circle',
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: 'rgb(231, 81, 90)',
+        yAxisID: 'y1',
       },
       {
-        label: 'Lactate',
-        data: trainings.map(t => {
-          // Get max lactate value
+        label: 'Lactate (mmol/L)',
+        data: progress ? progress.lactateData : trainings.map(t => {
           const validLactates = t.results.filter(r => r.lactate > 0).map(r => r.lactate);
           return validLactates.length > 0 
             ? Math.max(...validLactates) 
             : null;
         }),
-        borderColor: 'rgb(153, 102, 255)',
-        tension: 0.1,
+        borderColor: 'rgb(34, 197, 94)',
+        backgroundColor: 'rgb(34, 197, 94)',
+        pointStyle: 'circle',
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: 'rgb(34, 197, 94)',
+        yAxisID: 'y2',
       },
     ],
   };
 
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
         position: 'top',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          pointRadius: 4,
+          font: { size: 12 },
+        },
       },
-      title: {
-        display: true,
-        text: 'Training History',
+      tooltip: {
+        enabled: false,
+        external: (context) => {
+          if (context.tooltip.opacity === 0) {
+            setTooltip(null);
+          } else {
+            setTooltip({
+              ...context.tooltip,
+              dataPoints: context.tooltip.dataPoints.map(point => ({
+                ...point,
+                datasetIndex: point.datasetIndex,
+                dataIndex: point.dataIndex,
+                label: point.label,
+                value: point.raw
+              }))
+            });
+          }
+        },
       },
     },
+    scales: {
+      y: {
+        title: { display: true, text: 'Power (W)' },
+        min: 0,
+        max: Math.max(...(progress ? progress.powerData : trainings.map(t => {
+          const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
+          return validPowers.length > 0 
+            ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
+            : 0;
+        }))) + 60,
+        ticks: { display: true },
+        border: { dash: [6, 6] },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.15)',
+          borderDash: [4, 4],
+          drawTicks: true,
+        },
+      },
+      y1: {
+        title: { display: true, text: 'Heart Rate (BPM)' },
+        min: 100,
+        max: 210,
+        position: 'right',
+        ticks: { display: true },
+        grid: {
+          drawOnChartArea: true,
+          color: 'rgba(0, 0, 0, 0)',
+          borderDash: [4, 4],
+        },
+      },
+      y2: {
+        title: { display: true, text: 'Lactate (mmol/L)' },
+        min: 0,
+        max: 8,
+        position: 'right',
+        offset: 80,
+        ticks: { display: true },
+        grid: {
+          drawOnChartArea: true,
+          color: 'rgba(0, 0, 0, 0)',
+          borderDash: [4, 4],
+        },
+      },
+      x: {
+        title: { display: true, text: 'Date' },
+        border: { dash: [6, 6] },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.15)',
+          borderDash: [4, 4],
+        },
+      },
+    },
+  };
+
+  // Custom tooltip component
+  const CustomTooltip = ({ tooltip, datasets }) => {
+    if (!tooltip?.dataPoints) return null;
+
+    const index = tooltip.dataPoints[0]?.dataIndex;
+    if (index === undefined) return null;
+
+    const date = tooltip.dataPoints[0]?.label || "N/A";
+    const power = datasets[0]?.data?.[index] ?? "N/A";
+    const hr = datasets[1]?.data?.[index] ?? "N/A";
+    const lactate = datasets[2]?.data?.[index] ?? "N/A";
+
+    return (
+      <div
+        className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-3 rounded-xl text-sm border border-gray-100"
+        style={{
+          left: tooltip.caretX,
+          top: tooltip.caretY,
+          transform: "translate(-50%, -120%)",
+          position: "absolute",
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+          zIndex: 50
+        }}
+      >
+        <div className="font-bold text-gray-900 mb-1">{date}</div>
+        <div className="flex items-center gap-2 text-blue-600">
+          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+          Power: {power} W
+        </div>
+        <div className="flex items-center gap-2 text-red-600">
+          <span className="w-2 h-2 rounded-full bg-red-500"></span>
+          Heart Rate: {hr} BPM
+        </div>
+        <div className="flex items-center gap-2 text-green-600">
+          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+          Lactate: {lactate} mmol/L
+        </div>
+        <div
+          className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
+          style={{
+            left: "50%",
+            bottom: "-8px",
+            transform: "translateX(-50%)",
+          }}
+        ></div>
+      </div>
+    );
   };
 
   // Format duration from seconds to MM:SS
@@ -139,7 +367,7 @@ const TrainingHistory = () => {
         <h1 className="text-2xl font-bold mb-4 text-red-600">Error: {error}</h1>
         <button
           onClick={() => navigate(-1)}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
         >
           Go Back
         </button>
@@ -153,7 +381,7 @@ const TrainingHistory = () => {
         <h1 className="text-2xl font-bold mb-4">No trainings found for "{decodeURIComponent(title)}"</h1>
         <button
           onClick={() => navigate(-1)}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
         >
           Go Back
         </button>
@@ -169,19 +397,112 @@ const TrainingHistory = () => {
       className="container mx-auto px-4 py-8"
     >
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">{decodeURIComponent(title)}</h1>
+        <div className="flex items-center">
+          <h1 className="text-3xl font-bold mr-4">{decodeURIComponent(title)}</h1>
+          
+          {/* Training Selection Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark flex items-center"
+            >
+              <span>Change Training</span>
+              <svg 
+                className={`ml-2 h-5 w-5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {isDropdownOpen && (
+              <div className="absolute z-10 mt-2 w-64 bg-white rounded-md shadow-lg overflow-hidden">
+                <div className="py-1 max-h-60 overflow-y-auto">
+                  {allTrainingTitles.map((trainingTitle) => (
+                    <button
+                      key={trainingTitle}
+                      onClick={() => handleTrainingSelect(trainingTitle)}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                        trainingTitle === title ? 'bg-primary-light text-primary font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {trainingTitle}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
         <button
           onClick={() => navigate(-1)}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
         >
           Go Back
         </button>
       </div>
 
+      {/* Progress Summary */}
+      {progress && (
+        <div className="mb-8 bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Progress Summary</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="text-blue-700 font-medium">Power</h3>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-2xl font-bold text-blue-600">
+                  {progress.powerData[progress.powerData.length - 1] || '-'} W
+                </span>
+                {progress.powerProgress && (
+                  <span className={`text-sm font-medium ${progress.powerProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {progress.powerProgress > 0 ? '+' : ''}{progress.powerProgress}%
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mt-1">Latest average power</p>
+            </div>
+            <div className="bg-red-50 p-4 rounded-lg">
+              <h3 className="text-red-700 font-medium">Heart Rate</h3>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-2xl font-bold text-red-600">
+                  {progress.hrData[progress.hrData.length - 1] || '-'} BPM
+                </span>
+                {progress.hrProgress && (
+                  <span className={`text-sm font-medium ${progress.hrProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {progress.hrProgress > 0 ? '+' : ''}{progress.hrProgress}%
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mt-1">Latest average heart rate</p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <h3 className="text-green-700 font-medium">Lactate</h3>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-2xl font-bold text-green-600">
+                  {progress.lactateData[progress.lactateData.length - 1]?.toFixed(1) || '-'} mmol/L
+                </span>
+                {progress.lactateProgress && (
+                  <span className={`text-sm font-medium ${progress.lactateProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {progress.lactateProgress > 0 ? '+' : ''}{progress.lactateProgress}%
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mt-1">Latest max lactate</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Charts */}
       <div className="mb-8 bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-xl font-semibold mb-4">Training History</h2>
-        <Line data={chartData} options={chartOptions} />
+        <div className="relative" style={{ width: '100%', height: '400px' }}>
+          <Line data={chartData} options={chartOptions} />
+          {tooltip && <CustomTooltip tooltip={tooltip} datasets={chartData.datasets} />}
+        </div>
       </div>
 
       {/* Training Details */}
@@ -196,7 +517,7 @@ const TrainingHistory = () => {
           >
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <p className="font-medium text-lg">{new Date(training.date).toLocaleDateString()}</p>
+                <p className="font-medium text-lg">{formatDate(training.date)}</p>
                 <p className="text-gray-600">{training.specifics?.specific || 'No specifics'}</p>
               </div>
               
@@ -220,26 +541,26 @@ const TrainingHistory = () => {
               </div>
               
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interval</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Power</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Heart Rate</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lactate</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RPE</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Power</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HR</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">La</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RPE</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {training.results.map((result) => (
-                      <tr key={result._id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.interval}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDuration(result.duration)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.power || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.heartRate || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.lactate || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{result.RPE || '-'}</td>
+                      <tr key={result._id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.interval}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{formatDuration(result.duration)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.power || '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.heartRate || '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.lactate || '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.RPE || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

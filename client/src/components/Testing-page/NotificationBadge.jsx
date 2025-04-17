@@ -30,8 +30,8 @@ function NotificationBadge({ isActive, onToggle }) {
       <div className="flex justify-center sm:justify-end">
         <button
           onClick={onToggle}
-          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-violet-500 border-solid w-full sm:w-auto
-            ${isActive ? "bg-violet-500 text-white" : "text-stone-500"}`}
+          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border border-primary border-solid w-full sm:w-auto
+            ${isActive ? "bg-primary text-white" : "text-stone-500"}`}
           role="status"
           aria-live="polite"
         >

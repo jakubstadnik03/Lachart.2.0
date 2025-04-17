@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTrainings } from "../../context/TrainingContext";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
+import { useNavigate } from "react-router-dom";
 
-function TrainingRow({ training, sport, date, averagePace, status }) {
+function TrainingRow({ training, sport, date, averagePace, status, onTrainingClick }) {
   // Omezíme délku názvu tréninku na 20 znaků
   const truncatedTraining = training.length > 18 ? training.substring(0, 18) + '..' : training;
 
@@ -26,7 +27,10 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
   return (
     <>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
-        <div className="self-stretch py-1.5 sm:py-2.5 px-1 w-full text-xs sm:text-sm font-semibold border-b text-center border-gray-200">
+        <div 
+          className="self-stretch py-1.5 sm:py-2.5 px-1 w-full text-xs sm:text-sm font-semibold border-b text-center border-gray-200 cursor-pointer hover:bg-blue-50 hover:text-secondary transition-colors duration-200"
+          onClick={() => onTrainingClick(training)}
+        >
           {truncatedTraining}
         </div>
       </div>
@@ -101,11 +105,16 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [displayCount, setDisplayCount] = useState(6);
   const settingsRef = useRef(null);
+  const navigate = useNavigate();
 
   const handleSportChange = (sport) => {
     if (onSportChange) {
       onSportChange(sport);
     }
+  };
+
+  const handleTrainingClick = (trainingTitle) => {
+    navigate(`/training-history/${encodeURIComponent(trainingTitle)}`);
   };
 
   useEffect(() => {
@@ -173,7 +182,7 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
              
               <button 
                 onClick={() => window.location.href = "/training"}
-                className="flex overflow-hidden gap-1 items-center self-stretch py-0.5  my-auto text-xs sm:text-base text-blue-500 bg-white rounded min-h-[24px] sm:min-h-[28px]"
+                className="flex overflow-hidden gap-1 items-center self-stretch py-0.5  my-auto text-xs sm:text-base text-secondary bg-white rounded min-h-[24px] sm:min-h-[28px]"
               >
                 <div className="self-stretch my-auto">View more</div>
                 <img
@@ -233,7 +242,11 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
         <div className="grid grid-cols-4 gap-y-1 sm:gap-y-2 w-full text-xs sm:text-base text-gray-600">
           <TableHeader />
           {formattedTrainings.map((training, index) => (
-            <TrainingRow key={index} {...training} />
+            <TrainingRow 
+              key={index} 
+              {...training} 
+              onTrainingClick={handleTrainingClick}
+            />
           ))}
         </div>
       </div>
