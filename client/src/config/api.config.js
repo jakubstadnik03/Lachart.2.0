@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
     CREATE_TRAINING: `${API_BASE_URL}/trainings/create`,
     UPDATE_TRAINING: (id) => `${API_BASE_URL}/trainings/${id}`,
     DELETE_TRAINING: (id) => `${API_BASE_URL}/trainings/${id}`,
+    GET_TRAININGS_BY_TITLE: (title) => `${API_BASE_URL}/training/title/${encodeURIComponent(title)}`,
     
     TESTINGS: `${API_BASE_URL}/testings`,
     TESTING_DETAIL: (id) => `${API_BASE_URL}/testings/${id}`,

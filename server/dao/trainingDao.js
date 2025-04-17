@@ -77,6 +77,41 @@ class TrainingDao {
     }
   }
 
+  async findByTitle(title, userId) {
+    try {
+      console.log('Finding trainings with title:', title, 'for user:', userId);
+      
+      // Normalize the search title by removing spaces and special characters
+      const normalizedSearchTitle = title.replace(/[\s-:]/g, '').toLowerCase();
+      console.log('Normalized search title:', normalizedSearchTitle);
+      
+      const trainings = await this.Training.find({ 
+        athleteId: userId 
+      }).sort({ date: -1 });
+      
+      console.log('All trainings found:', trainings.length);
+      console.log('Training titles:', trainings.map(t => t.title));
+      
+      // Filter trainings by comparing normalized titles
+      const filteredTrainings = trainings.filter(training => {
+        const normalizedTrainingTitle = training.title.replace(/[\s-:]/g, '').toLowerCase();
+        console.log('Comparing:', {
+          original: training.title,
+          normalized: normalizedTrainingTitle,
+          searchTitle: normalizedSearchTitle,
+          matches: normalizedTrainingTitle === normalizedSearchTitle
+        });
+        return normalizedTrainingTitle === normalizedSearchTitle;
+      });
+      
+      console.log('Filtered trainings:', filteredTrainings.length);
+      return filteredTrainings;
+    } catch (error) {
+      console.error('Error in findByTitle:', error);
+      throw error;
+    }
+  }
+
   validateTrainingData(trainingData) {
     if (!trainingData.athleteId) {
       throw new Error('athleteId is required');

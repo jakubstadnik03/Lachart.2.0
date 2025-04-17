@@ -95,9 +95,9 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   
     const efficiencyColor = workout.lactate ? (
       lactateStatus === "down" 
-        ? "text-red-700 bg-red-600"
+        ? "text-red bg-red"
         : lactateStatus === "up"
-        ? "text-green-600 bg-green-600"
+        ? "text-green bg-green"
         : "text-gray-500 bg-gray-400"
     ) : "text-gray-500 bg-gray-400";
 
@@ -145,7 +145,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           />
           <div>{workout.heartRate}</div>
         </div>
-        <div className="flex gap-0.5 items-center text-blue-500 w-12">
+        <div className="flex gap-0.5 items-center text-secondary w-12">
           <img
             loading="lazy"
             src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/560435bfa3d998398c37040f6c6463c35a70154d9fd9cd3f0f8d73ae6ed91ab4?"
@@ -216,7 +216,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
                 const urlTitle = title.replace(/\s+/g, '-');
                 window.location.href = `/training-history/${urlTitle}`;
               }}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm"
+              className="bg-secondary hover:bg-secondary-dark text-white px-4 py-2 rounded-md text-sm"
             >
               Compare Training
             </button>

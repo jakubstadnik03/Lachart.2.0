@@ -98,10 +98,35 @@ class TrainingAbl {
         }
     }
 
-    static async getTrainingsByTitle(title, userId) {
+    async getTrainingsByTitle(title, userId) {
         try {
-            const trainings = await TrainingDao.getTrainingsByUserId(userId);
-            return trainings.filter(training => training.title === title);
+            console.log('Getting trainings by title:', title, 'for user:', userId);
+            
+            // Získání uživatele pro zjištění role
+            const user = await this.userDao.findById(userId);
+            if (!user) {
+                console.error('User not found:', userId);
+                throw new Error('Uživatel nenalezen');
+            }
+
+            // Pokud je uživatel trenér, získat všechny tréninky jeho atletů
+            // Pokud je uživatel atlet, získat jen jeho tréninky
+            let trainings = [];
+            if (user.role === 'coach') {
+                // Získat ID všech atletů tohoto trenéra
+                const athletes = await this.userDao.findAthletesByCoachId(userId);
+                console.log('Found athletes:', athletes.length);
+                const athleteIds = athletes.map(athlete => athlete._id);
+                
+                // Získat tréninky všech těchto atletů
+                trainings = await this.trainingDao.findByAthleteIds(athleteIds);
+            } else {
+                // Atlet vidí jen své tréninky
+                trainings = await this.trainingDao.findByTitle(title, userId);
+            }
+
+            console.log('Returning trainings:', trainings.length);
+            return trainings;
         } catch (error) {
             console.error('Error in getTrainingsByTitle:', error);
             throw error;

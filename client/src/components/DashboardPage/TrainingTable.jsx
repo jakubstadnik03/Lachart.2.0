@@ -16,8 +16,8 @@ function TrainingRow({ training, sport, date, averagePace, status }) {
 
   const getBackgroundColor = (status) => {
     const colors = {
-      up: "bg-green-600 text-green-600 bg-opacity-10",
-      down: "bg-red-600 text-red-600 bg-opacity-10",
+      up: "bg-green text-green bg-opacity-10",
+      down: "bg-red text-red bg-opacity-10",
       same: "bg-gray-200 text-gray-600"
     };
     return colors[status];

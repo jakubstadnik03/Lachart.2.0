@@ -463,14 +463,14 @@ const ProfilePage = () => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.7 }}
             >
-              <TrainingGraph 
-                trainingList={trainings}
-                selectedSport={selectedSport}
-                selectedTitle={selectedTitle}
-                setSelectedTitle={setSelectedTitle}
-                selectedTraining={selectedTraining}
-                setSelectedTraining={setSelectedTraining}
-              />
+            <TrainingGraph 
+              trainingList={trainings}
+              selectedSport={selectedSport}
+              selectedTitle={selectedTitle}
+              setSelectedTitle={setSelectedTitle}
+              selectedTraining={selectedTraining}
+              setSelectedTraining={setSelectedTraining}
+            />
             </motion.div>
 
             <motion.div 
@@ -504,19 +504,19 @@ const ProfilePage = () => {
 
       <AnimatePresence>
         {isEditModalOpen && (
-          <EditProfileModal
-            isOpen={isEditModalOpen}
-            onClose={() => setIsEditModalOpen(false)}
-            onSubmit={handleProfileUpdate}
-            userData={userInfo}
-          />
+      <EditProfileModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSubmit={handleProfileUpdate}
+        userData={userInfo}
+      />
         )}
 
         {isPasswordModalOpen && (
-          <ChangePasswordModal
-            isOpen={isPasswordModalOpen}
-            onClose={() => setIsPasswordModalOpen(false)}
-          />
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+      />
         )}
       </AnimatePresence>
     </motion.div>

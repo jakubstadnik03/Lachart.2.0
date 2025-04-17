@@ -304,7 +304,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           />
           <div>{workout.heartRate}</div>
         </div>
-        <div className="flex gap-0.5 items-center text-blue-500 w-12">
+        <div className="flex gap-0.5 items-center text-secondary w-12">
           <img
             loading="lazy"
             src="/icon/rpe.svg"
@@ -378,7 +378,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
                   e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
                   handleEditTraining(training);
                 }}
-                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-100 rounded-full bg-white shadow-sm"
+                className="p-2 text-primary hover:text-primary-dark hover:bg-blue-100 rounded-full bg-white shadow-sm"
                 title="Edit training"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -390,7 +390,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
                   e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
                   handleDeleteTraining(training);
                 }}
-                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full bg-white shadow-sm"
+                className="p-2 text-red hover:text-red-dark hover:bg-red-100 rounded-full bg-white shadow-sm"
                 title="Delete training"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -454,11 +454,9 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       {/* Edit Modal */}
       {showEditModal && trainingToEdit && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          {error && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
-              {error}
-            </div>
-          )}
+          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
+            {error}
+          </div>
           
           <TrainingForm 
             onClose={() => {
