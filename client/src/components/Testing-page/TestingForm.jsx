@@ -22,15 +22,26 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const convertPaceToSeconds = (pace) => {
     if (!pace) return '';
-    const [minutes, seconds] = pace.split(':').map(Number);
-    return minutes * 60 + seconds;
+    try {
+      const [minutes, seconds] = pace.split(':').map(Number);
+      if (isNaN(minutes) || isNaN(seconds)) return '';
+      return minutes * 60 + seconds;
+    } catch (error) {
+      console.error('Error converting pace to seconds:', error);
+      return '';
+    }
   };
 
   const convertSecondsToPace = (seconds) => {
     if (!seconds && seconds !== 0) return '';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    try {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    } catch (error) {
+      console.error('Error converting seconds to pace:', error);
+      return '';
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -45,9 +56,20 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   });
 
   const [rows, setRows] = useState(testData?.results?.map(row => ({
-    ...row,
-    power: formData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
-  })) || []);
+    interval: row.interval || 1,
+    power: formData.sport === 'bike' ? (row.power || 0) : (row.power ? convertSecondsToPace(row.power) : '0:00'),
+    heartRate: row.heartRate || 0,
+    lactate: row.lactate || 0,
+    glucose: row.glucose || 0,
+    RPE: row.RPE || 0
+  })) || [{
+    interval: 1,
+    power: formData.sport === 'bike' ? 0 : '0:00',
+    heartRate: 0,
+    lactate: 0,
+    glucose: 0,
+    RPE: 0
+  }]);
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [hoverGlucose, setHoverGlucose] = useState(false);
@@ -82,6 +104,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     );
     console.log('Updated rows after pace change:', updatedRows);
     setRows(updatedRows);
+    setIsDirty(true);
   };
 
   const handleValueChange = (rowIndex, field, value) => {
@@ -94,8 +117,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
     let processedValue = value;
 
-    if (value !== '' && field !== 'power') {
-      processedValue = Number(value);
+    // Ensure numeric values are properly converted
+    if (field !== 'power' || formData.sport === 'bike') {
+      processedValue = value === '' ? 0 : Number(value);
     }
 
     const updatedRows = rows.map((row, index) =>
@@ -107,14 +131,28 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
     // Update glucose visibility when glucose value changes
     if (field === 'glucose') {
-      const hasNonZeroGlucose = updatedRows.some(row => 
-        row.glucose !== undefined && 
-        row.glucose !== null && 
-        row.glucose !== '' && 
-        Number(row.glucose) !== 0
-      );
+      const hasNonZeroGlucose = updatedRows.some(row => Number(row.glucose) > 0);
       setShowGlucose(hasNonZeroGlucose);
     }
+
+    // Propagate changes to parent component with processed rows
+    const processedRows = updatedRows.map((row, idx) => ({
+      interval: idx + 1,
+      power: formData.sport === 'bike' ? 
+        (row.power === '' ? 0 : Number(row.power)) :
+        (row.power ? convertPaceToSeconds(row.power) : 0),
+      heartRate: row.heartRate === '' ? 0 : Number(row.heartRate),
+      lactate: row.lactate === '' ? 0 : Number(row.lactate),
+      glucose: row.glucose === '' ? 0 : Number(row.glucose),
+      RPE: row.RPE === '' ? 0 : Number(row.RPE)
+    }));
+
+    const updatedTestData = {
+      ...testData,
+      results: processedRows
+    };
+    
+    onTestDataChange(updatedTestData);
   };
 
   useEffect(() => {
@@ -141,12 +179,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       setFormData(newFormData);
       
       // Update rows with converted power values
-      const updatedRows = rows.map(row => ({
-        ...row,
-        power: value === 'bike' ? 
-          (row.power ? convertPaceToSeconds(row.power) : '') : 
-          (row.power ? convertSecondsToPace(row.power) : '')
-      }));
+      const updatedRows = rows.map(row => {
+        let power = row.power;
+        if (value === 'bike' && power) {
+          // Convert from pace to power (seconds)
+          power = convertPaceToSeconds(power);
+        } else if ((value === 'run' || value === 'swim') && power) {
+          // Convert from power (seconds) to pace
+          power = convertSecondsToPace(power);
+        }
+        return { ...row, power };
+      });
       setRows(updatedRows);
       
       // Create complete updated test data
@@ -192,35 +235,49 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
   const handleSaveChanges = () => {
+    if (!formData.title) {
+      addNotification('Test title is required', 'error');
+      return;
+    }
+    
+    if (!formData.sport) {
+      addNotification('Sport is required', 'error');
+      return;
+    }
+    
+    // Process rows to ensure correct format with numeric values
+    const processedRows = rows.map((row, index) => {
+      let power = row.power;
+      
+      // Convert power based on sport type
+      if (formData.sport === 'bike') {
+        power = power === '' ? 0 : Number(power);
+      } else if (formData.sport === 'run' || formData.sport === 'swim') {
+        power = power ? convertPaceToSeconds(power) : 0;
+      }
+      
+      // Ensure all numeric values are properly converted
+      return {
+        interval: index + 1,
+        power: power,
+        heartRate: row.heartRate === '' ? 0 : Number(row.heartRate),
+        lactate: row.lactate === '' ? 0 : Number(row.lactate),
+        glucose: row.glucose === '' ? 0 : Number(row.glucose),
+        RPE: row.RPE === '' ? 0 : Number(row.RPE)
+      };
+    });
+    
     const updatedTest = {
       ...testData,
       title: formData.title,
-      description: formData.description,
-      weight: formData.weight ? Number(formData.weight) : '',
+      description: formData.description || '',
+      weight: formData.weight === '' ? 0 : Number(formData.weight),
       sport: formData.sport,
-      baseLactate: formData.baseLa ? Number(formData.baseLa) : '',
+      baseLactate: formData.baseLa === '' ? 0 : Number(formData.baseLa),
       date: formData.date,
-      specifics: formData.specifics,
-      comments: formData.comments,
-      results: rows.map(row => {
-        let power = row.power;
-        if ((formData.sport === 'run' || formData.sport === 'swim') && power) {
-          // Convert pace (MM:SS) to seconds
-          const [minutes, seconds] = power.split(':').map(Number);
-          if (!isNaN(minutes) && !isNaN(seconds)) {
-            power = minutes * 60 + seconds;
-          } else {
-            power = ''; // If conversion fails, set to empty
-          }
-        }
-        return {
-          power: power ? Number(power) : '',
-          heartRate: row.heartRate ? Number(row.heartRate) : '',
-          lactate: row.lactate ? Number(row.lactate) : '',
-          glucose: row.glucose ? Number(row.glucose) : '',
-          RPE: row.RPE ? Number(row.RPE) : ''
-        };
-      })
+      specifics: formData.specifics || { specific: '', weather: '' },
+      comments: formData.comments || '',
+      results: processedRows
     };
     
     console.log('Saving test data:', updatedTest);
@@ -246,11 +303,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const handleAddRow = () => {
     const newRow = {
-      power: '',
-      heartRate: '',
-      lactate: '',
-      glucose: '',
-      RPE: ''
+      interval: rows.length + 1,
+      power: formData.sport === 'bike' ? 0 : '0:00',
+      heartRate: 0,
+      lactate: 0,
+      glucose: 0,
+      RPE: 0
     };
     
     const newRows = [...rows, newRow];
