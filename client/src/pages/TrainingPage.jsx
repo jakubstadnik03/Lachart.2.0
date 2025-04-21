@@ -45,7 +45,7 @@ const TrainingPage = () => {
       }
     } catch (err) {
       console.error('Error loading trainings:', err);
-      setError('Failed to load trainings');
+     //  setError('Failed to load trainings');
     } finally {
       setLoading(false);
     }
@@ -67,7 +67,8 @@ const TrainingPage = () => {
       const { athleteId, trainings } = event.detail;
       setSelectedAthleteId(athleteId);
       setTrainings(trainings);
-      
+      navigate(`/testing/${athleteId}`, { replace: true });
+
       // Nastavení výchozího vybraného tréninku pro nového atleta
       if (trainings.length > 0) {
         const sportTrainings = trainings.filter(t => t.sport === selectedSport);
@@ -80,7 +81,7 @@ const TrainingPage = () => {
 
     window.addEventListener('athleteChanged', handleAthleteChange);
     return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, [selectedSport]);
+  }, [navigate]);
 
   const handleAthleteChange = (newAthleteId) => {
     setSelectedAthleteId(newAthleteId);
@@ -161,9 +162,13 @@ const TrainingPage = () => {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-    </div>
+    <motion.div 
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="flex items-center justify-center h-screen"
+  >
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+  </motion.div>
   );
 
   if (error) return (

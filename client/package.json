@@ -11,6 +11,7 @@
     "chart.js": "^4.4.7",
     "cra-template": "1.2.0",
     "cubic-spline": "^3.0.3",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.6.5",
     "js-cookie": "^3.0.5",
     "lucide-react": "^0.474.0",

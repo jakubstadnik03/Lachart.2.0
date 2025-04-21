@@ -26,37 +26,50 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower }) {
+function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, containerWidth, selectedTraining, displayCount }) {
   const getWidth = () => {
-    // Base width is smaller on mobile and larger on desktop
-    const baseWidth = window.innerWidth < 640 ? 4 : window.innerWidth < 1700 ? 7 : 8;
+    if (!duration) return window.innerWidth < 640 ? 1 : 4;
+
+    // Najdeme všechny tréninky stejného typu
+    const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
     
-    if (!duration) return baseWidth;
+    // Najdeme nejdelší interval napříč všemi tréninky stejného typu
+    const maxDuration = Math.max(...sameTypeTrainings.flatMap(t => 
+      t.results.map(r => Number(r.duration) || 0)
+    ));
+
+    // Vypočítáme poměr vůči nejdelšímu intervalu
+    const durationRatio = (Number(duration) || 0) / maxDuration;
     
-    // Convert duration from seconds to minutes
-    const totalMinutes = duration / 60;
-      
-    // Find the shortest duration in the current training
-    const currentTraining = visibleTrainings.find(t => 
-      t.results.some(r => r.duration === duration)
-    );
+    // Základní šířky se zmenšují s počtem zobrazených tréninků a na mobilu
+    const baseWidth = window.innerWidth < 640 ? 1 : 4;
+    let maxWidth;
     
-    if (!currentTraining) return baseWidth;
+    // Různé maximální šířky podle počtu tréninků a velikosti obrazovky
+    if (window.innerWidth < 640) {
+      // Mobilní zařízení
+      if (displayCount <= 3) {
+        maxWidth = 6; // Pro 1-3 tréninky na mobilu
+      } else if (displayCount <= 6) {
+        maxWidth = 4; // Pro 4-6 tréninků na mobilu
+      } else {
+        maxWidth = 3; // Pro více než 6 tréninků na mobilu
+      }
+    } else {
+      // Desktop
+      if (displayCount <= 3) {
+        maxWidth = 20; // Pro 1-3 tréninky na desktopu
+      } else if (displayCount <= 6) {
+        maxWidth = 12; // Pro 4-6 tréninků na desktopu
+      } else {
+        maxWidth = 8; // Pro více než 6 tréninků na desktopu
+      }
+    }
     
-    const durations = currentTraining.results
-      .filter(r => r.duration)
-      .map(r => r.duration / 60);
-    
-    if (durations.length === 0) return baseWidth;
-    
-    const shortestDuration = Math.min(...durations);
-    const ratio = totalMinutes / shortestDuration;
-    
-    // Calculate width based on ratio and screen size
-    const maxWidth = window.innerWidth < 640 ? 40 : 80;
-    const calculatedWidth = baseWidth * ratio;
-    return Math.min(maxWidth, Math.max(baseWidth, calculatedWidth));
+    return Math.max(baseWidth, Math.min(baseWidth + (durationRatio * (maxWidth - baseWidth)), maxWidth));
   };
+
+  const width = getWidth();
 
   const formatDuration = (seconds) => {
     const minutes = Math.floor(seconds / 60);
@@ -67,7 +80,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
   return (
     <div
       className="relative flex justify-center shrink-0 h-full"
-      style={{ width: `${getWidth()}px` }}
+      style={{ width: `${width}px` }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
@@ -174,6 +187,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
   const [progressIndex, setProgressIndex] = useState(0);
   const settingsRef = useRef(null);
   const visibleTrainingsCount = 2;
+  const containerRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -194,6 +209,18 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
       }
     }
   }, [trainings, selectedSport]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
 
   const trainingOptions = useMemo(() => {
     const uniqueTitles = [...new Set(
@@ -320,10 +347,18 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
   const getColumnWidth = () => {
     // Šířka sloupce se zvětšuje s menším počtem zobrazených tréninků
     const baseWidth = 50;
-    const maxWidth = 100;
+    const maxWidth = 80;
     const minWidth = 30;
     const width = Math.min(maxWidth, Math.max(minWidth, baseWidth * (6 / displayCount)));
     return `${width}px`;
+  };
+
+  // Calculate total duration for each training
+  const getTotalDuration = (training) => {
+    return training.results.reduce((total, result) => {
+      const duration = Number(result.duration) || 0;
+      return total + duration;
+    }, 0);
   };
 
   return (
@@ -416,7 +451,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
            style={{ height: `${maxGraphHeight + 30}px` }}>
         <Scale values={powerValues} unit="W" />
         
-        <div className="relative flex-1 flex items-stretch justify-between min-w-0">
+        <div ref={containerRef} className="relative flex-1 flex items-stretch justify-between min-w-0">
           {/* Grid lines */}
           <div className="absolute inset-0">
             {powerValues.map((value, index) => (
@@ -449,7 +484,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
           {/* Bars */}
           <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4">
             {visibleTrainings.map((training, trainingIndex) => {
-              // Calculate fixed width for each training column
               const columnWidth = `${100 / visibleTrainings.length}%`;
               
               return (
@@ -459,7 +493,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
                   style={{ 
                     width: columnWidth,
                     height: `${maxGraphHeight}px`,
-                    padding: '0 4px' // Add consistent padding between columns
+                    padding: '0 4px'
                   }}
                 >
                   <div className="flex gap-1 h-full justify-center items-end">
@@ -484,6 +518,9 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
                           visibleTrainings={visibleTrainings}
                           minPower={minPower}
                           maxPower={maxPower}
+                          containerWidth={containerWidth}
+                          selectedTraining={selectedTraining}
+                          displayCount={displayCount}
                         />
                       );
                     })}

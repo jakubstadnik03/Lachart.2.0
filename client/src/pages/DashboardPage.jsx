@@ -47,7 +47,7 @@ const DashboardPage = () => {
       }
     } catch (error) {
       console.error('Error loading trainings:', error);
-      setError(error.message);
+     // setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -81,7 +81,7 @@ const DashboardPage = () => {
       }
     } catch (error) {
       console.error('Error loading athlete:', error);
-      setError(error.message);
+    //  setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -98,10 +98,14 @@ const DashboardPage = () => {
       try {
         if (!user || !user._id) return;
         
+        // Pokud je uživatel trenér a má vybraného atleta, načteme data pro atleta
+        // Jinak načteme data pro samotného uživatele
+        const athleteId = user.role === 'coach' && selectedAthleteId ? selectedAthleteId : user._id;
+        
         const [trainingsData, athleteData, testsData] = await Promise.all([
-          loadTrainings(user._id),
-          loadAthlete(user._id),
-          loadTests(user._id)
+          loadTrainings(athleteId),
+          loadAthlete(athleteId),
+          loadTests(athleteId)
         ]);
 
         if (trainingsData) {
@@ -112,12 +116,12 @@ const DashboardPage = () => {
         }
       } catch (error) {
         console.error('Error loading data:', error);
-        setError(error.message);
+       // setError(error.message);
       }
     };
 
     loadData();
-  }, [user?._id]);
+  }, [user?._id, selectedAthleteId]);
 
   useEffect(() => {
     if (trainings.length > 0) {
