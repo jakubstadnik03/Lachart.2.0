@@ -7,6 +7,7 @@ import {
   RadialLinearScale,
   PointElement,
   LineElement,
+  Filler,
   Tooltip,
   Legend,
 } from "chart.js";
@@ -14,7 +15,7 @@ import { Menu, Transition } from "@headlessui/react";
 import { Fragment } from "react";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
 // Registrace modulů pro Chart.js
-ChartJS.register(RadialLinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
 export default function SpiderChart({ trainings = [], userTrainings = [] }) {
   const [selectedSport, setSelectedSport] = useState('bike');
@@ -147,7 +148,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
       borderWidth: 2,
       pointBackgroundColor: monthColors[index % monthColors.length],
       fill: true,
-      tension: 0.4,
+      tension: 0,
       spanGaps: true,
       showLine: true,
       pointRadius: 4,
@@ -155,7 +156,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
       pointHitRadius: 8,
       pointBorderWidth: 2,
       pointStyle: 'circle',
-      borderJoinStyle: 'round',
+      borderJoinStyle: 'miter',
       borderDash: [],
     })),
   };
@@ -168,7 +169,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     elements: {
       line: {
         borderWidth: 2,
-        tension: 0.4,
+        tension: 0,
+        borderJoinStyle: 'miter',
       }
     },
     scales: {

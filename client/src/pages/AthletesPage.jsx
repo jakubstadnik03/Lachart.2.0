@@ -325,7 +325,7 @@ const AthletesPage = () => {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setIsModalOpen(true)}
-                    className="w-full sm:w-auto bg-primary text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm sm:text-base"
+                    className="w-full sm:w-auto bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors text-sm sm:text-base"
                   >
                     Add New Athlete
                   </motion.button>
@@ -393,7 +393,7 @@ const AthletesPage = () => {
                       </div>
                       <div className="text-center mt-3 sm:mt-4">
                         <h3 
-                          className="text-lg sm:text-2xl font-bold text-gray-900 hover:text-purple-600 cursor-pointer"
+                          className="text-lg sm:text-2xl font-bold text-gray-900 hover:text-primary-dark cursor-pointer"
                           onClick={() => handleViewProfile(athlete._id)}
                         >
                           {athlete.name} {athlete.surname}
@@ -402,17 +402,17 @@ const AthletesPage = () => {
                       </div>
                       <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4">
                         <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-                          <div className="text-base sm:text-xl font-semibold text-purple-900">{athlete.sport}</div>
+                          <div className="text-base sm:text-xl font-semibold text-secondary">{athlete.sport}</div>
                           <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.specialization}</div>
                         </div>
                         <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-                          <div className="text-base sm:text-xl font-semibold text-purple-900">{formatDate(athlete.dateOfBirth)}</div>
+                          <div className="text-base sm:text-xl font-semibold text-primary ">{formatDate(athlete.dateOfBirth)}</div>
                           <div className="text-xs sm:text-sm text-gray-500 mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
                         </div>
                       </div>
                       <button 
                         onClick={() => handleViewProfile(athlete._id)}
-                        className="w-full mt-4 sm:mt-6 bg-primary text-white py-2 sm:py-3 rounded-xl hover:bg-purple-700 transition-colors text-sm sm:text-lg font-semibold flex items-center justify-center gap-2"
+                        className="w-full mt-4 sm:mt-6 bg-primary text-white py-2 sm:py-3 rounded-xl hover:bg-primary-dark transition-colors text-sm sm:text-lg font-semibold flex items-center justify-center gap-2"
                       >
                         View Profile
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -430,7 +430,7 @@ const AthletesPage = () => {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl  overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">
                 {selectedAthlete ? 'Edit Athlete' : 'Add New Athlete'}
@@ -657,7 +657,7 @@ const AthletesPage = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                  className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
                 >
                   {selectedAthlete ? 'Save Changes' : 'Add Athlete'}
                 </button>
@@ -720,7 +720,7 @@ const AthletesPage = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-white bg-purple-600 rounded-lg hover:bg-purple-700"
+                  className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
                 >
                   Odeslat pozvánku
                 </button>

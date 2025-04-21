@@ -39,11 +39,19 @@ class TrainingDao {
 
   async createTraining(trainingData) {
     try {
+      console.log('Creating training with data:', JSON.stringify(trainingData, null, 2));
+      
       // Validace dat
       this.validateTrainingData(trainingData);
       
+      console.log('After validation:', JSON.stringify(trainingData, null, 2));
+      
       const training = new this.Training(trainingData);
-      return await training.save();
+      const savedTraining = await training.save();
+      
+      console.log('Saved training:', JSON.stringify(savedTraining, null, 2));
+      
+      return savedTraining;
     } catch (error) {
       console.error('Error in createTraining:', error);
       throw error;
@@ -61,6 +69,9 @@ class TrainingDao {
 
   async update(id, updateData) {
     try {
+      // Validate the update data
+      this.validateTrainingData(updateData);
+      
       return await this.Training.findByIdAndUpdate(id, updateData, { new: true });
     } catch (error) {
       console.error('Error in update:', error);
@@ -126,11 +137,19 @@ class TrainingDao {
     // Validace výsledků
     if (trainingData.results && Array.isArray(trainingData.results)) {
       trainingData.results.forEach((result, index) => {
-        if (result.duration && !result.durationType) {
-          throw new Error(`durationType is required for interval ${index + 1}`);
+        // Ensure durationType is set
+        if (!result.durationType) {
+          result.durationType = 'time'; // Set default durationType
         }
-        if (result.durationType && !['time', 'distance'].includes(result.durationType)) {
+        
+        // Validate durationType
+        if (!['time', 'distance'].includes(result.durationType)) {
           throw new Error(`Invalid durationType for interval ${index + 1}`);
+        }
+        
+        // Ensure duration is set
+        if (!result.duration) {
+          result.duration = '0'; // Set default duration
         }
       });
     }

@@ -104,180 +104,219 @@ export default function AthleteProfile() {
   }
 
   return (
-    <div className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
-      {/* Horní část s profilem */}
-      <div className="bg-white rounded-3xl shadow-sm overflow-hidden relative">
-        <div className="h-24 md:h-32 bg-gradient-to-r from-purple-100 to-purple-50" />
-        <div className="px-4 md:px-6 pb-4 md:pb-6">
-          {/* Avatar a jméno */}
-          <div className="flex flex-col sm:flex-row sm:items-end -mt-12 mb-4 gap-4 sm:gap-0">
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white overflow-hidden bg-white mx-auto sm:mx-0">
-              <img
-                src={getAvatarBySport(athlete.sport)}
-                alt="Profile"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="text-center sm:text-left sm:ml-4 sm:mb-2">
-              <h1 className="text-xl md:text-2xl font-bold">{athlete.name} {athlete.surname}</h1>
-              <p className="text-gray-600">{athlete.specialization || 'Athlete'}</p>
-            </div>
-          </div>
-
-          {/* Osobní informace */}
-          <div className="mt-4 md:mt-6">
-            <h2 className="text-lg font-semibold mb-3 md:mb-4">Personal Info</h2>
-            <div className="grid grid-cols-1 gap-2 sm:gap-4">
-              {/* Basic Info - Full width */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
-              >
-                <p className="text-gray-600 text-sm sm:w-1/3">Full Name</p>
-                <p className="font-medium text-sm sm:w-2/3">{`${athlete.name} ${athlete.surname}`}</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
-              >
-                <p className="text-gray-600 text-sm sm:w-1/3">Email</p>
-                <p className="font-medium text-sm sm:w-2/3">{athlete.email || 'Not set'}</p>
-              </motion.div>
-
-              {/* Physical Stats - Side by side on mobile */}
-              <div className="grid grid-cols-2 gap-2">
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="min-h-screen bg-gray-100 px-2 sm:px-4 md:px-6"
+    >
+      <motion.div
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="max-w-7xl mx-auto py-4 sm:py-6"
+      >
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="px-2 sm:px-4 py-4 sm:py-6"
+        >
+          <motion.div
+            initial={{ scale: 0.95 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+            className="bg-white rounded-lg shadow"
+          >
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+              className="px-2 sm:px-4 py-4 sm:p-6"
+            >
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
+                <motion.h1
+                  initial={{ y: -10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1 }}
+                  className="text-xl sm:text-2xl font-bold text-gray-900"
                 >
-                  <p className="text-gray-600 text-xs">Weight</p>
-                  <p className="font-medium text-sm">{athlete.weight ? `${athlete.weight} kg` : 'Not set'}</p>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-xs">Height</p>
-                  <p className="font-medium text-sm">{athlete.height ? `${athlete.height} cm` : 'Not set'}</p>
-                </motion.div>
+                  Athlete Profile
+                </motion.h1>
               </div>
 
-              {/* Sport Info - Side by side on mobile */}
-              <div className="grid grid-cols-2 gap-2">
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-xs">Sport</p>
-                  <p className="font-medium text-sm">{athlete.sport || 'Not set'}</p>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.6 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-xs">Specialization</p>
-                  <p className="font-medium text-sm">{athlete.specialization || 'Not set'}</p>
-                </motion.div>
-              </div>
-
-              {/* Contact Info - Side by side on mobile */}
-              <div className="grid grid-cols-2 gap-2">
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.7 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-xs">Phone</p>
-                  <p className="font-medium text-sm">{athlete.phone || 'Not set'}</p>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.8 }}
-                  className="flex flex-col p-2 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-600 text-xs">Date of Birth</p>
-                  <p className="font-medium text-sm">{athlete.dateOfBirth ? formatDate(athlete.dateOfBirth) : 'Not set'}</p>
-                </motion.div>
-              </div>
-
-              {/* Address - Full width */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.9 }}
-                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.5, delay: 1.2 }}
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
               >
-                <p className="text-gray-600 text-sm sm:w-1/3">Address</p>
-                <p className="font-medium text-sm sm:w-2/3">{athlete.address || 'Not set'}</p>
-              </motion.div>
+                {/* Profile Card */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1.4 }}
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden"
+                >
+                  <div className="h-24 sm:h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
+                    <div className="absolute top-2 sm:top-4 right-2 sm:right-4">
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        className="text-gray-600 hover:text-gray-800"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                        </svg>
+                      </motion.button>
+                    </div>
+                  </div>
+                  <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+                    <div className="flex justify-center -mt-12 sm:-mt-16">
+                      <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
+                        <img
+                          src={getAvatarBySport(athlete.sport)}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-center mt-3 sm:mt-4">
+                      <h3 className="text-lg sm:text-2xl font-bold text-gray-900">
+                        {athlete.name} {athlete.surname}
+                      </h3>
+                      <p className="text-sm sm:text-base text-gray-500 mt-1">{athlete.specialization || 'Athlete'}</p>
+                    </div>
+                    <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4">
+                      <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                        <div className="text-base sm:text-xl font-semibold text-secondary">{athlete.sport || 'Not set'}</div>
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.specialization || 'Not set'}</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                        <div className="text-base sm:text-xl font-semibold text-primary">{formatDate(athlete.dateOfBirth)}</div>
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{`${athlete.height || '0'} cm ${athlete.weight || '0'} kg`}</div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
 
-              {/* Bio - Full width */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.0 }}
-                className="flex flex-col sm:flex-row sm:items-center p-2 bg-gray-50 rounded-lg"
-              >
-                <p className="text-gray-600 text-sm sm:w-1/3">Bio</p>
-                <p className="font-medium text-sm sm:w-2/3">{athlete.bio || 'Not set'}</p>
+                {/* Contact Information */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1.6 }}
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden"
+                >
+                  <div className="h-24 sm:h-32 bg-gradient-to-r from-blue-100 to-blue-50" />
+                  <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Contact Information</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                          <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                        </svg>
+                        <span className="text-gray-700">{athlete.email || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                        </svg>
+                        <span className="text-gray-700">{athlete.phone || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-gray-700">{athlete.address || 'Not set'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Bio Information */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.5, delay: 1.8 }}
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden"
+                >
+                  <div className="h-24 sm:h-32 bg-gradient-to-r from-green-100 to-green-50" />
+                  <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Bio</h3>
+                    <p className="text-gray-700">{athlete.bio || 'No bio available'}</p>
+                  </div>
+                </motion.div>
               </motion.div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      </motion.div>
+
+      {/* Training and Testing Section */}
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, delay: 2.0 }}
+        className="mt-6"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <SpiderChart 
+              trainings={trainings}
+              selectedSport={selectedSport}
+              className="w-[400px]"
+            />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.7 }}
+          >
+            <TrainingGraph 
+              trainingList={trainings}
+              selectedSport={selectedSport}
+              selectedTitle={selectedTitle}
+              setSelectedTitle={setSelectedTitle}
+              selectedTraining={selectedTraining}
+              setSelectedTraining={setSelectedTraining}
+            />
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+            className='lg:col-span-2'
+          >
+            <UserTrainingsTable trainings={trainings} />
+          </motion.div>
         </div>
-      </div>
 
-      {/* Grafy a tabulky */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        <div>
-          <SpiderChart 
-            trainings={trainings}
-            selectedSport={selectedSport}
-            className="w-[400px]"
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9 }}
+          className="lg:col-span-2 mt-6"
+        >
+          <div className="mb-4">
+            <SportsSelector onSportChange={setSelectedTestingSport} />
+          </div>
+          <PreviousTestingComponent 
+            selectedSport={selectedTestingSport}
+            tests={tests}
+            setTests={setTests}
+            athleteId={athlete._id}
           />
-        </div>
-        <TrainingGraph 
-          trainingList={trainings}
-          selectedSport={selectedSport}
-          selectedTitle={selectedTitle}
-          setSelectedTitle={setSelectedTitle}
-          selectedTraining={selectedTraining}
-          setSelectedTraining={setSelectedTraining}
-        />
-
-        <div className='lg:col-span-2'>
-          <UserTrainingsTable trainings={trainings} />
-        </div>
-      </div>
-
-      <div className="lg:col-span-2">
-        <div className="mb-4">
-          <SportsSelector onSportChange={setSelectedTestingSport} />
-        </div>
-        <PreviousTestingComponent 
-          selectedSport={selectedTestingSport}
-          tests={tests}
-          setTests={setTests}
-          athleteId={athlete._id}
-        />
-      </div>
-    </div>
+        </motion.div>
+      </motion.div>
+    </motion.div>
   );
 }

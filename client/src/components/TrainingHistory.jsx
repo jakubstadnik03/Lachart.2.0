@@ -33,6 +33,45 @@ const TrainingHistory = () => {
   const [tooltip, setTooltip] = useState(null);
   const [allTrainingTitles, setAllTrainingTitles] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedSport, setSelectedSport] = useState(null);
+
+  // Format pace from seconds to MM:SS
+  const formatPace = (seconds) => {
+    if (!seconds) return '00:00';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  // Format duration based on durationType
+  const formatDuration = (duration, durationType) => {
+    if (!duration) return '00:00';
+    
+    // If duration is already a string (like "1 km"), return it as is
+    if (typeof duration === 'string') {
+      return duration;
+    }
+    
+    // If duration is a number, format it as time
+    const minutes = Math.floor(duration / 60);
+    const remainingSeconds = Math.floor(duration % 60);
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  // Convert pace to seconds for calculations
+  const paceToSeconds = (pace) => {
+    if (!pace) return 0;
+    const [minutes, seconds] = pace.split(':').map(Number);
+    return minutes * 60 + seconds;
+  };
+
+  // Convert seconds to pace for display
+  const secondsToPace = (seconds) => {
+    if (!seconds) return '00:00';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     const fetchTrainings = async () => {
@@ -47,10 +86,12 @@ const TrainingHistory = () => {
         const data = await getTrainingsByTitle(decodedTitle);
         console.log('API response:', data);
         
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           setTrainings(data);
+          // Set the sport from the first training
+          setSelectedSport(data[0].sport);
         } else {
-          console.error('API returned non-array data:', data);
+          console.error('API returned non-array data or empty array:', data);
           setError('Invalid data format received from server');
         }
       } catch (error) {
@@ -103,12 +144,22 @@ const TrainingHistory = () => {
       new Date(a.date) - new Date(b.date)
     );
     
-    // Calculate average power for each training
+    // Calculate values based on sport type
+    const isPaceSport = selectedSport === 'run' || selectedSport === 'swim';
+    
+    // Calculate average power/pace for each training
     const powerData = sortedTrainings.map(t => {
       const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
-      return validPowers.length > 0 
-        ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
-        : null;
+      if (validPowers.length === 0) return null;
+      
+      const avgPower = validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length;
+      
+      // For pace sports, convert to pace format for display
+      if (isPaceSport) {
+        return avgPower; // Keep as seconds for calculations
+      }
+      
+      return Math.round(avgPower);
     });
     
     // Calculate average heart rate for each training
@@ -147,7 +198,8 @@ const TrainingHistory = () => {
       powerData,
       hrData,
       lactateData,
-      dates: sortedTrainings.map(t => formatDate(t.date))
+      dates: sortedTrainings.map(t => formatDate(t.date)),
+      isPaceSport
     };
   };
 
@@ -158,12 +210,19 @@ const TrainingHistory = () => {
     labels: progress ? progress.dates : trainings.map(t => formatDate(t.date)),
     datasets: [
       {
-        label: 'Power (W)',
+        label: progress?.isPaceSport ? 'Pace (min/km)' : 'Power (W)',
         data: progress ? progress.powerData : trainings.map(t => {
           const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
-          return validPowers.length > 0 
-            ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
-            : null;
+          if (validPowers.length === 0) return null;
+          
+          const avgPower = validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length;
+          
+          // For pace sports, keep as seconds for calculations
+          if (progress?.isPaceSport) {
+            return avgPower;
+          }
+          
+          return Math.round(avgPower);
         }),
         borderColor: 'rgb(63, 140, 254)',
         backgroundColor: 'rgb(63, 140, 254)',
@@ -243,15 +302,33 @@ const TrainingHistory = () => {
     },
     scales: {
       y: {
-        title: { display: true, text: 'Power (W)' },
+        title: { 
+          display: true, 
+          text: progress?.isPaceSport ? 'Pace (min/km)' : 'Power (W)' 
+        },
         min: 0,
-        max: Math.max(...(progress ? progress.powerData : trainings.map(t => {
-          const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
-          return validPowers.length > 0 
-            ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
-            : 0;
-        }))) + 60,
-        ticks: { display: true },
+        max: progress?.isPaceSport 
+          ? Math.max(...(progress ? progress.powerData : trainings.map(t => {
+              const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
+              return validPowers.length > 0 
+                ? validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length 
+                : 0;
+            }))) + 60
+          : Math.max(...(progress ? progress.powerData : trainings.map(t => {
+              const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
+              return validPowers.length > 0 
+                ? Math.round(validPowers.reduce((sum, power) => sum + power, 0) / validPowers.length) 
+                : 0;
+            }))) + 60,
+        ticks: { 
+          display: true,
+          callback: function(value) {
+            if (progress?.isPaceSport) {
+              return secondsToPace(value);
+            }
+            return value;
+          }
+        },
         border: { dash: [6, 6] },
         grid: {
           color: 'rgba(0, 0, 0, 0.15)',
@@ -303,7 +380,10 @@ const TrainingHistory = () => {
     if (index === undefined) return null;
 
     const date = tooltip.dataPoints[0]?.label || "N/A";
-    const power = datasets[0]?.data?.[index] ?? "N/A";
+    const powerValue = datasets[0]?.data?.[index];
+    const power = progress?.isPaceSport 
+      ? (powerValue ? secondsToPace(powerValue) : "N/A") 
+      : (powerValue ?? "N/A");
     const hr = datasets[1]?.data?.[index] ?? "N/A";
     const lactate = datasets[2]?.data?.[index] ?? "N/A";
 
@@ -323,7 +403,7 @@ const TrainingHistory = () => {
         <div className="font-bold text-gray-900 mb-1">{date}</div>
         <div className="flex items-center gap-2 text-blue-600">
           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          Power: {power} W
+          {progress?.isPaceSport ? 'Pace' : 'Power'}: {power} {progress?.isPaceSport ? 'min/km' : 'W'}
         </div>
         <div className="flex items-center gap-2 text-red-600">
           <span className="w-2 h-2 rounded-full bg-red-500"></span>
@@ -343,14 +423,6 @@ const TrainingHistory = () => {
         ></div>
       </div>
     );
-  };
-
-  // Format duration from seconds to MM:SS
-  const formatDuration = (seconds) => {
-    if (!seconds) return '00:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -451,10 +523,12 @@ const TrainingHistory = () => {
           <h2 className="text-xl font-semibold mb-4">Progress Summary</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-blue-700 font-medium">Power</h3>
+              <h3 className="text-blue-700 font-medium">{progress.isPaceSport ? 'Pace' : 'Power'}</h3>
               <div className="flex items-center justify-between mt-2">
                 <span className="text-2xl font-bold text-blue-600">
-                  {progress.powerData[progress.powerData.length - 1] || '-'} W
+                  {progress.isPaceSport 
+                    ? secondsToPace(progress.powerData[progress.powerData.length - 1] || 0) 
+                    : (progress.powerData[progress.powerData.length - 1] || '-')} {progress.isPaceSport ? 'min/km' : 'W'}
                 </span>
                 {progress.powerProgress && (
                   <span className={`text-sm font-medium ${progress.powerProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -462,7 +536,7 @@ const TrainingHistory = () => {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">Latest average power</p>
+              <p className="text-sm text-gray-500 mt-1">Latest average {progress.isPaceSport ? 'pace' : 'power'}</p>
             </div>
             <div className="bg-red-50 p-4 rounded-lg">
               <h3 className="text-red-700 font-medium">Heart Rate</h3>
@@ -546,7 +620,9 @@ const TrainingHistory = () => {
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Power</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {training.sport === 'run' || training.sport === 'swim' ? 'Pace' : 'Power'}
+                      </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HR</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">La</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RPE</th>
@@ -556,8 +632,14 @@ const TrainingHistory = () => {
                     {training.results.map((result) => (
                       <tr key={result._id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.interval}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{formatDuration(result.duration)}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.power || '-'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                          {formatDuration(result.duration, result.durationType)}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                          {training.sport === 'run' || training.sport === 'swim' 
+                            ? secondsToPace(result.power) 
+                            : result.power || '-'}
+                        </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.heartRate || '-'}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.lactate || '-'}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">{result.RPE || '-'}</td>

@@ -167,6 +167,12 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       
       // Zpracování duration pro všechny intervaly
       if (dataToSubmit.results) {
+        console.log('Processing durations before conversion:', dataToSubmit.results.map(r => ({ 
+          interval: r.interval, 
+          duration: r.duration, 
+          durationType: r.durationType 
+        })));
+        
         dataToSubmit.results = dataToSubmit.results.map(interval => {
           const updatedInterval = { ...interval };
           
@@ -191,9 +197,31 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
               }
             }
           }
+          // Pro distance typ, zajistíme, že máme hodnotu
+          else if (interval.durationType === "distance") {
+            if (!interval.duration) {
+              updatedInterval.duration = "0";
+            }
+          }
+          
+          // Zajistíme, že duration není undefined nebo null
+          if (updatedInterval.duration === undefined || updatedInterval.duration === null) {
+            updatedInterval.duration = "0";
+          }
+          
+          // Zajistíme, že durationType je vždy nastaven
+          if (!updatedInterval.durationType) {
+            updatedInterval.durationType = "time";
+          }
           
           return updatedInterval;
         });
+        
+        console.log('Processed durations after conversion:', dataToSubmit.results.map(r => ({ 
+          interval: r.interval, 
+          duration: r.duration, 
+          durationType: r.durationType 
+        })));
       }
       
       if (isCustomTitle && formData.customTitle) {
@@ -212,6 +240,21 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       if (isEditing && initialData?._id) {
         dataToSubmit._id = initialData._id;
       }
+      
+      // Zajistíme, že každý interval má duration
+      if (dataToSubmit.results) {
+        dataToSubmit.results = dataToSubmit.results.map(interval => {
+          if (!interval.duration) {
+            return {
+              ...interval,
+              duration: "0"
+            };
+          }
+          return interval;
+        });
+      }
+      
+      console.log('Submitting training data:', dataToSubmit);
       
       await onSubmit(dataToSubmit);
       
@@ -239,9 +282,9 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           heartRate: "",
           lactate: "",
           RPE: "",
-          duration: "",
+          duration: "00:00",
           durationType: "time",
-          repeatCount: 1 // Přidáme výchozí hodnotu pro počet opakování
+          repeatCount: 1
         }
       ]
     }));
@@ -701,7 +744,9 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                             newResults[index].durationType = interval.durationType === "time" ? "distance" : "time";
                             // Při přepnutí na time vymažeme hodnotu
                             if (newResults[index].durationType === "time") {
-                              newResults[index].duration = "";
+                              newResults[index].duration = "00:00"; // Set default value instead of empty string
+                            } else {
+                              newResults[index].duration = "0"; // Set default value for distance
                             }
                             setFormData(prev => ({ ...prev, results: newResults }));
                           }}

@@ -435,11 +435,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
           {/* Average lines */}
           <svg className="absolute inset-0 z-30 pointer-events-none">
             <path
-              d={`M ${averagePower.map((avg, i) => {
+              d={averagePower.map((avg, i) => {
                 const x = (i * (100 / (averagePower.length - 1)))+ '%';
                 const y = maxGraphHeight - ((avg - minPower) / (maxPower - minPower)) * maxGraphHeight;
                 return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-              }).join(' ')}`}
+              }).join(' ')}
               stroke="#8B5CF6"
               strokeWidth="2"
               fill="none"

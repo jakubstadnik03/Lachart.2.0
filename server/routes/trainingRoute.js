@@ -37,14 +37,23 @@ router.post("/", verifyToken, async (req, res) => {
 
     // Validace formátu results
     if (req.body.results) {
-      req.body.results = req.body.results.map(result => ({
-        interval: Number(result.interval),
-        power: Number(result.power),
-        heartRate: Number(result.heartRate),
-        lactate: Number(result.lactate),
-        glucose: Number(result.glucose),
-        RPE: Number(result.RPE)
-      }));
+      console.log('Original results:', JSON.stringify(req.body.results, null, 2));
+      req.body.results = req.body.results.map(result => {
+        // Ensure duration is included and properly formatted
+        const processedResult = {
+          interval: Number(result.interval),
+          power: Number(result.power),
+          heartRate: Number(result.heartRate),
+          lactate: Number(result.lactate),
+          glucose: Number(result.glucose),
+          RPE: Number(result.RPE),
+          duration: result.duration || "0", // Ensure duration is never undefined
+          durationType: result.durationType || "time" // Ensure durationType is never undefined
+        };
+        console.log('Processed result duration:', processedResult.duration);
+        return processedResult;
+      });
+      console.log('Processed results:', JSON.stringify(req.body.results, null, 2));
     }
 
     console.log('Processed training data:', JSON.stringify(req.body, null, 2));

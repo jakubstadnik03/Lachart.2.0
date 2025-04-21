@@ -15,7 +15,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen }) => {
   };
 
   return (
-    <div className="flex flex-col w-full sticky top-0 z-[100] bg-zinc-50">
+    <div className="flex flex-col w-full sticky top-0 z-[2] bg-zinc-50">
       <div className="flex relative justify-between items-center px-6 w-full border-b border-solid border-b-stone-300 custom-padding">
         {/* Menu Toggle Button */}
         <button

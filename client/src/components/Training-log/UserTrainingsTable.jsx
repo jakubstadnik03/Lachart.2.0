@@ -3,6 +3,7 @@ import TrainingItem from "./TrainingItem";
 import TrainingForm from "../TrainingForm";
 import { deleteTraining, updateTraining } from "../../services/api";
 import { useTrainings } from "../../context/TrainingContext"; // Předpokládám, že máte kontext pro správu tréninků
+import { useNotification } from "../../context/NotificationContext"; // Přidáme import pro notifikace
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
   const pageNumbers = [];
@@ -93,6 +94,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [error, setError] = useState(null);
   
   const { deleteTraining: removeTrainingFromContext } = useTrainings();
+  const { addNotification } = useNotification(); // Přidáme hook pro notifikace
 
   // Přidáme nový state pro sledování rozbalených položek
   const [expandedItems, setExpandedItems] = useState({});
@@ -197,16 +199,22 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       // Aktualizace kontextu
       removeTrainingFromContext(trainingToDelete._id);
       
-      // Aktualizace lokálního stavu
-      const updatedTrainings = trainings.filter(training => training._id !== trainingToDelete._id);
-      
       // Zavřít modální okno
       setShowDeleteModal(false);
       setTrainingToDelete(null);
       
+      // Zobrazit notifikaci
+      addNotification(`Trénink "${trainingToDelete.title}" byl úspěšně smazán`, 'success');
+      
+      // Obnovit stránku po krátké prodlevě
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+      
     } catch (error) {
       console.error("Error deleting training:", error);
       setError("Nepodařilo se smazat trénink. " + (error.response?.data?.message || error.message));
+      addNotification("Nepodařilo se smazat trénink", 'error');
     } finally {
       setIsLoading(false);
     }
@@ -292,7 +300,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     };
   
     return (
-      <div key={workout.interval} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
+      <div key={`workout-${workout.interval}-${index}`} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
         <div className="text-center w-8">{workout.interval}</div>
         <div className="text-center w-12 sm:w-16">{workout.power}</div>
         <div className="flex gap-0.5 items-center w-16">
@@ -347,18 +355,18 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 bg-gray-100 border-b border-gray-300 text-sm font-medium rounded-t-2xl">
-        <div className="cursor-pointer" onClick={() => handleSort("date")}>
+        <div key="date-header" className="cursor-pointer" onClick={() => handleSort("date")}>
           Date {sortConfig.key === "date" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
-        <div className="flex justify-center cursor-pointer" onClick={() => handleSort("sport")}>
+        <div key="sport-header" className="flex justify-center cursor-pointer" onClick={() => handleSort("sport")}>
           Sport {sortConfig.key === "sport" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
-        <div className="cursor-pointer" onClick={() => handleSort("title")}>
+        <div key="title-header" className="cursor-pointer" onClick={() => handleSort("title")}>
           Title {sortConfig.key === "title" && (sortConfig.direction === "asc" ? "↑" : "↓")}
         </div>
-        <div className="hidden sm:block col-span-3 text-center">Intervals</div>
-        <div className="hidden sm:block">Terrain</div>
-        <div className="hidden sm:block">Weather</div>
+        <div key="intervals-header" className="hidden sm:block col-span-3 text-center">Intervals</div>
+        <div key="terrain-header" className="hidden sm:block">Terrain</div>
+        <div key="weather-header" className="hidden sm:block">Weather</div>
       </div>
 
       <div className="space-y-2 mt-2">

@@ -19,7 +19,7 @@ module.exports = {
         white: '#F9FBFD',
         'text': '#1D2C4C',
         'lighterText': '#4A5E82',
-        'green': '#4BA87D',
+        'greenos': '#4BA87D',
         red: {
           DEFAULT: '#E05347',
           dark: '#B84238', // Darker version of the red color

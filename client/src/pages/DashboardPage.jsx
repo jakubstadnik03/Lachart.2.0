@@ -202,6 +202,7 @@ const DashboardPage = () => {
           <TrainingTable 
             trainings={trainings}
             selectedSport={selectedSport}
+            onSportChange={setSelectedSport}
           />
         </motion.div>
 
