@@ -144,6 +144,16 @@ class UserDao {
       throw new Error("Error finding user by invitation token: " + error.message);
     }
   }
+
+  async findByGoogleId(googleId) {
+    try {
+      const user = await UserModel.findOne({ googleId });
+      return user;
+    } catch (error) {
+      console.error('Error finding user by Google ID:', error);
+      throw error;
+    }
+  }
 }
 
 // Exportujeme třídu, ne instanci

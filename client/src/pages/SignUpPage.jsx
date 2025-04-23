@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register } from '../services/api';
+import { GoogleLogin } from '@react-oauth/google';
+import FacebookLogin from 'react-facebook-login';
+import { useNotification } from '../context/NotificationContext';
+import { API_ENDPOINTS } from '../config/api.config';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -14,6 +18,7 @@ const SignUpPage = () => {
     role: 'athlete'
   });
   const [error, setError] = useState(null);
+  const { addNotification } = useNotification();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -30,14 +35,60 @@ const SignUpPage = () => {
     }
   };
 
-  const handleGoogleSignUp = () => {
-    // TODO: Implementace Google registrace
-    console.log('Google sign up clicked');
+  const handleGoogleSuccess = async (response) => {
+    try {
+      const res = await fetch(`${API_ENDPOINTS.API_URL}/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          googleId: response.credential,
+          email: response.email,
+          name: response.given_name,
+          surname: response.family_name,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        navigate('/dashboard');
+      } else {
+        addNotification('Google authentication failed', 'error');
+      }
+    } catch (error) {
+      console.error('Google auth error:', error);
+      addNotification('Google authentication failed', 'error');
+    }
   };
 
-  const handleFacebookSignUp = () => {
-    // TODO: Implementace Facebook registrace
-    console.log('Facebook sign up clicked');
+  const handleFacebookSuccess = async (response) => {
+    try {
+      const res = await fetch(`${API_ENDPOINTS.API_URL}/auth/facebook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          facebookId: response.id,
+          email: response.email,
+          name: response.first_name,
+          surname: response.last_name,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        navigate('/dashboard');
+      } else {
+        addNotification('Facebook authentication failed', 'error');
+      }
+    } catch (error) {
+      console.error('Facebook auth error:', error);
+      addNotification('Facebook authentication failed', 'error');
+    }
   };
 
   return (
@@ -262,22 +313,20 @@ const SignUpPage = () => {
               </div>
 
               <div className="mt-6 flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:items-center sm:space-x-2">
-                <button
-                  type="button"
-                  onClick={handleGoogleSignUp}
-                  className="w-full sm:w-1/2 inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                  <img src="/icon/google.svg" alt="Google" className="h-5 w-5 mr-2" />
-                  Google
-                </button>
-                <button
-                  type="button"
-                  onClick={handleFacebookSignUp}
-                  className="w-full sm:w-1/2 inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                  <img src="/icon/facebook.svg" alt="Facebook" className="h-5 w-5 mr-2" />
-                  Facebook
-                </button>
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => addNotification('Google authentication failed', 'error')}
+                  useOneTap
+                />
+                <FacebookLogin
+                  appId={process.env.REACT_APP_FACEBOOK_APP_ID}
+                  autoLoad={false}
+                  fields="name,email,picture"
+                  callback={handleFacebookSuccess}
+                  cssClass="w-full sm:w-1/2 inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                  icon="fa-facebook"
+                  textButton="Facebook"
+                />
               </div>
             </div>
           </form>

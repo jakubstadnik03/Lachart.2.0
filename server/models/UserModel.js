@@ -17,12 +17,24 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: function() {
+      return !this.googleId && !this.facebookId;
+    }
   },
   role: {
     type: String,
     enum: ['admin', 'coach', 'athlete'],
     default: 'athlete'
+  },
+  googleId: {
+    type: String,
+    sparse: true,
+    unique: true
+  },
+  facebookId: {
+    type: String,
+    sparse: true,
+    unique: true
   },
   dateOfBirth: Date,
   address: String,

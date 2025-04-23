@@ -2,9 +2,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
-import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
+import { GoogleLogin } from '@react-oauth/google';
+import FacebookLogin from 'react-facebook-login';
+import api from '../services/api';
+import { API_ENDPOINTS } from '../config/api.config';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -41,14 +44,42 @@ const LoginPage = () => {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // TODO: Implementace Google přihlášení
-    console.log('Google login clicked');
+  const handleGoogleSuccess = async (response) => {
+    try {
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/google-auth`, {
+        credential: response.credential
+      });
+
+      if (result.data && result.data.token) {
+        // Use the login function from AuthProvider
+        const loginResult = await login(null, null, result.data);
+        if (!loginResult.success) {
+          addNotification('Google login failed', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Google login failed:', error);
+      addNotification(error.response?.data?.message || 'Google login failed', 'error');
+    }
   };
 
-  const handleFacebookLogin = () => {
-    // TODO: Implementace Facebook přihlášení
-    console.log('Facebook login clicked');
+  const handleFacebookSuccess = async (response) => {
+    try {
+      const result = await api.post(`${API_ENDPOINTS.AUTH}/facebook-auth`, {
+        accessToken: response.accessToken
+      });
+
+      if (result.data && result.data.token) {
+        // Use the login function from AuthProvider
+        const loginResult = await login(null, null, result.data);
+        if (!loginResult.success) {
+          addNotification('Facebook login failed', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Facebook login failed:', error);
+      addNotification(error.response?.data?.message || 'Facebook login failed', 'error');
+    }
   };
 
   return (
@@ -219,26 +250,39 @@ const LoginPage = () => {
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                  <img src="/icon/google.svg" alt="Google" className="h-5 w-5 mr-2" />
-                  Google
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={handleFacebookLogin}
-                  className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                  <img src="/icon/facebook.svg" alt="Facebook" className="h-5 w-5 mr-2" />
-                  Facebook
-                </motion.button>
+                <div id="google-login-button">
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={() => {
+                      console.error('Google authentication failed');
+                      addNotification('Google authentication failed', 'error');
+                    }}
+                    useOneTap={false}
+                    width="200"
+                    theme="outline"
+                    size="large"
+                    text="signin_with"
+                    shape="rectangular"
+                    auto_select={false}
+                    cancel_on_tap_outside={true}
+                    prompt_parent_id="google-login-button"
+                    nonce={crypto.randomUUID()}
+                  />
+                </div>
+                <FacebookLogin
+                  appId={process.env.REACT_APP_FACEBOOK_APP_ID}
+                  autoLoad={false}
+                  fields="name,email,picture"
+                  scope="public_profile,email"
+                  callback={handleFacebookSuccess}
+                  onFailure={(error) => {
+                    console.error('Facebook login failed:', error);
+                    addNotification('Facebook login failed', 'error');
+                  }}
+                  cssClass="btn btn-primary w-full"
+                  icon="fa-facebook"
+                  textButton="Přihlásit se přes Facebook"
+                />
               </div>
             </motion.div>
           </motion.form>

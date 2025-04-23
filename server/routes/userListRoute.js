@@ -9,6 +9,7 @@ const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -853,6 +854,172 @@ router.get("/verify-invitation-token/:token", async (req, res) => {
         });
     } catch (error) {
         console.error("Error verifying invitation token:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Google authentication
+router.post("/google-auth", async (req, res) => {
+    try {
+        const { credential } = req.body;
+        
+        if (!credential) {
+            return res.status(400).json({ error: "Google credential is required" });
+        }
+
+        // Decode the JWT token to get user information
+        const decodedToken = jwt.decode(credential);
+        if (!decodedToken) {
+            return res.status(400).json({ error: "Invalid Google credential" });
+        }
+
+        const { sub: googleId, email, given_name: name, family_name: surname } = decodedToken;
+        
+        console.log('Google authentication attempt:', {
+            googleId,
+            email,
+            name,
+            surname
+        });
+        
+        if (!email) {
+            return res.status(400).json({ error: "Email is required" });
+        }
+
+        // Check if user exists with this Google ID
+        let user = await userDao.findByGoogleId(googleId);
+        console.log('Existing user with Google ID:', user);
+        
+        if (!user) {
+            // Check if user exists with this email
+            user = await userDao.findByEmail(email);
+            console.log('Existing user with email:', user);
+            
+            if (user) {
+                // Link Google account to existing user
+                user.googleId = googleId;
+                await user.save();
+                console.log('Linked Google account to existing user:', user);
+            } else {
+                // Create new user
+                user = await userDao.createUser({
+                    name,
+                    surname,
+                    email,
+                    googleId,
+                    role: 'athlete',
+                    isRegistrationComplete: true
+                });
+                console.log('Created new user with Google account:', user);
+            }
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        console.log('Successfully authenticated user:', {
+            userId: user._id,
+            email: user.email,
+            name: user.name,
+            surname: user.surname,
+            role: user.role
+        });
+
+        res.status(200).json({
+            token,
+            user: {
+                _id: user._id,
+                name: user.name,
+                surname: user.surname,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error("Google auth error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Facebook authentication
+router.post("/facebook-auth", async (req, res) => {
+    try {
+        const { facebookId, email, name, surname } = req.body;
+        
+        // Check if user exists with this Facebook ID
+        let user = await userDao.findByFacebookId(facebookId);
+        
+        if (!user) {
+            // Check if user exists with this email
+            user = await userDao.findByEmail(email);
+            
+            if (user) {
+                // Link Facebook account to existing user
+                user.facebookId = facebookId;
+                await user.save();
+            } else {
+                // Create new user
+                user = await userDao.createUser({
+                    name,
+                    surname,
+                    email,
+                    facebookId,
+                    role: 'athlete',
+                    isRegistrationComplete: true
+                });
+            }
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.status(200).json({
+            token,
+            user: {
+                _id: user._id,
+                name: user.name,
+                surname: user.surname,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error("Facebook auth error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Link social account
+router.post("/link-social", verifyToken, async (req, res) => {
+    try {
+        const { provider, providerId } = req.body;
+        const userId = req.user.userId;
+
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (provider === 'google') {
+            user.googleId = providerId;
+        } else if (provider === 'facebook') {
+            user.facebookId = providerId;
+        } else {
+            return res.status(400).json({ error: "Invalid provider" });
+        }
+
+        await user.save();
+        res.status(200).json({ message: "Social account linked successfully" });
+    } catch (error) {
+        console.error("Link social error:", error);
         res.status(500).json({ error: error.message });
     }
 });

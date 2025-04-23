@@ -6,18 +6,29 @@ import api from '../services/api';
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('userData');
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const navigate = useNavigate();
 
-  // Initialize token on mount
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // Načtení tokenu a uživatele z localStorage při startu
+    const storedToken = localStorage.getItem("token");
+    const storedUser = localStorage.getItem("user");
+    
+    if (storedToken) {
+      setToken(storedToken);
+      // Nastavení tokenu do API
+      api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
+    }
+    
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+        localStorage.removeItem("user");
+      }
     }
   }, []);
 
@@ -32,31 +43,41 @@ export const AuthProvider = ({ children }) => {
     delete api.defaults.headers.common['Authorization'];
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, userData = null) => {
     try {
-      setLoading(true);
-      const response = await api.post('/user/login', { email, password });
-
-      if (response.data && response.data.token) {
-        saveToken(response.data.token);
-        setUser(response.data.user);
-        localStorage.setItem('userData', JSON.stringify(response.data.user));
+      if (userData) {
+        // Pro sociální přihlášení
+        const { token: socialToken, user: socialUser } = userData;
+        setToken(socialToken);
+        setUser(socialUser);
+        localStorage.setItem("token", socialToken);
+        localStorage.setItem("user", JSON.stringify(socialUser));
+        api.defaults.headers.common["Authorization"] = `Bearer ${socialToken}`;
+        navigate('/dashboard', { replace: true });
+        return { success: true };
+      } else {
+        // Pro běžné přihlášení
+        const response = await api.post("/user/login", { email, password });
+        const { token: loginToken, user: loginUser } = response.data;
+        
+        setToken(loginToken);
+        setUser(loginUser);
+        localStorage.setItem("token", loginToken);
+        localStorage.setItem("user", JSON.stringify(loginUser));
+        api.defaults.headers.common["Authorization"] = `Bearer ${loginToken}`;
         navigate('/dashboard', { replace: true });
         return { success: true };
       }
-      return { success: false, error: 'Invalid response from server' };
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error("Login error:", error);
       removeToken();
       setUser(null);
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Login failed'
+      return { 
+        success: false, 
+        error: error.response?.data?.message || "Login failed" 
       };
-    } finally {
-      setLoading(false);
     }
-  }, [saveToken, removeToken, navigate]);
+  }, [navigate, removeToken]);
 
   const logout = useCallback(async () => {
     try {
@@ -72,11 +93,10 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    token,
     login,
     logout,
-    loading,
-    isAuthenticated: !!user,
-    token: localStorage.getItem('authToken')
+    isAuthenticated: !!token,
   };
 
   return (
