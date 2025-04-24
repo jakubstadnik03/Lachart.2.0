@@ -286,8 +286,8 @@ const TestComparison = ({ tests = [] }) => {
   };
 
   return (
-    <div className="w-full p-4 bg-white rounded-2xl shadow-lg">
-      <div className="relative" style={{ width: '100%', height: '400px' }}>
+    <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-x-auto">
+      <div className="relative w-full h-[350px] sm:h-[600px] md:h-[400px]">
         <Line 
           ref={chartRef}
           options={options} 
@@ -297,12 +297,12 @@ const TestComparison = ({ tests = [] }) => {
       
       {/* Tabulka s porovnáním zón a legendou */}
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full text-xs sm:text-sm">
           <thead>
             <tr className="bg-gray-50">
-              <th className="px-4 py-2 text-left">Zone</th>
+              <th className="px-2 sm:px-4 py-2 text-left">Zone</th>
               {testsWithThresholds.map((test, i) => (
-                <th key={i} className="px-4 py-2 text-left" colSpan={2}>
+                <th key={i} className="px-2 sm:px-4 py-2 text-left" colSpan={2}>
                   {new Date(test.date).toLocaleDateString('cs-CZ', {
                     day: '2-digit',
                     month: '2-digit',
@@ -310,19 +310,19 @@ const TestComparison = ({ tests = [] }) => {
                   })}
                 </th>
               ))}
-              <th className="px-4 py-2 text-left">Show/Hide</th>
+              <th className="px-2 sm:px-4 py-2 text-left">Show/Hide</th>
             </tr>
             <tr className="bg-gray-50 border-t">
-              <th className="px-4 py-2 text-left"></th>
+              <th className="px-2 sm:px-4 py-2 text-left"></th>
               {testsWithThresholds.map((_, i) => (
                 <React.Fragment key={i}>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">
+                  <th className="px-2 sm:px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-600">
                     {sport === 'bike' ? 'Power' : 'Pace'}
                   </th>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-600">HR</th>
+                  <th className="px-2 sm:px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-600">HR</th>
                 </React.Fragment>
               ))}
-              <th className="px-4 py-2 text-left"></th>
+              <th className="px-2 sm:px-4 py-2 text-left"></th>
             </tr>
           </thead>
           <tbody>
@@ -341,10 +341,10 @@ const TestComparison = ({ tests = [] }) => {
               'LTRatio'
             ].map(zone => (
               <tr key={zone} className="border-t">
-                <td className="px-4 py-2 font-medium">{zone}</td>
+                <td className="px-2 sm:px-4 py-2 font-medium text-xs sm:text-sm">{zone}</td>
                 {testsWithThresholds.map((test, i) => (
                   <React.Fragment key={i}>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2 text-xs sm:text-sm">
                       {zone === 'LTRatio' 
                         ? test.thresholds[zone] || 'N/A'
                         : test.thresholds[zone] 
@@ -354,7 +354,7 @@ const TestComparison = ({ tests = [] }) => {
                           : 'N/A'
                       }
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2 text-xs sm:text-sm">
                       {zone !== 'LTRatio' && test.thresholds.heartRates && test.thresholds.heartRates[zone]
                         ? `${Math.round(test.thresholds.heartRates[zone])}bpm`
                         : 'N/A'
@@ -362,9 +362,9 @@ const TestComparison = ({ tests = [] }) => {
                     </td>
                   </React.Fragment>
                 ))}
-                <td className="px-4 py-2">
+                <td className="px-2 sm:px-4 py-2">
                   <button
-                    className="w-6 h-6 rounded-full relative"
+                    className="w-5 h-5 sm:w-6 sm:h-6 rounded-full relative"
                     style={{
                       backgroundColor: zone === 'Data points' ? 'transparent' : zoneColors[zone],
                       border: '2px solid',
@@ -401,7 +401,7 @@ const TestComparison = ({ tests = [] }) => {
                       <div 
                         className="absolute inset-0 flex items-center justify-center"
                         style={{
-                          fontSize: '1.2em',
+                          fontSize: '1em',
                           color: zone === 'Data points' ? '#000' : '#fff'
                         }}
                       >

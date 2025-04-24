@@ -25,9 +25,9 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate(from, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, from]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,6 +40,13 @@ const LoginPage = () => {
       if (result.data.token) {
         console.log("Login successful, token received:", result.data.token);
         console.log("User data:", result.data.user);
+        
+        // Uložení tokenu a uživatelských dat do localStorage
+        localStorage.setItem("token", result.data.token);
+        localStorage.setItem("user", JSON.stringify(result.data.user));
+        
+        // Nastavení autorizační hlavičky pro API
+        api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;
         
         login(formData.email, formData.password, result.data.token, result.data.user);
         addNotification("Successfully logged in", "success");
@@ -257,7 +264,7 @@ const LoginPage = () => {
                   onError={handleGoogleError}
                   useOneTap={false}
                   auto_select={false}
-                  theme="filled_black"
+                  theme="filled_white"
                   size="large"
                   text="signin_with"
                   shape="rectangular"

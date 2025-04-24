@@ -6,7 +6,7 @@ import PreviousTestingComponent from "../components/Testing-page/PreviousTesting
 import SportsSelector from "../components/Header/SportsSelector";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
-import { getTrainingsByAthleteId, getTestingsByAthleteId, updateUserProfile, loadUserProfile } from '../services/api';
+import { updateUserProfile } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { 
   PencilIcon, 
@@ -16,7 +16,6 @@ import {
   PhoneIcon,
   CalendarIcon,
   MapPinIcon,
-  UserCircleIcon,
   ScaleIcon,
   ArrowTrendingUpIcon,
   TrophyIcon,
@@ -25,13 +24,11 @@ import {
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../config/api.config';
-import { useParams } from 'react-router-dom';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ProfilePage = () => {
-  const { user, updateUser, token } = useAuth();
-  const { athleteId } = useParams();
+  const { user, token } = useAuth();
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
@@ -44,47 +41,47 @@ const ProfilePage = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
-  const getUserProfile = async () => {
-    try {
-      const response = await axios.get(API_ENDPOINTS.PROFILE, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
-      throw error;
-    }
-  };
+  // const getUserProfile = async () => {
+  //   try {
+  //     const response = await axios.get(API_ENDPOINTS.PROFILE, {
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`
+  //       }
+  //     });
+  //     return response.data;
+  //   } catch (error) {
+  //     console.error('Error fetching user profile:', error);
+  //     throw error;
+  //   }
+  // };
 
-  const getTrainingsByAthleteId = async (athleteId) => {
-    try {
-      const response = await axios.get(API_ENDPOINTS.TRAININGS(athleteId), {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching trainings:', error);
-      throw error;
-    }
-  };
+  // const getTrainingsByAthleteId = async (athleteId) => {
+  //   try {
+  //     const response = await axios.get(API_ENDPOINTS.TRAININGS(athleteId), {
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`
+  //       }
+  //     });
+  //     return response.data;
+  //   } catch (error) {
+  //     console.error('Error fetching trainings:', error);
+  //     throw error;
+  //   }
+  // };
 
-  const getAthleteTests = async (athleteId) => {
-    try {
-      const response = await axios.get(API_ENDPOINTS.ATHLETE_TESTS(athleteId), {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching tests:', error);
-      throw error;
-    }
-  };
+  // const getAthleteTests = async (athleteId) => {
+  //   try {
+  //     const response = await axios.get(API_ENDPOINTS.ATHLETE_TESTS(athleteId), {
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`
+  //       }
+  //     });
+  //     return response.data;
+  //   } catch (error) {
+  //     console.error('Error fetching tests:', error);
+  //     throw error;
+  //   }
+  // };
 
   // Formátování data
   const formatDate = (dateString) => {

@@ -6,7 +6,7 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { getTrainingsByAthleteId, addTraining } from '../services/api';
+import { addTraining } from '../services/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import AthleteSelector from '../components/AthleteSelector';
 import { motion, AnimatePresence } from 'framer-motion';

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from 'react-router-dom';
-import SportsSelector from "../components/Header/SportsSelector";
+// import SportsSelector from "../components/Header/SportsSelector";
 import TrainingTable from "../components/DashboardPage/TrainingTable";
 import { TrainingStats } from "../components/DashboardPage/TrainingStats";
 import TrainingGraph from "../components/DashboardPage/TrainingGraph";
@@ -10,17 +10,17 @@ import api from '../services/api';
 import AthleteSelector from "../components/AthleteSelector";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import DateSelector from "../components/DateSelector";
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
-import { 
-  CalendarIcon, 
-  ClockIcon, 
-  FireIcon, 
-  HeartIcon, 
-  ChartBarIcon,
-  ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon
-} from '@heroicons/react/24/outline';
+// import { 
+//   CalendarIcon, 
+//   ClockIcon, 
+//   FireIcon, 
+//   HeartIcon, 
+//   ChartBarIcon,
+//   ArrowTrendingUpIcon,
+//   ArrowTrendingDownIcon
+// } from '@heroicons/react/24/outline';
 
 const DashboardPage = () => {
   const { athleteId } = useParams();

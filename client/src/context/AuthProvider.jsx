@@ -1,6 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
@@ -11,44 +11,44 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      setToken(token);
-      setIsAuthenticated(true);
-      setLoading(false);
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Načtení tokenu a uživatele z localStorage při startu
-    const storedToken = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
-    
-    if (storedToken) {
-      setToken(storedToken);
-      setIsAuthenticated(true);
-      // Nastavení tokenu do API
-      api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
-    }
-    
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-      } catch (error) {
-        console.error("Error parsing user data:", error);
+    const checkAuth = async () => {
+      const storedToken = localStorage.getItem("token");
+      const storedUser = localStorage.getItem("user");
+      
+      if (storedToken) {
+        try {
+          // Nastavení autorizační hlavičky pro API
+          api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
+          
+          // Ověření tokenu pomocí profilového endpointu
+          const response = await api.get('/user/profile');
+          
+          // Aktualizace stavu
+          setToken(storedToken);
+          setUser(response.data);
+          setIsAuthenticated(true);
+        } catch (error) {
+          console.error("Token verification failed:", error);
+          removeToken();
+        }
+      } else if (storedUser) {
+        // Pokud máme uloženého uživatele, ale ne token, odstraníme uživatele
         localStorage.removeItem("user");
       }
-    }
+      
+      setLoading(false);
+    };
+
+    checkAuth();
   }, []);
 
   const saveToken = useCallback((token) => {
     localStorage.setItem("token", token);
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    setToken(token);
     setIsAuthenticated(true);
   }, []);
 
@@ -64,14 +64,12 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (email, password, token, user) => {
     try {
       if (token && user) {
-        // Pro sociální přihlášení nebo přímé přihlášení s tokenem
         setToken(token);
         setUser(user);
         saveToken(token);
         localStorage.setItem("user", JSON.stringify(user));
         return { success: true };
       } else {
-        // Pro běžné přihlášení
         const response = await api.post("/user/login", { email, password });
         const { token: loginToken, user: loginUser } = response.data;
         
@@ -98,14 +96,19 @@ export const AuthProvider = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       removeToken();
-      navigate('/login', { replace: true });
+      // Při odhlášení přesměrujeme na login stránku s informací o původní URL
+      navigate('/login', { 
+        replace: true,
+        state: { from: location.pathname }
+      });
     }
-  }, [navigate, removeToken]);
+  }, [navigate, removeToken, location]);
 
   const value = {
     user,
     token,
     isAuthenticated,
+    loading,
     login,
     logout,
   };
