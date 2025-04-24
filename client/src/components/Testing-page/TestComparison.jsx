@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import { calculateThresholds } from './DataTable';
 import { convertPowerToPace, getPaceAxisLimits } from '../../utils/paceConverter';
+import * as math from 'mathjs';
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
@@ -12,7 +13,7 @@ const TestComparison = ({ tests = [] }) => {
   const sport = tests[0]?.sport;
   const colorPalette = ['#2196F3', '#dc2626', '#16a34a', '#9333ea', '#ea580c'];
 
-  // Pomocná funkce pro převod hex na rgb - přesunuta nahoru
+  // Pomocná funkce pro převod hex na rgb
   const hexToRgb = (hex) => {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? 
@@ -20,7 +21,7 @@ const TestComparison = ({ tests = [] }) => {
       : '0, 0, 0';
   };
 
-  // Definice barev pro zóny (stejné jako v LactateCurveCalculator)
+  // Definice barev pro zóny
   const zoneColors = {
     'Measured data': '#000000',
     'Log-log': '#52525b',
@@ -37,23 +38,76 @@ const TestComparison = ({ tests = [] }) => {
   };
 
   // Vypočítáme thresholds pro každý test
-  const testsWithThresholds = tests.map(test => ({
-    ...test,
-    thresholds: calculateThresholds(test)
-  }));
+  const testsWithThresholds = tests.map(test => {
+    const thresholds = calculateThresholds(test);
+    
+    // Polynomial Regression (degree 3)
+    const xVals = test.results.map(r => r.power);
+    const yVals = test.results.map(r => r.lactate);
+    
+    const polyRegression = (() => {
+      const n = xVals.length;
+      const X = [];
+      const Y = [];
+
+      for (let i = 0; i < n; i++) {
+        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        Y.push(yVals[i]);
+      }
+
+      const XT = math.transpose(X);
+      const XTX = math.multiply(XT, X);
+      const XTY = math.multiply(XT, Y);
+      const coefficients = math.lusolve(XTX, XTY).flat();
+
+      return (x) =>
+        coefficients[0] +
+        coefficients[1] * x +
+        coefficients[2] * Math.pow(x, 2) +
+        coefficients[3] * Math.pow(x, 3);
+    })();
+
+    // Generate points for polynomial curve
+    const minPower = Math.min(...xVals);
+    const maxPower = Math.max(...xVals);
+    const step = (maxPower - minPower) / 100;
+
+    const polyPoints = [];
+    for (let x = minPower; x <= maxPower; x += step) {
+      polyPoints.push({ x, y: polyRegression(x) });
+    }
+
+    // Calculate LTRatio if both LTP1 and LTP2 exist
+    if (thresholds.LTP1 && thresholds.LTP2) {
+      const ratio = thresholds.LTP2 / thresholds.LTP1;
+      if (ratio >= 1.1 && ratio <= 1.3) {
+        thresholds.LTRatio = ratio.toFixed(2);
+      }
+    }
+
+    return {
+      ...test,
+      thresholds,
+      polyPoints
+    };
+  });
 
   // Vytvoříme datasety pro křivky
   const datasets = testsWithThresholds.map((test, testIndex) => {
-    // Opravený výpočet opacity - pokud je jen jeden test, bude mít opacity 1
     const opacity = tests.length === 1 ? 1 : 0.3 + ((0.7 * testIndex) / (tests.length - 1));
 
-    // Dataset pro křivku
-    const curveDataset = {
-      label: `${new Date(test.date).toLocaleDateString()} - Data points`,
+    // Dataset pro měřené body
+    const measuredDataset = {
+      label: `${new Date(test.date).toLocaleDateString('cs-CZ', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      })} - Data points`,
       data: test.results.map((result, pointIndex) => ({
         x: result.power,
         y: result.lactate,
-        pointIndex: pointIndex + 1
+        pointIndex: pointIndex + 1,
+        testIndex: testIndex
       })),
       borderColor: `rgba(33, 150, 243, ${opacity})`,
       backgroundColor: 'transparent',
@@ -63,7 +117,29 @@ const TestComparison = ({ tests = [] }) => {
       pointBorderWidth: 2,
       borderWidth: 2,
       tension: 0.4,
-      order: testIndex * 2
+      showLine: false,
+      order: testIndex * 3
+    };
+
+    // Dataset pro polynomickou křivku
+    const polyDataset = {
+      label: `${new Date(test.date).toLocaleDateString('cs-CZ', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      })} - Polynomial Fit`,
+      data: test.polyPoints.map(point => ({
+        ...point,
+        testIndex: testIndex
+      })),
+      borderColor: `rgba(33, 150, 243, ${opacity})`,
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      pointBorderWidth: 0,
+      borderWidth: 2,
+      tension: 0.4,
+      showLine: true,
+      order: testIndex * 3 + 1
     };
 
     // Dataset pro thresholds
@@ -73,22 +149,27 @@ const TestComparison = ({ tests = [] }) => {
         const color = zoneColors[key];
         const rgbaColor = `rgba(${hexToRgb(color)}, ${opacity})`;
         return {
-          label: `${new Date(test.date).toLocaleDateString()} - ${key}`,
+          label: `${new Date(test.date).toLocaleDateString('cs-CZ', {
+            day: '2-digit',
+            month: '2-digit',
+            year: '2-digit'
+          })} - ${key}`,
           data: [{
             x: value,
             y: test.thresholds.lactates[key] || 0,
-            label: key
+            label: key,
+            testIndex: testIndex
           }],
           borderColor: rgbaColor,
           backgroundColor: rgbaColor,
           pointRadius: 8,
           pointStyle: 'circle',
           showLine: false,
-          order: testIndex * 2 + 1
+          order: testIndex * 3 + 2
         };
       });
 
-    return [curveDataset, ...thresholdDatasets];
+    return [measuredDataset, polyDataset, ...thresholdDatasets];
   }).flat();
 
   // Najdeme všechny hodnoty power pro nastavení osy X
@@ -96,7 +177,6 @@ const TestComparison = ({ tests = [] }) => {
     test.results.map(result => result.power)
   );
   
-  // Přidáme 10% mezeru na obou stranách
   const minPower = Math.min(...allPowerValues);
   const maxPower = Math.max(...allPowerValues);
   const powerRange = maxPower - minPower;
@@ -108,6 +188,10 @@ const TestComparison = ({ tests = [] }) => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'point',
+      intersect: true
+    },
     scales: {
       y: {
         beginAtZero: true,
@@ -157,53 +241,46 @@ const TestComparison = ({ tests = [] }) => {
         displayColors: false,
         titleAlign: 'center',
         bodyAlign: 'center',
+        position: 'nearest',
         callbacks: {
           title: function(tooltipItems) {
             const item = tooltipItems[0];
             const date = item.dataset.label.split(' - ')[0];
-            const label = item.raw.label || 'Data point';
-            if (item.raw.pointIndex) {
-              return `${date}\n${label} #${item.raw.pointIndex}`;
-            }
-            return `${date}\n${label}`;
+            return date;
           },
           label: function(context) {
             const point = context.raw;
+            const testIndex = point.testIndex;
+            const currentTest = testsWithThresholds[testIndex];
             const xValue = sport === 'bike' 
               ? `${Math.round(point.x)}W` 
               : convertPowerToPace(point.x, sport);
-            return `Power: ${xValue}\nLactate: ${point.y.toFixed(1)} mmol/L`;
+            const datasetLabel = context.dataset.label.split(' - ')[1];
+            if (datasetLabel === 'Data points' || datasetLabel === 'Polynomial Fit') {
+              return [
+                datasetLabel,
+                `Power: ${xValue}`,
+                `Lactate: ${point.y.toFixed(1)} mmol/L`
+              ];
+            } else if (datasetLabel === 'LTRatio') {
+              return [
+                datasetLabel,
+                `Ratio: ${currentTest.thresholds.LTRatio || 'N/A'}`
+              ];
+            } else {
+              const hr = currentTest.thresholds.heartRates[datasetLabel];
+              return [
+                datasetLabel,
+                `Power: ${xValue}`,
+                `Lactate: ${point.y.toFixed(1)} mmol/L`,
+                `HR: ${hr ? Math.round(hr) : 'N/A'} bpm`
+              ];
+            }
           }
         }
       },
       legend: {
-        position: 'right',
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'circle',
-          padding: 15,
-          generateLabels: function(chart) {
-            const datasets = chart.data.datasets;
-            return datasets.map(dataset => ({
-              text: dataset.label.split(' - ')[1], // Zobrazí pouze název metody
-              fillStyle: dataset.backgroundColor,
-              strokeStyle: dataset.borderColor,
-              lineWidth: dataset.borderWidth,
-              hidden: !dataset.visible,
-              index: dataset.index,
-              pointStyle: 'circle'
-            }));
-          }
-        },
-        onClick: function(e, legendItem, legend) {
-          const index = legendItem.index;
-          const chart = legend.chart;
-          const meta = chart.getDatasetMeta(index);
-
-          // Přepne viditelnost datasetu
-          meta.hidden = meta.hidden === null ? !meta.hidden : null;
-          chart.update();
-        }
+        display: false
       }
     },
   };
@@ -213,7 +290,7 @@ const TestComparison = ({ tests = [] }) => {
       <div className="relative" style={{ width: '100%', height: '400px' }}>
         <Line 
           ref={chartRef}
-          options={{ ...options, plugins: { ...options.plugins, legend: { display: false } } }} 
+          options={options} 
           data={{ datasets }} 
         />
       </div>
@@ -226,7 +303,11 @@ const TestComparison = ({ tests = [] }) => {
               <th className="px-4 py-2 text-left">Zone</th>
               {testsWithThresholds.map((test, i) => (
                 <th key={i} className="px-4 py-2 text-left" colSpan={2}>
-                  {new Date(test.date).toLocaleDateString()}
+                  {new Date(test.date).toLocaleDateString('cs-CZ', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: '2-digit'
+                  })}
                 </th>
               ))}
               <th className="px-4 py-2 text-left">Show/Hide</th>

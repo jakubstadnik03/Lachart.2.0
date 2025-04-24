@@ -202,9 +202,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
         labels: {
           font: { size: 12 },
           usePointStyle: true,
-          padding: 10,
+          padding: 5,
           boxWidth: 12,
         },
+        padding: 0,
+        margin: 0,
       },
       tooltip: {
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -238,8 +240,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center bg-white p-2 sm:p-4 rounded-3xl shadow-md relative">
-      <div className="flex flex-col sm:flex-row items-center w-full justify-between gap-1 sm:gap-0 mb-2">
+    <div className="w-full h-full flex flex-col items-center bg-white p-1 sm:p-2 rounded-3xl shadow-md relative">
+      <div className="flex flex-col sm:flex-row items-center w-full justify-between gap-1 sm:gap-0 mb-1">
         <h2 className="text-base sm:text-lg font-semibold">Training Power Chart</h2>
         <div className="flex items-center gap-2">
           {/* Dropdown pro výběr sportu */}
@@ -329,7 +331,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
         </div>
       </div>
       {filteredTrainings.length > 0 ? (
-        <div className="w-full h-[400px] ">
+        <div className="w-full h-[350px] lg:h-[450px]">
           <Radar data={data} options={options} />
         </div>
       ) : (

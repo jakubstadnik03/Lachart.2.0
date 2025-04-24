@@ -8,7 +8,20 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setToken(token);
+      setIsAuthenticated(true);
+      setLoading(false);
+    } else {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     // Načtení tokenu a uživatele z localStorage při startu
@@ -17,6 +30,7 @@ export const AuthProvider = ({ children }) => {
     
     if (storedToken) {
       setToken(storedToken);
+      setIsAuthenticated(true);
       // Nastavení tokenu do API
       api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
     }
@@ -33,27 +47,28 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const saveToken = useCallback((token) => {
-    localStorage.setItem('authToken', token);
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    localStorage.setItem("token", token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    setIsAuthenticated(true);
   }, []);
 
   const removeToken = useCallback(() => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('userData');
-    delete api.defaults.headers.common['Authorization'];
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    delete api.defaults.headers.common["Authorization"];
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
   }, []);
 
-  const login = useCallback(async (email, password, userData = null) => {
+  const login = useCallback(async (email, password, token, user) => {
     try {
-      if (userData) {
-        // Pro sociální přihlášení
-        const { token: socialToken, user: socialUser } = userData;
-        setToken(socialToken);
-        setUser(socialUser);
-        localStorage.setItem("token", socialToken);
-        localStorage.setItem("user", JSON.stringify(socialUser));
-        api.defaults.headers.common["Authorization"] = `Bearer ${socialToken}`;
-        navigate('/dashboard', { replace: true });
+      if (token && user) {
+        // Pro sociální přihlášení nebo přímé přihlášení s tokenem
+        setToken(token);
+        setUser(user);
+        saveToken(token);
+        localStorage.setItem("user", JSON.stringify(user));
         return { success: true };
       } else {
         // Pro běžné přihlášení
@@ -62,22 +77,19 @@ export const AuthProvider = ({ children }) => {
         
         setToken(loginToken);
         setUser(loginUser);
-        localStorage.setItem("token", loginToken);
+        saveToken(loginToken);
         localStorage.setItem("user", JSON.stringify(loginUser));
-        api.defaults.headers.common["Authorization"] = `Bearer ${loginToken}`;
-        navigate('/dashboard', { replace: true });
         return { success: true };
       }
     } catch (error) {
       console.error("Login error:", error);
       removeToken();
-      setUser(null);
       return { 
         success: false, 
         error: error.response?.data?.message || "Login failed" 
       };
     }
-  }, [navigate, removeToken]);
+  }, [removeToken, saveToken]);
 
   const logout = useCallback(async () => {
     try {
@@ -86,7 +98,6 @@ export const AuthProvider = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       removeToken();
-      setUser(null);
       navigate('/login', { replace: true });
     }
   }, [navigate, removeToken]);
@@ -94,9 +105,9 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     token,
+    isAuthenticated,
     login,
     logout,
-    isAuthenticated: !!token,
   };
 
   return (

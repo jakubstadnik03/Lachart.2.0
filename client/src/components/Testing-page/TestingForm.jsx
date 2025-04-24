@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Trash, Plus, X, Save } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 
-function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange }) {
+function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete }) {
   const { addNotification } = useNotification();
 
   const formatDate = (dateString) => {
@@ -316,6 +316,15 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setIsDirty(true);
   };
 
+  const handleDeleteTest = () => {
+    if (window.confirm('Are you sure you want to delete this test? This action cannot be undone.')) {
+      if (onDelete) {
+        onDelete(testData);
+        addNotification('Test deleted successfully', 'success');
+      }
+    }
+  };
+
   // Calculate grid columns based on whether glucose is shown
   const gridCols = showGlucose ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-4 sm:grid-cols-6';
 
@@ -481,17 +490,26 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
         <button 
           onClick={handleAddRow} 
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-green rounded-lg hover:bg-green-600"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-emerald-500 rounded-lg hover:bg-emerald-600"
         >
           <Plus size={20} /> Add Interval
         </button>
 
-        <button 
-          onClick={handleSaveChanges}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-blue-600"
-        >
-          <Save size={20} /> Save Changes
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleDeleteTest}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-red rounded-lg hover:bg-red-dark"
+          >
+            <Trash size={20} /> Delete Test
+          </button>
+
+          <button 
+            onClick={handleSaveChanges}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
+          >
+            <Save size={20} /> Save Changes
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -25,15 +25,24 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
       : tests.filter(test => test.sport === selectedSport);
 
     if (filteredTests.length > 0) {
+      // If we have a current test, try to find it in the filtered tests
       if (currentTest) {
         const updatedCurrentTest = filteredTests.find(test => test._id === currentTest._id);
         if (updatedCurrentTest) {
           setCurrentTest(updatedCurrentTest);
         } else {
-          setCurrentTest(filteredTests[0]);
+          // If current test is not in filtered tests, select the most recent one
+          const mostRecentTest = filteredTests.reduce((latest, current) => {
+            return new Date(current.date) > new Date(latest.date) ? current : latest;
+          });
+          setCurrentTest(mostRecentTest);
         }
       } else {
-        setCurrentTest(filteredTests[0]);
+        // If no current test, select the most recent one
+        const mostRecentTest = filteredTests.reduce((latest, current) => {
+          return new Date(current.date) > new Date(latest.date) ? current : latest;
+        });
+        setCurrentTest(mostRecentTest);
       }
     } else {
       setCurrentTest(null);
@@ -80,6 +89,17 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
     }
   };
 
+  const handleTestDelete = async (testToDelete) => {
+    try {
+      await api.delete(`/test/${testToDelete._id}`);
+      setTests(prev => prev.filter(t => t._id !== testToDelete._id));
+      setCurrentTest(null);
+      setSelectedTests(prev => prev.filter(t => t._id !== testToDelete._id));
+    } catch (err) {
+      console.error('Error deleting test:', err);
+    }
+  };
+
   const handleGlucoseColumnChange = (hidden) => {
     setGlucoseColumnHidden(hidden);
   };
@@ -107,6 +127,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
               testData={currentTest} 
               onTestDataChange={handleTestUpdate}
               onGlucoseColumnChange={handleGlucoseColumnChange}
+              onDelete={handleTestDelete}
             />
           </div>
         </div>

@@ -1,85 +1,85 @@
 // src/pages/LoginPage.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 import { GoogleLogin } from '@react-oauth/google';
-import FacebookLogin from 'react-facebook-login';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api.config';
 
 const LoginPage = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [showPassword, setShowPassword] = useState(false);
-  const { addNotification } = useNotification();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     rememberMe: false
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const { login, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { addNotification } = useNotification();
 
   // Získáme původní cíl navigace, pokud existuje
   const from = location.state?.from?.pathname || "/dashboard";
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     try {
-      const result = await login(email, password);
-      if (!result.success) {
-        addNotification('Incorrect email or password', 'error');
+      const result = await api.post(API_ENDPOINTS.AUTH + "/login", {
+        email: formData.email,
+        password: formData.password
+      });
+      
+      if (result.data.token) {
+        console.log("Login successful, token received:", result.data.token);
+        console.log("User data:", result.data.user);
+        
+        login(formData.email, formData.password, result.data.token, result.data.user);
+        addNotification("Successfully logged in", "success");
+        navigate("/dashboard", { replace: true });
       }
-    } catch (err) {
-      console.error('Login error:', err);
-      if (err.response?.status === 401) {
-        addNotification('Incorrect email or password', 'error');
-      } else {
-        addNotification('An unexpected error occurred. Please try again later.', 'error');
-      }
+    } catch (error) {
+      console.error("Login error:", error);
+      addNotification(
+        error.response?.data?.message || "Login failed",
+        "error"
+      );
     }
   };
 
-  const handleGoogleSuccess = async (response) => {
+  const handleGoogleSuccess = async (credentialResponse) => {
     try {
+      console.log("Google credential response:", credentialResponse);
       const result = await api.post(`${API_ENDPOINTS.AUTH}/google-auth`, {
-        credential: response.credential
+        credential: credentialResponse.credential,
       });
-
-      if (result.data && result.data.token) {
-        // Use the login function from AuthProvider
-        const loginResult = await login(null, null, result.data);
-        if (!loginResult.success) {
-          addNotification('Google login failed', 'error');
-        }
+      
+      if (result.data.token) {
+        console.log("Google login successful, token received:", result.data.token);
+        console.log("User data:", result.data.user);
+        
+        login(null, null, result.data.token, result.data.user);
+        addNotification("Successfully logged in with Google", "success");
+        navigate("/dashboard", { replace: true });
       }
     } catch (error) {
-      console.error('Google login failed:', error);
-      addNotification(error.response?.data?.message || 'Google login failed', 'error');
+      console.error("Google login error:", error);
+      addNotification(
+        error.response?.data?.message || "Google login failed",
+        "error"
+      );
     }
   };
 
-  const handleFacebookSuccess = async (response) => {
-    try {
-      const result = await api.post(`${API_ENDPOINTS.AUTH}/facebook-auth`, {
-        accessToken: response.accessToken
-      });
-
-      if (result.data && result.data.token) {
-        // Use the login function from AuthProvider
-        const loginResult = await login(null, null, result.data);
-        if (!loginResult.success) {
-          addNotification('Facebook login failed', 'error');
-        }
-      }
-    } catch (error) {
-      console.error('Facebook login failed:', error);
-      addNotification(error.response?.data?.message || 'Facebook login failed', 'error');
-    }
+  const handleGoogleError = () => {
+    addNotification("Google login failed", "error");
   };
 
   return (
@@ -87,14 +87,14 @@ const LoginPage = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen flex"
+      className="min-h-screen flex bg-[#EEF2FF] pt-safe-top pb-safe-bottom overflow-hidden"
     >
       {/* Left side - Background */}
       <motion.div 
         initial={{ x: -100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
-        className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent"
+        className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent overflow-hidden"
       >
         {/* Zde můžete přidat obrázek nebo grafiku */}
       </motion.div>
@@ -104,13 +104,13 @@ const LoginPage = () => {
         initial={{ x: 100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
-        className="w-full lg:w-1/2 flex items-center justify-center px-8"
+        className="w-full lg:w-1/2 flex items-center justify-center px-8 overflow-hidden"
       >
         <motion.div 
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="max-w-md w-full space-y-8"
+          className="max-w-md w-full space-y-8 overflow-hidden"
         >
           <motion.div
             initial={{ scale: 0.9 }}
@@ -119,11 +119,11 @@ const LoginPage = () => {
           >
             <div className='mx-auto flex items-center gap-2 justify-center'>
               <img
-                className=" h-12 w-auto"
+                className="h-12 w-auto"
                 src="/images/LaChart.png"
                 alt="Your Logo"
               />
-              <h1 className=' text-2xl font-bold text-primary'>LaChart</h1>
+              <h1 className='text-2xl font-bold text-primary'>LaChart</h1>
             </div>
 
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
@@ -158,8 +158,8 @@ const LoginPage = () => {
                   required
                   className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
               </motion.div>
               <motion.div 
@@ -174,8 +174,8 @@ const LoginPage = () => {
                   required
                   className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 />
                 <motion.button
                   whileHover={{ scale: 1.1 }}
@@ -210,6 +210,8 @@ const LoginPage = () => {
                   name="remember-me"
                   type="checkbox"
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  checked={formData.rememberMe}
+                  onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
                   Remember me
@@ -249,39 +251,23 @@ const LoginPage = () => {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                <div id="google-login-button">
-                  <GoogleLogin
-                    onSuccess={handleGoogleSuccess}
-                    onError={() => {
-                      console.error('Google authentication failed');
-                      addNotification('Google authentication failed', 'error');
-                    }}
-                    useOneTap={false}
-                    width="200"
-                    theme="outline"
-                    size="large"
-                    text="signin_with"
-                    shape="rectangular"
-                    auto_select={false}
-                    cancel_on_tap_outside={true}
-                    prompt_parent_id="google-login-button"
-                    nonce={crypto.randomUUID()}
-                  />
-                </div>
-                <FacebookLogin
-                  appId={process.env.REACT_APP_FACEBOOK_APP_ID}
-                  autoLoad={false}
-                  fields="name,email,picture"
-                  scope="public_profile,email"
-                  callback={handleFacebookSuccess}
-                  onFailure={(error) => {
-                    console.error('Facebook login failed:', error);
-                    addNotification('Facebook login failed', 'error');
-                  }}
-                  cssClass="btn btn-primary w-full"
-                  icon="fa-facebook"
-                  textButton="Přihlásit se přes Facebook"
+              <div className="mt-6 flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                  useOneTap={false}
+                  auto_select={false}
+                  theme="filled_black"
+                  size="large"
+                  text="signin_with"
+                  shape="rectangular"
+                  logo_alignment="left"
+                  width="300"
+                  cancel_on_tap_outside={true}
+                  prompt_parent_id="google-login-button"
+                  nonce={crypto.randomUUID()}
+                  ux_mode="popup"
+                  context="signin"
                 />
               </div>
             </motion.div>

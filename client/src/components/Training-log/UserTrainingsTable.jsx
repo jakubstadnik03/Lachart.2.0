@@ -6,18 +6,33 @@ import { useTrainings } from "../../context/TrainingContext"; // Předpokládám
 import { useNotification } from "../../context/NotificationContext"; // Přidáme import pro notifikace
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
-  const pageNumbers = [];
-  for (let i = 1; i <= totalPages; i++) {
-    pageNumbers.push(i);
-  }
-
   const getVisiblePages = () => {
-    if (totalPages <= 5) return pageNumbers;
+    const pages = [];
+    // Rozlišení mezi mobilem a desktopem pomocí window.innerWidth
+    const isMobile = window.innerWidth < 768; // 768px je běžný breakpoint pro tablet
+    const maxVisiblePages = isMobile ? 2 : 3;
     
-    if (currentPage <= 3) return pageNumbers.slice(0, 5);
-    if (currentPage >= totalPages - 2) return pageNumbers.slice(totalPages - 5);
+    if (totalPages <= maxVisiblePages) {
+      // Pokud je stránek málo, zobrazíme všechny
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Pokud je stránek více, zobrazíme omezený počet kolem aktuální stránky
+      let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+      
+      // Upravíme startPage, pokud jsme na konci
+      if (endPage === totalPages) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pages.push(i);
+      }
+    }
     
-    return pageNumbers.slice(currentPage - 3, currentPage + 2);
+    return pages;
   };
 
   return (

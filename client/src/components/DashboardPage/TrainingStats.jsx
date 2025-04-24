@@ -183,7 +183,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
   const [hoveredBar, setHoveredBar] = useState(null);
   const [visibleTrainingIndex, setVisibleTrainingIndex] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [displayCount, setDisplayCount] = useState(6);
+  const [displayCount, setDisplayCount] = useState(() => {
+    // Set default to 3 on mobile devices
+    return window.innerWidth < 768 ? 3 : 6;
+  });
   const [progressIndex, setProgressIndex] = useState(0);
   const settingsRef = useRef(null);
   const visibleTrainingsCount = 2;
@@ -363,7 +366,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
 
   return (
     <div className="flex flex-col p-3 sm:p-5 bg-white rounded-3xl shadow-md relative h-full">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
+      <div className="flex  flex-row  justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
         <div className="flex items-center gap-2 sm:gap-4">
           <h2 className="text-base sm:text-xl font-semibold text-zinc-900">
             Last {filteredTrainings.length} trainings
