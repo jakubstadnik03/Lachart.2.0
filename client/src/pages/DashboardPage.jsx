@@ -9,6 +9,8 @@ import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import AthleteSelector from "../components/AthleteSelector";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
+import TestComparison from "../components/Testing-page/TestComparison";
+import TestSelector from "../components/Testing-page/TestSelector";
 import DateSelector from "../components/DateSelector";
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
@@ -36,6 +38,7 @@ const DashboardPage = () => {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { addNotification } = useNotification();
+  const [selectedTests, setSelectedTests] = useState([]);
 
   const loadTrainings = async (targetId) => {
     try {
@@ -141,6 +144,10 @@ const DashboardPage = () => {
   const handleDateSelect = (date) => {
     const selectedTest = tests.find(test => new Date(test.date).toISOString() === new Date(date).toISOString());
     setCurrentTest(selectedTest);
+  };
+
+  const handleTestSelect = (tests) => {
+    setSelectedTests(tests);
   };
 
   const handleAthleteChange = (newAthleteId) => {
@@ -259,17 +266,28 @@ const DashboardPage = () => {
         >
           <div className="space-y-6">
             {tests && tests.length > 0 ? (
-              <DateSelector
-                dates={tests.map(test => test.date)}
-                onSelectDate={handleDateSelect}
-              />
+              <>
+                <DateSelector
+                  dates={tests.map(test => test.date)}
+                  onSelectDate={handleDateSelect}
+                />
+                {currentTest && currentTest.results && (
+                  <>
+                    <LactateCurveCalculator mockData={currentTest} />
+                    <TestSelector 
+                      tests={tests}
+                      selectedTests={selectedTests}
+                      onTestSelect={handleTestSelect}
+                      selectedSport={selectedSport}
+                    />
+                    <TestComparison tests={selectedTests} />
+                  </>
+                )}
+              </>
             ) : (
               <div className="text-center py-4 text-gray-500">
                 No tests available
               </div>
-            )}
-            {currentTest && currentTest.results && (
-              <LactateCurveCalculator mockData={currentTest} />
             )}
           </div>
         </motion.div>
