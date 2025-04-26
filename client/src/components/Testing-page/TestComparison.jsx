@@ -7,6 +7,7 @@ import * as math from 'mathjs';
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
+  const [allPointsHidden, setAllPointsHidden] = useState(false);
 
   if (!tests.length) return null;
 
@@ -285,6 +286,33 @@ const TestComparison = ({ tests = [] }) => {
     },
   };
 
+  const toggleAllPoints = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const newHiddenPoints = new Set();
+    if (!allPointsHidden) {
+      // Hide all points but keep lines visible
+      Object.keys(zoneColors).forEach(zone => {
+        if (zone !== 'Data points' && zone !== 'Log-log') {
+          newHiddenPoints.add(zone);
+        }
+      });
+    }
+
+    setHiddenPoints(newHiddenPoints);
+    setAllPointsHidden(!allPointsHidden);
+
+    // Update chart visibility - only hide points, keep lines visible
+    datasets.forEach((dataset, index) => {
+      const meta = chart.getDatasetMeta(index);
+      const isPointDataset = dataset.label.includes('Data points') || 
+                           dataset.label.includes('Polynomial Fit');
+      meta.hidden = !allPointsHidden && !isPointDataset;
+    });
+    chart.update();
+  };
+
   return (
     <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-x-auto">
       <div className="relative w-full h-[350px] sm:h-[600px] md:h-[400px]">
@@ -310,7 +338,27 @@ const TestComparison = ({ tests = [] }) => {
                   })}
                 </th>
               ))}
-              <th className="px-2 sm:px-4 py-2 text-left">Show/Hide</th>
+              <th className="px-2 sm:px-4 py-2 text-left">
+                <button
+                  onClick={toggleAllPoints}
+                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                >
+                  <span>{allPointsHidden ? 'Show All Points' : 'Hide All Points'}</span>
+                  <svg 
+                    className={`w-4 h-4 transform transition-transform ${allPointsHidden ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M19 9l-7 7-7-7" 
+                    />
+                  </svg>
+                </button>
+              </th>
             </tr>
             <tr className="bg-gray-50 border-t">
               <th className="px-2 sm:px-4 py-2 text-left"></th>
@@ -369,7 +417,7 @@ const TestComparison = ({ tests = [] }) => {
                       backgroundColor: zone === 'Data points' ? 'transparent' : zoneColors[zone],
                       border: '2px solid',
                       borderColor: zone === 'Data points' ? '#000' : zoneColors[zone],
-                      opacity: hiddenPoints.has(zone) ? 0.5 : 1
+                      opacity: hiddenPoints.has(zone) ? 0.5 : 1,
                     }}
                     onClick={() => {
                       const chart = chartRef.current;
@@ -388,6 +436,7 @@ const TestComparison = ({ tests = [] }) => {
                         }
                         
                         setHiddenPoints(newHiddenPoints);
+                        setAllPointsHidden(false);
                         
                         datasetIndexes.forEach(index => {
                           const meta = chart.getDatasetMeta(index);
