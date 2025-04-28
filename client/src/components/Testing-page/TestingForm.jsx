@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trash, Plus, X, Save } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -58,22 +58,29 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [rows, setRows] = useState(testData?.results?.map(row => ({
     interval: row.interval || 1,
     power: formData.sport === 'bike' ? (row.power || 0) : (row.power ? convertSecondsToPace(row.power) : '0:00'),
-    heartRate: row.heartRate || 0,
-    lactate: row.lactate || 0,
-    glucose: row.glucose || 0,
-    RPE: row.RPE || 0
+    heartRate: row.heartRate?.toString() || '0',
+    lactate: row.lactate?.toString() || '0',
+    glucose: row.glucose?.toString() || '0',
+    RPE: row.RPE?.toString() || '0'
   })) || [{
     interval: 1,
-    power: formData.sport === 'bike' ? 0 : '0:00',
-    heartRate: 0,
-    lactate: 0,
-    glucose: 0,
-    RPE: 0
+    power: formData.sport === 'bike' ? '0' : '0:00',
+    heartRate: '0',
+    lactate: '0',
+    glucose: '0',
+    RPE: '0'
   }]);
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [hoverGlucose, setHoverGlucose] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  const inputRefs = useRef([]);
+
+  // Initialize refs when rows change
+  useEffect(() => {
+    inputRefs.current = inputRefs.current.slice(0, rows.length);
+  }, [rows]);
 
   // Check if any row has glucose data
   const hasGlucoseData = rows.some(row => 
@@ -107,6 +114,22 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setIsDirty(true);
   };
 
+  const validateNumericInput = (value) => {
+    // Allow empty string, single decimal point, or valid number
+    if (value === '' || value === '.' || value === '0') return true;
+    
+    // Check if it's a valid number (including decimals)
+    const numberRegex = /^-?\d*\.?\d*$/;
+    return numberRegex.test(value);
+  };
+
+  const handleNumericInputChange = (rowIndex, field, value) => {
+    if (!validateNumericInput(value)) return;
+    
+    // Preserve the exact input value
+    handleValueChange(rowIndex, field, value);
+  };
+
   const handleValueChange = (rowIndex, field, value) => {
     console.log('Value change:', { rowIndex, field, value, currentSport: formData.sport });
     
@@ -115,36 +138,33 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       return;
     }
 
-    let processedValue = value;
-
-    // Ensure numeric values are properly converted
-    if (field !== 'power' || formData.sport === 'bike') {
-      processedValue = value === '' ? 0 : Number(value);
-    }
-
+    // Preserve the exact input value in the state
     const updatedRows = rows.map((row, index) =>
-      index === rowIndex ? { ...row, [field]: processedValue } : row
+      index === rowIndex ? { ...row, [field]: value } : row
     );
-    console.log('Updated rows after value change:', updatedRows);
+    
     setRows(updatedRows);
     setIsDirty(true);
 
     // Update glucose visibility when glucose value changes
     if (field === 'glucose') {
-      const hasNonZeroGlucose = updatedRows.some(row => Number(row.glucose) > 0);
+      const hasNonZeroGlucose = updatedRows.some(row => {
+        const glucoseValue = row.glucose === '' ? 0 : parseFloat(row.glucose);
+        return glucoseValue > 0;
+      });
       setShowGlucose(hasNonZeroGlucose);
     }
 
-    // Propagate changes to parent component with processed rows
+    // When sending data to parent, convert to numbers with decimal precision
     const processedRows = updatedRows.map((row, idx) => ({
       interval: idx + 1,
       power: formData.sport === 'bike' ? 
-        (row.power === '' ? 0 : Number(row.power)) :
+        (row.power === '' ? 0 : parseFloat(row.power)) :
         (row.power ? convertPaceToSeconds(row.power) : 0),
-      heartRate: row.heartRate === '' ? 0 : Number(row.heartRate),
-      lactate: row.lactate === '' ? 0 : Number(row.lactate),
-      glucose: row.glucose === '' ? 0 : Number(row.glucose),
-      RPE: row.RPE === '' ? 0 : Number(row.RPE)
+      heartRate: row.heartRate === '' ? 0 : parseFloat(row.heartRate),
+      lactate: row.lactate === '' ? 0 : parseFloat(row.lactate),
+      glucose: row.glucose === '' ? 0 : parseFloat(row.glucose),
+      RPE: row.RPE === '' ? 0 : parseFloat(row.RPE)
     }));
 
     const updatedTestData = {
@@ -410,8 +430,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         <div key={index} className={`grid ${gridCols} gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg`}>
           <div className="text-center text-sm">{index + 1}</div>
           <input 
-            type={formData.sport === 'bike' ? "number" : "text"}
-            value={row.power || ''}
+            type={formData.sport === 'bike' ? "text" : "text"}
+            defaultValue={row.power || ''}
             onChange={(e) => {
               console.log('Input change:', e.target.value);
               handleValueChange(index, 'power', e.target.value);
@@ -420,27 +440,27 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
           />
           <input 
-            type="number" 
-            value={row.heartRate || ''}
-            onChange={(e) => handleValueChange(index, 'heartRate', e.target.value)} 
+            type="text" 
+            defaultValue={row.heartRate || ''}
+            onChange={(e) => handleNumericInputChange(index, 'heartRate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           <input 
-            type="number" 
-            value={row.lactate || ''}
-            onChange={(e) => handleValueChange(index, 'lactate', e.target.value)} 
+            type="text" 
+            defaultValue={row.lactate || ''}
+            onChange={(e) => handleNumericInputChange(index, 'lactate', e.target.value)} 
             className="p-1 text-sm border rounded-lg" 
           />
           {showGlucose && <input 
-            type="number" 
-            value={row.glucose || ''}
-            onChange={(e) => handleValueChange(index, 'glucose', e.target.value)} 
+            type="text" 
+            defaultValue={row.glucose || ''}
+            onChange={(e) => handleNumericInputChange(index, 'glucose', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />}
           <input 
-            type="number" 
-            value={row.RPE || ''}
-            onChange={(e) => handleValueChange(index, 'RPE', e.target.value)} 
+            type="text" 
+            defaultValue={row.RPE || ''}
+            onChange={(e) => handleNumericInputChange(index, 'RPE', e.target.value)} 
             className="hidden sm:block p-1 text-sm border rounded-lg" 
           />
           <button onClick={() => handleDeleteRow(index)} className="hidden sm:block p-1 text-red-600"><Trash size={20} /></button>
@@ -462,9 +482,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           className="p-2 border rounded-lg w-full sm:w-auto" 
         />
         <input 
-          type="number" 
+          type="text" 
           value={formData.weight} 
-          onChange={(e) => handleFormDataChange('weight', e.target.value)} 
+          onChange={(e) => handleNumericInputChange(-1, 'weight', e.target.value)} 
           className="p-2 border rounded-lg w-full sm:w-24" 
           placeholder="Weight (kg)" 
         />
@@ -479,9 +499,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           <option value="swim">Swim</option>
         </select>
         <input 
-          type="number" 
+          type="text" 
           value={formData.baseLa} 
-          onChange={(e) => handleFormDataChange('baseLa', e.target.value)} 
+          onChange={(e) => handleNumericInputChange(-1, 'baseLa', e.target.value)} 
           className="p-2 border rounded-lg w-full sm:w-24" 
           placeholder="Base La" 
         />

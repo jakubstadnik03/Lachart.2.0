@@ -6,25 +6,26 @@ import LactateCurveCalculator from "./LactateCurveCalculator";
 import TestComparison from "./TestComparison";
 import TestSelector from "./TestSelector";
 import api from '../../services/api';
+import { motion, AnimatePresence } from "framer-motion";
 
 const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
 
-  // Reset stavu při změně tests
+  // Filter tests based on selected sport
+  const filteredTests = selectedSport === 'all' 
+    ? tests 
+    : tests.filter(test => test.sport === selectedSport);
+
+  // Reset selected tests when sport changes
   useEffect(() => {
     setSelectedTests([]);
     setCurrentTest(null);
-  }, [tests]);
+  }, [selectedSport]);
 
+  // Update current test when filtered tests change
   useEffect(() => {
-    if (!tests || tests.length === 0) return;
-
-    const filteredTests = selectedSport === 'all' 
-      ? tests 
-      : tests.filter(test => test.sport === selectedSport);
-
     if (filteredTests.length > 0) {
       // If we have a current test, try to find it in the filtered tests
       if (currentTest) {
@@ -48,30 +49,19 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
     } else {
       setCurrentTest(null);
     }
-  }, [selectedSport, tests, currentTest]);
+  }, [filteredTests, currentTest]);
 
   const handleDateSelect = (date) => {
-    const selectedTest = tests.find(test => test.date === date);
+    const selectedTest = filteredTests.find(test => test.date === date);
     if (selectedTest) {
       setCurrentTest(selectedTest);
       setSelectedTests([]); // Reset selected tests when changing date
     }
   };
 
-  const handleTestSelect = (test) => {
-    const canAddTest = selectedTests.length === 0 || selectedTests[0].sport === test.sport;
-    
-    setSelectedTests(prev => {
-      const isSelected = prev.find(t => t._id === test._id);
-      if (isSelected) {
-        return prev.filter(t => t._id !== test._id);
-      } else if (canAddTest) {
-        return [...prev, test];
-      } else {
-        alert('You can only compare tests of the same sport type');
-        return prev;
-      }
-    });
+  const handleTestSelect = (newSelectedTests) => {
+    console.log('handleTestSelect called with:', newSelectedTests);
+    setSelectedTests(newSelectedTests);
   };
 
   const handleTestUpdate = async (updatedTest) => {
@@ -107,45 +97,102 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
 
   return (
     <div className="space-y-6">
-      {tests && tests.length > 0 ? (
-        <DateSelector
-          dates={tests.map(test => test.date)}
-          onSelectDate={handleDateSelect}
-        />
-      ) : (
-        <div className="text-center py-4 text-gray-500">
-          No tests available
-        </div>
-      )}
-
-      {currentTest && currentTest.results && (
-        <div className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5">
-          <div className={`${glucoseColumnHidden ? 'flex-[2]' : 'flex-[2.5]'}`}>
-            <LactateCurve mockData={currentTest} />
-          </div>
-          <div className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}>
-            <TestingForm 
-              testData={currentTest} 
-              onTestDataChange={handleTestUpdate}
-              onGlucoseColumnChange={handleGlucoseColumnChange}
-              onDelete={handleTestDelete}
+      <AnimatePresence mode="wait">
+        {filteredTests && filteredTests.length > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <DateSelector
+              dates={filteredTests.map(test => test.date)}
+              onSelectDate={handleDateSelect}
             />
-          </div>
-        </div>
-      )}
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-center py-4 text-gray-500"
+          >
+            No tests available for {selectedSport === 'all' ? 'any sport' : selectedSport}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {currentTest && currentTest.results && (
-        <LactateCurveCalculator mockData={currentTest} />
-      )}
+      <AnimatePresence>
+        {currentTest && currentTest.results && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+            className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5"
+          >
+            <motion.div 
+              className={`${glucoseColumnHidden ? 'flex-[2]' : 'flex-[2.5]'}`}
+              whileHover={{ scale: 1.02 }}
+              transition={{ duration: 0.2 }}
+            >
+              <LactateCurve mockData={currentTest} />
+            </motion.div>
+            <motion.div 
+              className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}
+              whileHover={{ scale: 1.02 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TestingForm 
+                testData={currentTest} 
+                onTestDataChange={handleTestUpdate}
+                onGlucoseColumnChange={handleGlucoseColumnChange}
+                onDelete={handleTestDelete}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <TestSelector 
-        tests={tests}
-        selectedTests={selectedTests}
-        onTestSelect={setSelectedTests}
-        selectedSport={selectedSport}
-      />
+      <AnimatePresence>
+        {currentTest && currentTest.results && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <LactateCurveCalculator mockData={currentTest} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <TestComparison tests={selectedTests} />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <TestSelector 
+          tests={filteredTests}
+          selectedTests={selectedTests}
+          onTestSelect={handleTestSelect}
+          selectedSport={selectedSport}
+        />
+      </motion.div>
+
+      <AnimatePresence>
+        {selectedTests && selectedTests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+            className="mt-6"
+          >
+            <TestComparison tests={selectedTests} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

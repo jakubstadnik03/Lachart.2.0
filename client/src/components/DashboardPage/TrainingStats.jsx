@@ -28,7 +28,7 @@ function StatCard({ stats }) {
 
 function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, containerWidth, selectedTraining, displayCount }) {
   const getWidth = () => {
-    if (!duration) return window.innerWidth < 640 ? 1 : 4;
+    if (!duration) return window.innerWidth < 640 ? 1 : 2;
 
     // Najdeme všechny tréninky stejného typu
     const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
@@ -42,27 +42,27 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
     const durationRatio = (Number(duration) || 0) / maxDuration;
     
     // Základní šířky se zmenšují s počtem zobrazených tréninků a na mobilu
-    const baseWidth = window.innerWidth < 640 ? 1 : 4;
+    const baseWidth = window.innerWidth < 640 ? 1 : 2;
     let maxWidth;
     
     // Různé maximální šířky podle počtu tréninků a velikosti obrazovky
     if (window.innerWidth < 640) {
       // Mobilní zařízení
       if (displayCount <= 3) {
-        maxWidth = 6; // Pro 1-3 tréninky na mobilu
+        maxWidth = 4; // Pro 1-3 tréninky na mobilu
       } else if (displayCount <= 6) {
-        maxWidth = 4; // Pro 4-6 tréninků na mobilu
+        maxWidth = 3; // Pro 4-6 tréninků na mobilu
       } else {
-        maxWidth = 3; // Pro více než 6 tréninků na mobilu
+        maxWidth = 2; // Pro více než 6 tréninků na mobilu
       }
     } else {
       // Desktop
       if (displayCount <= 3) {
-        maxWidth = 20; // Pro 1-3 tréninky na desktopu
+        maxWidth = Math.min(12, containerWidth / (displayCount * 3)); // Pro 1-3 tréninky na desktopu
       } else if (displayCount <= 6) {
-        maxWidth = 12; // Pro 4-6 tréninků na desktopu
+        maxWidth = Math.min(6, containerWidth / (displayCount * 2.5)); // Pro 4-6 tréninků na desktopu
       } else {
-        maxWidth = 8; // Pro více než 6 tréninků na desktopu
+        maxWidth = Math.min(4, containerWidth / (displayCount * 2)); // Pro více než 6 tréninků na desktopu
       }
     }
     

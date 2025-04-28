@@ -9,9 +9,36 @@ const TestComparison = ({ tests = [] }) => {
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [allPointsHidden, setAllPointsHidden] = useState(false);
 
-  if (!tests.length) return null;
+  // Early return if no tests or tests array is empty
+  if (!tests || !Array.isArray(tests) || tests.length === 0) {
+    return (
+      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg">
+        <div className="text-center py-4 text-gray-500">
+          No tests selected for comparison
+        </div>
+      </div>
+    );
+  }
 
-  const sport = tests[0]?.sport;
+  // Ensure all tests have required data
+  const validTests = tests.filter(test => 
+    test && 
+    test.results && 
+    Array.isArray(test.results) && 
+    test.results.length > 0
+  );
+
+  if (validTests.length === 0) {
+    return (
+      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg">
+        <div className="text-center py-4 text-gray-500">
+          No valid test data available for comparison
+        </div>
+      </div>
+    );
+  }
+
+  const sport = validTests[0]?.sport;
   const colorPalette = ['#2196F3', '#dc2626', '#16a34a', '#9333ea', '#ea580c'];
 
   // Pomocná funkce pro převod hex na rgb
@@ -39,7 +66,7 @@ const TestComparison = ({ tests = [] }) => {
   };
 
   // Vypočítáme thresholds pro každý test
-  const testsWithThresholds = tests.map(test => {
+  const testsWithThresholds = validTests.map(test => {
     const thresholds = calculateThresholds(test);
     
     // Polynomial Regression (degree 3)
@@ -95,7 +122,7 @@ const TestComparison = ({ tests = [] }) => {
 
   // Vytvoříme datasety pro křivky
   const datasets = testsWithThresholds.map((test, testIndex) => {
-    const opacity = tests.length === 1 ? 1 : 0.3 + ((0.7 * testIndex) / (tests.length - 1));
+    const opacity = validTests.length === 1 ? 1 : 0.3 + ((0.7 * testIndex) / (validTests.length - 1));
 
     // Dataset pro měřené body
     const measuredDataset = {
@@ -174,7 +201,7 @@ const TestComparison = ({ tests = [] }) => {
   }).flat();
 
   // Najdeme všechny hodnoty power pro nastavení osy X
-  const allPowerValues = tests.flatMap(test => 
+  const allPowerValues = validTests.flatMap(test => 
     test.results.map(result => result.power)
   );
   
