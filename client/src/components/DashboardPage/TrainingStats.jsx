@@ -26,9 +26,9 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, containerWidth, selectedTraining, displayCount }) {
+function VerticalBar({ height, color, power, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, containerWidth, selectedTraining, displayCount, isFullWidth }) {
   const getWidth = () => {
-    if (!duration) return window.innerWidth < 640 ? 1 : 2;
+    if (!duration) return window.innerWidth < 640 ? 1 : isFullWidth ? 4 : 2;
 
     // Najdeme všechny tréninky stejného typu
     const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
@@ -42,7 +42,7 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
     const durationRatio = (Number(duration) || 0) / maxDuration;
     
     // Základní šířky se zmenšují s počtem zobrazených tréninků a na mobilu
-    const baseWidth = window.innerWidth < 640 ? 1 : 2;
+    const baseWidth = window.innerWidth < 640 ? 1 : isFullWidth ? 4 : 2;
     let maxWidth;
     
     // Různé maximální šířky podle počtu tréninků a velikosti obrazovky
@@ -58,11 +58,17 @@ function VerticalBar({ height, color, power, heartRate, lactate, duration, index
     } else {
       // Desktop
       if (displayCount <= 3) {
-        maxWidth = Math.min(12, containerWidth / (displayCount * 3)); // Pro 1-3 tréninky na desktopu
+        maxWidth = isFullWidth 
+          ? Math.min(20, containerWidth / (displayCount * 2))
+          : Math.min(12, containerWidth / (displayCount * 3));
       } else if (displayCount <= 6) {
-        maxWidth = Math.min(6, containerWidth / (displayCount * 2.5)); // Pro 4-6 tréninků na desktopu
+        maxWidth = isFullWidth
+          ? Math.min(12, containerWidth / (displayCount * 1.5))
+          : Math.min(6, containerWidth / (displayCount * 2.5));
       } else {
-        maxWidth = Math.min(4, containerWidth / (displayCount * 2)); // Pro více než 6 tréninků na desktopu
+        maxWidth = isFullWidth
+          ? Math.min(8, containerWidth / (displayCount * 1.2))
+          : Math.min(4, containerWidth / (displayCount * 2));
       }
     }
     
@@ -178,7 +184,7 @@ function TrainingComparison({ training, previousTraining }) {
   );
 }
 
-export function TrainingStats({ trainings, selectedSport, onSportChange }) {
+export function TrainingStats({ trainings, selectedSport, onSportChange, isFullWidth = false }) {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [hoveredBar, setHoveredBar] = useState(null);
   const [visibleTrainingIndex, setVisibleTrainingIndex] = useState(0);
@@ -524,6 +530,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange }) {
                           containerWidth={containerWidth}
                           selectedTraining={selectedTraining}
                           displayCount={displayCount}
+                          isFullWidth={isFullWidth}
                         />
                       );
                     })}

@@ -8,6 +8,19 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const formatDateForInput = (dateString) => {
     if (!dateString) return '';
     try {
+      console.log('Formatting date for input:', dateString);
+      
+      // Pokud je datum ve formátu DD.MM.YY
+      if (dateString.includes('.')) {
+        const [day, month, year] = dateString.split('.');
+        // Přidáme 20 před rok, pokud je rok ve formátu YY
+        const fullYear = year.length === 2 ? `20${year}` : year;
+        const date = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+        if (isNaN(date.getTime())) return ''; // Invalid date
+        return date.toISOString().split('T')[0];
+      }
+      
+      // Pro ostatní formáty
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return ''; // Invalid date
       
@@ -15,7 +28,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const year = date.getFullYear();
       
-      return `${day}.${month}.${year}`;
+      const formattedDate = `${year}-${month}-${day}`;
+      console.log('Formatted date for input:', formattedDate);
+      return formattedDate;
     } catch (error) {
       console.error('Error formatting date:', error);
       return '';
@@ -25,13 +40,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const parseDateForSubmit = (dateString) => {
     if (!dateString) return '';
     try {
-      const [day, month, year] = dateString.split('.');
-      if (!day || !month || !year) return '';
-      
-      const date = new Date(year, month - 1, day);
+      console.log('Parsing date for submit:', dateString);
+      // Vytvoříme datum s časem nastaveným na půlnoc UTC
+      const date = new Date(dateString + 'T00:00:00.000Z');
       if (isNaN(date.getTime())) return ''; // Invalid date
       
-      return date.toISOString().split('T')[0];
+      const isoDate = date.toISOString();
+      console.log('Parsed date for submit:', isoDate);
+      return isoDate;
     } catch (error) {
       console.error('Error parsing date:', error);
       return '';
@@ -41,7 +57,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   useEffect(() => {
     if (userData) {
       try {
-        setFormData({
+        console.log('Initial userData:', userData);
+        const initialFormData = {
           name: userData.name || '',
           dateOfBirth: formatDateForInput(userData.dateOfBirth),
           address: userData.address || '',
@@ -51,7 +68,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           sport: userData.sport || '',
           specialization: userData.specialization || '',
           bio: userData.bio || ''
-        });
+        };
+        console.log('Initial formData:', initialFormData);
+        setFormData(initialFormData);
       } catch (error) {
         console.error('Error setting form data:', error);
         setFormData({
@@ -85,7 +104,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       dateOfBirth: parseDateForSubmit(formData.dateOfBirth)
     };
 
+    console.log('Submitting form data:', dataToSubmit);
     onSubmit(dataToSubmit);
+  };
+
+  const handleDateChange = (e) => {
+    const newDate = e.target.value;
+    console.log('Date changed:', newDate);
+    setFormData(prev => ({ ...prev, dateOfBirth: newDate }));
   };
 
   return (
@@ -101,10 +127,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           <div>
             <label className="block text-sm font-medium text-gray-700">Date of Birth</label>
             <input
-              type="text"
+              type="date"
               value={formData.dateOfBirth || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-              placeholder="DD.MM.YYYY"
+              onChange={handleDateChange}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
             />
           </div>

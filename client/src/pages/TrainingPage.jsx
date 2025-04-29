@@ -285,6 +285,7 @@ const TrainingPage = () => {
           trainings={trainings} 
           selectedSport={selectedSport}
           onSportChange={setSelectedSport}
+          isFullWidth={true}
         />
       </motion.div>
 
