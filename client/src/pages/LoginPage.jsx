@@ -23,9 +23,28 @@ const LoginPage = () => {
   // Získáme původní cíl navigace, pokud existuje
   const from = location.state?.from?.pathname || "/dashboard";
 
+  // Check for invitation token in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const invitationToken = urlParams.get('token');
+    if (invitationToken) {
+      console.log("Found invitation token in URL:", invitationToken);
+      localStorage.setItem('pendingInvitationToken', invitationToken);
+    }
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(from, { replace: true });
+      const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+      console.log("Checking for pending invitation token:", pendingInvitationToken);
+      
+      if (pendingInvitationToken) {
+        console.log("Found pending invitation token, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+        localStorage.removeItem('pendingInvitationToken');
+        navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
     }
   }, [isAuthenticated, navigate, from]);
 
@@ -50,7 +69,18 @@ const LoginPage = () => {
         
         login(formData.email, formData.password, result.data.token, result.data.user);
         addNotification("Successfully logged in", "success");
-        navigate("/dashboard", { replace: true });
+
+        // Check if there's a pending invitation
+        const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+        console.log("Checking for pending invitation after login:", pendingInvitationToken);
+        
+        if (pendingInvitationToken) {
+          console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+          localStorage.removeItem('pendingInvitationToken');
+          navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+        } else {
+          navigate("/dashboard", { replace: true });
+        }
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -79,9 +109,27 @@ const LoginPage = () => {
         console.log("Google login successful, token received:", result.data.token);
         console.log("User data:", result.data.user);
         
+        // Uložení tokenu a uživatelských dat do localStorage
+        localStorage.setItem("token", result.data.token);
+        localStorage.setItem("user", JSON.stringify(result.data.user));
+        
+        // Nastavení autorizační hlavičky pro API
+        api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;
+        
         login(null, null, result.data.token, result.data.user);
         addNotification("Successfully logged in with Google", "success");
-        navigate("/dashboard", { replace: true });
+
+        // Check if there's a pending invitation
+        const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+        console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
+        
+        if (pendingInvitationToken) {
+          console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+          localStorage.removeItem('pendingInvitationToken');
+          navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+        } else {
+          navigate("/dashboard", { replace: true });
+        }
       }
     } catch (error) {
       console.error("Google login error:", error);

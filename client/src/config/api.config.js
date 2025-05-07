@@ -1,5 +1,5 @@
-export const API_BASE_URL = 'https://lachart.onrender.com';
-// export const API_BASE_URL = 'http://localhost:8000';
+// export const API_BASE_URL = 'https://lachart.onrender.com';
+export const API_BASE_URL = 'http://localhost:8000';
 
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/user/login`,
@@ -11,6 +11,10 @@ export const API_ENDPOINTS = {
     USER_PROFILE: `${API_BASE_URL}/user/profile`,
     EDIT_PROFILE: `${API_BASE_URL}/user/edit-profile`,
     COACH_EDIT_ATHLETE: (id) => `${API_BASE_URL}/user/coach/edit-athlete/${id}`,
+    // Nové endpointy pro správu trenéra
+    COACH_PROFILE: `${API_BASE_URL}/user/coach/profile`,
+    REMOVE_COACH: `${API_BASE_URL}/user/athlete/remove-coach`,
+    INVITE_COACH: `${API_BASE_URL}/user/athlete/invite-coach`,
     // Nové endpointy
     TRAININGS: (athleteId) => `${API_BASE_URL}/user/athlete/${athleteId}/trainings`,
     TRAINING_DETAIL: (id) => `${API_BASE_URL}/trainings/${id}`,
@@ -32,5 +36,7 @@ export const API_ENDPOINTS = {
     ATHLETE_TESTS: (id) => `${API_BASE_URL}/test/list/${id}`,
     ADD_TRAINING: `${API_BASE_URL}/user/training`,
     ATHLETE: (id) => `${API_BASE_URL}/user/athlete/${id}`,
+    VERIFY_COACH_INVITATION: (token) => `${API_BASE_URL}/user/verify-coach-invitation-token/${token}`,
+    ACCEPT_COACH_INVITATION: (token) => `${API_BASE_URL}/user/accept-coach-invitation/${token}`,
     // další endpointy...
 }; 

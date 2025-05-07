@@ -31,7 +31,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   };
   const getStatusIcon = (status) => {
     const icons = {
-      up: "/icon/arrow-up.svg",
+      up: "/icon/arrow-up.svg", 
       down: "/icon/arrow-down.svg",
       same: "/icon/arrow-same.svg"
     };
@@ -97,7 +97,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
       lactateStatus === "down" 
         ? "text-red bg-red"
         : lactateStatus === "up"
-        ? "text-green bg-green"
+        ? "text-green bg-green-600"
         : "text-gray-500 bg-gray-400"
     ) : "text-gray-500 bg-gray-400";
 
@@ -158,7 +158,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           {workout.lactate && lactateIcon && <img
             loading="lazy"
             src={lactateIcon}
-            className="w-2 h-2 sm:w-3 sm:h-3"
+            className="w-3 h-3"
             alt=""
           />}
           <div>{workout.lactate || ''}</div>

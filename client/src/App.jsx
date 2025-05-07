@@ -22,6 +22,7 @@ import CompleteRegistrationPage from './pages/CompleteRegistrationPage';
 import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import TrainingDetailPage from './pages/TrainingDetailPage';
 import TrainingHistory from './components/TrainingHistory';
+import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
 import './App.css';
 
 function AppRoutes() {
@@ -36,6 +37,7 @@ function AppRoutes() {
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
       <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
       <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
+      <Route path="/accept-coach-invitation/:token" element={<AcceptCoachInvitation />} />
 
       {/* Chráněné routy s Layoutem */}
       <Route

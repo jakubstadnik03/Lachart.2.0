@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
-import { Lock, Mail, User, Phone, MapPin, Calendar, Info } from 'lucide-react';
+import { Lock, Mail, User, Phone, MapPin, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
 
 const SettingsPage = () => {
   const { user } = useAuth();
@@ -20,6 +20,22 @@ const SettingsPage = () => {
     newCoachEmail: ''
   });
 
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
+  });
+
+  const [currentCoach, setCurrentCoach] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const togglePasswordVisibility = (field) => {
+    setShowPasswords(prev => ({
+      ...prev,
+      [field]: !prev[field]
+    }));
+  };
+
   useEffect(() => {
     if (user) {
       setLinkedAccounts({
@@ -27,6 +43,58 @@ const SettingsPage = () => {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user?.coachId) {
+      fetchCurrentCoach();
+    }
+  }, [user?.coachId]);
+
+  const fetchCurrentCoach = async () => {
+    try {
+      const response = await fetch(API_ENDPOINTS.COACH_PROFILE, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (response.ok) {
+        const coachData = await response.json();
+        setCurrentCoach(coachData);
+      }
+    } catch (error) {
+      console.error('Error fetching coach:', error);
+      addNotification('Failed to load coach data', 'error');
+    }
+  };
+
+  const handleRemoveCoach = async () => {
+    if (!window.confirm('Are you sure you want to remove your coach?')) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const response = await fetch(API_ENDPOINTS.REMOVE_COACH, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        setCurrentCoach(null);
+        addNotification('Coach successfully removed', 'success');
+      } else {
+        const data = await response.json();
+        addNotification(data.error || 'Failed to remove coach', 'error');
+      }
+    } catch (error) {
+      console.error('Error removing coach:', error);
+      addNotification('Failed to remove coach', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleSuccess = async (response) => {
     try {
@@ -138,27 +206,40 @@ const SettingsPage = () => {
 
   const handleCoachChange = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
     try {
-      const response = await fetch(`${API_ENDPOINTS.AUTH}/change-coach`, {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      console.log('Sending coach invitation with token:', token); // Debug log
+
+      const response = await fetch(`${API_ENDPOINTS.AUTH}/athlete/invite-coach`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          newCoachEmail: formData.newCoachEmail
-        }),
+          email: formData.newCoachEmail
+        })
       });
 
-      if (response.ok) {
-        addNotification('Coach change request sent successfully', 'success');
-        setFormData(prev => ({ ...prev, newCoachEmail: '' }));
-      } else {
-        addNotification('Failed to change coach', 'error');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Server response:', errorData); // Debug log
+        throw new Error(errorData.error || 'Failed to invite coach');
       }
+
+      const data = await response.json();
+      addNotification('Coach invitation sent successfully', 'success');
+      setFormData(prev => ({ ...prev, newCoachEmail: '' }));
     } catch (error) {
-      console.error('Coach change error:', error);
-      addNotification('Failed to change coach', 'error');
+      console.error('Error inviting coach:', error);
+      addNotification(error.message || 'Failed to invite coach', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -175,35 +256,68 @@ const SettingsPage = () => {
               <div className="border-b pb-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Change Password</h3>
                 <form onSubmit={handlePasswordChange} className="space-y-4">
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-gray-700">Current Password</label>
                     <input
-                      type="password"
+                      type={showPasswords.current ? "text" : "password"}
                       value={formData.currentPassword}
                       onChange={(e) => setFormData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary pr-10"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('current')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center mt-6"
+                    >
+                      <img
+                        src={showPasswords.current ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.current ? "Hide password" : "Show password"}
+                        className="h-5 w-5 text-gray-400"
+                      />
+                    </button>
                   </div>
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-gray-700">New Password</label>
                     <input
-                      type="password"
+                      type={showPasswords.new ? "text" : "password"}
                       value={formData.newPassword}
                       onChange={(e) => setFormData(prev => ({ ...prev, newPassword: e.target.value }))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary pr-10"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('new')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center mt-6"
+                    >
+                      <img
+                        src={showPasswords.new ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.new ? "Hide password" : "Show password"}
+                        className="h-5 w-5 text-gray-400"
+                      />
+                    </button>
                   </div>
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
                     <input
-                      type="password"
+                      type={showPasswords.confirm ? "text" : "password"}
                       value={formData.confirmPassword}
                       onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary pr-10"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => togglePasswordVisibility('confirm')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center mt-6"
+                    >
+                      <img
+                        src={showPasswords.confirm ? "/icon/eye-on.svg" : "/icon/eye-off.svg"}
+                        alt={showPasswords.confirm ? "Hide password" : "Show password"}
+                        className="h-5 w-5 text-gray-400"
+                      />
+                    </button>
                   </div>
                   <button
                     type="submit"
@@ -239,23 +353,51 @@ const SettingsPage = () => {
 
               {/* Coach Change */}
               <div className="border-b pb-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Change Coach</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Coach Management</h3>
+                
+                {currentCoach ? (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">Current Coach</h4>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-gray-600">{currentCoach.name} {currentCoach.surname}</p>
+                        <p className="text-sm text-gray-500">{currentCoach.email}</p>
+                      </div>
+                      <button
+                        onClick={handleRemoveCoach}
+                        disabled={isLoading}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 focus:outline-none"
+                      >
+                        <UserMinus className="h-5 w-5" />
+                        Remove Coach
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-600 mb-4">You currently don't have an assigned coach.</p>
+                )}
+
                 <form onSubmit={handleCoachChange} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">New Coach Email</label>
-                    <input
-                      type="email"
-                      value={formData.newCoachEmail}
-                      onChange={(e) => setFormData(prev => ({ ...prev, newCoachEmail: e.target.value }))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
-                      required
-                    />
+                    <div className="mt-1 flex rounded-md shadow-sm">
+                      <input
+                        type="email"
+                        value={formData.newCoachEmail}
+                        onChange={(e) => setFormData(prev => ({ ...prev, newCoachEmail: e.target.value }))}
+                        className="flex-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                        placeholder="coach@email.com"
+                        required
+                      />
+                    </div>
                   </div>
                   <button
                     type="submit"
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                   >
-                    Request Coach Change
+                    <UserPlus className="h-5 w-5" />
+                    {isLoading ? 'Sending...' : 'Invite New Coach'}
                   </button>
                 </form>
               </div>
@@ -318,7 +460,7 @@ const SettingsPage = () => {
               </div>
               <div className="flex items-center">
                 <Calendar className="h-5 w-5 text-gray-400 mr-3" />
-                <span className="text-gray-600">© 2024 LaChart. All rights reserved.</span>
+                <span className="text-gray-600">© 2025 LaChart. All rights reserved.</span>
               </div>
             </div>
           </div>

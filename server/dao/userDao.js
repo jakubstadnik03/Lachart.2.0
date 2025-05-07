@@ -72,6 +72,18 @@ class UserDao {
     }
   }
 
+  async findOne(query) {
+    try {
+      console.log('Finding user with query:', query);
+      const user = await UserModel.findOne(query);
+      console.log('Found user:', user ? 'yes' : 'no');
+      return user;
+    } catch (error) {
+      console.error("Error finding user with query:", error);
+      throw error;
+    }
+  }
+
   async createUser(userData) {
     try {
       console.log("Creating user with data:", { ...userData, password: '[HIDDEN]' });

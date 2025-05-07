@@ -10,13 +10,9 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const { OAuth2Client } = require('google-auth-library');
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
-
-// Google OAuth client
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Register endpoint
 router.post("/register", async (req, res) => {
@@ -1005,61 +1001,37 @@ router.get("/coach/profile", verifyToken, async (req, res) => {
 // Endpoint for athlete to invite coach
 router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
     try {
-        console.log('Received invite-coach request:', {
-            userId: req.user.userId,
-            body: req.body
-        });
-
         const { email } = req.body;
         const athleteId = req.user.userId;
 
-        // Validate email
-        if (!email) {
-            console.log('Email validation failed: email is missing');
-            return res.status(400).json({ error: "Email is required" });
-        }
-
-        // Check if user is an athlete
+        // Find athlete
         const athlete = await userDao.findById(athleteId);
-        console.log('Found athlete:', athlete);
-
         if (!athlete) {
-            console.log('Athlete not found for ID:', athleteId);
             return res.status(404).json({ error: "Athlete not found" });
         }
 
         if (athlete.role !== 'athlete') {
-            console.log('User is not an athlete:', athlete.role);
             return res.status(403).json({ error: "Access allowed only for athletes" });
         }
 
         // Check if athlete already has a coach
         if (athlete.coachId) {
-            console.log('Athlete already has a coach:', athlete.coachId);
-            return res.status(400).json({ error: "You already have a coach assigned" });
+            return res.status(400).json({ error: "Athlete already has an assigned coach" });
         }
 
         // Find coach by email
         const coach = await userDao.findByEmail(email);
-        console.log('Found coach:', coach);
-
         if (!coach) {
-            console.log('Coach not found for email:', email);
-            return res.status(404).json({ error: "Coach not found" });
+            return res.status(404).json({ error: "Coach with this email not found" });
         }
 
-        // Verify coach role
         if (coach.role !== 'coach') {
-            console.log('User is not a coach:', coach.role);
             return res.status(400).json({ error: "User with this email is not a coach" });
         }
 
-        // Check if coach has reached maximum number of athletes (10)
+        // Check if coach has reached maximum number of athletes
         const coachAthletes = await userDao.findAthletesByCoachId(coach._id);
-        console.log('Coach athletes count:', coachAthletes.length);
-
         if (coachAthletes.length >= 10) {
-            console.log('Coach has reached maximum athletes');
             return res.status(400).json({ error: "Coach has reached maximum number of athletes" });
         }
 
@@ -1084,23 +1056,31 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         });
 
         const invitationLink = `${process.env.CLIENT_URL}/accept-coach-invitation/${invitationToken}`;
-        
+
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
-            to: coach.email,
-            subject: 'Coach Invitation in LaChart',
+            to: email,
+            subject: 'Athlete Invitation in LaChart',
             html: `
-                <h2>Coach Invitation</h2>
+                <h2>Athlete Invitation</h2>
                 <p>Athlete ${athlete.name} ${athlete.surname} has invited you to be their coach in LaChart.</p>
-                <p>To accept the invitation, click on the following link:</p>
-                <a href="${invitationLink}">Accept Invitation</a>
+                <p>To confirm the invitation, click on the following link:</p>
+                <a href="${invitationLink}">Confirm Invitation</a>
                 <p>The link is valid for 7 days.</p>
                 <p>If you did not request this email, you can ignore it.</p>
             `
         });
 
-        console.log('Coach invitation sent successfully');
-        res.status(200).json({ message: "Coach invitation sent successfully" });
+        res.status(200).json({ 
+            message: "Invitation successfully sent",
+            coach: {
+                _id: coach._id,
+                name: coach.name,
+                surname: coach.surname,
+                email: coach.email,
+                invitationPending: true
+            }
+        });
     } catch (error) {
         console.error("Error inviting coach:", error);
         res.status(500).json({ error: error.message });
@@ -1201,97 +1181,29 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
 });
 
 // Verify coach invitation token
-router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res) => {
+router.get("/verify-coach-invitation-token/:token", async (req, res) => {
     try {
         const { token } = req.params;
-        console.log('Verifying coach invitation token:', token);
-
-        // Find the invitation in the database
-        const invitation = await CoachInvitation.findOne({ token });
-        if (!invitation) {
-            return res.status(404).json({ error: 'Pozvánka nebyla nalezena' });
-        }
-
-        // Check if the invitation has expired
-        if (invitation.expiresAt < new Date()) {
-            return res.status(400).json({ error: 'Pozvánka vypršela' });
-        }
-
-        // Find the coach
-        const coach = await User.findById(invitation.coachId);
+        const coach = await userDao.findByInvitationToken(token);
+        
         if (!coach) {
-            return res.status(404).json({ error: 'Trenér nebyl nalezen' });
+            return res.status(404).json({ error: "Invalid or expired invitation" });
         }
 
-        // Return the coach information
-        res.json({
-            coach: {
-                id: coach._id,
-                name: coach.name,
-                email: coach.email
-            }
-        });
-    } catch (error) {
-        console.error('Error verifying coach invitation:', error);
-        res.status(500).json({ error: 'Chyba při ověřování pozvánky' });
-    }
-});
-
-// Google authentication endpoint
-router.post("/google-auth", async (req, res) => {
-    try {
-        const { credential } = req.body;
-        
-        // Verify Google token
-        const ticket = await client.verifyIdToken({
-            idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID
-        });
-        
-        const payload = ticket.getPayload();
-        const { email, name, given_name, family_name, sub: googleId } = payload;
-
-        // Find or create user
-        let user = await userDao.findByEmail(email);
-        
-        if (!user) {
-            // Create new user if doesn't exist
-            user = await userDao.createUser({
-                email,
-                name: given_name,
-                surname: family_name,
-                googleId,
-                role: 'athlete', // Default role
-                isRegistrationComplete: true
-            });
-        } else if (!user.googleId) {
-            // Link Google account to existing user
-            user = await userDao.updateUser(user._id, { googleId });
+        if (coach.invitationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "Invitation has expired" });
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-            { userId: user._id, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        );
-
-        // Return token and user data
-        res.json({
-            token,
-            user: {
-                _id: user._id,
-                role: user.role,
-                name: user.name,
-                surname: user.surname,
-                email: user.email,
-                googleId: user.googleId
-            }
+        // Return only necessary information
+        res.status(200).json({
+            _id: coach._id,
+            email: coach.email,
+            name: coach.name,
+            surname: coach.surname
         });
-
     } catch (error) {
-        console.error("Google auth error:", error);
-        res.status(500).json({ error: "Google authentication failed" });
+        console.error("Error verifying coach invitation token:", error);
+        res.status(500).json({ error: error.message });
     }
 });
 
