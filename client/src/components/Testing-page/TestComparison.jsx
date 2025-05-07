@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
-import { calculateThresholds } from './DataTable';
+import { calculateThresholds, methodDescriptions, calculatePolynomialRegression } from './DataTable';
 import { convertPowerToPace, getPaceAxisLimits } from '../../utils/paceConverter';
 import * as math from 'mathjs';
 
@@ -68,51 +68,8 @@ const TestComparison = ({ tests = [] }) => {
   // Vypočítáme thresholds pro každý test
   const testsWithThresholds = validTests.map(test => {
     const thresholds = calculateThresholds(test);
+    const polyPoints = calculatePolynomialRegression(test.results);
     
-    // Polynomial Regression (degree 3)
-    const xVals = test.results.map(r => r.power);
-    const yVals = test.results.map(r => r.lactate);
-    
-    const polyRegression = (() => {
-      const n = xVals.length;
-      const X = [];
-      const Y = [];
-
-      for (let i = 0; i < n; i++) {
-        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-        Y.push(yVals[i]);
-      }
-
-      const XT = math.transpose(X);
-      const XTX = math.multiply(XT, X);
-      const XTY = math.multiply(XT, Y);
-      const coefficients = math.lusolve(XTX, XTY).flat();
-
-      return (x) =>
-        coefficients[0] +
-        coefficients[1] * x +
-        coefficients[2] * Math.pow(x, 2) +
-        coefficients[3] * Math.pow(x, 3);
-    })();
-
-    // Generate points for polynomial curve
-    const minPower = Math.min(...xVals);
-    const maxPower = Math.max(...xVals);
-    const step = (maxPower - minPower) / 100;
-
-    const polyPoints = [];
-    for (let x = minPower; x <= maxPower; x += step) {
-      polyPoints.push({ x, y: polyRegression(x) });
-    }
-
-    // Calculate LTRatio if both LTP1 and LTP2 exist
-    if (thresholds.LTP1 && thresholds.LTP2) {
-      const ratio = thresholds.LTP2 / thresholds.LTP1;
-      if (ratio >= 1.1 && ratio <= 1.3) {
-        thresholds.LTRatio = ratio.toFixed(2);
-      }
-    }
-
     return {
       ...test,
       thresholds,

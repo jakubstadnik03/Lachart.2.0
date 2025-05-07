@@ -226,36 +226,32 @@ router.post("/complete-registration/:token", async (req, res) => {
 });
 
 // Remove athlete from coach
-router.post("/coach/remove-athlete", verifyToken, async (req, res) => {
+router.delete("/coach/remove-athlete/:athleteId", verifyToken, async (req, res) => {
     try {
-        const { athleteId } = req.body;
-        
-        if (!athleteId) {
-            return res.status(400).json({ error: "ID atleta je povinné" });
-        }
-
         const coach = await userDao.findById(req.user.userId);
         
         if (!coach || coach.role !== 'coach') {
             return res.status(403).json({ error: "Přístup povolen pouze pro trenéry" });
         }
 
-        const athlete = await userDao.findById(athleteId);
+        const athlete = await userDao.findById(req.params.athleteId);
         if (!athlete) {
-            return res.status(404).json({ error: "Atlet nenalezen" });
+            return res.status(404).json({ error: "Atlet nebyl nalezen" });
         }
 
         if (athlete.coachId.toString() !== coach._id.toString()) {
-            return res.status(403).json({ error: "Tento atlet nepatří k vašemu týmu" });
+            return res.status(403).json({ error: "Nemáte oprávnění odstranit tohoto atleta" });
         }
 
-        // Odstranit atleta od trenéra
-        await userDao.removeAthleteFromCoach(coach._id, athleteId);
-        // Odstranit trenéra atletovi
-        await userDao.updateUser(athleteId, { coachId: null });
+        // Remove athlete from coach's list
+        await userDao.removeAthleteFromCoach(coach._id, athlete._id);
+        
+        // Delete athlete's account
+        await userDao.deleteById(athlete._id);
 
-        res.status(200).json({ message: "Atlet úspěšně odebrán" });
+        res.status(200).json({ message: "Atlet byl úspěšně odstraněn" });
     } catch (error) {
+        console.error("Error removing athlete:", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -1009,15 +1005,31 @@ router.post("/link-social", verifyToken, async (req, res) => {
         }
 
         if (provider === 'google') {
-            user.googleId = providerId;
+            // Verify the Google credential
+            const decodedToken = jwt.decode(providerId);
+            if (!decodedToken) {
+                return res.status(400).json({ error: "Invalid Google credential" });
+            }
+
+            // Check if this Google account is already linked to another user
+            const existingUser = await userDao.findByGoogleId(decodedToken.sub);
+            if (existingUser && existingUser._id.toString() !== userId) {
+                return res.status(400).json({ error: "This Google account is already linked to another user" });
+            }
+
+            user.googleId = decodedToken.sub;
+            await user.save();
+            res.status(200).json({ 
+                message: "Social account linked successfully",
+                googleId: decodedToken.sub
+            });
         } else if (provider === 'facebook') {
             user.facebookId = providerId;
+            await user.save();
+            res.status(200).json({ message: "Social account linked successfully" });
         } else {
             return res.status(400).json({ error: "Invalid provider" });
         }
-
-        await user.save();
-        res.status(200).json({ message: "Social account linked successfully" });
     } catch (error) {
         console.error("Link social error:", error);
         res.status(500).json({ error: error.message });

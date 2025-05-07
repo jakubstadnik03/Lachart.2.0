@@ -141,14 +141,22 @@ const AthletesPage = () => {
   };
 
   const handleRemoveAthlete = async (athleteId) => {
-    try {
-      await api.delete(`/user/athlete/${athleteId}`);
-      setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
-      setDropdownOpen(null);
-      addNotification('Athlete removed successfully', 'success');
-    } catch (error) {
-      console.error('Error removing athlete:', error);
-      addNotification('Failed to remove athlete', 'error');
+    // Get athlete name for confirmation message
+    const athlete = athletes.find(a => a._id === athleteId);
+    const athleteName = athlete ? `${athlete.name} ${athlete.surname}` : 'this athlete';
+    
+    // Show confirmation dialog
+    if (window.confirm(`Are you sure you want to remove ${athleteName}? This action cannot be undone.`)) {
+      try {
+        await api.delete(`/user/coach/remove-athlete/${athleteId}`);
+        setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
+        setDropdownOpen(null);
+        addNotification('Athlete removed successfully', 'success');
+      } catch (error) {
+        console.error('Error removing athlete:', error);
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to remove athlete';
+        addNotification(errorMessage, 'error');
+      }
     }
   };
 
@@ -193,35 +201,72 @@ const AthletesPage = () => {
           athlete._id === selectedAthlete._id ? response.data.athlete : athlete
         ));
         addNotification('Athlete updated successfully', 'success');
+        setIsModalOpen(false);
+        setSelectedAthlete(null);
+        resetForm();
       } else {
         // Přidání nového atleta
-        const response = await api.post('/user/coach/add-athlete', {
-          name: formData.name,
-          surname: formData.surname,
-          email: formData.email,
-          dateOfBirth: formattedDate,
-          address: formData.address,
-          phone: formData.phone,
-          height: formData.height ? Number(formData.height) : null,
-          weight: formData.weight ? Number(formData.weight) : null,
-          sport: formData.sport,
-          specialization: formData.specialization
-        });
-        
-        if (response.data.success) {
+        try {
+          const response = await api.post('/user/coach/add-athlete', {
+            name: formData.name,
+            surname: formData.surname,
+            email: formData.email,
+            dateOfBirth: formattedDate,
+            address: formData.address,
+            phone: formData.phone,
+            height: formData.height ? Number(formData.height) : null,
+            weight: formData.weight ? Number(formData.weight) : null,
+            sport: formData.sport,
+            specialization: formData.specialization
+          });
+          
+          // Přidání nového atleta do seznamu
           setAthletes([...athletes, response.data.athlete]);
           addNotification('Athlete added successfully and invitation sent', 'success');
-        } else {
-          addNotification('Error adding athlete: ' + response.data.message, 'error');
+          // Zavření modalu a reset formuláře
+          setIsModalOpen(false);
+          setSelectedAthlete(null);
+          resetForm();
+          // Refresh stránky
+          window.location.reload();
+        } catch (error) {
+          console.error('Error adding athlete:', error);
+          let errorMessage = 'An unexpected error occurred';
+          
+          if (error.response) {
+            // Server responded with an error
+            errorMessage = error.response.data.error || error.response.data.message || 'Failed to add athlete';
+          } else if (error.request) {
+            // Request was made but no response received
+            errorMessage = 'No response from server. Please check your internet connection.';
+          } else {
+            // Something else happened
+            errorMessage = error.message || 'An unexpected error occurred';
+          }
+          
+          addNotification(errorMessage, 'error');
+          // Keep the modal open so user can fix the error
+          setIsModalOpen(true);
         }
       }
-      setIsModalOpen(false);
-      setSelectedAthlete(null);
-      resetForm();
     } catch (error) {
       console.error('Error submitting athlete:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'An unexpected error occurred';
-      addNotification('Error saving athlete: ' + errorMessage, 'error');
+      let errorMessage = 'An unexpected error occurred';
+      
+      if (error.response) {
+        // Server responded with an error
+        errorMessage = error.response.data.error || error.response.data.message || 'Failed to save athlete';
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'No response from server. Please check your internet connection.';
+      } else {
+        // Something else happened
+        errorMessage = error.message || 'An unexpected error occurred';
+      }
+      
+      addNotification(errorMessage, 'error');
+      // Keep the modal open so user can fix the error
+      setIsModalOpen(true);
     }
   };
 
@@ -345,7 +390,7 @@ const AthletesPage = () => {
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 1.4 + index * 0.1 }}
                     whileHover={{ scale: 1.02 }}
-                    className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden"
+                    className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden flex flex-col h-full"
                   >
                     <div className="h-24 sm:h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
                       <div className="absolute top-2 sm:top-4 right-2 sm:right-4 dropdown-container">
@@ -381,7 +426,7 @@ const AthletesPage = () => {
                         )}
                       </div>
                     </div>
-                    <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+                    <div className="px-4 sm:px-6 pb-4 sm:pb-6 flex-grow flex flex-col">
                       <div className="flex justify-center -mt-12 sm:-mt-16">
                         <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
                           <img
@@ -400,14 +445,23 @@ const AthletesPage = () => {
                         </h3>
                         <p className="text-sm sm:text-base text-gray-500 mt-1">{athlete.email}</p>
                       </div>
-                      <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4">
+                      <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4 flex-grow">
                         <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-                          <div className="text-base sm:text-xl font-semibold text-secondary">{athlete.sport}</div>
-                          <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.specialization}</div>
+                          <div className="text-base sm:text-xl font-semibold text-secondary">{athlete.sport || ''}</div>
+                          <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.specialization || ''}</div>
                         </div>
                         <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
-                          <div className="text-base sm:text-xl font-semibold text-primary ">{formatDate(athlete.dateOfBirth)}</div>
-                          <div className="text-xs sm:text-sm text-gray-500 mt-1">{`${athlete.height} cm ${athlete.weight} kg`}</div>
+                          <div className="text-base sm:text-xl font-semibold text-primary">{formatDate(athlete.dateOfBirth)}</div>
+                          <div className="text-xs sm:text-sm text-gray-500 mt-1">
+                            {athlete.height && athlete.weight ? 
+                              `${athlete.height} cm ${athlete.weight} kg` : 
+                              athlete.height ? 
+                                `${athlete.height} cm` : 
+                                athlete.weight ? 
+                                  `${athlete.weight} kg` : 
+                                  ''
+                            }
+                          </div>
                         </div>
                       </div>
                       <button 

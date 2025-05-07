@@ -30,7 +30,25 @@ const SettingsPage = () => {
 
   const handleGoogleSuccess = async (response) => {
     try {
-      const res = await fetch(`${API_ENDPOINTS.AUTH}/link-social`, {
+      // First, authenticate with Google
+      const authResult = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          credential: response.credential
+        }),
+      });
+
+      if (!authResult.ok) {
+        throw new Error('Google authentication failed');
+      }
+
+      const authData = await authResult.json();
+      
+      // Then link the account
+      const linkResult = await fetch(`${API_ENDPOINTS.AUTH}/link-social`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,11 +60,17 @@ const SettingsPage = () => {
         }),
       });
 
-      if (res.ok) {
+      if (linkResult.ok) {
+        // Update the stored user data with the new Google ID
+        const currentUser = JSON.parse(localStorage.getItem('user'));
+        const updatedUser = { ...currentUser, googleId: response.credential };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        
         setLinkedAccounts(prev => ({ ...prev, google: true }));
         addNotification('Google account linked successfully', 'success');
       } else {
-        addNotification('Failed to link Google account', 'error');
+        const errorData = await linkResult.json();
+        addNotification(errorData.message || 'Failed to link Google account', 'error');
       }
     } catch (error) {
       console.error('Link Google error:', error);

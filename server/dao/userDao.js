@@ -19,7 +19,17 @@ class UserDao {
   }
 
   async delete(userId) {
-    await UserModel.findOneAndDelete({id: userId});
+    await UserModel.findOneAndDelete({_id: userId});
+  }
+
+  async deleteById(userId) {
+    try {
+      const result = await UserModel.findByIdAndDelete(userId);
+      return result;
+    } catch (error) {
+      console.error("Error deleting user by ID:", error);
+      throw error;
+    }
   }
 
   async update(userId, newData) {

@@ -54,10 +54,17 @@ const LoginPage = () => {
       }
     } catch (error) {
       console.error("Login error:", error);
-      addNotification(
-        error.response?.data?.message || "Login failed",
-        "error"
-      );
+      let errorMessage = "Login failed";
+      
+      if (error.response) {
+        if (error.response.status === 429) {
+          errorMessage = "Too many login attempts. Please wait a few minutes before trying again.";
+        } else {
+          errorMessage = error.response.data.message || "Login failed";
+        }
+      }
+      
+      addNotification(errorMessage, "error");
     }
   };
 

@@ -26,6 +26,7 @@ ChartJS.register(
 const colorMap = {
     'Measured data': '#000000',  
     'Log-log': '#52525b',       
+    'IAT': '#3b82f6',          // Přidáno - modrá barva pro IAT
     'OBLA 2.0': '#86efac',      
     'OBLA 2.5': '#fdba74',      
     'OBLA 3.0': '#818cf8',      
@@ -42,6 +43,7 @@ const colorMap = {
   const legendItems = [
     { color: 'border border-black border-solid bg-zinc-50', label: 'Data points', dsLabel: 'Measured data' },
     { color: 'bg-zinc-700', label: 'Log-log', dsLabel: 'Log-log' },
+    { color: 'bg-blue-500', label: 'IAT', dsLabel: 'IAT' },  // Přidáno
     { color: 'bg-green-300', label: 'OBLA 2.0', dsLabel: 'OBLA 2.0' },
     { color: 'bg-orange-300', label: 'OBLA 2.5', dsLabel: 'OBLA 2.5' },
     { color: 'bg-indigo-400', label: 'OBLA 3.0', dsLabel: 'OBLA 3.0' },
