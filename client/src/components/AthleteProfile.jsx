@@ -8,6 +8,8 @@ import PreviousTestingComponent from './Testing-page/PreviousTestingComponent';
 import SportsSelector from './Header/SportsSelector';
 import api from '../services/api';
 import { motion } from 'framer-motion';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import { useNotification } from '../context/NotificationContext';
 
 export default function AthleteProfile() {
   const { athleteId } = useParams();
@@ -21,6 +23,21 @@ export default function AthleteProfile() {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    surname: '',
+    dateOfBirth: '',
+    email: '',
+    phone: '',
+    address: '',
+    weight: '',
+    height: '',
+    sport: '',
+    specialization: '',
+    notes: '',
+  });
+  const { addNotification } = useNotification();
 
   useEffect(() => {
     const fetchAthleteData = async () => {
@@ -50,6 +67,86 @@ export default function AthleteProfile() {
       fetchAthleteData();
     }
   }, [athleteId, user]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'dateOfBirth') {
+      if (value) {
+        const [year, month, day] = value.split('-');
+        const formattedDate = `${day}.${month}.${year}`;
+        setFormData(prev => ({
+          ...prev,
+          [name]: formattedDate
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          [name]: ''
+        }));
+      }
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const handleEditAthlete = () => {
+    setFormData({
+      name: athlete.name,
+      surname: athlete.surname,
+      dateOfBirth: formatDate(athlete.dateOfBirth),
+      email: athlete.email,
+      phone: athlete.phone || '',
+      address: athlete.address || '',
+      weight: athlete.weight || '',
+      height: athlete.height || '',
+      sport: athlete.sport || '',
+      specialization: athlete.specialization || '',
+      notes: athlete.notes || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const formattedDate = formData.dateOfBirth ? 
+        formData.dateOfBirth.split('.').reverse().join('-') : 
+        null;
+
+      const response = await api.put(`/user/coach/edit-athlete/${athleteId}`, {
+        ...formData,
+        dateOfBirth: formattedDate
+      });
+
+      setAthlete(response.data.athlete);
+      addNotification('Athlete updated successfully', 'success');
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error('Error updating athlete:', error);
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to update athlete';
+      addNotification(errorMessage, 'error');
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      surname: '',
+      dateOfBirth: '',
+      email: '',
+      phone: '',
+      address: '',
+      weight: '',
+      height: '',
+      sport: '',
+      specialization: '',
+      notes: '',
+    });
+  };
 
   // Formátování data
   const formatDate = (dateString) => {
@@ -143,6 +240,14 @@ export default function AthleteProfile() {
                 >
                   Athlete Profile
                 </motion.h1>
+                {user?.role === 'coach' && (
+                  <button
+                    onClick={handleEditAthlete}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                  >
+                    Edit Profile
+                  </button>
+                )}
               </div>
 
               <motion.div
@@ -317,6 +422,241 @@ export default function AthleteProfile() {
           />
         </motion.div>
       </motion.div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Edit Athlete</h2>
+              <button 
+                onClick={() => {
+                  setIsModalOpen(false);
+                  resetForm();
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="grid grid-cols-[200px_1fr] gap-4">
+                {/* Left side - Profile Image */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Profile Image
+                  </label>
+                  <div className="w-full aspect-square bg-gray-200 rounded-full overflow-hidden flex items-center justify-center">
+                    {formData.sport && getAvatarBySport(formData.sport) ? (
+                      <img
+                        src={getAvatarBySport(formData.sport)}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <p className="text-sm text-gray-500 text-center px-4">
+                        Avatar will be selected after choosing sport
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right side - Basic Info */}
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Name<span className="text-orange-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      required
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Surname<span className="text-orange-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="surname"
+                      required
+                      value={formData.surname}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter Surname"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Date of Birth<span className="text-orange-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="dateOfBirth"
+                      required
+                      value={formData.dateOfBirth ? formData.dateOfBirth.split('.').reverse().join('-') : ''}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom part of the form */}
+              <div className="space-y-2 mt-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Email<span className="text-orange-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter email address"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone<span className="text-orange-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      required
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter phone number"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Address
+                  </label>
+                  <input
+                    type="text"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                    placeholder="Enter your address"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Weight
+                    </label>
+                    <input
+                      type="text"
+                      name="weight"
+                      value={formData.weight}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter weight"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Height
+                    </label>
+                    <input
+                      type="text"
+                      name="height"
+                      value={formData.height}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter height"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sports
+                    </label>
+                    <select
+                      name="sport"
+                      value={formData.sport}
+                      onChange={handleInputChange}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">Select sports</option>
+                      <option value="triathlon">Triathlon</option>
+                      <option value="running">Running</option>
+                      <option value="swimming">Swimming</option>
+                      <option value="cycling">Cycling</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Specialization
+                  </label>
+                  <input
+                    type="text"
+                    name="specialization"
+                    value={formData.specialization}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                    placeholder="Enter specialization (e.g., Sprint, Long Distance)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                    placeholder="Write notes..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

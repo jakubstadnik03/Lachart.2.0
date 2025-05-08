@@ -1068,10 +1068,23 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         const invitationTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
         // Save token and athlete ID to database
-        await userDao.updateUser(coach._id, {
+        console.log('Saving invitation data:', {
+            coachId: coach._id,
             invitationToken,
             invitationTokenExpires,
             pendingAthleteId: athleteId
+        });
+        
+        const updatedCoach = await userDao.updateUser(coach._id, {
+            invitationToken,
+            invitationTokenExpires,
+            pendingAthleteId: athleteId
+        });
+        
+        console.log('Coach after update:', {
+            id: updatedCoach._id,
+            invitationToken: updatedCoach.invitationToken,
+            pendingAthleteId: updatedCoach.pendingAthleteId
         });
 
         // Send invitation email
@@ -1121,6 +1134,13 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
             console.log('Coach not found for token:', token);
             return res.status(404).json({ error: "Invalid or expired invitation" });
         }
+
+        console.log('Found coach:', {
+            id: coach._id,
+            invitationToken: coach.invitationToken,
+            pendingAthleteId: coach.pendingAthleteId,
+            invitationTokenExpires: coach.invitationTokenExpires
+        });
 
         if (coach._id.toString() !== coachId.toString()) {
             console.log('Coach ID mismatch:', { tokenCoachId: coach._id, currentCoachId: coachId });
@@ -1204,26 +1224,15 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
 router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res) => {
     try {
         const { token } = req.params;
-        console.log('Verifying coach invitation token:', token);
-
-        // Find the invitation in the database
-        const invitation = await CoachInvitation.findOne({ token });
-        if (!invitation) {
+        // Najdi coacha podle tokenu
+        const coach = await userDao.findByInvitationToken(token);
+        if (!coach) {
             return res.status(404).json({ error: 'Pozvánka nebyla nalezena' });
         }
-
-        // Check if the invitation has expired
-        if (invitation.expiresAt < new Date()) {
+        if (coach.invitationTokenExpires < new Date()) {
             return res.status(400).json({ error: 'Pozvánka vypršela' });
         }
-
-        // Find the coach
-        const coach = await User.findById(invitation.coachId);
-        if (!coach) {
-            return res.status(404).json({ error: 'Trenér nebyl nalezen' });
-        }
-
-        // Return the coach information
+        // Vrať informace o coachovi
         res.json({
             coach: {
                 id: coach._id,
@@ -1292,6 +1301,54 @@ router.post("/google-auth", async (req, res) => {
     } catch (error) {
         console.error("Google auth error:", error);
         res.status(500).json({ error: "Google authentication failed" });
+    }
+});
+
+// Change password endpoint
+router.post("/change-password", verifyToken, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.userId;
+
+        // Validate required fields
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: "Current password and new password are required" });
+        }
+
+        // Validate password length
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: "New password must be at least 6 characters long" });
+        }
+
+        // Find user
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Verify current password
+        const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+        if (!isValidPassword) {
+            return res.status(400).json({ error: "Current password is incorrect" });
+        }
+
+        // Check if new password is same as current password
+        const isSamePassword = await bcrypt.compare(newPassword, user.password);
+        if (isSamePassword) {
+            return res.status(400).json({ error: "New password must be different from current password" });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // Update password
+        await userDao.updateUser(userId, { password: hashedPassword });
+
+        res.status(200).json({ message: "Password successfully changed" });
+    } catch (error) {
+        console.error("Error changing password:", error);
+        res.status(500).json({ error: error.message });
     }
 });
 

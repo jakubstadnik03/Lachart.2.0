@@ -5,7 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 
 const AcceptCoachInvitation = () => {
-    const { token } = useParams();
+    let { token } = useParams();
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const { addNotification } = useNotification();
@@ -13,12 +13,31 @@ const AcceptCoachInvitation = () => {
     const [error, setError] = useState(null);
     const [coachInfo, setCoachInfo] = useState(null);
 
+    // Fallback: pokud token není v useParams, zkusit jej získat z localStorage
+    if (!token) {
+        token = localStorage.getItem('pendingInvitationToken');
+        if (!token) {
+            setError('Chybí token pozvánky');
+            setLoading(false);
+        }
+    }
+
     useEffect(() => {
         // If not authenticated, store the token and redirect to login
         if (!isAuthenticated) {
             console.log('User not authenticated, storing invitation token and redirecting to login');
-            localStorage.setItem('pendingInvitationToken', token);
-            navigate('/login');
+            if (token) {
+                localStorage.setItem('pendingInvitationToken', token);
+            }
+            navigate('/login', { state: { from: `/accept-coach-invitation/${token}` } });
+            return;
+        }
+
+        // If authenticated, try to get token from URL params or localStorage
+        const invitationToken = token || localStorage.getItem('pendingInvitationToken');
+        if (!invitationToken) {
+            setError('Chybí token pozvánky');
+            setLoading(false);
             return;
         }
 
@@ -29,10 +48,10 @@ const AcceptCoachInvitation = () => {
                     throw new Error('Chybí autorizační token');
                 }
 
-                console.log('Verifying invitation with token:', token);
+                console.log('Verifying invitation with token:', invitationToken);
                 console.log('Using auth token:', authToken);
                 
-                const verifyUrl = `${API_ENDPOINTS.USER}/verify-coach-invitation-token/${token}`;
+                const verifyUrl = API_ENDPOINTS.VERIFY_COACH_INVITATION(invitationToken);
                 console.log('API endpoint:', verifyUrl);
 
                 const response = await fetch(verifyUrl, {
@@ -69,6 +88,8 @@ const AcceptCoachInvitation = () => {
                 const data = await response.json();
                 console.log('Received data:', data);
                 setCoachInfo(data.coach);
+                // Only remove the token after successful verification
+                localStorage.removeItem('pendingInvitationToken');
                 setLoading(false);
             } catch (error) {
                 console.error('Error verifying invitation:', error);
@@ -77,7 +98,7 @@ const AcceptCoachInvitation = () => {
             }
         };
 
-        if (token) {
+        if (invitationToken) {
             verifyInvitation();
         } else {
             setError('Chybí token pozvánky');
@@ -93,7 +114,12 @@ const AcceptCoachInvitation = () => {
                 throw new Error('Chybí autorizační token');
             }
 
-            const acceptUrl = `${API_ENDPOINTS.USER}/accept-coach-invitation/${token}`;
+            const invitationToken = token || localStorage.getItem('pendingInvitationToken');
+            if (!invitationToken) {
+                throw new Error('Chybí token pozvánky');
+            }
+
+            const acceptUrl = API_ENDPOINTS.ACCEPT_COACH_INVITATION(invitationToken);
             console.log('Accepting invitation at:', acceptUrl);
 
             const response = await fetch(acceptUrl, {

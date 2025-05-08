@@ -44,11 +44,13 @@ const SettingsPage = () => {
     }
   }, [user]);
 
+ 
+
   useEffect(() => {
     if (user?.coachId) {
       fetchCurrentCoach();
     }
-  }, [user?.coachId]);
+  }, [user?.coachId, fetchCurrentCoach]);
 
   const fetchCurrentCoach = async () => {
     try {
@@ -148,13 +150,21 @@ const SettingsPage = () => {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
+    
+    // Validate passwords match
     if (formData.newPassword !== formData.confirmPassword) {
       addNotification('New passwords do not match', 'error');
       return;
     }
 
+    // Validate password length
+    if (formData.newPassword.length < 6) {
+      addNotification('New password must be at least 6 characters long', 'error');
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_ENDPOINTS.AUTH}/change-password`, {
+      const response = await fetch(API_ENDPOINTS.CHANGE_PASSWORD, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,11 +176,13 @@ const SettingsPage = () => {
         }),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
         addNotification('Password changed successfully', 'success');
         setFormData(prev => ({ ...prev, currentPassword: '', newPassword: '', confirmPassword: '' }));
       } else {
-        addNotification('Failed to change password', 'error');
+        addNotification(data.error || 'Failed to change password', 'error');
       }
     } catch (error) {
       console.error('Password change error:', error);

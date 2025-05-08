@@ -25,10 +25,18 @@ const LoginPage = () => {
 
   // Check for invitation token in URL
   useEffect(() => {
+    // Nejprve zkusit získat token z query stringu
     const urlParams = new URLSearchParams(window.location.search);
-    const invitationToken = urlParams.get('token');
+    let invitationToken = urlParams.get('token');
+    // Pokud není v query stringu, zkusit získat z pathname
+    if (!invitationToken) {
+      const match = window.location.pathname.match(/accept-coach-invitation\/([a-zA-Z0-9]+)/);
+      if (match && match[1]) {
+        invitationToken = match[1];
+      }
+    }
     if (invitationToken) {
-      console.log("Found invitation token in URL:", invitationToken);
+      console.log("Found invitation token in URL or path:", invitationToken);
       localStorage.setItem('pendingInvitationToken', invitationToken);
     }
   }, []);
@@ -67,19 +75,25 @@ const LoginPage = () => {
         // Nastavení autorizační hlavičky pro API
         api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;
         
-        login(formData.email, formData.password, result.data.token, result.data.user);
-        addNotification("Successfully logged in", "success");
+        try {
+          // First call login to update auth state
+          await login(formData.email, formData.password, result.data.token, result.data.user);
+          addNotification("Successfully logged in", "success");
 
-        // Check if there's a pending invitation
-        const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-        console.log("Checking for pending invitation after login:", pendingInvitationToken);
-        
-        if (pendingInvitationToken) {
-          console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-          localStorage.removeItem('pendingInvitationToken');
-          navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
-        } else {
-          navigate("/dashboard", { replace: true });
+          // Then check for pending invitation
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          console.log("Checking for pending invitation after login:", pendingInvitationToken);
+          
+          if (pendingInvitationToken) {
+            console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
+          }
+        } catch (loginError) {
+          console.error("Error updating auth state:", loginError);
+          addNotification("Error during login process", "error");
         }
       }
     } catch (error) {
@@ -116,19 +130,25 @@ const LoginPage = () => {
         // Nastavení autorizační hlavičky pro API
         api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;
         
-        login(null, null, result.data.token, result.data.user);
-        addNotification("Successfully logged in with Google", "success");
+        try {
+          // First call login to update auth state
+          await login(null, null, result.data.token, result.data.user);
+          addNotification("Successfully logged in with Google", "success");
 
-        // Check if there's a pending invitation
-        const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-        console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
-        
-        if (pendingInvitationToken) {
-          console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-          localStorage.removeItem('pendingInvitationToken');
-          navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
-        } else {
-          navigate("/dashboard", { replace: true });
+          // Then check for pending invitation
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
+          
+          if (pendingInvitationToken) {
+            console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
+          }
+        } catch (loginError) {
+          console.error("Error updating auth state:", loginError);
+          addNotification("Error during login process", "error");
         }
       }
     } catch (error) {

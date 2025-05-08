@@ -68,7 +68,8 @@ export const AuthProvider = ({ children }) => {
         setUser(user);
         saveToken(token);
         localStorage.setItem("user", JSON.stringify(user));
-        return { success: true };
+        setIsAuthenticated(true);
+        return Promise.resolve({ success: true });
       } else {
         const response = await api.post("/user/login", { email, password });
         const { token: loginToken, user: loginUser } = response.data;
@@ -77,15 +78,16 @@ export const AuthProvider = ({ children }) => {
         setUser(loginUser);
         saveToken(loginToken);
         localStorage.setItem("user", JSON.stringify(loginUser));
-        return { success: true };
+        setIsAuthenticated(true);
+        return Promise.resolve({ success: true });
       }
     } catch (error) {
       console.error("Login error:", error);
       removeToken();
-      return { 
+      return Promise.reject({ 
         success: false, 
         error: error.response?.data?.message || "Login failed" 
-      };
+      });
     }
   }, [removeToken, saveToken]);
 

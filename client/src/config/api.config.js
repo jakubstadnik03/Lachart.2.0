@@ -1,5 +1,5 @@
-// export const API_BASE_URL = 'https://lachart.onrender.com';
-export const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = 'https://lachart.onrender.com';
+// export const API_BASE_URL = 'http://localhost:8000';
 
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/user/login`,
@@ -38,5 +38,8 @@ export const API_ENDPOINTS = {
     ATHLETE: (id) => `${API_BASE_URL}/user/athlete/${id}`,
     VERIFY_COACH_INVITATION: (token) => `${API_BASE_URL}/user/verify-coach-invitation-token/${token}`,
     ACCEPT_COACH_INVITATION: (token) => `${API_BASE_URL}/user/accept-coach-invitation/${token}`,
+    // Add USER and CHANGE_PASSWORD endpoints
+    USER: `${API_BASE_URL}/user`,
+    CHANGE_PASSWORD: `${API_BASE_URL}/user/change-password`,
     // další endpointy...
 }; 
