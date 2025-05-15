@@ -366,6 +366,20 @@ const LoginPage = () => {
               Sign Up
             </Link>
           </motion.p>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 1.8 }}
+            className="mt-4 text-center"
+          >
+            <Link 
+              to="/testing-without-login" 
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Continue without login (Demo Mode)
+            </Link>
+          </motion.div>
         </motion.div>
       </motion.div>
     </motion.div>

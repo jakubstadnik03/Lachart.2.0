@@ -496,8 +496,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       {
         header: 'La (mmol)',
         data: methods.map((method) => {
-          return thresholds.lactates[method]
-            ? thresholds.lactates[method].toFixed(2)
+          const value = thresholds.lactates[method];
+          return value && typeof value === 'number' && !isNaN(value)
+            ? value.toFixed(2)
             : 'N/A';
         })
       }

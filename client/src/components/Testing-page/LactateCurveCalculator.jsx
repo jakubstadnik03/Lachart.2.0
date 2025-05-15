@@ -204,35 +204,70 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   // Polynomial Regression (degree 3)
   const polyRegression = (() => {
-    const n = xVals.length;
-    const X = [];
-    const Y = [];
+    try {
+      const n = xVals.length;
+      if (n < 3) {
+        console.warn('Not enough data points for polynomial regression');
+        return null;
+      }
 
-    for (let i = 0; i < n; i++) {
-      X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-      Y.push(yVals[i]);
+      // Check for invalid or duplicate values
+      const uniqueXVals = new Set(xVals);
+      if (uniqueXVals.size < 3) {
+        console.warn('Not enough unique x values for polynomial regression');
+        return null;
+      }
+
+      const X = [];
+      const Y = [];
+
+      for (let i = 0; i < n; i++) {
+        if (isNaN(xVals[i]) || isNaN(yVals[i])) {
+          console.warn('Invalid data point found:', { x: xVals[i], y: yVals[i] });
+          return null;
+        }
+        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        Y.push(yVals[i]);
+      }
+
+      try {
+        const XT = math.transpose(X);
+        const XTX = math.multiply(XT, X);
+        const XTY = math.multiply(XT, Y);
+        const coefficients = math.lusolve(XTX, XTY).flat();
+
+        return (x) =>
+          coefficients[0] +
+          coefficients[1] * x +
+          coefficients[2] * Math.pow(x, 2) +
+          coefficients[3] * Math.pow(x, 3);
+      } catch (error) {
+        console.warn('Error in polynomial regression calculation:', error);
+        return null;
+      }
+    } catch (error) {
+      console.warn('Error in polynomial regression setup:', error);
+      return null;
     }
-
-    const XT = math.transpose(X);
-    const XTX = math.multiply(XT, X);
-    const XTY = math.multiply(XT, Y);
-    const coefficients = math.lusolve(XTX, XTY).flat();
-
-    return (x) =>
-      coefficients[0] +
-      coefficients[1] * x +
-      coefficients[2] * Math.pow(x, 2) +
-      coefficients[3] * Math.pow(x, 3);
   })();
 
-  // Generate points for polynomial curve
-  const minPower = Math.min(...xVals);
-  const maxPower = Math.max(...xVals);
-  const step = (maxPower - minPower) / 100; // Adjust density of points
-
+  // Generate points for polynomial curve only if regression is valid
   const polyPoints = [];
-  for (let x = minPower; x <= maxPower; x += step) {
-    polyPoints.push({ x, y: polyRegression(x) });
+  if (polyRegression) {
+    const minPower = Math.min(...xVals);
+    const maxPower = Math.max(...xVals);
+    const step = (maxPower - minPower) / 100;
+
+    for (let x = minPower; x <= maxPower; x += step) {
+      try {
+        const y = polyRegression(x);
+        if (!isNaN(y) && isFinite(y)) {
+          polyPoints.push({ x, y });
+        }
+      } catch (error) {
+        console.warn('Error calculating polynomial point:', error);
+      }
+    }
   }
 
   const measuredDataSet = {
@@ -249,13 +284,13 @@ const LactateCurveCalculator = ({ mockData }) => {
     pointRadius: 5,
   };
 
-  const polyDataSet = {
+  const polyDataSet = polyPoints.length > 0 ? {
     label: 'Polynomial Fit',
     data: polyPoints,
     borderColor: '#2196F3',
     pointRadius: 0,
     showLine: true,
-  };
+  } : null;
 
   const thresholdDatasets = Object.keys(thresholds)
     .filter(key => !['heartRates', 'lactates'].includes(key))
@@ -272,7 +307,11 @@ const LactateCurveCalculator = ({ mockData }) => {
       showLine: false,
     }));
 
-  const allDatasets = [...thresholdDatasets, measuredDataSet, polyDataSet];
+  const allDatasets = [
+    ...thresholdDatasets,
+    measuredDataSet,
+    ...(polyDataSet ? [polyDataSet] : [])
+  ];
 
   const data = { datasets: allDatasets };
   const options = {
@@ -281,8 +320,8 @@ const LactateCurveCalculator = ({ mockData }) => {
     scales: {
       x: {
         type: 'linear',
-        min: minPower - (maxPower - minPower) * 0.1,
-        max: maxPower + (maxPower - minPower) * 0.1,
+        min: Math.min(...xVals) - (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
+        max: Math.max(...xVals) + (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
         title: { 
           display: true, 
           text: isRunning ? 'Speed (km/h)' : 'Power (W)' 

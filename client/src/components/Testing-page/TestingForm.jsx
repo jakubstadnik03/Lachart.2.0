@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Trash, Plus, X, Save } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 
-function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete }) {
+function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false }) {
   const { addNotification } = useNotification();
 
   const formatDate = (dateString) => {
@@ -114,20 +114,61 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setIsDirty(true);
   };
 
-  const validateNumericInput = (value) => {
-    // Allow empty string, single decimal point, or valid number
-    if (value === '' || value === '.' || value === '0') return true;
+  const validateNumericInput = (value, allowDecimals = true) => {
+    // Allow empty string
+    if (value === '') return true;
     
-    // Check if it's a valid number (including decimals)
-    const numberRegex = /^-?\d*\.?\d*$/;
-    return numberRegex.test(value);
+    // For weight (no decimals)
+    if (!allowDecimals) {
+      return /^-?\d*$/.test(value);
+    }
+    
+    // For lactate (with decimals)
+    // Allow: numbers, single decimal point, and numbers after decimal point
+    return /^-?\d*\.?\d*$/.test(value);
   };
 
   const handleNumericInputChange = (rowIndex, field, value) => {
-    if (!validateNumericInput(value)) return;
+    // Special handling for weight (no decimals)
+    if (rowIndex === -1 && field === 'weight') {
+      if (!validateNumericInput(value, false)) return;
+      const newFormData = { ...formData, weight: value };
+      setFormData(newFormData);
+      setIsDirty(true);
+      
+      const updatedTestData = {
+        ...testData,
+        weight: value === '' ? 0 : Number(value),
+        results: rows
+      };
+      onTestDataChange(updatedTestData);
+      return;
+    }
     
-    // Preserve the exact input value
-    handleValueChange(rowIndex, field, value);
+    // Special handling for base lactate (with decimals)
+    if (rowIndex === -1 && field === 'baseLa') {
+      // Allow any numeric input including decimals
+      const newFormData = { ...formData, baseLa: value };
+      setFormData(newFormData);
+      setIsDirty(true);
+      
+      const updatedTestData = {
+        ...testData,
+        baseLactate: value === '' ? 0 : parseFloat(value) || 0,
+        results: rows
+      };
+      onTestDataChange(updatedTestData);
+      return;
+    }
+    
+    // Handle row-level lactate inputs (with decimals)
+    if (field === 'lactate') {
+      handleValueChange(rowIndex, field, value);
+    } else {
+      // Handle other numeric inputs (no decimals)
+      if (!validateNumericInput(value, false)) return;
+      handleValueChange(rowIndex, field, value);
+    }
   };
 
   const handleValueChange = (rowIndex, field, value) => {
@@ -371,7 +412,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   }, [testData]);
 
   return (
-    <div className={`flex flex-col w-full max-w-l mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg ${!showGlucose ? 'w-11/12 mx-0' : ''}`}>
+    <div className={`flex flex-col w-full p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg ${!showGlucose ? 'w-full' : ''}`}>
       <input 
         type="text"
         value={formData.title}
@@ -426,46 +467,48 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         <div className="hidden sm:block text-center">Actions</div>
       </div>
 
-      {rows.map((row, index) => (
-        <div key={index} className={`grid ${gridCols} gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg`}>
-          <div className="text-center text-sm">{index + 1}</div>
-          <input 
-            type={formData.sport === 'bike' ? "text" : "text"}
-            defaultValue={row.power || ''}
-            onChange={(e) => {
-              console.log('Input change:', e.target.value);
-              handleValueChange(index, 'power', e.target.value);
-            }}
-            className="p-1 text-sm border rounded-lg"
-            placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
-          />
-          <input 
-            type="text" 
-            defaultValue={row.heartRate || ''}
-            onChange={(e) => handleNumericInputChange(index, 'heartRate', e.target.value)} 
-            className="p-1 text-sm border rounded-lg" 
-          />
-          <input 
-            type="text" 
-            defaultValue={row.lactate || ''}
-            onChange={(e) => handleNumericInputChange(index, 'lactate', e.target.value)} 
-            className="p-1 text-sm border rounded-lg" 
-          />
-          {showGlucose && <input 
-            type="text" 
-            defaultValue={row.glucose || ''}
-            onChange={(e) => handleNumericInputChange(index, 'glucose', e.target.value)} 
-            className="hidden sm:block p-1 text-sm border rounded-lg" 
-          />}
-          <input 
-            type="text" 
-            defaultValue={row.RPE || ''}
-            onChange={(e) => handleNumericInputChange(index, 'RPE', e.target.value)} 
-            className="hidden sm:block p-1 text-sm border rounded-lg" 
-          />
-          <button onClick={() => handleDeleteRow(index)} className="hidden sm:block p-1 text-red-600"><Trash size={20} /></button>
-        </div>
-      ))}
+      <div className="max-h-[400px] overflow-y-auto">
+        {rows.map((row, index) => (
+          <div key={index} className={`grid ${gridCols} gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg`}>
+            <div className="text-center text-sm">{index + 1}</div>
+            <input 
+              type={formData.sport === 'bike' ? "text" : "text"}
+              defaultValue={row.power || ''}
+              onChange={(e) => {
+                console.log('Input change:', e.target.value);
+                handleValueChange(index, 'power', e.target.value);
+              }}
+              className="p-1 text-sm border rounded-lg"
+              placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
+            />
+            <input 
+              type="text" 
+              defaultValue={row.heartRate || ''}
+              onChange={(e) => handleNumericInputChange(index, 'heartRate', e.target.value)} 
+              className="p-1 text-sm border rounded-lg" 
+            />
+            <input 
+              type="text" 
+              defaultValue={row.lactate || ''}
+              onChange={(e) => handleNumericInputChange(index, 'lactate', e.target.value)} 
+              className="p-1 text-sm border rounded-lg" 
+            />
+            {showGlucose && <input 
+              type="text" 
+              defaultValue={row.glucose || ''}
+              onChange={(e) => handleNumericInputChange(index, 'glucose', e.target.value)} 
+              className="hidden sm:block p-1 text-sm border rounded-lg" 
+            />}
+            <input 
+              type="text" 
+              defaultValue={row.RPE || ''}
+              onChange={(e) => handleNumericInputChange(index, 'RPE', e.target.value)} 
+              className="hidden sm:block p-1 text-sm border rounded-lg" 
+            />
+            <button onClick={() => handleDeleteRow(index)} className="hidden sm:block p-1 text-red-600"><Trash size={20} /></button>
+          </div>
+        ))}
+      </div>
 
       <textarea 
         value={formData.description} 
@@ -499,7 +542,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           <option value="swim">Swim</option>
         </select>
         <input 
-          type="text" 
+          type="number"
+          step="0.1"
+          min="0"
           value={formData.baseLa} 
           onChange={(e) => handleNumericInputChange(-1, 'baseLa', e.target.value)} 
           className="p-2 border rounded-lg w-full sm:w-24" 
@@ -515,21 +560,23 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           <Plus size={20} /> Add Interval
         </button>
 
-        <div className="flex gap-2 w-full sm:w-auto">
-          <button 
-            onClick={handleDeleteTest}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-red rounded-lg hover:bg-red-dark"
-          >
-            <Trash size={20} /> Delete Test
-          </button>
+        {!demoMode && (
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button 
+              onClick={handleDeleteTest}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-red rounded-lg hover:bg-red-dark"
+            >
+              <Trash size={20} /> Delete Test
+            </button>
 
-          <button 
-            onClick={handleSaveChanges}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
-          >
-            <Save size={20} /> Save Changes
-          </button>
-        </div>
+            <button 
+              onClick={handleSaveChanges}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
+            >
+              <Save size={20} /> Save Changes
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

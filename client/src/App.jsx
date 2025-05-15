@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthProvider';
@@ -23,16 +23,23 @@ import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import TrainingDetailPage from './pages/TrainingDetailPage';
 import TrainingHistory from './components/TrainingHistory';
 import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
+import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import './App.css';
 
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+
+  // Memoize the Layout component to prevent unnecessary re-renders
+  const LayoutWithProps = useMemo(() => (
+    <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+  ), [isMenuOpen]);
 
   return (
     <Routes>
       {/* Veřejné routy */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
+      <Route path="/testing-without-login" element={<TestingWithoutLogin />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
       <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
@@ -43,7 +50,7 @@ function AppRoutes() {
       <Route
         element={
           <ProtectedRoute>
-            <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+            {LayoutWithProps}
           </ProtectedRoute>
         }
       >
@@ -79,17 +86,20 @@ function AppRoutes() {
 }
 
 function App() {
+  // Memoize the GoogleOAuthProvider configuration
+  const googleOAuthConfig = useMemo(() => ({
+    clientId: process.env.REACT_APP_GOOGLE_CLIENT_ID,
+    onScriptLoadError: () => console.error('Failed to load Google OAuth script'),
+    onScriptLoadSuccess: () => console.log('Google OAuth script loaded successfully'),
+    auto_select: false,
+    cancel_on_tap_outside: true,
+    useOneTap: false,
+    nonce: crypto.randomUUID()
+  }), []);
+
   return (
     <Router>
-      <GoogleOAuthProvider 
-        clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}
-        onScriptLoadError={() => console.error('Failed to load Google OAuth script')}
-        onScriptLoadSuccess={() => console.log('Google OAuth script loaded successfully')}
-        auto_select={false}
-        cancel_on_tap_outside={true}
-        useOneTap={false}
-        nonce={crypto.randomUUID()}
-      >
+      <GoogleOAuthProvider {...googleOAuthConfig}>
         <NotificationProvider>
           <AuthProvider>
             <TrainingProvider>
