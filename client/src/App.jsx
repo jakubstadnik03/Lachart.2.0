@@ -24,6 +24,7 @@ import TrainingDetailPage from './pages/TrainingDetailPage';
 import TrainingHistory from './components/TrainingHistory';
 import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
 import TestingWithoutLogin from './pages/TestingWithoutLogin';
+import About from './pages/About';
 import './App.css';
 
 function AppRoutes() {
@@ -37,6 +38,8 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Veřejné routy */}
+      <Route path="/" element={<About />} />
+      <Route path="/about" element={<About />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/testing-without-login" element={<TestingWithoutLogin />} />
@@ -54,7 +57,6 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/:athleteId" element={<Profile />} />
@@ -80,7 +82,7 @@ function AppRoutes() {
       </Route>
 
       {/* Fallback route */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

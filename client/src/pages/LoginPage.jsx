@@ -362,9 +362,22 @@ const LoginPage = () => {
             className="text-center text-sm text-gray-600"
           >
             Don't have an account?{' '}
-            <Link to="/signup" className="font-medium text-primary hover:text-primary-dark">
-              Sign Up
-            </Link>
+            <motion.span
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Link 
+                to="/signup" 
+                className="font-medium text-primary hover:text-primary-dark"
+                onClick={() => {
+                  console.log('Navigating to Sign Up page...');
+                  console.log('Current path:', window.location.pathname);
+                  console.log('Target path: /signup');
+                }}
+              >
+                Sign Up
+              </Link>
+            </motion.span>
           </motion.p>
 
           <motion.div

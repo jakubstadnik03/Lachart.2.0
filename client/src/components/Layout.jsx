@@ -4,6 +4,7 @@ import { Outlet } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
+import TestingWithoutLogin from "../pages/TestingWithoutLogin";
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
@@ -15,9 +16,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, setIsMenuOpen]);
 
-  // Pokud není uživatel přihlášen, nezobrazujeme Layout
+  // If user is not logged in, show TestingWithoutLogin
   if (!user) {
-    return null;
+    return <TestingWithoutLogin />;
   }
 
   return (

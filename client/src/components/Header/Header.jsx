@@ -4,9 +4,12 @@ import { UserDropdown } from "./UserDropdown";
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthProvider';
 
-const Header = ({ isMenuOpen, setIsMenuOpen }) => {
+const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+
+  // Use prop user if provided, otherwise use auth user
+  const user = propUser || authUser;
 
   const handleMenuToggle = () => {
     if (typeof setIsMenuOpen === 'function') {
@@ -37,6 +40,8 @@ const Header = ({ isMenuOpen, setIsMenuOpen }) => {
           <UserDropdown 
             isOpen={isDropdownOpen}
             setIsOpen={setIsDropdownOpen}
+            user={user}
+            disabled={!user?.role} // Disable dropdown if user has no role (demo mode)
           />
         </div>
       </div>

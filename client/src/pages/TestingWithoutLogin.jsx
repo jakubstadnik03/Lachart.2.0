@@ -4,10 +4,14 @@ import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
 import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
 import { useNotification } from '../context/NotificationContext';
+import Header from '../components/Header/Header';
+import Menu from '../components/Menu';
+import Footer from '../components/Footer';
 
 const TestingWithoutLogin = () => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [testData, setTestData] = useState({
         title: '',
         description: '',
@@ -26,6 +30,16 @@ const TestingWithoutLogin = () => {
             RPE: 0
         }]
     });
+
+    // Empty user data for demo mode
+    const emptyUser = {
+        name: '',
+        surname: '',
+        email: '',
+        role: '',
+        sport: '',
+        avatar: ''
+    };
 
     const handleTestDataChange = (newData) => {
         console.log('Received new data:', newData); // Debug log
@@ -78,45 +92,81 @@ const TestingWithoutLogin = () => {
     );
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">Test Form (Demo Mode)</h1>
-                    <p className="mt-2 text-gray-600">
-                        Fill out the test form to see the results. Data will not be saved.
-                    </p>
-                </div>
+        <div className="min-h-screen bg-gray-100 flex">
+            {/* Menu na levé straně */}
+            <Menu 
+                isMenuOpen={isMenuOpen} 
+                setIsMenuOpen={setIsMenuOpen}
+                user={emptyUser}
+                token=""
+            />
 
-                <div className="space-y-8">
-                    <TestingForm
-                        testData={testData}
-                        onTestDataChange={handleTestDataChange}
-                        onSave={handleSave}
-                        onGlucoseColumnChange={handleGlucoseColumnChange}
-                        demoMode={true}
-                    />
+            {/* Hlavní obsah včetně header, main content a footer */}
+            <div className="flex-1 flex flex-col min-h-screen ml-0">
+                {/* Header */}
+                <Header 
+                    isMenuOpen={isMenuOpen} 
+                    setIsMenuOpen={setIsMenuOpen}
+                    user={emptyUser}
+                />
 
-                    {hasValidData && (
-                        <div className="space-y-8">
-                            <div className="bg-white rounded-lg shadow p-6">
-                                <LactateCurve mockData={testData} />
-                            </div>
-                            <div className="bg-white rounded-lg shadow p-6">
-                                <LactateCurveCalculator mockData={testData} />
-                            </div>
+                {/* Hlavní obsah */}
+                <main className="flex-1 px-3 sm:px-3 md:px-4 py-6">
+                    <div className="max-w-[1600px] mx-auto">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-bold text-gray-900">Test Form (Demo Mode)</h1>
+                            <p className="mt-2 text-gray-600">
+                                Fill out the test form to see the results. Data will not be saved.
+                            </p>
                         </div>
-                    )}
-                </div>
 
-                <div className="mt-8 text-center">
-                    <button
-                        onClick={() => navigate('/login')}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-                    >
-                        Back to Login
-                    </button>
-                </div>
+                        {/* Info box about the component */}
+                        <div className="mb-8 max-w-2xl mx-auto bg-blue-50 border border-blue-200 text-blue-900 rounded-lg p-4 text-center shadow">
+                          <strong>Lactate Test Demo:</strong> This page allows you to try out the lactate test form and see how the analysis and curve calculation works. You can enter your own test data and view the generated lactate curve and calculations, all without logging in. No data will be saved.
+                        </div>
+
+                        <div className="space-y-8">
+                            <TestingForm
+                                testData={testData}
+                                onTestDataChange={handleTestDataChange}
+                                onSave={handleSave}
+                                onGlucoseColumnChange={handleGlucoseColumnChange}
+                                demoMode={true}
+                            />
+
+                            {hasValidData && (
+                                <div className="space-y-8">
+                                    <div className="bg-white rounded-lg shadow p-6">
+                                        <LactateCurve mockData={testData} />
+                                    </div>
+                                    <div className="bg-white rounded-lg shadow p-6">
+                                        <LactateCurveCalculator mockData={testData} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="mt-8 text-center">
+                            <button
+                                onClick={() => navigate('/login')}
+                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                            >
+                                Back to Login
+                            </button>
+                        </div>
+                    </div>
+                </main>
+
+                {/* Footer */}
+                <Footer />
             </div>
+
+            {isMenuOpen && (
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30"
+                    onClick={() => setIsMenuOpen(false)}
+                />
+            )}
         </div>
     );
 };

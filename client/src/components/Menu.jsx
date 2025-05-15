@@ -4,22 +4,27 @@ import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
+const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { user, token, logout } = useAuth();
+  const { user: authUser, token: authToken, logout } = useAuth();
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.split('/')[1];
   const currentAthleteId = location.pathname.split('/')[2];
 
+  // Use prop user/token if provided, otherwise use auth values
+  const user = propUser || authUser;
+  const token = propToken || authToken;
+
   // Ensure menu is open when component mounts
   useEffect(() => {
-    if (user && token) {
+    // Open menu if we have a user (either from props or auth) or if we're in demo mode
+    if (user || propUser) {
       setIsMenuOpen(true);
     }
-  }, [user, token, setIsMenuOpen]);
+  }, [user, propUser, setIsMenuOpen]);
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -36,6 +41,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
+    // Only load athletes if we have a token (not in demo mode)
     if (user && token) {
       loadAthletes();
     }
@@ -119,6 +125,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // Funkce pro určení avataru podle role a sportu
   const getAvatar = (user) => {
+    // Default avatar for demo mode or when user data is empty
+    if (!user || !user.role) {
+      return '/images/triathlete-avatar.jpg';
+    }
+
     if (user.role === 'coach') {
       return '/images/coach-avatar.webp';
     }
@@ -222,9 +233,9 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           />
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-800">
-              {user.name} {user.surname}
+              {user?.name || 'Demo'} {user?.surname || 'User'}
             </p>
-            <p className="text-xs text-gray-500">{user.email}</p>
+            <p className="text-xs text-gray-500">{user?.email || 'demo@example.com'}</p>
           </div>
         </motion.div>
 
@@ -235,51 +246,109 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           className="p-4 flex-shrink-0"
         >
           <h2 className="text-lg text-gray-700 mb-3">Menu</h2>
-          <ul className="space-y-2">
-            {menuItems
-              .filter(item => item.showFor.includes(user.role))
-              .map((item, index) => (
-                <motion.li 
-                  key={item.name}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ 
-                    delay: 0.1 * index,
-                    type: "spring",
-                    stiffness: 200,
-                    damping: 20
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+          {!user?.role ? (
+            <div className="space-y-4">
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                <NavLink
+                  to="/login"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
-                  <NavLink
-                    to={item.getPath ? item.getPath(currentAthleteId) : item.path}
-                    onClick={handleMenuItemClick}
-                    className={({ isActive }) =>
-                      `flex items-center text-sm font-medium p-3 rounded-lg ${
-                        isActive
-                          ? "bg-primary text-white"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`
-                    }
+                  <img
+                    src="/icon/login.svg"
+                    alt="Login"
+                    className="w-5 h-5 mr-3"
+                  />
+                  Login
+                </NavLink>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+              >
+                <NavLink
+                  to="/signup"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg border-2 border-primary text-primary hover:bg-primary hover:text-white transition-colors"
+                >
+                  <img
+                    src="/icon/register.svg"
+                    alt="Register"
+                    className="w-5 h-5 mr-3"
+                  />
+                  Register
+                </NavLink>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <NavLink
+                  to="/about"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                >
+                  <img
+                    src="/icon/info.svg"
+                    alt="About"
+                    className="w-5 h-5 mr-3"
+                  />
+                  About LaChart
+                </NavLink>
+              </motion.div>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {menuItems
+                .filter(item => item.showFor.includes(user.role))
+                .map((item, index) => (
+                  <motion.li 
+                    key={item.name}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ 
+                      delay: 0.1 * index,
+                      type: "spring",
+                      stiffness: 200,
+                      damping: 20
+                    }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    {({ isActive }) => (
-                      <>
-                        <img
-                          src={isActive ? item.iconWhite : item.icon}
-                          alt={item.name}
-                          className="w-5 h-5 mr-3"
-                        />
-                        {item.name}
-                      </>
-                    )}
-                  </NavLink>
-                </motion.li>
-              ))}
-          </ul>
+                    <NavLink
+                      to={item.getPath ? item.getPath(currentAthleteId) : item.path}
+                      onClick={handleMenuItemClick}
+                      className={({ isActive }) =>
+                        `flex items-center text-sm font-medium p-3 rounded-lg ${
+                          isActive
+                            ? "bg-primary text-white"
+                            : "text-gray-700 hover:bg-gray-100"
+                        }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <img
+                            src={isActive ? item.iconWhite : item.icon}
+                            alt={item.name}
+                            className="w-5 h-5 mr-3"
+                          />
+                          {item.name}
+                        </>
+                      )}
+                    </NavLink>
+                  </motion.li>
+                ))}
+            </ul>
+          )}
         </motion.div>
 
-        {user.role === "coach" && (
+        {user?.role === "coach" && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -342,64 +411,73 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
           transition={{ delay: 0.6 }}
           className="mt-auto flex-shrink-0"
         >
-          <div className="p-4 border-t border-gray-200">
-            <ul className="space-y-2">
-              <motion.li
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.7 }}
-              >
-                <NavLink
-                  to="/settings"
-                  className={({ isActive }) =>
-                    `flex items-center text-sm font-medium p-3 rounded-lg ${
-                      isActive
-                        ? "bg-primary text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`
-                  }
+          {!user?.role ? (
+            <div className="p-4 border-t border-gray-200">
+              <div className="text-center text-sm text-gray-500">
+                <p>© 2024 LaChart</p>
+                <p className="mt-1">All rights reserved</p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 border-t border-gray-200">
+              <ul className="space-y-2">
+                <motion.li
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.7 }}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <img
-                        src={isActive ? "/icon/settings-white.svg" : "/icon/settings.svg"}
-                        alt="Settings"
-                        className="w-5 h-5 mr-3"
-                      />
-                      Settings
-                    </>
-                  )}
-                </NavLink>
-              </motion.li>
-              <motion.li
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.8 }}
-              >
-                <NavLink
-                  to="/support"
-                  className={({ isActive }) =>
-                    `flex items-center text-sm font-medium p-3 rounded-lg ${
-                      isActive
-                        ? "bg-primary text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`
-                  }
+                  <NavLink
+                    to="/settings"
+                    className={({ isActive }) =>
+                      `flex items-center text-sm font-medium p-3 rounded-lg ${
+                        isActive
+                          ? "bg-primary text-white"
+                          : "text-gray-700 hover:bg-gray-100"
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <img
+                          src={isActive ? "/icon/settings-white.svg" : "/icon/settings.svg"}
+                          alt="Settings"
+                          className="w-5 h-5 mr-3"
+                        />
+                        Settings
+                      </>
+                    )}
+                  </NavLink>
+                </motion.li>
+                <motion.li
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.8 }}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <img
-                        src={isActive ? "/icon/support-white.svg" : "/icon/support.svg"}
-                        alt="Support"
-                        className="w-5 h-5 mr-3"
-                      />
-                      Support
-                    </>
-                  )}
-                </NavLink>
-              </motion.li>
-            </ul>
-          </div>
+                  <NavLink
+                    to="/support"
+                    className={({ isActive }) =>
+                      `flex items-center text-sm font-medium p-3 rounded-lg ${
+                        isActive
+                          ? "bg-primary text-white"
+                          : "text-gray-700 hover:bg-gray-100"
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <img
+                          src={isActive ? "/icon/support-white.svg" : "/icon/support.svg"}
+                          alt="Support"
+                          className="w-5 h-5 mr-3"
+                        />
+                        Support
+                      </>
+                    )}
+                  </NavLink>
+                </motion.li>
+              </ul>
+            </div>
+          )}
 
           <motion.div 
             initial={{ opacity: 0 }}
@@ -408,19 +486,32 @@ const Menu = ({ isMenuOpen, setIsMenuOpen }) => {
             className="p-4 border-t border-gray-200"
             style={{ paddingTop: '0.35rem', paddingBottom: '0.35rem' }}
           >
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleLogout}
-              className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
-            >
-              <img
-                src="/icon/logout.svg"
-                alt="Logout"
-                className="w-5 h-5 mr-3"
-              />
-              Log out
-            </motion.button>
+            {!user?.role ? (
+              <div
+                className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-gray-400 cursor-not-allowed"
+              >
+                <img
+                  src="/icon/logout.svg"
+                  alt="Logout"
+                  className="w-5 h-5 mr-3 opacity-50"
+                />
+                Log out
+              </div>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleLogout}
+                className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
+              >
+                <img
+                  src="/icon/logout.svg"
+                  alt="Logout"
+                  className="w-5 h-5 mr-3"
+                />
+                Log out
+              </motion.button>
+            )}
           </motion.div>
         </motion.div>
       </motion.div>

@@ -1,11 +1,14 @@
 import React, { useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
+import { motion, AnimatePresence } from 'framer-motion';
 
-export function UserDropdown({isOpen, setIsOpen }) {
+export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) => {
   const dropdownRef = useRef(null);
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user: authUser, logout } = useAuth();
+
+  // Use prop user if provided, otherwise use auth user
+  const user = propUser || authUser;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -14,17 +17,35 @@ export function UserDropdown({isOpen, setIsOpen }) {
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [setIsOpen]);
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, setIsOpen]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   // Funkce pro určení avataru podle role a sportu
   const getAvatar = (user) => {
+    // Default avatar for demo mode or when user data is empty
+    if (!user || !user.role) {
+      return '/images/triathlete-avatar.jpg';
+    }
+
     if (user.role === 'coach') {
       return '/images/coach-avatar.webp';
     }
     
-    // Pro atlety podle sportu
     const sportAvatars = {
       triathlon: '/images/triathlete-avatar.jpg',
       running: '/images/runner-avatar.jpg',
@@ -37,74 +58,58 @@ export function UserDropdown({isOpen, setIsOpen }) {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* User Avatar Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 hover:bg-gray-100 rounded-full p-1"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100 transition-colors ${
+          disabled ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
+        disabled={disabled}
       >
         <img
           src={getAvatar(user)}
-          alt="User"
+          alt="User Avatar"
           className="w-8 h-8 rounded-full"
         />
+        <div className="hidden md:block text-left">
+          <p className="text-sm font-medium text-gray-700">
+            {user?.name || 'Demo'} {user?.surname || 'User'}
+          </p>
+          <p className="text-xs text-gray-500">{user?.email || 'demo@example.com'}</p>
+        </div>
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100">
-          {/* User Info */}
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-semibold text-gray-900">
-                {user.name} {user.surname}
-              </h3>
-              <p className="text-sm text-gray-600">{user.role}</p>
-            </div>
-            <button 
+      <AnimatePresence>
+        {isOpen && !disabled && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 z-50"
+          >
+            <Link
+              to="/profile"
+              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               onClick={() => setIsOpen(false)}
-              className="text-gray-400 hover:text-gray-600"
             >
-              <img src="/icon/close.svg" alt="Close" className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Menu Items */}
-          <div className="p-2">
+              Profile
+            </Link>
+            <Link
+              to="/settings"
+              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              onClick={() => setIsOpen(false)}
+            >
+              Settings
+            </Link>
             <button
-              onClick={() => {
-                navigate('/profile');
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-gray-50 rounded-lg"
+              onClick={handleLogout}
+              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
             >
-              <img src="/icon/user.svg" alt="Profile" className="w-5 h-5" />
-              My Profile
+              Log out
             </button>
-            
-            <button
-              onClick={() => {
-                navigate('/settings');
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-gray-50 rounded-lg"
-            >
-              <img src="/icon/settings.svg" alt="Settings" className="w-5 h-5" />
-              Setting
-            </button>
-
-            <button
-              onClick={() => {
-                logout();
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-red-50 text-red-600 rounded-lg"
-            >
-              <img src="/icon/logout.svg" alt="Logout" className="w-5 h-5" />
-              Log Out
-            </button>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
-} 
+}; 

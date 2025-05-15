@@ -36,22 +36,6 @@ const SettingsPage = () => {
     }));
   };
 
-  useEffect(() => {
-    if (user) {
-      setLinkedAccounts({
-        google: !!user.googleId
-      });
-    }
-  }, [user]);
-
- 
-
-  useEffect(() => {
-    if (user?.coachId) {
-      fetchCurrentCoach();
-    }
-  }, [user?.coachId, fetchCurrentCoach]);
-
   const fetchCurrentCoach = async () => {
     try {
       const response = await fetch(API_ENDPOINTS.COACH_PROFILE, {
@@ -68,6 +52,20 @@ const SettingsPage = () => {
       addNotification('Failed to load coach data', 'error');
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      setLinkedAccounts({
+        google: !!user.googleId
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.coachId) {
+      fetchCurrentCoach();
+    }
+  }, [user?.coachId, fetchCurrentCoach]);
 
   const handleRemoveCoach = async () => {
     if (!window.confirm('Are you sure you want to remove your coach?')) {
