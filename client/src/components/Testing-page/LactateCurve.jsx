@@ -123,15 +123,67 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   }
 
   // Filter out rows with empty or invalid values
-  const validResults = mockData.results.filter(result => 
-    result &&
-    result.power !== '' &&
-    result.lactate !== '' &&
-    !isNaN(Number(result.power)) &&
-    !isNaN(Number(result.lactate))
-  );
+  const validResults = mockData.results.filter(result => {
+    console.log('Validating result:', result);
+    if (!result || result.power === undefined || result.power === null || result.lactate === undefined || result.lactate === null) {
+      console.log('Invalid result - missing power or lactate');
+      return false;
+    }
+
+    // Check if power is valid
+    const power = result.power.toString().replace(',', '.');
+    console.log('Power value:', power, 'Sport:', mockData.sport);
+    
+    if (mockData.sport === 'run' || mockData.sport === 'swim') {
+      // For running and swimming, check MM:SS format
+      if (typeof power === 'string' && power.includes(':')) {
+        const [minutes, seconds] = power.split(':').map(Number);
+        console.log('Parsed pace:', { minutes, seconds });
+        if (isNaN(minutes) || isNaN(seconds)) {
+          console.log('Invalid pace format - NaN values');
+          return false;
+        }
+        if (minutes < 0 || seconds < 0 || seconds >= 60) {
+          console.log('Invalid pace values - out of range');
+          return false;
+        }
+      } else if (!isNaN(Number(power))) {
+        // If it's a number, try to convert it to MM:SS format
+        const totalSeconds = Math.floor(Number(power));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        console.log('Converting number to pace:', { minutes, seconds });
+        if (minutes < 0 || seconds < 0 || seconds >= 60) {
+          console.log('Invalid converted pace values - out of range');
+          return false;
+        }
+      } else {
+        console.log('Invalid pace format - not a number or MM:SS');
+        return false;
+      }
+    } else {
+      // For cycling, check if it's a valid number
+      if (isNaN(Number(power))) {
+        console.log('Invalid power value - not a number');
+        return false;
+      }
+    }
+
+    // Check if lactate is valid
+    const lactate = result.lactate.toString().replace(',', '.');
+    if (isNaN(Number(lactate))) {
+      console.log('Invalid lactate value - not a number');
+      return false;
+    }
+
+    console.log('Valid result');
+    return true;
+  });
+
+  console.log('Valid results:', validResults);
 
   if (validResults.length < 2) {
+    console.log('Not enough valid results:', validResults.length);
     return (
       <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
         <div className="flex flex-col items-center justify-center h-64">
@@ -140,7 +192,14 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             Need at least 2 valid data points to create the curve
           </p>
           <p className="text-gray-400 text-sm text-center mt-2">
-            Make sure to enter both power/pace and lactate values
+            Make sure to enter both {mockData.sport === 'bike' ? 'power' : 'pace'} and lactate values
+            {mockData.sport !== 'bike' && ' in MM:SS format'}
+          </p>
+          <p className="text-gray-400 text-xs text-center mt-2">
+            Current sport: {mockData.sport}
+          </p>
+          <p className="text-gray-400 text-xs text-center mt-2">
+            Number of results: {mockData.results?.length || 0}
           </p>
         </div>
       </div>
@@ -148,9 +207,24 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   }
 
   try {
-    const powerData = validResults.map((result) => result.power);
-    const lactateData = validResults.map((result) => result.lactate);
-    const heartRateData = validResults.map((result) => result.heartRate);
+    const powerData = validResults.map((result) => {
+      const power = result.power?.toString().replace(',', '.');
+      if (mockData.sport === 'run' || mockData.sport === 'swim') {
+        // Convert MM:SS format to seconds
+        if (typeof power === 'string' && power.includes(':')) {
+          const [minutes, seconds] = power.split(':').map(Number);
+          return minutes * 60 + seconds;
+        }
+      }
+      return Number(power);
+    });
+
+    const lactateData = validResults.map((result) => 
+      Number(result.lactate.toString().replace(',', '.'))
+    );
+    const heartRateData = validResults.map((result) => 
+      result.heartRate ? Number(result.heartRate.toString().replace(',', '.')) : 0
+    );
 
     const datasets = [
       {
@@ -177,9 +251,21 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     ];
 
     const data = { 
-      labels: powerData.map(power => 
-        mockData.sport === "bike" ? `${power}W` : convertPowerToPace(power, mockData.sport)
-      ), 
+      labels: powerData.map(power => {
+        if (mockData.sport === 'bike') {
+          return `${power}W`;
+        } else if (mockData.sport === 'swim') {
+          // Convert seconds back to MM:SS format for swimming
+          const minutes = Math.floor(power / 60);
+          const seconds = Math.floor(power % 60);
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
+        } else {
+          // Convert seconds back to MM:SS format for running
+          const minutes = Math.floor(power / 60);
+          const seconds = Math.floor(power % 60);
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+        }
+      }), 
       datasets 
     };
 
@@ -197,24 +283,44 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           },
         },
         tooltip: {
-          enabled: false,
-          external: (context) => {
-            if (context.tooltip.opacity === 0) {
-              setTooltip(null);
-            } else {
-              setTooltip({
-                ...context.tooltip,
-                dataPoints: context.tooltip.dataPoints.map(point => ({
-                  ...point,
-                  datasetIndex: point.datasetIndex,
-                  dataIndex: point.dataIndex,
-                  label: point.label,
-                  value: point.raw
-                }))
-              });
+          enabled: true,
+          mode: 'nearest',
+          intersect: true,
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          titleColor: '#111827',
+          titleFont: { weight: 'bold', size: 14 },
+          bodyColor: '#111827',
+          bodyFont: { size: 13 },
+          borderColor: '#F3F4F6',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 12,
+          displayColors: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true,
+          callbacks: {
+            label: (context) => {
+              const label = context.dataset.label;
+              const value = context.parsed.y;
+              const power = powerData[context.dataIndex];
+              
+              if (mockData.sport === 'bike') {
+                return `${label}: ${value.toFixed(2)} mmol/L | ${power}W`;
+              } else if (mockData.sport === 'swim') {
+                const minutes = Math.floor(power / 60);
+                const seconds = Math.floor(power % 60);
+                const pace = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
+                return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+              } else {
+                const minutes = Math.floor(power / 60);
+                const seconds = Math.floor(power % 60);
+                const pace = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+                return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+              }
             }
           }
-        },
+        }
       },
       scales: {
         y: {
@@ -244,7 +350,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         x: {
           title: {
             display: true,
-            text: mockData.sport === 'bike' ? "Power (W)" : "Pace (min/km)"
+            text: mockData.sport === 'bike' ? "Power (W)" : 
+                  mockData.sport === 'swim' ? "Pace (min/100m)" : "Pace (min/km)"
           },
           border: { dash: [6, 6] },
           grid: {
@@ -254,7 +361,17 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           ticks: {
             callback: function(value, index) {
               const power = powerData[index];
-              return mockData.sport === 'bike' ? `${power}W` : convertPowerToPace(power, mockData.sport);
+              if (mockData.sport === 'bike') {
+                return `${power}W`;
+              } else if (mockData.sport === 'swim') {
+                const minutes = Math.floor(power / 60);
+                const seconds = Math.floor(power % 60);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
+              } else {
+                const minutes = Math.floor(power / 60);
+                const seconds = Math.floor(power % 60);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+              }
             }
           }
         },
@@ -303,33 +420,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         )}
 
         <div className="relative" style={{ width: '100%', height: '400px' }}>
-          <Line data={data} options={{
-            ...options,
-            plugins: {
-              ...options.plugins,
-              tooltip: {
-                ...options.plugins.tooltip,
-                enabled: false,
-                external: demoMode ? (context) => {
-                  if (context.tooltip.opacity === 0) {
-                    setTooltip(null);
-                  } else {
-                    setTooltip({
-                      ...context.tooltip,
-                      dataPoints: context.tooltip.dataPoints.map(point => ({
-                        ...point,
-                        datasetIndex: point.datasetIndex,
-                        dataIndex: point.dataIndex,
-                        label: point.label,
-                        value: point.raw
-                      }))
-                    });
-                  }
-                } : null
-              }
-            }
-          }} />
-          {demoMode && tooltip && <CustomTooltip tooltip={tooltip} datasets={datasets} sport={mockData.sport} />}
+          <Line data={data} options={options} />
         </div>
       </div>
     );

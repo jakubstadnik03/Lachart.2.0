@@ -539,8 +539,10 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   const formatPowerOrPace = (value, sport) => {
     if (!value || value === 'N/A') return 'N/A';
     
-    if (sport === 'run' || sport === 'swim') {
+    if (sport === 'run') {
       return `${formatSecondsToMMSS(value)}/km`;
+    } else if (sport === 'swim') {
+      return `${formatSecondsToMMSS(value)}/100m`;
     }
     return `${Math.round(value)} W`;
   };

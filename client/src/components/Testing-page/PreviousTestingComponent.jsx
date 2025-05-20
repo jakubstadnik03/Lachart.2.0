@@ -31,12 +31,14 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
       if (currentTest) {
         const updatedCurrentTest = filteredTests.find(test => test._id === currentTest._id);
         if (updatedCurrentTest) {
+          console.log('Updating current test with:', updatedCurrentTest);
           setCurrentTest(updatedCurrentTest);
         } else {
           // If current test is not in filtered tests, select the most recent one
           const mostRecentTest = filteredTests.reduce((latest, current) => {
             return new Date(current.date) > new Date(latest.date) ? current : latest;
           });
+          console.log('Setting most recent test:', mostRecentTest);
           setCurrentTest(mostRecentTest);
         }
       } else {
@@ -44,6 +46,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
         const mostRecentTest = filteredTests.reduce((latest, current) => {
           return new Date(current.date) > new Date(latest.date) ? current : latest;
         });
+        console.log('Setting initial most recent test:', mostRecentTest);
         setCurrentTest(mostRecentTest);
       }
     } else {
@@ -66,7 +69,9 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
 
   const handleTestUpdate = async (updatedTest) => {
     try {
+      console.log('Updating test with data:', updatedTest);
       const response = await api.put(`/test/${updatedTest._id}`, updatedTest);
+      console.log('API response:', response.data);
       setTests(prev => prev.map(t => 
         t._id === updatedTest._id ? response.data : t
       ));
@@ -136,6 +141,11 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >
+              {console.log('Rendering LactateCurve with data:', {
+                sport: currentTest.sport,
+                results: currentTest.results,
+                baseLactate: currentTest.baseLactate
+              })}
               <LactateCurve mockData={currentTest} />
             </motion.div>
             <motion.div 

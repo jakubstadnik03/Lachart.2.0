@@ -181,6 +181,8 @@ const convertSpeedToPace = (speed) => {
 const LactateCurveCalculator = ({ mockData }) => {
   const chartRef = useRef(null);
   const isRunning = mockData?.sport === 'run';
+  const isSwimming = mockData?.sport === 'swim';
+  const isPaceSport = isRunning || isSwimming;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -199,8 +201,26 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   const thresholds = calculateThresholds(mockData);
   const results = mockData.results;
-  const xVals = results.map(r => isRunning ? convertPaceToSpeed(r.power) : r.power);
-  const yVals = results.map(r => r.lactate);
+  
+  // Convert values to numbers, handling decimal commas
+  const xVals = results.map(r => {
+    const power = r.power?.toString().replace(',', '.');
+    return isPaceSport ? convertPaceToSpeed(Number(power)) : Number(power);
+  });
+  
+  const yVals = results.map(r => {
+    const lactate = r.lactate?.toString().replace(',', '.');
+    return Number(lactate);
+  });
+
+  // Sort results by pace (slowest to fastest) for running and swimming
+  const sortedResults = isPaceSport 
+    ? [...results].sort((a, b) => {
+        const aPower = Number(a.power?.toString().replace(',', '.'));
+        const bPower = Number(b.power?.toString().replace(',', '.'));
+        return bPower - aPower; // Sort descending (slowest to fastest)
+      })
+    : results;
 
   // Polynomial Regression (degree 3)
   const polyRegression = (() => {
@@ -272,11 +292,15 @@ const LactateCurveCalculator = ({ mockData }) => {
 
   const measuredDataSet = {
     label: 'Measured data',
-    data: results.map(r => ({ 
-      x: isRunning ? convertPaceToSpeed(r.power) : r.power, 
-      y: r.lactate,
-      originalPace: isRunning ? r.power : null
-    })),
+    data: sortedResults.map(r => {
+      const power = r.power?.toString().replace(',', '.');
+      const lactate = r.lactate?.toString().replace(',', '.');
+      return { 
+        x: isPaceSport ? convertPaceToSpeed(Number(power)) : Number(power), 
+        y: Number(lactate),
+        originalPace: isPaceSport ? r.power : null
+      };
+    }),
     showLine: false,
     pointBackgroundColor: '#f8fafc',
     pointBorderColor: '#000000',
@@ -297,9 +321,9 @@ const LactateCurveCalculator = ({ mockData }) => {
     .map(key => ({
       label: key,
       data: [{
-        x: isRunning ? convertPaceToSpeed(thresholds[key]) : thresholds[key],
+        x: isPaceSport ? convertPaceToSpeed(thresholds[key]) : thresholds[key],
         y: thresholds.lactates[key],
-        originalPace: isRunning ? thresholds[key] : null
+        originalPace: isPaceSport ? thresholds[key] : null
       }],
       borderColor: colorMap[key] || '#2196F3',
       backgroundColor: colorMap[key] || '#2196F3',
@@ -324,7 +348,7 @@ const LactateCurveCalculator = ({ mockData }) => {
         max: Math.max(...xVals) + (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
         title: { 
           display: true, 
-          text: isRunning ? 'Speed (km/h)' : 'Power (W)' 
+          text: isPaceSport ? 'Speed (km/h)' : 'Power (W)' 
         },
         border: { dash: [6, 6] },
         grid: {
@@ -332,6 +356,17 @@ const LactateCurveCalculator = ({ mockData }) => {
           borderDash: [4, 4],
           drawTicks: true,
         },
+        ticks: {
+          callback: function(value) {
+            if (isPaceSport) {
+              const paceSeconds = convertSpeedToPace(value);
+              const minutes = Math.floor(paceSeconds / 60);
+              const seconds = Math.floor(paceSeconds % 60);
+              return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${isSwimming ? '/100m' : '/km'}`;
+            }
+            return `${Math.round(value)}W`;
+          }
+        }
       },
       y: {
         type: 'linear',
@@ -372,9 +407,9 @@ const LactateCurveCalculator = ({ mockData }) => {
             const yVal = ctx.parsed.y;
             const dataPoint = ctx.dataset.data[ctx.dataIndex];
             
-            if (isRunning) {
+            if (isPaceSport) {
               const paceStr = formatSecondsToMMSS(convertSpeedToPace(xVal));
-              return `${label}: ${paceStr} min/km | ${yVal.toFixed(2)} mmol/L`;
+              return `${label}: ${paceStr} ${isSwimming ? '/100m' : '/km'} | ${yVal.toFixed(2)} mmol/L`;
             }
             return `${label}: ${xVal.toFixed(0)} W | ${yVal.toFixed(2)} mmol/L`;
           },

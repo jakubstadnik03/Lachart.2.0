@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -6,51 +7,70 @@ import { useNotification } from '../../context/NotificationContext';
 const tutorialSteps = [
   {
     field: 'title',
-    message: 'Začněte zadáním názvu testu',
-    example: 'Např: Laktátový test - Kolo (15.3.2024)'
+    message: 'Start by entering the test title',
+    example: 'Example: Lactate Test - Bike (15.3.2024)'
   },
   {
     field: 'sport',
-    message: 'Vyberte sport, pro který test provádíte',
-    example: 'Běh, Kolo nebo Plavání'
-  },
-  {
-    field: 'power_0',
-    message: 'Zadejte hodnotu výkonu/tempa pro první interval',
-    example: 'Pro kolo: watty (např. 200W)\nPro běh/plavání: tempo (např. 4:30)'
-  },
-  {
-    field: 'heartRate_0',
-    message: 'Zadejte tepovou frekvenci',
-    example: 'Hodnota v tepech za minutu (např. 150)'
-  },
-  {
-    field: 'lactate_0',
-    message: 'Zadejte naměřenou hodnotu laktátu',
-    example: 'Hodnota v mmol/L (např. 2.5)'
+    message: 'Select the sport for your test',
+    example: 'Running, Cycling or Swimming'
   },
   {
     field: 'weight',
-    message: 'Zadejte svoji váhu',
-    example: 'Hodnota v kg (např. 75)'
+    message: 'Enter your weight',
+    example: 'Value in kg (e.g., 75)'
   },
   {
     field: 'baseLa',
-    message: 'Zadejte klidovou hodnotu laktátu',
-    example: 'Hodnota v mmol/L měřená před testem (např. 1.2)'
+    message: 'Enter your baseline lactate level',
+    example: 'Value in mmol/L measured before the test (e.g., 1.2)'
+  },
+  {
+    field: 'power_0',
+    message: 'Enter power/pace for the first interval',
+    example: 'For cycling: watts (e.g., 200W)\nFor running/swimming: pace (e.g., 4:30)'
+  },
+  {
+    field: 'heartRate_0',
+    message: 'Enter heart rate',
+    example: 'Value in beats per minute (e.g., 150)'
+  },
+  {
+    field: 'lactate_0',
+    message: 'Enter measured lactate value',
+    example: 'Value in mmol/L (e.g., 2.5)'
   }
 ];
 
-// Tutorial message component
-const TutorialMessage = ({ step, onNext, onSkip, position }) => {
+// Portal-based Tutorial message component
+const TutorialMessagePortal = ({ step, onNext, onSkip, inputRef }) => {
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const tooltipRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef && inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top + window.scrollY,
+        left: rect.left + window.scrollX + rect.width / 2,
+        width: rect.width
+      });
+    }
+  }, [inputRef, step]);
+
   if (!step) return null;
 
-  return (
+  return ReactDOM.createPortal(
     <div 
-      className="absolute z-50 bg-white rounded-lg shadow-lg border border-primary/10 p-4 max-w-xs"
+      ref={tooltipRef}
+      className="z-50 bg-white rounded-lg shadow-lg border border-primary/10 p-4 max-w-xs"
       style={{
-        ...position,
-        animation: 'fadeIn 0.3s ease-out'
+        position: 'absolute',
+        top: coords.top - 16, // 16px above input
+        left: coords.left,
+        transform: 'translate(-50%, -100%)',
+        animation: 'fadeIn 0.3s ease-out',
+        pointerEvents: 'auto',
       }}
     >
       <div className="flex items-start gap-3">
@@ -59,30 +79,32 @@ const TutorialMessage = ({ step, onNext, onSkip, position }) => {
         </div>
         <div className="flex-1">
           <p className="text-gray-800 font-medium mb-1">{step.message}</p>
-          <p className="text-gray-500 text-sm">{step.example}</p>
+          <p className="text-gray-500 text-sm whitespace-pre-line">{step.example}</p>
           <div className="flex items-center justify-between mt-3">
             <button
               onClick={onSkip}
               className="text-gray-500 hover:text-gray-700 text-sm"
             >
-              Přeskočit tutoriál
+              Skip tutorial
             </button>
             <button
               onClick={onNext}
               className="flex items-center gap-1 text-primary hover:text-primary-dark font-medium"
             >
-              Další <ArrowRight size={16} />
+              Next <ArrowRight size={16} />
             </button>
           </div>
         </div>
       </div>
-      <div className="absolute w-3 h-3 bg-white transform rotate-45 border-l border-t border-primary/10"
+      <div className="absolute w-3 h-3 bg-white transform rotate-45 border-r border-b border-primary/10"
            style={{
-             top: '15px',
-             left: '-6px'
+             bottom: '-6px',
+             left: '50%',
+             marginTop: '-3px'
            }}
       />
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -199,8 +221,7 @@ const logDataChange = (type, data) => {
 
 function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false }) {
   const { addNotification } = useNotification();
-  const [currentTutorialStep, setCurrentTutorialStep] = useState(-1);
-  const [tutorialPosition, setTutorialPosition] = useState({ top: 0, left: 0 });
+  const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [highlightedField, setHighlightedField] = useState(null);
   const [activeHelp, setActiveHelp] = useState(null);
   const [helpPosition, setHelpPosition] = useState({ top: 0, left: 0 });
@@ -287,11 +308,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const currentStep = tutorialSteps[currentTutorialStep];
       const inputEl = inputRefs.current[currentStep.field];
       if (inputEl) {
-        const rect = inputEl.getBoundingClientRect();
-        setTutorialPosition({
-          top: `${rect.top + window.scrollY}px`,
-          left: `${rect.right + 20}px`
-        });
         inputEl.focus();
       }
     }
@@ -444,7 +460,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           interval: index + 1,
           power: convertToNumber(row.power),
           heartRate: convertToNumber(row.heartRate),
-          lactate: (row.lactate),
+          lactate: convertToNumber(row.lactate),
           glucose: convertToNumber(row.glucose),
           RPE: convertToNumber(row.RPE)
         };
@@ -613,23 +629,65 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }, 200);
   };
 
+  // Helper to get the correct ref for the current tutorial step
+  const getTutorialInputRef = () => {
+    if (currentTutorialStep < 0) return null;
+    const step = tutorialSteps[currentTutorialStep];
+    // For table fields like power_0, heartRate_0, etc.
+    if (step.field.includes('_')) {
+      return inputRefs.current[step.field] ? { current: inputRefs.current[step.field] } : null;
+    }
+    // For form fields
+    return inputRefs.current[step.field] ? { current: inputRefs.current[step.field] } : null;
+  };
+
   // Update the input field in the table
   const renderInput = (index, field, value, placeholder) => {
-    console.log(`Rendering ${field} input:`, { value, type: typeof value });
+    const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === `${field}_${index}`;
+    
     return (
-      <div className="min-w-0 overflow-hidden">
+      <div className="min-w-0 overflow-hidden relative">
         <input 
           ref={el => inputRefs.current[`${field}_${index}`] = el}
           type="text" 
           value={value === undefined || value === null ? '' : String(value)}
           onChange={(e) => {
-            console.log(`${field} input change:`, e.target.value);
             handleValueChange(index, field, e.target.value);
           }} 
           disabled={!isNewTest && !isEditMode}
           className={`w-full min-w-0 p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
+          } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''}`}
+          placeholder={placeholder}
+        />
+      </div>
+    );
+  };
+
+  // Update the form fields to include tutorial tooltips
+  const renderFormField = (field, label, type = 'text', placeholder = '') => {
+    const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === field;
+    
+    return (
+      <div className="relative">
+        <label className="block text-xs font-medium text-gray-700 mb-0.5">{label}</label>
+        {isTutorialField && (
+          <TutorialMessagePortal
+            step={tutorialSteps[currentTutorialStep]}
+            onNext={handleNextTutorialStep}
+            onSkip={handleSkipTutorial}
+            inputRef={getTutorialInputRef()}
+          />
+        )}
+        <input 
+          ref={el => inputRefs.current[field] = el}
+          type={type}
+          value={formData[field]}
+          onChange={(e) => handleFormDataChange(field, e.target.value)}
+          className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+            isTutorialField ? 'ring-2 ring-primary border-primary' : ''
           }`}
+          disabled={!isNewTest && !isEditMode}
           placeholder={placeholder}
         />
       </div>
@@ -645,21 +703,21 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         }
       `}</style>
 
-      {/* Tutorial Message - only show in demo mode */}
+      {/* Single Tutorial Message Portal */}
       {demoMode && currentTutorialStep >= 0 && (
-        <TutorialMessage
+        <TutorialMessagePortal
           step={tutorialSteps[currentTutorialStep]}
           onNext={handleNextTutorialStep}
           onSkip={handleSkipTutorial}
-          position={tutorialPosition}
+          inputRef={getTutorialInputRef()}
         />
       )}
 
-      {/* Help Button - only show in demo mode */}
+      {/* Help Button */}
       {demoMode && (
         <button
           onClick={() => setCurrentTutorialStep(0)}
-          className="absolute top-4 right-4 text-primary hover:text-primary-dark transition-colors"
+          className="absolute top-[1.3rem] right-4 text-primary hover:text-primary-dark transition-colors"
         >
           <HelpCircle size={24} />
         </button>
@@ -669,10 +727,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Title and Edit Button Row */}
         <div className="flex items-center gap-2 justify-between">
           <div className="flex-1">
-      <input 
+            <input 
               ref={el => inputRefs.current['title'] = el}
-        type="text"
-        value={formData.title}
+              type="text"
+              value={formData.title}
               onChange={(e) => {
                 logClick('Title Input Change', { value: e.target.value });
                 handleFormDataChange('title', e.target.value);
@@ -682,9 +740,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               className={`test-title-input w-full p-1.5 border rounded-lg text-sm ${
                 highlightedField === 'title' ? 'border-red-500 ring-2 ring-red-200' : ''
               } ${(!isNewTest && !isEditMode) ? 'bg-gray-50' : ''}`}
-        placeholder="Test Title *"
-        required
-      />
+              placeholder="Test Title *"
+              required
+            />
           </div>
           
           {/* Edit Mode Toggle - Only show for existing tests */}
@@ -732,7 +790,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               type="date" 
               value={formData.date}
               onChange={(e) => handleFormDataChange('date', e.target.value)} 
-              className="w-full p-1 border rounded-lg text-sm"
+              className={`w-full p-1 border rounded-lg text-sm ${
+                currentTutorialStep === 0 ? 'ring-2 ring-primary border-primary' : ''
+              }`}
               disabled={!isNewTest && !isEditMode}
             />
           </div>
@@ -744,10 +804,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               type="text"
               value={formData.weight}
               onChange={(e) => handleFormDataChange('weight', e.target.value)}
-              onFocus={(e) => handleInputFocus('weight', e)}
-              onBlur={handleInputBlur}
-              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-                currentTutorialStep === 5 ? 'ring-2 ring-primary border-primary' : ''
+              className={`w-full p-1 border rounded-lg text-sm ${
+                currentTutorialStep === 2 ? 'ring-2 ring-primary border-primary' : ''
               }`}
               disabled={!isNewTest && !isEditMode}
               placeholder="kg"
@@ -761,10 +819,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               type="text"
               value={formData.baseLa}
               onChange={(e) => handleFormDataChange('baseLa', e.target.value)}
-              onFocus={(e) => handleInputFocus('baseLa', e)}
-              onBlur={handleInputBlur}
-              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-                currentTutorialStep === 6 ? 'ring-2 ring-primary border-primary' : ''
+              className={`w-full p-1 border rounded-lg text-sm ${
+                currentTutorialStep === 3 ? 'ring-2 ring-primary border-primary' : ''
               }`}
               disabled={!isNewTest && !isEditMode}
               placeholder="mmol/L"
@@ -780,9 +836,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 logClick('Sport Select Change', { value: e.target.value });
                 handleFormDataChange('sport', e.target.value);
               }}
-              onFocus={(e) => handleInputFocus('sport', e)}
-              onBlur={handleInputBlur}
-              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+              className={`w-full p-1 border rounded-lg text-sm ${
                 currentTutorialStep === 1 ? 'ring-2 ring-primary border-primary' : ''
               }`}
               disabled={!isNewTest && !isEditMode}
@@ -798,31 +852,31 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
-        <input 
+            <input 
               ref={el => inputRefs.current['specifics'] = el}
-          type="text"
-          value={formData.specifics.specific}
-          onChange={(e) => handleFormDataChange('specifics', { 
-            ...formData.specifics, 
-            specific: e.target.value 
-          })}
+              type="text"
+              value={formData.specifics.specific}
+              onChange={(e) => handleFormDataChange('specifics', { 
+                ...formData.specifics, 
+                specific: e.target.value 
+              })}
               onFocus={(e) => handleInputFocus('specifics', e)}
               onBlur={handleInputBlur}
               className="w-full p-1 border rounded-lg text-sm"
               disabled={!isNewTest && !isEditMode}
               placeholder="e.g., Indoor"
-        />
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weather</label>
-        <input 
+            <input 
               ref={el => inputRefs.current['specifics'] = el}
-          type="text"
-          value={formData.specifics.weather}
-          onChange={(e) => handleFormDataChange('specifics', { 
-            ...formData.specifics, 
-            weather: e.target.value 
-          })}
+              type="text"
+              value={formData.specifics.weather}
+              onChange={(e) => handleFormDataChange('specifics', { 
+                ...formData.specifics, 
+                weather: e.target.value 
+              })}
               onFocus={(e) => handleInputFocus('specifics', e)}
               onBlur={handleInputBlur}
               className="w-full p-1 border rounded-lg text-sm"
@@ -830,7 +884,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               placeholder="e.g., 20°C"
             />
           </div>
-      </div>
+        </div>
 
         {/* Data Table */}
         <div className="mt-3 overflow-x-auto">
@@ -844,7 +898,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]');
             
             return (
-              <div className="w-full">
+              <>
                 <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0`}>
                   <div className="text-center min-w-0 overflow-hidden">Int.</div>
                   <div className="text-center min-w-0 overflow-hidden">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
@@ -854,8 +908,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <div className="text-center min-w-0 overflow-hidden">RPE</div>
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
-      <div className="max-h-[400px] overflow-y-auto">
-        {rows.map((row, index) => (
+                <div className="max-h-[400px] overflow-y-auto">
+                  {rows.map((row, index) => (
                     <div
                       key={index}
                       className={`grid ${gridCols} gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors`}
@@ -879,13 +933,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                           </button>
                         </div>
                       )}
-          </div>
-        ))}
-      </div>
-              </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             );
           })()}
-      </div>
+        </div>
 
         {/* Action Buttons */}
         {(isNewTest || isEditMode) && (
