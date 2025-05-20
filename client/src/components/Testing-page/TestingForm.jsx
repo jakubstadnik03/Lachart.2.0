@@ -1,9 +1,213 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash, Plus, X, Save } from 'lucide-react';
+import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
+
+// Tutorial steps configuration
+const tutorialSteps = [
+  {
+    field: 'title',
+    message: 'Začněte zadáním názvu testu',
+    example: 'Např: Laktátový test - Kolo (15.3.2024)'
+  },
+  {
+    field: 'sport',
+    message: 'Vyberte sport, pro který test provádíte',
+    example: 'Běh, Kolo nebo Plavání'
+  },
+  {
+    field: 'power_0',
+    message: 'Zadejte hodnotu výkonu/tempa pro první interval',
+    example: 'Pro kolo: watty (např. 200W)\nPro běh/plavání: tempo (např. 4:30)'
+  },
+  {
+    field: 'heartRate_0',
+    message: 'Zadejte tepovou frekvenci',
+    example: 'Hodnota v tepech za minutu (např. 150)'
+  },
+  {
+    field: 'lactate_0',
+    message: 'Zadejte naměřenou hodnotu laktátu',
+    example: 'Hodnota v mmol/L (např. 2.5)'
+  },
+  {
+    field: 'weight',
+    message: 'Zadejte svoji váhu',
+    example: 'Hodnota v kg (např. 75)'
+  },
+  {
+    field: 'baseLa',
+    message: 'Zadejte klidovou hodnotu laktátu',
+    example: 'Hodnota v mmol/L měřená před testem (např. 1.2)'
+  }
+];
+
+// Tutorial message component
+const TutorialMessage = ({ step, onNext, onSkip, position }) => {
+  if (!step) return null;
+
+  return (
+    <div 
+      className="absolute z-50 bg-white rounded-lg shadow-lg border border-primary/10 p-4 max-w-xs"
+      style={{
+        ...position,
+        animation: 'fadeIn 0.3s ease-out'
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white font-bold">
+          ?
+        </div>
+        <div className="flex-1">
+          <p className="text-gray-800 font-medium mb-1">{step.message}</p>
+          <p className="text-gray-500 text-sm">{step.example}</p>
+          <div className="flex items-center justify-between mt-3">
+            <button
+              onClick={onSkip}
+              className="text-gray-500 hover:text-gray-700 text-sm"
+            >
+              Přeskočit tutoriál
+            </button>
+            <button
+              onClick={onNext}
+              className="flex items-center gap-1 text-primary hover:text-primary-dark font-medium"
+            >
+              Další <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="absolute w-3 h-3 bg-white transform rotate-45 border-l border-t border-primary/10"
+           style={{
+             top: '15px',
+             left: '-6px'
+           }}
+      />
+    </div>
+  );
+};
+
+// Tooltip component
+const Tooltip = ({ content, children }) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+      >
+        {children}
+      </div>
+      {isVisible && (
+        <div className="absolute z-50 bg-gray-900 text-white text-sm px-2 py-1 rounded-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
+          {content}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Field help content configuration
+const fieldHelp = {
+  title: {
+    text: "Zadejte název testu (např. 'Laktátový test - Kolo')",
+    example: "Příklad: Laktátový test 15.3.2024"
+  },
+  sport: {
+    text: "Vyberte sport, pro který test provádíte",
+    example: "Běh, Kolo nebo Plavání"
+  },
+  power: {
+    bike: {
+      text: "Zadejte výkon ve wattech pro tento interval",
+      example: "Příklad: 200W"
+    },
+    run: {
+      text: "Zadejte tempo ve formátu MM:SS na kilometr",
+      example: "Příklad: 4:30"
+    },
+    swim: {
+      text: "Zadejte tempo ve formátu MM:SS na 100m",
+      example: "Příklad: 1:45"
+    }
+  },
+  heartRate: {
+    text: "Zadejte tepovou frekvenci v úderech za minutu",
+    example: "Příklad: 150"
+  },
+  lactate: {
+    text: "Zadejte naměřenou hodnotu laktátu v mmol/L",
+    example: "Příklad: 2.5"
+  },
+  glucose: {
+    text: "Zadejte hodnotu glukózy v krvi (volitelné)",
+    example: "Příklad: 5.5"
+  },
+  RPE: {
+    text: "Zadejte subjektivní hodnocení zátěže (1-10)",
+    example: "Příklad: 7"
+  },
+  weight: {
+    text: "Zadejte váhu v kilogramech",
+    example: "Příklad: 75"
+  },
+  baseLa: {
+    text: "Zadejte klidovou hodnotu laktátu před testem",
+    example: "Příklad: 1.2"
+  }
+};
+
+// Input help tooltip component
+const InputHelp = ({ field, isVisible, position }) => {
+  if (!isVisible || !fieldHelp[field]) return null;
+
+  return (
+    <div 
+      className="absolute z-50 bg-white px-4 py-3 rounded-lg shadow-lg border border-primary/10 max-w-xs"
+      style={{
+        ...position,
+        animation: 'fadeIn 0.2s ease-in-out'
+      }}
+    >
+      <div className="text-gray-800 font-medium mb-1">{fieldHelp[field].text}</div>
+      <div className="text-gray-500 text-sm">{fieldHelp[field].example}</div>
+    </div>
+  );
+};
+
+// Improved click logging function
+const logClick = (element, details = {}) => {
+  // Format the details object to be more readable
+  const formattedDetails = Object.entries(details)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(', ');
+  
+  console.log(`[Click] ${element}${formattedDetails ? ` (${formattedDetails})` : ''}`);
+};
+
+// Add data change logging
+const logDataChange = (type, data) => {
+  // Only log essential data to keep console clean
+  const essentialData = {
+    title: data.title,
+    sport: data.sport,
+    date: data.date,
+    results: data.results?.length || 0
+  };
+  console.log(`[Data Change] ${type}:`, essentialData);
+};
 
 function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false }) {
   const { addNotification } = useNotification();
+  const [currentTutorialStep, setCurrentTutorialStep] = useState(-1);
+  const [tutorialPosition, setTutorialPosition] = useState({ top: 0, left: 0 });
+  const [highlightedField, setHighlightedField] = useState(null);
+  const [activeHelp, setActiveHelp] = useState(null);
+  const [helpPosition, setHelpPosition] = useState({ top: 0, left: 0 });
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Determine if we're in new test mode (all editable) or previous test mode (needs edit button)
+  const isNewTest = !testData?._id;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -55,31 +259,60 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     comments: testData?.comments || ''
   });
 
-  const [rows, setRows] = useState(testData?.results?.map(row => ({
-    interval: row.interval || 1,
-    power: formData.sport === 'bike' ? (row.power || 0) : (row.power ? convertSecondsToPace(row.power) : '0:00'),
-    heartRate: row.heartRate?.toString() || '0',
-    lactate: row.lactate?.toString() || '0',
-    glucose: row.glucose?.toString() || '0',
-    RPE: row.RPE?.toString() || '0'
-  })) || [{
-    interval: 1,
-    power: formData.sport === 'bike' ? '0' : '0:00',
-    heartRate: '0',
-    lactate: '0',
-    glucose: '0',
-    RPE: '0'
-  }]);
+  const [rows, setRows] = useState([]);
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [hoverGlucose, setHoverGlucose] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  const inputRefs = useRef([]);
+  const inputRefs = useRef({});
 
-  // Initialize refs when rows change
+  // Handle tutorial navigation
+  const handleNextTutorialStep = () => {
+    setCurrentTutorialStep(prev => {
+      if (prev < tutorialSteps.length - 1) {
+        return prev + 1;
+      }
+      return -1; // End tutorial
+    });
+  };
+
+  const handleSkipTutorial = () => {
+    setCurrentTutorialStep(-1);
+  };
+
+  // Update tutorial position when step changes
   useEffect(() => {
-    inputRefs.current = inputRefs.current.slice(0, rows.length);
+    if (currentTutorialStep >= 0) {
+      const currentStep = tutorialSteps[currentTutorialStep];
+      const inputEl = inputRefs.current[currentStep.field];
+      if (inputEl) {
+        const rect = inputEl.getBoundingClientRect();
+        setTutorialPosition({
+          top: `${rect.top + window.scrollY}px`,
+          left: `${rect.right + 20}px`
+        });
+        inputEl.focus();
+      }
+    }
+  }, [currentTutorialStep]);
+
+  // Initialize refs for new rows
+  useEffect(() => {
+    rows.forEach((_, index) => {
+      ['power', 'heartRate', 'lactate', 'glucose', 'RPE'].forEach(field => {
+        const key = `${field}_${index}`;
+        if (!inputRefs.current[key]) {
+          inputRefs.current[key] = null;
+        }
+      });
+    });
+
+    Object.keys(inputRefs.current).forEach(key => {
+      if (key.includes('_') && parseInt(key.split('_')[1]) >= rows.length) {
+        delete inputRefs.current[key];
+      }
+    });
   }, [rows]);
 
   // Check if any row has glucose data
@@ -114,125 +347,150 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setIsDirty(true);
   };
 
-  const validateNumericInput = (value, allowDecimals = true) => {
-    // Allow empty string
-    if (value === '') return true;
-    
-    // For weight (no decimals)
-    if (!allowDecimals) {
-      return /^-?\d*$/.test(value);
-    }
-    
-    // For lactate (with decimals)
-    // Allow: numbers, single decimal point, and numbers after decimal point
-    return /^-?\d*\.?\d*$/.test(value);
-  };
-
-  const handleNumericInputChange = (rowIndex, field, value) => {
-    // Special handling for weight (no decimals)
-    if (rowIndex === -1 && field === 'weight') {
-      if (!validateNumericInput(value, false)) return;
-      const newFormData = { ...formData, weight: value };
-      setFormData(newFormData);
-      setIsDirty(true);
-      
-      const updatedTestData = {
-        ...testData,
-        weight: value === '' ? 0 : Number(value),
-        results: rows
-      };
-      onTestDataChange(updatedTestData);
-      return;
-    }
-    
-    // Special handling for base lactate (with decimals)
-    if (rowIndex === -1 && field === 'baseLa') {
-      // Allow any numeric input including decimals
-      const newFormData = { ...formData, baseLa: value };
-      setFormData(newFormData);
-      setIsDirty(true);
-      
-      const updatedTestData = {
-        ...testData,
-        baseLactate: value === '' ? 0 : parseFloat(value) || 0,
-        results: rows
-      };
-      onTestDataChange(updatedTestData);
-      return;
-    }
-    
-    // Handle row-level lactate inputs (with decimals)
-    if (field === 'lactate') {
-      handleValueChange(rowIndex, field, value);
-    } else {
-      // Handle other numeric inputs (no decimals)
-      if (!validateNumericInput(value, false)) return;
-      handleValueChange(rowIndex, field, value);
-    }
-  };
-
   const handleValueChange = (rowIndex, field, value) => {
-    console.log('Value change:', { rowIndex, field, value, currentSport: formData.sport });
+    console.log('Input change:', { rowIndex, field, value });
     
-    if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
-      handlePaceChange(rowIndex, value);
-      return;
-    }
-
-    // Preserve the exact input value in the state
-    const updatedRows = rows.map((row, index) =>
-      index === rowIndex ? { ...row, [field]: value } : row
-    );
+    // Always store the value as a string
+    const updatedRows = rows.map((row, index) => {
+      if (index === rowIndex) {
+        return { ...row, [field]: String(value) };
+      }
+      return row;
+    });
     
+    console.log('Updated rows:', updatedRows);
     setRows(updatedRows);
     setIsDirty(true);
 
-    // Update glucose visibility when glucose value changes
-    if (field === 'glucose') {
-      const hasNonZeroGlucose = updatedRows.some(row => {
-        const glucoseValue = row.glucose === '' ? 0 : parseFloat(row.glucose);
-        return glucoseValue > 0;
-      });
-      setShowGlucose(hasNonZeroGlucose);
-    }
-
-    // When sending data to parent, convert to numbers with decimal precision
-    const processedRows = updatedRows.map((row, idx) => ({
-      interval: idx + 1,
-      power: formData.sport === 'bike' ? 
-        (row.power === '' ? 0 : parseFloat(row.power)) :
-        (row.power ? convertPaceToSeconds(row.power) : 0),
-      heartRate: row.heartRate === '' ? 0 : parseFloat(row.heartRate),
-      lactate: row.lactate === '' ? 0 : parseFloat(row.lactate),
-      glucose: row.glucose === '' ? 0 : parseFloat(row.glucose),
-      RPE: row.RPE === '' ? 0 : parseFloat(row.RPE)
-    }));
-
     const updatedTestData = {
       ...testData,
-      results: processedRows
+      results: updatedRows
     };
     
     onTestDataChange(updatedTestData);
   };
 
+  // Update useEffect for testData changes to preserve raw values
   useEffect(() => {
     if (testData) {
-      console.log('Initial test data:', testData);
-      setRows(testData.results?.map(row => ({
-        ...row,
-        power: formData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
-      })) || []);
+      setFormData({
+        title: testData.title || '',
+        description: testData.description || '',
+        weight: testData.weight?.toString() || '',
+        sport: testData.sport || '',
+        baseLa: testData.baseLactate?.toString() || '',
+        date: formatDate(testData.date),
+        specifics: testData.specifics || { specific: '', weather: '' },
+        comments: testData.comments || ''
+      });
+      
+      if (testData.results && testData.results.length > 0) {
+        const initialRows = testData.results.map(row => ({
+          interval: row.interval || 1,
+          power: row.power ? String(row.power) : '',
+          heartRate: row.heartRate ? String(row.heartRate) : '',
+          lactate: row.lactate ? String(row.lactate) : '',
+          glucose: row.glucose ? String(row.glucose) : '',
+          RPE: row.RPE ? String(row.RPE) : ''
+        }));
+        setRows(initialRows);
+      } else {
+        setRows([{
+          interval: 1,
+          power: '',
+          heartRate: '',
+          lactate: '',
+          glucose: '',
+          RPE: ''
+        }]);
+      }
+    } else {
+      setRows([{
+        interval: 1,
+        power: '',
+        heartRate: '',
+        lactate: '',
+        glucose: '',
+        RPE: ''
+      }]);
     }
-  }, [testData, formData.sport]);
+  }, [testData]);
+
+  const handleSaveChanges = () => {
+    if (!validateForm()) {
+      return;
+    }
+    
+    const updatedTest = {
+      ...testData,
+      title: formData.title.trim(),
+      description: formData.description?.trim() || '',
+      weight: formData.weight === '' ? 0 : parseFloat(formData.weight.replace(',', '.')),
+      sport: formData.sport,
+      baseLactate: formData.baseLa === '' ? 0 : parseFloat(formData.baseLa.replace(',', '.')),
+      date: formData.date,
+      specifics: formData.specifics || { specific: '', weather: '' },
+      comments: formData.comments?.trim() || '',
+      results: rows.map((row, index) => {
+        // Convert values to numbers only at save time
+        const convertToNumber = (value) => {
+          if (value === '' || value === undefined || value === null) return 0;
+          // If the value contains a comma, replace it with a dot before parsing
+          const numericValue = value.toString().replace(',', '.');
+          return parseFloat(numericValue);
+        };
+
+        return {
+          interval: index + 1,
+          power: convertToNumber(row.power),
+          heartRate: convertToNumber(row.heartRate),
+          lactate: (row.lactate),
+          glucose: convertToNumber(row.glucose),
+          RPE: convertToNumber(row.RPE)
+        };
+      })
+    };
+    
+    if (onSave) {
+      try {
+        onSave(updatedTest);
+        addNotification('Test data saved successfully', 'success');
+        setIsDirty(false);
+        if (!isNewTest) {
+          setIsEditMode(false);
+        }
+      } catch (error) {
+        console.error('Error saving test data:', error);
+        addNotification('Failed to save test data', 'error');
+      }
+    }
+  };
+
+  const validateForm = () => {
+    const errors = [];
+    
+    if (!formData.title?.trim()) {
+      errors.push('Test title is required');
+      setHighlightedField('title');
+    }
+    
+    if (!formData.sport) {
+      errors.push('Sport is required');
+      setHighlightedField('sport');
+    }
+    
+    if (errors.length > 0) {
+      errors.forEach(error => addNotification(error, 'error'));
+      return false;
+    }
+    
+    return true;
+  };
 
   const handleFormDataChange = (field, value) => {
-    console.log('Form data change:', { field, value, currentSport: formData.sport });
+    logClick('Form Field Change', { field, value });
     
     if (field === 'sport') {
-      console.log('Sport changed, resetting form:', { from: formData.sport, to: value });
-      
-      // Create new form data with updated sport
       const newFormData = {
         ...formData,
         sport: value
@@ -243,31 +501,28 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const updatedRows = rows.map(row => {
         let power = row.power;
         if (value === 'bike' && power) {
-          // Convert from pace to power (seconds)
           power = convertPaceToSeconds(power);
         } else if ((value === 'run' || value === 'swim') && power) {
-          // Convert from power (seconds) to pace
           power = convertSecondsToPace(power);
         }
         return { ...row, power };
       });
       setRows(updatedRows);
       
-      // Create complete updated test data
       const updatedTestData = {
         ...testData,
         title: newFormData.title,
         description: newFormData.description,
-        weight: newFormData.weight ? Number(newFormData.weight) : '',
+        weight: newFormData.weight,
         sport: value,
-        baseLactate: newFormData.baseLa ? Number(newFormData.baseLa) : '',
+        baseLactate: newFormData.baseLa,
         date: newFormData.date,
         specifics: newFormData.specifics,
         comments: newFormData.comments,
         results: updatedRows
       };
       
-      console.log('Updating test data with new sport:', updatedTestData);
+      logDataChange('Sport Change', updatedTestData);
       onTestDataChange(updatedTestData);
       return;
     }
@@ -277,82 +532,21 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     setFormData(newFormData);
     setIsDirty(true);
 
-    // Propagate changes to parent component
     const updatedTestData = {
       ...testData,
       title: newFormData.title,
       description: newFormData.description,
-      weight: newFormData.weight ? Number(newFormData.weight) : '',
+      weight: newFormData.weight,
       sport: newFormData.sport,
-      baseLactate: newFormData.baseLa ? Number(newFormData.baseLa) : '',
+      baseLactate: newFormData.baseLa,
       date: newFormData.date,
       specifics: newFormData.specifics,
       comments: newFormData.comments,
       results: rows
     };
     
-    console.log('Propagating changes to parent:', updatedTestData);
+    logDataChange('Field Update', updatedTestData);
     onTestDataChange(updatedTestData);
-  };
-
-  const handleSaveChanges = () => {
-    if (!formData.title) {
-      addNotification('Test title is required', 'error');
-      return;
-    }
-    
-    if (!formData.sport) {
-      addNotification('Sport is required', 'error');
-      return;
-    }
-    
-    // Process rows to ensure correct format with numeric values
-    const processedRows = rows.map((row, index) => {
-      let power = row.power;
-      
-      // Convert power based on sport type
-      if (formData.sport === 'bike') {
-        power = power === '' ? 0 : Number(power);
-      } else if (formData.sport === 'run' || formData.sport === 'swim') {
-        power = power ? convertPaceToSeconds(power) : 0;
-      }
-      
-      // Ensure all numeric values are properly converted
-      return {
-        interval: index + 1,
-        power: power,
-        heartRate: row.heartRate === '' ? 0 : Number(row.heartRate),
-        lactate: row.lactate === '' ? 0 : Number(row.lactate),
-        glucose: row.glucose === '' ? 0 : Number(row.glucose),
-        RPE: row.RPE === '' ? 0 : Number(row.RPE)
-      };
-    });
-    
-    const updatedTest = {
-      ...testData,
-      title: formData.title,
-      description: formData.description || '',
-      weight: formData.weight === '' ? 0 : Number(formData.weight),
-      sport: formData.sport,
-      baseLactate: formData.baseLa === '' ? 0 : Number(formData.baseLa),
-      date: formData.date,
-      specifics: formData.specifics || { specific: '', weather: '' },
-      comments: formData.comments || '',
-      results: processedRows
-    };
-    
-    console.log('Saving test data:', updatedTest);
-    
-    if (onSave) {
-      try {
-        onSave(updatedTest);
-        addNotification('Test data saved successfully', 'success');
-      } catch (error) {
-        console.error('Error saving test data:', error);
-        addNotification('Failed to save test data', 'error');
-      }
-    }
-    setIsDirty(false);
   };
 
   const handleDeleteRow = (rowIndex) => {
@@ -365,15 +559,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const handleAddRow = () => {
     const newRow = {
       interval: rows.length + 1,
-      power: formData.sport === 'bike' ? 0 : '0:00',
-      heartRate: 0,
-      lactate: 0,
-      glucose: 0,
-      RPE: 0
+      power: '',
+      heartRate: '',
+      lactate: '',
+      glucose: '',
+      RPE: ''
     };
     
-    const newRows = [...rows, newRow];
-    setRows(newRows);
+    setRows([...rows, newRow]);
     setIsDirty(true);
   };
 
@@ -389,195 +582,357 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   // Calculate grid columns based on whether glucose is shown
   const gridCols = showGlucose ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-4 sm:grid-cols-6';
 
-  // Add useEffect to handle testData changes
-  useEffect(() => {
-    if (testData) {
-      console.log('Test data changed, updating form:', testData);
-      setFormData({
-        title: testData.title || '',
-        description: testData.description || '',
-        weight: testData.weight || '',
-        sport: testData.sport || '',
-        baseLa: testData.baseLactate || '',
-        date: formatDate(testData.date),
-        specifics: testData.specifics || { specific: '', weather: '' },
-        comments: testData.comments || ''
-      });
-      
-      setRows(testData.results?.map(row => ({
-        ...row,
-        power: testData.sport === 'bike' ? row.power : row.power ? convertSecondsToPace(row.power) : ''
-      })) || []);
+  // Highlight fields with errors
+  const validateField = (field, value) => {
+    if (field === 'title' && !value) {
+      setHighlightedField('title');
+      return false;
     }
-  }, [testData]);
+    if (field === 'sport' && !value) {
+      setHighlightedField('sport');
+      return false;
+    }
+    return true;
+  };
+
+  // Handle input focus
+  const handleInputFocus = (field, event) => {
+    const rect = event.target.getBoundingClientRect();
+    setHelpPosition({
+      top: `${rect.top - 80}px`,
+      left: `${rect.left}px`
+    });
+    setActiveHelp(field);
+  };
+
+  // Handle input blur
+  const handleInputBlur = () => {
+    // Add small delay to make the help message more readable
+    setTimeout(() => {
+      setActiveHelp(null);
+    }, 200);
+  };
+
+  // Update the input field in the table
+  const renderInput = (index, field, value, placeholder) => {
+    console.log(`Rendering ${field} input:`, { value, type: typeof value });
+    return (
+      <div className="min-w-0 overflow-hidden">
+        <input 
+          ref={el => inputRefs.current[`${field}_${index}`] = el}
+          type="text" 
+          value={value === undefined || value === null ? '' : String(value)}
+          onChange={(e) => {
+            console.log(`${field} input change:`, e.target.value);
+            handleValueChange(index, field, e.target.value);
+          }} 
+          disabled={!isNewTest && !isEditMode}
+          className={`w-full min-w-0 p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+            (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
+          }`}
+          placeholder={placeholder}
+        />
+      </div>
+    );
+  };
 
   return (
-    <div className={`flex flex-col w-full p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg ${!showGlucose ? 'w-full' : ''}`}>
+    <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative">
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Tutorial Message - only show in demo mode */}
+      {demoMode && currentTutorialStep >= 0 && (
+        <TutorialMessage
+          step={tutorialSteps[currentTutorialStep]}
+          onNext={handleNextTutorialStep}
+          onSkip={handleSkipTutorial}
+          position={tutorialPosition}
+        />
+      )}
+
+      {/* Help Button - only show in demo mode */}
+      {demoMode && (
+        <button
+          onClick={() => setCurrentTutorialStep(0)}
+          className="absolute top-4 right-4 text-primary hover:text-primary-dark transition-colors"
+        >
+          <HelpCircle size={24} />
+        </button>
+      )}
+
+      <div className="space-y-2">
+        {/* Title and Edit Button Row */}
+        <div className="flex items-center gap-2 justify-between">
+          <div className="flex-1">
       <input 
+              ref={el => inputRefs.current['title'] = el}
         type="text"
         value={formData.title}
-        onChange={(e) => handleFormDataChange('title', e.target.value)}
-        className="w-full p-2 border rounded-lg mb-4"
+              onChange={(e) => {
+                logClick('Title Input Change', { value: e.target.value });
+                handleFormDataChange('title', e.target.value);
+                setHighlightedField(null);
+              }}
+              disabled={!isNewTest && !isEditMode}
+              className={`test-title-input w-full p-1.5 border rounded-lg text-sm ${
+                highlightedField === 'title' ? 'border-red-500 ring-2 ring-red-200' : ''
+              } ${(!isNewTest && !isEditMode) ? 'bg-gray-50' : ''}`}
         placeholder="Test Title *"
         required
       />
+          </div>
+          
+          {/* Edit Mode Toggle - Only show for existing tests */}
+          {!isNewTest && (
+            <button
+              onClick={() => {
+                logClick('Edit/Cancel Button', { isEditMode });
+                setIsEditMode(!isEditMode);
+              }}
+              className={`px-2 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
+                isEditMode 
+                  ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                  : 'bg-primary hover:bg-primary-dark text-white'
+              }`}
+            >
+              {isEditMode ? (
+                <>
+                  <X size={14} />
+                  Cancel
+                </>
+              ) : (
+                <>
+                  <Edit size={14} />
+                  Edit
+                </>
+              )}
+            </button>
+          )}
+        </div>
 
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-4">
+        <textarea 
+          value={formData.description} 
+          onChange={(e) => handleFormDataChange('description', e.target.value)} 
+          className="w-full p-1.5 border rounded-lg text-sm"
+          disabled={!isNewTest && !isEditMode}
+          placeholder="Description of this testing..." 
+          rows={2}
+        />
+
+        <div className="grid grid-cols-4 gap-2">
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Date</label>
+            <input 
+              ref={el => inputRefs.current['date'] = el}
+              type="date" 
+              value={formData.date}
+              onChange={(e) => handleFormDataChange('date', e.target.value)} 
+              className="w-full p-1 border rounded-lg text-sm"
+              disabled={!isNewTest && !isEditMode}
+            />
+          </div>
+
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Weight</label>
+            <input 
+              ref={el => inputRefs.current['weight'] = el}
+              type="text"
+              value={formData.weight}
+              onChange={(e) => handleFormDataChange('weight', e.target.value)}
+              onFocus={(e) => handleInputFocus('weight', e)}
+              onBlur={handleInputBlur}
+              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                currentTutorialStep === 5 ? 'ring-2 ring-primary border-primary' : ''
+              }`}
+              disabled={!isNewTest && !isEditMode}
+              placeholder="kg"
+            />
+          </div>
+
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Base La</label>
+            <input 
+              ref={el => inputRefs.current['baseLa'] = el}
+              type="text"
+              value={formData.baseLa}
+              onChange={(e) => handleFormDataChange('baseLa', e.target.value)}
+              onFocus={(e) => handleInputFocus('baseLa', e)}
+              onBlur={handleInputBlur}
+              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                currentTutorialStep === 6 ? 'ring-2 ring-primary border-primary' : ''
+              }`}
+              disabled={!isNewTest && !isEditMode}
+              placeholder="mmol/L"
+            />
+          </div>
+
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Sport</label>
+            <select 
+              ref={el => inputRefs.current['sport'] = el}
+              value={formData.sport} 
+              onChange={(e) => {
+                logClick('Sport Select Change', { value: e.target.value });
+                handleFormDataChange('sport', e.target.value);
+              }}
+              onFocus={(e) => handleInputFocus('sport', e)}
+              onBlur={handleInputBlur}
+              className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+                currentTutorialStep === 1 ? 'ring-2 ring-primary border-primary' : ''
+              }`}
+              disabled={!isNewTest && !isEditMode}
+            >
+              <option value="">Sport *</option>
+              <option value="run">Run</option>
+              <option value="bike">Bike</option>
+              <option value="swim">Swim</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
         <input 
+              ref={el => inputRefs.current['specifics'] = el}
           type="text"
           value={formData.specifics.specific}
           onChange={(e) => handleFormDataChange('specifics', { 
             ...formData.specifics, 
             specific: e.target.value 
           })}
-          className="w-full p-2 border rounded-lg"
-          placeholder="Specific (e.g., Indoor, Outdoor)"
+              onFocus={(e) => handleInputFocus('specifics', e)}
+              onBlur={handleInputBlur}
+              className="w-full p-1 border rounded-lg text-sm"
+              disabled={!isNewTest && !isEditMode}
+              placeholder="e.g., Indoor"
         />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">Weather</label>
         <input 
+              ref={el => inputRefs.current['specifics'] = el}
           type="text"
           value={formData.specifics.weather}
           onChange={(e) => handleFormDataChange('specifics', { 
             ...formData.specifics, 
             weather: e.target.value 
           })}
-          className="w-full p-2 border rounded-lg"
-          placeholder="Weather"
-        />
-      </div>
-
-      <div className={`grid ${gridCols} gap-1 sm:gap-2 items-center p-2 text-xs sm:text-sm font-semibold bg-gray-100 rounded-lg`}>
-        <div className="text-center">Int.</div>
-        <div className="text-center">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
-        <div className="text-center">HR</div>
-        <div className="text-center">La</div>
-        {showGlucose && (
-          <div className="hidden sm:block text-center relative"
-            onMouseEnter={() => setHoverGlucose(true)}
-            onMouseLeave={() => setHoverGlucose(false)}
-          >
-            Glucose
-            {hoverGlucose && (
-              <button className="absolute -top-2 -right-2 text-red-600" onClick={() => setShowGlucose(false)}>
-                <X size={14} />
-              </button>
-            )}
+              onFocus={(e) => handleInputFocus('specifics', e)}
+              onBlur={handleInputBlur}
+              className="w-full p-1 border rounded-lg text-sm"
+              disabled={!isNewTest && !isEditMode}
+              placeholder="e.g., 20°C"
+            />
           </div>
-        )}
-        <div className="hidden sm:block text-center">RPE</div>
-        <div className="hidden sm:block text-center">Actions</div>
       </div>
 
+        {/* Data Table */}
+        <div className="mt-3 overflow-x-auto">
+          {(() => {
+            const gridCols = (isNewTest || isEditMode) 
+              ? (showGlucose 
+                  ? 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]'
+                  : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]')
+              : (showGlucose
+                  ? 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]'
+                  : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]');
+            
+            return (
+              <div className="w-full">
+                <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0`}>
+                  <div className="text-center min-w-0 overflow-hidden">Int.</div>
+                  <div className="text-center min-w-0 overflow-hidden">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
+                  <div className="text-center min-w-0 overflow-hidden">HR</div>
+                  <div className="text-center min-w-0 overflow-hidden">La</div>
+                  {showGlucose && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
+                  <div className="text-center min-w-0 overflow-hidden">RPE</div>
+                  {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
+                </div>
       <div className="max-h-[400px] overflow-y-auto">
         {rows.map((row, index) => (
-          <div key={index} className={`grid ${gridCols} gap-1 sm:gap-2 items-center mt-2 p-2 bg-white rounded-lg`}>
-            <div className="text-center text-sm">{index + 1}</div>
-            <input 
-              type={formData.sport === 'bike' ? "text" : "text"}
-              defaultValue={row.power || ''}
-              onChange={(e) => {
-                console.log('Input change:', e.target.value);
-                handleValueChange(index, 'power', e.target.value);
-              }}
-              className="p-1 text-sm border rounded-lg"
-              placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
-            />
-            <input 
-              type="text" 
-              defaultValue={row.heartRate || ''}
-              onChange={(e) => handleNumericInputChange(index, 'heartRate', e.target.value)} 
-              className="p-1 text-sm border rounded-lg" 
-            />
-            <input 
-              type="text" 
-              defaultValue={row.lactate || ''}
-              onChange={(e) => handleNumericInputChange(index, 'lactate', e.target.value)} 
-              className="p-1 text-sm border rounded-lg" 
-            />
-            {showGlucose && <input 
-              type="text" 
-              defaultValue={row.glucose || ''}
-              onChange={(e) => handleNumericInputChange(index, 'glucose', e.target.value)} 
-              className="hidden sm:block p-1 text-sm border rounded-lg" 
-            />}
-            <input 
-              type="text" 
-              defaultValue={row.RPE || ''}
-              onChange={(e) => handleNumericInputChange(index, 'RPE', e.target.value)} 
-              className="hidden sm:block p-1 text-sm border rounded-lg" 
-            />
-            <button onClick={() => handleDeleteRow(index)} className="hidden sm:block p-1 text-red-600"><Trash size={20} /></button>
+                    <div
+                      key={index}
+                      className={`grid ${gridCols} gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors`}
+                    >
+                      <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
+                      {renderInput(index, 'power', row.power, formData.sport === 'bike' ? 'W' : 'MM:SS')}
+                      {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
+                      {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
+                      {showGlucose && renderInput(index, 'glucose', row.glucose, 'mmol/L')}
+                      {renderInput(index, 'RPE', row.RPE, '1-10')}
+                      {(isNewTest || isEditMode) && (
+                        <div className="flex justify-center min-w-0 overflow-hidden">
+                          <button
+                            onClick={() => {
+                              logClick('Delete Row Button', { rowIndex: index });
+                              handleDeleteRow(index);
+                            }}
+                            className="p-0.5 text-red-600 hover:text-red-800 transition-colors"
+                          >
+                            <Trash size={14} />
+                          </button>
+                        </div>
+                      )}
           </div>
         ))}
       </div>
-
-      <textarea 
-        value={formData.description} 
-        onChange={(e) => handleFormDataChange('description', e.target.value)} 
-        className="w-full p-2 border rounded-lg mt-4" 
-        placeholder="Description of this testing..." 
-      />
-
-      <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mt-4">
-        <input 
-          type="date" 
-          value={formData.date}
-          onChange={(e) => handleFormDataChange('date', e.target.value)} 
-          className="p-2 border rounded-lg w-full sm:w-auto" 
-        />
-        <input 
-          type="text" 
-          value={formData.weight} 
-          onChange={(e) => handleNumericInputChange(-1, 'weight', e.target.value)} 
-          className="p-2 border rounded-lg w-full sm:w-24" 
-          placeholder="Weight (kg)" 
-        />
-        <select 
-          value={formData.sport} 
-          onChange={(e) => handleFormDataChange('sport', e.target.value)} 
-          className="p-2 border rounded-lg w-full sm:w-auto"
-        >
-          <option value="">Select sport *</option>
-          <option value="run">Run</option>
-          <option value="bike">Bike</option>
-          <option value="swim">Swim</option>
-        </select>
-        <input 
-          type="number"
-          step="0.1"
-          min="0"
-          value={formData.baseLa} 
-          onChange={(e) => handleNumericInputChange(-1, 'baseLa', e.target.value)} 
-          className="p-2 border rounded-lg w-full sm:w-24" 
-          placeholder="Base La" 
-        />
+              </div>
+            );
+          })()}
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 mt-4">
-        <button 
-          onClick={handleAddRow} 
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-emerald-500 rounded-lg hover:bg-emerald-600"
-        >
-          <Plus size={20} /> Add Interval
-        </button>
-
-        {!demoMode && (
-          <div className="flex gap-2 w-full sm:w-auto">
+        {/* Action Buttons */}
+        {(isNewTest || isEditMode) && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2">
             <button 
-              onClick={handleDeleteTest}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-red rounded-lg hover:bg-red-dark"
+              onClick={() => {
+                logClick('Add Interval Button');
+                handleAddRow();
+              }}
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
             >
-              <Trash size={20} /> Delete Test
+              <Plus size={14} /> Add Interval
             </button>
 
+            <div className="flex gap-2 w-full sm:w-auto">
+              {!isNewTest && (
+                <button 
+                  onClick={() => {
+                    logClick('Delete Test Button', { testId: testData._id });
+                    handleDeleteTest();
+                  }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  <Trash size={14} /> Delete Test
+                </button>
+              )}
+
             <button 
-              onClick={handleSaveChanges}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
+                onClick={() => {
+                  logClick('Save Button', { isNewTest });
+                  handleSaveChanges();
+                }}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors"
             >
-              <Save size={20} /> Save Changes
+                <Save size={14} /> {isNewTest ? 'Save Test' : 'Save Changes'}
             </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Field Validation Messages */}
+      {highlightedField && (
+        <div className="mt-2 text-red-500 text-sm">
+          Please fill in the {highlightedField} field
+        </div>
+      )}
     </div>
   );
 }
