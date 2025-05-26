@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
 import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
@@ -27,6 +27,18 @@ const itemVariants = {
     opacity: 1,
     transition: {
       duration: 0.5,
+      ease: "easeOut"
+    }
+  }
+};
+
+const fadeInUpVariants = {
+  hidden: { y: 60, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: {
+      duration: 0.6,
       ease: "easeOut"
     }
   }
@@ -69,6 +81,18 @@ const TestingWithoutLogin = () => {
     });
     const [isDemoDropdownOpen, setIsDemoDropdownOpen] = useState(false);
     const isInitialMount = useRef(true);
+
+    // Create refs for scroll animations
+    const formRef = useRef(null);
+    const curveRef = useRef(null);
+    const calculatorRef = useRef(null);
+    const buttonsRef = useRef(null);
+
+    // Use useInView hook for each section
+    const isFormInView = useInView(formRef, { once: true, margin: "-100px" });
+    const isCurveInView = useInView(curveRef, { once: true, margin: "-100px" });
+    const isCalculatorInView = useInView(calculatorRef, { once: true, margin: "-100px" });
+    const isButtonsInView = useInView(buttonsRef, { once: true, margin: "-100px" });
 
     // Save to localStorage whenever testData changes
     useEffect(() => {
@@ -419,12 +443,13 @@ const TestingWithoutLogin = () => {
                         </motion.div>
 
                         {/* Main Content Area */}
-                        <motion.div 
-                            className="space-y-8 mt-8 px-4"
-                            variants={itemVariants}
-                        >
+                        <div className="space-y-8 mt-8 px-4">
                             {/* Testing Form Section */}
                             <motion.div 
+                                ref={formRef}
+                                initial="hidden"
+                                animate={isFormInView ? "visible" : "hidden"}
+                                variants={fadeInUpVariants}
                                 className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
                                 whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                             >
@@ -523,13 +548,14 @@ const TestingWithoutLogin = () => {
 
                             {/* Results Section */}
                             {hasValidData && (
-                                <motion.div 
-                                    className="space-y-8"
-                                    variants={itemVariants}
-                                >
+                                <div className="space-y-8">
                                     {/* Lactate Curve Section */}
                                     <motion.div 
-                                        className="bg-white rounded-xl shadow-sm border border-gray-100sm:p-3 lg:p-6 "
+                                        ref={curveRef}
+                                        initial="hidden"
+                                        animate={isCurveInView ? "visible" : "hidden"}
+                                        variants={fadeInUpVariants}
+                                        className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Lactate Curve Analysis</h2>
@@ -542,45 +568,48 @@ const TestingWithoutLogin = () => {
 
                                     {/* Calculator Section */}
                                     <motion.div 
+                                        ref={calculatorRef}
+                                        initial="hidden"
+                                        animate={isCalculatorInView ? "visible" : "hidden"}
+                                        variants={fadeInUpVariants}
                                         className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Calculator</h2>
-                                        <div className="w-full overflow-x-auto">
-                                            <div className=" lg:w-[800px] lg:min-w-full">
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
                                                 />
-                                            </div>
-                                        </div>
                                     </motion.div>
-                                </motion.div>
+                                </div>
                             )}
-                        </motion.div>
 
-                        {/* Action Buttons */}
-                        <motion.div 
-                            className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
-                            variants={itemVariants}
-                        >
-                            <motion.button
-                                onClick={() => navigate('/signup')}
-                                className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
+                            {/* Action Buttons */}
+                            <motion.div 
+                                ref={buttonsRef}
+                                initial="hidden"
+                                animate={isButtonsInView ? "visible" : "hidden"}
+                                variants={fadeInUpVariants}
+                                className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
                             >
-                                Create Account
-                            </motion.button>
-                            <motion.button
-                                onClick={() => navigate('/login')}
-                                className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                Sign In
-                            </motion.button>
-                        </motion.div>
+                                <motion.button
+                                    onClick={() => navigate('/signup')}
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Create Account
+                                </motion.button>
+                                <motion.button
+                                    onClick={() => navigate('/login')}
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Sign In
+                                </motion.button>
+                            </motion.div>
+                        </div>
                     </div>
                 </motion.main>
 

@@ -7,6 +7,7 @@ import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import 'swiper/css/effect-coverflow';
+import ContactUs from '../components/ContactUs';
 
 // Lazy load the ContactForm component
 const ContactForm = lazy(() => import('../components/ContactForm'));
@@ -397,33 +398,55 @@ const About = () => {
       {/* Contact Form Section */}
       <section className="py-16 bg-gray-50 border-t border-gray-100">
         <div className="max-w-2xl mx-auto px-4">
-          <h2 className="text-2xl font-bold text-primary mb-6 text-center">Contact Us</h2>
-          <Suspense fallback={
-            <div className="animate-pulse space-y-4 bg-white p-6 rounded-xl shadow">
-              <div className="h-10 bg-gray-200 rounded"></div>
-              <div className="h-10 bg-gray-200 rounded"></div>
-              <div className="h-32 bg-gray-200 rounded"></div>
-              <div className="h-10 bg-primary/50 rounded"></div>
-            </div>
-          }>
-            <ContactForm />
-          </Suspense>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-2xl font-bold text-primary mb-6 text-center">Kontaktujte nás</h2>
+            <ContactUs />
+          </motion.div>
         </div>
       </section>
 
       {/* CTA Section with improved styling */}
-      <section className="bg-primary py-16">
+      <motion.section 
+        className="bg-primary py-16"
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
             <div className="text-center lg:text-left">
-              <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+              <motion.h2 
+                className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+              >
                 Ready to get started?
-              </h2>
-              <p className="mt-4 text-xl text-purple-200">
+              </motion.h2>
+              <motion.p 
+                className="mt-4 text-xl text-purple-200"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: 0.4 }}
+              >
                 Join LaChart today and transform your training with data-driven insights.
-              </p>
+              </motion.p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4">
+            <motion.div 
+              className="flex flex-col sm:flex-row gap-4"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: 0.6 }}
+            >
               <a
                 href="/signup"
                 className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-lg font-bold rounded-lg text-primary bg-white hover:bg-gray-100 transform hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl"
@@ -436,13 +459,19 @@ const About = () => {
               >
                 Sign in
               </a>
-            </div>
+            </motion.div>
           </div>
         </div>
-      </section>
+      </motion.section>
 
       {/* Footer */}
-      <footer className="bg-white py-12 border-t">
+      <motion.footer 
+        className="bg-white py-12 border-t"
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
@@ -494,7 +523,7 @@ const About = () => {
             </p>
           </div>
         </div>
-      </footer>
+      </motion.footer>
 
       {/* Add these styles to your CSS */}
       <style jsx global>{`
