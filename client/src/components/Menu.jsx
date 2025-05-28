@@ -258,7 +258,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
                   <img
-                    src="/icon/login.svg"
+                    src="/icon/login-white.svg"
                     alt="Login"
                     className="w-5 h-5 mr-3"
                   />
@@ -273,10 +273,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               >
                 <NavLink
                   to="/signup"
-                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg border-2 border-primary text-primary hover:bg-primary hover:text-white transition-colors"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
                   <img
-                    src="/icon/register.svg"
+                    src="/icon/register-white.svg"
                     alt="Register"
                     className="w-5 h-5 mr-3"
                   />
@@ -291,10 +291,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               >
                 <NavLink
                   to="/about"
-                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
                 >
                   <img
-                    src="/icon/info.svg"
+                    src="/icon/info-white.svg"
                     alt="About"
                     className="w-5 h-5 mr-3"
                   />

@@ -404,7 +404,7 @@ const About = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-2xl font-bold text-primary mb-6 text-center">Kontaktujte nás</h2>
+            <h2 className="text-2xl font-bold text-primary mb-6 text-center">Contact us</h2>
             <ContactUs />
           </motion.div>
         </div>

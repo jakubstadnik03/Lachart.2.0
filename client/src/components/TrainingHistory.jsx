@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Line } from 'react-chartjs-2';
-import { getTrainingsByTitle, getTrainingTitles } from '../services/api';
+import { getTrainingsByTitle, getTrainingTitles, deleteTraining, updateTraining } from '../services/api';
+import api from '../services/api';
+import { useNotification } from '../context/NotificationContext';
+import TrainingForm from './TrainingForm';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -34,6 +37,13 @@ const TrainingHistory = () => {
   const [allTrainingTitles, setAllTrainingTitles] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedSport, setSelectedSport] = useState(null);
+  const [trainingToEdit, setTrainingToEdit] = useState(null);
+  const [trainingToDelete, setTrainingToDelete] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { addNotification } = useNotification();
 
   // Format pace from seconds to MM:SS
   const formatPace = (seconds) => {
@@ -425,6 +435,111 @@ const TrainingHistory = () => {
     );
   };
 
+  const handleEditTraining = (training) => {
+    setTrainingToEdit(training);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteTraining = (training) => {
+    setTrainingToDelete(training);
+    setShowDeleteModal(true);
+  };
+
+  const handleAddNewTraining = () => {
+    setTrainingToEdit({
+      title: decodeURIComponent(title),
+      sport: selectedSport,
+      date: new Date().toISOString().slice(0, 16),
+      specifics: {
+        specific: "",
+        weather: "",
+        customSpecific: "",
+        customWeather: ""
+      },
+      results: []
+    });
+    setShowAddModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!trainingToDelete || !trainingToDelete._id) {
+      setError("Cannot delete training without ID");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await deleteTraining(trainingToDelete._id);
+      setShowDeleteModal(false);
+      setTrainingToDelete(null);
+      addNotification(`Training "${trainingToDelete.title}" was successfully deleted`, 'success');
+      
+      // Refresh the trainings list
+      const data = await getTrainingsByTitle(decodeURIComponent(title));
+      if (Array.isArray(data) && data.length > 0) {
+        setTrainings(data);
+      }
+    } catch (error) {
+      console.error("Error deleting training:", error);
+      setError("Failed to delete training. " + (error.response?.data?.message || error.message));
+      addNotification("Failed to delete training", 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditSubmit = async (updatedTraining) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await updateTraining(updatedTraining._id, updatedTraining);
+      
+      // Update local state
+      const updatedTrainings = trainings.map(training => 
+        training._id === updatedTraining._id ? response : training
+      );
+      setTrainings(updatedTrainings);
+      
+      setShowEditModal(false);
+      setTrainingToEdit(null);
+      addNotification("Training updated successfully", 'success');
+      
+    } catch (error) {
+      console.error("Error updating training:", error);
+      setError("Failed to update training. " + (error.response?.data?.message || error.message));
+      addNotification("Failed to update training", 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddSubmit = async (newTraining) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Add the new training
+      const response = await api.post('/trainings', newTraining);
+      
+      // Update local state
+      setTrainings(prev => [...prev, response.data]);
+      
+      setShowAddModal(false);
+      setTrainingToEdit(null);
+      addNotification("Training added successfully", 'success');
+      
+    } catch (error) {
+      console.error("Error adding training:", error);
+      setError("Failed to add training. " + (error.response?.data?.message || error.message));
+      addNotification("Failed to add training", 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -508,8 +623,17 @@ const TrainingHistory = () => {
             )}
           </div>
         </div>
-        
- 
+
+        {/* Add New Training Button */}
+        <button
+          onClick={handleAddNewTraining}
+          className="px-4 py-2 bg-secondary text-white rounded hover:bg-secondary-dark flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add New Training
+        </button>
       </div>
 
       {/* Progress Summary */}
@@ -582,8 +706,28 @@ const TrainingHistory = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="bg-white rounded-lg shadow-lg p-6"
+            className="bg-white rounded-lg shadow-lg p-6 relative group"
           >
+            <div className="absolute right-4 top-4 transform flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <button 
+                onClick={() => handleEditTraining(training)}
+                className="p-2 text-primary hover:text-primary-dark hover:bg-blue-100 rounded-full bg-white shadow-sm"
+                title="Edit training"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => handleDeleteTraining(training)}
+                className="p-2 text-red hover:text-red-dark hover:bg-red-100 rounded-full bg-white shadow-sm"
+                title="Delete training"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <p className="font-medium text-lg">{formatDate(training.date)}</p>
@@ -647,6 +791,88 @@ const TrainingHistory = () => {
           </motion.div>
         ))}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && trainingToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold mb-4">Delete Training</h3>
+            <p className="mb-6">
+              Are you sure you want to delete the training "{trainingToDelete.title}" from {formatDate(trainingToDelete.date)}? 
+              This action cannot be undone.
+            </p>
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                {error}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setTrainingToDelete(null);
+                  setError(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:bg-red-300"
+                disabled={isLoading}
+              >
+                {isLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && trainingToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
+            {error}
+          </div>
+          
+          <TrainingForm 
+            onClose={() => {
+              setShowEditModal(false);
+              setTrainingToEdit(null);
+              setError(null);
+            }}
+            onSubmit={handleEditSubmit}
+            initialData={trainingToEdit}
+            isEditing={true}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
+
+      {/* Add New Training Modal */}
+      {showAddModal && trainingToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
+            {error}
+          </div>
+          
+          <TrainingForm 
+            onClose={() => {
+              setShowAddModal(false);
+              setTrainingToEdit(null);
+              setError(null);
+            }}
+            onSubmit={handleAddSubmit}
+            initialData={trainingToEdit}
+            isEditing={false}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
     </motion.div>
   );
 };

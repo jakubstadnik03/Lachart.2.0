@@ -194,7 +194,18 @@ const TestingWithoutLogin = () => {
 
     // Function to fill form with mock data
     const handleFillMockData = (sport) => {
-        setTestData(mockData[sport]);
+        const mockDataForSport = {
+            ...mockData[sport],
+            results: mockData[sport].results.map(result => ({
+                ...result,
+                power: result.power,
+                heartRate: result.heartRate,
+                lactate: result.lactate,
+                glucose: result.glucose,
+                RPE: result.RPE
+            }))
+        };
+        setTestData(mockDataForSport);
         addNotification(`Form filled with ${sport} demo data`, 'success');
     };
 
@@ -236,10 +247,17 @@ const TestingWithoutLogin = () => {
     const handleTestDataChange = (newData) => {
         // If newData is a value change object
         if (newData.field && newData.value !== undefined) {
-            setTestData(prevData => ({
-                ...prevData,
-                [newData.field]: newData.value
-            }));
+            setTestData(prevData => {
+                const updatedData = {
+                    ...prevData,
+                    [newData.field]: newData.value
+                };
+                // If baseLa is updated, also update baseLactate
+                if (newData.field === 'baseLa') {
+                    updatedData.baseLactate = parseFloat(String(newData.value).replace(',', '.'));
+                }
+                return updatedData;
+            });
             return;
         }
 
@@ -248,6 +266,8 @@ const TestingWithoutLogin = () => {
             ...newData,
             weight: newData.weight || '',
             baseLa: newData.baseLa || '',
+            baseLactate: newData.baseLa ? parseFloat(String(newData.baseLa).replace(',', '.')) : 
+                         (newData.baseLactate ? parseFloat(String(newData.baseLactate).replace(',', '.')) : 0),
             results: (newData.results || []).map(result => ({
                 ...result,
                 power: result.power || '',
@@ -307,10 +327,7 @@ const TestingWithoutLogin = () => {
 
     // Prepare data for LactateCurveCalculator
     const prepareCalculatorData = () => {
-        console.log('Starting prepareCalculatorData with testData:', testData);
-        
         if (!testData || !testData.results) {
-            console.log('Invalid testData:', testData);
             return {
                 sport: 'bike',
                 baseLactate: 0,
@@ -318,53 +335,53 @@ const TestingWithoutLogin = () => {
             };
         }
 
+        // Ensure baseLactate is properly processed
+        const baseLactate = testData.baseLa ? 
+            parseFloat(String(testData.baseLa).replace(',', '.')) : 
+            (testData.baseLactate ? parseFloat(String(testData.baseLactate).replace(',', '.')) : 0);
+
         const processedData = {
             ...testData,
-            baseLactate: testData.baseLa === '' ? 0 : parseFloat(String(testData.baseLa).replace(',', '.')),
+            baseLactate: baseLactate,
+            baseLa: baseLactate, // Ensure both fields are set
             results: testData.results.map(result => {
-                console.log('Processing result:', result);
+                if (!result) return null;
+
+                let power = result.power;
                 
-                if (!result) {
-                    console.log('Skipping null/undefined result');
-                    return null;
-                }
-
-                try {
-                    let power = result.power;
-                    console.log('Original power value:', power);
-
-                    // Convert pace to seconds for calculation
-                    if (testData.sport === 'run' || testData.sport === 'swim') {
-                        if (power && typeof power === 'string' && power.includes(':')) {
-                            const [minutes, seconds] = power.split(':').map(Number);
-                            if (!isNaN(minutes) && !isNaN(seconds)) {
-                                power = (minutes * 60 + seconds).toString();
-                                console.log('Converted pace to seconds:', power);
-                            }
+                // Convert pace to seconds for calculation
+                if (testData.sport === 'run' || testData.sport === 'swim') {
+                    if (power && typeof power === 'string' && power.includes(':')) {
+                        const [minutes, seconds] = power.split(':').map(Number);
+                        if (!isNaN(minutes) && !isNaN(seconds)) {
+                            power = (minutes * 60 + seconds).toString();
                         }
                     }
-
-                    const processedResult = {
-                        ...result,
-                        power: power ? parseFloat(String(power).replace(',', '.')) : 0,
-                        heartRate: result.heartRate ? parseFloat(String(result.heartRate).replace(',', '.')) : 0,
-                        lactate: result.lactate ? parseFloat(String(result.lactate).replace(',', '.')) : 0,
-                        glucose: result.glucose ? parseFloat(String(result.glucose).replace(',', '.')) : 0,
-                        RPE: result.RPE ? parseFloat(String(result.RPE).replace(',', '.')) : 0
-                    };
-
-                    console.log('Processed result:', processedResult);
-                    return processedResult;
-                } catch (error) {
-                    console.error('Error processing result:', error);
-                    return null;
                 }
+
+                return {
+                    ...result,
+                    power: power ? parseFloat(String(power).replace(',', '.')) : 0,
+                    heartRate: result.heartRate ? parseFloat(String(result.heartRate).replace(',', '.')) : 0,
+                    lactate: result.lactate ? parseFloat(String(result.lactate).replace(',', '.')) : 0,
+                    glucose: result.glucose ? parseFloat(String(result.glucose).replace(',', '.')) : 0,
+                    RPE: result.RPE ? parseFloat(String(result.RPE).replace(',', '.')) : 0
+                };
             }).filter(result => result !== null)
         };
 
-        console.log('Final processed data:', processedData);
+        console.log('Processed data for calculator:', processedData);
         return processedData;
     };
+
+    // Add useEffect to force graph updates when data changes
+    useEffect(() => {
+        if (hasValidData) {
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 100);
+        }
+    }, [testData, hasValidData]);
 
     return (
         <div className="min-h-screen bg-gray-50 flex">
@@ -561,7 +578,10 @@ const TestingWithoutLogin = () => {
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Lactate Curve Analysis</h2>
                                         <div className="w-full overflow-x-auto">
                                             <div className="lg:min-w-[800px] lg:min-w-full">
-                                                <LactateCurve mockData={testData} demoMode={true} />
+                                                <LactateCurve 
+                                                    mockData={prepareCalculatorData()} 
+                                                    demoMode={true} 
+                                                />
                                             </div>
                                         </div>
                                     </motion.div>
@@ -576,10 +596,14 @@ const TestingWithoutLogin = () => {
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Calculator</h2>
+                                        <div className="w-full overflow-x-auto">
+                                            <div className="lg:min-w-[800px] lg:min-w-full">
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
                                                 />
+                                            </div>
+                                        </div>
                                     </motion.div>
                                 </div>
                             )}

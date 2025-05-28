@@ -15,6 +15,7 @@ const LoginPage = () => {
     rememberMe: false
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,14 +59,22 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) return; // Prevent multiple submissions
+
+    setIsLoading(true);
+    addNotification("Attempting to log in...", "info");
+
     try {
+      console.log("Sending login request to:", API_ENDPOINTS.AUTH + "/login");
+      console.log("Login data:", { email: formData.email, password: "***" });
+
       const result = await api.post(API_ENDPOINTS.AUTH + "/login", {
         email: formData.email,
         password: formData.password
       });
       
       if (result.data.token) {
-        console.log("Login successful, token received:", result.data.token);
+        console.log("Login successful, token received");
         console.log("User data:", result.data.user);
         
         // Uložení tokenu a uživatelských dat do localStorage
@@ -101,26 +110,39 @@ const LoginPage = () => {
       let errorMessage = "Login failed";
       
       if (error.response) {
+        console.log("Error response:", error.response);
         if (error.response.status === 429) {
           errorMessage = "Too many login attempts. Please wait a few minutes before trying again.";
         } else {
           errorMessage = error.response.data.message || "Login failed";
         }
+      } else if (error.request) {
+        console.log("No response received:", error.request);
+        errorMessage = "No response from server. Please check your internet connection.";
+      } else {
+        console.log("Error setting up request:", error.message);
+        errorMessage = "Error setting up login request.";
       }
       
       addNotification(errorMessage, "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGoogleSuccess = async (credentialResponse) => {
+    if (isLoading) return;
+    setIsLoading(true);
+    addNotification("Attempting to log in with Google...", "info");
+
     try {
-      console.log("Google credential response:", credentialResponse);
+      console.log("Google credential response received");
       const result = await api.post(`${API_ENDPOINTS.AUTH}/google-auth`, {
         credential: credentialResponse.credential,
       });
       
       if (result.data.token) {
-        console.log("Google login successful, token received:", result.data.token);
+        console.log("Google login successful, token received");
         console.log("User data:", result.data.user);
         
         // Uložení tokenu a uživatelských dat do localStorage
@@ -153,14 +175,27 @@ const LoginPage = () => {
       }
     } catch (error) {
       console.error("Google login error:", error);
-      addNotification(
-        error.response?.data?.message || "Google login failed",
-        "error"
-      );
+      let errorMessage = "Google login failed";
+      
+      if (error.response) {
+        console.log("Error response:", error.response);
+        errorMessage = error.response.data.message || "Google login failed";
+      } else if (error.request) {
+        console.log("No response received:", error.request);
+        errorMessage = "No response from server. Please check your internet connection.";
+      } else {
+        console.log("Error setting up request:", error.message);
+        errorMessage = "Error setting up Google login request.";
+      }
+      
+      addNotification(errorMessage, "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGoogleError = () => {
+    console.error("Google login error occurred");
     addNotification("Google login failed", "error");
   };
 
@@ -238,7 +273,8 @@ const LoginPage = () => {
                   name="email"
                   type="email"
                   required
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isLoading}
+                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="Email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -254,7 +290,8 @@ const LoginPage = () => {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   required
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isLoading}
+                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -263,7 +300,8 @@ const LoginPage = () => {
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  disabled={isLoading}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center disabled:opacity-50"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
@@ -291,7 +329,8 @@ const LoginPage = () => {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  disabled={isLoading}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                   checked={formData.rememberMe}
                   onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
                 />
@@ -313,9 +352,20 @@ const LoginPage = () => {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={isLoading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed relative"
             >
-              Sign In
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </motion.button>
 
             <motion.div 
@@ -350,6 +400,7 @@ const LoginPage = () => {
                   nonce={crypto.randomUUID()}
                   ux_mode="popup"
                   context="signin"
+                  disabled={isLoading}
                 />
               </div>
             </motion.div>

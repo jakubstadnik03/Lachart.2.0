@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -70,20 +70,68 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
 // Info tooltip component
 const InfoTooltip = ({ content }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+
+  const updatePosition = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.top,
+        left: rect.left + rect.width / 2
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isVisible) {
+      updatePosition();
+      window.addEventListener('scroll', updatePosition);
+      window.addEventListener('resize', updatePosition);
+    }
+    return () => {
+      window.removeEventListener('scroll', updatePosition);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isVisible]);
 
   return (
     <div className="relative inline-block">
       <button
-        onMouseEnter={() => setIsVisible(true)}
+        ref={buttonRef}
+        onMouseEnter={() => {
+          updatePosition();
+          setIsVisible(true);
+        }}
         onMouseLeave={() => setIsVisible(false)}
         className="text-gray-400 hover:text-gray-600 transition-colors"
       >
         <Info size={16} />
       </button>
       {isVisible && (
-        <div className="absolute z-50 bg-white text-sm px-4 py-2 rounded-lg shadow-lg -top-2 left-6 transform -translate-y-full max-w-xs border border-gray-100">
+        <div 
+          className="absolute z-[9999] bg-white text-sm px-4 py-2 rounded-lg shadow-lg border border-gray-100"
+          style={{
+            position: 'fixed',
+            top: `${position.top}px`,
+            left: `${position.left}px`,
+            transform: 'translate(-50%, -100%)',
+            marginTop: '-8px',
+            minWidth: '200px',
+            maxWidth: '300px',
+            whiteSpace: 'normal',
+            wordWrap: 'break-word'
+          }}
+        >
           {content}
-          <div className="absolute w-2 h-2 bg-white border-l border-b border-gray-100 transform rotate-45 -left-1 top-1/2 -translate-y-1/2"></div>
+          <div 
+            className="absolute w-2 h-2 bg-white border-l border-b border-gray-100 transform rotate-45"
+            style={{
+              left: '50%',
+              bottom: '-6px',
+              transform: 'translateX(-50%) rotate(45deg)'
+            }}
+          />
         </div>
       )}
     </div>
@@ -385,7 +433,9 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             <h2 className="text-2xl font-bold flex items-center gap-2">
               Lactate Curve 
               {demoMode && (
-                <InfoTooltip content="This graph shows the relationship between your power/pace and lactate levels, helping identify your training zones." />
+                <div className="relative z-[999]">
+                  <InfoTooltip content="This graph shows the relationship between your power/pace and lactate levels, helping identify your training zones." />
+                </div>
               )}
               <span className="text-xl text-gray-600 ml-2">({formatDate(mockData.date)})</span>
             </h2>
@@ -393,14 +443,16 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               Base Lactate: 
               <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
               {demoMode && (
-                <InfoTooltip content="Your resting lactate level before the test." />
+                <div className="relative z-[999]">
+                  <InfoTooltip content="Your resting lactate level before the test." />
+                </div>
               )}
             </p>
           </div>
           {demoMode && (
             <button
               onClick={() => setShowGuide(!showGuide)}
-              className="text-primary hover:text-primary-dark transition-colors"
+              className="text-primary hover:text-primary-dark transition-colors relative z-[999]"
             >
               <HelpCircle size={24} />
             </button>
