@@ -176,7 +176,7 @@ const About = () => {
               className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start"
             >
               <a href="/signup" className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Get Started</a>
-              <a href="/login" className="inline-block border border-white text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-white hover:text-primary transition">Sign In</a>
+              <a href="/login" className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Sign In</a>
               <a href="/testing-without-login" className="inline-block bg-secondary text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-secondary-dark transition border border-white">Lactate Form</a>
             </motion.div>
           </div>

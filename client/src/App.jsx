@@ -25,6 +25,7 @@ import TrainingHistory from './components/TrainingHistory';
 import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
 import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import About from './pages/About';
+import Documentation from './pages/Documentation';
 import './App.css';
 
 function AppRoutes() {
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
       <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
       <Route path="/accept-coach-invitation/:token" element={<AcceptCoachInvitation />} />
+      <Route path="/documentation" element={<Documentation />} />
 
       {/* Chráněné routy s Layoutem */}
       <Route
