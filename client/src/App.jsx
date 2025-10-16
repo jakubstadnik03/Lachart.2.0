@@ -28,6 +28,7 @@ import About from './pages/About';
 import Documentation from './pages/Documentation';
 import { Analytics } from "@vercel/analytics/react"
 import './App.css';
+import FeedbackWidget from './components/FeedbackWidget';
 
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -110,6 +111,7 @@ function App() {
             <TrainingProvider>
               <AppRoutes />
               <Analytics />
+              <FeedbackWidget />
 
             </TrainingProvider>
           </AuthProvider>

@@ -140,4 +140,15 @@ export const getTrainingsByTitle = async (title) => {
   }
 };
 
+// Feedback endpoint
+export const submitFeedback = async (payload) => {
+  try {
+    const response = await api.post('/feedback', payload);
+    return response.data;
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    throw error;
+  }
+};
+
 export default api; 

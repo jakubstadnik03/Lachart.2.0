@@ -426,8 +426,8 @@ const LoginPage = () => {
                   console.log('Target path: /signup');
                 }}
               >
-                Sign Up
-              </Link>
+              Sign Up
+            </Link>
             </motion.span>
           </motion.p>
 

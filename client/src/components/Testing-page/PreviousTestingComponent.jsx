@@ -110,10 +110,10 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-            <DateSelector
+        <DateSelector
               dates={filteredTests.map(test => test.date)}
-              onSelectDate={handleDateSelect}
-            />
+          onSelectDate={handleDateSelect}
+        />
           </motion.div>
         ) : (
           <motion.div
@@ -128,7 +128,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
       </AnimatePresence>
 
       <AnimatePresence>
-        {currentTest && currentTest.results && (
+      {currentTest && currentTest.results && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -146,33 +146,33 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
                 results: currentTest.results,
                 baseLactate: currentTest.baseLactate
               })}
-              <LactateCurve mockData={currentTest} />
+            <LactateCurve mockData={currentTest} />
             </motion.div>
             <motion.div 
               className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >
-              <TestingForm 
-                testData={currentTest} 
-                onTestDataChange={handleTestUpdate}
-                onGlucoseColumnChange={handleGlucoseColumnChange}
+            <TestingForm 
+              testData={currentTest} 
+              onTestDataChange={handleTestUpdate}
+              onGlucoseColumnChange={handleGlucoseColumnChange}
                 onDelete={handleTestDelete}
-              />
+            />
             </motion.div>
           </motion.div>
-        )}
+      )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {currentTest && currentTest.results && (
+      {currentTest && currentTest.results && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-            <LactateCurveCalculator mockData={currentTest} />
+        <LactateCurveCalculator mockData={currentTest} />
           </motion.div>
         )}
       </AnimatePresence>
