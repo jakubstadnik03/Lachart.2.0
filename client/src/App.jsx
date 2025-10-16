@@ -26,6 +26,7 @@ import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
 import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import About from './pages/About';
 import Documentation from './pages/Documentation';
+import { Analytics } from "@vercel/analytics/react"
 import './App.css';
 
 function AppRoutes() {
@@ -108,6 +109,8 @@ function App() {
           <AuthProvider>
             <TrainingProvider>
               <AppRoutes />
+              <Analytics />
+
             </TrainingProvider>
           </AuthProvider>
         </NotificationProvider>
