@@ -26,7 +26,6 @@ import AcceptCoachInvitation from './pages/AcceptCoachInvitation';
 import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import About from './pages/About';
 import Documentation from './pages/Documentation';
-import { Analytics } from "@vercel/analytics/react"
 import './App.css';
 
 function AppRoutes() {
@@ -39,7 +38,6 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Analytics />
       {/* Veřejné routy */}
       <Route path="/" element={<About />} />
       <Route path="/about" element={<About />} />
