@@ -6,6 +6,7 @@ import LactateCurve from '../components/Testing-page/LactateCurve';
 import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
 import { useNotification } from '../context/NotificationContext';
 import Header from '../components/Header/Header';
+import WelcomeModal from '../components/WelcomeModal';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
 
@@ -61,26 +62,28 @@ const TestingWithoutLogin = () => {
         }
         // Default state if no saved data
         return {
-            title: '',
-            description: '',
-            weight: '',
-            sport: 'bike',
-            baseLa: '',
-            date: new Date().toISOString().split('T')[0],
-            specifics: { specific: '', weather: '' },
-            comments: '',
-            results: [{
-                interval: 1,
-                power: 0,
-                heartRate: 0,
-                lactate: 0,
-                glucose: 0,
-                RPE: 0
-            }]
+        title: '',
+        description: '',
+        weight: '',
+        sport: 'bike',
+        baseLa: '',
+        date: new Date().toISOString().split('T')[0],
+        specifics: { specific: '', weather: '' },
+        comments: '',
+        results: [{
+            interval: 1,
+            power: 0,
+            heartRate: 0,
+            lactate: 0,
+            glucose: 0,
+            RPE: 0
+        }]
         };
     });
     const [isDemoDropdownOpen, setIsDemoDropdownOpen] = useState(false);
     const isInitialMount = useRef(true);
+    const [showWelcome, setShowWelcome] = useState(false);
+    const welcomeTimerRef = useRef(null);
 
     // Create refs for scroll animations
     const formRef = useRef(null);
@@ -98,6 +101,19 @@ const TestingWithoutLogin = () => {
     useEffect(() => {
         localStorage.setItem('testData', JSON.stringify(testData));
     }, [testData]);
+
+    // Show welcome modal after 5 minutes on demo page (once per session)
+    useEffect(() => {
+        if (!sessionStorage.getItem('demoWelcomed')) {
+            welcomeTimerRef.current = setTimeout(() => {
+                setShowWelcome(true);
+                sessionStorage.setItem('demoWelcomed', '1');
+            }, 5 * 60 * 1000); // 5 minutes
+        }
+        return () => {
+            if (welcomeTimerRef.current) clearTimeout(welcomeTimerRef.current);
+        };
+    }, []);
 
     // Initialize menu state based on screen size
     useEffect(() => {
@@ -249,8 +265,8 @@ const TestingWithoutLogin = () => {
         if (newData.field && newData.value !== undefined) {
             setTestData(prevData => {
                 const updatedData = {
-                    ...prevData,
-                    [newData.field]: newData.value
+                ...prevData,
+                [newData.field]: newData.value
                 };
                 // If baseLa is updated, also update baseLactate
                 if (newData.field === 'baseLa') {
@@ -383,6 +399,17 @@ const TestingWithoutLogin = () => {
         }
     }, [testData, hasValidData]);
 
+    // When valid data appears (e.g., after filling mock data), scroll to curve and ensure visible
+    useEffect(() => {
+        if (hasValidData && curveRef.current) {
+            try {
+                curveRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (e) {
+                // no-op
+            }
+        }
+    }, [hasValidData]);
+
     return (
         <div className="min-h-screen bg-gray-50 flex">
             {/* Left Menu - hidden on mobile, visible on desktop */}
@@ -406,7 +433,7 @@ const TestingWithoutLogin = () => {
 
                 {/* Main Content */}
                 <motion.main 
-                    className="flex-1 px-4 py-8 overflow-x-hidden"
+                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
@@ -467,7 +494,7 @@ const TestingWithoutLogin = () => {
                                 initial="hidden"
                                 animate={isFormInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+                                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible"
                                 whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                             >
                                 <div className="p-4 sm:p-6">
@@ -475,7 +502,7 @@ const TestingWithoutLogin = () => {
                                         <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Test Data Entry</h2>
                                         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                             <motion.div 
-                                                className="relative w-full sm:w-auto"
+                                                className="relative z-[12000] w-full sm:w-auto"
                                                 whileHover={{ scale: 1.02 }}
                                                 whileTap={{ scale: 0.98 }}
                                             >
@@ -547,17 +574,18 @@ const TestingWithoutLogin = () => {
                                             >
                                                 Reset Form
                                             </motion.button>
-                                        </div>
-                                    </div>
+                        </div>
+                        </div>
                                     <div className="w-full overflow-x-auto">
                                         <div className="lg:min-w-[800px] lg:min-w-full">
-                                            <TestingForm
-                                                testData={testData}
-                                                onTestDataChange={handleTestDataChange}
-                                                onSave={handleSave}
-                                                onGlucoseColumnChange={handleGlucoseColumnChange}
-                                                demoMode={true}
-                                            />
+                            <TestingForm
+                                testData={testData}
+                                onTestDataChange={handleTestDataChange}
+                                onSave={handleSave}
+                                onGlucoseColumnChange={handleGlucoseColumnChange}
+                                demoMode={true}
+                                                disableInnerScroll={true}
+                            />
                                         </div>
                                     </div>
                                 </div>
@@ -567,10 +595,10 @@ const TestingWithoutLogin = () => {
                             {hasValidData && (
                                 <div className="space-y-8">
                                     {/* Lactate Curve Section */}
-                                    <motion.div 
-                                        ref={curveRef}
-                                        initial="hidden"
-                                        animate={isCurveInView ? "visible" : "hidden"}
+                            <motion.div 
+                                ref={curveRef}
+                                initial="hidden"
+                                animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
                                         variants={fadeInUpVariants}
                                         className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
@@ -590,7 +618,7 @@ const TestingWithoutLogin = () => {
                                     <motion.div 
                                         ref={calculatorRef}
                                         initial="hidden"
-                                        animate={isCalculatorInView ? "visible" : "hidden"}
+                                        animate={(isCalculatorInView || hasValidData) ? "visible" : "hidden"}
                                         variants={fadeInUpVariants}
                                         className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
@@ -602,8 +630,8 @@ const TestingWithoutLogin = () => {
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
                                                 />
-                                            </div>
-                                        </div>
+                                    </div>
+                                    </div>
                                     </motion.div>
                                 </div>
                             )}
@@ -639,6 +667,7 @@ const TestingWithoutLogin = () => {
 
                 {/* Footer */}
                 <Footer />
+                <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
             </div>
         </div>
     );

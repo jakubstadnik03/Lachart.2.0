@@ -766,37 +766,36 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
     }
 });
 
-// Accept invitation endpoint
-router.post("/accept-invitation/:token", verifyToken, async (req, res) => {
+// Accept invitation endpoint (public via token)
+router.post("/accept-invitation/:token", async (req, res) => {
     try {
         const { token } = req.params;
-        const athleteId = req.user.userId;
-
-        // Find athlete by token
+        // Find athlete by invitation token
         const athlete = await userDao.findByInvitationToken(token);
         if (!athlete) {
             return res.status(404).json({ error: "Invalid or expired invitation" });
-        }
-
-        if (athlete._id.toString() !== athleteId.toString()) {
-            return res.status(403).json({ error: "You are not authorized to accept this invitation" });
         }
 
         if (athlete.invitationTokenExpires < new Date()) {
             return res.status(400).json({ error: "Invitation has expired" });
         }
 
-        // Add athlete to coach
-        await userDao.addAthleteToCoach(athlete.pendingCoachId, athlete._id);
-        await userDao.updateUser(athlete._id, { 
-            coachId: athlete.pendingCoachId,
+        // Resolve coach from pendingCoachId
+        const coach = await userDao.findById(athlete.pendingCoachId);
+        if (!coach) {
+            return res.status(404).json({ error: "Coach not found for this invitation" });
+        }
+
+        // Link athlete and coach
+        await userDao.addAthleteToCoach(coach._id, athlete._id);
+        await userDao.updateUser(athlete._id, {
+            coachId: coach._id,
             invitationToken: null,
             invitationTokenExpires: null,
             pendingCoachId: null
         });
 
         // Send confirmation email to coach
-        const coach = await userDao.findById(athlete.pendingCoachId);
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -805,16 +804,18 @@ router.post("/accept-invitation/:token", verifyToken, async (req, res) => {
             }
         });
 
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: coach.email,
-            subject: 'Athlete Accepted Team Invitation',
-            html: `
-                <h2>Invitation Accepted</h2>
-                <p>Athlete ${athlete.name} ${athlete.surname} has accepted your team invitation.</p>
-                <p>They will now appear in your athletes list.</p>
-            `
-        });
+        if (coach?.email) {
+            await transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: coach.email,
+                subject: 'Athlete Accepted Team Invitation',
+                html: `
+                    <h2>Invitation Accepted</h2>
+                    <p>Athlete ${athlete.name} ${athlete.surname} has accepted your team invitation.</p>
+                    <p>They will now appear in your athletes list.</p>
+                `
+            });
+        }
 
         res.status(200).json({ 
             message: "Invitation successfully accepted",
@@ -884,17 +885,17 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
         // Remove athlete from coach's list
         await userDao.removeAthleteFromCoach(coachId, athleteId);
 
-        // Send notification email to coach
+        // Send notification emails to both coach and athlete
         const coach = await userDao.findById(coachId);
-        if (coach) {
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_APP_PASSWORD
-                }
-            });
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
 
+        if (coach?.email) {
             await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: coach.email,
@@ -902,6 +903,18 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
                 html: `
                     <h2>Athlete Left Team</h2>
                     <p>Athlete ${athlete.name} ${athlete.surname} has left your team.</p>
+                `
+            });
+        }
+
+        if (athlete?.email) {
+            await transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: athlete.email,
+                subject: 'Coach Removed',
+                html: `
+                    <h2>Coach Removed</h2>
+                    <p>You have successfully removed your coach${coach ? ` ${coach.name} ${coach.surname}` : ''}.</p>
                 `
             });
         }

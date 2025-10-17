@@ -374,6 +374,14 @@ const AthletesPage = () => {
                   >
                     Add New Athlete
                   </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setIsInviteModalOpen(true)}
+                    className="w-full sm:w-auto bg-white text-primary border border-primary px-4 py-2 rounded-lg hover:bg-primary hover:text-white transition-colors text-sm sm:text-base"
+                  >
+                    Add Existing Athlete
+                  </motion.button>
                 </div>
               </div>
 
@@ -726,7 +734,7 @@ const AthletesPage = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold">Přidat existujícího atleta</h2>
+              <h2 className="text-2xl font-bold">Add Existing Athlete</h2>
               <button 
                 onClick={() => {
                   setIsInviteModalOpen(false);
@@ -742,7 +750,7 @@ const AthletesPage = () => {
             <form onSubmit={handleInviteAthlete} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email atleta<span className="text-orange-500">*</span>
+                  Athlete Email<span className="text-orange-500">*</span>
                 </label>
                 <input
                   type="email"
@@ -750,7 +758,7 @@ const AthletesPage = () => {
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   className="w-full p-2 border border-gray-300 rounded-lg"
-                  placeholder="Zadejte email atleta"
+                  placeholder="Enter athlete email"
                 />
               </div>
 
@@ -770,13 +778,13 @@ const AthletesPage = () => {
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
-                  Zrušit
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark"
                 >
-                  Odeslat pozvánku
+                  Send Invitation
                 </button>
               </div>
             </form>

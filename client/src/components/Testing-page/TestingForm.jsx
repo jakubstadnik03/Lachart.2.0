@@ -219,7 +219,7 @@ const logDataChange = (type, data) => {
   console.log(`[Data Change] ${type}:`, essentialData);
 };
 
-function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false }) {
+function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false, disableInnerScroll = false }) {
   const { addNotification } = useNotification();
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [highlightedField, setHighlightedField] = useState(null);
@@ -648,12 +648,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   // Update the input field in the table
   const renderInput = (index, field, value, placeholder) => {
     const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === `${field}_${index}`;
-    
-    return (
+
+  return (
       <div className="min-w-0 overflow-hidden relative">
         <input 
           ref={el => inputRefs.current[`${field}_${index}`] = el}
-          type="text" 
+          type="text"
           value={value === undefined || value === null ? '' : String(value)}
           onChange={(e) => {
             handleValueChange(index, field, e.target.value);
@@ -724,8 +724,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           className="absolute top-[1.3rem] right-4 text-primary hover:text-primary-dark transition-colors"
         >
           <HelpCircle size={24} />
-        </button>
-      )}
+              </button>
+            )}
 
       <div className="space-y-2">
         {/* Title and Edit Button Row */}
@@ -775,38 +775,38 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               )}
             </button>
           )}
-        </div>
+      </div>
 
-        <textarea 
-          value={formData.description} 
-          onChange={(e) => handleFormDataChange('description', e.target.value)} 
+      <textarea 
+        value={formData.description} 
+        onChange={(e) => handleFormDataChange('description', e.target.value)} 
           className="w-full p-1.5 border rounded-lg text-sm"
           disabled={!isNewTest && !isEditMode}
-          placeholder="Description of this testing..." 
+        placeholder="Description of this testing..." 
           rows={2}
-        />
+      />
 
         <div className="grid grid-cols-4 gap-2">
           <div className="relative">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Date</label>
-            <input 
+        <input 
               ref={el => inputRefs.current['date'] = el}
-              type="date" 
-              value={formData.date}
-              onChange={(e) => handleFormDataChange('date', e.target.value)} 
+          type="date" 
+          value={formData.date}
+          onChange={(e) => handleFormDataChange('date', e.target.value)} 
               className={`w-full p-1 border rounded-lg text-sm ${
                 currentTutorialStep === 0 ? 'ring-2 ring-primary border-primary' : ''
               }`}
               disabled={!isNewTest && !isEditMode}
-            />
+        />
           </div>
 
           <div className="relative">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weight</label>
-            <input 
+        <input 
               ref={el => inputRefs.current['weight'] = el}
-              type="text"
-              value={formData.weight}
+          type="text" 
+          value={formData.weight} 
               onChange={(e) => handleFormDataChange('weight', e.target.value)}
               className={`w-full p-1 border rounded-lg text-sm ${
                 currentTutorialStep === 2 ? 'ring-2 ring-primary border-primary' : ''
@@ -833,9 +833,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
           <div className="relative">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Sport</label>
-            <select 
+        <select 
               ref={el => inputRefs.current['sport'] = el}
-              value={formData.sport} 
+          value={formData.sport} 
               onChange={(e) => {
                 logClick('Sport Select Change', { value: e.target.value });
                 handleFormDataChange('sport', e.target.value);
@@ -846,10 +846,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               disabled={!isNewTest && !isEditMode}
             >
               <option value="">Sport *</option>
-              <option value="run">Run</option>
-              <option value="bike">Bike</option>
-              <option value="swim">Swim</option>
-            </select>
+          <option value="run">Run</option>
+          <option value="bike">Bike</option>
+          <option value="swim">Swim</option>
+        </select>
           </div>
         </div>
 
@@ -873,7 +873,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weather</label>
-            <input 
+        <input 
               ref={el => inputRefs.current['specifics'] = el}
               type="text"
               value={formData.specifics.weather}
@@ -886,8 +886,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               className="w-full p-1 border rounded-lg text-sm"
               disabled={!isNewTest && !isEditMode}
               placeholder="e.g., 20°C"
-            />
-          </div>
+        />
+      </div>
         </div>
 
         {/* Data Table */}
@@ -912,7 +912,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <div className="text-center min-w-0 overflow-hidden">RPE</div>
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
-                <div className="max-h-[400px] overflow-y-auto">
+                <div className={`${disableInnerScroll ? '' : 'max-h-[400px] overflow-y-auto'}`}>
                   {rows.map((row, index) => (
                     <div
                       key={index}
@@ -926,7 +926,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       {renderInput(index, 'RPE', row.RPE, '1-10')}
                       {(isNewTest || isEditMode) && (
                         <div className="flex justify-center min-w-0 overflow-hidden">
-                          <button
+        <button 
                             onClick={() => {
                               logClick('Delete Row Button', { rowIndex: index });
                               handleDeleteRow(index);
@@ -934,7 +934,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                             className="p-0.5 text-red-600 hover:text-red-800 transition-colors"
                           >
                             <Trash size={14} />
-                          </button>
+        </button>
                         </div>
                       )}
                     </div>

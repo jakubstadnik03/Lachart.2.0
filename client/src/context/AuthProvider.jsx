@@ -12,6 +12,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeTimer, setWelcomeTimer] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -72,8 +73,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem("user", JSON.stringify(user));
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
-          setShowWelcome(true);
-          sessionStorage.setItem('welcomed', '1');
+          const t = setTimeout(() => {
+            setShowWelcome(true);
+            sessionStorage.setItem('welcomed', '1');
+          }, 10000); // show after 10 seconds
+          setWelcomeTimer(t);
         }
         return Promise.resolve({ success: true });
       } else {
@@ -86,8 +90,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem("user", JSON.stringify(loginUser));
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
-          setShowWelcome(true);
-          sessionStorage.setItem('welcomed', '1');
+          const t = setTimeout(() => {
+            setShowWelcome(true);
+            sessionStorage.setItem('welcomed', '1');
+          }, 10000); // show after 10 seconds
+          setWelcomeTimer(t);
         }
         return Promise.resolve({ success: true });
       }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
@@ -36,7 +36,7 @@ const SettingsPage = () => {
     }));
   };
 
-  const fetchCurrentCoach = async () => {
+  const fetchCurrentCoach = useCallback(async () => {
     try {
       const response = await fetch(API_ENDPOINTS.COACH_PROFILE, {
         headers: {
@@ -51,7 +51,7 @@ const SettingsPage = () => {
       console.error('Error fetching coach:', error);
       addNotification('Failed to load coach data', 'error');
     }
-  };
+  }, [addNotification]);
 
   useEffect(() => {
     if (user) {
@@ -62,10 +62,21 @@ const SettingsPage = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user?.coachId) {
-      fetchCurrentCoach();
+    // Always try to fetch on mount; backend returns 404 if none
+    fetchCurrentCoach();
+    if (!user?.coachId) {
+      setCurrentCoach(null);
     }
   }, [user?.coachId, fetchCurrentCoach]);
+
+  // Refresh coach data when window regains focus (e.g., after accepting invitation in another tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchCurrentCoach();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchCurrentCoach]);
 
   const handleRemoveCoach = async () => {
     if (!window.confirm('Are you sure you want to remove your coach?')) {
@@ -245,6 +256,8 @@ const SettingsPage = () => {
       const data = await response.json();
       addNotification('Coach invitation sent successfully', 'success');
       setFormData(prev => ({ ...prev, newCoachEmail: '' }));
+      // In case the backend immediately assigns a coach, refresh coach data
+      fetchCurrentCoach();
     } catch (error) {
       console.error('Error inviting coach:', error);
       addNotification(error.message || 'Failed to invite coach', 'error');

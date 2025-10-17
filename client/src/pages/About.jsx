@@ -117,14 +117,31 @@ const About = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Helmet>
-        <title>LaChart – Lactate Curve Calculator & Testing App</title>
-        <meta name="description" content="LaChart is a modern web app for athletes and coaches. Calculate your lactate curve, analyze lactate threshold, and discover your training zones (LT1, LT2, OBLA, IAT) with our advanced lactate testing calculator." />
-        <meta name="keywords" content="Lactate Curve Calculator, lactate testing, lactate threshold, LT1, LT2, OBLA, IAT, endurance, training zones, sports analytics, performance analysis, LaChart" />
-        <meta property="og:title" content="LaChart – Lactate Curve Calculator & Testing App" />
-        <meta property="og:description" content="Calculate your lactate curve, analyze lactate threshold, and discover your training zones with our advanced lactate testing calculator." />
+        <title>Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart</title>
+        <link rel="canonical" href="https://lachart.net/about" />
+        <meta name="description" content="Lactate Curve Analyzer and Lactate Threshold Calculator for athletes and coaches. Analyze lactate tests, calculate LT1, LT2, OBLA, IAT, and training zones with LaChart." />
+        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate measurement, OBLA, LT1, LT2, IAT, endurance training zones, lactate testing app, sports analytics, performance analysis" />
+        <meta property="og:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart" />
+        <meta property="og:description" content="Analyze lactate tests and discover training zones (LT1, LT2, OBLA, IAT) with LaChart's advanced lactate calculator." />
         <meta property="og:image" content="/images/lachart1.png" />
         <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://lachart.net/about" />
         <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart" />
+        <meta name="twitter:description" content="Analyze lactate curve and thresholds (LT1, LT2, OBLA, IAT)." />
+        <meta name="twitter:image" content="/images/lachart1.png" />
+        <script type="application/ld+json">
+          {`
+            {
+              "@context": "https://schema.org",
+              "@type": "WebPage",
+              "name": "Lactate Curve Analyzer & Lactate Threshold Calculator",
+              "url": "https://lachart.net/about",
+              "description": "Analyze lactate test data and calculate lactate thresholds (LT1, LT2, OBLA, IAT) with LaChart.",
+              "publisher": {"@type": "Organization", "name": "LaChart"}
+            }
+          `}
+        </script>
       </Helmet>
       {/* Navbar with hover effects */}
       <nav className="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-20 relative">
@@ -447,18 +464,18 @@ const About = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: 0.6 }}
             >
-              <a
-                href="/signup"
+            <a
+              href="/signup"
                 className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-lg font-bold rounded-lg text-primary bg-white hover:bg-gray-100 transform hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl"
-              >
-                Get started
-              </a>
-              <a
-                href="/login"
+            >
+              Get started
+            </a>
+            <a
+              href="/login"
                 className="inline-flex items-center justify-center px-8 py-3 border-2 border-white text-lg font-bold rounded-lg text-white hover:bg-white hover:text-primary transform hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl"
-              >
-                Sign in
-              </a>
+            >
+              Sign in
+            </a>
             </motion.div>
           </div>
         </div>
@@ -548,4 +565,4 @@ const About = () => {
   );
 };
 
-export default About; 
+export default About;
