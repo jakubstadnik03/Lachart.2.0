@@ -31,7 +31,7 @@ export const NotificationProvider = ({ children }) => {
   return (
     <NotificationContext.Provider value={{ addNotification, removeNotification }}>
       {children}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+      <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 pointer-events-none">
         <AnimatePresence>
           {notifications.map((notification) => (
             <motion.div
@@ -40,7 +40,7 @@ export const NotificationProvider = ({ children }) => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.95 }}
               transition={{ duration: 0.2 }}
-              className={`p-4 rounded-lg shadow-lg ${
+              className={`pointer-events-auto p-4 rounded-lg shadow-lg ${
                 notification.type === 'success'
                   ? 'bg-green-500 text-white'
                   : notification.type === 'error'

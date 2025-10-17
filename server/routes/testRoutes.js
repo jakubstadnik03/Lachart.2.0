@@ -55,6 +55,20 @@ router.get('/', verifyToken, testController.getTests);
  */
 router.get('/:id', verifyToken, testController.getTestById);
 
+// Compatibility alias: GET /test/list/:athleteId to fetch tests by athlete
+router.get('/list/:athleteId', verifyToken, async (req, res) => {
+    try {
+        const { athleteId } = req.params;
+        const tests = await testAbl.getTestsByAthleteId(athleteId);
+        res.status(200).json(tests);
+    } catch (error) {
+        console.error('Error fetching athlete tests (alias):', error);
+        res.status(error.status || 500).json({ 
+            error: error.error || 'Error fetching athlete tests' 
+        });
+    }
+});
+
 /**
  * @swagger
  * /api/tests:

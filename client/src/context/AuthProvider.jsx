@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
+import WelcomeModal from '../components/WelcomeModal';
 
 const AuthContext = createContext(null);
 
@@ -10,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -69,6 +71,10 @@ export const AuthProvider = ({ children }) => {
         saveToken(token);
         localStorage.setItem("user", JSON.stringify(user));
         setIsAuthenticated(true);
+        if (!sessionStorage.getItem('welcomed')) {
+          setShowWelcome(true);
+          sessionStorage.setItem('welcomed', '1');
+        }
         return Promise.resolve({ success: true });
       } else {
         const response = await api.post("/user/login", { email, password });
@@ -79,6 +85,10 @@ export const AuthProvider = ({ children }) => {
         saveToken(loginToken);
         localStorage.setItem("user", JSON.stringify(loginUser));
         setIsAuthenticated(true);
+        if (!sessionStorage.getItem('welcomed')) {
+          setShowWelcome(true);
+          sessionStorage.setItem('welcomed', '1');
+        }
         return Promise.resolve({ success: true });
       }
     } catch (error) {
@@ -118,6 +128,7 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={value}>
       {children}
+      <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
     </AuthContext.Provider>
   );
 };

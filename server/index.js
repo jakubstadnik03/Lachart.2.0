@@ -12,13 +12,15 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// ✅ CORS nastavení – povolí localhost i Vercel doménu
+// ✅ CORS configuration – allow local, Vercel preview, and production domain
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://lachart-bc.vercel.app'
+  'https://lachart-bc.vercel.app',
+  'https://lachart.net',
+  'https://www.lachart.net'
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -26,8 +28,14 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Middleware
 app.use(helmet()); // Security headers
@@ -58,9 +66,25 @@ const cache = new NodeCache({ stdTTL: 600 }); // Cache for 10 minutes
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
+  skip: (req) => req.method === 'OPTIONS' // don't limit preflight
 });
-app.use(limiter);
+
+// Apply global limiter only in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(limiter);
+}
+
+// Dedicated limiter for login to prevent abuse but allow normal usage
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // up to 30 login attempts per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many login attempts, please try again later.',
+  skip: (req) => req.method === 'OPTIONS'
+});
+app.use('/user/login', loginLimiter);
 
 // Cache middleware
 const cacheMiddleware = (duration) => {
