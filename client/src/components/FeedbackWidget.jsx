@@ -27,17 +27,19 @@ const FeedbackWidget = () => {
     }
     try {
       setIsSubmitting(true);
-      await submitFeedback({
+      const payload = {
         subject: values.subject || 'Feedback',
         message: values.message,
         email: values.email || undefined,
         page: window.location.pathname
-      });
+      };
+      const res = await submitFeedback(payload);
       addNotification('Thanks for your feedback!', 'success');
       setValues({ subject: '', message: '', email: '' });
       setOpen(false);
     } catch (err) {
-      addNotification('Submission failed. Please try again.', 'error');
+      const serverMsg = err?.response?.data?.message || err?.message || 'Unknown error';
+      addNotification(`Submission failed: ${serverMsg}`, 'error');
       console.error('Feedback submit error:', err);
     } finally {
       setIsSubmitting(false);

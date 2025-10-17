@@ -451,6 +451,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         // Convert values to numbers only at save time
         const convertToNumber = (value) => {
           if (value === '' || value === undefined || value === null) return 0;
+          if (typeof value !== 'string') {
+            const n = Number(value);
+            return isNaN(n) ? 0 : n;
+          }
           // If the value contains a comma, replace it with a dot before parsing
           const numericValue = value.toString().replace(',', '.');
           return parseFloat(numericValue);

@@ -2,8 +2,85 @@ const express = require("express");
 const router = express.Router();
 const testAbl = require("../abl/testAbl");
 const verifyToken = require("../middleware/verifyToken");
+const testController = require('../controllers/testController');
 
-// POST /tests - Create a new test
+/**
+ * @swagger
+ * /api/tests:
+ *   get:
+ *     summary: Get all tests for the authenticated user
+ *     tags: [Tests]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of tests
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Test'
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/', verifyToken, testController.getTests);
+
+/**
+ * @swagger
+ * /api/tests/{id}:
+ *   get:
+ *     summary: Get a specific test by ID
+ *     tags: [Tests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Test ID
+ *     responses:
+ *       200:
+ *         description: Test details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Test'
+ *       404:
+ *         description: Test not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/:id', verifyToken, testController.getTestById);
+
+/**
+ * @swagger
+ * /api/tests:
+ *   post:
+ *     summary: Create a new test
+ *     tags: [Tests]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Test'
+ *     responses:
+ *       201:
+ *         description: Test created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Test'
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Unauthorized
+ */
 router.post("/", verifyToken, async (req, res) => {
     try {
         const test = await testAbl.createTest(req.body);
@@ -15,32 +92,39 @@ router.post("/", verifyToken, async (req, res) => {
     }
 });
 
-// GET /tests/:athleteId - Get tests for an athlete
-router.get("/list/:athleteId", verifyToken, async (req, res) => {
-    try {
-        const tests = await testAbl.getTestsByAthleteId(req.params.athleteId);
-        res.json(tests);
-    } catch (error) {
-        res.status(error.status || 500).json({ 
-            error: error.error || 'Chyba při získávání testů' 
-        });
-    }
-});
-
-// GET /tests/test/:id - Get a specific test
-router.get("/:id", verifyToken, async (req, res) => {
-    try {
-        const test = await testAbl.getTestById(req.params.id);
-        if (!test) {
-            return res.status(404).json({ error: 'Test nenalezen' });
-        }
-        res.json(test);
-    } catch (error) {
-        res.status(500).json({ error: 'Chyba při získávání testu' });
-    }
-});
-
-// PUT /tests/:id - Update a test
+/**
+ * @swagger
+ * /api/tests/{id}:
+ *   put:
+ *     summary: Update a test
+ *     tags: [Tests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Test ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Test'
+ *     responses:
+ *       200:
+ *         description: Test updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Test'
+ *       404:
+ *         description: Test not found
+ *       401:
+ *         description: Unauthorized
+ */
 router.put("/:id", verifyToken, async (req, res) => {
     try {
         const updatedTest = await testAbl.updateTest(req.params.id, req.body);
@@ -53,7 +137,29 @@ router.put("/:id", verifyToken, async (req, res) => {
     }
 });
 
-// DELETE /tests/:id - Delete a test
+/**
+ * @swagger
+ * /api/tests/{id}:
+ *   delete:
+ *     summary: Delete a test
+ *     tags: [Tests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Test ID
+ *     responses:
+ *       200:
+ *         description: Test deleted successfully
+ *       404:
+ *         description: Test not found
+ *       401:
+ *         description: Unauthorized
+ */
 router.delete("/:id", verifyToken, async (req, res) => {
     try {
         const result = await testAbl.deleteTest(req.params.id);

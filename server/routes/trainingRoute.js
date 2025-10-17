@@ -3,70 +3,146 @@ const express = require("express");
 const router = express.Router();
 const TrainingAbl = require("../abl/trainingAbl");
 const verifyToken = require("../middleware/verifyToken");
+const trainingController = require('../controllers/trainingController');
 
-// Create a new training
-router.post("/", verifyToken, async (req, res) => {
-  try {
-    if (typeof req.body === 'string') {
-      req.body = JSON.parse(req.body);
-    }
+/**
+ * @swagger
+ * /api/training:
+ *   get:
+ *     summary: Get all training sessions for the authenticated user
+ *     tags: [Training]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of training sessions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Training'
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/', verifyToken, trainingController.getTrainings);
 
-    // Validace povinných polí
-    const requiredFields = ['athleteId', 'sport', 'title', 'date'];
-    const missingFields = requiredFields.filter(field => !req.body[field]);
-    
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        error: `Chybí povinná pole: ${missingFields.join(', ')}`
-      });
-    }
+/**
+ * @swagger
+ * /api/training/{id}:
+ *   get:
+ *     summary: Get a specific training session by ID
+ *     tags: [Training]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Training session ID
+ *     responses:
+ *       200:
+ *         description: Training session details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Training'
+ *       404:
+ *         description: Training session not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/:id', verifyToken, trainingController.getTrainingById);
 
-    // Validace specifics objektu
-    if (req.body.specifics) {
-      if (typeof req.body.specifics !== 'object') {
-        return res.status(400).json({
-          error: 'Specifics musí být objekt'
-        });
-      }
-    }
+/**
+ * @swagger
+ * /api/training:
+ *   post:
+ *     summary: Create a new training session
+ *     tags: [Training]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Training'
+ *     responses:
+ *       201:
+ *         description: Training session created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Training'
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/', verifyToken, trainingController.createTraining);
 
-    // Formátování data
-    if (req.body.date) {
-      req.body.date = new Date(req.body.date);
-    }
+/**
+ * @swagger
+ * /api/training/{id}:
+ *   put:
+ *     summary: Update a training session
+ *     tags: [Training]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Training session ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Training'
+ *     responses:
+ *       200:
+ *         description: Training session updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Training'
+ *       404:
+ *         description: Training session not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.put('/:id', verifyToken, trainingController.updateTraining);
 
-    // Validace formátu results
-    if (req.body.results) {
-      console.log('Original results:', JSON.stringify(req.body.results, null, 2));
-      req.body.results = req.body.results.map(result => {
-        // Ensure duration is included and properly formatted
-        const processedResult = {
-          interval: Number(result.interval),
-          power: Number(result.power),
-          heartRate: Number(result.heartRate),
-          lactate: Number(result.lactate),
-          glucose: Number(result.glucose),
-          RPE: Number(result.RPE),
-          duration: result.duration || "0", // Ensure duration is never undefined
-          durationType: result.durationType || "time" // Ensure durationType is never undefined
-        };
-        console.log('Processed result duration:', processedResult.duration);
-        return processedResult;
-      });
-      console.log('Processed results:', JSON.stringify(req.body.results, null, 2));
-    }
-
-    console.log('Processed training data:', JSON.stringify(req.body, null, 2));
-    const newTraining = await TrainingAbl.createTraining(req.body);
-    res.status(201).json(newTraining);
-  } catch (error) {
-    console.error('Error creating training:', error);
-    res.status(400).json({ 
-      error: 'Neplatný formát dat',
-      details: error.message 
-    });
-  }
-});
+/**
+ * @swagger
+ * /api/training/{id}:
+ *   delete:
+ *     summary: Delete a training session
+ *     tags: [Training]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Training session ID
+ *     responses:
+ *       200:
+ *         description: Training session deleted successfully
+ *       404:
+ *         description: Training session not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.delete('/:id', verifyToken, trainingController.deleteTraining);
 
 // Get all trainings for an athlete
 router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
@@ -106,19 +182,6 @@ router.get("/title/:title", verifyToken, async (req, res) => {
     res.status(200).json(trainings);
   } catch (error) {
     console.error('Error in /training/title:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get a specific training by ID
-router.get("/:id", verifyToken, async (req, res) => {
-  try {
-    const training = await TrainingAbl.getTrainingById(req.params.id);
-    if (!training) {
-      return res.status(404).json({ error: "Trénink nenalezen" });
-    }
-    res.status(200).json(training);
-  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

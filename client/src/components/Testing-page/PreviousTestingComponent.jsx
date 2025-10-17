@@ -134,10 +134,10 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="flex justify-center flex-wrap lg:flex-nowrap gap-6 mt-5"
+            className="flex flex-col lg:flex-row justify-center gap-6 mt-5"
           >
             <motion.div 
-              className={`${glucoseColumnHidden ? 'flex-[2]' : 'flex-[2.5]'}`}
+              className={`${glucoseColumnHidden ? 'lg:flex-[2]' : 'lg:flex-[2.5]'} w-full`}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >
@@ -149,7 +149,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
             <LactateCurve mockData={currentTest} />
             </motion.div>
             <motion.div 
-              className={`${glucoseColumnHidden ? 'flex-1 max-w-l mx-0' : 'flex-1 max-w-l'} bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}
+              className={`${glucoseColumnHidden ? 'lg:flex-1' : 'lg:flex-1'} w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >
