@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
+import { trackEvent } from '../../utils/analytics';
 
 // Tutorial steps configuration
 const tutorialSteps = [
@@ -475,6 +476,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       try {
         onSave(updatedTest);
         addNotification('Test data saved successfully', 'success');
+        trackEvent('test_saved', { 
+          sport: formData.sport,
+          intervals: rows.length,
+          isNewTest: isNewTest 
+        });
         setIsDirty(false);
         if (!isNewTest) {
           setIsEditMode(false);

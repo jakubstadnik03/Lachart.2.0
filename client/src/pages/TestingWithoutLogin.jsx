@@ -9,6 +9,7 @@ import Header from '../components/Header/Header';
 import WelcomeModal from '../components/WelcomeModal';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
+import { trackEvent } from '../utils/analytics';
 
 // Animation variants
 const containerVariants = {
@@ -205,6 +206,7 @@ const TestingWithoutLogin = () => {
     // Function to handle demo data selection
     const handleDemoDataSelect = (sport) => {
         handleFillMockData(sport);
+        trackEvent('demo_data_selected', { sport: sport });
         setIsDemoDropdownOpen(false);
     };
 
@@ -247,6 +249,7 @@ const TestingWithoutLogin = () => {
         };
         setTestData(defaultData);
         localStorage.removeItem('testData');
+        trackEvent('demo_form_reset');
         addNotification('Form has been reset', 'success');
     };
 
@@ -311,6 +314,10 @@ const TestingWithoutLogin = () => {
                 RPE: result.RPE === '' ? 0 : parseFloat(result.RPE.toString().replace(',', '.'))
             }))
         };
+        trackEvent('demo_test_processed', { 
+            sport: data.sport,
+            intervals: data.results.length 
+        });
         addNotification('Test data was processed successfully', 'success');
         console.log('Processed test data:', processedData);
     };
@@ -645,7 +652,7 @@ const TestingWithoutLogin = () => {
                                 className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
                             >
                                 <motion.button
-                                    onClick={() => navigate('/signup')}
+                                    onClick={() => { trackEvent('cta_click', { label: 'demo_create_account' }); navigate('/signup'); }}
                                     className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
@@ -653,7 +660,7 @@ const TestingWithoutLogin = () => {
                                     Create Account
                                 </motion.button>
                                 <motion.button
-                                    onClick={() => navigate('/login')}
+                                    onClick={() => { trackEvent('cta_click', { label: 'demo_sign_in' }); navigate('/login'); }}
                                     className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}

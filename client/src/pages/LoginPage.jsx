@@ -7,6 +7,7 @@ import { useNotification } from '../context/NotificationContext';
 import { GoogleLogin } from '@react-oauth/google';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api.config';
+import { trackEvent } from '../utils/analytics';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -88,6 +89,7 @@ const LoginPage = () => {
           // First call login to update auth state
           await login(formData.email, formData.password, result.data.token, result.data.user);
           addNotification("Successfully logged in", "success");
+          trackEvent('login_success', { method: 'email' });
 
           // Then check for pending invitation
           const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
@@ -144,6 +146,7 @@ const LoginPage = () => {
       if (result.data.token) {
         console.log("Google login successful, token received");
         console.log("User data:", result.data.user);
+        trackEvent('login_success', { method: 'google' });
         
         // Uložení tokenu a uživatelských dat do localStorage
         localStorage.setItem("token", result.data.token);

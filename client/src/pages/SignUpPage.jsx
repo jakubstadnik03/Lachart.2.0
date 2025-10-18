@@ -5,6 +5,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
+import { trackEvent } from '../utils/analytics';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +30,7 @@ const SignUpPage = () => {
     }
     try {
       await register(formData);
+      trackEvent('register_success', { method: 'email' });
       navigate('/login');
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');
@@ -52,6 +54,7 @@ const SignUpPage = () => {
 
       const data = await res.json();
       if (data.token) {
+        trackEvent('register_success', { method: 'google' });
         localStorage.setItem('token', data.token);
         navigate('/dashboard');
       } else {

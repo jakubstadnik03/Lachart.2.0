@@ -1,4 +1,5 @@
 import React, { lazy, Suspense } from 'react';
+import { trackEvent } from '../utils/analytics';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -192,9 +193,9 @@ const About = () => {
               transition={{ duration: 0.5, delay: 0.4 }}
               className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start"
             >
-              <a href="/signup" className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Get Started</a>
-              <a href="/login" className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Sign In</a>
-              <a href="/testing-without-login" className="inline-block bg-secondary text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-secondary-dark transition border border-white">Lactate Form</a>
+              <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'about_get_started' })} className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Get Started</a>
+              <a href="/login" onClick={() => trackEvent('cta_click', { label: 'about_sign_in' })} className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Sign In</a>
+              <a href="/testing-without-login" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-block bg-secondary text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-secondary-dark transition border border-white">Lactate Form</a>
             </motion.div>
           </div>
           <div className="flex-1 mt-10 lg:mt-0 flex justify-center z-10">
@@ -466,12 +467,14 @@ const About = () => {
             >
             <a
               href="/signup"
+              onClick={() => trackEvent('cta_click', { label: 'footer_get_started' })}
                 className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-lg font-bold rounded-lg text-primary bg-white hover:bg-gray-100 transform hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl"
             >
               Get started
             </a>
             <a
               href="/login"
+              onClick={() => trackEvent('cta_click', { label: 'footer_sign_in' })}
                 className="inline-flex items-center justify-center px-8 py-3 border-2 border-white text-lg font-bold rounded-lg text-white hover:bg-white hover:text-primary transform hover:-translate-y-0.5 transition-all shadow-lg hover:shadow-xl"
             >
               Sign in

@@ -27,16 +27,24 @@ import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import About from './pages/About';
 import Documentation from './pages/Documentation';
 import { Analytics } from "@vercel/analytics/react"
+import { useLocation } from 'react-router-dom';
+import { initAnalytics, trackPageView } from './utils/analytics';
 import './App.css';
 import FeedbackWidget from './components/FeedbackWidget';
 
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const location = useLocation();
 
   // Memoize the Layout component to prevent unnecessary re-renders
   const LayoutWithProps = useMemo(() => (
     <Layout isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
   ), [isMenuOpen]);
+
+  // Track page views on route change
+  React.useEffect(() => {
+    trackPageView(location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   return (
     <Routes>
@@ -109,6 +117,7 @@ function App() {
         <NotificationProvider>
           <AuthProvider>
             <TrainingProvider>
+              {initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
               <Analytics />
               <FeedbackWidget />
