@@ -143,24 +143,20 @@ export const getTrainingsByTitle = async (title) => {
 // Feedback endpoint
 export const submitFeedback = async (payload) => {
   try {
-    console.log('API: Submitting feedback to /feedback endpoint');
+    console.log('🚀 API: Submitting feedback to /feedback endpoint');
+    
     const response = await api.post('/feedback', payload, {
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 5000 // 5 second timeout
+      timeout: 25000 // 25 second timeout for Render.com
     });
-    console.log('API: Feedback response received:', response);
+    
+    console.log('✅ API: Feedback response received:', response.data);
     return response.data;
   } catch (error) {
-    console.error('API: Error submitting feedback:', error);
-    console.error('API: Error details:', {
-      status: error?.response?.status,
-      statusText: error?.response?.statusText,
-      data: error?.response?.data,
-      message: error?.message,
-      code: error?.code
-    });
+    console.error('❌ API: Error submitting feedback:', error.message);
+    console.error('❌ API: Error code:', error.code);
     throw error;
   }
 };

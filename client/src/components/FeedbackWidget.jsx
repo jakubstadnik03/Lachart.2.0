@@ -27,6 +27,7 @@ const FeedbackWidget = () => {
     }
     try {
       setIsSubmitting(true);
+      
       const payload = {
         subject: values.subject || 'Feedback',
         message: values.message,
@@ -34,19 +35,16 @@ const FeedbackWidget = () => {
         page: window.location.pathname
       };
       
-      console.log('Submitting feedback:', payload);
+      console.log('🚀 Submitting feedback:', payload);
       
       const res = await submitFeedback(payload);
-      console.log('Feedback response:', res);
+      console.log('✅ Feedback response:', res);
       
       addNotification('Thanks for your feedback!', 'success');
       setValues({ subject: '', message: '', email: '' });
       setOpen(false);
     } catch (err) {
-      console.error('Feedback submit error:', err);
-      console.error('Error response:', err?.response);
-      console.error('Error status:', err?.response?.status);
-      console.error('Error data:', err?.response?.data);
+      console.error('❌ Feedback submit error:', err);
       
       let errorMessage = 'Failed to send feedback';
       
@@ -54,8 +52,8 @@ const FeedbackWidget = () => {
         errorMessage = 'Please check your message and try again';
       } else if (err?.response?.status === 500) {
         errorMessage = 'Server error. Please try again later';
-      } else if (err?.code === 'NETWORK_ERROR' || err?.message?.includes('Network Error') || err?.code === 'ECONNABORTED') {
-        errorMessage = 'Connection timeout. The server is not responding';
+      } else if (err?.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Server may be starting up.';
       } else if (err?.response?.data?.message) {
         errorMessage = err.response.data.message;
       } else if (err?.message) {
@@ -64,23 +62,21 @@ const FeedbackWidget = () => {
       
       addNotification(`Submission failed: ${errorMessage}`, 'error');
       
-      // Offer fallback email option for critical errors
-      if (err?.response?.status >= 500 || err?.code === 'NETWORK_ERROR' || err?.message?.includes('Network Error') || err?.code === 'ECONNABORTED') {
-        const fallbackEmail = 'jakub.stadnik@seznam.cz';
-        const emailSubject = encodeURIComponent(`[LaChart Feedback] ${values.subject || 'Feedback'}`);
-        const emailBody = encodeURIComponent(
-          `Message: ${values.message}\n\n` +
-          `From: ${values.email || 'anonymous'}\n` +
-          `Page: ${window.location.pathname}\n` +
-          `Time: ${new Date().toLocaleString()}`
-        );
-        const mailtoLink = `mailto:${fallbackEmail}?subject=${emailSubject}&body=${emailBody}`;
-        
-        // Show fallback option immediately
-        // eslint-disable-next-line no-alert
-        if (window.confirm('The feedback system is currently unavailable. Would you like to send your feedback via email instead?')) {
-          window.open(mailtoLink, '_blank');
-        }
+      // Always offer fallback email for any error
+      const fallbackEmail = 'jakub.stadnik@seznam.cz';
+      const emailSubject = encodeURIComponent(`[LaChart Feedback] ${values.subject || 'Feedback'}`);
+      const emailBody = encodeURIComponent(
+        `Message: ${values.message}\n\n` +
+        `From: ${values.email || 'anonymous'}\n` +
+        `Page: ${window.location.pathname}\n` +
+        `Time: ${new Date().toLocaleString()}`
+      );
+      const mailtoLink = `mailto:${fallbackEmail}?subject=${emailSubject}&body=${emailBody}`;
+      
+      // Show fallback option immediately
+      // eslint-disable-next-line no-alert
+      if (window.confirm('Would you like to send your feedback via email instead? This ensures your message reaches us immediately.')) {
+        window.open(mailtoLink, '_blank');
       }
     } finally {
       setIsSubmitting(false);
