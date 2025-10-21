@@ -31,6 +31,7 @@ import { useLocation } from 'react-router-dom';
 import { initAnalytics, trackPageView } from './utils/analytics';
 import './App.css';
 import FeedbackWidget from './components/FeedbackWidget';
+import LactateGuide from './pages/LactateGuide';
 
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -60,6 +61,7 @@ function AppRoutes() {
       <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
       <Route path="/accept-coach-invitation/:token" element={<AcceptCoachInvitation />} />
       <Route path="/documentation" element={<Documentation />} />
+      <Route path="/lactate-guide" element={<LactateGuide />} />
 
       {/* Chráněné routy s Layoutem */}
       <Route

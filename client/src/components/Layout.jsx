@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useAuth } from "../context/AuthProvider";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
@@ -8,6 +8,7 @@ import TestingWithoutLogin from "../pages/TestingWithoutLogin";
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
+  const location = useLocation();
 
   // Ensure menu is open when component mounts
   useEffect(() => {
@@ -15,6 +16,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       setIsMenuOpen(true);
     }
   }, [user, setIsMenuOpen]);
+
+  // Allow access to lactate-guide without login - render it directly
+  if (location.pathname === '/lactate-guide') {
+    return <Outlet />;
+  }
 
   // If user is not logged in, show TestingWithoutLogin
   if (!user) {

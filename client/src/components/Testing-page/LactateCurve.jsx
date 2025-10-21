@@ -261,18 +261,23 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         // Convert MM:SS format to seconds
         if (typeof power === 'string' && power.includes(':')) {
           const [minutes, seconds] = power.split(':').map(Number);
-          return minutes * 60 + seconds;
+          const value = minutes * 60 + seconds;
+          return isNaN(value) || !isFinite(value) ? 0 : value;
         }
       }
-      return Number(power);
+      const value = Number(power);
+      return isNaN(value) || !isFinite(value) ? 0 : value;
     });
 
-    const lactateData = validResults.map((result) => 
-      Number(result.lactate.toString().replace(',', '.'))
-    );
-    const heartRateData = validResults.map((result) => 
-      result.heartRate ? Number(result.heartRate.toString().replace(',', '.')) : 0
-    );
+    const lactateData = validResults.map((result) => {
+      const value = Number(result.lactate.toString().replace(',', '.'));
+      return isNaN(value) || !isFinite(value) ? 0 : value;
+    });
+    const heartRateData = validResults.map((result) => {
+      if (!result.heartRate) return 0;
+      const value = Number(result.heartRate.toString().replace(',', '.'));
+      return isNaN(value) || !isFinite(value) ? 0 : value;
+    });
 
     const datasets = [
       {

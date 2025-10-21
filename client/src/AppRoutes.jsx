@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import DashboardPage from './pages/DashboardPage';
 import TrainingPage from './pages/TrainingPage';
 import TestingPage from './pages/TestingPage';
+import LactateGuide from './pages/LactateGuide';
 // ... další importy
 
 const AppRoutes = () => {
@@ -12,6 +13,7 @@ const AppRoutes = () => {
         <Route index element={<DashboardPage />} />
         <Route path="/training" element={<TrainingPage />} />
         <Route path="/testing" element={<TestingPage />} />
+        <Route path="/lactate-guide" element={<LactateGuide />} />
         {/* ... další routy */}
       </Route>
     </Routes>

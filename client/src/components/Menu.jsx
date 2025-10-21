@@ -301,6 +301,23 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   About LaChart
                 </NavLink>
               </motion.div>
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <NavLink
+                  to="/lactate-guide"
+                  className="flex items-center justify-center text-sm font-medium p-3 rounded-lg bg-secondary text-white hover:bg-secondary-dark transition-colors"
+                >
+                  <img
+                    src="/icon/testing-white.svg"
+                    alt="Lactate Guide"
+                    className="w-5 h-5 mr-3"
+                  />
+                  Lactate Guide
+                </NavLink>
+              </motion.div>
             </div>
           ) : (
             <ul className="space-y-2">

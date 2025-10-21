@@ -22,19 +22,60 @@ const WelcomeModal = ({ open, onClose }) => {
     }
     try {
       setIsSubmitting(true);
-      await submitFeedback({
+      const payload = {
         subject: values.subject || 'Welcome Feedback',
         message: values.message,
         email: values.email || undefined,
         page: window.location.pathname
-      });
+      };
+      
+      console.log('Submitting welcome feedback:', payload);
+      const res = await submitFeedback(payload);
+      console.log('Welcome feedback response:', res);
+      
       addNotification('Thanks for your feedback!', 'success');
       setValues({ subject: '', message: '', email: '' });
       onClose?.();
     } catch (err) {
-      const serverMsg = err?.response?.data?.message || err?.message || 'Unknown error';
-      addNotification(`Submission failed: ${serverMsg}`, 'error');
       console.error('Welcome feedback submit error:', err);
+      console.error('Error response:', err?.response);
+      console.error('Error status:', err?.response?.status);
+      console.error('Error data:', err?.response?.data);
+      
+      let errorMessage = 'Failed to send feedback';
+      
+      if (err?.response?.status === 400) {
+        errorMessage = 'Please check your message and try again';
+      } else if (err?.response?.status === 500) {
+        errorMessage = 'Server error. Please try again later';
+      } else if (err?.code === 'NETWORK_ERROR' || err?.message?.includes('Network Error') || err?.code === 'ECONNABORTED') {
+        errorMessage = 'Connection timeout. The server is not responding';
+      } else if (err?.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      addNotification(`Submission failed: ${errorMessage}`, 'error');
+      
+      // Offer fallback email option for critical errors
+      if (err?.response?.status >= 500 || err?.code === 'NETWORK_ERROR' || err?.message?.includes('Network Error') || err?.code === 'ECONNABORTED') {
+        const fallbackEmail = 'jakub.stadnik@seznam.cz';
+        const emailSubject = encodeURIComponent(`[LaChart Welcome Feedback] ${values.subject || 'Welcome Feedback'}`);
+        const emailBody = encodeURIComponent(
+          `Message: ${values.message}\n\n` +
+          `From: ${values.email || 'anonymous'}\n` +
+          `Page: ${window.location.pathname}\n` +
+          `Time: ${new Date().toLocaleString()}`
+        );
+        const mailtoLink = `mailto:${fallbackEmail}?subject=${emailSubject}&body=${emailBody}`;
+        
+        // Show fallback option immediately
+        // eslint-disable-next-line no-alert
+        if (window.confirm('The feedback system is currently unavailable. Would you like to send your feedback via email instead?')) {
+          window.open(mailtoLink, '_blank');
+        }
+      }
     } finally {
       setIsSubmitting(false);
     }

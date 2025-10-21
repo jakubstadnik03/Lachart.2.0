@@ -191,11 +191,12 @@ const About = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start"
+              className="flex flex-wrap gap-3 justify-center lg:justify-start"
             >
-              <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'about_get_started' })} className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Get Started</a>
-              <a href="/login" onClick={() => trackEvent('cta_click', { label: 'about_sign_in' })} className="inline-block bg-white text-primary font-bold px-8 py-3 rounded-lg shadow hover:bg-gray-100 transition">Sign In</a>
-              <a href="/testing-without-login" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-block bg-secondary text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-secondary-dark transition border border-white">Lactate Form</a>
+              <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'about_get_started' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Get Started</a>
+              <a href="/login" onClick={() => trackEvent('cta_click', { label: 'about_sign_in' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Sign In</a>
+              <a href="/testing-without-login" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-flex items-center bg-secondary text-white font-bold px-6 py-2 rounded-lg shadow hover:bg-secondary-dark transition border border-white whitespace-nowrap">Lactate Form</a>
+              <a href="/lactate-guide" onClick={() => trackEvent('cta_click', { label: 'about_lactate_guide' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition border border-white whitespace-nowrap">Lactate Guide</a>
             </motion.div>
           </div>
           <div className="flex-1 mt-10 lg:mt-0 flex justify-center z-10">
@@ -221,6 +222,62 @@ const About = () => {
             {features.map((feature, index) => (
               <FeatureCard key={feature.title} {...feature} index={index} />
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Lactate Guide Section */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <h2 className="text-base text-primary font-semibold tracking-wide uppercase">Learn About Lactate</h2>
+              <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+                Master Lactate Threshold Training
+              </p>
+              <p className="mt-4 text-lg text-gray-600">
+                Discover the science behind lactate, understand what lactate threshold means, and learn how to improve your performance through proper training methods. Our comprehensive guide covers everything from basic concepts to advanced training protocols.
+              </p>
+              <div className="mt-6 space-y-4">
+                <div className="flex items-start">
+                  <span className="text-primary mr-3">📚</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Complete Theory</h3>
+                    <p className="text-gray-600 text-sm">Learn what lactate is, how it affects your body, and why the threshold matters for endurance performance.</p>
+                  </div>
+                </div>
+                <div className="flex items-start">
+                  <span className="text-primary mr-3">🧪</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Testing Protocols</h3>
+                    <p className="text-gray-600 text-sm">Understand different methods to measure lactate threshold, from lab tests to field estimations.</p>
+                  </div>
+                </div>
+                <div className="flex items-start">
+                  <span className="text-primary mr-3">🏃‍♂️</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Training Strategies</h3>
+                    <p className="text-gray-600 text-sm">Discover proven methods to increase your lactate threshold and improve endurance performance.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8">
+                <a 
+                  href="/lactate-guide" 
+                  onClick={() => trackEvent('cta_click', { label: 'about_guide_section' })}
+                  className="inline-block bg-primary text-white font-bold px-8 py-3 rounded-lg shadow hover:bg-primary-dark transition"
+                >
+                  Read the Complete Guide
+                </a>
+              </div>
+            </div>
+            <div className="flex justify-center">
+              <LazyImage 
+                src="/images/lactate-analysis.jpg" 
+                alt="Lactate Analysis and Testing" 
+                className="w-full max-w-lg rounded-2xl shadow-lg object-cover" 
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -512,6 +569,11 @@ const About = () => {
                   </a>
                 </li>
                 <li>
+                  <a href="/lactate-guide" className="text-base text-gray-600 hover:text-primary">
+                    Lactate Guide
+                  </a>
+                </li>
+                <li>
                   <a href="/login" className="text-base text-gray-600 hover:text-primary">
                     Login
                   </a>
@@ -545,25 +607,6 @@ const About = () => {
         </div>
       </motion.footer>
 
-      {/* Add these styles to your CSS */}
-      <style jsx global>{`
-        .swiper-slide {
-          transition: all 0.3s ease;
-        }
-        .swiper-slide-active {
-          z-index: 1;
-        }
-        .swiper-button-next,
-        .swiper-button-prev {
-          color: #767EB5 !important;
-        }
-        .swiper-pagination-bullet-active {
-          background: #767EB5 !important;
-        }
-        .custom-bullet-active {
-          background: #767EB5 !important;
-        }
-      `}</style>
     </div>
   );
 };

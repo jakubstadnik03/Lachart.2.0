@@ -706,12 +706,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   return (
     <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative">
-      <style jsx>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+      {/* keyframes moved to global CSS (index.css) */}
 
       {/* Single Tutorial Message Portal */}
       {demoMode && currentTutorialStep >= 0 && (
