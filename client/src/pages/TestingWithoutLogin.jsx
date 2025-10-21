@@ -9,7 +9,7 @@ import Header from '../components/Header/Header';
 import WelcomeModal from '../components/WelcomeModal';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
-import { trackEvent } from '../utils/analytics';
+import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestCompletion } from '../utils/analytics';
 
 // Animation variants
 const containerVariants = {
@@ -103,12 +103,28 @@ const TestingWithoutLogin = () => {
         localStorage.setItem('testData', JSON.stringify(testData));
     }, [testData]);
 
+    // Track page view on mount
+    useEffect(() => {
+        if (!isInitialMount.current) {
+            trackDemoUsage('page_view', { 
+                has_saved_data: !!localStorage.getItem('testData'),
+                sport: testData.sport 
+            });
+            trackConversionFunnel('demo_view', { 
+                has_saved_data: !!localStorage.getItem('testData'),
+                sport: testData.sport 
+            });
+        }
+        isInitialMount.current = false;
+    }, [testData.sport]);
+
     // Show welcome modal after 5 minutes on demo page (once per session)
     useEffect(() => {
         if (!sessionStorage.getItem('demoWelcomed')) {
             welcomeTimerRef.current = setTimeout(() => {
                 setShowWelcome(true);
                 sessionStorage.setItem('demoWelcomed', '1');
+                trackDemoUsage('welcome_modal_shown', { time_on_page: '5_minutes' });
             }, 5 * 60 * 1000); // 5 minutes
         }
         return () => {
@@ -314,9 +330,14 @@ const TestingWithoutLogin = () => {
                 RPE: result.RPE === '' ? 0 : parseFloat(result.RPE.toString().replace(',', '.'))
             }))
         };
-        trackEvent('demo_test_processed', { 
+        trackDemoUsage('test_processed', { 
             sport: data.sport,
             intervals: data.results.length 
+        });
+        trackLactateTestCompletion({
+            sport: data.sport,
+            stages: data.results.length,
+            hasResults: true
         });
         addNotification('Test data was processed successfully', 'success');
         console.log('Processed test data:', processedData);
@@ -652,7 +673,11 @@ const TestingWithoutLogin = () => {
                                 className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
                             >
                                 <motion.button
-                                    onClick={() => { trackEvent('cta_click', { label: 'demo_create_account' }); navigate('/signup'); }}
+                                    onClick={() => { 
+                                        trackDemoUsage('cta_click', { label: 'demo_create_account' }); 
+                                        trackConversionFunnel('signup_start', { source: 'demo_page' });
+                                        navigate('/signup'); 
+                                    }}
                                     className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
@@ -660,7 +685,11 @@ const TestingWithoutLogin = () => {
                                     Create Account
                                 </motion.button>
                                 <motion.button
-                                    onClick={() => { trackEvent('cta_click', { label: 'demo_sign_in' }); navigate('/login'); }}
+                                    onClick={() => { 
+                                        trackDemoUsage('cta_click', { label: 'demo_sign_in' }); 
+                                        trackConversionFunnel('login_start', { source: 'demo_page' });
+                                        navigate('/login'); 
+                                    }}
                                     className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}

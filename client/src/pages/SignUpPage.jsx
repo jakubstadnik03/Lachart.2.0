@@ -5,7 +5,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
-import { trackEvent } from '../utils/analytics';
+import { trackEvent, trackUserRegistration, trackConversionFunnel } from '../utils/analytics';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -30,10 +30,15 @@ const SignUpPage = () => {
     }
     try {
       await register(formData);
-      trackEvent('register_success', { method: 'email' });
+      trackUserRegistration('email', formData.role);
+      trackConversionFunnel('signup_complete', { method: 'email', role: formData.role });
       navigate('/login');
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');
+      trackEvent('register_error', { 
+        method: 'email', 
+        error: error.response?.data?.message || 'Registration failed' 
+      });
     }
   };
 
@@ -54,11 +59,13 @@ const SignUpPage = () => {
 
       const data = await res.json();
       if (data.token) {
-        trackEvent('register_success', { method: 'google' });
+        trackUserRegistration('google', 'athlete');
+        trackConversionFunnel('signup_complete', { method: 'google', role: 'athlete' });
         localStorage.setItem('token', data.token);
         navigate('/dashboard');
       } else {
         addNotification('Google authentication failed', 'error');
+        trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
       }
     } catch (error) {
       console.error('Google auth error:', error);

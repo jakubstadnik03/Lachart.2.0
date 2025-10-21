@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
+import { trackGuideInteraction, trackConversionFunnel } from '../utils/analytics';
 
 const LactateGuide = () => {
   // FAQ state and item toggling (match SupportPage behavior)
@@ -11,6 +12,37 @@ const LactateGuide = () => {
     if (updated.has(index)) updated.delete(index); else updated.add(index);
     setOpenFaq(updated);
   };
+
+  // Track page view and smooth scroll handler
+  useEffect(() => {
+    // Track page view
+    trackGuideInteraction('view', 'page_load');
+    trackConversionFunnel('guide_view', { source: 'direct' });
+
+    const handleSmoothScroll = (e) => {
+      const target = e.target.closest('a[href^="#"]');
+      if (target) {
+        e.preventDefault();
+        const targetId = target.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+        if (targetElement) {
+          trackGuideInteraction('section_click', targetId);
+          targetElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      }
+    };
+
+    // Add event listener to the document
+    document.addEventListener('click', handleSmoothScroll);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('click', handleSmoothScroll);
+    };
+  }, []);
 
   const faqItems = [
     {
@@ -52,7 +84,22 @@ const LactateGuide = () => {
     </div>
   );
   return (
-    <main className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white" style={{ scrollBehavior: 'smooth' }}>
+      {/* Navbar with hover effects */}
+      <nav className="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-20 relative">
+        <div className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
+            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+            <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
+          </a>
+        </div>
+        <div className="flex items-center gap-6">
+          <a href="/login" className="text-primary font-semibold hover:text-primary-dark transition-colors">Login</a>
+          <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors">Register</a>
+        </div>
+      </nav>
+
+      <main>
       <Helmet>
         <title>How to Calculate Lactate Threshold: Complete Guide & Testing Methods | LaChart</title>
         <link rel="canonical" href="https://lachart.net/lactate-guide" />
@@ -96,7 +143,7 @@ const LactateGuide = () => {
       </Helmet>
 
       {/* Hero with sticky in-page nav */}
-      <header className="bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 border-b relative overflow-hidden">
+      <section className="bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 border-b relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5"></div>
         <div className="max-w-6xl mx-auto px-4 py-10 md:py-14 relative">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-8 items-start">
@@ -118,11 +165,25 @@ const LactateGuide = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.2 }}
               >
-                <a href="/testing-without-login" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-primary text-white font-bold shadow-lg hover:bg-primary-dark hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
-                  🧮 Try Demo
+                <a 
+                  href="/testing-without-login" 
+                  onClick={() => {
+                    trackGuideInteraction('cta_click', 'try_demo_hero');
+                    trackConversionFunnel('demo_start', { source: 'guide_hero' });
+                  }}
+                  className="inline-flex items-center px-5 py-2.5 rounded-lg bg-primary text-white font-bold shadow-lg hover:bg-primary-dark hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  Try Demo
                 </a>
-                <a href="/signup" className="inline-flex items-center px-5 py-2.5 rounded-lg border border-primary text-primary font-bold hover:bg-indigo-50 hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200">
-                  📊 Get Started
+                <a 
+                  href="/signup" 
+                  onClick={() => {
+                    trackGuideInteraction('cta_click', 'get_started_hero');
+                    trackConversionFunnel('signup_start', { source: 'guide_hero' });
+                  }}
+                  className="inline-flex items-center px-5 py-2.5 rounded-lg border border-primary text-primary font-bold hover:bg-indigo-50 hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200"
+                >
+                  Get Started
                 </a>
               </motion.div>
             </motion.div>
@@ -147,7 +208,7 @@ const LactateGuide = () => {
             </motion.nav>
           </div>
         </div>
-      </header>
+      </section>
 
       {/* Content sections */}
       <article className="max-w-6xl mx-auto px-4 py-10 bg-gradient-to-b from-white to-gray-50">
@@ -491,10 +552,24 @@ const LactateGuide = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <a href="/testing-without-login" className="inline-flex items-center px-6 py-3 rounded-lg bg-primary text-white font-bold shadow-lg hover:bg-primary-dark hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
+            <a 
+              href="/testing-without-login" 
+              onClick={() => {
+                trackGuideInteraction('cta_click', 'try_calculator_bottom');
+                trackConversionFunnel('demo_start', { source: 'guide_bottom' });
+              }}
+              className="inline-flex items-center px-6 py-3 rounded-lg bg-primary text-white font-bold shadow-lg hover:bg-primary-dark hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
+            >
               🧮 Try Free Calculator
             </a>
-            <a href="/signup" className="inline-flex items-center px-6 py-3 rounded-lg border border-primary text-primary font-bold hover:bg-indigo-50 hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200">
+            <a 
+              href="/signup" 
+              onClick={() => {
+                trackGuideInteraction('cta_click', 'create_account_bottom');
+                trackConversionFunnel('signup_start', { source: 'guide_bottom' });
+              }}
+              className="inline-flex items-center px-6 py-3 rounded-lg border border-primary text-primary font-bold hover:bg-indigo-50 hover:shadow-md transform hover:-translate-y-0.5 transition-all duration-200"
+            >
               📊 Create Free Account
             </a>
           </motion.div>
@@ -521,7 +596,74 @@ const LactateGuide = () => {
           </div>
         </motion.section>
       </article>
-    </main>
+      </main>
+
+      {/* Footer */}
+      <motion.footer 
+        className="bg-white py-12 border-t"
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <a href="/" className="flex items-center gap-2">
+                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
+              </a>
+              <p className="mt-4 text-gray-600">
+                Advanced lactate testing and analysis for athletes and coaches.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
+              <ul className="mt-4 space-y-4">
+                <li>
+                  <a href="/testing-without-login" className="text-base text-gray-600 hover:text-primary">
+                    Try Demo
+                  </a>
+                </li>
+                <li>
+                  <a href="/lactate-guide" className="text-base text-gray-600 hover:text-primary">
+                    Lactate Guide
+                  </a>
+                </li>
+                <li>
+                  <a href="/login" className="text-base text-gray-600 hover:text-primary">
+                    Login
+                  </a>
+                </li>
+                <li>
+                  <a href="/signup" className="text-base text-gray-600 hover:text-primary">
+                    Register
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Contact</h3>
+              <ul className="mt-4 space-y-4">
+                <li className="flex items-center">
+                  <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <a href="mailto:jakub.stadnik01@gmail.com" className="ml-2 text-gray-600 hover:text-primary">
+                    jakub.stadnik01@gmail.com
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-8 border-t border-gray-200 pt-8 text-center">
+            <p className="text-base text-gray-400">
+              &copy; {new Date().getFullYear()} LaChart. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </motion.footer>
+    </div>
   );
 };
 
