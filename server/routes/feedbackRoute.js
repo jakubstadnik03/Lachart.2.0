@@ -1,8 +1,9 @@
 const express = require('express');
-const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
-// Fast feedback endpoint - optimized for Render.com
+// Simple feedback endpoint - logs to file and console
 router.post('/', async (req, res) => {
   console.log('🚀 Feedback endpoint hit at:', new Date().toISOString());
   
@@ -15,76 +16,68 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Message is required' });
     }
 
-    console.log('✅ Feedback received:', { 
-      subject: subject || 'Feedback', 
-      messageLength: message.length, 
+    const feedbackData = {
+      subject: subject || 'Feedback',
+      message: message,
       email: email || 'anonymous',
       page: page || '/',
-      timestamp: new Date().toISOString() 
-    });
+      timestamp: new Date().toISOString(),
+      userAgent: req.headers['user-agent'] || 'unknown'
+    };
 
-    // Fast email setup with fallback
-    const transporter = nodemailer.createTransporter({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER || 'jakub.stadnik01@gmail.com',
-        pass: process.env.EMAIL_APP_PASSWORD
-      },
-      // Fast timeout settings
-      connectionTimeout: 10000,
-      greetingTimeout: 5000,
-      socketTimeout: 10000
-    });
+    console.log('✅ Feedback received:', feedbackData);
 
-    const toAddress = process.env.FEEDBACK_TO || 'jakub.stadnik@seznam.cz';
+    // Log to console (visible in Render logs)
+    console.log('📧 FEEDBACK EMAIL:');
+    console.log('Subject:', feedbackData.subject);
+    console.log('From:', feedbackData.email);
+    console.log('Page:', feedbackData.page);
+    console.log('Message:', feedbackData.message);
+    console.log('Time:', feedbackData.timestamp);
+    console.log('--- END FEEDBACK ---');
 
-    // Simple HTML template
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #3B82F6;">📧 New Feedback from LaChart</h2>
-        <div style="background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 10px 0;">
-          <p><strong>Subject:</strong> ${subject || 'Feedback'}</p>
-          <p><strong>Message:</strong></p>
-          <p style="white-space: pre-wrap;">${message}</p>
-        </div>
-        <hr style="border: 1px solid #E5E7EB; margin: 20px 0;">
-        <div style="color: #6B7280; font-size: 14px;">
-          <p><strong>From:</strong> ${email || 'anonymous'}</p>
-          <p><strong>Page:</strong> ${page || '/'}</p>
-          <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
-        </div>
-      </div>
-    `;
+    // Also try to save to file (if possible)
+    try {
+      const feedbackDir = path.join(__dirname, '../logs');
+      if (!fs.existsSync(feedbackDir)) {
+        fs.mkdirSync(feedbackDir, { recursive: true });
+      }
+      
+      const filename = `feedback-${new Date().toISOString().split('T')[0]}.json`;
+      const filepath = path.join(feedbackDir, filename);
+      
+      // Read existing data or create new array
+      let feedbacks = [];
+      if (fs.existsSync(filepath)) {
+        try {
+          feedbacks = JSON.parse(fs.readFileSync(filepath, 'utf8'));
+        } catch (e) {
+          feedbacks = [];
+        }
+      }
+      
+      // Add new feedback
+      feedbacks.push(feedbackData);
+      
+      // Write back to file
+      fs.writeFileSync(filepath, JSON.stringify(feedbacks, null, 2));
+      console.log('✅ Feedback saved to file:', filepath);
+    } catch (fileError) {
+      console.log('⚠️ Could not save to file:', fileError.message);
+    }
 
-    // Send email with timeout
-    const emailPromise = transporter.sendMail({
-      from: process.env.EMAIL_USER || 'jakub.stadnik01@gmail.com',
-      to: toAddress,
-      subject: `[LaChart] ${subject || 'Feedback'}`,
-      html
-    });
-
-    // Race between email and timeout
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Email timeout')), 15000)
-    );
-
-    await Promise.race([emailPromise, timeoutPromise]);
-
-    console.log('✅ Email sent successfully to:', toAddress);
     return res.status(200).json({ 
       status: 'success', 
-      message: 'Feedback sent successfully',
+      message: 'Feedback received and logged',
       timestamp: new Date().toISOString()
     });
 
   } catch (err) {
     console.error('❌ Feedback error:', err.message);
     
-    // Still return success to client, but log the error
-    return res.status(200).json({ 
-      status: 'logged', 
-      message: 'Feedback logged (email may have failed)',
+    return res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to process feedback',
       timestamp: new Date().toISOString()
     });
   }
