@@ -5,9 +5,10 @@ import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
+  // FIRST: all hooks
+  const { user: authUser, token: authToken, logout, loading } = useAuth();
   const [athletes, setAthletes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const { user: authUser, token: authToken, logout } = useAuth();
+  const [loadingAthletes, setLoadingAthletes] = useState(true);
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -18,7 +19,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const user = propUser || authUser;
   const token = propToken || authToken;
 
-  // Ensure menu is open when component mounts
+  // All useEffects - move all up here
   useEffect(() => {
     // Open menu if we have a user (either from props or auth) or if we're in demo mode
     if (user || propUser) {
@@ -30,17 +31,16 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     const loadAthletes = async () => {
       if (user?.role === "coach") {
         try {
-          setLoading(true);
+          setLoadingAthletes(true);
           const response = await api.get('/user/coach/athletes');
           setAthletes(response.data);
         } catch (error) {
           console.error('Error loading athletes:', error);
         } finally {
-          setLoading(false);
+          setLoadingAthletes(false);
         }
       }
     };
-
     // Only load athletes if we have a token (not in demo mode)
     if (user && token) {
       loadAthletes();
@@ -52,6 +52,9 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       setIsMenuOpen(false);
     }
   }, [location.pathname, setIsMenuOpen]);
+
+  // THEN: run loading check
+  if (loading) return null;
 
   const handleMenuItemClick = () => {
     if (window.innerWidth < 768) {
@@ -180,7 +183,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       icon: "/icon/profile.svg",
       iconWhite: "/icon/profile-white.svg",
       showFor: ["coach", "athlete"]
-    }
+    },
+    {
+      name: "Admin Dashboard",
+      path: "/admin",
+      icon: "/icon/dashboard.svg",
+      iconWhite: "/icon/dashboard-white.svg",
+      showFor: ["admin"]
+    },
   ];
 
   return (
@@ -322,7 +332,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           ) : (
             <ul className="space-y-2">
               {menuItems
-                .filter(item => item.showFor.includes(user.role))
+                .filter(item => (item.showFor.includes(user.role) || (item.showFor.includes("admin") && user?.admin === true)))
                 .map((item, index) => (
                   <motion.li 
                     key={item.name}
@@ -373,7 +383,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             className="p-4 border-t border-gray-200 flex-1 overflow-y-auto"
           >
             <h2 className="text-sm font-bold text-gray-700 mb-3">Athletes</h2>
-            {loading ? (
+            {loadingAthletes ? (
               <div className="text-sm text-gray-500">Načítání atletů...</div>
             ) : athletes.length > 0 ? (
               <ul className="space-y-2">

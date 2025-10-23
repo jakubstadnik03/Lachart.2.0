@@ -26,6 +26,18 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'coach', 'athlete'],
     default: 'athlete'
   },
+  admin: {
+    type: Boolean,
+    default: false
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  lastLogin: {
+    type: Date,
+    default: null
+  },
   googleId: {
     type: String,
     sparse: true,

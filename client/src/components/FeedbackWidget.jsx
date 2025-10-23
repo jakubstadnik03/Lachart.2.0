@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
+import { logFeedbackSent } from '../utils/eventLogger';
 
 const SERVICE_ID = 'service_sdkyhzd';
 const TEMPLATE_ID = 'template_wphmbwc';
@@ -24,6 +25,12 @@ const FeedbackWidget = () => {
         formRef.current,
         PUBLIC_KEY
       );
+      
+      // Log feedback event
+      const formData = new FormData(formRef.current);
+      const subject = formData.get('subject') || 'Feedback';
+      await logFeedbackSent(subject);
+      
       addNotification('Feedback sent! Thank you 🙏', 'success');
       setOpen(false);
     } catch (error) {

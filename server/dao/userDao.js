@@ -41,6 +41,10 @@ class UserDao {
     return await UserModel.find();
   }
 
+  async findAll() {
+    return await UserModel.find();
+  }
+
   async get(userId) {
     return await UserModel.findOne({ id: userId });
   }

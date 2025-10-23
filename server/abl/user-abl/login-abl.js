@@ -49,6 +49,9 @@ class LoginAbl {
 
             console.log("Token generated successfully");
 
+            // Update lastLogin timestamp
+            await this.userDao.update(user._id, { lastLogin: new Date() });
+
             res.status(200).json({
                 token,
                 user: {
@@ -57,6 +60,7 @@ class LoginAbl {
                     name: user.name,
                     surname: user.surname,
                     role: user.role,
+                    admin: user.admin,
                     athletes: user.athletes || []
                 }
             });

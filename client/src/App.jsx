@@ -32,7 +32,7 @@ import { initAnalytics, trackPageView } from './utils/analytics';
 import './App.css';
 import FeedbackWidget from './components/FeedbackWidget';
 import LactateGuide from './pages/LactateGuide';
-
+import AdminDashboard from './pages/AdminDashboard';
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
@@ -80,6 +80,7 @@ function AppRoutes() {
         <Route path="/athletes" element={<Athletes />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/support" element={<Support />} />
+        <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/athlete-profile/:id" element={<Profile />} />
         <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
         <Route path="/training/:athleteId?" element={<Training />} />

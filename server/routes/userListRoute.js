@@ -14,6 +14,7 @@ const { OAuth2Client } = require('google-auth-library');
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
+const Test = require("../models/test");
 
 // Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -505,6 +506,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             surname: user.surname,
             email: user.email,
             role: user.role,
+            admin: user.admin,
             dateOfBirth: user.dateOfBirth,
             address: user.address,
             phone: user.phone,
@@ -1298,6 +1300,9 @@ router.post("/google-auth", async (req, res) => {
             { expiresIn: '24h' }
         );
 
+        // Update lastLogin timestamp
+        await userDao.updateUser(user._id, { lastLogin: new Date() });
+
         // Return token and user data
         res.json({
             token,
@@ -1362,6 +1367,138 @@ router.post("/change-password", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error changing password:", error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Admin endpoints
+// Get all users for admin dashboard
+router.get("/admin/users", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const users = await userDao.findAll();
+        
+        // Get counts for each user
+        console.log('Processing users for admin dashboard...');
+        const usersWithCounts = await Promise.all(users.map(async (user) => {
+            let trainingCount = 0;
+            let testCount = 0;
+            
+            // Count trainings and tests for athletes
+            if (user.role === 'athlete') {
+                try {
+                    console.log(`Counting data for athlete ${user._id} (${user.name} ${user.surname})`);
+                    const trainings = await trainingDao.findByAthleteId(user._id);
+                    const tests = await Test.find({ athleteId: user._id });
+                    trainingCount = trainings.length;
+                    testCount = tests.length;
+                    console.log(`Found ${trainingCount} trainings and ${testCount} tests for ${user.name}`);
+                } catch (error) {
+                    console.error(`Error counting data for user ${user._id}:`, error);
+                }
+            }
+            
+            return {
+                _id: user._id,
+                name: user.name,
+                surname: user.surname,
+                email: user.email,
+                role: user.role,
+                admin: user.admin,
+                dateOfBirth: user.dateOfBirth,
+                sport: user.sport,
+                createdAt: user.createdAt,
+                lastLogin: user.lastLogin,
+                isActive: user.isActive !== false, // Default to true if not set
+                trainingCount,
+                testCount
+            };
+        }));
+
+        res.status(200).json(usersWithCounts);
+    } catch (error) {
+        console.error("Error fetching users for admin:", error);
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Get admin dashboard statistics
+router.get("/admin/stats", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const users = await userDao.findAll();
+        
+        const stats = {
+            totalUsers: users.length,
+            usersByRole: {
+                admin: users.filter(u => u.role === 'admin').length,
+                coach: users.filter(u => u.role === 'coach').length,
+                athlete: users.filter(u => u.role === 'athlete').length
+            },
+            usersBySport: users.reduce((acc, user) => {
+                const sport = user.sport || 'Not specified';
+                acc[sport] = (acc[sport] || 0) + 1;
+                return acc;
+            }, {}),
+            recentRegistrations: users
+                .filter(u => u.createdAt && new Date(u.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+                .length,
+            activeUsers: users.filter(u => u.isActive !== false).length
+        };
+
+        res.status(200).json(stats);
+    } catch (error) {
+        console.error("Error fetching admin stats:", error);
+        res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+});
+
+// Update user (admin only)
+router.put("/admin/users/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { userId } = req.params;
+        const { name, surname, email, role, admin, isActive } = req.body;
+
+        const updateData = {};
+        if (name !== undefined) updateData.name = name;
+        if (surname !== undefined) updateData.surname = surname;
+        if (email !== undefined) updateData.email = email;
+        if (role !== undefined) updateData.role = role;
+        if (admin !== undefined) updateData.admin = admin;
+        if (isActive !== undefined) updateData.isActive = isActive;
+
+        const updatedUser = await userDao.updateUser(userId, updateData);
+        if (!updatedUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        res.status(200).json({
+            message: "User updated successfully",
+            user: {
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                surname: updatedUser.surname,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                admin: updatedUser.admin,
+                isActive: updatedUser.isActive
+            }
+        });
+    } catch (error) {
+        console.error("Error updating user:", error);
+        res.status(500).json({ error: "Failed to update user" });
     }
 });
 

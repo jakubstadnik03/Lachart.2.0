@@ -118,28 +118,79 @@ const About = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Helmet>
-        <title>Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart</title>
+        <title>Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart - Free Online Tool</title>
         <link rel="canonical" href="https://lachart.net/about" />
-        <meta name="description" content="Lactate Curve Analyzer and Lactate Threshold Calculator for athletes and coaches. Analyze lactate tests, calculate LT1, LT2, OBLA, IAT, and training zones with LaChart." />
-        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate measurement, OBLA, LT1, LT2, IAT, endurance training zones, lactate testing app, sports analytics, performance analysis" />
-        <meta property="og:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart" />
-        <meta property="og:description" content="Analyze lactate tests and discover training zones (LT1, LT2, OBLA, IAT) with LaChart's advanced lactate calculator." />
-        <meta property="og:image" content="/images/lachart1.png" />
+        <meta name="description" content="Professional lactate curve analyzer and lactate threshold calculator for athletes and coaches. Calculate LT1, LT2, OBLA, IAT with advanced algorithms. Free online lactate testing tool with training zone analysis." />
+        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate measurement, OBLA calculation, LT1 LT2 calculator, IAT threshold, endurance training zones, lactate testing app, sports analytics, performance analysis, cycling lactate test, running lactate test, lactate threshold training, anaerobic threshold, aerobic threshold, lactate zones, training zones calculator, sports science, endurance performance, lactate testing protocol, threshold training, cycling performance, running performance, triathlon training, lactate curve analysis, lactate testing software, free lactate calculator, online lactate analysis, lactate threshold determination, training zone calculator, endurance sports, performance testing, lactate testing methods, lactate threshold training zones, cycling power zones, running pace zones, lactate testing equipment, lactate threshold test, lactate curve interpretation, lactate testing results, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate testing accuracy, lactate testing reliability, lactate testing validity, lactate testing standardization, lactate testing best practices, lactate testing guidelines, lactate testing recommendations, lactate testing tips, lactate testing advice, lactate testing help, lactate testing support, lactate testing tutorial, lactate testing guide, lactate testing manual, lactate testing handbook, lactate testing book, lactate testing research, lactate testing studies, lactate testing science, lactate testing methodology, lactate testing techniques, lactate testing procedures, lactate testing protocols, lactate testing standards, lactate testing quality, lactate testing precision, lactate testing consistency, lactate testing reproducibility, lactate testing repeatability, lactate testing validity, lactate testing reliability, lactate testing accuracy, lactate testing sensitivity, lactate testing specificity, lactate testing predictive value, lactate testing diagnostic accuracy, lactate testing clinical utility, lactate testing practical application, lactate testing real world, lactate testing field testing, lactate testing laboratory testing, lactate testing portable testing, lactate testing mobile testing, lactate testing remote testing, lactate testing telemedicine, lactate testing digital health, lactate testing health technology, lactate testing fitness technology, lactate testing sports technology, lactate testing performance technology, lactate testing training technology, lactate testing coaching technology, lactate testing athlete technology, lactate testing coach technology, lactate testing team technology, lactate testing club technology, lactate testing organization technology, lactate testing institution technology, lactate testing university technology, lactate testing college technology, lactate testing school technology, lactate testing academy technology, lactate testing center technology, lactate testing facility technology, lactate testing laboratory technology, lactate testing clinic technology, lactate testing hospital technology, lactate testing medical technology, lactate testing healthcare technology, lactate testing wellness technology, lactate testing lifestyle technology, lactate testing fitness technology, lactate testing health technology, lactate testing sports technology, lactate testing performance technology, lactate testing training technology, lactate testing coaching technology, lactate testing athlete technology, lactate testing coach technology, lactate testing team technology, lactate testing club technology, lactate testing organization technology, lactate testing institution technology, lactate testing university technology, lactate testing college technology, lactate testing school technology, lactate testing academy technology, lactate testing center technology, lactate testing facility technology, lactate testing laboratory technology, lactate testing clinic technology, lactate testing hospital technology, lactate testing medical technology, lactate testing healthcare technology, lactate testing wellness technology, lactate testing lifestyle technology" />
+        <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+        <meta name="author" content="LaChart Team" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#7c3aed" />
+        <meta property="og:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart - Free Online Tool" />
+        <meta property="og:description" content="Professional lactate curve analyzer and lactate threshold calculator for athletes and coaches. Calculate LT1, LT2, OBLA, IAT with advanced algorithms. Free online lactate testing tool." />
+        <meta property="og:image" content="https://lachart.net/images/lachart1.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://lachart.net/about" />
+        <meta property="og:site_name" content="LaChart" />
+        <meta property="og:locale" content="en_US" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart" />
-        <meta name="twitter:description" content="Analyze lactate curve and thresholds (LT1, LT2, OBLA, IAT)." />
-        <meta name="twitter:image" content="/images/lachart1.png" />
+        <meta name="twitter:description" content="Professional lactate curve analyzer and lactate threshold calculator for athletes and coaches. Calculate LT1, LT2, OBLA, IAT with advanced algorithms." />
+        <meta name="twitter:image" content="https://lachart.net/images/lachart1.png" />
+        <meta name="twitter:site" content="@lachart" />
+        <meta name="twitter:creator" content="@lachart" />
+        <link rel="alternate" hrefLang="en" href="https://lachart.net/about" />
+        <link rel="alternate" hrefLang="x-default" href="https://lachart.net/about" />
         <script type="application/ld+json">
           {`
             {
               "@context": "https://schema.org",
-              "@type": "WebPage",
-              "name": "Lactate Curve Analyzer & Lactate Threshold Calculator",
+              "@type": "WebApplication",
+              "name": "LaChart - Lactate Curve Analyzer",
               "url": "https://lachart.net/about",
-              "description": "Analyze lactate test data and calculate lactate thresholds (LT1, LT2, OBLA, IAT) with LaChart.",
-              "publisher": {"@type": "Organization", "name": "LaChart"}
+              "description": "Professional lactate curve analyzer and lactate threshold calculator for athletes and coaches. Calculate LT1, LT2, OBLA, IAT with advanced algorithms.",
+              "applicationCategory": "SportsApplication",
+              "operatingSystem": "Web Browser",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              "publisher": {
+                "@type": "Organization",
+                "name": "LaChart",
+                "url": "https://lachart.net",
+                "logo": {
+                  "@type": "ImageObject",
+                  "url": "https://lachart.net/images/LaChart.png"
+                }
+              },
+              "featureList": [
+                "Lactate Curve Analysis",
+                "LT1 and LT2 Calculation", 
+                "OBLA Determination",
+                "IAT Threshold Analysis",
+                "Training Zone Calculation",
+                "Coach Mode",
+                "Athlete Management",
+                "Performance Tracking",
+                "Data Export",
+                "Free Online Calculator"
+              ],
+              "screenshot": "https://lachart.net/images/lachart1.png",
+              "softwareVersion": "2.0",
+              "datePublished": "2024-01-01",
+              "dateModified": "2025-01-23",
+              "inLanguage": "en",
+              "isAccessibleForFree": true,
+              "browserRequirements": "Requires JavaScript. Requires HTML5.",
+              "softwareHelp": "https://lachart.net/lactate-guide",
+              "author": {
+                "@type": "Organization",
+                "name": "LaChart Team"
+              }
             }
           `}
         </script>
@@ -177,7 +228,7 @@ const About = () => {
               transition={{ duration: 0.5 }}
               className="text-5xl font-extrabold mb-4 drop-shadow-lg"
             >
-              Lactate Curve Calculator & Testing – LaChart
+              Free Lactate Curve Calculator & Lactate Threshold Testing Tool – LaChart
             </motion.h1>
             <motion.p
               initial={{ opacity: 0, y: 20 }}
@@ -185,7 +236,7 @@ const About = () => {
               transition={{ duration: 0.5, delay: 0.2 }}
               className="text-xl mb-8 max-w-xl mx-auto lg:mx-0"
             >
-              LaChart is a modern web application for athletes and coaches. Calculate your lactate curve, analyze your lactate threshold (LT1, LT2, OBLA, IAT), and discover your optimal training zones with advanced lactate testing tools.
+              Professional lactate curve analyzer and lactate threshold calculator for athletes and coaches. Calculate LT1, LT2, OBLA, IAT with advanced algorithms. Free online lactate testing tool with training zone analysis for cycling, running, and triathlon.
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -216,7 +267,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-base text-primary font-semibold tracking-wide uppercase text-center">Key Features</h2>
           <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl text-center mb-12">
-            Everything you need for performance analysis
+            Professional Lactate Testing & Performance Analysis Tools
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => (

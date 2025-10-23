@@ -9,6 +9,20 @@ const api = axios.create({
   }
 });
 
+// Add request interceptor to include auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Auth endpoints
 export const login = async (credentials) => {
   try {
@@ -157,6 +171,37 @@ export const submitFeedback = async (payload) => {
   } catch (error) {
     console.error('❌ API: Error submitting feedback:', error.message);
     console.error('❌ API: Error code:', error.code);
+    throw error;
+  }
+};
+
+// Admin API functions
+export const getAdminUsers = async () => {
+  try {
+    const response = await api.get('/user/admin/users');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching admin users:', error);
+    throw error;
+  }
+};
+
+export const getAdminStats = async () => {
+  try {
+    const response = await api.get('/user/admin/stats');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    throw error;
+  }
+};
+
+export const updateUserAdmin = async (userId, userData) => {
+  try {
+    const response = await api.put(`/user/admin/users/${userId}`, userData);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating user:', error);
     throw error;
   }
 };

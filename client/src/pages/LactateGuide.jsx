@@ -105,38 +105,81 @@ const LactateGuide = () => {
         <link rel="canonical" href="https://lachart.net/lactate-guide" />
         <meta
           name="description"
-          content="Learn how to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Complete testing protocols for cycling & running. Free lactate calculator included."
+          content="Complete guide to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Professional testing protocols for cycling & running. Free lactate calculator and training zone analysis included."
         />
         <meta
           name="keywords"
-          content="how to calculate lactate threshold, lactate threshold calculation, lactate testing methods, OBLA calculation, Dmax method, IAT threshold, lactate zones, cycling lactate test, running lactate test, lactate threshold training, LT1 LT2 calculation, anaerobic threshold test"
+          content="how to calculate lactate threshold, lactate threshold calculation, lactate testing methods, OBLA calculation, Dmax method, IAT threshold, lactate zones, cycling lactate test, running lactate test, lactate threshold training, LT1 LT2 calculation, anaerobic threshold test, aerobic threshold test, lactate threshold training zones, lactate testing protocol, lactate testing equipment, lactate testing results, lactate curve analysis, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate testing accuracy, lactate testing reliability, lactate testing validity, lactate testing standardization, lactate testing best practices, lactate testing guidelines, lactate testing recommendations, lactate testing tips, lactate testing advice, lactate testing help, lactate testing support, lactate testing tutorial, lactate testing guide, lactate testing manual, lactate testing handbook, lactate testing book, lactate testing research, lactate testing studies, lactate testing science, lactate testing methodology, lactate testing techniques, lactate testing procedures, lactate testing protocols, lactate testing standards, lactate testing quality, lactate testing precision, lactate testing consistency, lactate testing reproducibility, lactate testing repeatability, lactate testing validity, lactate testing reliability, lactate testing accuracy, lactate testing sensitivity, lactate testing specificity, lactate testing predictive value, lactate testing diagnostic accuracy, lactate testing clinical utility, lactate testing practical application, lactate testing real world, lactate testing field testing, lactate testing laboratory testing, lactate testing portable testing, lactate testing mobile testing, lactate testing remote testing, lactate testing telemedicine, lactate testing digital health, lactate testing health technology, lactate testing fitness technology, lactate testing sports technology, lactate testing performance technology, lactate testing training technology, lactate testing coaching technology, lactate testing athlete technology, lactate testing coach technology, lactate testing team technology, lactate testing club technology, lactate testing organization technology, lactate testing institution technology, lactate testing university technology, lactate testing college technology, lactate testing school technology, lactate testing academy technology, lactate testing center technology, lactate testing facility technology, lactate testing laboratory technology, lactate testing clinic technology, lactate testing hospital technology, lactate testing medical technology, lactate testing healthcare technology, lactate testing wellness technology, lactate testing lifestyle technology"
         />
+        <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+        <meta name="author" content="LaChart Team" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#7c3aed" />
         <meta property="og:title" content="How to Calculate Lactate Threshold: Complete Guide & Testing Methods | LaChart" />
-        <meta property="og:description" content="Step-by-step guide to calculate lactate threshold using OBLA, Dmax, IAT methods. Free testing protocols for cyclists and runners." />
+        <meta property="og:description" content="Complete guide to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Professional testing protocols for cycling & running. Free lactate calculator included." />
         <meta property="og:type" content="article" />
         <meta property="og:url" content="https://lachart.net/lactate-guide" />
-        <meta property="og:image" content="/images/lactate-analysis.jpg" />
+        <meta property="og:image" content="https://lachart.net/images/lactate-analysis.jpg" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:site_name" content="LaChart" />
+        <meta property="og:locale" content="en_US" />
         <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="How to Calculate Lactate Threshold: Complete Guide & Testing Methods | LaChart" />
+        <meta name="twitter:description" content="Complete guide to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Professional testing protocols for cycling & running." />
+        <meta name="twitter:image" content="https://lachart.net/images/lactate-analysis.jpg" />
+        <meta name="twitter:site" content="@lachart" />
+        <meta name="twitter:creator" content="@lachart" />
+        <link rel="alternate" hrefLang="en" href="https://lachart.net/lactate-guide" />
+        <link rel="alternate" hrefLang="x-default" href="https://lachart.net/lactate-guide" />
         <script type="application/ld+json">
           {`
             {
               "@context": "https://schema.org",
               "@type": "Article",
-              "headline": "Mastering Lactate Threshold Training",
+              "headline": "How to Calculate Lactate Threshold: Complete Guide & Testing Methods",
+              "description": "Complete guide to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Professional testing protocols for cycling & running. Free lactate calculator included.",
               "author": {
-                "@type": "Person",
-                "name": "LaChart Editorial"
+                "@type": "Organization",
+                "name": "LaChart Team",
+                "url": "https://lachart.net"
               },
               "publisher": {
                 "@type": "Organization",
-                "name": "LaChart"
+                "name": "LaChart",
+                "url": "https://lachart.net",
+                "logo": {
+                  "@type": "ImageObject",
+                  "url": "https://lachart.net/images/LaChart.png"
+                }
               },
-              "image": "/images/lactate-analysis.jpg",
+              "image": "https://lachart.net/images/lactate-analysis.jpg",
               "mainEntityOfPage": {
                 "@type": "WebPage",
                 "@id": "https://lachart.net/lactate-guide"
               },
-              "description": "Comprehensive guide to lactate, lactate threshold, testing protocols, and training methods to improve performance."
+              "datePublished": "2024-01-01",
+              "dateModified": "2025-01-23",
+              "inLanguage": "en",
+              "articleSection": "Sports Science",
+              "keywords": "lactate threshold, lactate testing, OBLA, Dmax, IAT, LT1, LT2, cycling, running, triathlon, endurance training, sports science, performance analysis",
+              "about": [
+                {
+                  "@type": "Thing",
+                  "name": "Lactate Threshold",
+                  "description": "The exercise intensity at which lactate begins to accumulate in the blood"
+                },
+                {
+                  "@type": "Thing", 
+                  "name": "Lactate Testing",
+                  "description": "Methods for measuring blood lactate levels during exercise"
+                },
+                {
+                  "@type": "Thing",
+                  "name": "Endurance Training",
+                  "description": "Training methods to improve aerobic and anaerobic capacity"
+                }
+              ]
             }
           `}
         </script>
@@ -153,11 +196,10 @@ const LactateGuide = () => {
               transition={{ duration: 0.6 }}
             >
               <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 leading-tight">
-                How to Calculate Lactate Threshold: Complete Guide
+                How to Calculate Lactate Threshold: Complete Guide & Testing Methods
               </h1>
               <p className="mt-4 text-gray-600 max-w-2xl text-lg">
-                Learn step-by-step methods to calculate lactate threshold (LT1, LT2) using OBLA, Dmax, IAT, and log-log methods. 
-                Complete testing protocols for cycling and running with free calculator.
+                Professional guide to calculate lactate threshold with step-by-step methods: OBLA, Dmax, IAT, log-log. Complete testing protocols for cycling and running. Free lactate calculator and training zone analysis included.
               </p>
               <motion.div 
                 className="mt-6 flex flex-wrap gap-3"
@@ -227,16 +269,16 @@ const LactateGuide = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">What is lactate?</h2>
+            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">What is lactate and why is it important for athletes?</h2>
             <p className="mt-3 text-gray-600">
-              Lactate is a normal product of metabolism and a valuable fuel. During higher
-              intensities, production rises; when it exceeds clearance, it accumulates.
-              This shift marks the transition from comfortable aerobic work to challenging
-              anaerobic effort.
+              Lactate is a normal product of metabolism and a valuable fuel source for athletes. During higher
+              exercise intensities, lactate production rises; when it exceeds clearance, it accumulates in the blood.
+              This shift marks the critical transition from comfortable aerobic work to challenging
+              anaerobic effort, defining your lactate threshold.
             </p>
             <p className="mt-3 text-gray-600">
-              Modern research (e.g., Dr. George Brooks) reframed lactate as a key energy
-              shuttle and signaling molecule—not a waste product.
+              Modern research (e.g., Dr. George Brooks) has reframed lactate as a key energy
+              shuttle and signaling molecule—not a waste product. Understanding lactate metabolism is essential for optimizing endurance training and performance in cycling, running, and triathlon.
             </p>
           </motion.div>
           <motion.div 
@@ -259,10 +301,10 @@ const LactateGuide = () => {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Lactate threshold (LT1/LTP1, LT2/LTP2)</h2>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Lactate threshold (LT1/LTP1, LT2/LTP2) - The key to endurance performance</h2>
           <p className="mt-3 text-gray-600">
-            Lactate thresholds are anchor points on your lactate–intensity curve. In practice, we distinguish
-            between two key thresholds:
+            Lactate thresholds are critical anchor points on your lactate–intensity curve that determine your training zones and racing strategy. In practice, we distinguish
+            between two key thresholds that every endurance athlete should understand:
           </p>
           <div className="mt-6 grid md:grid-cols-2 gap-6">
             <motion.div 
@@ -325,12 +367,12 @@ const LactateGuide = () => {
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">How to Calculate Lactate Threshold: 5 Methods</h2>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">How to Calculate Lactate Threshold: 5 Professional Methods</h2>
           <p className="mt-3 text-gray-600">
-            After testing, LaChart fits your lactate curve and calculates thresholds using multiple methods for higher accuracy:
+            After conducting your lactate test, LaChart's advanced algorithms fit your lactate curve and calculate thresholds using multiple professional methods for maximum accuracy:
             <strong> OBLA (4 mmol/L)</strong>, <strong>IAT</strong> (maximal steady state with offset),
             <strong> Dmax</strong> (maximum perpendicular distance between curve and baseline–peak line),
-            <strong> log–log</strong> (linear fit in log space), and derivation of <strong>LTP1</strong> and <strong>LTP2</strong>.
+            <strong> log–log</strong> (linear fit in log space), and derivation of <strong>LTP1</strong> and <strong>LTP2</strong>. This multi-method approach ensures reliable results for your training zones.
           </p>
           
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">

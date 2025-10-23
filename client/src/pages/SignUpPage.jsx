@@ -6,6 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
 import { trackEvent, trackUserRegistration, trackConversionFunnel } from '../utils/analytics';
+import { logUserRegistration } from '../utils/eventLogger';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -29,9 +30,13 @@ const SignUpPage = () => {
       return;
     }
     try {
-      await register(formData);
+      const response = await register(formData);
       trackUserRegistration('email', formData.role);
       trackConversionFunnel('signup_complete', { method: 'email', role: formData.role });
+      
+      // Log registration event
+      await logUserRegistration('email', response?.data?.user?._id);
+      
       navigate('/login');
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');
@@ -61,6 +66,10 @@ const SignUpPage = () => {
       if (data.token) {
         trackUserRegistration('google', 'athlete');
         trackConversionFunnel('signup_complete', { method: 'google', role: 'athlete' });
+        
+        // Log registration event
+        await logUserRegistration('google', data.user?._id);
+        
         localStorage.setItem('token', data.token);
         navigate('/dashboard');
       } else {

@@ -8,6 +8,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api.config';
 import { trackEvent, trackConversionFunnel } from '../utils/analytics';
+import { logUserLogin } from '../utils/eventLogger';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -91,6 +92,9 @@ const LoginPage = () => {
           addNotification("Successfully logged in", "success");
           trackEvent('login_success', { method: 'email' });
           trackConversionFunnel('login_complete', { method: 'email' });
+          
+          // Log login event
+          await logUserLogin('email', result.data.user?._id);
 
           // Then check for pending invitation
           const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
@@ -149,6 +153,9 @@ const LoginPage = () => {
         console.log("User data:", result.data.user);
         trackEvent('login_success', { method: 'google' });
         trackConversionFunnel('login_complete', { method: 'google' });
+        
+        // Log login event
+        await logUserLogin('google', result.data.user?._id);
         
         // Uložení tokenu a uživatelských dat do localStorage
         localStorage.setItem("token", result.data.token);
