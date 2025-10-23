@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useInView } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
 import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
+import TrainingZonesGenerator from '../components/Testing-page/TrainingZonesGenerator';
 import { useNotification } from '../context/NotificationContext';
 import Header from '../components/Header/Header';
 import WelcomeModal from '../components/WelcomeModal';
@@ -47,10 +48,11 @@ const fadeInUpVariants = {
 };
 
 const TestingWithoutLogin = () => {
-    const navigate = useNavigate();
-    const { addNotification } = useNotification();
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const menuRef = useRef(null);
+  const navigate = useNavigate();
+  const { addNotification } = useNotification();
+  const menuRef = useRef(null);
+  const [unitSystem, setUnitSystem] = useState('metric'); // 'metric' or 'imperial'
+  const [inputMode, setInputMode] = useState('pace'); // 'pace' or 'speed'
     const [testData, setTestData] = useState(() => {
         // Try to load data from localStorage on initial render
         const savedData = localStorage.getItem('testData');
@@ -136,8 +138,9 @@ const TestingWithoutLogin = () => {
     useEffect(() => {
         if (isInitialMount.current) {
             const handleResize = () => {
+                // Menu is always open on desktop in demo mode
                 if (window.innerWidth >= 768) {
-                    setIsMenuOpen(true);
+                    // Menu is always visible on desktop
                 }
             };
 
@@ -604,6 +607,7 @@ const TestingWithoutLogin = () => {
                                             </motion.button>
                         </div>
                         </div>
+
                                     <div className="w-full overflow-x-auto">
                                         <div className="lg:min-w-[800px] lg:min-w-full">
                             <TestingForm
@@ -636,7 +640,9 @@ const TestingWithoutLogin = () => {
                                             <div className="lg:min-w-[800px] lg:min-w-full">
                                                 <LactateCurve 
                                                     mockData={prepareCalculatorData()} 
-                                                    demoMode={true} 
+                                                    demoMode={true}
+                                                    unitSystem={unitSystem}
+                                                    inputMode={inputMode}
                                                 />
                                             </div>
                                         </div>
@@ -660,6 +666,23 @@ const TestingWithoutLogin = () => {
                                                 />
                                     </div>
                                     </div>
+                                    </motion.div>
+
+                                    {/* Training Zones Section */}
+                                    <motion.div 
+                                        initial="hidden"
+                                        animate={(isCalculatorInView || hasValidData) ? "visible" : "hidden"}
+                                        variants={fadeInUpVariants}
+                                        className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
+                                        whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
+                                    >
+                                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Generator</h2>
+                                        <div className="w-full">
+                                            <TrainingZonesGenerator 
+                                                mockData={prepareCalculatorData()} 
+                                                demoMode={true} 
+                                            />
+                                        </div>
                                     </motion.div>
                                 </div>
                             )}

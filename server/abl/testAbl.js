@@ -72,9 +72,27 @@ class TestAbl {
 
     static async updateTest(id, testData) {
         try {
-            const test = await Test.findByIdAndUpdate(id, testData, { 
+            console.log('Updating test with ID:', id);
+            console.log('Test data:', JSON.stringify(testData, null, 2));
+
+            // ====== INSURANCE: always convert MM:SS string to seconds on backend ======
+            if (Array.isArray(testData.results)) {
+                testData.results = testData.results.map(r => {
+                    let newPower = r.power;
+                    if (typeof newPower === 'string' && newPower.includes(':')) {
+                        const parts = newPower.split(':');
+                        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                            newPower = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                        }
+                    }
+                    return { ...r, power: Number(newPower) };
+                });
+            }
+            // ===========================================================================
+
+            const test = await Test.findByIdAndUpdate(id, testData, {
                 new: true,
-                runValidators: true 
+                runValidators: true
             });
             if (!test) {
                 throw {
@@ -82,8 +100,10 @@ class TestAbl {
                     error: 'Test nenalezen'
                 };
             }
+            console.log('Test updated successfully:', test._id);
             return test;
         } catch (error) {
+            console.error('Error updating test:', error);
             throw {
                 status: error.status || 500,
                 error: error.error || `Chyba při aktualizaci testu: ${error.message}`

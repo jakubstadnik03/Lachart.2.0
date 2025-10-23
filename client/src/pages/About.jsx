@@ -409,15 +409,19 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className={`text-base ${primaryText} font-semibold tracking-wide uppercase text-center`}>Benefits</h2>
           <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl text-center mb-12">
-            Why choose LaChart?
+            Why choose LaChart for your lactate testing and performance analysis?
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-8 rounded-2xl shadow flex flex-col justify-center">
               <ul className="space-y-4 text-lg">
-                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Based on real sports principles</li>
-                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Focused on training efficiency through lactate zones</li>
-                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Quick and intuitive training logging</li>
-                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Advanced analysis without Excel</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Based on real sports science principles and research</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Focused on training efficiency through precise lactate zones</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Quick and intuitive lactate testing and training logging</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Advanced lactate curve analysis without Excel</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Professional-grade lactate threshold calculation methods</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Free online lactate calculator with no registration required</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Compatible with cycling, running, and triathlon training</li>
+                <li className="flex items-start"><span className="text-primary mr-2">✓</span>Export results to PDF for professional reporting</li>
               </ul>
             </div>
             <div className="bg-white p-8 rounded-2xl shadow flex items-center justify-center">
@@ -517,6 +521,35 @@ const About = () => {
               alt="Lactate Test Demo Screenshot" 
               className="max-w-xl w-full rounded-xl shadow object-contain border border-gray-100" 
             />
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="py-16 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-extrabold text-gray-900 text-center mb-12">Frequently Asked Questions</h2>
+          <div className="space-y-6">
+            <div className="bg-gray-50 p-6 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">What is lactate threshold and why is it important?</h3>
+              <p className="text-gray-600">Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately.</p>
+            </div>
+            <div className="bg-gray-50 p-6 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">How accurate is the free lactate threshold calculator?</h3>
+              <p className="text-gray-600">LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training.</p>
+            </div>
+            <div className="bg-gray-50 p-6 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Do I need to register to use the lactate calculator?</h3>
+              <p className="text-gray-600">No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features.</p>
+            </div>
+            <div className="bg-gray-50 p-6 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">What sports is LaChart suitable for?</h3>
+              <p className="text-gray-600">LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort.</p>
+            </div>
+            <div className="bg-gray-50 p-6 rounded-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">How does LaChart compare to expensive lab testing?</h3>
+              <p className="text-gray-600">While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.</p>
+            </div>
           </div>
         </div>
       </section>

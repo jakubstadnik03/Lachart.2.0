@@ -1,8 +1,13 @@
 User-agent: *
 Allow: /
 
+# Allow all search engines to crawl all content
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /api/
+
+# Sitemap location
 Sitemap: https://lachart.net/sitemap.xml
 
-# https://www.robotstxt.org/robotstxt.html
-User-agent: *
-Disallow:
+# Crawl delay (optional)
+Crawl-delay: 1

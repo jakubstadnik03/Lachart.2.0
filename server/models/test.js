@@ -34,6 +34,18 @@ const testSchema = new mongoose.Schema({
         weather: String
     },
     comments: String,
+    unitSystem: {
+        type: String,
+        enum: ['metric', 'imperial'],
+        default: 'metric',
+        required: false
+    },
+    inputMode: {
+        type: String,
+        enum: ['pace', 'speed'],
+        default: 'pace',
+        required: false
+    },
     results: [{
         interval: Number,
         power: Number,

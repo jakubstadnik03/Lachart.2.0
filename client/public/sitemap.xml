@@ -1,39 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://lachart.net/</loc>
+    <lastmod>2025-01-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://lachart.net/images/lachart1.png</image:loc>
+      <image:title>LaChart Lactate Curve Analyzer</image:title>
+      <image:caption>Professional lactate curve analysis and threshold calculation tool</image:caption>
+    </image:image>
   </url>
   <url>
     <loc>https://lachart.net/about</loc>
+    <lastmod>2025-01-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lachart.net/images/lachart1.png</image:loc>
+      <image:title>Lactate Curve Calculator Features</image:title>
+      <image:caption>Advanced lactate testing and analysis features</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://lachart.net/lactate-guide</loc>
+    <lastmod>2025-01-23</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lachart.net/images/lactate-analysis.jpg</image:loc>
+      <image:title>Lactate Threshold Testing Guide</image:title>
+      <image:caption>Complete guide to lactate threshold calculation and testing methods</image:caption>
+    </image:image>
   </url>
   <url>
     <loc>https://lachart.net/testing-without-login</loc>
+    <lastmod>2025-01-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://lachart.net/images/lachart-test.png</image:loc>
+      <image:title>Free Lactate Test Demo</image:title>
+      <image:caption>Try our free lactate threshold calculator demo</image:caption>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://lachart.net/documentation</loc>
+    <lastmod>2025-01-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://lachart.net/login</loc>
+    <lastmod>2025-01-23</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
     <loc>https://lachart.net/signup</loc>
+    <lastmod>2025-01-23</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://lachart.net/lactate-guide</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://lachart.net/documentation</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
   </url>
 </urlset>
 
