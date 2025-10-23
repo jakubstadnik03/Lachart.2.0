@@ -1,83 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import emailjs from '@emailjs/browser';
 import { motion, AnimatePresence } from 'framer-motion';
-import { submitFeedback } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
+
+const SERVICE_ID = 'service_sdkyhzd';
+const TEMPLATE_ID = 'template_wphmbwc';
+const PUBLIC_KEY = 'ChzwROYrWPZuGCms-'; // <- doplň!
 
 const FeedbackWidget = () => {
   const { addNotification } = useNotification();
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [values, setValues] = useState({
-    subject: '',
-    message: '',
-    email: ''
-  });
+  const formRef = useRef();
 
-  const onChange = (e) => {
-    const { name, value } = e.target;
-    setValues((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const onSubmit = async (e) => {
+  const sendEmail = async (e) => {
     e.preventDefault();
     if (isSubmitting) return;
-    if (!values.message.trim()) {
-      addNotification('Please write a message.', 'warning');
-      return;
-    }
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
-      
-      const payload = {
-        subject: values.subject || 'Feedback',
-        message: values.message,
-        email: values.email || undefined,
-        page: window.location.pathname
-      };
-      
-      console.log('🚀 Submitting feedback:', payload);
-      
-      const res = await submitFeedback(payload);
-      console.log('✅ Feedback response:', res);
-      
-      addNotification('Thanks for your feedback!', 'success');
-      setValues({ subject: '', message: '', email: '' });
-      setOpen(false);
-    } catch (err) {
-      console.error('❌ Feedback submit error:', err);
-      
-      let errorMessage = 'Failed to send feedback';
-      
-      if (err?.response?.status === 400) {
-        errorMessage = 'Please check your message and try again';
-      } else if (err?.response?.status === 500) {
-        errorMessage = 'Server error. Please try again later';
-      } else if (err?.code === 'ECONNABORTED') {
-        errorMessage = 'Request timeout. Server may be starting up.';
-      } else if (err?.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
-      
-      addNotification(`Submission failed: ${errorMessage}`, 'error');
-      
-      // Always offer fallback email for any error
-      const fallbackEmail = 'jakub.stadnik@seznam.cz';
-      const emailSubject = encodeURIComponent(`[LaChart Feedback] ${values.subject || 'Feedback'}`);
-      const emailBody = encodeURIComponent(
-        `Message: ${values.message}\n\n` +
-        `From: ${values.email || 'anonymous'}\n` +
-        `Page: ${window.location.pathname}\n` +
-        `Time: ${new Date().toLocaleString()}`
+      await emailjs.sendForm(
+        SERVICE_ID,
+        TEMPLATE_ID,
+        formRef.current,
+        PUBLIC_KEY
       );
-      const mailtoLink = `mailto:${fallbackEmail}?subject=${emailSubject}&body=${emailBody}`;
-      
-      // Show fallback option immediately
-      // eslint-disable-next-line no-alert
-      if (window.confirm('Would you like to send your feedback via email instead? This ensures your message reaches us immediately.')) {
-        window.open(mailtoLink, '_blank');
-      }
+      addNotification('Feedback sent! Thank you 🙏', 'success');
+      setOpen(false);
+    } catch (error) {
+      console.error(error);
+      addNotification('Failed to send feedback. Try it later or use email.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -94,7 +45,6 @@ const FeedbackWidget = () => {
         <img src="/icon/info-white.svg" alt="feedback" className="w-5 h-5" />
         <span className="hidden sm:block">Feedback</span>
       </button>
-
       <AnimatePresence>
         {open && (
           <motion.div
@@ -122,37 +72,31 @@ const FeedbackWidget = () => {
                   ✕
                 </button>
               </div>
-              <form onSubmit={onSubmit} className="space-y-4">
+              <form ref={formRef} onSubmit={sendEmail} className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Subject (optional)</label>
+                  <label className="block text-sm text-gray-600 mb-1">Name (optional)</label>
                   <input
-                    name="subject"
-                    value={values.subject}
-                    onChange={onChange}
+                    name="name"
                     className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:outline-none"
-                    placeholder="Idea, bug, praise…"
+                    placeholder="Your name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Your message</label>
-                  <textarea
-                    name="message"
-                    value={values.message}
-                    onChange={onChange}
-                    className="w-full min-h-[120px] rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:outline-none"
-                    placeholder="What should we improve? What do you like?"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Contact (optional)</label>
+                  <label className="block text-sm text-gray-600 mb-1">Email (optional)</label>
                   <input
                     type="email"
                     name="email"
-                    value={values.email}
-                    onChange={onChange}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:outline-none"
-                    placeholder="Email for reply"
+                    placeholder="Reply-to email (optional)"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Message *</label>
+                  <textarea
+                    name="message"
+                    required
+                    className="w-full min-h-[120px] rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary focus:outline-none"
+                    placeholder="Your feedback..."
                   />
                 </div>
                 <div className="flex items-center justify-end gap-3 pt-2">
@@ -169,7 +113,7 @@ const FeedbackWidget = () => {
                     className="px-4 py-2 rounded-md bg-primary text-white hover:bg-primary-dark disabled:opacity-60"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? 'Sending…' : 'Send' }
+                    {isSubmitting ? 'Sending…' : 'Send'}
                   </button>
                 </div>
               </form>
