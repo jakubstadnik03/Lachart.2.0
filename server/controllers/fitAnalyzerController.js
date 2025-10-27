@@ -49,7 +49,7 @@ const parseFitFile = async (filePath) => {
     const stream = Stream.fromBuffer(buffer);
     const fitParser = new FitParser(stream);
     
-    const { messages, errors } = fitParser.parse();
+    const { messages, errors } = await fitParser.parse();
     
     if (errors.length > 0) {
       console.warn('FIT parsing warnings:', errors);
