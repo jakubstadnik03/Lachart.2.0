@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 
@@ -22,7 +23,6 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Zone 4: OBLA 3.0 - LTP2 (Threshold)
       // Zone 5: > LTP2 (VO2max)
       const obla20 = thresholds.obla20?.power || lt1.power * 1.1;
-      const obla30 = thresholds.obla30?.power || lt2.power * 0.9;
       
       zones.power = {
         zone1: { min: 0, max: Math.round(lt1.power * 0.7), description: 'Recovery & Easy' },
@@ -149,58 +149,6 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     }));
   };
 
-
-  // Import the same threshold calculation logic from DataTable
-  const calculateDmax = (points) => {
-    if (!points || points.length < 3) return null;
-    
-    // Najít první a poslední bod
-    const firstPoint = points[0];
-    const lastPoint = points[points.length - 1];
-    
-    // Vypočítat přímku mezi prvním a posledním bodem
-    const slope = (lastPoint.lactate - firstPoint.lactate) / 
-                  (lastPoint.power - firstPoint.power);
-    const intercept = firstPoint.lactate - slope * firstPoint.power;
-    
-    // Najít bod s největší kolmou vzdáleností od přímky
-    let maxDistance = 0;
-    let dmaxPoint = null;
-    
-    points.forEach(point => {
-      // Vypočítat vzdálenost bodu od přímky
-      const distance = Math.abs(
-        point.lactate - (slope * point.power + intercept)
-      ) / Math.sqrt(1 + slope * slope);
-      
-      if (distance > maxDistance) {
-        maxDistance = distance;
-        dmaxPoint = point;
-      }
-    });
-    
-    return dmaxPoint;
-  };
-
-  const findLactateThresholds = (results, baseLactate) => {
-    if (!results || results.length < 3) {
-      return { ltp1: null, ltp2: null };
-    }
-
-    // Použít D-max pro LTP2
-    const ltp2Point = calculateDmax(results);
-    
-    if (!ltp2Point) return { ltp1: null, ltp2: null };
-    
-    // Pro LTP1 použít modifikovanou D-max metodu na první část křivky
-    const firstHalfPoints = results.filter(p => p.power <= ltp2Point.power);
-    const ltp1Point = calculateDmax(firstHalfPoints);
-
-    return {
-      ltp1: ltp1Point?.power || null,
-      ltp2: ltp2Point.power
-    };
-  };
 
   const calculateTrainingZones = useCallback(() => {
     if (!mockData || !mockData.results || mockData.results.length < 3) {

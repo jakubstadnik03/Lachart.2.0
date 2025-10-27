@@ -118,8 +118,6 @@ app.use("/user", userListRoute);
 app.use("/training", trainingRoute);
 app.use("/feedback", feedbackRoute);
 app.use("/api/events", eventRoutes);
-app.use("/api/fit-analyzer", require('./routes/fitAnalyzerRoutes'));
-app.use("/api/lactate", require('./routes/lactateRoutes'));
 
 // Apply cache middleware to routes that can be cached
 app.use('/api/training', cacheMiddleware(600), trainingRoute);

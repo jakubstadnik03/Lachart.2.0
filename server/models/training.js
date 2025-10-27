@@ -45,7 +45,19 @@ const trainingSchema = new mongoose.Schema({
     intensity: String,
     results: [resultSchema],
     specifics: specificsSchema,
-    comments: String
+    comments: String,
+    unitSystem: {
+        type: String,
+        enum: ['metric', 'imperial'],
+        default: 'metric',
+        required: false
+    },
+    inputMode: {
+        type: String,
+        enum: ['pace', 'speed'],
+        default: 'pace',
+        required: false
+    }
 }, {
     timestamps: true,
 });
