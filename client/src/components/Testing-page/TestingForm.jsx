@@ -227,9 +227,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [activeHelp, setActiveHelp] = useState(null);
   const [helpPosition, setHelpPosition] = useState({ top: 0, left: 0 });
   const [isEditMode, setIsEditMode] = useState(false);
-
-  // Determine if we're in new test mode (all editable) or previous test mode (needs edit button)
-  const isNewTest = !testData?._id;
+  const [inputMode, setInputMode] = useState('pace');
+  const [unitSystem, setUnitSystem] = useState('metric'); // 'metric' (km, pace/km) nebo 'imperial' (mile, mph)
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -246,27 +245,43 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   };
 
-  const convertPaceToSeconds = (pace) => {
-    if (!pace) return '';
-    try {
-      const [minutes, seconds] = pace.split(':').map(Number);
-      if (isNaN(minutes) || isNaN(seconds)) return '';
-      return minutes * 60 + seconds;
-    } catch (error) {
-      console.error('Error converting pace to seconds:', error);
-      return '';
+  // Helper functions for conversions
+  const convertSecondsToPace = (seconds) => {
+    if (!seconds && seconds !== 0) return '0:00';
+      const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.round(seconds % 60);
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const convertPaceToSeconds = (paceString) => {
+    if (!paceString || typeof paceString !== 'string') return 0;
+    const [minutes, seconds] = paceString.split(':').map(Number);
+    return (minutes * 60) + seconds;
+  };
+
+  const convertSecondsToSpeed = (seconds, unitSystem) => {
+    if (!seconds) return 0;
+    if (unitSystem === 'imperial') {
+      // Convert pace (seconds per km) to speed (mph)
+      // First convert seconds per km to km/h, then to mph
+      const kmh = 3600 / seconds; // Convert seconds per km to km/h
+      return kmh * 0.621371; // Convert km/h to mph
+    } else {
+      // Convert pace (seconds per km) to speed (km/h)
+      return 3600 / seconds;
     }
   };
 
-  const convertSecondsToPace = (seconds) => {
-    if (!seconds && seconds !== 0) return '';
-    try {
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-    } catch (error) {
-      console.error('Error converting seconds to pace:', error);
-      return '';
+  const convertSpeedToSeconds = (speed, unitSystem) => {
+    if (!speed) return 0;
+    if (unitSystem === 'imperial') {
+      // Convert speed (mph) to pace (seconds per km)
+      // First convert mph to km/h, then to seconds per km
+      const kmh = speed / 0.621371; // Convert mph to km/h
+      return 3600 / kmh; // Convert km/h to seconds per km
+    } else {
+      // Convert speed (km/h) to pace (seconds per km)
+      return 3600 / speed;
     }
   };
 
@@ -280,6 +295,68 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     specifics: testData?.specifics || { specific: '', weather: '' },
     comments: testData?.comments || ''
   });
+
+  useEffect(() => {
+    if (testData) {
+      if (testData.unitSystem) {
+        setUnitSystem(testData.unitSystem);
+      }
+      if (testData.inputMode) {
+        setInputMode(testData.inputMode);
+      }
+    }
+  }, [testData]);
+
+  // Convert display format when switching inputMode/unitSystem (only for backend data)
+  useEffect(() => {
+    if ((formData.sport === 'run' || formData.sport === 'swim')) {
+      const updatedRows = rows.map(row => {
+        if (!row.power || row.power === '') return row;
+        
+        // Convert based on current inputMode
+        if (inputMode === 'pace') {
+          // Convert to pace format
+          const powerNum = parseFloat(row.power);
+          if (!isNaN(powerNum) && powerNum > 100) {
+            // This is seconds from backend, convert to pace
+            return { ...row, power: convertSecondsToPace(powerNum) };
+          } else if (typeof row.power === 'string' && row.power.includes(':')) {
+            // Already in pace format, keep as is
+            return row;
+          } else if (!isNaN(powerNum) && powerNum < 100) {
+            // This is speed, convert to pace
+            const seconds = convertSpeedToSeconds(powerNum, unitSystem);
+            return { ...row, power: convertSecondsToPace(seconds) };
+          }
+        } else if (inputMode === 'speed') {
+          // Convert to speed format
+          if (typeof row.power === 'string' && row.power.includes(':')) {
+            // This is pace format, convert to speed
+            const seconds = convertPaceToSeconds(row.power);
+            const speed = convertSecondsToSpeed(seconds, unitSystem);
+            return { ...row, power: speed.toFixed(1) };
+          } else {
+            const powerNum = parseFloat(row.power);
+            if (!isNaN(powerNum) && powerNum > 100) {
+              // This is seconds from backend, convert to speed
+              const speed = convertSecondsToSpeed(powerNum, unitSystem);
+              return { ...row, power: speed.toFixed(1) };
+            }
+          }
+        }
+        
+        return row; // Keep user-typed values as is
+      });
+      
+      if (JSON.stringify(updatedRows) !== JSON.stringify(rows)) {
+        setRows(updatedRows);
+      }
+    }
+    // eslint-disable-next-line
+  }, [inputMode, unitSystem, formData.sport]);
+
+  // Determine if we're in new test mode (all editable) or previous test mode (needs edit button)
+  const isNewTest = !testData?._id;
 
   const [rows, setRows] = useState([]);
 
@@ -377,14 +454,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     
     console.log('Updated rows:', updatedRows);
     setRows(updatedRows);
-    setIsDirty(true);
-
-    const updatedTestData = {
-      ...testData,
+      setIsDirty(true);
+      
+      const updatedTestData = {
+        ...testData,
       results: updatedRows
-    };
+      };
     
-    onTestDataChange(updatedTestData);
+      onTestDataChange(updatedTestData);
   };
 
   // Update useEffect for testData changes to preserve raw values
@@ -402,16 +479,38 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       });
       
       if (testData.results && testData.results.length > 0) {
-        const initialRows = testData.results.map(row => ({
-          interval: row.interval || 1,
-          power: row.power ? String(row.power) : '',
-          heartRate: row.heartRate ? String(row.heartRate) : '',
-          lactate: row.lactate ? String(row.lactate) : '',
-          glucose: row.glucose ? String(row.glucose) : '',
-          RPE: row.RPE ? String(row.RPE) : ''
-        }));
+        const initialRows = testData.results.map(row => {
+          let powerValue = row.power ? String(row.power) : '';
+          
+          // Convert backend seconds to display format based on inputMode and unitSystem
+          if ((testData.sport === 'run' || testData.sport === 'swim') && powerValue) {
+            const currentInputMode = testData.inputMode || 'pace';
+            const currentUnitSystem = testData.unitSystem || 'metric';
+            const seconds = parseFloat(powerValue);
+            
+            if (!isNaN(seconds) && seconds > 0) {
+              if (currentInputMode === 'pace') {
+                // Convert seconds to MM:SS format
+                powerValue = convertSecondsToPace(seconds);
+              } else if (currentInputMode === 'speed') {
+                // Convert seconds to speed format
+                const speed = convertSecondsToSpeed(seconds, currentUnitSystem);
+                powerValue = speed.toFixed(1);
+              }
+            }
+          }
+          
+          return {
+            interval: row.interval || 1,
+            power: powerValue,
+            heartRate: row.heartRate ? String(row.heartRate) : '',
+            lactate: row.lactate ? String(row.lactate) : '',
+            glucose: row.glucose ? String(row.glucose) : '',
+            RPE: row.RPE ? String(row.RPE) : ''
+          };
+        });
         setRows(initialRows);
-      } else {
+    } else {
         setRows([{
           interval: 1,
           power: '',
@@ -433,11 +532,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   }, [testData]);
 
+// NO AUTOMATIC CONVERSIONS - let user type anything
+
   const handleSaveChanges = () => {
     if (!validateForm()) {
       return;
     }
-    
+    const finalInputMode = inputMode; // místo nedefinovaných propInputMode/localInputMode
     const updatedTest = {
       ...testData,
       title: formData.title.trim(),
@@ -448,22 +549,31 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       date: formData.date,
       specifics: formData.specifics || { specific: '', weather: '' },
       comments: formData.comments?.trim() || '',
+      unitSystem: unitSystem, // <--- přidáno
+      inputMode: inputMode, // <--- přidáno
       results: rows.map((row, index) => {
-        // Convert values to numbers only at save time
+        let powerValue = row.power;
+        if ((formData.sport === 'run' || formData.sport === 'swim')) {
+          if (finalInputMode === 'pace' && typeof powerValue === 'string' && powerValue.includes(':')) {
+            // Convert pace (MM:SS) to seconds for backend
+            powerValue = convertPaceToSeconds(powerValue);
+          } else if (finalInputMode === 'speed' && !isNaN(Number(powerValue)) && !powerValue.includes(':')) {
+            // Convert speed to seconds for backend
+            const speed = parseFloat(powerValue.toString().replace(',', '.'));
+            powerValue = convertSpeedToSeconds(speed, unitSystem);
+          }
+        }
         const convertToNumber = (value) => {
           if (value === '' || value === undefined || value === null) return 0;
           if (typeof value !== 'string') {
             const n = Number(value);
             return isNaN(n) ? 0 : n;
           }
-          // If the value contains a comma, replace it with a dot before parsing
-          const numericValue = value.toString().replace(',', '.');
-          return parseFloat(numericValue);
+          return parseFloat(value.replace(',', '.'));
         };
-
         return {
           interval: index + 1,
-          power: convertToNumber(row.power),
+          power: convertToNumber(powerValue),
           heartRate: convertToNumber(row.heartRate),
           lactate: convertToNumber(row.lactate),
           glucose: convertToNumber(row.glucose),
@@ -471,15 +581,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         };
       })
     };
-    
     if (onSave) {
       try {
         onSave(updatedTest);
         addNotification('Test data saved successfully', 'success');
-        trackEvent('test_saved', { 
+        trackEvent('test_saved', {
           sport: formData.sport,
           intervals: rows.length,
-          isNewTest: isNewTest 
+          isNewTest: isNewTest
         });
         setIsDirty(false);
         if (!isNewTest) {
@@ -651,19 +760,86 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return inputRefs.current[step.field] ? { current: inputRefs.current[step.field] } : null;
   };
 
+
+  // Validate and format power input on blur
+  const handlePowerBlur = (index, value) => {
+    if ((formData.sport !== 'run' && formData.sport !== 'swim')) return;
+    
+    let formattedValue = value;
+    let isValid = true;
+    let errorMessage = '';
+    
+    if (inputMode === 'pace') {
+      // Validate pace format (MM:SS)
+      if (value && value.trim() !== '') {
+        if (value.includes(':')) {
+          const [minutes, seconds] = value.split(':').map(Number);
+          if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) {
+            isValid = false;
+            errorMessage = 'Invalid pace format. Use MM:SS (e.g., 5:30)';
+          } else {
+            formattedValue = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+          }
+        } else {
+          // Try to convert number to MM:SS
+          const totalSeconds = parseFloat(value);
+          if (!isNaN(totalSeconds) && totalSeconds > 0) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const secs = Math.round(totalSeconds % 60);
+            formattedValue = `${minutes}:${secs.toString().padStart(2, '0')}`;
+          } else {
+            isValid = false;
+            errorMessage = 'Invalid pace format. Use MM:SS (e.g., 5:30)';
+          }
+        }
+      }
+    } else if (inputMode === 'speed') {
+      // Validate speed format (number)
+      if (value && value.trim() !== '') {
+        const speed = parseFloat(value);
+        if (isNaN(speed) || speed <= 0) {
+          isValid = false;
+          errorMessage = 'Invalid speed. Enter a positive number (e.g., 14)';
+        } else {
+          formattedValue = speed.toFixed(1);
+        }
+      }
+    }
+    
+    if (isValid) {
+      // Update the row with formatted value
+      const updatedRows = rows.map((row, i) => 
+        i === index ? { ...row, power: formattedValue } : row
+      );
+      setRows(updatedRows);
+    } else {
+      // Show error message (you can implement a toast or inline error)
+      console.error(errorMessage);
+      // For now, just log the error - you can add visual feedback later
+    }
+  };
+
   // Update the input field in the table
   const renderInput = (index, field, value, placeholder) => {
     const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === `${field}_${index}`;
-
+    let displayValue = value;
+    
+    // NO AUTOMATIC CONVERSIONS - let user type anything
+    // Only show the raw value as stored in state
   return (
       <div className="min-w-0 overflow-hidden relative">
-        <input 
+      <input 
           ref={el => inputRefs.current[`${field}_${index}`] = el}
-          type="text"
-          value={value === undefined || value === null ? '' : String(value)}
+        type="text"
+          value={displayValue === undefined || displayValue === null ? '' : String(displayValue)}
           onChange={(e) => {
             handleValueChange(index, field, e.target.value);
-          }} 
+          }}
+          onBlur={(e) => {
+            if (field === 'power' && (formData.sport === 'run' || formData.sport === 'swim')) {
+              handlePowerBlur(index, e.target.value);
+            }
+          }}
           disabled={!isNewTest && !isEditMode}
           className={`w-full min-w-0 p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
@@ -854,10 +1030,54 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
         </div>
 
+        {/* Unit System Controls */}
+        {(formData.sport === 'run' || formData.sport === 'swim') && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Input Mode</label>
+              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
+                <button
+                  onClick={() => setInputMode('pace')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'pace' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  Pace
+                </button>
+                <button
+                  onClick={() => setInputMode('speed')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'speed' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  Speed
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Unit System</label>
+              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
+                <button
+                  onClick={() => setUnitSystem('metric')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'metric' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  {inputMode === 'pace' ? 'pace/km' : 'km/h'}
+                </button>
+                <button
+                  onClick={() => setUnitSystem('imperial')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'imperial' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  {inputMode === 'pace' ? 'pace/mile' : 'mph'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
-            <input 
+        <input 
               ref={el => inputRefs.current['specifics'] = el}
               type="text"
               value={formData.specifics.specific}
@@ -889,7 +1109,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               placeholder="e.g., 20°C"
         />
       </div>
-        </div>
+      </div>
 
         {/* Data Table */}
         <div className="mt-3 overflow-x-auto">
@@ -906,7 +1126,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <>
                 <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0`}>
                   <div className="text-center min-w-0 overflow-hidden">Int.</div>
-                  <div className="text-center min-w-0 overflow-hidden">{formData.sport === 'run' || formData.sport === 'swim' ? 'Pace' : 'Power'}</div>
+                  <div className="text-center min-w-0 overflow-hidden">
+  {formData.sport === 'bike' ? 'Power' :
+    (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'Pace' :
+    (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? 'Speed' : 'Power'}
+</div>
                   <div className="text-center min-w-0 overflow-hidden">HR</div>
                   <div className="text-center min-w-0 overflow-hidden">La</div>
                   {showGlucose && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
@@ -920,7 +1144,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       className={`grid ${gridCols} gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors`}
                     >
                       <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
-                      {renderInput(index, 'power', row.power, formData.sport === 'bike' ? 'W' : 'MM:SS')}
+                      {renderInput(index, 'power', row.power,
+                        formData.sport === 'bike' ? 'W' :
+                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'MM:SS' :
+                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? (unitSystem === 'imperial' ? 'mph' : 'km/h') : 'MM:SS'
+                      )}
                       {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
                       {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
                       {showGlucose && renderInput(index, 'glucose', row.glucose, 'mmol/L')}
@@ -959,9 +1187,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <Plus size={14} /> Add Interval
             </button>
 
-            <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2 w-full sm:w-auto">
               {!isNewTest && (
-                <button 
+            <button 
                   onClick={() => {
                     logClick('Delete Test Button', { testId: testData._id });
                     handleDeleteTest();
@@ -969,7 +1197,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
                 >
                   <Trash size={14} /> Delete Test
-                </button>
+            </button>
               )}
 
             <button 

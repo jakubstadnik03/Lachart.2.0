@@ -17,7 +17,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, setIsMenuOpen]);
 
-  // Allow access to lactate-guide and admin without login - render them directly
+  // Allow access to lactate-guide without login - render them directly
   if (location.pathname === '/lactate-guide') {
     return <Outlet />;
   }

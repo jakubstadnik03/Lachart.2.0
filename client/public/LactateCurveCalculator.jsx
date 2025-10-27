@@ -166,28 +166,16 @@ const formatSecondsToMMSS = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
-  // Převede tempo na rychlost
+const convertPaceToSpeed = (seconds) => {
+  // Převede tempo (sekundy na km) na rychlost (km/h)
   if (!seconds) return 0;
-  if (unitSystem === 'imperial') {
-    // Pro imperial: tempo (sekundy na míli) na rychlost (mph)
-    return 3600 / seconds;
-  } else {
-    // Pro metric: tempo (sekundy na km) na rychlost (km/h)
-    return 3600 / seconds;
-  }
+  return 3600 / seconds;
 };
 
-const convertSpeedToPace = (speed, unitSystem = 'metric') => {
-  // Převede rychlost na tempo
+const convertSpeedToPace = (speed) => {
+  // Převede rychlost (km/h) na tempo (sekundy na km)
   if (!speed) return 0;
-  if (unitSystem === 'imperial') {
-    // Pro imperial: rychlost (mph) na tempo (sekundy na míli)
-    return 3600 / speed;
-  } else {
-    // Pro metric: rychlost (km/h) na tempo (sekundy na km)
-    return 3600 / speed;
-  }
+  return 3600 / speed;
 };
 
 const LactateCurveCalculator = ({ mockData }) => {
@@ -195,10 +183,6 @@ const LactateCurveCalculator = ({ mockData }) => {
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
-  
-  // Get unit system and input mode from mockData or default to metric/pace
-  const unitSystem = mockData?.unitSystem || 'metric';
-  const inputMode = mockData?.inputMode || 'pace';
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -221,7 +205,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   // Convert values to numbers, handling decimal commas
   const xVals = results.map(r => {
     const power = r.power?.toString().replace(',', '.');
-    return isPaceSport ? convertPaceToSpeed(Number(power), unitSystem) : Number(power);
+    return isPaceSport ? convertPaceToSpeed(Number(power)) : Number(power);
   });
   
   const yVals = results.map(r => {
@@ -312,7 +296,7 @@ const LactateCurveCalculator = ({ mockData }) => {
       const power = r.power?.toString().replace(',', '.');
       const lactate = r.lactate?.toString().replace(',', '.');
       return { 
-        x: isPaceSport ? convertPaceToSpeed(Number(power), unitSystem) : Number(power), 
+        x: isPaceSport ? convertPaceToSpeed(Number(power)) : Number(power), 
         y: Number(lactate),
         originalPace: isPaceSport ? r.power : null
       };
@@ -337,7 +321,7 @@ const LactateCurveCalculator = ({ mockData }) => {
     .map(key => ({
       label: key,
       data: [{
-        x: isPaceSport ? convertPaceToSpeed(thresholds[key], unitSystem) : thresholds[key],
+        x: isPaceSport ? convertPaceToSpeed(thresholds[key]) : thresholds[key],
         y: thresholds.lactates[key],
         originalPace: isPaceSport ? thresholds[key] : null
       }],
@@ -364,15 +348,7 @@ const LactateCurveCalculator = ({ mockData }) => {
         max: Math.max(...xVals) + (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
         title: { 
           display: true, 
-          text: isPaceSport ? 
-            (inputMode === 'pace' ? 
-              (isSwimming ? 
-                (unitSystem === 'imperial' ? 'Pace (min/100yd)' : 'Pace (min/100m)') :
-                (unitSystem === 'imperial' ? 'Pace (min/mile)' : 'Pace (min/km)')
-              ) :
-              (unitSystem === 'imperial' ? 'Speed (mph)' : 'Speed (km/h)')
-            ) : 
-            'Power (W)' 
+          text: isPaceSport ? 'Speed (km/h)' : 'Power (W)' 
         },
         border: { dash: [6, 6] },
         grid: {
@@ -383,17 +359,10 @@ const LactateCurveCalculator = ({ mockData }) => {
         ticks: {
           callback: function(value) {
             if (isPaceSport) {
-              if (inputMode === 'pace') {
-                const paceSeconds = convertSpeedToPace(value, unitSystem);
-                const minutes = Math.floor(paceSeconds / 60);
-                const seconds = Math.floor(paceSeconds % 60);
-                const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
-              } else {
-                // Speed mode - show speed values
-                const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                return `${value.toFixed(1)}${unit}`;
-              }
+              const paceSeconds = convertSpeedToPace(value);
+              const minutes = Math.floor(paceSeconds / 60);
+              const seconds = Math.floor(paceSeconds % 60);
+              return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${isSwimming ? '/100m' : '/km'}`;
             }
             return `${Math.round(value)}W`;
           }
@@ -439,15 +408,8 @@ const LactateCurveCalculator = ({ mockData }) => {
             const dataPoint = ctx.dataset.data[ctx.dataIndex];
             
             if (isPaceSport) {
-              if (inputMode === 'pace') {
-                const paceStr = formatSecondsToMMSS(convertSpeedToPace(xVal, unitSystem));
-                const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                return `${label}: ${paceStr} ${unit} | ${yVal.toFixed(2)} mmol/L`;
-              } else {
-                // Speed mode - show speed values
-                const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                return `${label}: ${xVal.toFixed(1)}${unit} | ${yVal.toFixed(2)} mmol/L`;
-              }
+              const paceStr = formatSecondsToMMSS(convertSpeedToPace(xVal));
+              return `${label}: ${paceStr} ${isSwimming ? '/100m' : '/km'} | ${yVal.toFixed(2)} mmol/L`;
             }
             return `${label}: ${xVal.toFixed(0)} W | ${yVal.toFixed(2)} mmol/L`;
           },

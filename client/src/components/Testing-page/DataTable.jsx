@@ -462,6 +462,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   const DataTable = ({ mockData }) => {
     const thresholds = calculateThresholds(mockData);
     const sport = mockData?.sport || 'bike';
+    const unitSystem = mockData?.unitSystem || 'metric';
+    const inputMode = mockData?.inputMode || 'pace';
   
     // Seznam metod, včetně Log-log
     const methods = [
@@ -479,10 +481,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         descriptions: methods.map(method => methodDescriptions[method])
       },
       {
-        header: sport === 'bike' ? 'Pwr (W)' : 'Pace (km)',
+        header: sport === 'bike' ? 'Pwr (W)' : 
+                (sport === 'run' || sport === 'swim') ? 
+                  (inputMode === 'pace' ? 
+                    (sport === 'swim' ? 
+                      (unitSystem === 'imperial' ? 'Pace (/100yd)' : 'Pace (/100m)') :
+                      (unitSystem === 'imperial' ? 'Pace(/mile)' : 'Pace(/km)')
+                    ) :
+                    (unitSystem === 'imperial' ? 'Speed(mph)' : 'Speed(km/h)')
+                  ) : 'Pace (km)',
         data: methods.map((method) => {
           const value = thresholds[method];
-          return value ? formatPowerOrPace(value, sport) : 'N/A';
+          return value ? formatPowerOrPace(value, sport, unitSystem, inputMode) : 'N/A';
         })
       },
       {
@@ -536,15 +546,33 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatPowerOrPace = (value, sport) => {
+  const formatPowerOrPace = (value, sport, unitSystem = 'metric', inputMode = 'pace') => {
     if (!value || value === 'N/A') return 'N/A';
     
-    if (sport === 'run') {
-      return `${formatSecondsToMMSS(value)}/km`;
-    } else if (sport === 'swim') {
-      return `${formatSecondsToMMSS(value)}/100m`;
+    if (sport === 'bike') {
+      return `${Math.round(value)} W`;
+    } else if (sport === 'run' || sport === 'swim') {
+      if (inputMode === 'pace') {
+        const paceStr = formatSecondsToMMSS(value);
+        if (sport === 'swim') {
+          const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
+          return `${paceStr}${unit}`;
+        } else {
+          const unit = unitSystem === 'imperial' ? '/mile' : '/km';
+          return `${paceStr}${unit}`;
+        }
+      } else {
+        // Speed mode - convert seconds to speed
+        const speed = 3600 / value; // Convert seconds per km to km/h
+        if (unitSystem === 'imperial') {
+          const mph = speed * 0.621371; // Convert km/h to mph
+          return `${mph.toFixed(1)} mph`;
+        } else {
+          return `${speed.toFixed(1)} km/h`;
+        }
+      }
     }
-    return `${Math.round(value)} W`;
+    return 'N/A';
   };
   
   export default DataTable;

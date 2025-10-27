@@ -14,6 +14,7 @@
     "nodemon": "^2.0.15"
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.178.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.0",
@@ -26,6 +27,7 @@
     "helmet": "^7.2.0",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^6.13.8",
+    "multer": "^2.0.2",
     "node-cache": "^5.1.2",
     "nodemailer": "^6.10.0",
     "passport": "^0.7.0",

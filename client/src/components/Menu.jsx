@@ -171,6 +171,20 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
     },
     {
+      name: "FIT Analyzer",
+      path: "/fit-analyzer",
+      icon: "/icon/upload.svg",
+      iconWhite: "/icon/upload-white.svg",
+      showFor: ["admin"]
+    },
+    {
+      name: "Lactate Analysis",
+      path: "/lactate-analysis",
+      icon: "/icon/lactate.svg",
+      iconWhite: "/icon/lactate-white.svg",
+      showFor: ["admin"]
+    },
+    {
       name: "Athletes",
       path: "/athletes",
       icon: "/icon/athletes.svg",

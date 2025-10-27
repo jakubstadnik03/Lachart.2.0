@@ -10,62 +10,10 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { convertPowerToPace } from '../../utils/paceConverter';
 import { HelpCircle, Info } from 'lucide-react';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-// Enhanced tooltip component with more detailed information
-const CustomTooltip = ({ tooltip, datasets, sport }) => {
-  if (!tooltip?.dataPoints) return null;
-
-  const index = tooltip.dataPoints[0]?.dataIndex;
-  if (index === undefined) return null;
-
-  const interval = index + 1;
-  const power = tooltip.dataPoints[0]?.label || "N/A";
-  const bpm = datasets[1]?.data?.[index] ?? "N/A";
-  const mmol = datasets[0]?.data?.[index] ?? "N/A";
-
-  return (
-    <div
-      className="absolute bg-white/95 backdrop-blur-sm shadow-lg p-4 rounded-xl text-sm border border-gray-100"
-      style={{
-        left: tooltip.caretX,
-        top: tooltip.caretY,
-        transform: "translate(-50%, -120%)",
-        position: "absolute",
-        pointerEvents: "none",
-        whiteSpace: "nowrap",
-        zIndex: 50
-      }}
-    >
-      <div className="font-bold text-gray-900 mb-2">Interval {interval}</div>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-gray-700">
-          <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-          {sport === 'bike' ? 'Power' : 'Pace'}: {power}
-        </div>
-        <div className="flex items-center gap-2 text-blue-600">
-          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          Lactate: {mmol} mmol/L
-        </div>
-        <div className="flex items-center gap-2 text-red-600">
-          <span className="w-2 h-2 rounded-full bg-red-500"></span>
-          Heart Rate: {bpm} Bpm
-        </div>
-      </div>
-      <div
-        className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
-        style={{
-          left: "50%",
-          bottom: "-8px",
-          transform: "translateX(-50%)",
-        }}
-      ></div>
-    </div>
-  );
-};
 
 // Info tooltip component
 const InfoTooltip = ({ content }) => {
@@ -138,9 +86,26 @@ const InfoTooltip = ({ content }) => {
   );
 };
 
+const convertSecondsToPace = (seconds) => {
+  if (!seconds && seconds !== 0) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const convertSecondsToSpeed = (seconds, unitSystem) => {
+  if (!seconds || seconds <= 0) return 0;
+  const speed = 3600 / seconds; // Convert seconds per km to km/h
+  return unitSystem === 'imperial' ? speed * 0.621371 : speed; // Convert to mph if imperial
+};
+
+
 const LactateCurve = ({ mockData, demoMode = false }) => {
-  const [tooltip, setTooltip] = useState(null);
   const [showGuide, setShowGuide] = useState(demoMode);
+  
+  // Get unit system and input mode from mockData or default to metric/pace
+  const unitSystem = mockData?.unitSystem || 'metric';
+  const inputMode = mockData?.inputMode || 'pace';
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -307,17 +272,18 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       labels: powerData.map(power => {
         if (mockData.sport === 'bike') {
           return `${power}W`;
-        } else if (mockData.sport === 'swim') {
-          // Convert seconds back to MM:SS format for swimming
-          const minutes = Math.floor(power / 60);
-          const seconds = Math.floor(power % 60);
-          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
-        } else {
-          // Convert seconds back to MM:SS format for running
-          const minutes = Math.floor(power / 60);
-          const seconds = Math.floor(power % 60);
-          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+        } else if (mockData.sport === 'run' || mockData.sport === 'swim') {
+          if (inputMode === 'pace') {
+            return convertSecondsToPace(power);
+          } else {
+            // Speed mode - convert seconds to speed
+            const speed = convertSecondsToSpeed(power, unitSystem);
+            const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+            return `${speed.toFixed(1)} ${unit}`;
+          }
         }
+        // fallback
+        return power;
       }), 
       datasets 
     };
@@ -360,16 +326,17 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               
               if (mockData.sport === 'bike') {
                 return `${label}: ${value.toFixed(2)} mmol/L | ${power}W`;
-              } else if (mockData.sport === 'swim') {
-                const minutes = Math.floor(power / 60);
-                const seconds = Math.floor(power % 60);
-                const pace = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
-                return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+              } else if (mockData.sport === 'run' || mockData.sport === 'swim') {
+                if (inputMode === 'pace') {
+                  const pace = convertSecondsToPace(power);
+                  return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+                } else {
+                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+                  return `${label}: ${value.toFixed(2)} mmol/L | ${speed.toFixed(1)} ${unit}`;
+                }
               } else {
-                const minutes = Math.floor(power / 60);
-                const seconds = Math.floor(power % 60);
-                const pace = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
-                return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+                return `${label}: ${value.toFixed(2)} mmol/L | ${power}`;
               }
             }
           }
@@ -404,7 +371,15 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           title: {
             display: true,
             text: mockData.sport === 'bike' ? "Power (W)" : 
-                  mockData.sport === 'swim' ? "Pace (min/100m)" : "Pace (min/km)"
+                  mockData.sport === 'swim' ? 
+                    (inputMode === 'pace' ? 
+                      (unitSystem === 'imperial' ? "Pace (min/100yd)" : "Pace (min/100m)") :
+                      (unitSystem === 'imperial' ? "Speed (mph)" : "Speed (km/h)")
+                    ) : 
+                    (inputMode === 'pace' ? 
+                      (unitSystem === 'imperial' ? "Pace (min/mile)" : "Pace (min/km)") :
+                      (unitSystem === 'imperial' ? "Speed (mph)" : "Speed (km/h)")
+                    )
           },
           border: { dash: [6, 6] },
           grid: {
@@ -417,13 +392,27 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               if (mockData.sport === 'bike') {
                 return `${power}W`;
               } else if (mockData.sport === 'swim') {
-                const minutes = Math.floor(power / 60);
-                const seconds = Math.floor(power % 60);
-                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/100m`;
+                if (inputMode === 'pace') {
+                  const minutes = Math.floor(power / 60);
+                  const seconds = Math.floor(power % 60);
+                  const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
+                  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
+                } else {
+                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+                  return `${speed.toFixed(1)} ${unit}`;
+                }
               } else {
-                const minutes = Math.floor(power / 60);
-                const seconds = Math.floor(power % 60);
-                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}/km`;
+                if (inputMode === 'pace') {
+                  const minutes = Math.floor(power / 60);
+                  const seconds = Math.floor(power % 60);
+                  const unit = unitSystem === 'imperial' ? '/mile' : '/km';
+                  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
+                } else {
+                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+                  return `${speed.toFixed(1)} ${unit}`;
+                }
               }
             }
           }
@@ -443,7 +432,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                 </div>
               )}
               <span className="text-xl text-gray-600 ml-2">({formatDate(mockData.date)})</span>
-            </h2>
+        </h2>
             <p className="text-lg text-gray-500 flex items-center gap-2">
               Base Lactate: 
               <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
@@ -487,7 +476,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
         <div className="flex flex-col items-center justify-center h-64">
           <div className="text-red-500 mb-4">⚠️</div>
-          <p className="text-red-500 text-center">Error calculating lactate curve</p>
+        <p className="text-red-500 text-center">Error calculating lactate curve</p>
           {demoMode && (
             <p className="text-gray-400 text-sm text-center mt-2">
               Please check your input data and try again

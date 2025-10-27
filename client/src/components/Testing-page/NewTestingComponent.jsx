@@ -19,73 +19,16 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
     });
   
     const handleTestDataChange = (updatedData) => {
-      // Keep values as strings until save
-      const processedData = {
-        ...updatedData,
-        title: updatedData.title?.trim(),
-        sport: updatedData.sport || selectedSport,
-        date: updatedData.date || new Date().toISOString().split('T')[0],
-        weight: updatedData.weight || '',
-        baseLactate: updatedData.baseLactate || '',
-        results: updatedData.results.map(result => ({
-          power: result.power || '',
-          heartRate: result.heartRate || '',
-          lactate: result.lactate || '',
-          glucose: result.glucose || '',
-          RPE: result.RPE || ''
-        }))
-      };
-      
-      setTestData(processedData);
+      // Simply update the state without processing
+      setTestData(updatedData);
     };
 
-    const handleSaveTest = () => {
-      console.log('Current testData:', testData);
-
-      // Validate required fields
-      const missingFields = [];
-      if (!testData.title?.trim()) missingFields.push('Title');
-      if (!testData.sport) missingFields.push('Sport');
-      if (!testData.date) missingFields.push('Date');
-
-      if (missingFields.length > 0) {
-        alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
-        return;
-      }
-
-      // Validate that there are some results
-      if (!testData.results || testData.results.length === 0) {
-        alert('Please add at least one test result');
-        return;
-      }
-
-      // Convert values to numbers only at save time
-      const processedData = {
-        ...testData,
-        title: testData.title,
-        sport: testData.sport,
-        date: testData.date,
-        description: testData.description?.trim() || '',
-        baseLactate: testData.baseLactate === '' ? 0 : parseFloat(testData.baseLactate.toString().replace(',', '.')),
-        weight: testData.weight === '' ? 0 : parseFloat(testData.weight.toString().replace(',', '.')),
-        specifics: {
-          specific: testData.specifics?.specific || '',
-          weather: testData.specifics?.weather || ''
-        },
-        comments: testData.comments?.trim() || '',
-        results: testData.results.map((result, index) => ({
-          interval: index + 1,
-          power: result.power === '' ? 0 : parseFloat(result.power.toString().replace(',', '.')),
-          heartRate: result.heartRate === '' ? 0 : parseFloat(result.heartRate.toString().replace(',', '.')),
-          lactate: result.lactate === '' ? 0 : parseFloat(result.lactate.toString().replace(',', '.')),
-          glucose: result.glucose === '' ? 0 : parseFloat(result.glucose.toString().replace(',', '.')),
-          RPE: result.RPE === '' ? 0 : parseFloat(result.RPE.toString().replace(',', '.'))
-        }))
-      };
-
-      console.log('Processed data being submitted:', processedData);
-      onSubmit(processedData);
+    const handleSaveFromForm = (formData) => {
+      // This will be called from TestingForm when user clicks save
+      console.log('Saving from form:', formData);
+      onSubmit(formData);
     };
+
   
     return (
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 mt-4 lg:mt-5">
@@ -97,7 +40,7 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
             <TestingForm 
               testData={testData} 
               onTestDataChange={handleTestDataChange}
-              onSave={handleSaveTest}
+              onSave={handleSaveFromForm}
             />
           </div>
         </div>

@@ -33,6 +33,9 @@ import './App.css';
 import FeedbackWidget from './components/FeedbackWidget';
 import LactateGuide from './pages/LactateGuide';
 import AdminDashboard from './pages/AdminDashboard';
+import FitFileAnalyzer from './pages/FitFileAnalyzer';
+import LactateAnalysisPage from './pages/LactateAnalysisPage';
+import LactatePredictionDemo from './pages/LactatePredictionDemo';
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
@@ -77,6 +80,30 @@ function AppRoutes() {
         <Route path="/training-comparison/:title" element={<TrainingDetailPage />} />
         <Route path="/training" element={<Training />} />
         <Route path="/testing" element={<Testing />} />
+        <Route 
+          path="/fit-analyzer" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <FitFileAnalyzer />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/lactate-analysis" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <LactateAnalysisPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/lactate-prediction" 
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <LactatePredictionDemo />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="/athletes" element={<Athletes />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/support" element={<Support />} />
