@@ -10,9 +10,9 @@ class TrainingDao {
   async findByAthleteId(athleteId) {
     try {
       console.log('Finding trainings for athlete:', athleteId);
-      // Convert string ID to MongoDB ObjectId if needed
-      const objectId = mongoose.Types.ObjectId.isValid(athleteId) ? new mongoose.Types.ObjectId(athleteId) : athleteId;
-      const trainings = await this.Training.find({ athleteId: objectId });
+      // Convert ObjectId to string since athleteId is stored as String in the schema
+      const athleteIdStr = athleteId instanceof mongoose.Types.ObjectId ? athleteId.toString() : String(athleteId);
+      const trainings = await this.Training.find({ athleteId: athleteIdStr });
       console.log('Found trainings:', trainings.length);
       return trainings;
     } catch (error) {
@@ -24,11 +24,18 @@ class TrainingDao {
   async findByAthleteIds(athleteIds) {
     try {
       console.log('Finding trainings for athletes:', athleteIds);
-      // Convert string IDs to MongoDB ObjectIds if needed
-      const objectIds = athleteIds.map(id => 
-        mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id
+      
+      // If no athlete IDs provided, return empty array
+      if (!athleteIds || athleteIds.length === 0) {
+        console.log('No athlete IDs provided, returning empty array');
+        return [];
+      }
+      
+      // Convert ObjectIds to strings since athleteId is stored as String in the schema
+      const athleteIdStrings = athleteIds.map(id => 
+        id instanceof mongoose.Types.ObjectId ? id.toString() : String(id)
       );
-      const trainings = await this.Training.find({ athleteId: { $in: objectIds } });
+      const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } });
       console.log('Found trainings:', trainings.length);
       return trainings;
     } catch (error) {
@@ -96,8 +103,10 @@ class TrainingDao {
       const normalizedSearchTitle = title.replace(/[\s-:]/g, '').toLowerCase();
       console.log('Normalized search title:', normalizedSearchTitle);
       
+      // Convert ObjectId to string since athleteId is stored as String in the schema
+      const userIdStr = userId instanceof mongoose.Types.ObjectId ? userId.toString() : String(userId);
       const trainings = await this.Training.find({ 
-        athleteId: userId 
+        athleteId: userIdStr 
       }).sort({ date: -1 });
       
       console.log('All trainings found:', trainings.length);

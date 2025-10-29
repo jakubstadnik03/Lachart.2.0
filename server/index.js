@@ -111,6 +111,7 @@ const userListRoute = require("./routes/userListRoute");
 const trainingRoute = require("./routes/trainingRoute");
 const feedbackRoute = require("./routes/feedbackRoute");
 const eventRoutes = require("./routes/eventRoutes");
+const fitUploadRoute = require("./routes/fitUploadRoute");
 
 // Routes
 app.use("/test", testRoutes);
@@ -118,6 +119,7 @@ app.use("/user", userListRoute);
 app.use("/training", trainingRoute);
 app.use("/feedback", feedbackRoute);
 app.use("/api/events", eventRoutes);
+app.use("/api/fit", fitUploadRoute);
 
 // Apply cache middleware to routes that can be cached
 app.use('/api/training', cacheMiddleware(600), trainingRoute);

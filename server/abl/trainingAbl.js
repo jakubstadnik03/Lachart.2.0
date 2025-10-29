@@ -66,10 +66,15 @@ class TrainingAbl {
                 // Získat ID všech atletů tohoto trenéra
                 const athletes = await this.userDao.findAthletesByCoachId(userId);
                 console.log('Found athletes:', athletes.length);
-                const athleteIds = athletes.map(athlete => athlete._id);
                 
-                // Získat tréninky všech těchto atletů
-                trainings = await this.trainingDao.findByAthleteIds(athleteIds);
+                if (athletes && athletes.length > 0) {
+                    const athleteIds = athletes.map(athlete => athlete._id);
+                    // Získat tréninky všech těchto atletů
+                    trainings = await this.trainingDao.findByAthleteIds(athleteIds);
+                } else {
+                    // Trenér nemá žádné atlety, vrátit prázdné pole
+                    trainings = [];
+                }
             } else {
                 // Atlet vidí jen své tréninky
                 trainings = await this.trainingDao.findByAthleteId(userId);
@@ -83,17 +88,6 @@ class TrainingAbl {
         } catch (error) {
             console.error('Error in getTrainingTitles:', error);
             console.error('Stack:', error.stack);
-            throw error;
-        }
-    }
-
-    static async getTrainingTitles(userId) {
-        try {
-            const trainings = await TrainingDao.getTrainingsByUserId(userId);
-            const titles = [...new Set(trainings.map(training => training.title))];
-            return titles;
-        } catch (error) {
-            console.error('Error in getTrainingTitles:', error);
             throw error;
         }
     }

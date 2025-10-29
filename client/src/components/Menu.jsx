@@ -164,11 +164,25 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
     },
     {
+      name: "FIT Analysis",
+      path: "/fit-analysis",
+      icon: "/icon/fit-analysis.svg",
+      iconWhite: "/icon/fit-analysis-white.svg",
+      showFor: ["admin"]
+    },
+    {
       name: "Testing",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
       icon: "/icon/testing.svg",
       iconWhite: "/icon/testing-white.svg",
       showFor: ["coach", "athlete"]
+    },
+    {
+      name: "Lactate Testing",
+      path: "/lactate-testing",
+      icon: "/icon/lactate-testing.svg",
+      iconWhite: "/icon/lactate-testing-white.svg",
+      showFor: ["admin"]
     },
     {
       name: "Athletes",
@@ -332,7 +346,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           ) : (
             <ul className="space-y-2">
               {menuItems
-                .filter(item => (item.showFor.includes(user.role) || (item.showFor.includes("admin") && user?.admin === true)))
+                .filter(item => {
+                  // Check if user has required role
+                  if (item.showFor.includes(user.role)) return true;
+                  // Check if item is admin-only and user is admin
+                  if (item.showFor.includes("admin") && user?.admin === true) return true;
+                  return false;
+                })
                 .map((item, index) => (
                   <motion.li 
                     key={item.name}

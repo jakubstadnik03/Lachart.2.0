@@ -12,6 +12,7 @@
     "@vercel/analytics": "^1.5.0",
     "axios": "^1.12.2",
     "chart.js": "^4.4.7",
+    "chartjs-adapter-date-fns": "^3.0.0",
     "cra-template": "1.2.0",
     "cubic-spline": "^3.0.3",
     "date-fns": "^4.1.0",

@@ -206,4 +206,74 @@ export const updateUserAdmin = async (userId, userData) => {
   }
 };
 
-export default api; 
+// Lactate testing session endpoints
+export const saveLactateSession = (sessionData) => api.post('/lactate-session', sessionData);
+export const getLactateSessions = (athleteId) => api.get(`/lactate-session/athlete/${athleteId}`);
+export const getLactateSessionById = (sessionId) => api.get(`/lactate-session/${sessionId}`);
+export const deleteLactateSession = (sessionId) => api.delete(`/lactate-session/${sessionId}`);
+
+export default api;
+
+// FIT file upload endpoints
+export const uploadFitFile = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    const response = await api.post('/api/fit/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Authorization: `Bearer ${token}`
+      },
+      timeout: 60000 // 60 second timeout for large files
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading FIT file:', error);
+    throw error;
+  }
+};
+
+export const getFitTrainings = async () => {
+  try {
+    const response = await api.get('/api/fit/trainings');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching FIT trainings:', error);
+    throw error;
+  }
+};
+
+export const getFitTraining = async (id) => {
+  try {
+    const response = await api.get(`/api/fit/trainings/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching FIT training:', error);
+    throw error;
+  }
+};
+
+export const updateLactateValues = async (trainingId, lactateValues) => {
+  try {
+    const response = await api.put(`/api/fit/trainings/${trainingId}/lactate`, {
+      lactateValues
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating lactate values:', error);
+    throw error;
+  }
+};
+
+export const deleteFitTraining = async (trainingId) => {
+  try {
+    const response = await api.delete(`/api/fit/trainings/${trainingId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting FIT training:', error);
+    throw error;
+  }
+}; 
