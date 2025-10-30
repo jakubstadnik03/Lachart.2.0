@@ -1,0 +1,233 @@
+# Mock FIT file for Lactate Testing Protocol
+# This is a simulated .fit file containing lactate test data
+# Format: Garmin FIT file with lactate measurements
+
+# File Header
+FIT_FILE_HEADER:
+  file_size: 2048
+  protocol_version: 20
+  profile_version: 21.47
+  data_size: 1800
+  data_type: ".FIT"
+  crc: 0x1234
+
+# File ID
+FILE_ID:
+  type: 4  # Activity
+  manufacturer: 1  # Garmin
+  product: 1234
+  serial_number: 123456789
+  time_created: 2024-01-15T10:30:00Z
+  number: 1
+
+# Activity
+ACTIVITY:
+  timestamp: 2024-01-15T10:30:00Z
+  total_timer_time: 3000  # 50 minutes
+  num_sessions: 1
+  type: 1  # Manual
+  event: 26  # Activity
+  event_type: 0  # Start
+  local_timestamp: 2024-01-15T10:30:00Z
+  event_group: 0
+
+# Session
+SESSION:
+  message_index: 0
+  timestamp: 2024-01-15T10:30:00Z
+  event: 26  # Activity
+  event_type: 0  # Start
+  start_time: 2024-01-15T10:30:00Z
+  start_position_lat: 500000000  # 50.0 degrees
+  start_position_long: 140000000  # 14.0 degrees
+  sport: 1  # Running
+  sub_sport: 1  # Generic
+  total_elapsed_time: 3000  # 50 minutes
+  total_timer_time: 3000
+  total_distance: 10000  # 10km
+  total_calories: 500
+  total_fat_calories: 200
+  avg_speed: 3.33  # m/s
+  max_speed: 4.5  # m/s
+  avg_heart_rate: 150
+  max_heart_rate: 180
+  avg_cadence: 85
+  max_cadence: 95
+  avg_power: 200
+  max_power: 300
+  total_ascent: 100
+  total_descent: 100
+  intensity: 2  # Active
+  lap_trigger: 0  # Manual
+  sport_index: 0
+
+# Laps (5-minute intervals for lactate test)
+LAP_1:
+  message_index: 0
+  timestamp: 2024-01-15T10:35:00Z
+  start_time: 2024-01-15T10:30:00Z
+  start_position_lat: 500000000
+  start_position_long: 140000000
+  end_position_lat: 500010000
+  end_position_long: 140001000
+  total_elapsed_time: 300  # 5 minutes
+  total_timer_time: 300
+  total_distance: 1000  # 1km
+  total_calories: 50
+  avg_speed: 3.33  # m/s
+  max_speed: 3.5
+  avg_heart_rate: 120
+  max_heart_rate: 130
+  avg_cadence: 80
+  max_cadence: 85
+  avg_power: 150
+  max_power: 180
+  total_ascent: 20
+  total_descent: 15
+  intensity: 1  # Rest
+  lap_trigger: 0  # Manual
+  sport: 1  # Running
+  lap_trigger: 0
+
+LAP_2:
+  message_index: 1
+  timestamp: 2024-01-15T10:40:00Z
+  start_time: 2024-01-15T10:35:00Z
+  start_position_lat: 500010000
+  start_position_long: 140001000
+  end_position_lat: 500020000
+  end_position_long: 140002000
+  total_elapsed_time: 300  # 5 minutes
+  total_timer_time: 300
+  total_distance: 1000  # 1km
+  total_calories: 60
+  avg_speed: 3.5  # m/s
+  max_speed: 3.8
+  avg_heart_rate: 140
+  max_heart_rate: 150
+  avg_cadence: 85
+  max_cadence: 90
+  avg_power: 180
+  max_power: 220
+  total_ascent: 25
+  total_descent: 20
+  intensity: 2  # Active
+  lap_trigger: 0  # Manual
+  sport: 1  # Running
+
+LAP_3:
+  message_index: 2
+  timestamp: 2024-01-15T10:45:00Z
+  start_time: 2024-01-15T10:40:00Z
+  start_position_lat: 500020000
+  start_position_long: 140002000
+  end_position_lat: 500030000
+  end_position_long: 140003000
+  total_elapsed_time: 300  # 5 minutes
+  total_timer_time: 300
+  total_distance: 1000  # 1km
+  total_calories: 70
+  avg_speed: 3.8  # m/s
+  max_speed: 4.0
+  avg_heart_rate: 160
+  max_heart_rate: 170
+  avg_cadence: 90
+  max_cadence: 95
+  avg_power: 220
+  max_power: 260
+  total_ascent: 30
+  total_descent: 25
+  intensity: 2  # Active
+  lap_trigger: 0  # Manual
+  sport: 1  # Running
+
+LAP_4:
+  message_index: 3
+  timestamp: 2024-01-15T10:50:00Z
+  start_time: 2024-01-15T10:45:00Z
+  start_position_lat: 500030000
+  start_position_long: 140003000
+  end_position_lat: 500040000
+  end_position_long: 140004000
+  total_elapsed_time: 300  # 5 minutes
+  total_timer_time: 300
+  total_distance: 1000  # 1km
+  total_calories: 80
+  avg_speed: 4.0  # m/s
+  max_speed: 4.2
+  avg_heart_rate: 170
+  max_heart_rate: 180
+  avg_cadence: 95
+  max_cadence: 100
+  avg_power: 260
+  max_power: 300
+  total_ascent: 35
+  total_descent: 30
+  intensity: 2  # Active
+  lap_trigger: 0  # Manual
+  sport: 1  # Running
+
+LAP_5:
+  message_index: 4
+  timestamp: 2024-01-15T10:55:00Z
+  start_time: 2024-01-15T10:50:00Z
+  start_position_lat: 500040000
+  start_position_long: 140004000
+  end_position_lat: 500050000
+  end_position_long: 140005000
+  total_elapsed_time: 300  # 5 minutes
+  total_timer_time: 300
+  total_distance: 1000  # 1km
+  total_calories: 90
+  avg_speed: 4.2  # m/s
+  max_speed: 4.5
+  avg_heart_rate: 175
+  max_heart_rate: 185
+  avg_cadence: 100
+  max_cadence: 105
+  avg_power: 300
+  max_power: 350
+  total_ascent: 40
+  total_descent: 35
+  intensity: 2  # Active
+  lap_trigger: 0  # Manual
+  sport: 1  # Running
+
+# Records (every 10 seconds for 50 minutes = 300 records)
+# Sample records showing lactate progression
+RECORD_1:
+  timestamp: 2024-01-15T10:30:10Z
+  position_lat: 500000000
+  position_long: 140000000
+  distance: 33
+  altitude: 100
+  speed: 3.3
+  power: 150
+  heart_rate: 120
+  cadence: 80
+  temperature: 20
+
+RECORD_2:
+  timestamp: 2024-01-15T10:30:20Z
+  position_lat: 500000100
+  position_long: 140000100
+  distance: 66
+  altitude: 101
+  speed: 3.3
+  power: 155
+  heart_rate: 122
+  cadence: 82
+  temperature: 20
+
+# ... (continuing pattern for all 300 records)
+
+# Lactate measurements (custom field for this mock)
+LACTATE_MEASUREMENTS:
+  lap_1_lactate: 1.2  # mmol/L
+  lap_2_lactate: 1.8  # mmol/L
+  lap_3_lactate: 2.5  # mmol/L
+  lap_4_lactate: 3.8  # mmol/L
+  lap_5_lactate: 5.2  # mmol/L
+
+# File CRC
+FILE_CRC: 0x5678

@@ -8,7 +8,7 @@ import LiveDashboard from '../components/LactateTesting/LiveDashboard';
 import LactateEntryModal from '../components/LactateTesting/LactateEntryModal';
 import LactateChart from '../components/LactateTesting/LactateChart';
 import ProtocolEditModal from '../components/LactateTesting/ProtocolEditModal';
-import { saveLactateSession } from '../services/api';
+import { saveLactateSession, getLactateSessions, getLactateSessionById } from '../services/api';
 import deviceConnectivity from '../services/deviceConnectivity';
 import {
   PlayIcon,
@@ -72,6 +72,12 @@ const LactateTestingPage = () => {
   const [showLactateModal, setShowLactateModal] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
   const [showProtocolEdit, setShowProtocolEdit] = useState(false);
+
+  // Previous Lactate Sessions
+  const [previousSessions, setPreviousSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [loadingSessions, setLoadingSessions] = useState(false);
 
   // Refs for intervals
   const intervalTimerRef = useRef(null);
@@ -301,16 +307,21 @@ const LactateTestingPage = () => {
         startTime: new Date(Date.now() - totalTestTime * 1000).toISOString(),
         endTime: new Date().toISOString(),
         protocol: protocol,
-        deviceData: historicalData,
+        measurements: historicalData, // <-- správné pole místo deviceData
         lactateValues: lactateValues,
         testDuration: totalTestTime,
         currentStep: currentStep
       };
 
+      console.log('sessionData POST:', sessionData); // pro debug
+
       await saveLactateSession(sessionData);
       addNotification('Test session saved successfully', 'success');
     } catch (error) {
       console.error('Error saving test:', error);
+      if (error.response) {
+        console.error('Backend error detail:', error.response.data);
+      }
       addNotification('Failed to save test session', 'error');
     }
   };
@@ -333,6 +344,79 @@ const LactateTestingPage = () => {
       timestamp: Date.now()
     }));
   }, []);
+
+  // Previous Lactate Sessions
+  useEffect(() => {
+    // Load all lactate sessions for user
+    const loadSessions = async () => {
+      if (!user?._id) return;
+      try {
+        setLoadingSessions(true);
+        const resp = await getLactateSessions(user._id);
+        const list = Array.isArray(resp.data) ? resp.data : (resp.data?.sessions || resp.data || []);
+        setPreviousSessions(list);
+        if (list.length > 0) setSelectedSessionId(list[0]._id);
+      } catch (e) {
+        setPreviousSessions([]);
+      } finally {
+        setLoadingSessions(false);
+      }
+    };
+    loadSessions();
+  }, [user?._id]);
+
+  useEffect(() => {
+    // Load details for selected session
+    const loadSession = async () => {
+      if (!selectedSessionId) return setSelectedSession(null);
+      try {
+        setLoadingSessions(true);
+        const resp = await getLactateSessionById(selectedSessionId);
+        setSelectedSession(resp.data || resp);
+      } catch(e) {
+        setSelectedSession(null);
+      } finally {
+        setLoadingSessions(false);
+      }
+    };
+    loadSession();
+  }, [selectedSessionId]);
+
+  // Helper: transform lactate session to chart data
+  const transformSessionToChartData = (session) => {
+    // Prefer FIT file if present
+    if (session?.fitFile?.fitData) {
+      const fit = session.fitFile.fitData;
+      const fitHistorical = Array.isArray(fit.records) ? fit.records.map(r => ({
+        power: Number(r.power || 0),
+        heartRate: Number(r.heartRate || 0),
+        timestamp: r.timestamp ? new Date(r.timestamp).getTime() : Date.now()
+      })) : [];
+      const fitLactate = Array.isArray(fit.laps) ? fit.laps.filter(l => typeof l.lactate === 'number').map((l, i) => ({
+        step: l.lapNumber || i+1,
+        power: Number(l.avgPower || 0),
+        lactate: Number(l.lactate),
+        time: (l.totalElapsedTime||0) * (l.lapNumber||i+1)
+      })) : [];
+      return { historical: fitHistorical, lactateValues: fitLactate };
+    }
+    // Else parse realtime measurements
+    if (Array.isArray(session?.measurements) && session.measurements.length > 0) {
+      const mesHistorical = session.measurements.map(m => ({
+        power: Number(m.power || 0),
+        heartRate: Number(m.heartRate || 0),
+        timestamp: new Date(m.timestamp).getTime() || Date.now()
+      }));
+      // If measurements have lactate, try to extract based on intervals
+      let mesLactate = session.measurements
+        .filter(m => typeof m.lactate === 'number')
+        .map((m, i) => ({ step: m.interval || i + 1, power: m.power, lactate: m.lactate, time: m.timestamp ? new Date(m.timestamp).getTime() : i * 60 }));
+      // Or if explicit intervals, session.results/lactateValues
+      if (Array.isArray(session.lactateValues)) mesLactate = session.lactateValues;
+      return { historical: mesHistorical, lactateValues: mesLactate };
+    }
+    return { historical: [], lactateValues: [] };
+  };
 
   // Update data collection based on phase
   useEffect(() => {
@@ -376,7 +460,7 @@ const LactateTestingPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className=" mx-auto">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Lactate Threshold Testing</h1>
@@ -747,6 +831,53 @@ const LactateTestingPage = () => {
             </motion.div>
           </div>
         )}
+
+        {/* Previous Testing Section */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900">Previous Lactate Sessions</h2>
+            <select className="px-3 py-2 bg-white/80 border border-gray-200 rounded-xl text-sm" value={selectedSessionId} onChange={e => setSelectedSessionId(e.target.value)}>
+              {previousSessions.map(s => (
+                <option key={s._id} value={s._id}>
+                  {new Date(s.completedAt || s.createdAt || s.date).toLocaleString()} • {s.sport || 'test'}
+                </option>
+              ))}
+            </select>
+          </div>
+          {loadingSessions && <div className="text-sm text-gray-600">Loading previous session…</div>}
+          {!loadingSessions && selectedSession && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                  <div className="text-sm text-gray-600">Sport</div>
+                  <div className="text-xl font-semibold text-primary">{selectedSession.sport ?? '—'}</div>
+                </div>
+                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                  <div className="text-sm text-gray-600">Délka</div>
+                  <div className="text-xl font-semibold text-primary">{selectedSession.duration ? `${Math.round(selectedSession.duration/60)} min` : '—'}</div>
+                </div>
+                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                  <div className="text-sm text-gray-600">Datum</div>
+                  <div className="text-xl font-semibold text-primary">{selectedSession.completedAt ? new Date(selectedSession.completedAt).toLocaleString() : (selectedSession.createdAt ? new Date(selectedSession.createdAt).toLocaleString() : '—')}</div>
+                </div>
+              </div>
+              <div className="mt-2">
+                {/* Transform session data for chart rendering */}
+                {(() => {
+                  const { historical, lactateValues } = transformSessionToChartData(selectedSession);
+                  return (
+                    <LactateChart
+                      lactateValues={lactateValues}
+                      historicalData={historical}
+                      protocol={{ steps: [] }}
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+          {!loadingSessions && previousSessions.length === 0 && <div className="text-sm text-gray-600">No previous sessions found.</div>}
+        </motion.div>
       </div>
     </div>
   );

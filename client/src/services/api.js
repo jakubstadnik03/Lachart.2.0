@@ -207,10 +207,17 @@ export const updateUserAdmin = async (userId, userData) => {
 };
 
 // Lactate testing session endpoints
-export const saveLactateSession = (sessionData) => api.post('/lactate-session', sessionData);
-export const getLactateSessions = (athleteId) => api.get(`/lactate-session/athlete/${athleteId}`);
-export const getLactateSessionById = (sessionId) => api.get(`/lactate-session/${sessionId}`);
-export const deleteLactateSession = (sessionId) => api.delete(`/lactate-session/${sessionId}`);
+// Lactate Session API
+export const createLactateSession = (sessionData) => api.post('/api/lactate-session', sessionData);
+export const getLactateSessions = (athleteId) => api.get(`/api/lactate-session/athlete/${athleteId}`);
+export const getLactateSessionById = (sessionId) => api.get(`/api/lactate-session/${sessionId}`);
+export const updateLactateSession = (sessionId, updateData) => api.put(`/api/lactate-session/${sessionId}`, updateData);
+export const completeLactateSession = (sessionId, completionData) => api.post(`/api/lactate-session/${sessionId}/complete`, completionData);
+export const generateMockFitFile = (sessionId) => api.post(`/api/lactate-session/${sessionId}/mock-fit`);
+export const deleteLactateSession = (sessionId) => api.delete(`/api/lactate-session/${sessionId}`);
+
+// Legacy compatibility
+export const saveLactateSession = createLactateSession;
 
 export default api;
 
