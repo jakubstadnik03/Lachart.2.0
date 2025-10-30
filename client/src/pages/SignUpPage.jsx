@@ -7,6 +7,7 @@ import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
 import { trackEvent, trackUserRegistration, trackConversionFunnel } from '../utils/analytics';
 import { logUserRegistration } from '../utils/eventLogger';
+import { AnimatePresence, motion as m } from 'framer-motion';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -20,11 +21,17 @@ const SignUpPage = () => {
     role: 'athlete'
   });
   const [error, setError] = useState(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const { addNotification } = useNotification();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError('You must accept the Terms and Privacy Policy.');
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords don't match");
       return;
@@ -354,6 +361,31 @@ const SignUpPage = () => {
               </motion.div>
             )}
 
+            {/* Terms & Conditions checkbox */}
+            <motion.div
+              className="flex items-start gap-2 text-sm text-gray-600 mb-1 mt-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 1.5 }}
+            >
+              <input
+                type="checkbox"
+                id="acceptTerms"
+                name="acceptTerms"
+                checked={acceptedTerms}
+                onChange={e => setAcceptedTerms(e.target.checked)}
+                className="h-4 w-4 mt-1 accent-primary"
+                required
+              />
+              <label htmlFor="acceptTerms">
+                I agree to the{' '}
+                <button type="button" className="underline text-primary hover:text-primary-dark mr-1" onClick={() => setShowTermsModal(true)}>
+                  Terms & Conditions
+                </button>
+                and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline text-primary hover:text-primary-dark">Privacy Policy</a>.
+              </label>
+            </motion.div>
+
             <motion.div
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -361,6 +393,7 @@ const SignUpPage = () => {
               <button
                 type="submit"
                 className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500"
+                disabled={!acceptedTerms}
               >
                 Sign Up
               </button>
@@ -416,6 +449,57 @@ const SignUpPage = () => {
           </motion.p>
         </motion.div>
       </motion.div>
+
+      {/* Terms Modal */}
+      <AnimatePresence>
+        {showTermsModal && (
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center px-3"
+            onClick={() => setShowTermsModal(false)}
+          >
+            <m.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white max-w-xl w-full p-8 rounded-xl shadow-xl relative"
+              onClick={e => e.stopPropagation()}
+            >
+              <button className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg" onClick={() => setShowTermsModal(false)}>&times;</button>
+              <h2 className="text-2xl font-bold mb-4 text-primary">Terms & Conditions</h2>
+              <div className="prose max-w-none text-sm text-gray-700 mb-4 overflow-y-auto max-h-[50vh]">
+                <p><b>Welcome to LaChart!</b> To use our application, you must accept the following Terms and Privacy Policy. Please read carefully:</p>
+                <ol className="list-decimal ml-6">
+                  <li><b>Data Storage:</b> Your account and test entries are stored securely. Data is not shared with third parties except as required by law.</li>
+                  <li><b>Privacy:</b> See our <a href="/privacy" className="underline text-primary">Privacy Policy</a> for full details.</li>
+                  <li><b>Usage:</b> You agree to use the application for lawful purposes. No abusive, fraudulent, or unauthorized activities are allowed.</li>
+                  <li><b>Account:</b> Users are responsible for keeping passwords safe. LaChart is not liable for unauthorized access caused by user negligence.</li>
+                  <li><b>Analytics:</b> The app collects anonymous usage stats to improve the product.</li>
+                  <li><b>Consent:</b> By signing up, you consent to receive transactional emails (activation, password, notifications).</li>
+                </ol>
+                <p>For more details or concerns, contact us at <a href="mailto:jakub.stadnik01@gmail.com" className="underline text-primary">jakub.stadnik01@gmail.com</a>.</p>
+                <p className="text-xs text-gray-400 mt-2">This is a demo EULA. Your real legal text goes here.</p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  className="px-5 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark"
+                  onClick={() => { setAcceptedTerms(true); setShowTermsModal(false); }}
+                >
+                  I Accept
+                </button>
+                <button
+                  className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300"
+                  onClick={() => setShowTermsModal(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </m.div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

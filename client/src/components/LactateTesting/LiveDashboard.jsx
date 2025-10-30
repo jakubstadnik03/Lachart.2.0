@@ -78,7 +78,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-lg shadow-md p-6"
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
     >
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <ChartBarIcon className="w-6 h-6" />
@@ -95,29 +95,14 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: isActive ? [1, 1.05, 1] : 1 }}
               transition={{ duration: 0.3, repeat: isActive ? Infinity : 0, repeatDelay: 1 }}
-              className={`p-4 rounded-lg border-2 ${
-                metric.color === 'blue' ? 'border-blue-500 bg-blue-50' :
-                metric.color === 'red' ? 'border-red-500 bg-red-50' :
-                metric.color === 'green' ? 'border-green-500 bg-green-50' :
-                'border-purple-500 bg-purple-50'
-              }`}
+              className={`p-4 rounded-2xl border border-white/40 bg-white/60 backdrop-blur`}
             >
               <div className="flex items-center gap-2 mb-2">
-                <Icon className={`w-5 h-5 ${
-                  metric.color === 'blue' ? 'text-blue-600' :
-                  metric.color === 'red' ? 'text-red-600' :
-                  metric.color === 'green' ? 'text-green-600' :
-                  'text-purple-600'
-                }`} />
+                <Icon className={`w-5 h-5 text-gray-700`} />
                 <span className="text-sm font-medium text-gray-600">{metric.label}</span>
               </div>
               <div className="flex items-baseline gap-1">
-                <span className={`text-2xl font-bold ${
-                  metric.color === 'blue' ? 'text-blue-700' :
-                  metric.color === 'red' ? 'text-red-700' :
-                  metric.color === 'green' ? 'text-green-700' :
-                  'text-purple-700'
-                }`}>
+                <span className={`text-2xl font-bold text-gray-900`}>
                   {metric.value}
                 </span>
                 <span className="text-sm text-gray-500">{metric.unit}</span>
@@ -129,7 +114,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
 
       {/* Additional Metrics */}
       {additionalMetrics.some(m => m.value !== '--') && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <div className="mb-6 p-4 bg-white/60 backdrop-blur rounded-2xl border border-white/40">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Additional Metrics</h3>
           <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
             {additionalMetrics.map((metric) => (
@@ -149,6 +134,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
         <h3 className="text-sm font-semibold text-gray-700 mb-2">
           Real-Time Chart - Full Training (from start)
         </h3>
+        <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -241,20 +227,21 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             )}
           </LineChart>
         </ResponsiveContainer>
+        </div>
         <p className="text-xs text-gray-500 mt-2">
           Showing all data points from test start ({chartData.length} data points)
         </p>
       </div>
 
       {/* Connection Status */}
-      <div className="mt-4 pt-4 border-t border-gray-200">
+      <div className="mt-4 pt-4 border-t border-white/40">
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-600">Connected Devices:</span>
           {Object.entries(devices).filter(([_, state]) => state.connected).length > 0 ? (
             <div className="flex gap-2">
               {Object.entries(devices).map(([key, state]) => 
                 state.connected && (
-                  <span key={key} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                  <span key={key} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-xs border border-emerald-200">
                     {key}
                   </span>
                 )

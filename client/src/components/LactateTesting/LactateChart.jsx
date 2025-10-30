@@ -54,7 +54,7 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-lg shadow-md p-6"
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
     >
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <ChartBarIcon className="w-6 h-6" />
@@ -62,7 +62,7 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
       </h2>
 
       {!hasData ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-500 bg-white/60 border border-white/40 rounded-2xl">
           <p>No lactate values entered yet.</p>
           <p className="text-sm mt-2">Add lactate values after each work interval to see the curve.</p>
         </div>
@@ -71,6 +71,7 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
           {/* Primary Lactate Curve */}
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Lactate vs Power</h3>
+            <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
             <ResponsiveContainer width="100%" height={300}>
               <ScatterChart data={lactateCurveData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -113,12 +114,14 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
                 />
               </ScatterChart>
             </ResponsiveContainer>
+            </div>
           </div>
 
           {/* Multi-Sensor Comparison */}
           {multiSensorData.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Multi-Sensor Comparison</h3>
+              <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
               <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={multiSensorData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -201,11 +204,12 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
                   )}
                 </ComposedChart>
               </ResponsiveContainer>
+              </div>
             </div>
           )}
 
           {/* Data Summary */}
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="mt-4 pt-4 border-t border-white/40">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Test Summary</h3>
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>

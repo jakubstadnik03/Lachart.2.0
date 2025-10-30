@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 
 const LactateTestingProtocol = () => {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50">
       <Helmet>
         <title>Lactate Testing Protocol: Complete Guide for Cycling & Running | LaChart</title>
         <link rel="canonical" href="https://lachart.net/lactate-testing-protocol" />
@@ -12,288 +12,226 @@ const LactateTestingProtocol = () => {
           name="description"
           content="Complete lactate testing protocol guide for cycling and running. Step-by-step instructions, equipment needed, and professional testing procedures for accurate lactate threshold determination."
         />
-        <meta
-          name="keywords"
-          content="lactate testing protocol, lactate test procedure, cycling lactate test, running lactate test, lactate testing equipment, lactate testing steps, lactate testing guide, lactate testing instructions, lactate testing methodology, lactate testing standards, lactate testing best practices, lactate testing accuracy, lactate testing reliability, lactate testing validity, lactate testing protocol cycling, lactate testing protocol running, lactate testing protocol triathlon, lactate testing protocol swimming, lactate testing protocol rowing, lactate testing protocol endurance sports, lactate testing protocol athletes, lactate testing protocol coaches, lactate testing protocol sports science, lactate testing protocol research, lactate testing protocol laboratory, lactate testing protocol field testing, lactate testing protocol portable, lactate testing protocol mobile, lactate testing protocol remote, lactate testing protocol digital, lactate testing protocol online, lactate testing protocol free, lactate testing protocol professional, lactate testing protocol elite, lactate testing protocol amateur, lactate testing protocol recreational, lactate testing protocol training, lactate testing protocol racing, lactate testing protocol performance, lactate testing protocol analysis, lactate testing protocol results, lactate testing protocol interpretation, lactate testing protocol application, lactate testing protocol implementation, lactate testing protocol execution, lactate testing protocol monitoring, lactate testing protocol tracking, lactate testing protocol progress, lactate testing protocol improvement, lactate testing protocol optimization, lactate testing protocol personalization, lactate testing protocol customization, lactate testing protocol adaptation, lactate testing protocol modification, lactate testing protocol variation, lactate testing protocol alternative, lactate testing protocol substitute, lactate testing protocol replacement, lactate testing protocol backup, lactate testing protocol emergency, lactate testing protocol contingency, lactate testing protocol plan B, lactate testing protocol fallback, lactate testing protocol safety, lactate testing protocol security, lactate testing protocol privacy, lactate testing protocol confidentiality, lactate testing protocol data protection, lactate testing protocol GDPR, lactate testing protocol compliance, lactate testing protocol regulation, lactate testing protocol standard, lactate testing protocol quality, lactate testing protocol precision, lactate testing protocol consistency, lactate testing protocol reproducibility, lactate testing protocol repeatability, lactate testing protocol validity, lactate testing protocol reliability, lactate testing protocol accuracy, lactate testing protocol sensitivity, lactate testing protocol specificity, lactate testing protocol predictive value, lactate testing protocol diagnostic accuracy, lactate testing protocol clinical utility, lactate testing protocol practical application, lactate testing protocol real world, lactate testing protocol field testing, lactate testing protocol laboratory testing, lactate testing protocol portable testing, lactate testing protocol mobile testing, lactate testing protocol remote testing, lactate testing protocol telemedicine, lactate testing protocol digital health, lactate testing protocol health technology, lactate testing protocol fitness technology, lactate testing protocol sports technology, lactate testing protocol performance technology, lactate testing protocol training technology, lactate testing protocol coaching technology, lactate testing protocol athlete technology, lactate testing protocol coach technology, lactate testing protocol team technology, lactate testing protocol club technology, lactate testing protocol organization technology, lactate testing protocol institution technology, lactate testing protocol university technology, lactate testing protocol college technology, lactate testing protocol school technology, lactate testing protocol academy technology, lactate testing protocol center technology, lactate testing protocol facility technology, lactate testing protocol laboratory technology, lactate testing protocol clinic technology, lactate testing protocol hospital technology, lactate testing protocol medical technology, lactate testing protocol healthcare technology, lactate testing protocol wellness technology, lactate testing protocol lifestyle technology"
-        />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-        <meta name="author" content="LaChart Team" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="theme-color" content="#7c3aed" />
-        <meta property="og:title" content="Lactate Testing Protocol: Complete Guide for Cycling & Running | LaChart" />
-        <meta property="og:description" content="Complete lactate testing protocol guide for cycling and running. Step-by-step instructions, equipment needed, and professional testing procedures." />
-        <meta property="og:type" content="article" />
-        <meta property="og:url" content="https://lachart.net/lactate-testing-protocol" />
-        <meta property="og:image" content="https://lachart.net/images/lactate-analysis.jpg" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:site_name" content="LaChart" />
-        <meta property="og:locale" content="en_US" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Lactate Testing Protocol: Complete Guide for Cycling & Running | LaChart" />
-        <meta name="twitter:description" content="Complete lactate testing protocol guide for cycling and running. Step-by-step instructions, equipment needed, and professional testing procedures." />
-        <meta name="twitter:image" content="https://lachart.net/images/lactate-analysis.jpg" />
-        <meta name="twitter:site" content="@lachart" />
-        <meta name="twitter:creator" content="@lachart" />
-        <link rel="alternate" hrefLang="en" href="https://lachart.net/lactate-testing-protocol" />
-        <link rel="alternate" hrefLang="x-default" href="https://lachart.net/lactate-testing-protocol" />
-        <script type="application/ld+json">
-          {`
-            {
-              "@context": "https://schema.org",
-              "@type": "Article",
-              "headline": "Lactate Testing Protocol: Complete Guide for Cycling & Running",
-              "description": "Complete lactate testing protocol guide for cycling and running. Step-by-step instructions, equipment needed, and professional testing procedures for accurate lactate threshold determination.",
-              "author": {
-                "@type": "Organization",
-                "name": "LaChart Team",
-                "url": "https://lachart.net"
-              },
-              "publisher": {
-                "@type": "Organization",
-                "name": "LaChart",
-                "url": "https://lachart.net",
-                "logo": {
-                  "@type": "ImageObject",
-                  "url": "https://lachart.net/images/LaChart.png"
-                }
-              },
-              "image": "https://lachart.net/images/lactate-analysis.jpg",
-              "mainEntityOfPage": {
-                "@type": "WebPage",
-                "@id": "https://lachart.net/lactate-testing-protocol"
-              },
-              "datePublished": "2025-01-23",
-              "dateModified": "2025-01-23",
-              "inLanguage": "en",
-              "articleSection": "Sports Science",
-              "keywords": "lactate testing protocol, lactate test procedure, cycling lactate test, running lactate test, lactate testing equipment, lactate testing steps, lactate testing guide, lactate testing instructions, lactate testing methodology, lactate testing standards, lactate testing best practices, lactate testing accuracy, lactate testing reliability, lactate testing validity, lactate testing protocol cycling, lactate testing protocol running, lactate testing protocol triathlon, lactate testing protocol swimming, lactate testing protocol rowing, lactate testing protocol endurance sports, lactate testing protocol athletes, lactate testing protocol coaches, lactate testing protocol sports science, lactate testing protocol research, lactate testing protocol laboratory, lactate testing protocol field testing, lactate testing protocol portable, lactate testing protocol mobile, lactate testing protocol remote, lactate testing protocol digital, lactate testing protocol online, lactate testing protocol free, lactate testing protocol professional, lactate testing protocol elite, lactate testing protocol amateur, lactate testing protocol recreational, lactate testing protocol training, lactate testing protocol racing, lactate testing protocol performance, lactate testing protocol analysis, lactate testing protocol results, lactate testing protocol interpretation, lactate testing protocol application, lactate testing protocol implementation, lactate testing protocol execution, lactate testing protocol monitoring, lactate testing protocol tracking, lactate testing protocol progress, lactate testing protocol improvement, lactate testing protocol optimization, lactate testing protocol personalization, lactate testing protocol customization, lactate testing protocol adaptation, lactate testing protocol modification, lactate testing protocol variation, lactate testing protocol alternative, lactate testing protocol substitute, lactate testing protocol replacement, lactate testing protocol backup, lactate testing protocol emergency, lactate testing protocol contingency, lactate testing protocol plan B, lactate testing protocol fallback, lactate testing protocol safety, lactate testing protocol security, lactate testing protocol privacy, lactate testing protocol confidentiality, lactate testing protocol data protection, lactate testing protocol GDPR, lactate testing protocol compliance, lactate testing protocol regulation, lactate testing protocol standard, lactate testing protocol quality, lactate testing protocol precision, lactate testing protocol consistency, lactate testing protocol reproducibility, lactate testing protocol repeatability, lactate testing protocol validity, lactate testing protocol reliability, lactate testing protocol accuracy, lactate testing protocol sensitivity, lactate testing protocol specificity, lactate testing protocol predictive value, lactate testing protocol diagnostic accuracy, lactate testing protocol clinical utility, lactate testing protocol practical application, lactate testing protocol real world, lactate testing protocol field testing, lactate testing protocol laboratory testing, lactate testing protocol portable testing, lactate testing protocol mobile testing, lactate testing protocol remote testing, lactate testing protocol telemedicine, lactate testing protocol digital health, lactate testing protocol health technology, lactate testing protocol fitness technology, lactate testing protocol sports technology, lactate testing protocol performance technology, lactate testing protocol training technology, lactate testing protocol coaching technology, lactate testing protocol athlete technology, lactate testing protocol coach technology, lactate testing protocol team technology, lactate testing protocol club technology, lactate testing protocol organization technology, lactate testing protocol institution technology, lactate testing protocol university technology, lactate testing protocol college technology, lactate testing protocol school technology, lactate testing protocol academy technology, lactate testing protocol center technology, lactate testing protocol facility technology, lactate testing protocol laboratory technology, lactate testing protocol clinic technology, lactate testing protocol hospital technology, lactate testing protocol medical technology, lactate testing protocol healthcare technology, lactate testing protocol wellness technology, lactate testing protocol lifestyle technology",
-              "about": [
-                {
-                  "@type": "Thing",
-                  "name": "Lactate Testing Protocol",
-                  "description": "Standardized procedures for conducting lactate threshold tests in endurance sports"
-                },
-                {
-                  "@type": "Thing", 
-                  "name": "Lactate Testing Equipment",
-                  "description": "Tools and devices needed for accurate lactate measurement during exercise"
-                },
-                {
-                  "@type": "Thing",
-                  "name": "Endurance Sports Testing",
-                  "description": "Performance testing methods for cycling, running, and other endurance sports"
-                }
-              ]
-            }
-          `}
-        </script>
       </Helmet>
 
-      {/* Navbar */}
-      <nav className="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-20 relative">
-        <div className="flex items-center gap-2">
-          <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-            <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
-          </a>
-        </div>
-        <div className="flex items-center gap-6">
-          <a href="/login" className="text-primary font-semibold hover:text-primary-dark transition-colors">Login</a>
-          <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors">Register</a>
-        </div>
-      </nav>
-
-      <main className="max-w-6xl mx-auto px-4 py-10">
+      {/* Hero */}
+      <header className="relative mx-auto max-w-6xl px-4 pt-12 pb-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
+          className="relative overflow-hidden bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl"
         >
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight mb-6">
-            Lactate Testing Protocol: Complete Guide for Cycling & Running
-          </h1>
-          <p className="text-xl text-gray-600 mb-8">
-            Professional lactate testing protocol guide with step-by-step instructions, equipment requirements, and best practices for accurate lactate threshold determination in endurance sports.
-          </p>
+          <div className="absolute -top-10 -right-10 w-60 h-60 rounded-full bg-primary/10 blur-2xl" />
+          <div className="absolute -bottom-10 -left-10 w-72 h-72 rounded-full bg-pink-300/10 blur-3xl" />
 
-          {/* Equipment Section */}
-          <section className="py-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Required Equipment for Lactate Testing</h2>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-blue-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-blue-900 mb-4">Essential Equipment</h3>
+          <div className="relative px-6 py-10 md:px-12 md:py-14">
+            <div className="flex items-center gap-3 mb-4 text-primary">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
+                <path d="M3 12h3l3 8 4-16 3 8h4"/>
+              </svg>
+              <span className="text-sm font-semibold tracking-wide">Protocol Guide</span>
+            </div>
+            <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight">
+              Lactate Testing Protocol
+            </h1>
+            <p className="mt-4 text-lg md:text-xl text-gray-700 max-w-3xl">
+              Professional, field‑tested procedures for accurate lactate threshold determination (LT1, LT2) across cycling and running.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <span className="px-3 py-1 rounded-full text-sm bg-white/70 border border-white/50 text-gray-700">Cycling</span>
+              <span className="px-3 py-1 rounded-full text-sm bg-white/70 border border-white/50 text-gray-700">Running</span>
+              <span className="px-3 py-1 rounded-full text-sm bg-white/70 border border-white/50 text-gray-700">Coach‑ready</span>
+            </div>
+          </div>
+        </motion.div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 pb-16 space-y-8">
+        {/* Equipment */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl"
+        >
+          <div className="px-6 py-6 md:px-10 md:py-8">
+            <div className="flex items-center gap-2 mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+              </svg>
+              <h2 className="text-2xl font-bold text-gray-900">Required Equipment</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="rounded-2xl p-5 bg-indigo-50/60 border border-indigo-100">
+                <h3 className="text-lg font-semibold text-indigo-900 mb-3">Essential</h3>
                 <ul className="space-y-2 text-gray-700">
-                  <li>• Lactate analyzer (portable or laboratory-grade)</li>
-                  <li>• Blood sampling lancets and test strips</li>
+                  <li>• Lactate analyzer, lancets, test strips</li>
                   <li>• Heart rate monitor</li>
                   <li>• Power meter (cycling) or GPS watch (running)</li>
-                  <li>• Stopwatch or timer</li>
+                  <li>• Stopwatch/timer</li>
                   <li>• Data recording sheet</li>
                 </ul>
               </div>
-              <div className="bg-green-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-green-900 mb-4">Optional Equipment</h3>
+              <div className="rounded-2xl p-5 bg-pink-50/60 border border-pink-100">
+                <h3 className="text-lg font-semibold text-pink-900 mb-3">Optional</h3>
                 <ul className="space-y-2 text-gray-700">
-                  <li>• Treadmill (for running tests)</li>
-                  <li>• Stationary bike (for cycling tests)</li>
+                  <li>• Treadmill / Stationary bike</li>
                   <li>• VO2 analyzer</li>
-                  <li>• Environmental monitoring devices</li>
+                  <li>• Environmental monitors</li>
                   <li>• Video recording equipment</li>
                 </ul>
               </div>
             </div>
-          </section>
+          </div>
+        </motion.section>
 
-          {/* Protocol Steps */}
-          <section className="py-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Step-by-Step Lactate Testing Protocol</h2>
-            <div className="space-y-6">
-              <div className="bg-gray-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Pre-Test Preparation</h3>
-                <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                  <li>Ensure athlete is well-rested (no intense training 24-48 hours prior)</li>
-                  <li>Maintain consistent nutrition and hydration</li>
-                  <li>Calibrate all equipment (power meter, heart rate monitor)</li>
-                  <li>Set up testing environment (temperature, humidity control)</li>
-                  <li>Prepare data recording sheets</li>
-                </ol>
-              </div>
-
-              <div className="bg-gray-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Cycling Lactate Test Protocol</h3>
-                <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                  <li>Start with 10-minute warm-up at 100-150W</li>
-                  <li>Begin test at 150W, increase by 25-30W every 3-4 minutes</li>
-                  <li>Take blood sample at end of each stage</li>
-                  <li>Record power output, heart rate, and lactate value</li>
-                  <li>Continue until near race pace or voluntary exhaustion</li>
-                  <li>Allow 5-minute cool-down</li>
-                </ol>
-              </div>
-
-              <div className="bg-gray-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Running Lactate Test Protocol</h3>
-                <ol className="list-decimal pl-5 space-y-2 text-gray-700">
-                  <li>Start with 10-minute easy warm-up</li>
-                  <li>Begin test at comfortable pace, increase by 0.5 km/h every 3-4 minutes</li>
-                  <li>Take blood sample at end of each stage</li>
-                  <li>Record pace, heart rate, and lactate value</li>
-                  <li>Continue until near race pace or voluntary exhaustion</li>
-                  <li>Allow 5-minute cool-down</li>
-                </ol>
-              </div>
+        {/* Protocol Steps */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl"
+        >
+          <div className="px-6 py-6 md:px-10 md:py-8 space-y-6">
+            <div className="flex items-center gap-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2l4 8H8l4-8z"/>
+                <path d="M2 22h20l-10-6-10 6z"/>
+              </svg>
+              <h2 className="text-2xl font-bold text-gray-900">Step‑by‑Step Protocol</h2>
             </div>
-          </section>
 
-          {/* Best Practices */}
-          <section className="py-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Best Practices for Accurate Results</h2>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-yellow-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-yellow-900 mb-4">Testing Conditions</h3>
+            {/* Pre‑Test */}
+            <div className="rounded-2xl p-5 bg-white/70 border border-white/50">
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">Pre‑Test Preparation</h3>
+              <ol className="list-decimal pl-5 space-y-2 text-gray-700">
+                <li>Rested athlete (no intense training 24–48h prior)</li>
+                <li>Consistent nutrition and hydration</li>
+                <li>Calibrate power meter and HR monitor</li>
+                <li>Controlled environment (temp/humidity)</li>
+                <li>Prepared data sheets</li>
+              </ol>
+            </div>
+
+            {/* Cycling */}
+            <div className="rounded-2xl p-5 bg-white/70 border border-white/50">
+              <div className="flex items-center gap-2 mb-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="5.5" cy="17.5" r="3.5"/>
+                  <circle cx="18.5" cy="17.5" r="3.5"/>
+                  <path d="M5.5 17.5L9 7h6l3.5 10.5"/>
+                </svg>
+                <h3 className="text-xl font-semibold text-gray-900">Cycling Protocol</h3>
+              </div>
+              <ol className="list-decimal pl-5 space-y-2 text-gray-700">
+                <li>Warm‑up 10′ at 100–150W</li>
+                <li>Start 150W, +25–30W every 3–4′</li>
+                <li>Blood sample end of each stage</li>
+                <li>Record power, HR, lactate</li>
+                <li>Stop near race pace / volitional exhaustion</li>
+                <li>Cool‑down 5′</li>
+              </ol>
+            </div>
+
+            {/* Running */}
+            <div className="rounded-2xl p-5 bg-white/70 border border-white/50">
+              <div className="flex items-center gap-2 mb-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M13 5l2 2 3-3"/>
+                  <path d="M9 7l-4 9"/>
+                  <path d="M16 13l-3 6"/>
+                </svg>
+                <h3 className="text-xl font-semibold text-gray-900">Running Protocol</h3>
+              </div>
+              <ol className="list-decimal pl-5 space-y-2 text-gray-700">
+                <li>Warm‑up 10′ easy</li>
+                <li>Start comfortable pace, +0.5 km/h every 3–4′</li>
+                <li>Blood sample end of each stage</li>
+                <li>Record pace, HR, lactate</li>
+                <li>Stop near race pace / volitional exhaustion</li>
+                <li>Cool‑down 5′</li>
+              </ol>
+            </div>
+          </div>
+        </motion.section>
+
+        {/* Best Practices */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl"
+        >
+          <div className="px-6 py-6 md:px-10 md:py-8">
+            <div className="flex items-center gap-2 mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"/>
+              </svg>
+              <h2 className="text-2xl font-bold text-gray-900">Best Practices</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="rounded-2xl p-5 bg-yellow-50/60 border border-yellow-100">
+                <h3 className="text-lg font-semibold text-yellow-900 mb-3">Testing Conditions</h3>
                 <ul className="space-y-2 text-gray-700">
                   <li>• Consistent time of day</li>
-                  <li>• Controlled temperature (18-22°C)</li>
-                  <li>• Minimal wind/airflow</li>
-                  <li>• Quiet, distraction-free environment</li>
-                  <li>• Same equipment for all tests</li>
+                  <li>• Temp 18–22°C, low airflow</li>
+                  <li>• Quiet environment</li>
+                  <li>• Same equipment each session</li>
                 </ul>
               </div>
-              <div className="bg-purple-50 p-6 rounded-xl">
-                <h3 className="text-xl font-semibold text-purple-900 mb-4">Data Collection</h3>
+              <div className="rounded-2xl p-5 bg-violet-50/60 border border-violet-100">
+                <h3 className="text-lg font-semibold text-violet-900 mb-3">Data Collection</h3>
                 <ul className="space-y-2 text-gray-700">
-                  <li>• Record all measurements immediately</li>
-                  <li>• Use consistent blood sampling technique</li>
-                  <li>• Ensure clean, dry skin for blood samples</li>
-                  <li>• Take samples from same finger/ear</li>
-                  <li>• Record environmental conditions</li>
+                  <li>• Record immediately after each stage</li>
+                  <li>• Consistent sampling technique</li>
+                  <li>• Same site (finger/ear) each time</li>
+                  <li>• Record environment conditions</li>
                 </ul>
               </div>
             </div>
-          </section>
+          </div>
+        </motion.section>
 
-          {/* CTA Section */}
-          <section className="py-8 bg-primary text-white rounded-xl">
-            <div className="text-center">
-              <h2 className="text-3xl font-bold mb-4">Ready to Start Your Lactate Testing?</h2>
-              <p className="text-xl mb-6">Use our free online lactate calculator to analyze your test results and determine your training zones.</p>
-              <div className="flex flex-wrap gap-4 justify-center">
-                <a 
-                  href="/testing-without-login" 
-                  className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-primary font-bold shadow-lg hover:bg-gray-100 transition"
-                >
-                  Try Free Calculator
-                </a>
-                <a 
-                  href="/lactate-guide" 
-                  className="inline-flex items-center px-6 py-3 rounded-lg border border-white text-white font-bold hover:bg-white hover:text-primary transition"
-                >
-                  Read Complete Guide
-                </a>
-              </div>
+        {/* CTA */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="relative overflow-hidden bg-primary text-white rounded-3xl shadow-xl border border-primary/30"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-white/10 via-transparent to-white/10" />
+          <div className="relative px-6 py-8 md:px-10 md:py-10 text-center">
+            <h2 className="text-3xl font-bold mb-3">Ready to Start Your Lactate Testing?</h2>
+            <p className="text-lg text-white/90 mb-6">Use our free online lactate calculator to analyze your test results and determine your training zones.</p>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <a
+                href="/lactate-curve-calculator"
+                className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-primary font-bold shadow-lg hover:bg-gray-100 transition"
+              >
+                Try Free Calculator
+              </a>
+              <a
+                href="/lactate-guide"
+                className="inline-flex items-center px-6 py-3 rounded-lg border border-white text-white font-bold hover:bg-white hover:text-primary transition"
+              >
+                Read Complete Guide
+              </a>
             </div>
-          </section>
-        </motion.div>
+          </div>
+        </motion.section>
       </main>
 
       {/* Footer */}
-      <footer className="bg-white py-12 border-t">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <a href="/" className="flex items-center gap-2">
-                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-                <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
-              </a>
-              <p className="mt-4 text-gray-600">
-                Professional lactate testing and analysis for athletes and coaches.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
-              <ul className="mt-4 space-y-4">
-                <li>
-                  <a href="/testing-without-login" className="text-base text-gray-600 hover:text-primary">
-                    Try Demo
-                  </a>
-                </li>
-                <li>
-                  <a href="/lactate-guide" className="text-base text-gray-600 hover:text-primary">
-                    Lactate Guide
-                  </a>
-                </li>
-                <li>
-                  <a href="/login" className="text-base text-gray-600 hover:text-primary">
-                    Login
-                  </a>
-                </li>
-                <li>
-                  <a href="/signup" className="text-base text-gray-600 hover:text-primary">
-                    Register
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Contact</h3>
-              <ul className="mt-4 space-y-4">
-                <li className="flex items-center">
-                  <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <a href="mailto:jakub.stadnik01@gmail.com" className="ml-2 text-gray-600 hover:text-primary">
-                    jakub.stadnik01@gmail.com
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="mt-8 border-t border-gray-200 pt-8 text-center">
-            <p className="text-base text-gray-400">
-              &copy; {new Date().getFullYear()} LaChart. All rights reserved.
-            </p>
-          </div>
+      <footer className="py-10">
+        <div className="max-w-6xl mx-auto px-4 text-center text-gray-400 text-sm">
+          © {new Date().getFullYear()} LaChart. All rights reserved.
         </div>
       </footer>
     </div>

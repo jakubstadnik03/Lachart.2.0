@@ -44,7 +44,7 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-lg shadow-md p-6"
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
     >
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <WifiIcon className="w-6 h-6" />
@@ -59,11 +59,11 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
           return (
             <div
               key={device.key}
-              className={`p-4 rounded-lg border-2 transition-all ${
+              className={`p-4 rounded-2xl transition-all border ${
                 isConnected
-                  ? 'border-green-500 bg-green-50'
-                  : 'border-gray-200 bg-gray-50'
-              }`}
+                  ? 'border-emerald-300 bg-emerald-50/60'
+                  : 'border-white/40 bg-white/50 backdrop-blur'
+              } shadow`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -77,10 +77,10 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
                 <div className="flex items-center gap-2">
                   {isConnected ? (
                     <>
-                      <SignalIcon className="w-5 h-5 text-green-500" />
+                      <SignalIcon className="w-5 h-5 text-emerald-500" />
                       <button
                         onClick={() => onDeviceDisconnect(device.key)}
-                        className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600"
+                        className="px-3 py-1.5 text-sm bg-white/70 text-rose-700 rounded-xl hover:bg-white border border-rose-200 shadow"
                       >
                         Disconnect
                       </button>
@@ -90,7 +90,7 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
                       <SignalSlashIcon className="w-5 h-5 text-gray-400" />
                       <button
                         onClick={() => onDeviceConnect(device.key)}
-                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                        className="px-3 py-1.5 text-sm bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
                       >
                         Connect
                       </button>
@@ -100,7 +100,7 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
               </div>
 
               {isConnected && deviceState?.data && (
-                <div className="mt-3 pt-3 border-t border-green-200">
+                <div className="mt-3 pt-3 border-t border-emerald-200/60">
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {device.key === 'bikeTrainer' && (
                       <>

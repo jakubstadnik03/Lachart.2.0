@@ -450,7 +450,7 @@ const LoginPage = () => {
             className="mt-4 text-center"
           >
             <Link 
-              to="/testing-without-login" 
+              to="/lactate-curve-calculator" 
               className="text-sm text-gray-600 hover:text-gray-900"
             >
               Continue without login (Demo Mode)

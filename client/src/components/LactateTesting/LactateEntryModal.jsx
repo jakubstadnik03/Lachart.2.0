@@ -52,13 +52,13 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg p-6 max-w-md w-full mx-4 z-50 shadow-xl"
+            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/70 backdrop-blur-lg rounded-2xl p-6 max-w-md w-full mx-4 z-50 shadow-xl border border-white/40"
           >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">Add Lactate Value</h2>
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-500 hover:text-gray-700"
               >
                 <XMarkIcon className="w-6 h-6" />
               </button>
@@ -86,7 +86,7 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
                     value={lactateValue}
                     onChange={(e) => setLactateValue(e.target.value)}
                     placeholder="e.g., 2.5"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full px-4 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     autoFocus
                     required
                   />
@@ -103,7 +103,7 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
                     <select
                       value={borgValue}
                       onChange={(e) => setBorgValue(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                       <option value="">Select BORG value...</option>
                       {borgScale.map((item) => (
@@ -123,13 +123,13 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                  className="flex-1 px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white border border-white/40 shadow"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
                 >
                   Add Values & Continue
                 </button>

@@ -66,21 +66,21 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+          className="bg-white/70 backdrop-blur-lg rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/40 shadow-xl"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Edit Protocol Steps</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-500 hover:text-gray-700"
             >
               <XMarkIcon className="w-6 h-6" />
             </button>
@@ -88,12 +88,12 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
 
           <div className="space-y-4 mb-4">
             {editedSteps.map((step, index) => (
-              <div key={index} className="p-4 border border-gray-200 rounded-lg">
+              <div key={index} className="p-4 border border-white/40 bg-white/60 backdrop-blur rounded-xl">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-gray-700">Step {step.stepNumber}</span>
                     <span className={`px-2 py-1 rounded text-xs ${
-                      step.phase === 'work' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                      step.phase === 'work' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     }`}>
                       {step.phase === 'work' ? 'Work' : 'Recovery'}
                     </span>
@@ -101,7 +101,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
                   {editedSteps.length > 1 && (
                     <button
                       onClick={() => handleRemoveStep(index)}
-                      className="text-red-500 hover:text-red-700"
+                      className="text-rose-600 hover:text-rose-700"
                     >
                       <TrashIcon className="w-5 h-5" />
                     </button>
@@ -118,7 +118,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
                       value={step.targetPower}
                       onChange={(e) => handleStepChange(index, 'targetPower', e.target.value)}
                       disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
                     />
                     {testState === 'running' && index < currentStep && (
                       <p className="text-xs text-gray-500 mt-1">Already completed</p>
@@ -134,7 +134,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
                       value={step.duration}
                       onChange={(e) => handleStepChange(index, 'duration', e.target.value)}
                       disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
                     />
                   </div>
 
@@ -147,7 +147,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
                       value={step.recoveryDuration}
                       onChange={(e) => handleStepChange(index, 'recoveryDuration', e.target.value)}
                       disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
                     />
                   </div>
                 </div>
@@ -161,7 +161,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
           <div className="flex gap-2 justify-between">
             <button
               onClick={handleAddStep}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2"
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
             >
               <PlusIcon className="w-5 h-5" />
               Add Step
@@ -169,13 +169,13 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
             <div className="flex gap-2">
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                className="px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white border border-white/40 shadow"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
               >
                 Save Changes
               </button>

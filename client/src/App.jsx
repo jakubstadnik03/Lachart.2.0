@@ -35,6 +35,7 @@ import LactateGuide from './pages/LactateGuide';
 import AdminDashboard from './pages/AdminDashboard';
 import FitAnalysisPage from './pages/FitAnalysisPage';
 import LactateTestingPage from './pages/LactateTestingPage';
+import Privacy from './pages/Privacy';
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
@@ -54,9 +55,10 @@ function AppRoutes() {
       {/* Veřejné routy */}
       <Route path="/" element={<About />} />
       <Route path="/about" element={<About />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
-      <Route path="/testing-without-login" element={<TestingWithoutLogin />} />
+      <Route path="/lactate-curve-calculator" element={<TestingWithoutLogin />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
       <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />

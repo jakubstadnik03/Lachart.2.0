@@ -109,95 +109,6 @@ const TutorialMessagePortal = ({ step, onNext, onSkip, inputRef }) => {
   );
 };
 
-// Tooltip component
-const Tooltip = ({ content, children }) => {
-  const [isVisible, setIsVisible] = useState(false);
-
-  return (
-    <div className="relative inline-block">
-      <div
-        onMouseEnter={() => setIsVisible(true)}
-        onMouseLeave={() => setIsVisible(false)}
-      >
-        {children}
-      </div>
-      {isVisible && (
-        <div className="absolute z-50 bg-gray-900 text-white text-sm px-2 py-1 rounded-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-          {content}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Field help content configuration
-const fieldHelp = {
-  title: {
-    text: "Zadejte název testu (např. 'Laktátový test - Kolo')",
-    example: "Příklad: Laktátový test 15.3.2024"
-  },
-  sport: {
-    text: "Vyberte sport, pro který test provádíte",
-    example: "Běh, Kolo nebo Plavání"
-  },
-  power: {
-    bike: {
-      text: "Zadejte výkon ve wattech pro tento interval",
-      example: "Příklad: 200W"
-    },
-    run: {
-      text: "Zadejte tempo ve formátu MM:SS na kilometr",
-      example: "Příklad: 4:30"
-    },
-    swim: {
-      text: "Zadejte tempo ve formátu MM:SS na 100m",
-      example: "Příklad: 1:45"
-    }
-  },
-  heartRate: {
-    text: "Zadejte tepovou frekvenci v úderech za minutu",
-    example: "Příklad: 150"
-  },
-  lactate: {
-    text: "Zadejte naměřenou hodnotu laktátu v mmol/L",
-    example: "Příklad: 2.5"
-  },
-  glucose: {
-    text: "Zadejte hodnotu glukózy v krvi (volitelné)",
-    example: "Příklad: 5.5"
-  },
-  RPE: {
-    text: "Zadejte subjektivní hodnocení zátěže (1-10)",
-    example: "Příklad: 7"
-  },
-  weight: {
-    text: "Zadejte váhu v kilogramech",
-    example: "Příklad: 75"
-  },
-  baseLa: {
-    text: "Zadejte klidovou hodnotu laktátu před testem",
-    example: "Příklad: 1.2"
-  }
-};
-
-// Input help tooltip component
-const InputHelp = ({ field, isVisible, position }) => {
-  if (!isVisible || !fieldHelp[field]) return null;
-
-  return (
-    <div 
-      className="absolute z-50 bg-white px-4 py-3 rounded-lg shadow-lg border border-primary/10 max-w-xs"
-      style={{
-        ...position,
-        animation: 'fadeIn 0.2s ease-in-out'
-      }}
-    >
-      <div className="text-gray-800 font-medium mb-1">{fieldHelp[field].text}</div>
-      <div className="text-gray-500 text-sm">{fieldHelp[field].example}</div>
-    </div>
-  );
-};
-
 // Improved click logging function
 const logClick = (element, details = {}) => {
   // Format the details object to be more readable
@@ -224,8 +135,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const { addNotification } = useNotification();
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [highlightedField, setHighlightedField] = useState(null);
-  const [activeHelp, setActiveHelp] = useState(null);
-  const [helpPosition, setHelpPosition] = useState({ top: 0, left: 0 });
   const [isEditMode, setIsEditMode] = useState(false);
   const [inputMode, setInputMode] = useState('pace');
   const [unitSystem, setUnitSystem] = useState('metric'); // 'metric' (km, pace/km) nebo 'imperial' (mile, mph)
@@ -361,8 +270,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [rows, setRows] = useState([]);
 
   const [showGlucose, setShowGlucose] = useState(true);
-  const [hoverGlucose, setHoverGlucose] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
 
   const inputRefs = useRef({});
 
@@ -431,16 +338,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   }, [showGlucose, onGlucoseColumnChange]);
 
-  const handlePaceChange = (index, value) => {
-    console.log('Pace change:', { index, value });
-    const updatedRows = rows.map((row, i) =>
-      i === index ? { ...row, power: value } : row
-    );
-    console.log('Updated rows after pace change:', updatedRows);
-    setRows(updatedRows);
-    setIsDirty(true);
-  };
-
   const handleValueChange = (rowIndex, field, value) => {
     console.log('Input change:', { rowIndex, field, value });
     
@@ -454,7 +351,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     
     console.log('Updated rows:', updatedRows);
     setRows(updatedRows);
-      setIsDirty(true);
       
       const updatedTestData = {
         ...testData,
@@ -477,32 +373,22 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         specifics: testData.specifics || { specific: '', weather: '' },
         comments: testData.comments || ''
       });
-      
       if (testData.results && testData.results.length > 0) {
         const initialRows = testData.results.map(row => {
-          let powerValue = row.power ? String(row.power) : '';
-          
-          // Convert backend seconds to display format based on inputMode and unitSystem
-          if ((testData.sport === 'run' || testData.sport === 'swim') && powerValue) {
-            const currentInputMode = testData.inputMode || 'pace';
-            const currentUnitSystem = testData.unitSystem || 'metric';
-            const seconds = parseFloat(powerValue);
-            
-            if (!isNaN(seconds) && seconds > 0) {
-              if (currentInputMode === 'pace') {
-                // Convert seconds to MM:SS format
-                powerValue = convertSecondsToPace(seconds);
-              } else if (currentInputMode === 'speed') {
-                // Convert seconds to speed format
-                const speed = convertSecondsToSpeed(seconds, currentUnitSystem);
-                powerValue = speed.toFixed(1);
-              }
+          let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
+          if ((testData.sport === 'run' || testData.sport === 'swim')) {
+            const num = Number(power);
+            if (!isNaN(num) && num > 0) {
+              power = convertSecondsToPace(num);
+            } else if (typeof power === 'string' && power.includes(':')) {
+              // already MM:SS, keep as is
+            } else {
+              power = '';
             }
           }
-          
           return {
             interval: row.interval || 1,
-            power: powerValue,
+            power,
             heartRate: row.heartRate ? String(row.heartRate) : '',
             lactate: row.lactate ? String(row.lactate) : '',
             glucose: row.glucose ? String(row.glucose) : '',
@@ -510,7 +396,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           };
         });
         setRows(initialRows);
-    } else {
+      } else {
         setRows([{
           interval: 1,
           power: '',
@@ -590,10 +476,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           intervals: rows.length,
           isNewTest: isNewTest
         });
-        setIsDirty(false);
-        if (!isNewTest) {
-          setIsEditMode(false);
-        }
+        setIsEditMode(false);
       } catch (error) {
         console.error('Error saving test data:', error);
         addNotification('Failed to save test data', 'error');
@@ -665,7 +548,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     // For other field changes
     const newFormData = { ...formData, [field]: value };
     setFormData(newFormData);
-    setIsDirty(true);
 
     const updatedTestData = {
       ...testData,
@@ -688,7 +570,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     const updatedRows = rows.filter((_, index) => index !== rowIndex);
     updatedRows.forEach((row, index) => (row.interval = index + 1));
     setRows(updatedRows);
-    setIsDirty(true);
   };
 
   const handleAddRow = () => {
@@ -702,7 +583,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     };
     
     setRows([...rows, newRow]);
-    setIsDirty(true);
   };
 
   const handleDeleteTest = () => {
@@ -714,37 +594,20 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   };
 
-  // Calculate grid columns based on whether glucose is shown
-  const gridCols = showGlucose ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-4 sm:grid-cols-6';
-
-  // Highlight fields with errors
-  const validateField = (field, value) => {
-    if (field === 'title' && !value) {
-      setHighlightedField('title');
-      return false;
-    }
-    if (field === 'sport' && !value) {
-      setHighlightedField('sport');
-      return false;
-    }
-    return true;
-  };
-
   // Handle input focus
   const handleInputFocus = (field, event) => {
-    const rect = event.target.getBoundingClientRect();
-    setHelpPosition({
-      top: `${rect.top - 80}px`,
-      left: `${rect.left}px`
-    });
-    setActiveHelp(field);
+    // setHelpPosition({
+    //   top: `${rect.top - 80}px`,
+    //   left: `${rect.left}px`
+    // });
+    // setActiveHelp(field);
   };
 
   // Handle input blur
   const handleInputBlur = () => {
     // Add small delay to make the help message more readable
     setTimeout(() => {
-      setActiveHelp(null);
+      // setActiveHelp(null);
     }, 200);
   };
 
@@ -844,36 +707,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           className={`w-full min-w-0 p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
           } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''}`}
-          placeholder={placeholder}
-        />
-      </div>
-    );
-  };
-
-  // Update the form fields to include tutorial tooltips
-  const renderFormField = (field, label, type = 'text', placeholder = '') => {
-    const isTutorialField = currentTutorialStep >= 0 && tutorialSteps[currentTutorialStep].field === field;
-    
-    return (
-      <div className="relative">
-        <label className="block text-xs font-medium text-gray-700 mb-0.5">{label}</label>
-        {isTutorialField && (
-          <TutorialMessagePortal
-            step={tutorialSteps[currentTutorialStep]}
-            onNext={handleNextTutorialStep}
-            onSkip={handleSkipTutorial}
-            inputRef={getTutorialInputRef()}
-          />
-        )}
-        <input 
-          ref={el => inputRefs.current[field] = el}
-          type={type}
-          value={formData[field]}
-          onChange={(e) => handleFormDataChange(field, e.target.value)}
-          className={`w-full p-1 border rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
-            isTutorialField ? 'ring-2 ring-primary border-primary' : ''
-          }`}
-          disabled={!isNewTest && !isEditMode}
           placeholder={placeholder}
         />
       </div>

@@ -16,7 +16,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-lg shadow-md p-6"
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
     >
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <Cog6ToothIcon className="w-6 h-6" />
@@ -34,7 +34,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               value={protocol.workDuration}
               onChange={(e) => handleChange('workDuration', e.target.value)}
               disabled={!isEditable}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
             />
           </div>
 
@@ -47,7 +47,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               value={protocol.recoveryDuration}
               onChange={(e) => handleChange('recoveryDuration', e.target.value)}
               disabled={!isEditable}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
             />
           </div>
 
@@ -60,7 +60,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               value={protocol.startPower}
               onChange={(e) => handleChange('startPower', e.target.value)}
               disabled={!isEditable}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
             />
           </div>
 
@@ -73,7 +73,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               value={protocol.powerIncrement}
               onChange={(e) => handleChange('powerIncrement', e.target.value)}
               disabled={!isEditable}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
             />
           </div>
 
@@ -86,18 +86,18 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               value={protocol.maxSteps}
               onChange={(e) => handleChange('maxSteps', e.target.value)}
               disabled={!isEditable}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
             />
           </div>
         </div>
 
         {/* Protocol Preview */}
-        <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="mt-4 pt-4 border-t border-white/40">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-semibold text-gray-700">Protocol Preview</h3>
             <button
               onClick={onEditProtocol}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-white/70 text-primary rounded-xl hover:bg-white border border-white/40 shadow"
               title="Edit protocol steps"
             >
               <PencilIcon className="w-4 h-4" />
@@ -109,7 +109,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
               {protocol.steps.map((step, index) => (
                 <div
                   key={index}
-                  className="p-2 bg-purple-50 rounded text-sm flex justify-between items-center"
+                  className="p-2 bg-white/60 backdrop-blur rounded-lg text-sm flex justify-between items-center border border-white/40"
                 >
                   <span className="font-semibold">Step {step.stepNumber}:</span>
                   <span>{step.targetPower}W × {Math.floor(step.duration / 60)}min</span>

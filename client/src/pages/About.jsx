@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { trackEvent } from '../utils/analytics';
 import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
@@ -69,6 +69,18 @@ const primary = 'bg-primary';
 const primaryText = 'text-primary';
 
 const About = () => {
+  // Cookie consent state
+  const [showCookieBar, setShowCookieBar] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('cookiesAccepted')) {
+      setTimeout(() => setShowCookieBar(true), 1500);
+    }
+  }, []);
+  const handleAcceptCookies = () => {
+    localStorage.setItem('cookiesAccepted', '1');
+    setShowCookieBar(false);
+  };
+
   const features = [
     {
       title: 'Lactate Curve Analysis',
@@ -212,7 +224,7 @@ const About = () => {
       <div className="w-full bg-secondary text-white py-3 px-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4">
           <span className="font-semibold text-center sm:text-left">Test your demo app with calculating Lactate thresholds from a lactate testing.</span>
-          <a href="/testing-without-login" 
+          <a href="/lactate-curve-calculator" 
              className="inline-block px-6 py-2 rounded-lg bg-white text-secondary font-bold shadow-lg hover:shadow-xl hover:bg-gray-50 transform hover:-translate-y-0.5 transition-all">
             Try Demo
           </a>
@@ -246,7 +258,7 @@ const About = () => {
             >
               <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'about_get_started' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Get Started</a>
               <a href="/login" onClick={() => trackEvent('cta_click', { label: 'about_sign_in' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Sign In</a>
-              <a href="/testing-without-login" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-flex items-center bg-secondary text-white font-bold px-6 py-2 rounded-lg shadow hover:bg-secondary-dark transition border border-white whitespace-nowrap">Lactate Form</a>
+              <a href="/lactate-curve-calculator" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-flex items-center bg-secondary text-white font-bold px-6 py-2 rounded-lg shadow hover:bg-secondary-dark transition border border-white whitespace-nowrap">Lactate Form</a>
               <a href="/lactate-guide" onClick={() => trackEvent('cta_click', { label: 'about_lactate_guide' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition border border-white whitespace-nowrap">Lactate Guide</a>
             </motion.div>
           </div>
@@ -513,7 +525,7 @@ const About = () => {
             <p className="text-gray-600 mb-4">
               This is a great way to see how LaChart analyzes your performance and helps you understand your endurance profile. No login is required and your data will not be saved. Just experiment and see your results instantly!
             </p>
-            <a href="/testing-without-login" className="inline-block mt-2 px-6 py-3 rounded bg-primary text-white font-bold shadow hover:bg-primary-dark transition">Try the Demo Now</a>
+            <a href="/lactate-curve-calculator" className="inline-block mt-2 px-6 py-3 rounded bg-primary text-white font-bold shadow hover:bg-primary-dark transition">Try the Demo Now</a>
           </div>
           <div className="flex-1 flex justify-center order-1 md:order-2 mb-8 md:mb-0">
             <LazyImage 
@@ -648,7 +660,7 @@ const About = () => {
               <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
               <ul className="mt-4 space-y-4">
                 <li>
-                  <a href="/testing-without-login" className="text-base text-gray-600 hover:text-primary">
+                  <a href="/lactate-curve-calculator" className="text-base text-gray-600 hover:text-primary">
                     Try Demo
                   </a>
                 </li>
@@ -690,6 +702,24 @@ const About = () => {
           </div>
         </div>
       </motion.footer>
+
+      {/* Cookie Consent Banner */}
+      {showCookieBar && (
+        <div className="fixed bottom-0 left-0 w-full z-[99999] flex items-end justify-center pointer-events-none">
+          <div className="pointer-events-auto bg-white/90 border rounded-t-xl shadow px-6 py-4 mb-0 text-sm flex flex-col md:flex-row gap-3 md:gap-8 items-center fade-in-up animate-fade-in-up">
+            <span>
+              This website uses cookies to ensure you get the best experience.{' '}
+              <a href="/privacy" target="_blank" className="underline text-primary">Learn more</a>.
+            </span>
+            <button
+              className="ml-2 px-5 py-1 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark transition"
+              onClick={handleAcceptCookies}
+            >
+              I Agree
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -375,7 +375,7 @@ const LactateTestingPage = () => {
   const currentStepData = protocol.steps[currentStep] || {};
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
@@ -387,7 +387,7 @@ const LactateTestingPage = () => {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-lg shadow-md p-6 mb-6"
+          className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 mb-6"
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
@@ -400,7 +400,7 @@ const LactateTestingPage = () => {
                   <span className="text-sm text-gray-600">Step {currentStep + 1}/{protocol.steps.length}</span>
                   <span className="text-sm text-gray-600">•</span>
                   {phase === 'countdown' ? (
-                    <span className="text-sm font-bold text-blue-600">Starting in {countdown}...</span>
+                    <span className="text-sm font-bold text-primary">Starting in {countdown}...</span>
                   ) : phase === 'recovery' ? (
                     <span className="text-sm text-gray-600">Recovery (data recording)</span>
                   ) : (
@@ -415,13 +415,13 @@ const LactateTestingPage = () => {
                 <>
                   <button
                     onClick={() => setShowCalibration(true)}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                    className="px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white/90 border border-white/40 shadow"
                   >
                     Calibrate
                   </button>
                   <button
                     onClick={handleStartTest}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
                   >
                     <PlayIcon className="w-5 h-5" />
                     Start Test
@@ -432,28 +432,28 @@ const LactateTestingPage = () => {
                 <>
                   <button
                     onClick={handlePauseTest}
-                    className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 flex items-center gap-2 shadow"
                   >
                     <PauseIcon className="w-5 h-5" />
                     Pause
                   </button>
                   <button
                     onClick={handleSkipInterval}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 flex items-center gap-2 shadow"
                   >
                     <StopIcon className="w-5 h-5" />
                     End Interval
                   </button>
                   <button
                     onClick={() => setShowLactateModal(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 flex items-center gap-2 shadow"
                   >
                     <PlusIcon className="w-5 h-5" />
                     Add Lactate
                   </button>
                   <button
                     onClick={handleStopTest}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
                   >
                     <StopIcon className="w-5 h-5" />
                     Stop Test
@@ -464,28 +464,28 @@ const LactateTestingPage = () => {
                 <>
                   <button
                     onClick={handleStartInterval}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
                   >
                     <PlayIcon className="w-5 h-5" />
                     Start Interval
                   </button>
                   <button
                     onClick={() => setShowLactateModal(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 flex items-center gap-2 shadow"
                   >
                     <PlusIcon className="w-5 h-5" />
                     Add Lactate
                   </button>
                   <button
                     onClick={handlePauseTest}
-                    className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 flex items-center gap-2 shadow"
                   >
                     <PauseIcon className="w-5 h-5" />
                     Pause
                   </button>
                   <button
                     onClick={handleStopTest}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
                   >
                     <StopIcon className="w-5 h-5" />
                     Stop Test
@@ -494,12 +494,12 @@ const LactateTestingPage = () => {
               )}
               {testState === 'running' && phase === 'countdown' && (
                 <>
-                  <div className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 text-xl font-bold">
+                  <div className="px-4 py-2 bg-primary text-white rounded-xl flex items-center gap-2 text-xl font-bold shadow">
                     Starting in {countdown}...
                   </div>
                   <button
                     onClick={handleStopTest}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
                   >
                     <StopIcon className="w-5 h-5" />
                     Stop Test
@@ -510,14 +510,14 @@ const LactateTestingPage = () => {
                 <>
                   <button
                     onClick={handleResumeTest}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
                   >
                     <PlayIcon className="w-5 h-5" />
                     Resume
                   </button>
                   <button
                     onClick={handleStopTest}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
                   >
                     <StopIcon className="w-5 h-5" />
                     Stop
@@ -527,7 +527,7 @@ const LactateTestingPage = () => {
               {testState === 'completed' && (
                 <button
                   onClick={handleSaveTest}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
                 >
                   <ChartBarIcon className="w-5 h-5" />
                   Save Test
@@ -538,36 +538,36 @@ const LactateTestingPage = () => {
 
           {/* Current Step Info */}
           {testState !== 'idle' && currentStepData && (
-            <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <div className="mt-4 p-4 bg-white/70 backdrop-blur rounded-2xl border border-white/40">
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <div className="text-sm text-gray-600">Current Phase</div>
-                  <div className="text-lg font-semibold text-purple-700">
+                  <div className="text-lg font-semibold text-primary">
                     {phase === 'countdown' ? 'Countdown' : phase === 'recovery' ? 'Recovery' : 'Work'}
                   </div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-600">Target Power</div>
-                  <div className="text-lg font-semibold text-purple-700">
+                  <div className="text-lg font-semibold text-primary">
                     {currentStepData.targetPower} W
                   </div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-600">Step Duration</div>
-                  <div className="text-lg font-semibold text-purple-700">
+                  <div className="text-lg font-semibold text-primary">
                     {formatTime(currentStepData.duration)}
                   </div>
                 </div>
               </div>
               {phase === 'countdown' && (
                 <div className="mt-2 text-center">
-                  <div className="text-4xl font-bold text-blue-600">{countdown}</div>
+                  <div className="text-4xl font-bold text-primary">{countdown}</div>
                   <div className="text-sm text-gray-600">Starting interval...</div>
                 </div>
               )}
               {phase === 'recovery' && (
                 <div className="mt-2 text-center">
-                  <div className="text-sm text-green-600">✓ Recording data during recovery</div>
+                  <div className="text-sm text-emerald-600">✓ Recording data during recovery</div>
                 </div>
               )}
             </div>

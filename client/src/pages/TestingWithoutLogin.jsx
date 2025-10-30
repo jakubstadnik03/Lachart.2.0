@@ -4,12 +4,16 @@ import { motion, AnimatePresence, useInView } from 'framer-motion';
 import TestingForm from '../components/Testing-page/TestingForm';
 import LactateCurve from '../components/Testing-page/LactateCurve';
 import LactateCurveCalculator from '../components/Testing-page/LactateCurveCalculator';
+import TrainingZonesGenerator from '../components/Testing-page/TrainingZonesGenerator';
 import { useNotification } from '../context/NotificationContext';
 import Header from '../components/Header/Header';
 import WelcomeModal from '../components/WelcomeModal';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
 import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestCompletion } from '../utils/analytics';
+// SEO: Helmet meta tags at the top of the main component
+import { Helmet } from 'react-helmet';
+import { X as CloseIcon } from 'lucide-react';
 
 // Animation variants
 const containerVariants = {
@@ -46,7 +50,7 @@ const fadeInUpVariants = {
   }
 };
 
-const TestingWithoutLogin = () => {
+const LactateCurveCalculatorPage = () => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -85,6 +89,8 @@ const TestingWithoutLogin = () => {
     const isInitialMount = useRef(true);
     const [showWelcome, setShowWelcome] = useState(false);
     const welcomeTimerRef = useRef(null);
+    const [showFeatureModal, setShowFeatureModal] = useState(false);
+    const featureTimerRef = useRef(null);
 
     // Create refs for scroll animations
     const formRef = useRef(null);
@@ -129,6 +135,20 @@ const TestingWithoutLogin = () => {
         }
         return () => {
             if (welcomeTimerRef.current) clearTimeout(welcomeTimerRef.current);
+        };
+    }, []);
+
+    // Feature modal after 60s of use (once per session)
+    useEffect(() => {
+        if (!sessionStorage.getItem('featureModalShown')) {
+            featureTimerRef.current = setTimeout(() => {
+                setShowFeatureModal(true);
+                sessionStorage.setItem('featureModalShown', '1');
+                trackDemoUsage('feature_modal_shown', { timing: '60s' });
+            }, 60 * 1000);
+        }
+        return () => {
+            if (featureTimerRef.current) clearTimeout(featureTimerRef.current);
         };
     }, []);
 
@@ -378,7 +398,7 @@ const TestingWithoutLogin = () => {
                 results: []
             };
         }
-
+        
         // Ensure baseLactate is properly processed
         const baseLactate = testData.baseLa ? 
             parseFloat(String(testData.baseLa).replace(',', '.')) : 
@@ -440,6 +460,34 @@ const TestingWithoutLogin = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 flex">
+            <Helmet>
+                <title>Lactate Curve Calculator | Free Lactate Testing, LT1, LT2, OBLA &amp; Training Zones Online</title>
+                <link rel="canonical" href="https://lachart.net/lactate-curve-calculator" />
+                <meta name="description" content="Calculate zones from lactate effortlessly. Free online lactate curve calculator: analyze test data, determine LT1/LT2/OBLA, and generate training zones for running, cycling, and swimming. No login required." />
+                <meta name="keywords" content="lactate curve calculator, lactate test, LT1, LT2, lactate threshold, OBLA, training zones, running, cycling, endurance, free tool, online, calculator, lactic acid, calculate zones from lactate, calculate training zones from lactate, lactate zones calculator, lactate based training zones" />
+                <meta property="og:title" content="Lactate Curve Calculator – Free Online Test &amp; LT1, LT2 Zones Generator" />
+                <meta property="og:description" content="Instantly analyze your lactate test: calculate zones from lactate, see LT1/LT2 thresholds and generate training zones. Free for runners, cyclists and coaches!" />
+                <meta property="og:type" content="website" />
+                <meta property="og:url" content="https://lachart.net/lactate-curve-calculator" />
+                <meta property="og:image" content="https://lachart.net/og-lactate-curve-calculator.png" />
+                <meta name="twitter:card" content="summary_large_image" />
+                <meta name="twitter:title" content="Lactate Curve Calculator – Calculate Zones from Lactate (LT1, LT2, OBLA)" />
+                <meta name="twitter:description" content="Free lactate curve calculator: calculate zones from lactate, determine LT1/LT2 and get training zones instantly." />
+                <meta name="twitter:image" content="https://lachart.net/og-lactate-curve-calculator.png" />
+                {/* FAQ Structured Data */}
+                <script type="application/ld+json">{`
+                    {
+                        "@context": "https://schema.org",
+                        "@type": "FAQPage",
+                        "mainEntity": [
+                            {"@type": "Question", "name": "What is a lactate curve?", "acceptedAnswer": {"@type": "Answer", "text": "A lactate curve visualizes the concentration of blood lactate at increasing exercise intensities. It helps identify aerobic (LT1) and anaerobic (LT2, OBLA) thresholds for optimizing training."}},
+                            {"@type": "Question", "name": "How do I calculate lactate threshold?", "acceptedAnswer": {"@type": "Answer", "text": "You can estimate your lactate threshold using a step test, measuring blood lactate at each stage, and analyzing the curve with an online calculator to find LT1, LT2, or OBLA points."}},
+                            {"@type": "Question", "name": "How do I calculate training zones from lactate?", "acceptedAnswer": {"@type": "Answer", "text": "Enter your test stages and this tool calculates training zones by deriving LT1 and LT2 from your lactate curve, then mapping intensities to practical pace/power/HR zones for your sport."}},
+                            {"@type": "Question", "name": "Can I use this calculator for running, cycling, swimming?", "acceptedAnswer": {"@type": "Answer", "text": "Yes! The calculator works for all endurance sports: running, cycling, swimming and more. Just enter your test stages and see your personalized curve and zones."}}
+                        ]
+                    }
+                `}</script>
+            </Helmet>
             {/* Left Menu - hidden on mobile, visible on desktop */}
             <div className="menu-container hidden md:block" ref={menuRef}>
             <Menu 
@@ -460,25 +508,56 @@ const TestingWithoutLogin = () => {
                 />
 
                 {/* Main Content */}
-                <motion.main 
+          {/* Main Content */}
+          <motion.main 
                     className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
                 >
-                    <div className="max-w-[1600px] mx-auto space-y-8">
+                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-y-hidden">
                         {/* Page Header */}
-                        <motion.div 
-                            className="text-center max-w-3xl mx-auto px-4"
-                            variants={itemVariants}
-                        >
-                            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-                                Lactate Test Demo
-                            </h1>
-                            <p className="text-base md:text-lg text-gray-600 mb-6">
-                                Experience LaChart's powerful lactate testing capabilities. Enter your test data to see real-time analysis and curve generation.
-                            </p>
-                        </motion.div>
+                        <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
+  {/* EKG SVG background */}
+  <svg className="absolute left-1/2 -translate-x-1/2 top-7 w-64 md:w-[420px] opacity-25 z-0" viewBox="0 0 300 40" fill="none">
+    <path d="M5 35Q38 5 62 27Q90 44 135 16Q170 1 295 36" stroke="#4F46E5" strokeWidth="6" fill="none"/>
+  </svg>
+  <div className="max-w-5xl mx-auto text-center relative z-10">
+    <h1 className="text-5xl md:text-6xl font-extrabold mb-7 leading-snug tracking-tight bg-gradient-to-br from-primary via-pink-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
+      Lactate Curve Calculator
+    </h1>
+    <div className="h-3 inline-block mb-4">
+      <span className="block w-32 mx-auto rounded-full h-1 bg-gradient-to-r from-indigo-400 via-pink-400 to-yellow-400"></span>
+    </div>
+    <h2 className="text-2xl md:text-3xl font-bold mb-7 leading-snug underline underline-offset-8 decoration-primary/60 text-gray-900">
+      Analyze Your <span className="bg-primary/10 px-2 rounded font-semibold">Lactate Test</span> Instantly With Our <span className="text-primary font-bold">Advanced Calculator</span>
+    </h2>
+    <p className="text-xl md:text-2xl text-gray-800 mb-4 font-medium max-w-4xl mx-auto">
+      Upload or enter your blood lactate testing stages below to generate your personalized curve and calculate endurance thresholds (
+      <span className="text-indigo-800 font-bold">LT1</span>,
+      <span className="text-pink-700 font-bold"> LT2</span>, <span className="text-orange-700 font-bold">OBLA</span>
+      ).
+      <br className="hidden md:block"/>
+      <span className="block mt-2 bg-gradient-to-r from-pink-600 to-blue-500 bg-clip-text text-transparent font-bold text-2xl">
+        Automated calculation of LT1, LT2 (OBLA), and training zones!
+      </span>
+    </p>
+    <div className="flex flex-col md:flex-row md:gap-8 gap-5 justify-center items-center mt-6 px-2">
+      <div className="flex-1 bg-white/80 border border-indigo-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
+        <span className="text-primary font-bold">No sign-up, no ads</span> – calculation runs entirely in your browser.<br />Private, secure, and 100% free.
+      </div>
+      <div className="flex-1 bg-white/80 border border-pink-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
+        Perfect for <span className="bg-yellow-100 rounded px-1 font-semibold">running, cycling, swimming</span>. Step test ready. Metric & Imperial units.
+      </div>
+    </div>
+    <p className="text-md md:text-lg text-gray-600 mb-3 mt-8 px-2 md:px-12 max-w-3xl mx-auto">
+      <span className="bg-indigo-50 px-2 py-1 rounded">Lactate testing is the gold standard for creating evidence-based training plans and maximizing endurance performance.</span> This tool visualizes your curve, finds all key thresholds, and generates scientifically accurate training zones for every athlete.
+    </p>
+    <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto italic">
+      Used by professional coaches and recreational athletes worldwide.
+    </p>
+  </div>
+</div>
 
                         {/* Info Cards */}
                         <motion.div 
@@ -491,9 +570,9 @@ const TestingWithoutLogin = () => {
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                                <h2 className="text-lg font-semibold text-blue-900 mb-2">
                                     🧪 Try Without Login
-                                </h3>
+                                </h2>
                                 <p className="text-blue-800">
                                     This is a demo version where you can test the lactate analysis features. No account required, but data won't be saved.
                                 </p>
@@ -505,14 +584,15 @@ const TestingWithoutLogin = () => {
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <h3 className="text-lg font-semibold text-purple-900 mb-2">
+                                <h2 className="text-lg font-semibold text-purple-900 mb-2">
                                     📝 How to Use
-                                </h3>
+                                </h2>
                                 <p className="text-purple-800">
                                     Fill in the test form below with your lactate test data. The curve and calculations will update automatically.
                                 </p>
                             </motion.div>
                         </motion.div>
+
 
                         {/* Main Content Area */}
                         <div className="space-y-8 mt-8 px-4">
@@ -638,6 +718,9 @@ const TestingWithoutLogin = () => {
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
                                                 />
+                                                <div className="mt-8">
+                                                    <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
+                                                </div>
                                             </div>
                                         </div>
                                     </motion.div>
@@ -704,9 +787,60 @@ const TestingWithoutLogin = () => {
                 {/* Footer */}
                 <Footer />
                 <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
+                {/* Feature/Signup Modal after 60s */}
+                <AnimatePresence>
+                  {showFeatureModal && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center px-4"
+                      onClick={() => setShowFeatureModal(false)}
+                    >
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-white/80 backdrop-blur-lg border border-white/40 rounded-2xl shadow-xl max-w-lg w-full p-6"
+                      >
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-xl font-bold text-gray-900">Unlock More with LaChart</h3>
+                          <button className="text-gray-500 hover:text-gray-700" onClick={() => setShowFeatureModal(false)}>
+                            <CloseIcon size={20} />
+                          </button>
+                        </div>
+                        <p className="text-gray-700 mb-4">Save your tests, calculate zones from lactate automatically, and track progress over time.</p>
+                        <ul className="text-sm text-gray-700 space-y-2 mb-5 list-disc pl-5">
+                          <li>Compare test results across dates (progress tracking)</li>
+                          <li>Coach workspace: store athletes’ tests and training lactate</li>
+                          <li>Auto-generated training zones for run/bike/swim</li>
+                        </ul>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => {
+                              setShowFeatureModal(false);
+                              navigate('/signup');
+                              trackConversionFunnel('signup_start', { source: '60s_feature_modal' });
+                            }}
+                            className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
+                          >
+                            Sign up for free
+                          </button>
+                          <button
+                            onClick={() => setShowFeatureModal(false)}
+                            className="px-4 py-2 bg-white/70 text-gray-800 rounded-xl hover:bg-white border border-white/40 shadow"
+                          >
+                            Maybe later
+                          </button>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
             </div>
         </div>
     );
 };
 
-export default TestingWithoutLogin; 
+export default LactateCurveCalculatorPage; 

@@ -137,7 +137,6 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
 
   // Filter out rows with empty or invalid values
   const validResults = mockData.results.filter(result => {
-    console.log('Validating result:', result);
     if (!result || result.power === undefined || result.power === null || result.lactate === undefined || result.lactate === null) {
       console.log('Invalid result - missing power or lactate');
       return false;
@@ -145,7 +144,6 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
 
     // Check if power is valid
     const power = result.power.toString().replace(',', '.');
-    console.log('Power value:', power, 'Sport:', mockData.sport);
     
     if (mockData.sport === 'run' || mockData.sport === 'swim') {
       // For running and swimming, check MM:SS format
@@ -165,7 +163,6 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         const totalSeconds = Math.floor(Number(power));
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
-        console.log('Converting number to pace:', { minutes, seconds });
         if (minutes < 0 || seconds < 0 || seconds >= 60) {
           console.log('Invalid converted pace values - out of range');
           return false;
@@ -189,11 +186,9 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       return false;
     }
 
-    console.log('Valid result');
     return true;
   });
 
-  console.log('Valid results:', validResults);
 
   if (validResults.length < 2) {
     console.log('Not enough valid results:', validResults.length);
@@ -421,51 +416,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     };
 
     return (
-      <div className="relative w-full p-6 bg-white rounded-2xl shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              Lactate Curve 
-              {demoMode && (
-                <div className="relative z-[999]">
-                  <InfoTooltip content="This graph shows the relationship between your power/pace and lactate levels, helping identify your training zones." />
-                </div>
-              )}
-              <span className="text-xl text-gray-600 ml-2">({formatDate(mockData.date)})</span>
-        </h2>
-            <p className="text-lg text-gray-500 flex items-center gap-2">
-              Base Lactate: 
-              <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
-              {demoMode && (
-                <div className="relative z-[999]">
-                  <InfoTooltip content="Your resting lactate level before the test." />
-                </div>
-              )}
-            </p>
-          </div>
-          {demoMode && (
-            <button
-              onClick={() => setShowGuide(!showGuide)}
-              className="text-primary hover:text-primary-dark transition-colors relative z-[999]"
-            >
-              <HelpCircle size={24} />
-            </button>
-          )}
-        </div>
-
-        {demoMode && showGuide && (
-          <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
-            <h3 className="font-semibold mb-2">How to Read This Graph:</h3>
-            <ul className="space-y-2">
-              <li>• Blue line shows lactate concentration at different intensities</li>
-              <li>• Red line shows heart rate response</li>
-              <li>• Hover over points to see detailed values</li>
-              <li>• Sharp increases in lactate indicate threshold points</li>
-            </ul>
-          </div>
-        )}
-
-        <div className="relative" style={{ width: '100%', height: '400px' }}>
+      <div className="relative w-full max-w-full overflow-x-auto p-2 md:p-4 bg-white rounded-2xl shadow-lg">
+        <div style={{ width: '100%', minWidth: 0, maxWidth: '100vw', height: '400px' }}>
           <Line data={data} options={options} />
         </div>
       </div>

@@ -208,7 +208,7 @@ const LactateGuide = () => {
                 transition={{ duration: 0.6, delay: 0.2 }}
               >
                 <a 
-                  href="/testing-without-login" 
+                  href="/lactate-curve-calculator" 
                   onClick={() => {
                     trackGuideInteraction('cta_click', 'try_demo_hero');
                     trackConversionFunnel('demo_start', { source: 'guide_hero' });
@@ -595,7 +595,7 @@ const LactateGuide = () => {
             transition={{ duration: 0.6, delay: 0.4 }}
           >
             <a 
-              href="/testing-without-login" 
+              href="/lactate-curve-calculator" 
               onClick={() => {
                 trackGuideInteraction('cta_click', 'try_calculator_bottom');
                 trackConversionFunnel('demo_start', { source: 'guide_bottom' });
@@ -629,10 +629,10 @@ const LactateGuide = () => {
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Useful links</h2>
           <p className="mt-3 text-gray-600">Jump straight into a demo and explore the app layout with the left navigation menu.</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <a href="/testing-without-login" className="inline-flex items-center px-6 py-3 rounded-lg bg-primary text-white font-bold shadow hover:bg-primary-dark transition">
+            <a href="/lactate-curve-calculator" className="inline-flex items-center px-6 py-3 rounded-lg bg-primary text-white font-bold shadow hover:bg-primary-dark transition">
               🚀 Open Demo Test (TestingWithoutLogin)
             </a>
-            <a href="/testing-without-login" className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 text-gray-800 font-bold hover:bg-gray-50 transition">
+            <a href="/lactate-curve-calculator" className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 text-gray-800 font-bold hover:bg-gray-50 transition">
               🧭 See App Menu (Menu component)
             </a>
           </div>
@@ -663,7 +663,7 @@ const LactateGuide = () => {
               <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
               <ul className="mt-4 space-y-4">
                 <li>
-                  <a href="/testing-without-login" className="text-base text-gray-600 hover:text-primary">
+                  <a href="/lactate-curve-calculator" className="text-base text-gray-600 hover:text-primary">
                     Try Demo
                   </a>
                 </li>

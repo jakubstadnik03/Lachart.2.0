@@ -7,6 +7,7 @@ import LactateGuide from './pages/LactateGuide';
 import AdminDashboard from './pages/AdminDashboard';
 import FitAnalysisPage from './pages/FitAnalysisPage';
 import LactateTestingPage from './pages/LactateTestingPage';
+import LactateCurveCalculatorPage from './pages/TestingWithoutLogin.jsx'; // pokud již přejmenováno, oprav i název importu
 // ... další importy
 
 const AppRoutes = () => {
@@ -20,6 +21,7 @@ const AppRoutes = () => {
         <Route path="/lactate-testing" element={<LactateTestingPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/fit-analysis" element={<FitAnalysisPage />} />
+        <Route path="/lactate-curve-calculator" element={<LactateCurveCalculatorPage />} />
         {/* ... další routy */}
       </Route>
     </Routes>
