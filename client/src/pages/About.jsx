@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { trackEvent } from '../utils/analytics';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, EffectCoverflow } from 'swiper/modules';
@@ -12,6 +12,70 @@ import ContactUs from '../components/ContactUs';
 
 // Lazy load the ContactForm component
 const ContactForm = lazy(() => import('../components/ContactForm'));
+
+// FAQ Accordion Item Component
+const FAQItem = ({ icon, question, answer }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const iconPaths = {
+    question: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    check: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+    user: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
+    flag: "M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9",
+    chart: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+  };
+
+  return (
+    <motion.div 
+      className="group bg-white/80 backdrop-blur-sm border border-gray-200/60 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden"
+      initial={false}
+    >
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full p-4 sm:p-5 md:p-6 flex items-center justify-between gap-3 sm:gap-4 text-left focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-2xl"
+      >
+        <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+          <div className={`flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center transition-colors ${isOpen ? 'from-primary/20 to-primary/10' : ''}`}>
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={iconPaths[icon]} />
+            </svg>
+          </div>
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900 leading-tight flex-1 min-w-0">
+            {question}
+          </h3>
+        </div>
+        <motion.div
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.3 }}
+          className="flex-shrink-0 ml-2"
+        >
+          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </motion.div>
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 sm:px-5 md:px-6 pb-4 sm:pb-5 md:pb-6 pt-0">
+              <div className="pl-11 sm:pl-14 md:pl-16">
+                <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+                  {answer}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
 
 // Image loading component
 const LazyImage = ({ src, alt, className }) => {
@@ -538,30 +602,42 @@ const About = () => {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-16 bg-white">
+      <section className="py-12 sm:py-16 md:py-20 bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-extrabold text-gray-900 text-center mb-12">Frequently Asked Questions</h2>
-          <div className="space-y-6">
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">What is lactate threshold and why is it important?</h3>
-              <p className="text-gray-600">Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately.</p>
-            </div>
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">How accurate is the free lactate threshold calculator?</h3>
-              <p className="text-gray-600">LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training.</p>
-            </div>
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Do I need to register to use the lactate calculator?</h3>
-              <p className="text-gray-600">No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features.</p>
-            </div>
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">What sports is LaChart suitable for?</h3>
-              <p className="text-gray-600">LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort.</p>
-            </div>
-            <div className="bg-gray-50 p-6 rounded-xl">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">How does LaChart compare to expensive lab testing?</h3>
-              <p className="text-gray-600">While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.</p>
-            </div>
+          <div className="text-center mb-10 sm:mb-12 md:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-gray-900 mb-3 sm:mb-4">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-sm sm:text-base text-gray-600 max-w-2xl mx-auto">
+              Everything you need to know about lactate threshold testing and LaChart
+            </p>
+          </div>
+          <div className="space-y-3 sm:space-y-4">
+            <FAQItem 
+              icon="question"
+              question="What is lactate threshold and why is it important?"
+              answer="Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately."
+            />
+            <FAQItem 
+              icon="check"
+              question="How accurate is the free lactate threshold calculator?"
+              answer="LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training."
+            />
+            <FAQItem 
+              icon="user"
+              question="Do I need to register to use the lactate calculator?"
+              answer="No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features."
+            />
+            <FAQItem 
+              icon="flag"
+              question="What sports is LaChart suitable for?"
+              answer="LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort."
+            />
+            <FAQItem 
+              icon="chart"
+              question="How does LaChart compare to expensive lab testing?"
+              answer="While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes."
+            />
           </div>
         </div>
       </section>
