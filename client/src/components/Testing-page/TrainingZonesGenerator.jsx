@@ -154,9 +154,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           </h4>
           <p className="text-xs sm:text-sm text-gray-700 mt-1">Complete training zones with power, heart rate, and lactate ranges</p>
         </div>
-        <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] mx-auto">
+        <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
           <div className="inline-block min-w-full align-middle">
-            <table className="w-full min-w-[300px] sm:min-w-[500px] md:min-w-[650px] select-text">
+            <table className="w-full min-w-[300px] sm:min-w-full md:min-w-full select-text">
               <thead className="bg-white/10">
                 <tr>
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>

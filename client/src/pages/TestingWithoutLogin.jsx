@@ -510,50 +510,55 @@ const LactateCurveCalculatorPage = () => {
                 {/* Main Content */}
           {/* Main Content */}
           <motion.main 
-                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible"
+                    className="flex-1 px-2 sm:px-4 py-4 sm:py-8 overflow-x-hidden overflow-y-visible"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
                 >
-                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-y-hidden">
+                    <div className="max-w-[1600px] mx-auto space-y-4 sm:space-y-8 overflow-y-hidden">
                         {/* Page Header */}
-                        <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
+                        <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-8 sm:pb-14 pt-8 sm:pt-18 px-3 sm:px-4 rounded-xl sm:rounded-3xl shadow-xl sm:shadow-2xl mb-8 sm:mb-14 border-t-2 sm:border-t-4 border-b-2 sm:border-b-4 border-primary/40 relative overflow-hidden max-w-[95vw] sm:max-w-full">
   {/* EKG SVG background */}
-  <svg className="absolute left-1/2 -translate-x-1/2 top-7 w-64 md:w-[420px] opacity-25 z-0" viewBox="0 0 300 40" fill="none">
-    <path d="M5 35Q38 5 62 27Q90 44 135 16Q170 1 295 36" stroke="#4F46E5" strokeWidth="6" fill="none"/>
+  <svg className="absolute left-1/2 -translate-x-1/2 top-4 sm:top-7 w-48 sm:w-64 md:w-[420px] opacity-20 sm:opacity-25 z-0" viewBox="0 0 300 40" fill="none">
+    <path d="M5 35Q38 5 62 27Q90 44 135 16Q170 1 295 36" stroke="#4F46E5" strokeWidth="4" className="sm:stroke-[6]" fill="none"/>
   </svg>
-  <div className="max-w-5xl mx-auto text-center relative z-10">
-    <h1 className="text-5xl md:text-6xl font-extrabold mb-7 leading-snug tracking-tight bg-gradient-to-br from-primary via-pink-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
+  <div className="max-w-5xl mx-auto text-center relative z-10 px-2 sm:px-4">
+    <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-extrabold mb-3 sm:mb-5 md:mb-7 leading-tight sm:leading-snug tracking-tight bg-gradient-to-br from-primary via-pink-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
       Lactate Curve Calculator
     </h1>
-    <div className="h-3 inline-block mb-4">
-      <span className="block w-32 mx-auto rounded-full h-1 bg-gradient-to-r from-indigo-400 via-pink-400 to-yellow-400"></span>
+    <div className="h-2 sm:h-3 inline-block mb-2 sm:mb-3 md:mb-4">
+      <span className="block w-20 sm:w-24 md:w-32 mx-auto rounded-full h-0.5 sm:h-1 bg-gradient-to-r from-indigo-400 via-pink-400 to-yellow-400"></span>
     </div>
-    <h2 className="text-2xl md:text-3xl font-bold mb-7 leading-snug underline underline-offset-8 decoration-primary/60 text-gray-900">
-      Analyze Your <span className="bg-primary/10 px-2 rounded font-semibold">Lactate Test</span> Instantly With Our <span className="text-primary font-bold">Advanced Calculator</span>
+    <h2 className="text-base sm:text-lg md:text-xl lg:text-2xl xl:text-3xl font-bold mb-3 sm:mb-5 md:mb-7 leading-tight sm:leading-snug underline underline-offset-4 sm:underline-offset-8 decoration-primary/60 text-gray-900 px-2 sm:px-3 max-w-xl sm:max-w-2xl md:max-w-3xl mx-auto">
+      <span className="block mb-1">Analyze Your <span className="bg-primary/10 px-1 sm:px-2 rounded font-semibold">Lactate Test</span></span>
+      <span className="block">Instantly With Our <span className="text-primary font-bold">Advanced Calculator</span></span>
     </h2>
-    <p className="text-xl md:text-2xl text-gray-800 mb-4 font-medium max-w-4xl mx-auto">
-      Upload or enter your blood lactate testing stages below to generate your personalized curve and calculate endurance thresholds (
+    <p className="text-sm sm:text-base md:text-lg lg:text-xl text-gray-800 mb-2 sm:mb-3 md:mb-4 font-medium max-w-xs sm:max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto px-3 sm:px-4 leading-relaxed">
+      <span className="block mb-2">Upload or enter your blood lactate testing stages below to generate your personalized curve and calculate endurance thresholds (
       <span className="text-indigo-800 font-bold">LT1</span>,
       <span className="text-pink-700 font-bold"> LT2</span>, <span className="text-orange-700 font-bold">OBLA</span>
-      ).
-      <br className="hidden md:block"/>
-      <span className="block mt-2 bg-gradient-to-r from-pink-600 to-blue-500 bg-clip-text text-transparent font-bold text-2xl">
-        Automated calculation of LT1, LT2 (OBLA), and training zones!
+      ).</span>
+      <span className="block mt-3 sm:mt-4 bg-gradient-to-r from-pink-600 to-blue-500 bg-clip-text text-transparent font-bold text-base sm:text-lg md:text-xl lg:text-2xl leading-tight">
+        Automated calculation of<br className="sm:hidden"/> LT1, LT2 (OBLA), and training zones!
       </span>
     </p>
-    <div className="flex flex-col md:flex-row md:gap-8 gap-5 justify-center items-center mt-6 px-2">
-      <div className="flex-1 bg-white/80 border border-indigo-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
-        <span className="text-primary font-bold">No sign-up, no ads</span> – calculation runs entirely in your browser.<br />Private, secure, and 100% free.
+    <div className="flex flex-col md:flex-row md:gap-6 lg:gap-8 gap-3 sm:gap-4 justify-center items-stretch md:items-center mt-4 sm:mt-5 md:mt-6 px-3 sm:px-4 max-w-xs sm:max-w-lg md:max-w-3xl lg:max-w-4xl mx-auto">
+      <div className="flex-1 bg-white/80 border border-indigo-100 rounded-lg sm:rounded-xl md:rounded-2xl py-3 sm:py-3 md:py-4 px-4 sm:px-5 md:px-6 shadow-md text-xs sm:text-sm md:text-base lg:text-lg leading-relaxed font-medium max-w-sm sm:max-w-md mx-auto w-full">
+        <span className="block mb-1"><span className="text-primary font-bold">No sign-up, no ads</span> – calculation runs entirely in your browser.</span>
+        <span className="block">Private, secure, and 100% free.</span>
       </div>
-      <div className="flex-1 bg-white/80 border border-pink-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
-        Perfect for <span className="bg-yellow-100 rounded px-1 font-semibold">running, cycling, swimming</span>. Step test ready. Metric & Imperial units.
+      <div className="flex-1 bg-white/80 border border-pink-100 rounded-lg sm:rounded-xl md:rounded-2xl py-3 sm:py-3 md:py-4 px-4 sm:px-5 md:px-6 shadow-md text-xs sm:text-sm md:text-base lg:text-lg leading-relaxed font-medium max-w-sm sm:max-w-md mx-auto w-full">
+        <span className="block mb-1">Perfect for <span className="bg-yellow-100 rounded px-1 font-semibold">running, cycling, swimming</span>.</span>
+        <span className="block">Step test ready. Metric & Imperial units.</span>
       </div>
     </div>
-    <p className="text-md md:text-lg text-gray-600 mb-3 mt-8 px-2 md:px-12 max-w-3xl mx-auto">
-      <span className="bg-indigo-50 px-2 py-1 rounded">Lactate testing is the gold standard for creating evidence-based training plans and maximizing endurance performance.</span> This tool visualizes your curve, finds all key thresholds, and generates scientifically accurate training zones for every athlete.
+    <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 mb-2 sm:mb-3 mt-4 sm:mt-6 md:mt-8 px-3 sm:px-4 md:px-6 lg:px-12 max-w-xl sm:max-w-2xl md:max-w-3xl mx-auto leading-relaxed">
+      <span className="block mb-2 sm:mb-3">
+        <span className="bg-indigo-50 px-2 py-1 rounded text-xs sm:text-sm md:text-base">Lactate testing is the gold standard for creating evidence-based training plans and maximizing endurance performance.</span>
+      </span>
+      <span className="block">This tool visualizes your curve, finds all key thresholds, and generates scientifically accurate training zones for every athlete.</span>
     </p>
-    <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto italic">
+    <p className="text-xs sm:text-sm md:text-base text-gray-500 max-w-lg sm:max-w-xl md:max-w-2xl mx-auto italic px-3 sm:px-4">
       Used by professional coaches and recreational athletes worldwide.
     </p>
   </div>
@@ -561,53 +566,55 @@ const LactateCurveCalculatorPage = () => {
 
                         {/* Info Cards */}
                         <motion.div 
-                            className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto px-4"
+                            className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 md:gap-6 max-w-[95vw] sm:max-w-full md:max-w-4xl lg:max-w-5xl mx-auto px-3 sm:px-4 md:px-6"
                             variants={itemVariants}
                         >
                             {/* Demo Info Card */}
                             <motion.div 
-                                className="bg-blue-50 border border-blue-200 rounded-xl sm:p-3 lg:p-6 shadow-sm"
+                                className="bg-blue-50 border border-blue-200 rounded-lg sm:rounded-xl p-3 sm:p-4 md:p-5 lg:p-6 shadow-sm"
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <h2 className="text-lg font-semibold text-blue-900 mb-2">
+                                <h2 className="text-sm sm:text-base md:text-lg font-semibold text-blue-900 mb-2">
                                     🧪 Try Without Login
                                 </h2>
-                                <p className="text-blue-800">
-                                    This is a demo version where you can test the lactate analysis features. No account required, but data won't be saved.
+                                <p className="text-xs sm:text-sm md:text-base text-blue-800 leading-relaxed">
+                                    <span className="block mb-1">This is a demo version where you can test the lactate analysis features.</span>
+                                    <span className="block">No account required, but data won't be saved.</span>
                                 </p>
                             </motion.div>
 
                             {/* Instructions Card */}
                             <motion.div 
-                                className="bg-purple-50 border border-purple-200 rounded-xl sm:p-3 lg:p-6 shadow-sm"
+                                className="bg-purple-50 border border-purple-200 rounded-lg sm:rounded-xl p-3 sm:p-4 md:p-5 lg:p-6 shadow-sm"
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <h2 className="text-lg font-semibold text-purple-900 mb-2">
+                                <h2 className="text-sm sm:text-base md:text-lg font-semibold text-purple-900 mb-2">
                                     📝 How to Use
                                 </h2>
-                                <p className="text-purple-800">
-                                    Fill in the test form below with your lactate test data. The curve and calculations will update automatically.
+                                <p className="text-xs sm:text-sm md:text-base text-purple-800 leading-relaxed">
+                                    <span className="block mb-1">Fill in the test form below with your lactate test data.</span>
+                                    <span className="block">The curve and calculations will update automatically.</span>
                                 </p>
                             </motion.div>
                         </motion.div>
 
 
                         {/* Main Content Area */}
-                        <div className="space-y-8 mt-8 px-4">
+                        <div className="space-y-6 sm:space-y-8 mt-4 sm:mt-8 px-2 sm:px-4">
                             {/* Testing Form Section */}
                             <motion.div 
                                 ref={formRef}
                                 initial="hidden"
                                 animate={isFormInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible"
+                                className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 overflow-hidden"
                                 whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                             >
-                                <div className="p-4 sm:p-6">
-                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Test Data Entry</h2>
+                                <div className="p-2 sm:p-3 md:p-4 lg:p-6">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-3 sm:mb-4 md:mb-6">
+                                        <h2 className="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold text-gray-900">Test Data Entry</h2>
                                         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                             <motion.div 
                                                 className="relative z-[12000] w-full sm:w-auto"
@@ -616,11 +623,11 @@ const LactateCurveCalculatorPage = () => {
                                             >
                                                 <button
                                                     onClick={toggleDemoDropdown}
-                                                    className="w-full px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
+                                                    className="w-full sm:w-auto px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between sm:justify-center"
                                                 >
-                                                    Fill with Demo Data
+                                                    <span className="whitespace-nowrap">Fill with Demo Data</span>
                                                     <svg 
-                                                        className={`w-4 h-4 ml-2 transition-transform ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
+                                                        className={`w-3 h-3 sm:w-4 sm:h-4 ml-2 transition-transform flex-shrink-0 ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
                                                         fill="none" 
                                                         stroke="currentColor" 
                                                         viewBox="0 0 24 24"
@@ -631,7 +638,7 @@ const LactateCurveCalculatorPage = () => {
                                                 <AnimatePresence>
                                                     {isDemoDropdownOpen && (
                                                         <motion.div 
-                                                            className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-[9999]"
+                                                            className="absolute right-0 mt-2 w-full sm:w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-[9999]"
                                                             initial={{ opacity: 0, y: -10 }}
                                                             animate={{ opacity: 1, y: 0 }}
                                                             exit={{ opacity: 0, y: -10 }}
@@ -644,7 +651,7 @@ const LactateCurveCalculatorPage = () => {
                                                                         e.stopPropagation();
                                                                         handleDemoDataSelect('bike');
                                                                     }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    className="w-full px-3 sm:px-4 py-2 text-left text-xs sm:text-sm text-gray-700 hover:bg-gray-50 touch-manipulation"
                                                                     whileHover={{ x: 5 }}
                                                                 >
                                                                     Bike Demo Data
@@ -654,7 +661,7 @@ const LactateCurveCalculatorPage = () => {
                                                                         e.stopPropagation();
                                                                         handleDemoDataSelect('run');
                                                                     }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    className="w-full px-3 sm:px-4 py-2 text-left text-xs sm:text-sm text-gray-700 hover:bg-gray-50 touch-manipulation"
                                                                     whileHover={{ x: 5 }}
                                                                 >
                                                                     Run Demo Data
@@ -664,7 +671,7 @@ const LactateCurveCalculatorPage = () => {
                                                                         e.stopPropagation();
                                                                         handleDemoDataSelect('swim');
                                                                     }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    className="w-full px-3 sm:px-4 py-2 text-left text-xs sm:text-sm text-gray-700 hover:bg-gray-50 touch-manipulation"
                                                                     whileHover={{ x: 5 }}
                                                                 >
                                                                     Swim Demo Data
@@ -676,7 +683,7 @@ const LactateCurveCalculatorPage = () => {
                                             </motion.div>
                                             <motion.button
                                                 onClick={handleResetForm}
-                                                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                                className="w-full sm:w-auto px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors touch-manipulation"
                                                 whileHover={{ scale: 1.02 }}
                                                 whileTap={{ scale: 0.98 }}
                                             >
@@ -684,8 +691,8 @@ const LactateCurveCalculatorPage = () => {
                                             </motion.button>
                         </div>
                         </div>
-                                    <div className="w-full overflow-x-auto">
-                                        <div className="lg:min-w-[800px] lg:min-w-full">
+                                    <div className="w-full overflow-x-auto -mx-2 sm:-mx-3 md:mx-0 px-2 sm:px-3 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+                                        <div className="w-full min-w-0 max-w-full">
                             <TestingForm
                                 testData={testData}
                                 onTestDataChange={handleTestDataChange}
@@ -701,24 +708,26 @@ const LactateCurveCalculatorPage = () => {
 
                             {/* Results Section */}
                             {hasValidData && (
-                                <div className="space-y-8">
+                                <div className="space-y-6 sm:space-y-8">
                                     {/* Lactate Curve Section */}
                             <motion.div 
                                 ref={curveRef}
                                 initial="hidden"
                                 animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
                                         variants={fadeInUpVariants}
-                                        className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
+                                        className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-2 sm:p-3 md:p-4 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
-                                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Lactate Curve Analysis</h2>
-                                        <div className="w-full overflow-x-auto">
-                                            <div className="lg:min-w-[800px] lg:min-w-full">
-                                                <LactateCurve 
-                                                    mockData={prepareCalculatorData()} 
-                                                    demoMode={true} 
-                                                />
-                                                <div className="mt-8">
+                                        <h2 className="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4 md:mb-6 px-1">Lactate Curve Analysis</h2>
+                                        <div className="w-full overflow-x-auto -mx-2 sm:-mx-3 md:mx-0 px-2 sm:px-3 md:px-0" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorX: 'contain' }}>
+                                            <div className="w-full min-w-0 max-w-full">
+                                                <div className="w-full max-w-full overflow-hidden">
+                                                    <LactateCurve 
+                                                        mockData={prepareCalculatorData()} 
+                                                        demoMode={true} 
+                                                    />
+                                                </div>
+                                                <div className="mt-4 sm:mt-6 md:mt-8">
                                                     <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
                                                 </div>
                                             </div>
@@ -731,12 +740,12 @@ const LactateCurveCalculatorPage = () => {
                                         initial="hidden"
                                         animate={(isCalculatorInView || hasValidData) ? "visible" : "hidden"}
                                         variants={fadeInUpVariants}
-                                        className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
+                                        className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-2 sm:p-3 md:p-4 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
-                                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Calculator</h2>
-                                        <div className="w-full overflow-x-auto">
-                                            <div className="lg:min-w-[800px] lg:min-w-full">
+                                        <h2 className="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4 md:mb-6 px-1">Training Zones Calculator</h2>
+                                        <div className="w-full overflow-x-auto -mx-2 sm:-mx-3 md:mx-0 px-2 sm:px-3 md:px-0" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorX: 'contain' }}>
+                                            <div className="w-full min-w-0 max-w-full">
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
@@ -753,7 +762,7 @@ const LactateCurveCalculatorPage = () => {
                                 initial="hidden"
                                 animate={isButtonsInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
+                                className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 pt-6 sm:pt-8 px-2 sm:px-4"
                             >
                                 <motion.button
                                     onClick={() => { 
@@ -761,7 +770,7 @@ const LactateCurveCalculatorPage = () => {
                                         trackConversionFunnel('signup_start', { source: 'demo_page' });
                                         navigate('/signup'); 
                                     }}
-                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 border border-transparent text-sm sm:text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md touch-manipulation"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -773,7 +782,7 @@ const LactateCurveCalculatorPage = () => {
                                         trackConversionFunnel('login_start', { source: 'demo_page' });
                                         navigate('/login'); 
                                     }}
-                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 border border-primary text-sm sm:text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md touch-manipulation"
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                 >
@@ -802,34 +811,34 @@ const LactateCurveCalculatorPage = () => {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="bg-white/80 backdrop-blur-lg border border-white/40 rounded-2xl shadow-xl max-w-lg w-full p-6"
+                        className="bg-white/80 backdrop-blur-lg border border-white/40 rounded-xl sm:rounded-2xl shadow-xl max-w-lg w-full p-4 sm:p-6 mx-2 sm:mx-0"
                       >
                         <div className="flex justify-between items-center mb-3">
-                          <h3 className="text-xl font-bold text-gray-900">Unlock More with LaChart</h3>
-                          <button className="text-gray-500 hover:text-gray-700" onClick={() => setShowFeatureModal(false)}>
+                          <h3 className="text-lg sm:text-xl font-bold text-gray-900">Unlock More with LaChart</h3>
+                          <button className="text-gray-500 hover:text-gray-700 touch-manipulation p-1" onClick={() => setShowFeatureModal(false)}>
                             <CloseIcon size={20} />
                           </button>
                         </div>
-                        <p className="text-gray-700 mb-4">Save your tests, calculate zones from lactate automatically, and track progress over time.</p>
-                        <ul className="text-sm text-gray-700 space-y-2 mb-5 list-disc pl-5">
+                        <p className="text-sm sm:text-base text-gray-700 mb-4">Save your tests, calculate zones from lactate automatically, and track progress over time.</p>
+                        <ul className="text-xs sm:text-sm text-gray-700 space-y-2 mb-5 list-disc pl-4 sm:pl-5">
                           <li>Compare test results across dates (progress tracking)</li>
-                          <li>Coach workspace: store athletes’ tests and training lactate</li>
+                          <li>Coach workspace: store athletes' tests and training lactate</li>
                           <li>Auto-generated training zones for run/bike/swim</li>
                         </ul>
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
                           <button
                             onClick={() => {
                               setShowFeatureModal(false);
                               navigate('/signup');
                               trackConversionFunnel('signup_start', { source: '60s_feature_modal' });
                             }}
-                            className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
+                            className="w-full sm:w-auto px-4 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 shadow touch-manipulation text-sm sm:text-base"
                           >
                             Sign up for free
                           </button>
                           <button
                             onClick={() => setShowFeatureModal(false)}
-                            className="px-4 py-2 bg-white/70 text-gray-800 rounded-xl hover:bg-white border border-white/40 shadow"
+                            className="w-full sm:w-auto px-4 py-2.5 bg-white/70 text-gray-800 rounded-xl hover:bg-white border border-white/40 shadow touch-manipulation text-sm sm:text-base"
                           >
                             Maybe later
                           </button>
