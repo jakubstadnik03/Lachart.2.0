@@ -154,18 +154,18 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           </h4>
           <p className="text-xs sm:text-sm text-gray-700 mt-1">Complete training zones with power, heart rate, and lactate ranges</p>
         </div>
-        <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
+        <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] mx-auto">
           <div className="inline-block min-w-full align-middle">
-            <table className="w-full min-w-[320px] sm:min-w-[500px] md:min-w-[650px] select-text">
+            <table className="w-full min-w-[300px] sm:min-w-[500px] md:min-w-[650px] select-text">
               <thead className="bg-white/10">
                 <tr>
-                  <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
-                  <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
                   {selectedSport === 'bike' && (
-                    <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Power (W)</th>
+                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Power (W)</th>
                   )}
                   {(selectedSport === 'run' || selectedSport === 'swim') && (
-                    <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
+                    <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
                       {inputMode === 'pace' ? 
                         (selectedSport === 'swim' ? 
                           (unitSystem === 'imperial' ? 'Pace /100yd' : 'Pace /100m') :
@@ -175,9 +175,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       }
                     </th>
                   )}
-                  <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
-                  <th className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden md:table-cell">Lactate</th>
-                  <th className="px-1 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Edit</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden md:table-cell">Lactate</th>
+                  <th className="px-0.5 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Edit</th>
                 </tr>
               </thead>
             <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
@@ -208,10 +208,10 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                     transition={{ delay: index * 0.09 }}
                   >
                     {/* ZONE NUMBER + DOT */}
-                    <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                       <div className="flex items-center">
                         <span className={
-                          `w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full mr-1.5 sm:mr-2 md:mr-3 inline-block border border-white/70 shadow ` +
+                          `w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full mr-1 sm:mr-2 md:mr-3 inline-block border border-white/70 shadow ` +
                           [
                             'bg-[#9AECDB]/60', // 1 glass green
                             'bg-[#48DBFB]/60', // 2 glass blue
@@ -226,26 +226,26 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </div>
                     </td>
                     {/* DESCRIPTION */}
-                    <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20 hidden sm:table-cell">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20 hidden sm:table-cell">
                       <span className="text-xs sm:text-sm font-normal text-gray-700">{zone.description}</span>
                     </td>
                     {/* POWER/PASTE/SPEED column */}
                     {selectedSport === 'bike' && powerZone && (
-                      <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                         {isEditingZones ? (
                           <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
                             <input
                               type="number"
                               value={powerZone[zoneKey]?.min || ''}
                               onChange={(e) => handleZoneChange('power', zoneKey, 'min', parseInt(e.target.value) || 0)}
-                              className="w-10 sm:w-12 md:w-14 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                              className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                             />
                             <span className="text-xs font-light text-gray-400">-</span>
                             <input
                               type="number"
                               value={powerZone[zoneKey]?.max || ''}
                               onChange={(e) => handleZoneChange('power', zoneKey, 'max', parseInt(e.target.value) || 0)}
-                              className="w-10 sm:w-12 md:w-14 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                              className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                             />
                             <span className="text-xs font-light text-gray-400 hidden sm:inline">W</span>
                           </div>
@@ -257,14 +257,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </td>
                     )}
                     {(selectedSport === 'run' || selectedSport === 'swim') && powerZone && (
-                      <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                      <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                         {isEditingZones ? (
                           <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
                             <input
                               type="text"
                               value={powerZone[zoneKey]?.min || ''}
                               onChange={(e) => handleZoneChange(inputMode === 'speed' ? 'speed' : 'pace', zoneKey, 'min', e.target.value)}
-                              className="w-12 sm:w-14 md:w-16 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                              className="w-10 sm:w-14 md:w-16 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                               placeholder={inputMode === 'speed' ? '12.0' : '4:30'}
                             />
                             <span className="text-xs font-light text-gray-400">-</span>
@@ -272,7 +272,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                               type="text"
                               value={powerZone[zoneKey]?.max || ''}
                               onChange={(e) => handleZoneChange(inputMode === 'speed' ? 'speed' : 'pace', zoneKey, 'max', e.target.value)}
-                              className="w-12 sm:w-14 md:w-16 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                              className="w-10 sm:w-14 md:w-16 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                               placeholder={inputMode === 'speed' ? '15.0' : '4:00'}
                             />
                             {inputMode === 'speed' && (
@@ -298,21 +298,21 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </td>
                     )}
                     {/* HR COLUMN */}
-                    <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                       {isEditingZones ? (
                         <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
                           <input
                             type="number"
                             value={hrZone?.[zoneKey]?.min || ''}
                             onChange={(e) => handleZoneChange('heartRate', zoneKey, 'min', parseInt(e.target.value) || 0)}
-                            className="w-10 sm:w-12 md:w-14 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                            className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                           />
                           <span className="text-xs font-light text-gray-400">-</span>
                           <input
                             type="number"
                             value={hrZone?.[zoneKey]?.max || ''}
                             onChange={(e) => handleZoneChange('heartRate', zoneKey, 'max', parseInt(e.target.value) || 0)}
-                            className="w-10 sm:w-12 md:w-14 px-1 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs sm:text-sm md:text-xs border border-blue-200 bg-white/70 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
+                            className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
                           />
                           <span className="text-xs font-light text-gray-400 hidden sm:inline">BPM</span>
                         </div>
@@ -323,13 +323,13 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       )}
                     </td>
                     {/* LACTATE */}
-                    <td className="px-2 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 hidden md:table-cell">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 hidden md:table-cell">
                       <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                         {lactateRange.min}-{lactateRange.max}
                       </span>
                     </td>
                     {/* ACTION BUTTONS */}
-                    <td className="px-1 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center">
+                    <td className="px-0.5 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center">
                       {!isEditingZones ? (
                         <button
                           onClick={handleEditZones}
