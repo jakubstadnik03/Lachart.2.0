@@ -40,6 +40,10 @@ export function DropdownMenu({
         aria-label="Training selector"
         onClick={toggleMenu}
       >
+        {/* Hamburger menu ikona */}
+        <svg className="w-5 h-5 mr-1 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
         <div className="text-xs sm:text-sm">
           {selectedOption ? selectedOption[displayKey] : 'Select training'}
         </div>
@@ -48,7 +52,7 @@ export function DropdownMenu({
           src="https://cdn.builder.io/api/v1/image/assets/069fe6e63e3c490cb6056c51644919ef/360c5357e47d27ba69f8c2d3bda65bfea9c145ed9c2ccb0e3ef65b920f754610?apiKey=069fe6e63e3c490cb6056c51644919ef&"
           className={`object-contain shrink-0 self-stretch w-2.5 aspect-[2] transform ${
             isOpen ? "rotate-180" : "rotate-0"
-          } transition-transform`}
+          } transition-transform ml-1`}
           alt="Dropdown arrow"
         />
       </div>

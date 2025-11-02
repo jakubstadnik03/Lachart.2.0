@@ -50,7 +50,7 @@ const FeedbackWidget = () => {
         aria-label="Open feedback"
       >
         <img src="/icon/info-white.svg" alt="feedback" className="w-5 h-5" />
-        <span className="hidden sm:block">Feedback</span>
+        <span className="hidden md:block">Feedback</span>
       </button>
       <AnimatePresence>
         {open && (

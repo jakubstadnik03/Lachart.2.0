@@ -53,21 +53,25 @@ function DateSelector({ dates, onSelectDate }) {
   const scrollContainerRef = useRef(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
+  const windowWidth = useWindowWidth();
+  const isMobile = windowWidth < 640; // sm breakpoint
+  const PAGE_SIZE = 4;
+  const [page, setPage] = useState(0); // only for mobile
 
   useEffect(() => {
     if (dates && dates.length > 0) {
       const sortedDates = [...dates].sort((a, b) => new Date(b) - new Date(a));
       const latestDate = sortedDates[0];
-      
       if (!selectedDate || !dates.includes(selectedDate)) {
         setSelectedDate(latestDate);
         onSelectDate(latestDate);
       }
+      if (isMobile) setPage(0);
     } else {
       setSelectedDate(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dates]);
+  }, [dates, isMobile]);
 
   useEffect(() => {
     const checkScroll = () => {
@@ -107,6 +111,33 @@ function DateSelector({ dates, onSelectDate }) {
     onSelectDate(date);
   };
 
+  // Pro mobil zobrazujeme jen konkrétní stránku datumů
+  const sortedDates = [...(dates || [])].sort((a, b) => new Date(b) - new Date(a));
+  let visibleDates = sortedDates;
+  if(isMobile && sortedDates.length > PAGE_SIZE) {
+    const start = page * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    visibleDates = sortedDates.slice(start, end);
+  }
+
+  // Šipky pro stránkování na mobilu (přepis stávajících podmínek pro showLeftArrow/showRightArrow jen na mobilu)
+  const customShowLeftArrow = isMobile && page > 0;
+  const customShowRightArrow = isMobile && ((page+1) * PAGE_SIZE < sortedDates.length);
+
+  // Animace stránky (framer-motion direction)
+  const [direction, setDirection] = useState(0); // -1 (left), 1 (right)
+
+  const scrollPage = (dir) => {
+    if (dir === 'left' && page > 0) {
+      setDirection(-1);
+      setPage(page - 1);
+    }
+    if (dir === 'right' && (page + 1) * PAGE_SIZE < sortedDates.length) {
+      setDirection(1);
+      setPage(page + 1);
+    }
+  };
+
   const scroll = (direction) => {
     if (scrollContainerRef.current) {
       // Use container width as scroll amount for better UX
@@ -118,34 +149,41 @@ function DateSelector({ dates, onSelectDate }) {
     }
   };
 
-  const sortedDates = [...(dates || [])].sort((a, b) => new Date(b) - new Date(a));
-
   return (
     <div className="relative w-full">
-      <div className="text-lg sm:text-xl font-semibold text-black mb-2 sm:mb-3">
-        Previous testings
-      </div>
-      
+      <div className="text-lg sm:text-xl font-semibold text-black mb-2 sm:mb-3">Previous testings</div>
       <div className="relative">
-        {showLeftArrow && (
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white active:bg-white p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
-            aria-label="Scroll left"
-          >
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </motion.button>
-        )}
-
+        {/* Vlevo */}
+        <motion.button
+          whileHover={customShowLeftArrow || (!isMobile && showLeftArrow) ? { scale: 1.14 } : false}
+          onClick={() => {
+            if ((isMobile && customShowLeftArrow) || (!isMobile && showLeftArrow)) {
+              isMobile ? scrollPage('left') : scroll('left');
+            }
+          }}
+          disabled={isMobile ? !customShowLeftArrow : !showLeftArrow}
+          aria-disabled={isMobile ? !customShowLeftArrow : !showLeftArrow}
+          className={
+            `absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center
+            ${((isMobile && !customShowLeftArrow) || (!isMobile && !showLeftArrow)) ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-white active:bg-white'}
+            `
+          }
+          aria-label="Scroll left"
+          tabIndex={((isMobile && !customShowLeftArrow) || (!isMobile && !showLeftArrow)) ? -1 : 0}
+        >
+          <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </motion.button>
+        {/* Datumy */}
         <div
           ref={scrollContainerRef}
-          className="flex gap-1 sm:gap-1.5 items-center py-1.5 sm:py-2 pr-2 sm:pr-1 pl-2 sm:pl-1.5 mt-2 text-xs sm:text-sm whitespace-nowrap rounded-md bg-zinc-100 sm:bg-zinc-150 text-stone-500 sm:text-stone-600 overflow-x-auto scrollbar-hide touch-pan-x snap-x snap-mandatory"
-          style={{ 
-            scrollbarWidth: 'none', 
+          className={
+            'flex gap-1 sm:gap-1.5 items-center py-1.5 sm:py-2 mt-2 text-xs sm:text-sm whitespace-nowrap rounded-md bg-zinc-100 sm:bg-zinc-150 text-stone-500 sm:text-stone-600 overflow-x-auto scrollbar-hide touch-pan-x snap-x snap-mandatory relative ' +
+            (isMobile ? 'pl-[52px] pr-[52px] justify-center' : 'pr-2 sm:pr-1 pl-2 sm:pl-1.5')
+          }
+          style={{
+            scrollbarWidth: 'none',
             msOverflowStyle: 'none',
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorX: 'contain'
@@ -154,31 +192,49 @@ function DateSelector({ dates, onSelectDate }) {
           {!dates || dates.length === 0 ? (
             <p className="px-2 sm:px-3 text-xs sm:text-sm">No tests available</p>
           ) : (
-            sortedDates.map((date) => (
-              <div key={date} className="snap-start flex-shrink-0">
-                <DateButton
-                  date={date}
-                  isSelected={date === selectedDate}
-                  onClick={() => handleDateSelect(date)}
-                />
-              </div>
-            ))
+            <motion.div
+              key={page}
+              initial={{ x: isMobile && direction !== 0 ? (direction > 0 ? 90 : -90) : 0, opacity: isMobile && direction !== 0 ? 0 : 1 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: isMobile && direction !== 0 ? (direction > 0 ? -90 : 90) : 0, opacity: 0 }}
+              transition={{ type: 'tween', duration: 0.29 }}
+              className="flex gap-1 sm:gap-1.5 items-center w-full justify-center"
+              style={{ minHeight: '32px' }}
+            >
+              {visibleDates.map((date) => (
+                <div key={date} className="snap-start flex-shrink-0">
+                  <DateButton
+                    date={date}
+                    isSelected={date === selectedDate}
+                    onClick={() => handleDateSelect(date)}
+                  />
+                </div>
+              ))}
+            </motion.div>
           )}
         </div>
-
-        {showRightArrow && (
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white active:bg-white p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
-            aria-label="Scroll right"
-          >
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </motion.button>
-        )}
+        {/* Vpravo */}
+        <motion.button
+          whileHover={customShowRightArrow || (!isMobile && showRightArrow) ? { scale: 1.14 } : false}
+          onClick={() => {
+            if ((isMobile && customShowRightArrow) || (!isMobile && showRightArrow)) {
+              isMobile ? scrollPage('right') : scroll('right');
+            }
+          }}
+          disabled={isMobile ? !customShowRightArrow : !showRightArrow}
+          aria-disabled={isMobile ? !customShowRightArrow : !showRightArrow}
+          className={
+            `absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center
+            ${((isMobile && !customShowRightArrow) || (!isMobile && !showRightArrow)) ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-white active:bg-white'}
+            `
+          }
+          aria-label="Scroll right"
+          tabIndex={((isMobile && !customShowRightArrow) || (!isMobile && !showRightArrow)) ? -1 : 0}
+        >
+          <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </motion.button>
       </div>
     </div>
   );
