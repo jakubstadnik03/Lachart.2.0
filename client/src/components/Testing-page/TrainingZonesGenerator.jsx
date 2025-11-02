@@ -57,71 +57,135 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     }
     const sport = mockData.sport || 'bike';
     setSelectedSport(sport);
-    if (sport !== 'run' && sport !== 'swim') return;
+    
     const thresholds = calculateThresholds(mockData);
-    const lt1_sec = thresholds['LTP1'];
-    const lt2_sec = thresholds['LTP2'];
+    const lt1_value = thresholds['LTP1'];
+    const lt2_value = thresholds['LTP2'];
     const hr1 = thresholds.heartRates['LTP1'];
     const hr2 = thresholds.heartRates['LTP2'];
-    if (!lt1_sec || !lt2_sec || !hr1 || !hr2) {
-      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { lt1_sec, lt2_sec, hr1, hr2 });
+    
+    if (!lt1_value || !lt2_value || !hr1 || !hr2) {
+      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { lt1_value, lt2_value, hr1, hr2 });
       setZones(null);
       return;
     }
-    if (lt2_sec >= lt1_sec) {
-      console.warn('[Zones] LTP2 < LTP1, invalid combination', { lt1_sec, lt2_sec });
+    
+    if (lt2_value <= lt1_value) {
+      console.warn('[Zones] LTP2 <= LTP1, invalid combination', { lt1_value, lt2_value });
       setZones(null);
       return;
     }
-    const fmt = s => formatPace(s);
-    console.log(`[Zones] LTP1: ${lt1_sec} (${fmt(lt1_sec)}) LTP2: ${lt2_sec} (${fmt(lt2_sec)})`);
-    // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
-    setZones({
-      pace: {
-        zone1: {
-          min: fmt(lt1_sec / 0.90),
-          max: fmt(lt1_sec / 0.70),
-          description: '70–90% LT1 (recovery, reference wide zone)',
-          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
-          percent: '70–90% LT1',
+    
+    // Pro bike: použít power hodnoty (watty), pro run/swim: použít tempo (sekundy)
+    if (sport === 'bike') {
+      // Pro bike jsou LTP1 a LTP2 už v power hodnotách (watty)
+      const lt1_watts = lt1_value;
+      const lt2_watts = lt2_value;
+      
+      console.log(`[Zones Bike] LTP1: ${lt1_watts}W LTP2: ${lt2_watts}W`);
+      
+      setZones({
+        power: {
+          zone1: {
+            min: Math.round(lt1_watts * 0.70),
+            max: Math.round(lt1_watts * 0.90),
+            description: '70–90% LT1 (recovery, reference wide zone)',
+            hr: `${Math.round(hr1*0.70)}–${Math.round(hr1*0.90)} BPM`,
+            percent: '70–90% LT1',
+          },
+          zone2: {
+            min: Math.round(lt1_watts * 0.90),
+            max: Math.round(lt1_watts * 1.00),
+            description: '90%–100% LT1',
+            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
+            percent: '90–100% LT1',
+          },
+          zone3: {
+            min: Math.round(lt1_watts * 1.00),
+            max: Math.round(lt2_watts * 0.95),
+            description: '100% LT1 – 95% LT2',
+            hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
+            percent: '100% LT1 – 95% LT2',
+          },
+          zone4: {
+            min: Math.round(lt2_watts * 0.96),
+            max: Math.round(lt2_watts * 1.04),
+            description: '96%–104% LT2 (threshold)',
+            hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
+            percent: '96–104% LT2',
+          },
+          zone5: {
+            min: Math.round(lt2_watts * 1.05),
+            max: Math.round(lt2_watts * 1.20),
+            description: '105–120% LT2 (sprint/VO2max+ reference)',
+            hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
+            percent: '105–120% LT2',
+          },
         },
-        zone2: {
-          min: fmt(lt1_sec / 1.00),
-          max: fmt(lt1_sec / 0.90),
-          description: '90%–100% LT1',
-          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
-          percent: '90–100% LT1',
+        heartRate: {
+          zone1: { min: Math.round(hr1*0.70), max: Math.round(hr1*0.90) },
+          zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
+          zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
+          zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
+          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
+        }
+      });
+    } else {
+      // Pro run/swim: použít tempo (sekundy)
+      const lt1_sec = lt1_value;
+      const lt2_sec = lt2_value;
+      const fmt = s => formatPace(s);
+      
+      console.log(`[Zones Run/Swim] LTP1: ${lt1_sec} (${fmt(lt1_sec)}) LTP2: ${lt2_sec} (${fmt(lt2_sec)})`);
+      
+      // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
+      setZones({
+        pace: {
+          zone1: {
+            min: fmt(lt1_sec / 0.90),
+            max: fmt(lt1_sec / 0.70),
+            description: '70–90% LT1 (recovery, reference wide zone)',
+            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
+            percent: '70–90% LT1',
+          },
+          zone2: {
+            min: fmt(lt1_sec / 1.00),
+            max: fmt(lt1_sec / 0.90),
+            description: '90%–100% LT1',
+            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
+            percent: '90–100% LT1',
+          },
+          zone3: {
+            min: fmt(lt2_sec / 0.95),
+            max: fmt(lt1_sec / 1.00),
+            description: '100% LT1 – 95% LT2',
+            hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
+            percent: '100% LT1 – 95% LT2',
+          },
+          zone4: {
+            min: fmt(lt2_sec / 1.04),
+            max: fmt(lt2_sec / 0.96),
+            description: '96%–104% LT2 (threshold)',
+            hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
+            percent: '96–104% LT2',
+          },
+          zone5: {
+            min: fmt(lt2_sec / 1.20),
+            max: fmt(lt2_sec / 1.05),
+            description: '105–120% LT2 (sprint/VO2max+ reference)',
+            hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
+            percent: '105–120% LT2',
+          },
         },
-        zone3: {
-          min: fmt(lt2_sec / 0.95),
-          max: fmt(lt1_sec / 1.00),
-          description: '100% LT1 – 95% LT2',
-          hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
-          percent: '100% LT1 – 95% LT2',
-        },
-        zone4: {
-          min: fmt(lt2_sec / 1.04),
-          max: fmt(lt2_sec / 0.96),
-          description: '96%–104% LT2 (threshold)',
-          hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
-          percent: '96–104% LT2',
-        },
-        zone5: {
-          min: fmt(lt2_sec / 1.20),
-          max: fmt(lt2_sec / 1.05),
-          description: '105–120% LT2 (sprint/VO2max+ reference)',
-          hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
-          percent: '105–120% LT2',
-        },
-      },
-      heartRate: {
-        zone1: { min: Math.round(hr1*0.90), max: Math.round(hr1*0.70) },
-        zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
-        zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
-        zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-        zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
-      }
-    });
+        heartRate: {
+          zone1: { min: Math.round(hr1*0.90), max: Math.round(hr1*0.70) },
+          zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
+          zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
+          zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
+          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
+        }
+      });
+    }
   }, [mockData]);
 
   useEffect(() => {
