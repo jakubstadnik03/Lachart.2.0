@@ -216,13 +216,76 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   }, [testData]);
 
-  // Removed automatic conversion - let user type whatever they want
-  // useEffect for conversion is removed to prevent auto-formatting
+  // Convert display format when switching inputMode/unitSystem (for existing values only)
+  useEffect(() => {
+    if ((formData.sport === 'run' || formData.sport === 'swim') && rows.length > 0) {
+      const updatedRows = rows.map(row => {
+        if (!row.power || row.power === '') return row;
+        
+        // Convert based on current inputMode
+        if (inputMode === 'pace') {
+          // Convert to pace format (MM:SS)
+          const powerStr = String(row.power);
+          
+          // If it already has ':', keep as is (already in pace format)
+          if (powerStr.includes(':')) {
+            return row;
+          }
+          
+          // If it's a number, try to convert
+          const powerNum = parseFloat(powerStr);
+          if (!isNaN(powerNum)) {
+            // If it's a large number (> 100), assume it's seconds - convert to pace
+            if (powerNum > 100) {
+              return { ...row, power: convertSecondsToPace(powerNum) };
+            }
+            // If it's a small number (< 50), assume it's speed - convert to pace
+            else if (powerNum < 50 && powerNum > 0) {
+              const seconds = convertSpeedToSeconds(powerNum, unitSystem);
+              return { ...row, power: convertSecondsToPace(seconds) };
+            }
+          }
+        } else if (inputMode === 'speed') {
+          // Convert to speed format
+          const powerStr = String(row.power);
+          
+          // If it has ':', it's pace format - convert to speed
+          if (powerStr.includes(':')) {
+            const seconds = convertPaceToSeconds(powerStr);
+            const speed = convertSecondsToSpeed(seconds, unitSystem);
+            return { ...row, power: speed.toFixed(1) };
+          }
+          
+          // If it's a number, check what it is
+          const powerNum = parseFloat(powerStr);
+          if (!isNaN(powerNum)) {
+            // If it's a large number (> 100), assume it's seconds - convert to speed
+            if (powerNum > 100) {
+              const speed = convertSecondsToSpeed(powerNum, unitSystem);
+              return { ...row, power: speed.toFixed(1) };
+            }
+            // If it's already a small number, assume it's already speed, keep as is
+          }
+        }
+        
+        return row; // Keep as is if we can't determine format
+      });
+      
+      // Only update if rows actually changed
+      if (JSON.stringify(updatedRows) !== JSON.stringify(rows)) {
+        setRows(updatedRows);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputMode, unitSystem, formData.sport]);
 
   // Determine if we're in new test mode (all editable) or previous test mode (needs edit button)
   const isNewTest = !testData?._id;
 
   const [rows, setRows] = useState([]);
+  
+  // Store original test data when entering edit mode for cancel functionality
+  const [originalTestData, setOriginalTestData] = useState(null);
 
   const [showGlucose, setShowGlucose] = useState(true);
 
@@ -433,6 +496,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           isNewTest: isNewTest
         });
         setIsEditMode(false);
+        setOriginalTestData(null); // Clear original data after successful save
       } catch (error) {
         console.error('Error saving test data:', error);
         addNotification('Failed to save test data', 'error');
@@ -668,6 +732,60 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             <button
               onClick={() => {
                 logClick('Edit/Cancel Button', { isEditMode });
+                if (isEditMode) {
+                  // Cancel: restore original data
+                  if (originalTestData) {
+                    // Restore formData
+                    setFormData({
+                      title: originalTestData.title || '',
+                      description: originalTestData.description || '',
+                      weight: originalTestData.weight?.toString() || '',
+                      sport: originalTestData.sport || '',
+                      baseLa: originalTestData.baseLactate?.toString() || '',
+                      date: formatDate(originalTestData.date),
+                      specifics: originalTestData.specifics || { specific: '', weather: '' },
+                      comments: originalTestData.comments || ''
+                    });
+                    
+                    // Restore rows with proper formatting
+                    if (originalTestData.results && originalTestData.results.length > 0) {
+                      const restoredRows = originalTestData.results.map(row => {
+                        let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
+                        
+                        // For existing tests, convert seconds to MM:SS format for display
+                        if ((originalTestData.sport === 'run' || originalTestData.sport === 'swim') && power) {
+                          const powerNum = parseFloat(power);
+                          if (!isNaN(powerNum) && powerNum > 60 && !power.includes(':')) {
+                            power = convertSecondsToPace(powerNum);
+                          }
+                        }
+                        
+                        return {
+                          interval: row.interval || 1,
+                          power,
+                          heartRate: row.heartRate ? String(row.heartRate) : '',
+                          lactate: row.lactate ? String(row.lactate) : '',
+                          glucose: row.glucose ? String(row.glucose) : '',
+                          RPE: row.RPE ? String(row.RPE) : ''
+                        };
+                      });
+                      setRows(restoredRows);
+                    }
+                    
+                    // Restore inputMode and unitSystem if they were in original data
+                    if (originalTestData.inputMode) {
+                      setInputMode(originalTestData.inputMode);
+                    }
+                    if (originalTestData.unitSystem) {
+                      setUnitSystem(originalTestData.unitSystem);
+                    }
+                    
+                    setOriginalTestData(null);
+                  }
+                } else {
+                  // Enter edit mode: save current state as original
+                  setOriginalTestData({ ...testData });
+                }
                 setIsEditMode(!isEditMode);
               }}
               className={`px-2 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
