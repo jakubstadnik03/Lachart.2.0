@@ -216,53 +216,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
   }, [testData]);
 
-  // Convert display format when switching inputMode/unitSystem (only for backend data)
-  useEffect(() => {
-    if ((formData.sport === 'run' || formData.sport === 'swim')) {
-      const updatedRows = rows.map(row => {
-        if (!row.power || row.power === '') return row;
-        
-        // Convert based on current inputMode
-        if (inputMode === 'pace') {
-          // Convert to pace format
-          const powerNum = parseFloat(row.power);
-          if (!isNaN(powerNum) && powerNum > 100) {
-            // This is seconds from backend, convert to pace
-            return { ...row, power: convertSecondsToPace(powerNum) };
-          } else if (typeof row.power === 'string' && row.power.includes(':')) {
-            // Already in pace format, keep as is
-            return row;
-          } else if (!isNaN(powerNum) && powerNum < 100) {
-            // This is speed, convert to pace
-            const seconds = convertSpeedToSeconds(powerNum, unitSystem);
-            return { ...row, power: convertSecondsToPace(seconds) };
-          }
-        } else if (inputMode === 'speed') {
-          // Convert to speed format
-          if (typeof row.power === 'string' && row.power.includes(':')) {
-            // This is pace format, convert to speed
-            const seconds = convertPaceToSeconds(row.power);
-            const speed = convertSecondsToSpeed(seconds, unitSystem);
-            return { ...row, power: speed.toFixed(1) };
-          } else {
-            const powerNum = parseFloat(row.power);
-            if (!isNaN(powerNum) && powerNum > 100) {
-              // This is seconds from backend, convert to speed
-              const speed = convertSecondsToSpeed(powerNum, unitSystem);
-              return { ...row, power: speed.toFixed(1) };
-            }
-          }
-        }
-        
-        return row; // Keep user-typed values as is
-      });
-      
-      if (JSON.stringify(updatedRows) !== JSON.stringify(rows)) {
-        setRows(updatedRows);
-      }
-    }
-    // eslint-disable-next-line
-  }, [inputMode, unitSystem, formData.sport]);
+  // Removed automatic conversion - let user type whatever they want
+  // useEffect for conversion is removed to prevent auto-formatting
 
   // Determine if we're in new test mode (all editable) or previous test mode (needs edit button)
   const isNewTest = !testData?._id;
@@ -376,16 +331,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       if (testData.results && testData.results.length > 0) {
         const initialRows = testData.results.map(row => {
           let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
-          if ((testData.sport === 'run' || testData.sport === 'swim')) {
-            const num = Number(power);
-            if (!isNaN(num) && num > 0) {
-              power = convertSecondsToPace(num);
-            } else if (typeof power === 'string' && power.includes(':')) {
-              // already MM:SS, keep as is
-            } else {
-              power = '';
+          
+          // For existing tests (from backend), convert seconds to MM:SS format for display
+          // Only for run/swim sports and only if power is a number > 60 (likely seconds)
+          if (!isNewTest && (testData.sport === 'run' || testData.sport === 'swim') && power) {
+            const powerNum = parseFloat(power);
+            // If it's a number > 60, assume it's seconds from backend and convert to MM:SS
+            if (!isNaN(powerNum) && powerNum > 60 && !power.includes(':')) {
+              power = convertSecondsToPace(powerNum);
             }
           }
+          
           return {
             interval: row.interval || 1,
             power,
@@ -416,7 +372,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         RPE: ''
       }]);
     }
-  }, [testData]);
+  }, [testData, isNewTest]);
 
 // NO AUTOMATIC CONVERSIONS - let user type anything
 
@@ -624,62 +580,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
 
-  // Validate and format power input on blur
+  // Removed automatic formatting on blur - let user type whatever they want
   const handlePowerBlur = (index, value) => {
-    if ((formData.sport !== 'run' && formData.sport !== 'swim')) return;
-    
-    let formattedValue = value;
-    let isValid = true;
-    let errorMessage = '';
-    
-    if (inputMode === 'pace') {
-      // Validate pace format (MM:SS)
-      if (value && value.trim() !== '') {
-        if (value.includes(':')) {
-          const [minutes, seconds] = value.split(':').map(Number);
-          if (isNaN(minutes) || isNaN(seconds) || minutes < 0 || seconds < 0 || seconds >= 60) {
-            isValid = false;
-            errorMessage = 'Invalid pace format. Use MM:SS (e.g., 5:30)';
-          } else {
-            formattedValue = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-          }
-        } else {
-          // Try to convert number to MM:SS
-          const totalSeconds = parseFloat(value);
-          if (!isNaN(totalSeconds) && totalSeconds > 0) {
-            const minutes = Math.floor(totalSeconds / 60);
-            const secs = Math.round(totalSeconds % 60);
-            formattedValue = `${minutes}:${secs.toString().padStart(2, '0')}`;
-          } else {
-            isValid = false;
-            errorMessage = 'Invalid pace format. Use MM:SS (e.g., 5:30)';
-          }
-        }
-      }
-    } else if (inputMode === 'speed') {
-      // Validate speed format (number)
-      if (value && value.trim() !== '') {
-        const speed = parseFloat(value);
-        if (isNaN(speed) || speed <= 0) {
-          isValid = false;
-          errorMessage = 'Invalid speed. Enter a positive number (e.g., 14)';
-        } else {
-          formattedValue = speed.toFixed(1);
-        }
-      }
-    }
-    
-    if (isValid) {
-      // Update the row with formatted value
-      const updatedRows = rows.map((row, i) => 
-        i === index ? { ...row, power: formattedValue } : row
-      );
-      setRows(updatedRows);
-    } else {
-      // Show error message (you can implement a toast or inline error)
-      console.error(errorMessage);
-      // For now, just log the error - you can add visual feedback later
-    }
+    // Do nothing - keep the value exactly as user typed it
+    return;
   };
 
   // Update the input field in the table
