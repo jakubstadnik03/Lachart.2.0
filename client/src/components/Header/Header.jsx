@@ -23,7 +23,7 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
         {/* Menu Toggle Button */}
         <button
           onClick={handleMenuToggle}
-          className="p-2 rounded-lg hover:bg-gray-100"
+          className="p-2 rounded-lg hover:bg-gray-100 md:hidden"
         >
           {isMenuOpen ? (
             <XMarkIcon className="h-6 w-6 text-gray-600" />

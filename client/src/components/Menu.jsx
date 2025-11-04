@@ -222,7 +222,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           damping: 30,
           opacity: { duration: 0.2 }
         }}
-        className={`fixed top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden`}
+        className={`fixed md:sticky md:block top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden`}
       >
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
@@ -578,7 +578,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black bg-opacity-50 z-30 backdrop-blur-sm"
+            className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30 backdrop-blur-sm"
             onClick={() => setIsMenuOpen(false)}
           />
         )}
