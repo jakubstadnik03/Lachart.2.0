@@ -89,6 +89,19 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
+  },
+  // External integrations
+  strava: {
+    athleteId: { type: String, default: null },
+    accessToken: { type: String, default: null },
+    refreshToken: { type: String, default: null },
+    expiresAt: { type: Number, default: null }
+  },
+  garmin: {
+    // Placeholder for potential OAuth tokens
+    accessToken: { type: String, default: null },
+    refreshToken: { type: String, default: null },
+    expiresAt: { type: Number, default: null }
   }
 }, {
   timestamps: true

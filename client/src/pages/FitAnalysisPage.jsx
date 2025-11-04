@@ -11,6 +11,7 @@ import {
   BoltIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
+import CalendarView from '../components/Calendar/CalendarView';
 
 
 const FitAnalysisPage = () => {
@@ -522,6 +523,69 @@ const FitAnalysisPage = () => {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">FIT Training Analysis</h1>
+
+        {/* Integrations Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-lg shadow-md p-6 mb-6"
+        >
+          <h2 className="text-xl font-semibold mb-4">Connect & Sync</h2>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const { getStravaAuthUrl } = require('../services/api');
+                  const url = await getStravaAuthUrl();
+                  window.location.href = url;
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="px-3 py-2 rounded-md bg-orange-600 text-white hover:bg-orange-700 text-sm"
+            >
+              Connect Strava
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const { startGarminAuth } = require('../services/api');
+                  const url = await startGarminAuth();
+                  window.location.href = url;
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="px-3 py-2 rounded-md bg-gray-700 text-white hover:bg-gray-800 text-sm"
+            >
+              Connect Garmin
+            </button>
+            <button
+              onClick={async () => {
+                const { syncStravaActivities } = require('../services/api');
+                try { await syncStravaActivities(); alert('Strava sync requested'); } catch(e){ console.error(e); alert('Strava sync failed'); }
+              }}
+              className="px-3 py-2 rounded-md bg-orange-100 text-orange-800 hover:bg-orange-200 text-sm"
+            >
+              Sync Strava
+            </button>
+            <button
+              onClick={async () => {
+                const { syncGarminActivities } = require('../services/api');
+                try { await syncGarminActivities(); alert('Garmin sync requested'); } catch(e){ console.error(e); alert('Garmin sync failed'); }
+              }}
+              className="px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 text-sm"
+            >
+              Sync Garmin
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Calendar Section */}
+        <CalendarView
+          activities={filteredTrainings.map(t => ({ id: t._id, date: t.timestamp, title: t.originalFileName, sport: t.sport }))}
+          onSelectActivity={(a) => { if (a?.id) loadTrainingDetail(a.id); }}
+        />
 
         {/* Upload Section */}
         <motion.div

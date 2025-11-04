@@ -113,6 +113,7 @@ const feedbackRoute = require("./routes/feedbackRoute");
 const eventRoutes = require("./routes/eventRoutes");
 const fitUploadRoute = require("./routes/fitUploadRoute");
 const lactateSessionRoutes = require("./routes/lactateSessionRoutes");
+const integrationsRoutes = require("./routes/integrationsRoutes");
 
 // Routes
 app.use("/test", testRoutes);
@@ -122,6 +123,7 @@ app.use("/feedback", feedbackRoute);
 app.use("/api/events", eventRoutes);
 app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
+app.use("/api/integrations", integrationsRoutes);
 
 // Apply cache middleware to routes that can be cached
 app.use('/api/training', cacheMiddleware(600), trainingRoute);

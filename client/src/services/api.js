@@ -283,4 +283,30 @@ export const deleteFitTraining = async (trainingId) => {
     console.error('Error deleting FIT training:', error);
     throw error;
   }
+};
+
+// External integrations: Strava & Garmin (stubs)
+export const getStravaAuthUrl = async () => {
+  const { data } = await api.get('/api/integrations/strava/auth-url');
+  return data.url;
+};
+
+export const startGarminAuth = async () => {
+  const { data } = await api.get('/api/integrations/garmin/auth-url');
+  return data.url;
+};
+
+export const syncStravaActivities = async (since=null) => {
+  const { data } = await api.post('/api/integrations/strava/sync', { since });
+  return data; // { imported, updated }
+};
+
+export const syncGarminActivities = async (since=null) => {
+  const { data } = await api.post('/api/integrations/garmin/sync', { since });
+  return data;
+};
+
+export const listExternalActivities = async (params={}) => {
+  const { data } = await api.get('/api/integrations/activities', { params });
+  return data; // normalized activities
 }; 
