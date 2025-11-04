@@ -16,6 +16,7 @@
     "cra-template": "1.2.0",
     "cubic-spline": "^3.0.3",
     "date-fns": "^4.1.0",
+    "echarts-for-react": "^3.0.2",
     "framer-motion": "^12.8.0",
     "js-cookie": "^3.0.5",
     "lucide-react": "^0.474.0",

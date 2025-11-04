@@ -309,4 +309,14 @@ export const syncGarminActivities = async (since=null) => {
 export const listExternalActivities = async (params={}) => {
   const { data } = await api.get('/api/integrations/activities', { params });
   return data; // normalized activities
+};
+
+export const getIntegrationStatus = async () => {
+  const { data } = await api.get('/api/integrations/status');
+  return data; // { stravaConnected, garminConnected }
+};
+
+export const getStravaActivityDetail = async (stravaId) => {
+  const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`);
+  return data; // { detail, streams }
 }; 

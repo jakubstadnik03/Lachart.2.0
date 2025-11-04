@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { uploadFitFile, getFitTrainings, getFitTraining, updateLactateValues, deleteFitTraining } from '../services/api';
-import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
 import {
   CloudArrowUpIcon,
@@ -12,6 +11,10 @@ import {
   TrashIcon
 } from '@heroicons/react/24/outline';
 import CalendarView from '../components/Calendar/CalendarView';
+import ReactECharts from 'echarts-for-react';
+import { getIntegrationStatus } from '../services/api';
+import { listExternalActivities, syncStravaActivities } from '../services/api';
+import { getStravaActivityDetail } from '../services/api';
 
 
 const FitAnalysisPage = () => {
@@ -19,13 +22,8 @@ const FitAnalysisPage = () => {
   const [uploading, setUploading] = useState(false);
   const [trainings, setTrainings] = useState([]);
   const [selectedTraining, setSelectedTraining] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [editingLactate, setEditingLactate] = useState(null);
   const [lactateInputs, setLactateInputs] = useState({});
-  const [filteredTrainings, setFilteredTrainings] = useState([]);
-  const [filterSport, setFilterSport] = useState('all');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
   const [showAllTrainings, setShowAllTrainings] = useState(false);
   const [allTrainingsWithLaps, setAllTrainingsWithLaps] = useState([]);
   const fileInputRef = useRef(null);
@@ -44,15 +42,57 @@ const FitAnalysisPage = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, time: 0 });
   const [dragEnd, setDragEnd] = useState({ x: 0, time: 0 });
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [garminConnected, setGarminConnected] = useState(false);
+  const [externalActivities, setExternalActivities] = useState([]);
+  const [selectedStrava, setSelectedStrava] = useState(null);
+  const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
+  const [stravaSeries, setStravaSeries] = useState({ speed: true, hr: true, power: true, altitude: true });
+  const stravaChartRef = useRef(null);
 
   useEffect(() => {
     loadTrainings();
   }, []);
 
   useEffect(() => {
-    applyFilters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainings, filterSport, filterDateFrom, filterDateTo, showAllTrainings]);
+    const checkStatus = async () => {
+      try {
+        const status = await getIntegrationStatus();
+        setStravaConnected(Boolean(status.stravaConnected));
+        setGarminConnected(Boolean(status.garminConnected));
+      } catch (e) {
+        // ignore if not logged
+      }
+    };
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('strava') === 'connected') {
+      checkStatus();
+      loadExternalActivities();
+      const url = window.location.pathname;
+      window.history.replaceState({}, '', url);
+    } else {
+      checkStatus();
+      loadExternalActivities();
+    }
+  }, []);
+
+  const loadExternalActivities = async () => {
+    try {
+      const acts = await listExternalActivities();
+      setExternalActivities(acts || []);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const loadStravaDetail = async (id) => {
+    try {
+      const data = await getStravaActivityDetail(id);
+      setSelectedStrava(data.detail);
+      setSelectedStravaStreams(data.streams);
+      setSelectedTraining(null);
+    } catch (e) {}
+  };
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -188,49 +228,13 @@ const FitAnalysisPage = () => {
 
   const loadTrainings = async () => {
     try {
-      setLoading(true);
       const data = await getFitTrainings();
       setTrainings(data);
-      setFilteredTrainings(data);
     } catch (error) {
       console.error('Error loading trainings:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const applyFilters = async () => {
-    let filtered = [...trainings];
-
-    // Filter by sport
-    if (filterSport !== 'all') {
-      filtered = filtered.filter(t => t.sport === filterSport);
-    }
-
-    // Filter by date range
-    if (filterDateFrom) {
-      filtered = filtered.filter(t => new Date(t.timestamp) >= new Date(filterDateFrom));
-    }
-    if (filterDateTo) {
-      filtered = filtered.filter(t => new Date(t.timestamp) <= new Date(filterDateTo + 'T23:59:59'));
-    }
-
-    setFilteredTrainings(filtered);
-
-    // Load all trainings with laps if needed for statistics
-    if (showAllTrainings) {
-      try {
-        const trainingsWithLaps = await Promise.all(
-          filtered.map(t => getFitTraining(t._id))
-        );
-        setAllTrainingsWithLaps(trainingsWithLaps);
-      } catch (error) {
-        console.error('Error loading trainings with laps:', error);
-      }
-    } else {
-      setAllTrainingsWithLaps([]);
-    }
-  };
 
   const loadTrainingDetail = async (id) => {
     try {
@@ -542,9 +546,10 @@ const FitAnalysisPage = () => {
                   console.error(e);
                 }
               }}
-              className="px-3 py-2 rounded-md bg-orange-600 text-white hover:bg-orange-700 text-sm"
+              disabled={stravaConnected}
+              className={`px-3 py-2 rounded-md text-sm ${stravaConnected ? 'bg-green-100 text-green-800 cursor-default' : 'bg-orange-600 text-white hover:bg-orange-700'}`}
             >
-              Connect Strava
+              {stravaConnected ? 'Strava Connected' : 'Connect Strava'}
             </button>
             <button
               onClick={async () => {
@@ -562,8 +567,11 @@ const FitAnalysisPage = () => {
             </button>
             <button
               onClick={async () => {
-                const { syncStravaActivities } = require('../services/api');
-                try { await syncStravaActivities(); alert('Strava sync requested'); } catch(e){ console.error(e); alert('Strava sync failed'); }
+                try { 
+                  const res = await syncStravaActivities(); 
+                  await loadExternalActivities();
+                  alert(`Strava sync: imported ${res.imported}, updated ${res.updated}`); 
+                } catch(e){ console.error(e); alert('Strava sync failed'); }
               }}
               className="px-3 py-2 rounded-md bg-orange-100 text-orange-800 hover:bg-orange-200 text-sm"
             >
@@ -578,168 +586,69 @@ const FitAnalysisPage = () => {
             >
               Sync Garmin
             </button>
-          </div>
-        </motion.div>
-
-        {/* Calendar Section */}
-        <CalendarView
-          activities={filteredTrainings.map(t => ({ id: t._id, date: t.timestamp, title: t.originalFileName, sport: t.sport }))}
-          onSelectActivity={(a) => { if (a?.id) loadTrainingDetail(a.id); }}
-        />
-
-        {/* Upload Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-lg shadow-md p-6 mb-8"
-        >
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <CloudArrowUpIcon className="w-6 h-6" />
-            Upload FIT File
-          </h2>
-          <div className="flex flex-col gap-4">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-sm flex items-center gap-2"
+            >
+              <CloudArrowUpIcon className="w-4 h-4" />
+              Upload FIT File
+            </button>
             <input
               ref={fileInputRef}
               type="file"
               accept=".fit"
               multiple
               onChange={handleFileSelect}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className="hidden"
             />
             {files.length > 0 && (
-              <div className="text-sm text-gray-600">
-                Selected files: {files.length}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">{files.length} file(s) selected</span>
+                <button
+                  onClick={handleUpload}
+                  disabled={uploading}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm flex items-center gap-2"
+                >
+                  {uploading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <DocumentArrowUpIcon className="w-4 h-4" />
+                      Upload
+                    </>
+                  )}
+                </button>
               </div>
             )}
-            <button
-              onClick={handleUpload}
-              disabled={files.length === 0 || uploading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
-            >
-              {uploading ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <DocumentArrowUpIcon className="w-5 h-5" />
-                  Upload Files
-                </>
-              )}
-            </button>
           </div>
         </motion.div>
 
-        {/* Training List */}
-        {loading ? (
-          <div className="text-center py-12">Loading...</div>
-        ) : trainings.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            No trainings uploaded yet
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Filters and Training Selection - Top Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Filters */}
-              <div className="lg:col-span-1 bg-white rounded-lg shadow-md p-4">
-                <h3 className="font-semibold mb-4">Filters</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Sport</label>
-                    <select
-                      value={filterSport}
-                      onChange={(e) => setFilterSport(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    >
-                      <option value="all">All Sports</option>
-                      <option value="running">Running</option>
-                      <option value="cycling">Cycling</option>
-                      <option value="swimming">Swimming</option>
-                      <option value="generic">Generic</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">From Date</label>
-                    <input
-                      type="date"
-                      value={filterDateFrom}
-                      onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">To Date</label>
-                    <input
-                      type="date"
-                      value={filterDateTo}
-                      onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="showAllTrainings"
-                      checked={showAllTrainings}
-                      onChange={(e) => setShowAllTrainings(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 rounded"
-                    />
-                    <label htmlFor="showAllTrainings" className="text-sm text-gray-700">
-                      Show all intervals
-                    </label>
-                  </div>
-                </div>
-              </div>
+        {/* Calendar Section */}
+        <CalendarView
+          activities={[
+            ...trainings.map(t => ({ id: t._id, date: t.timestamp, title: t.originalFileName, sport: t.sport })),
+            ...externalActivities.map(a => ({ id: `strava-${a.stravaId}`, date: a.startDate, title: a.name, sport: a.sport }))
+          ]}
+          onSelectActivity={(a) => { 
+            if (a?.id && String(a.id).startsWith('strava-')) {
+              const sid = String(a.id).replace('strava-','');
+              loadStravaDetail(sid);
+            } else if (a?.id) {
+              loadTrainingDetail(a.id);
+            }
+          }}
+        />
 
-              {/* Training List */}
-              <div className="lg:col-span-3 bg-white rounded-lg shadow-md p-4">
-                <h3 className="font-semibold mb-4">Trainings ({filteredTrainings.length})</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[200px] overflow-y-auto">
-                  {filteredTrainings.map((training) => (
-                    <div
-                      key={training._id}
-                      className={`group relative text-left p-3 rounded-lg border transition-colors ${
-                        selectedTraining?._id === training._id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <button
-                        onClick={() => loadTrainingDetail(training._id)}
-                        className="w-full text-left"
-                      >
-                        <div className="font-medium text-sm truncate">{training.originalFileName}</div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {format(parseISO(training.timestamp), 'MMM dd, HH:mm')}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {formatDistance(training.totalDistance)} • {formatDuration(training.totalElapsedTime)}
-                        </div>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTraining(training._id);
-                        }}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-all"
-                        title="Delete training"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Training Detail and Charts - Full Width */}
-            <div className="w-full">
-              {selectedTraining || (showAllTrainings && allTrainingsWithLaps.length > 0) ? (
+        {/* Training Detail and Charts - Full Width */}
+        {selectedTraining ? (
+          <div className="w-full mt-6">
+            {selectedTraining ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -1731,14 +1640,456 @@ const FitAnalysisPage = () => {
                     </div>
                   )}
                 </motion.div>
-              ) : (
-                <div className="bg-white rounded-lg shadow-md p-12 text-center text-gray-500">
-                  Select a training or enable "Show all intervals" to view the chart
-                </div>
-              )}
-            </div>
+              ) : null}
           </div>
-        )}
+        ) : null}
+
+        {/* Strava Activity Detail */}
+        {selectedStrava && selectedStravaStreams ? (
+          <div className="w-full mt-6">
+            {(() => {
+          const time = selectedStravaStreams?.time?.data || [];
+          const speed = selectedStravaStreams?.velocity_smooth?.data || [];
+          const hr = selectedStravaStreams?.heartrate?.data || [];
+          const power = selectedStravaStreams?.watts?.data || [];
+          const altitude = selectedStravaStreams?.altitude?.data || [];
+          const maxTime = time.length > 0 ? time[time.length-1] : 0;
+
+          return (
+            <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+              {/* Header Stats + Toggles */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600">Duration</div>
+                  <div className="text-xl font-bold mt-1">{formatDuration(selectedStrava.elapsed_time)}</div>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600">Distance</div>
+                  <div className="text-xl font-bold mt-1">{formatDistance(selectedStrava.distance)}</div>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600">Avg Heart Rate</div>
+                  <div className="text-xl font-bold mt-1">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600">Avg Power</div>
+                  <div className="text-xl font-bold mt-1">{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <label className="flex items-center gap-1"><input type="checkbox" checked={stravaSeries.speed} onChange={(e)=>setStravaSeries(s=>({...s,speed:e.target.checked}))}/> Speed</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={stravaSeries.hr} onChange={(e)=>setStravaSeries(s=>({...s,hr:e.target.checked}))}/> Heart Rate</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={stravaSeries.power} onChange={(e)=>setStravaSeries(s=>({...s,power:e.target.checked}))}/> Power</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={stravaSeries.altitude} onChange={(e)=>setStravaSeries(s=>({...s,altitude:e.target.checked}))}/> Elevation</label>
+                <button 
+                  className="px-2 py-1 border rounded hover:bg-gray-100" 
+                  onClick={() => {
+                    if (stravaChartRef.current) {
+                      const chart = stravaChartRef.current.getEchartsInstance();
+                      chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+                    }
+                  }}
+                >
+                  Reset Zoom
+                </button>
+              </div>
+
+              {/* Streams Chart (ECharts) */}
+              {(() => {
+                // Prepare interval bars data from laps
+                const laps = selectedStrava?.laps || [];
+                const intervalBars = [];
+                let cumulativeTime = 0;
+                
+                laps.forEach((lap, idx) => {
+                  const startTime = cumulativeTime;
+                  const endTime = cumulativeTime + (lap.elapsed_time || 0);
+                  const power = lap.average_watts || lap.average_power || 0;
+                  const duration = lap.elapsed_time || 0;
+                  
+                  intervalBars.push({
+                    value: [(startTime + endTime) / 2 / 60, power], // [center time, power] in minutes
+                    interval: idx + 1,
+                    startTime: startTime / 60,
+                    endTime: endTime / 60,
+                    duration: duration,
+                    width: duration / 60, // Width in minutes
+                    power: power,
+                    heartRate: lap.average_heartrate || lap.average_hr || null,
+                    distance: lap.distance || 0
+                  });
+                  
+                  cumulativeTime = endTime;
+                });
+
+                const option = {
+                  backgroundColor: 'transparent',
+                  tooltip: { 
+                    trigger: 'axis',
+                    axisPointer: {
+                      type: 'cross',
+                      label: {
+                        backgroundColor: '#6a7985'
+                      }
+                    },
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    borderColor: 'rgba(139, 69, 190, 0.3)',
+                    borderWidth: 1,
+                    textStyle: { color: '#333', fontSize: 13 },
+                    padding: [12, 16],
+                    formatter: (params) => {
+                      let result = '';
+                      const timeValue = params[0]?.axisValue || params[0]?.value?.[0] || 0;
+                      
+                      // Check if hovering over an interval
+                      const hoveredInterval = intervalBars.find(bar => {
+                        const start = bar.startTime;
+                        const end = bar.endTime;
+                        return timeValue >= start && timeValue <= end;
+                      });
+                      
+                      if (hoveredInterval) {
+                        const lap = laps[hoveredInterval.interval - 1] || {};
+                        const avgSpeed = lap.average_speed ? (lap.average_speed * 3.6).toFixed(1) : '-';
+                        result += `
+                          <div style="font-weight: 600; color: #8B45D6; margin-bottom: 8px; font-size: 14px;">
+                            Interval ${hoveredInterval.interval || ''}
+                          </div>
+                          <div style="font-size: 12px; line-height: 1.8; color: #555;">
+                            <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(hoveredInterval.power || 0)} W</span></div>
+                            ${hoveredInterval.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(hoveredInterval.heartRate)} bpm</span></div>` : ''}
+                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed} km/h</span></div>
+                            <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(hoveredInterval.distance || 0)}</span></div>
+                            <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(hoveredInterval.duration || 0)}</span></div>
+                            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #eee; font-size: 11px; color: #999;">
+                              ${hoveredInterval.startTime?.toFixed(1)} - ${hoveredInterval.endTime?.toFixed(1)} min
+                            </div>
+                          </div>
+                        `;
+                      }
+                      
+                      // Add line series values
+                      params.forEach(param => {
+                        if (param.seriesName !== 'Intervals' && param.seriesName !== 'Elevation') {
+                          const value = Array.isArray(param.value) ? param.value[1] : param.value;
+                          const unit = param.seriesName === 'Speed' ? ' km/h' : 
+                                     param.seriesName === 'Heart Rate' ? ' bpm' : 
+                                     param.seriesName === 'Power' ? ' W' : '';
+                          result += `<div style="margin-top: 4px;"><span style="color: ${param.color};">●</span> ${param.seriesName}: <span style="font-weight: 600;">${value}${unit}</span></div>`;
+                        }
+                      });
+                      
+                      return result || 'Hover over the chart to see values';
+                    }
+                  },
+                  legend: {
+                    data: ['Speed','Heart Rate','Power','Elevation','Intervals'],
+                    selected: {
+                      'Speed': stravaSeries.speed,
+                      'Heart Rate': stravaSeries.hr,
+                      'Power': stravaSeries.power,
+                      'Elevation': stravaSeries.altitude,
+                      'Intervals': true
+                    },
+                    textStyle: { fontSize: 12, fontWeight: 500 },
+                    itemGap: 20,
+                    top: 10
+                  },
+                  dataZoom: [
+                    { 
+                      type: 'inside',
+                      filterMode: 'none'
+                    },
+                    { 
+                      type: 'slider',
+                      height: 20,
+                      bottom: 10,
+                      handleStyle: {
+                        color: '#8B45D6',
+                        borderColor: '#8B45D6'
+                      },
+                      dataBackground: {
+                        areaStyle: { color: 'rgba(139, 69, 190, 0.1)' }
+                      },
+                      selectedDataBackground: {
+                        areaStyle: { color: 'rgba(139, 69, 190, 0.2)' }
+                      }
+                    }
+                  ],
+                  grid: { 
+                    left: 60, 
+                    right: 50, 
+                    top: 60, 
+                    bottom: 80,
+                    containLabel: false
+                  },
+                  xAxis: {
+                    type: 'value',
+                    name: 'Time (min)',
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#666' },
+                    min: 0,
+                    max: maxTime / 60,
+                    axisLine: { lineStyle: { color: '#E0E0E0' } },
+                    axisTick: { show: false },
+                    splitLine: { 
+                      show: true, 
+                      lineStyle: { type: 'dashed', color: '#F0F0F0' }
+                    },
+                    axisLabel: { color: '#999', fontSize: 11 }
+                  },
+                  yAxis: [
+                    { 
+                      type: 'value', 
+                      name: '',
+                      axisLine: { lineStyle: { color: '#E0E0E0' } },
+                      axisTick: { show: false },
+                      splitLine: { 
+                        show: true, 
+                        lineStyle: { type: 'dashed', color: '#F0F0F0' }
+                      },
+                      axisLabel: { color: '#999', fontSize: 11 }
+                    },
+                    { 
+                      type: 'value', 
+                      name: 'Elevation (m)', 
+                      position: 'right',
+                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#A07850' },
+                      axisLine: { show: true, lineStyle: { color: '#A07850' } },
+                      axisTick: { show: false },
+                      splitLine: { show: false },
+                      axisLabel: { color: '#A07850', fontSize: 11 }
+                    }
+                  ],
+                  series: [
+                    {
+                      name: 'Intervals',
+                      type: 'custom',
+                      coordinateSystem: 'cartesian2d',
+                      data: intervalBars.map(bar => ({
+                        value: bar.value,
+                        custom: {
+                          interval: bar.interval,
+                          startTime: bar.startTime,
+                          endTime: bar.endTime,
+                          duration: bar.duration,
+                          width: bar.width,
+                          power: bar.power,
+                          heartRate: bar.heartRate,
+                          distance: bar.distance
+                        }
+                      })),
+                      renderItem: (params, api) => {
+                        const dataValue = params.value || params.data?.value;
+                        const custom = params.data?.custom || {};
+                        
+                        if (!Array.isArray(dataValue) || dataValue.length < 2) {
+                          return null;
+                        }
+                        
+                        const [centerTime, power] = dataValue;
+                        const startTime = custom.startTime || (centerTime - (custom.width || 0) / 2);
+                        const endTime = custom.endTime || (centerTime + (custom.width || 0) / 2);
+                        const barWidth = custom.width || 0;
+                        
+                        if (barWidth <= 0 || power <= 0) return null;
+                        
+                        // Get coordinates - api.coord converts data values [x, y] to pixel coordinates [x, y]
+                        // X coordinates for start and end time
+                        const startX = api.coord([startTime, 0])[0];
+                        const endX = api.coord([endTime, 0])[0];
+                        // Y coordinates for power and base (0)
+                        const powerY = api.coord([centerTime, power])[1];
+                        const baseY = api.coord([centerTime, 0])[1];
+                        
+                        // Calculate bar dimensions
+                        // In ECharts, Y increases downward, so baseY > powerY
+                        const x = Math.min(startX, endX);
+                        const width = Math.max(3, Math.abs(endX - startX));
+                        const height = Math.max(3, Math.abs(baseY - powerY));
+                        const y = Math.min(powerY, baseY); // Top of bar (smaller Y value = higher on screen)
+                        
+                        if (width < 3 || height < 3) return null;
+                        
+                        // Use a more visible color - light purple with good opacity
+                        const color = `rgba(139, 69, 190, 0.4)`; // Purple with good visibility
+                        const borderColor = `rgba(139, 69, 190, 0.7)`; // More visible border
+                        
+                        return {
+                          type: 'rect',
+                          shape: {
+                            x: x,
+                            y: y,
+                            width: width,
+                            height: height,
+                            r: [2, 2, 0, 0]
+                          },
+                          style: {
+                            fill: color,
+                            stroke: borderColor,
+                            lineWidth: 1.5
+                          },
+                          styleEmphasis: {
+                            fill: `rgba(139, 69, 190, 0.5)`,
+                            stroke: `rgba(139, 69, 190, 0.8)`,
+                            lineWidth: 2
+                          },
+                          z2: 1 // Lower z-index to be behind line series
+                        };
+                      },
+                      z: 1, // Behind line series (they have z: 2 or higher)
+                      silent: true // Don't interfere with tooltip on line series
+                    },
+                    {
+                      name: 'Speed', 
+                      type: 'line', 
+                      smooth: true,
+                      data: time.map((t, i) => [t / 60, (speed[i] * 3.6).toFixed(1)]),
+                      lineStyle: { 
+                        color: '#4A90E2',
+                        width: 2.5,
+                        shadowBlur: 4,
+                        shadowColor: 'rgba(74, 144, 226, 0.3)'
+                      },
+                      symbol: 'none',
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
+                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
+                          ]
+                        }
+                      },
+                      z: 2
+                    },
+                    {
+                      name: 'Heart Rate', 
+                      type: 'line', 
+                      smooth: true,
+                      data: time.map((t, i) => [t / 60, hr[i] || null]).filter(d => d[1] !== null),
+                      lineStyle: { 
+                        color: '#FF6B6B',
+                        width: 2.5,
+                        shadowBlur: 4,
+                        shadowColor: 'rgba(255, 107, 107, 0.3)'
+                      },
+                      symbol: 'none',
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(255, 107, 107, 0.15)' },
+                            { offset: 1, color: 'rgba(255, 107, 107, 0.01)' }
+                          ]
+                        }
+                      },
+                      z: 2
+                    },
+                    {
+                      name: 'Power', 
+                      type: 'line', 
+                      smooth: true,
+                      data: time.map((t, i) => [t / 60, power[i] || null]).filter(d => d[1] !== null),
+                      lineStyle: { 
+                        color: '#8B45D6',
+                        width: 2.5,
+                        shadowBlur: 4,
+                        shadowColor: 'rgba(139, 69, 190, 0.3)'
+                      },
+                      symbol: 'none',
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(139, 69, 190, 0.15)' },
+                            { offset: 1, color: 'rgba(139, 69, 190, 0.01)' }
+                          ]
+                        }
+                      },
+                      z: 2
+                    },
+                    {
+                      name: 'Elevation', 
+                      type: 'line', 
+                      yAxisIndex: 1, 
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(160, 120, 80, 0.4)' },
+                            { offset: 1, color: 'rgba(160, 120, 80, 0.05)' }
+                          ]
+                        }
+                      },
+                      data: time.map((t, i) => [t / 60, altitude[i] || null]).filter(d => d[1] !== null),
+                      lineStyle: { 
+                        color: '#A07850',
+                        width: 2,
+                        shadowBlur: 3,
+                        shadowColor: 'rgba(160, 120, 80, 0.2)'
+                      },
+                      symbol: 'none',
+                      z: 2
+                    }
+                  ]
+                };
+                return (
+                  <ReactECharts 
+                    ref={stravaChartRef}
+                    option={option} 
+                    style={{ height: 320 }} 
+                    notMerge={true} 
+                    lazyUpdate={true} 
+                  />
+                );
+              })()}
+
+              {/* Laps/Intervals (Strava) */}
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">Intervals</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Speed</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {(selectedStrava?.laps || []).map((lap, index) => (
+                        <tr key={index}>
+                          <td className="px-4 py-3 text-sm">{index + 1}</td>
+                          <td className="px-4 py-3 text-sm">{formatDuration(lap.elapsed_time)}</td>
+                          <td className="px-4 py-3 text-sm">{formatDistance(lap.distance)}</td>
+                          <td className="px-4 py-3 text-sm">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
+                          <td className="px-4 py-3 text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
+                          <td className="px-4 py-3 text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
+                        </tr>
+                      ))}
+                      {(!selectedStrava?.laps || selectedStrava.laps.length === 0) && (
+                        <tr><td className="px-4 py-3 text-sm" colSpan={6}>No intervals available</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -18,20 +18,43 @@ function startOfMonth(date) {
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate()+n); return d; }
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
+function sportBadge(sport) {
+  if (!sport) return '';
+  const s = String(sport).toLowerCase();
+  if (s.includes('run')) return '🏃‍♂️';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '🚴‍♂️';
+  if (s.includes('swim')) return '🏊‍♂️';
+  if (s.includes('ski')) return '🎿';
+  if (s.includes('hike')) return '🥾';
+  return '🏋️';
+}
+
 export default function CalendarView({ activities = [], onSelectActivity }) {
   const [view, setView] = useState('month'); // 'month' | 'week'
   const [anchorDate, setAnchorDate] = useState(new Date());
+  const [sportFilter, setSportFilter] = useState('all');
+
+  const uniqueSports = useMemo(() => {
+    const set = new Set();
+    activities.forEach(a => { if (a?.sport) set.add(String(a.sport)); });
+    return ['all', ...Array.from(set).sort()];
+  }, [activities]);
+
+  const filteredActivities = useMemo(() => {
+    if (sportFilter === 'all') return activities;
+    return activities.filter(a => String(a.sport) === sportFilter);
+  }, [activities, sportFilter]);
 
   const activitiesByDay = useMemo(() => {
     const map = new Map();
-    activities.forEach(act => {
+    filteredActivities.forEach(act => {
       const d = new Date(act.date || act.timestamp || act.startDate || act.start_time || Date.now());
       const key = d.toISOString().slice(0,10);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(act);
     });
     return map;
-  }, [activities]);
+  }, [filteredActivities]);
 
   const days = useMemo(() => {
     if (view === 'week') {
@@ -48,7 +71,7 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
           <button onClick={prev} className="px-2 py-1 rounded border">◀</button>
           <button onClick={today} className="px-2 py-1 rounded border">Today</button>
@@ -58,6 +81,11 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
           {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
         </div>
         <div className="flex items-center gap-2">
+          <select value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} className="px-2 py-1 text-sm border rounded">
+            {uniqueSports.map(s => (
+              <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
+            ))}
+          </select>
           <button onClick={() => setView('week')} className={`px-3 py-1 rounded border ${view==='week'?'bg-gray-100':''}`}>Week</button>
           <button onClick={() => setView('month')} className={`px-3 py-1 rounded border ${view==='month'?'bg-gray-100':''}`}>Month</button>
         </div>
@@ -79,7 +107,8 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
               <div className="space-y-1">
                 {acts.slice(0,3).map((a, i) => (
                   <button key={i} onClick={() => onSelectActivity && onSelectActivity(a)} className="w-full text-left text-[11px] truncate px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700">
-                    {a.title || a.name || a.originalFileName || a.sport || 'Activity'}
+                    <span className="mr-1">{sportBadge(a.sport)}</span>
+                    {a.title || a.name || a.originalFileName || 'Activity'}
                   </button>
                 ))}
                 {acts.length > 3 && (

@@ -69,8 +69,8 @@ class TrainingAbl {
                 
                 if (athletes && athletes.length > 0) {
                     const athleteIds = athletes.map(athlete => athlete._id);
-                    // Získat tréninky všech těchto atletů
-                    trainings = await this.trainingDao.findByAthleteIds(athleteIds);
+                // Získat tréninky všech těchto atletů
+                trainings = await this.trainingDao.findByAthleteIds(athleteIds);
                 } else {
                     // Trenér nemá žádné atlety, vrátit prázdné pole
                     trainings = [];
