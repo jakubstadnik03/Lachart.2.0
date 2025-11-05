@@ -263,6 +263,16 @@ export const getFitTraining = async (id) => {
   }
 };
 
+export const getAllTitles = async () => {
+  try {
+    const response = await api.get('/api/training/titles');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching all titles:', error);
+    throw error;
+  }
+};
+
 export const updateLactateValues = async (trainingId, lactateValues) => {
   try {
     const response = await api.put(`/api/fit/trainings/${trainingId}/lactate`, {
@@ -271,6 +281,32 @@ export const updateLactateValues = async (trainingId, lactateValues) => {
     return response.data;
   } catch (error) {
     console.error('Error updating lactate values:', error);
+    throw error;
+  }
+};
+
+export const updateFitTraining = async (trainingId, { title, description }) => {
+  try {
+    const response = await api.put(`/api/fit/trainings/${trainingId}`, {
+      title,
+      description
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating training:', error);
+    throw error;
+  }
+};
+
+export const createLap = async (trainingId, { startTime, endTime }) => {
+  try {
+    const response = await api.post(`/api/fit/trainings/${trainingId}/laps`, {
+      startTime,
+      endTime
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating lap:', error);
     throw error;
   }
 };
@@ -297,7 +333,9 @@ export const startGarminAuth = async () => {
 };
 
 export const syncStravaActivities = async (since=null) => {
-  const { data } = await api.post('/api/integrations/strava/sync', { since });
+  const { data } = await api.post('/api/integrations/strava/sync', { since }, {
+    timeout: 600000 // 10 minutes timeout for large syncs (200 pages × 2 seconds = ~6-7 minutes max)
+  });
   return data; // { imported, updated }
 };
 
@@ -318,5 +356,79 @@ export const getIntegrationStatus = async () => {
 
 export const getStravaActivityDetail = async (stravaId) => {
   const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`);
-  return data; // { detail, streams }
+  return data; // { detail, streams, laps, titleManual, description }
+};
+
+export const updateStravaActivity = async (stravaId, { title, description }) => {
+  try {
+    const response = await api.put(`/api/integrations/strava/activities/${stravaId}`, {
+      title,
+      description
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating Strava activity:', error);
+    throw error;
+  }
+};
+
+export const updateStravaLactateValues = async (stravaId, lactateValues) => {
+  try {
+    const response = await api.put(`/api/integrations/strava/activities/${stravaId}/lactate`, {
+      lactateValues
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating Strava lactate values:', error);
+    throw error;
+  }
+};
+
+export const createStravaLap = async (stravaId, { startTime, endTime }) => {
+  try {
+    const response = await api.post(`/api/integrations/strava/activities/${stravaId}/laps`, {
+      startTime,
+      endTime
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating Strava lap:', error);
+    throw error;
+  }
+};
+
+export const deleteStravaLap = async (stravaId, lapIndex) => {
+  try {
+    const response = await api.delete(`/api/integrations/strava/activities/${stravaId}/laps/${lapIndex}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting Strava lap:', error);
+    throw error;
+  }
+};
+
+// Workout Clustering API
+export const extractWorkoutPattern = async (workoutId, ftp = null) => {
+  const { data } = await api.post(`/api/workout-clustering/extract/${workoutId}`, { ftp });
+  return data;
+};
+
+export const clusterWorkouts = async (ftp = null, eps = 0.25, minPts = 3) => {
+  const { data } = await api.post('/api/workout-clustering/cluster', { ftp, eps, minPts });
+  return data;
+};
+
+export const getClusters = async () => {
+  const { data } = await api.get('/api/workout-clustering/clusters');
+  return data;
+};
+
+export const updateClusterTitle = async (clusterId, title, trainingRouteId = null) => {
+  const { data } = await api.put(`/api/workout-clustering/cluster/${clusterId}/title`, { title, trainingRouteId });
+  return data;
+};
+
+export const getSimilarWorkouts = async (workoutId, threshold = 0.75) => {
+  const { data } = await api.get(`/api/workout-clustering/similar/${workoutId}`, { params: { threshold } });
+  return data;
 }; 

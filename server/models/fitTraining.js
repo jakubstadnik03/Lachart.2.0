@@ -99,6 +99,46 @@ const fitTrainingSchema = new mongoose.Schema({
     predictedLactate: Number,
     confidence: Number
   }],
+  // Workout Clustering
+  clusterId: {
+    type: String,
+    default: null,
+    index: true
+  },
+  titleAuto: {
+    type: String,
+    default: null
+  },
+  titleManual: {
+    type: String,
+    default: null
+  },
+  description: {
+    type: String,
+    default: null
+  },
+  trainingRouteId: {
+    type: String,
+    default: null
+  },
+  workoutPattern: {
+    intervalCount: Number,
+    intervalDurations: [Number],
+    intervalPowers: [Number],
+    restDurations: [Number],
+    normalizedDurations: [Number],
+    normalizedPowers: [Number],
+    workRestRatio: Number,
+    intensityZone: String,
+    shapeVector: [Number],
+    meanDuration: Number,
+    stdDuration: Number,
+    meanPowerNorm: Number
+  },
+  patternExtracted: {
+    type: Boolean,
+    default: false
+  },
 }, {
   timestamps: true
 });

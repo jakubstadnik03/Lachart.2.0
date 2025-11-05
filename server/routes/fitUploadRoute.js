@@ -89,6 +89,22 @@ router.get('/trainings', verifyToken, fitUploadController.getFitTrainings);
 
 /**
  * @swagger
+ * /api/fit/trainings/titles:
+ *   get:
+ *     summary: Get all unique titles from FitTraining and StravaActivity
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of unique titles
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/trainings/titles', verifyToken, fitUploadController.getAllTitles);
+
+/**
+ * @swagger
  * /api/fit/trainings/{id}:
  *   get:
  *     summary: Get single FIT training with all records
@@ -111,6 +127,80 @@ router.get('/trainings', verifyToken, fitUploadController.getFitTrainings);
  *         description: Unauthorized
  */
 router.get('/trainings/:id', verifyToken, fitUploadController.getFitTraining);
+
+/**
+ * @swagger
+ * /api/fit/trainings/{id}:
+ *   put:
+ *     summary: Update training title and description
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Training ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Training updated successfully
+ *       404:
+ *         description: Training not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.put('/trainings/:id', verifyToken, fitUploadController.updateFitTraining);
+
+/**
+ * @swagger
+ * /api/fit/trainings/{id}/laps:
+ *   post:
+ *     summary: Create a new lap from time range selection
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Training ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               startTime:
+ *                 type: number
+ *                 description: Start time in seconds from training start
+ *               endTime:
+ *                 type: number
+ *                 description: End time in seconds from training start
+ *     responses:
+ *       200:
+ *         description: Lap created successfully
+ *       404:
+ *         description: Training not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/trainings/:id/laps', verifyToken, fitUploadController.createLap);
 
 /**
  * @swagger

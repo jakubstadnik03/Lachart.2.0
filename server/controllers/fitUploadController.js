@@ -453,6 +453,71 @@ async function updateLactate(req, res) {
 }
 
 /**
+ * Update training title and description
+ */
+async function updateFitTraining(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const trainingId = req.params.id;
+    const { title, description } = req.body;
+
+    const training = await FitTraining.findOne({
+      _id: trainingId,
+      athleteId: userId
+    });
+
+    if (!training) {
+      return res.status(404).json({ error: 'Training not found' });
+    }
+
+    const oldTitle = training.titleManual || training.titleAuto || training.originalFileName;
+    
+    // Update title if provided
+    if (title !== undefined) {
+      training.titleManual = title || null;
+    }
+
+    // Update description if provided
+    if (description !== undefined) {
+      training.description = description || null;
+    }
+
+    await training.save();
+
+    // Update Training records with the same title
+    if (title !== undefined && title) {
+      const Training = require('../models/training');
+      const newTitle = title.trim();
+      
+      // Find Training records with the same title (old or new)
+      const trainingRecords = await Training.find({
+        athleteId: userId.toString(),
+        title: { $in: [oldTitle, newTitle] }
+      });
+      
+      // Update all matching Training records
+      for (const trainingRecord of trainingRecords) {
+        if (trainingRecord.title === oldTitle || trainingRecord.title === newTitle) {
+          trainingRecord.title = newTitle;
+          if (description !== undefined) {
+            trainingRecord.description = description || null;
+          }
+          await trainingRecord.save();
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      training
+    });
+  } catch (error) {
+    console.error('Error updating training:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
  * Delete FIT training
  */
 async function deleteFitTraining(req, res) {
@@ -481,11 +546,159 @@ async function deleteFitTraining(req, res) {
   }
 }
 
+/**
+ * Get all unique titles from FitTraining and StravaActivity
+ */
+async function getAllTitles(req, res) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get titles from FitTraining
+    const fitTrainings = await FitTraining.find({ athleteId: userId });
+    const fitTitles = fitTrainings
+      .map(t => t.titleManual || t.titleAuto || t.originalFileName)
+      .filter(Boolean);
+
+    // Get titles from StravaActivity
+    const stravaActivities = await StravaActivity.find({ userId: userId });
+    const stravaTitles = stravaActivities
+      .map(a => a.titleManual || a.name)
+      .filter(Boolean);
+
+    // Combine and get unique titles
+    const allTitles = [...new Set([...fitTitles, ...stravaTitles])].sort();
+
+    res.json(allTitles);
+  } catch (error) {
+    console.error('Error getting all titles:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Create a new lap from time range selection
+ */
+async function createLap(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const trainingId = req.params.id;
+    const { startTime, endTime } = req.body; // startTime and endTime in seconds from training start
+
+    const training = await FitTraining.findOne({
+      _id: trainingId,
+      athleteId: userId
+    });
+
+    if (!training) {
+      return res.status(404).json({ error: 'Training not found' });
+    }
+
+    if (!training.records || training.records.length === 0) {
+      return res.status(400).json({ error: 'Training has no records' });
+    }
+
+    // Get training start time
+    const trainingStartTime = training.records[0]?.timestamp 
+      ? new Date(training.records[0].timestamp).getTime() 
+      : training.timestamp 
+        ? new Date(training.timestamp).getTime() 
+        : Date.now();
+
+    // Find records in the selected time range
+    const selectedRecords = training.records.filter(record => {
+      if (!record.timestamp) return false;
+      const recordTime = new Date(record.timestamp).getTime();
+      const timeFromStart = (recordTime - trainingStartTime) / 1000; // Convert to seconds
+      return timeFromStart >= startTime && timeFromStart <= endTime;
+    });
+
+    if (selectedRecords.length === 0) {
+      return res.status(400).json({ error: 'No records found in selected time range' });
+    }
+
+    // Calculate statistics from selected records
+    const speeds = selectedRecords.map(r => r.speed).filter(v => v && v > 0);
+    const heartRates = selectedRecords.map(r => r.heartRate).filter(v => v && v > 0);
+    const powers = selectedRecords.map(r => r.power).filter(v => v && v > 0);
+    const cadences = selectedRecords.map(r => r.cadence).filter(v => v && v > 0);
+    const distances = selectedRecords.map(r => r.distance).filter(v => v && v > 0);
+
+    const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
+    const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : null;
+    const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : null;
+    const maxHeartRate = heartRates.length > 0 ? Math.max(...heartRates) : null;
+    const avgPower = powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b, 0) / powers.length) : null;
+    const maxPower = powers.length > 0 ? Math.max(...powers) : null;
+    const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : null;
+    const maxCadence = cadences.length > 0 ? Math.max(...cadences) : null;
+
+    // Calculate distance
+    const firstRecord = selectedRecords[0];
+    const lastRecord = selectedRecords[selectedRecords.length - 1];
+    const totalDistance = lastRecord.distance && firstRecord.distance 
+      ? lastRecord.distance - firstRecord.distance 
+      : null;
+
+    // Calculate elapsed time
+    const totalElapsedTime = endTime - startTime;
+
+    // Get positions
+    const startPositionLat = firstRecord.positionLat || null;
+    const startPositionLong = firstRecord.positionLong || null;
+    const endPositionLat = lastRecord.positionLat || null;
+    const endPositionLong = lastRecord.positionLong || null;
+
+    // Create new lap
+    const newLap = {
+      lapNumber: (training.laps?.length || 0) + 1,
+      startTime: new Date(trainingStartTime + startTime * 1000),
+      totalElapsedTime: totalElapsedTime,
+      totalTimerTime: totalElapsedTime,
+      totalDistance: totalDistance || 0,
+      avgSpeed: avgSpeed || 0,
+      maxSpeed: maxSpeed || 0,
+      avgHeartRate: avgHeartRate,
+      maxHeartRate: maxHeartRate,
+      avgPower: avgPower,
+      maxPower: maxPower,
+      avgCadence: avgCadence,
+      maxCadence: maxCadence,
+      startPositionLat: startPositionLat,
+      startPositionLong: startPositionLong,
+      endPositionLat: endPositionLat,
+      endPositionLong: endPositionLong
+    };
+
+    // Add lap to training
+    if (!training.laps) {
+      training.laps = [];
+    }
+    training.laps.push(newLap);
+
+    await training.save();
+
+    res.json({
+      success: true,
+      lap: newLap,
+      training
+    });
+  } catch (error) {
+    console.error('Error creating lap:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   uploadFitFile,
   getFitTrainings,
   getFitTraining,
   updateLactate,
-  deleteFitTraining
+  updateFitTraining,
+  deleteFitTraining,
+  getAllTitles,
+  createLap
 };
 
