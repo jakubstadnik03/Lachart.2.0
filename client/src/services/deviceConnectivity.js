@@ -13,6 +13,8 @@ class DeviceConnectivityService {
     this.dataCallbacks = new Map();
     this.wsConnection = null;
     this.isWebSocketConnected = false;
+    // Track previous CSC values for calculating speed and cadence
+    this.cscPreviousValues = new Map(); // deviceType -> { wheelRevolutions, lastWheelTime, crankRevolutions, lastCrankTime, timestamp }
   }
 
   /**
@@ -57,6 +59,7 @@ class DeviceConnectivityService {
         console.log(`Device ${deviceType} disconnected`);
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
+        this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
       });
 
       // Connect to GATT server
@@ -67,13 +70,48 @@ class DeviceConnectivityService {
         throw new Error(`Failed to connect to device: ${error.message}`);
       }
 
-      // Get primary service
+      // Get primary service - try multiple services for bikeTrainer
       let service;
-      try {
-        service = await server.getPrimaryService(deviceService.serviceUUID);
-      } catch (error) {
+      let serviceUUIDs = [deviceService.serviceUUID];
+      
+      // For bikeTrainer, try alternative services if primary not found
+      if (deviceType === 'bikeTrainer') {
+        // Try primary service first, then optional services
+        serviceUUIDs = [
+          deviceService.serviceUUID, // Cycling Power Service (primary)
+          '00001816-0000-1000-8000-00805f9b34fb' // Cycling Speed and Cadence Service (alternative)
+        ];
+        // Also try optional services if defined
+        if (deviceService.optionalServices) {
+          serviceUUIDs.push(...deviceService.optionalServices.filter(s => typeof s === 'string'));
+        }
+      }
+      
+      for (const uuid of serviceUUIDs) {
+        try {
+          service = await server.getPrimaryService(uuid);
+          console.log(`Found service: ${uuid} for ${deviceType}`);
+          break; // Success, exit loop
+        } catch (error) {
+          console.warn(`Service ${uuid} not found, trying next...`);
+          continue;
+        }
+      }
+      
+      if (!service) {
+        // Get available services for better error message
+        let availableServices = [];
+        try {
+          const services = await server.getPrimaryServices();
+          availableServices = services.map(s => s.uuid);
+          console.log('Available services on device:', availableServices);
+        } catch (e) {
+          console.warn('Could not list available services:', e);
+        }
+        
         await server.disconnect();
-        throw new Error(`Service not found. Your device may not support ${deviceType}.`);
+        const errorMsg = `Service not found. Your device may not support ${deviceType}.${availableServices.length > 0 ? ` Available services: ${availableServices.join(', ')}` : ''}`;
+        throw new Error(errorMsg);
       }
 
       // Register data callback
@@ -82,27 +120,73 @@ class DeviceConnectivityService {
       }
 
       // Start notifications for characteristic updates
-      if (deviceService.characteristics && deviceService.characteristics.length > 0) {
-        for (const charInfo of deviceService.characteristics) {
-          try {
-            const characteristic = await service.getCharacteristic(charInfo.uuid);
-            await characteristic.startNotifications();
-            
-            characteristic.addEventListener('characteristicvaluechanged', (event) => {
-              try {
-                const data = this.parseCharacteristicData(deviceType, event.target.value);
-                if (onData) {
-                  onData(data);
-                }
-              } catch (error) {
-                console.error(`Error parsing data from ${deviceType}:`, error);
-              }
-            });
-          } catch (error) {
-            console.warn(`Could not start notifications for characteristic ${charInfo.uuid}:`, error);
-            // Continue with other characteristics
-          }
+      // For bikeTrainer, try to find appropriate characteristics based on found service
+      let characteristicsToTry = [];
+      
+      if (deviceType === 'bikeTrainer') {
+        // Check which service we found
+        const serviceUUID = service.uuid;
+        
+        if (serviceUUID === '00001826-0000-1000-8000-00805f9b34fb') {
+          // Cycling Power Service - use power measurement characteristic
+          characteristicsToTry = [
+            { uuid: '00002a63-0000-1000-8000-00805f9b34fb', type: 'power' } // Cycling Power Measurement
+          ];
+        } else if (serviceUUID === '00001816-0000-1000-8000-00805f9b34fb') {
+          // Cycling Speed and Cadence Service - use CSC measurement characteristic
+          characteristicsToTry = [
+            { uuid: '00002a5b-0000-1000-8000-00805f9b34fb', type: 'csc' } // CSC Measurement
+          ];
+        } else {
+          // Try default characteristics from config
+          characteristicsToTry = (deviceService.characteristics || []).map(c => ({ ...c, type: 'default' }));
         }
+      } else {
+        // For other device types, use configured characteristics
+        characteristicsToTry = (deviceService.characteristics || []).map(c => ({ ...c, type: 'default' }));
+      }
+      
+      // If no characteristics found, try to discover available characteristics
+      if (characteristicsToTry.length === 0) {
+        try {
+          const characteristics = await service.getCharacteristics();
+          console.log(`Found ${characteristics.length} characteristics in service ${service.uuid}`);
+          for (const char of characteristics) {
+            characteristicsToTry.push({ uuid: char.uuid, type: 'discovered' });
+          }
+        } catch (error) {
+          console.warn('Could not discover characteristics:', error);
+        }
+      }
+      
+      let notificationStarted = false;
+      for (const charInfo of characteristicsToTry) {
+        try {
+          const characteristic = await service.getCharacteristic(charInfo.uuid);
+          await characteristic.startNotifications();
+          
+          characteristic.addEventListener('characteristicvaluechanged', (event) => {
+            try {
+              // Pass the characteristic type to parser
+              const data = this.parseCharacteristicData(deviceType, event.target.value, charInfo.type);
+              if (onData) {
+                onData(data);
+              }
+            } catch (error) {
+              console.error(`Error parsing data from ${deviceType}:`, error);
+            }
+          });
+          
+          console.log(`Successfully started notifications for characteristic ${charInfo.uuid}`);
+          notificationStarted = true;
+        } catch (error) {
+          console.warn(`Could not start notifications for characteristic ${charInfo.uuid}:`, error);
+          // Continue with other characteristics
+        }
+      }
+      
+      if (!notificationStarted && characteristicsToTry.length > 0) {
+        console.warn('No characteristics could be started for notifications. Device may not support data streaming.');
       }
 
       this.connections.set(deviceType, { device, server, service });
@@ -182,12 +266,14 @@ class DeviceConnectivityService {
         
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
+        this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
         return true;
       } catch (error) {
         console.error(`Error disconnecting ${deviceType}:`, error);
         // Still clean up local state
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
+        this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
         return false;
       }
     }
@@ -284,41 +370,147 @@ class DeviceConnectivityService {
 
   /**
    * Parse characteristic data based on device type
+   * @param {string} deviceType - Type of device
+   * @param {DataView} dataView - Data view from characteristic
+   * @param {string} charType - Type of characteristic ('power', 'csc', 'default', etc.)
    */
-  parseCharacteristicData(deviceType, dataView) {
+  parseCharacteristicData(deviceType, dataView, charType = 'default') {
     try {
       switch (deviceType) {
         case 'bikeTrainer':
-          // Parse Cycling Power Measurement (CPM) - Bluetooth SIG standard
-          // Format: [Flags (2 bytes), Instantaneous Power (2 bytes), Cumulative Wheel Revolutions (optional), Last Wheel Event Time (optional), Cumulative Crank Revolutions (optional), Last Crank Event Time (optional)]
-          if (dataView.byteLength < 4) {
-            console.warn('Power data too short');
-            return {};
+          if (charType === 'csc') {
+            // Parse Cycling Speed and Cadence (CSC) Measurement - Bluetooth SIG standard
+            // Format: [Flags (1 byte), Cumulative Wheel Revolutions (4 bytes, optional), Last Wheel Event Time (2 bytes, optional), Cumulative Crank Revolutions (2 bytes, optional), Last Crank Event Time (2 bytes, optional)]
+            if (dataView.byteLength < 1) {
+              console.warn('CSC data too short');
+              return {};
+            }
+            
+            const flagsCSC = dataView.getUint8(0);
+            const wheelRevPresent = flagsCSC & 0x01;
+            const crankRevPresent = flagsCSC & 0x02;
+            
+            let wheelRevolutions = null;
+            let lastWheelTime = null;
+            let crankRevolutions = null;
+            let lastCrankTime = null;
+            let offset = 1;
+            
+            // Wheel revolutions data (if present)
+            if (wheelRevPresent && dataView.byteLength >= offset + 6) {
+              wheelRevolutions = dataView.getUint32(offset, true);
+              lastWheelTime = dataView.getUint16(offset + 4, true);
+              offset += 6;
+            }
+            
+            // Crank revolutions data (if present)
+            if (crankRevPresent && dataView.byteLength >= offset + 4) {
+              crankRevolutions = dataView.getUint16(offset, true);
+              lastCrankTime = dataView.getUint16(offset + 2, true);
+            }
+            
+            // Calculate speed and cadence from deltas
+            const prev = this.cscPreviousValues.get('bikeTrainer');
+            const now = Date.now();
+            let speed = null;
+            let cadence = null;
+            let power = null; // Power not available from CSC, would need power meter
+            
+            // Calculate speed from wheel revolutions (assuming standard wheel circumference)
+            if (wheelRevPresent && prev && prev.wheelRevolutions !== null && prev.lastWheelTime !== null && 
+                wheelRevolutions !== null && lastWheelTime !== null) {
+              // Handle rollover for wheel revolutions (32-bit, max 4294967295)
+              let wheelDelta = wheelRevolutions - prev.wheelRevolutions;
+              if (wheelDelta < 0) {
+                wheelDelta += 4294967296; // Rollover handling
+              }
+              
+              // Handle rollover for time (lastWheelTime is in 1/1024 seconds, max 65535)
+              let timeDelta = lastWheelTime - prev.lastWheelTime;
+              if (timeDelta < 0) {
+                timeDelta += 65536; // Rollover handling
+              }
+              const timeDeltaSeconds = timeDelta / 1024.0;
+              
+              if (timeDeltaSeconds > 0 && wheelDelta > 0) {
+                // Standard wheel circumference: ~2.1m for 700c wheel
+                const wheelCircumference = 2.1; // meters
+                const speed_ms = (wheelDelta * wheelCircumference) / timeDeltaSeconds;
+                speed = speed_ms * 3.6; // Convert to km/h
+              }
+            }
+            
+            // Calculate cadence from crank revolutions
+            if (crankRevPresent && prev && prev.crankRevolutions !== null && prev.lastCrankTime !== null &&
+                crankRevolutions !== null && lastCrankTime !== null) {
+              // Handle rollover for crank revolutions (16-bit, max 65535)
+              let crankDelta = crankRevolutions - prev.crankRevolutions;
+              if (crankDelta < 0) {
+                crankDelta += 65536; // Rollover handling
+              }
+              
+              // Handle rollover for time (lastCrankTime is in 1/1024 seconds, max 65535)
+              let timeDelta = lastCrankTime - prev.lastCrankTime;
+              if (timeDelta < 0) {
+                timeDelta += 65536; // Rollover handling
+              }
+              const timeDeltaSeconds = timeDelta / 1024.0;
+              
+              if (timeDeltaSeconds > 0 && crankDelta > 0) {
+                cadence = (crankDelta / timeDeltaSeconds) * 60; // Convert to RPM
+              }
+            }
+            
+            // Store current values for next calculation
+            this.cscPreviousValues.set('bikeTrainer', {
+              wheelRevolutions,
+              lastWheelTime,
+              crankRevolutions,
+              lastCrankTime,
+              timestamp: now
+            });
+            
+            return {
+              speed, // km/h
+              cadence, // RPM
+              power, // null - not available from CSC
+              wheelRevolutions,
+              lastWheelTime,
+              crankRevolutions,
+              lastCrankTime
+            };
+          } else {
+            // Parse Cycling Power Measurement (CPM) - Bluetooth SIG standard
+            // Format: [Flags (2 bytes), Instantaneous Power (2 bytes), Cumulative Wheel Revolutions (optional), Last Wheel Event Time (optional), Cumulative Crank Revolutions (optional), Last Crank Event Time (optional)]
+            if (dataView.byteLength < 4) {
+              console.warn('Power data too short');
+              return {};
+            }
+            
+            const flags = dataView.getUint16(0, true);
+            const instantPower = dataView.getUint16(2, true);
+            
+            // Check if cadence data is present (bit 0 of flags)
+            let cadence = null;
+            let offset = 4;
+            
+            // If wheel revolutions present
+            if (flags & 0x10 && dataView.byteLength >= offset + 6) {
+              offset += 6; // 4 bytes cumulative + 2 bytes last event time
+            }
+            
+            // If crank revolutions present (for cadence)
+            if (flags & 0x20 && dataView.byteLength >= offset + 4) {
+              // Note: Real cadence calculation would need previous values for RPM
+              // For now, we'd need to track these values across notifications
+              // const crankRevolutions = dataView.getUint16(offset, true);
+              // const lastCrankEventTime = dataView.getUint16(offset + 2, true);
+              // Simplified: cadence would be calculated from delta of crank revolutions over time
+              cadence = null; // Would need to calculate from delta
+            }
+            
+            return { power: instantPower, cadence };
           }
-          
-          const flags = dataView.getUint16(0, true);
-          const instantPower = dataView.getUint16(2, true);
-          
-          // Check if cadence data is present (bit 0 of flags)
-          let cadence = null;
-          let offset = 4;
-          
-          // If wheel revolutions present
-          if (flags & 0x10 && dataView.byteLength >= offset + 6) {
-            offset += 6; // 4 bytes cumulative + 2 bytes last event time
-          }
-          
-          // If crank revolutions present (for cadence)
-          if (flags & 0x20 && dataView.byteLength >= offset + 4) {
-            // Note: Real cadence calculation would need previous values for RPM
-            // For now, we'd need to track these values across notifications
-            // const crankRevolutions = dataView.getUint16(offset, true);
-            // const lastCrankEventTime = dataView.getUint16(offset + 2, true);
-            // Simplified: cadence would be calculated from delta of crank revolutions over time
-            cadence = null; // Would need to calculate from delta
-          }
-          
-          return { power: instantPower, cadence };
 
         case 'heartRate':
           // Parse Heart Rate Measurement - Bluetooth SIG standard

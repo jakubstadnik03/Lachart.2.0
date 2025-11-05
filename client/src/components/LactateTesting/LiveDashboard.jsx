@@ -17,7 +17,8 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
       // If no historical data yet, show current live data point
       return [{
         time: 0,
-        power: liveData.power || 0,
+        power: liveData.power || null,
+        speed: liveData.speed || null,
         heartRate: liveData.heartRate || 0,
         cadence: liveData.cadence || 0
       }];
@@ -27,7 +28,8 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
     // Time is relative to test start (in seconds)
     return historicalData.map((dataPoint, index) => ({
       time: Math.floor((dataPoint.totalTime || index) / 60), // Convert to minutes for better readability
-      power: dataPoint.power || 0,
+      power: dataPoint.power || null,
+      speed: dataPoint.speed || null,
       heartRate: dataPoint.heartRate || 0,
       cadence: dataPoint.cadence || 0,
       smo2: dataPoint.smo2 || null,
@@ -35,11 +37,19 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
     }));
   }, [historicalData, liveData]);
 
+  // Use speed if power is not available (for CSC devices)
+  // Check if speed is available (from CSC service) or power (from Power service)
+  const hasSpeedInHistory = historicalData.some(d => d.speed !== null && d.speed !== undefined && d.speed > 0);
+  const hasPowerInHistory = historicalData.some(d => d.power !== null && d.power !== undefined && d.power > 0 && !hasSpeedInHistory);
+  const hasSpeed = (liveData.speed !== null && liveData.speed !== undefined && liveData.speed > 0) || hasSpeedInHistory;
+  const hasPower = hasSpeed ? false : ((liveData.power !== null && liveData.power !== undefined && liveData.power > 0) || hasPowerInHistory);
+  
   const metricCards = [
     {
-      label: 'Power',
-      value: `${liveData.power?.toFixed(0) || 0}`,
-      unit: 'W',
+      label: hasSpeed ? 'Speed' : (hasPower ? 'Power' : 'Power'),
+      value: hasSpeed ? `${liveData.speed.toFixed(1)}` :
+             (hasPower ? `${liveData.power.toFixed(0)}` : '0'),
+      unit: hasSpeed ? 'km/h' : (hasPower ? 'W' : 'W'),
       icon: BoltIcon,
       color: 'blue'
     },
@@ -148,7 +158,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             />
             <YAxis 
               yAxisId="left"
-              label={{ value: 'Power / HR / Cadence', angle: -90, position: 'insideLeft' }}
+              label={{ value: hasPower ? 'Power / HR / Cadence' : 'Speed / HR / Cadence', angle: -90, position: 'insideLeft' }}
               stroke="#666"
             />
             <YAxis 
@@ -160,11 +170,16 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             <Tooltip 
               contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc' }}
               formatter={(value, name) => {
-                if (name === 'Power (W)') return [`${value.toFixed(0)} W`, name];
-                if (name === 'HR (bpm)') return [`${value.toFixed(0)} bpm`, name];
-                if (name === 'Cadence (rpm)') return [`${value.toFixed(0)} rpm`, name];
-                if (name === 'SmO2 (%)') return [`${value.toFixed(1)}%`, name];
-                if (name === 'VO2') return [`${value.toFixed(1)} ml/min/kg`, name];
+                if (name === 'Speed (km/h)') {
+                  return [`${value?.toFixed(1) || 0} km/h`, 'Speed (km/h)'];
+                }
+                if (name === 'Power (W)') {
+                  return [`${value?.toFixed(0) || 0} W`, 'Power (W)'];
+                }
+                if (name === 'HR (bpm)') return [`${value?.toFixed(0) || 0} bpm`, name];
+                if (name === 'Cadence (rpm)') return [`${value?.toFixed(0) || 0} rpm`, name];
+                if (name === 'SmO2 (%)') return [`${value?.toFixed(1) || 0}%`, name];
+                if (name === 'VO2') return [`${value?.toFixed(1) || 0} ml/min/kg`, name];
                 return [value, name];
               }}
             />
@@ -172,11 +187,11 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             <Line 
               yAxisId="left"
               type="monotone" 
-              dataKey="power" 
+              dataKey={hasSpeed ? "speed" : "power"} 
               stroke="#3b82f6" 
               strokeWidth={2}
               dot={false}
-              name="Power (W)"
+              name={hasSpeed ? "Speed (km/h)" : "Power (W)"}
               isAnimationActive={false}
             />
             <Line 
