@@ -197,6 +197,36 @@ router.post('/:id/mock-fit', verifyToken, lactateSessionController.generateMockF
 
 /**
  * @swagger
+ * /api/lactate-session/{id}/download-fit:
+ *   get:
+ *     summary: Download FIT file for lactate session
+ *     tags: [LactateSession]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Session ID
+ *     responses:
+ *       200:
+ *         description: FIT file downloaded successfully
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Session or FIT file not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/:id/download-fit', verifyToken, lactateSessionController.downloadFitFile);
+
+/**
+ * @swagger
  * /api/lactate-session/{id}:
  *   delete:
  *     summary: Delete lactate session

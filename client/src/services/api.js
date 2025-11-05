@@ -63,8 +63,16 @@ export const getTrainingsByAthleteId = async (athleteId) => {
   }
 };
 
-export const getAllTrainings = () => api.get('/training');
-export const getTrainingById = (id) => api.get(`/training/${id}`);
+export const getAllTrainings = () => api.get('/api/training');
+export const getTrainingById = async (id) => {
+  try {
+    const response = await api.get(`/api/training/${id}`);
+    return response.data; // Return data directly
+  } catch (error) {
+    console.error('Error fetching training by ID:', error);
+    throw error;
+  }
+};
 export const addTraining = (trainingData) => api.post('/training', trainingData);
 export const updateTraining = (id, trainingData) => api.put(`/training/${id}`, trainingData);
 export const deleteTraining = (id) => api.delete(`/training/${id}`);
@@ -215,6 +223,17 @@ export const updateLactateSession = (sessionId, updateData) => api.put(`/api/lac
 export const completeLactateSession = (sessionId, completionData) => api.post(`/api/lactate-session/${sessionId}/complete`, completionData);
 export const generateMockFitFile = (sessionId) => api.post(`/api/lactate-session/${sessionId}/mock-fit`);
 export const deleteLactateSession = (sessionId) => api.delete(`/api/lactate-session/${sessionId}`);
+export const downloadLactateSessionFit = async (sessionId) => {
+  try {
+    const response = await api.get(`/api/lactate-session/${sessionId}/download-fit`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error downloading FIT file:', error);
+    throw error;
+  }
+};
 
 // Legacy compatibility
 export const saveLactateSession = createLactateSession;

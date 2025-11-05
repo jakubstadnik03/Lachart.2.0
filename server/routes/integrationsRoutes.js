@@ -500,6 +500,27 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
 
     await activity.save();
 
+    // Sync to Training model - sync all intervals (not just those with lactate)
+    try {
+      const TrainingAbl = require('../abl/trainingAbl');
+      // Merge activity data with detail for sync
+      const activityData = {
+        ...activity.toObject(),
+        name: activity.name,
+        titleManual: activity.titleManual,
+        description: activity.description,
+        sport: activity.sport,
+        startDate: activity.startDate,
+        elapsedTime: activity.elapsedTime,
+        movingTime: activity.movingTime,
+        laps: activity.laps
+      };
+      await TrainingAbl.syncTrainingFromSource('strava', activityData, user._id.toString());
+    } catch (syncError) {
+      console.error('Error syncing to Training model:', syncError);
+      // Don't fail the request if sync fails
+    }
+
     res.json({
       success: true,
       activity
@@ -580,10 +601,28 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     // Calculate elapsed time
     const elapsedTime = endTime - startTime;
 
-    // Get activity start date
-    const activityStartDate = activity.startDate || new Date();
+    // Get activity start date from Strava API detail
+    let activityStartDate = null;
+    try {
+      const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Use start_date_local if available (more accurate), otherwise start_date
+      const startDateStr = detailResp.data.start_date_local || detailResp.data.start_date;
+      if (startDateStr) {
+        activityStartDate = new Date(startDateStr);
+      }
+    } catch (e) {
+      // Fallback to activity.startDate if API call fails
+      activityStartDate = activity.startDate ? new Date(activity.startDate) : new Date();
+    }
+    
+    // Final fallback if still no date
+    if (!activityStartDate || isNaN(activityStartDate.getTime())) {
+      activityStartDate = activity.startDate ? new Date(activity.startDate) : new Date();
+    }
 
-    // Create new lap
+    // Create new lap with startTime relative to activity start_date
     const newLap = {
       lapNumber: (activity.laps?.length || 0) + 1,
       startTime: new Date(activityStartDate.getTime() + startTime * 1000),

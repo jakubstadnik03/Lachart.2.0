@@ -192,6 +192,192 @@ class TrainingAbl {
             throw error;
         }
     }
+
+    /**
+     * Create or update Training record from FitTraining or StravaActivity when lactate is added
+     */
+    async syncTrainingFromSource(sourceType, sourceData, userId) {
+        try {
+            // Map sport from source to Training format
+            let sport = 'run'; // default
+            if (sourceType === 'fit') {
+                const fitSport = sourceData.sport || 'generic';
+                if (fitSport === 'cycling') sport = 'bike';
+                else if (fitSport === 'running') sport = 'run';
+                else if (fitSport === 'swimming') sport = 'swim';
+            } else if (sourceType === 'strava') {
+                const stravaSport = sourceData.sport || '';
+                if (stravaSport.toLowerCase().includes('ride') || stravaSport.toLowerCase().includes('bike')) sport = 'bike';
+                else if (stravaSport.toLowerCase().includes('run')) sport = 'run';
+                else if (stravaSport.toLowerCase().includes('swim')) sport = 'swim';
+            }
+
+            // Get title
+            const title = sourceType === 'fit' 
+                ? (sourceData.titleManual || sourceData.titleAuto || sourceData.originalFileName || 'Untitled Training')
+                : (sourceData.titleManual || sourceData.name || 'Untitled Activity');
+
+            // Get date
+            const date = sourceType === 'fit' 
+                ? (sourceData.timestamp || new Date())
+                : (sourceData.startDate || new Date());
+
+            // Get duration in format "HH:MM:SS" or "MM:SS"
+            const totalTime = sourceType === 'fit'
+                ? (sourceData.totalElapsedTime || sourceData.totalTimerTime || 0)
+                : (sourceData.elapsedTime || sourceData.movingTime || 0);
+            
+            const hours = Math.floor(totalTime / 3600);
+            const minutes = Math.floor((totalTime % 3600) / 60);
+            const seconds = totalTime % 60;
+            const duration = hours > 0 
+                ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                : `${minutes}:${String(seconds).padStart(2, '0')}`;
+
+            // Get description
+            const description = sourceType === 'fit'
+                ? sourceData.description
+                : sourceData.description;
+
+            // Convert all laps to results array (not just those with lactate)
+            const results = [];
+            const laps = sourceData.laps || [];
+            
+            laps.forEach((lap, index) => {
+                // Skip if this lap is likely the entire activity (duration >= 95% of total time)
+                const totalTime = sourceType === 'fit'
+                    ? (sourceData.totalElapsedTime || sourceData.totalTimerTime || 0)
+                    : (sourceData.elapsedTime || sourceData.movingTime || 0);
+                // Get lap duration in seconds - ensure it's a number
+                let lapDuration = 0;
+                if (lap.totalElapsedTime !== undefined && lap.totalElapsedTime !== null) {
+                    lapDuration = typeof lap.totalElapsedTime === 'number' ? lap.totalElapsedTime : parseFloat(lap.totalElapsedTime) || 0;
+                } else if (lap.totalTimerTime !== undefined && lap.totalTimerTime !== null) {
+                    lapDuration = typeof lap.totalTimerTime === 'number' ? lap.totalTimerTime : parseFloat(lap.totalTimerTime) || 0;
+                } else if (lap.elapsed_time !== undefined && lap.elapsed_time !== null) {
+                    lapDuration = typeof lap.elapsed_time === 'number' ? lap.elapsed_time : parseFloat(lap.elapsed_time) || 0;
+                }
+                
+                // Skip if duration is 0 or if this is the whole activity lap
+                if (lapDuration <= 0) return;
+                if (totalTime > 0 && lapDuration >= totalTime * 0.95) return;
+
+                // Calculate rest time (time between laps) in seconds
+                let restSeconds = 0;
+                if (index > 0 && laps[index - 1]) {
+                    // Calculate rest based on startTime if available
+                    if (lap.startTime && laps[index - 1].startTime) {
+                        const currentStart = new Date(lap.startTime).getTime();
+                        const prevStart = new Date(laps[index - 1].startTime).getTime();
+                        const prevDuration = laps[index - 1].totalElapsedTime || laps[index - 1].totalTimerTime || laps[index - 1].elapsed_time || 0;
+                        const prevEnd = prevStart + (prevDuration * 1000);
+                        restSeconds = Math.max(0, Math.round((currentStart - prevEnd) / 1000));
+                    }
+                }
+
+                // Format duration as string for display, but also store duration in seconds
+                const lapHours = Math.floor(lapDuration / 3600);
+                const lapMinutes = Math.floor((lapDuration % 3600) / 60);
+                const lapSeconds = lapDuration % 60;
+                const lapDurationStr = lapHours > 0
+                    ? `${lapHours}:${String(lapMinutes).padStart(2, '0')}:${String(lapSeconds).padStart(2, '0')}`
+                    : `${lapMinutes}:${String(lapSeconds).padStart(2, '0')}`;
+
+                // Format rest as string for display
+                const restHours = Math.floor(restSeconds / 3600);
+                const restMinutes = Math.floor((restSeconds % 3600) / 60);
+                const restSecs = restSeconds % 60;
+                const restStr = restHours > 0
+                    ? `${restHours}:${String(restMinutes).padStart(2, '0')}:${String(restSecs).padStart(2, '0')}`
+                    : `${restMinutes}:${String(restSecs).padStart(2, '0')}`;
+
+                // Use durationSeconds as the primary duration value (in seconds)
+                const durationSecondsValue = Math.round(lapDuration);
+                
+                results.push({
+                    interval: index + 1,
+                    duration: durationSecondsValue, // Store duration in seconds as number
+                    durationSeconds: durationSecondsValue, // Also store in durationSeconds for clarity
+                    durationType: 'time',
+                    rest: restSeconds, // Store rest in seconds as number
+                    restSeconds: restSeconds, // Also store in restSeconds for clarity
+                    intensity: '', // Could be calculated from power/HR zones
+                    power: lap.avgPower || lap.maxPower || lap.average_watts || lap.max_watts || null,
+                    heartRate: lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null,
+                    lactate: lap.lactate || null, // Include lactate if available, otherwise null
+                    RPE: null
+                });
+            });
+
+            // Check if Training record already exists
+            const athleteId = userId.toString();
+            const existingTraining = await this.trainingDao.findByTitle(title, athleteId);
+            const matchingTraining = existingTraining.find(t => 
+                t.title === title && 
+                t.athleteId === athleteId &&
+                Math.abs(new Date(t.date).getTime() - new Date(date).getTime()) < 24 * 60 * 60 * 1000 // Same day
+            );
+
+            if (matchingTraining) {
+                // Update existing Training with all results
+                // Replace all results with new ones from source (keeps everything in sync)
+                // But preserve lactate values from existing results if they exist and are not in new results
+                const updatedResults = results.map(newResult => {
+                    // Try to find matching existing result by interval
+                    const existingResult = matchingTraining.results.find(r => r.interval === newResult.interval);
+                    if (existingResult && existingResult.lactate && (!newResult.lactate || newResult.lactate === null)) {
+                        // Preserve existing lactate if new result doesn't have one
+                        return {
+                            ...newResult,
+                            lactate: existingResult.lactate
+                        };
+                    }
+                    // Use new result (may include updated lactate)
+                    return newResult;
+                });
+
+                // Add any existing results that don't have a match in new results (shouldn't happen, but safety)
+                matchingTraining.results.forEach(existingResult => {
+                    const hasMatch = updatedResults.some(r => r.interval === existingResult.interval);
+                    if (!hasMatch) {
+                        updatedResults.push(existingResult);
+                    }
+                });
+
+                // Sort by interval
+                updatedResults.sort((a, b) => a.interval - b.interval);
+
+                return await this.trainingDao.update(matchingTraining._id, {
+                    results: updatedResults,
+                    description: description || matchingTraining.description,
+                    duration: duration || matchingTraining.duration
+                });
+            } else {
+                // Create new Training record with all intervals
+                const trainingData = {
+                    athleteId: athleteId,
+                    sport: sport,
+                    type: '', // Could be derived from workout pattern
+                    title: title,
+                    description: description || '',
+                    date: date,
+                    duration: duration,
+                    intensity: '', // Could be calculated
+                    results: results,
+                    specifics: {},
+                    comments: '',
+                    unitSystem: 'metric',
+                    inputMode: 'pace'
+                };
+
+                return await this.trainingDao.createTraining(trainingData);
+            }
+        } catch (error) {
+            console.error('Error syncing Training from source:', error);
+            // Don't throw - this is a background sync, shouldn't fail the main operation
+            return null;
+        }
+    }
 }
 
 module.exports = new TrainingAbl();

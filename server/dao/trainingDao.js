@@ -156,9 +156,48 @@ class TrainingDao {
           throw new Error(`Invalid durationType for interval ${index + 1}`);
         }
         
-        // Ensure duration is set
-        if (!result.duration) {
-          result.duration = '0'; // Set default duration
+        // Ensure duration is set (should be a number in seconds)
+        if (result.duration === undefined || result.duration === null) {
+          // If durationSeconds exists, use it; otherwise default to 0
+          result.duration = result.durationSeconds !== undefined && result.durationSeconds !== null 
+            ? (typeof result.durationSeconds === 'number' ? result.durationSeconds : parseFloat(result.durationSeconds) || 0)
+            : 0;
+        } else {
+          // Convert duration to number if it's a string
+          result.duration = typeof result.duration === 'number' 
+            ? result.duration 
+            : parseFloat(result.duration) || 0;
+        }
+        
+        // Ensure durationSeconds matches duration
+        if (result.durationSeconds === undefined || result.durationSeconds === null) {
+          result.durationSeconds = result.duration;
+        } else {
+          result.durationSeconds = typeof result.durationSeconds === 'number' 
+            ? result.durationSeconds 
+            : parseFloat(result.durationSeconds) || 0;
+        }
+        
+        // Ensure rest is set (should be a number in seconds)
+        if (result.rest === undefined || result.rest === null) {
+          // If restSeconds exists, use it; otherwise default to 0
+          result.rest = result.restSeconds !== undefined && result.restSeconds !== null 
+            ? (typeof result.restSeconds === 'number' ? result.restSeconds : parseFloat(result.restSeconds) || 0)
+            : 0;
+        } else {
+          // Convert rest to number if it's a string
+          result.rest = typeof result.rest === 'number' 
+            ? result.rest 
+            : parseFloat(result.rest) || 0;
+        }
+        
+        // Ensure restSeconds matches rest
+        if (result.restSeconds === undefined || result.restSeconds === null) {
+          result.restSeconds = result.rest;
+        } else {
+          result.restSeconds = typeof result.restSeconds === 'number' 
+            ? result.restSeconds 
+            : parseFloat(result.restSeconds) || 0;
         }
       });
     }

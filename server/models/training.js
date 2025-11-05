@@ -2,13 +2,15 @@ const mongoose = require('mongoose');
 
 const resultSchema = new mongoose.Schema({
     interval: Number,
-    duration: String,
+    duration: Number, // Duration in seconds (primary field)
+    durationSeconds: Number, // Duration in seconds (for clarity, same as duration)
     durationType: {
         type: String,
         enum: ['time', 'distance'],
         default: 'time'
     },
-    rest: String,
+    rest: Number, // Rest time in seconds (primary field)
+    restSeconds: Number, // Rest time in seconds (for clarity, same as rest)
     intensity: String,
     power: Number,
     heartRate: Number,

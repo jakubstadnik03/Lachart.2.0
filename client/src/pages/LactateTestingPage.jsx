@@ -8,7 +8,7 @@ import LiveDashboard from '../components/LactateTesting/LiveDashboard';
 import LactateEntryModal from '../components/LactateTesting/LactateEntryModal';
 import LactateChart from '../components/LactateTesting/LactateChart';
 import ProtocolEditModal from '../components/LactateTesting/ProtocolEditModal';
-import { saveLactateSession, getLactateSessions, getLactateSessionById } from '../services/api';
+import { saveLactateSession, getLactateSessions, getLactateSessionById, completeLactateSession, downloadLactateSessionFit } from '../services/api';
 import deviceConnectivity from '../services/deviceConnectivity';
 import {
   PlayIcon,
@@ -16,7 +16,8 @@ import {
   StopIcon,
   ClockIcon,
   ChartBarIcon,
-  PlusIcon
+  PlusIcon,
+  ArrowDownTrayIcon as DownloadIcon
 } from '@heroicons/react/24/outline';
 
 const LactateTestingPage = () => {
@@ -150,6 +151,14 @@ const LactateTestingPage = () => {
     setPhase('work');
     setCountdown(0);
 
+    // Set initial power target on trainer
+    const firstStep = protocol.steps[0];
+    if (firstStep && devices.bikeTrainer.connected) {
+      deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower).catch(err => {
+        console.error('Failed to set initial power on trainer:', err);
+      });
+    }
+
     // Start interval timer
     startIntervalTimer();
 
@@ -280,7 +289,25 @@ const LactateTestingPage = () => {
           
           // Move to next step if available, otherwise stay on current
           if (currentStep < protocol.steps.length - 1) {
-            setCurrentStep(prevStep => prevStep + 1);
+            setCurrentStep(prevStep => {
+              const newStep = prevStep + 1;
+              // Set power target on trainer when step changes
+              const nextStepData = protocol.steps[newStep];
+              if (nextStepData && devices.bikeTrainer.connected) {
+                deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower).catch(err => {
+                  console.error('Failed to set power on trainer:', err);
+                });
+              }
+              return newStep;
+            });
+          } else {
+            // Even if staying on current step, update power if needed
+            const currentStepData = protocol.steps[currentStep];
+            if (currentStepData && devices.bikeTrainer.connected) {
+              deviceConnectivity.setPower('bikeTrainer', currentStepData.targetPower).catch(err => {
+                console.error('Failed to set power on trainer:', err);
+              });
+            }
           }
           
           // Start work phase
@@ -302,21 +329,84 @@ const LactateTestingPage = () => {
   // Save test session
   const handleSaveTest = async () => {
     try {
-      const sessionData = {
-        athleteId: user._id,
-        startTime: new Date(Date.now() - totalTestTime * 1000).toISOString(),
-        endTime: new Date().toISOString(),
-        protocol: protocol,
-        measurements: historicalData, // <-- správné pole místo deviceData
-        lactateValues: lactateValues,
-        testDuration: totalTestTime,
-        currentStep: currentStep
+      const startTime = new Date(Date.now() - totalTestTime * 1000);
+      const endTime = new Date();
+      
+      // Generate FIT file data from historical data
+      const fitFileData = {
+        sport: 'bike', // Default to bike, could be determined from protocol
+        totalElapsedTime: totalTestTime,
+        totalDistance: historicalData.reduce((sum, d) => sum + (d.speed || 0), 0) * (totalTestTime / historicalData.length) || 0,
+        avgSpeed: historicalData.length > 0 
+          ? historicalData.reduce((sum, d) => sum + (d.speed || 0), 0) / historicalData.length 
+          : 0,
+        maxSpeed: historicalData.length > 0 
+          ? Math.max(...historicalData.map(d => d.speed || 0)) 
+          : 0,
+        avgHeartRate: historicalData.length > 0 
+          ? historicalData.reduce((sum, d) => sum + (d.heartRate || 0), 0) / historicalData.length 
+          : 0,
+        maxHeartRate: historicalData.length > 0 
+          ? Math.max(...historicalData.map(d => d.heartRate || 0)) 
+          : 0,
+        avgPower: historicalData.length > 0 
+          ? historicalData.reduce((sum, d) => sum + (d.power || 0), 0) / historicalData.length 
+          : 0,
+        maxPower: historicalData.length > 0 
+          ? Math.max(...historicalData.map(d => d.power || 0)) 
+          : 0,
+        records: historicalData.map((m, index) => ({
+          timestamp: new Date(startTime.getTime() + (m.totalTime || index) * 1000),
+          power: m.power || 0,
+          heartRate: m.heartRate || 0,
+          speed: m.speed || 0,
+          cadence: m.cadence || 0,
+          lactate: m.lactate || null
+        })),
+        laps: protocol.steps.map((step, index) => {
+          const stepData = historicalData.filter(d => d.step === index);
+          const stepLactate = lactateValues.find(lv => lv.step === index + 1);
+          return {
+            lapNumber: index + 1,
+            startTime: new Date(startTime.getTime() + (stepData[0]?.totalTime || index * protocol.workDuration) * 1000),
+            totalElapsedTime: stepData.length > 0 ? stepData.length : protocol.workDuration,
+            totalDistance: stepData.reduce((sum, d) => sum + (d.speed || 0), 0) || 0,
+            avgSpeed: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.speed || 0), 0) / stepData.length : 0,
+            avgHeartRate: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.heartRate || 0), 0) / stepData.length : 0,
+            avgPower: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.power || 0), 0) / stepData.length : step.targetPower,
+            lactate: stepLactate ? stepLactate.lactate : null
+          };
+        })
       };
 
-      console.log('sessionData POST:', sessionData); // pro debug
+      const sessionData = {
+        athleteId: user._id,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        protocol: protocol,
+        measurements: historicalData,
+        lactateValues: lactateValues,
+        testDuration: totalTestTime,
+        currentStep: currentStep,
+        status: 'completed'
+      };
 
-      await saveLactateSession(sessionData);
-      addNotification('Test session saved successfully', 'success');
+      // First create the session
+      const response = await saveLactateSession(sessionData);
+      const sessionId = response.session?._id || response.data?.session?._id || response._id;
+
+      if (sessionId) {
+        // Then complete the session with FIT file data
+        try {
+          await completeLactateSession(sessionId, { fitFileData });
+          addNotification('Test session saved successfully with FIT file', 'success');
+        } catch (fitError) {
+          console.error('Error saving FIT file:', fitError);
+          addNotification('Test session saved, but FIT file generation failed', 'warning');
+        }
+      } else {
+        addNotification('Test session saved successfully', 'success');
+      }
     } catch (error) {
       console.error('Error saving test:', error);
       if (error.response) {
@@ -847,19 +937,46 @@ const LactateTestingPage = () => {
           {loadingSessions && <div className="text-sm text-gray-600">Loading previous session…</div>}
           {!loadingSessions && selectedSession && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                  <div className="text-sm text-gray-600">Sport</div>
-                  <div className="text-xl font-semibold text-primary">{selectedSession.sport ?? '—'}</div>
+              <div className="flex items-center justify-between">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                    <div className="text-sm text-gray-600">Sport</div>
+                    <div className="text-xl font-semibold text-primary">{selectedSession.sport ?? '—'}</div>
+                  </div>
+                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                    <div className="text-sm text-gray-600">Délka</div>
+                    <div className="text-xl font-semibold text-primary">{selectedSession.duration ? `${Math.round(selectedSession.duration/60)} min` : '—'}</div>
+                  </div>
+                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
+                    <div className="text-sm text-gray-600">Datum</div>
+                    <div className="text-xl font-semibold text-primary">{selectedSession.completedAt ? new Date(selectedSession.completedAt).toLocaleString() : (selectedSession.createdAt ? new Date(selectedSession.createdAt).toLocaleString() : '—')}</div>
+                  </div>
                 </div>
-                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                  <div className="text-sm text-gray-600">Délka</div>
-                  <div className="text-xl font-semibold text-primary">{selectedSession.duration ? `${Math.round(selectedSession.duration/60)} min` : '—'}</div>
-                </div>
-                <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                  <div className="text-sm text-gray-600">Datum</div>
-                  <div className="text-xl font-semibold text-primary">{selectedSession.completedAt ? new Date(selectedSession.completedAt).toLocaleString() : (selectedSession.createdAt ? new Date(selectedSession.createdAt).toLocaleString() : '—')}</div>
-                </div>
+                {selectedSession.fitFile && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const blob = await downloadLactateSessionFit(selectedSession._id);
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = selectedSession.fitFile.originalName || `lactate-session-${selectedSession._id}.fit`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        addNotification('FIT file downloaded successfully', 'success');
+                      } catch (error) {
+                        console.error('Error downloading FIT file:', error);
+                        addNotification('Failed to download FIT file', 'error');
+                      }
+                    }}
+                    className="ml-4 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
+                  >
+                    <DownloadIcon className="w-5 h-5" />
+                    Download FIT
+                  </button>
+                )}
               </div>
               <div className="mt-2">
                 {/* Transform session data for chart rendering */}

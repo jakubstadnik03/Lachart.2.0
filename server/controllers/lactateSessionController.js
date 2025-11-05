@@ -126,10 +126,10 @@ const lactateSessionController = {
       // Save FIT file data if provided
       if (fitFileData) {
         session.fitFile = {
-          originalName: fitFileData.originalName || 'lactate-session.fit',
-          fileSize: fitFileData.fileSize || 0,
+          originalName: fitFileData.originalName || `lactate-session-${session._id}.fit`,
+          fileSize: fitFileData.fileSize || JSON.stringify(fitFileData.data || fitFileData).length,
           uploadDate: new Date(),
-          fitData: fitFileData.data
+          fitData: fitFileData.data || fitFileData // Support both formats
         };
       }
       
@@ -242,6 +242,45 @@ const lactateSessionController = {
       console.error('Error generating mock FIT file:', error);
       res.status(500).json({
         error: 'Error generating mock FIT file',
+        message: error.message
+      });
+    }
+  },
+
+  // Download FIT file for session
+  downloadFitFile: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const session = await LactateSession.findById(id);
+      
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      if (!session.fitFile || !session.fitFile.fitData) {
+        return res.status(404).json({ error: 'FIT file not found for this session' });
+      }
+
+      // Generate FIT file from fitData
+      // Note: This is a simplified approach - in production, you'd use a proper FIT file generator library
+      const fitData = session.fitFile.fitData;
+      
+      // Convert fitData to a JSON string that can be downloaded
+      // For actual .fit binary format, you'd need a library like @garmin/fitsdk
+      const fitJson = JSON.stringify(fitData, null, 2);
+      
+      // Set headers for download
+      const fileName = session.fitFile.originalName || `lactate-session-${session._id}.fit`;
+      
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Length', Buffer.byteLength(fitJson, 'utf8'));
+      
+      res.send(fitJson);
+    } catch (error) {
+      console.error('Error downloading FIT file:', error);
+      res.status(500).json({
+        error: 'Error downloading FIT file',
         message: error.message
       });
     }

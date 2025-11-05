@@ -442,6 +442,15 @@ async function updateLactate(req, res) {
     training.analysisComplete = true;
     await training.save();
 
+    // Sync to Training model - sync all intervals (not just those with lactate)
+    try {
+      const TrainingAbl = require('../abl/trainingAbl');
+      await TrainingAbl.syncTrainingFromSource('fit', training, userId);
+    } catch (syncError) {
+      console.error('Error syncing to Training model:', syncError);
+      // Don't fail the request if sync fails
+    }
+
     res.json({
       success: true,
       training

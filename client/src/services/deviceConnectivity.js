@@ -219,10 +219,16 @@ class DeviceConnectivityService {
           { namePrefix: 'Zwift' }
         ],
         serviceUUID: '00001826-0000-1000-8000-00805f9b34fb', // Cycling Power Service
-        optionalServices: ['battery_service', '0000180f-0000-1000-8000-00805f9b34fb'],
+        optionalServices: [
+          'battery_service', 
+          '0000180f-0000-1000-8000-00805f9b34fb',
+          '00001816-0000-1000-8000-00805f9b34fb' // Cycling Speed and Cadence Service (for control)
+        ],
         characteristics: [
           { uuid: '00002a63-0000-1000-8000-00805f9b34fb' } // Cycling Power Measurement
-        ]
+        ],
+        controlServiceUUID: '00001816-0000-1000-8000-00805f9b34fb', // Cycling Speed and Cadence Service
+        controlCharacteristicUUID: '00002a5b-0000-1000-8000-00805f9b34fb' // CSC Control Point (for Tacx/Wahoo ergo mode)
       },
       heartRate: {
         filters: [

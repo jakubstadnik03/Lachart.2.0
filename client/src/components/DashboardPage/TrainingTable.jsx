@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useTrainings } from "../../context/TrainingContext";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
 
-function TrainingRow({ training, sport, date, averagePace, status, onTrainingClick }) {
+function TrainingRow({ training, trainingId, sport, date, averagePace, status, onTrainingClick }) {
   // Omezíme délku názvu tréninku na 20 znaků
   const truncatedTraining = training.length > 18 ? training.substring(0, 18) + '..' : training;
 
@@ -29,7 +28,7 @@ function TrainingRow({ training, sport, date, averagePace, status, onTrainingCli
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
         <div 
           className="self-stretch py-1.5 sm:py-2.5 px-1 w-full text-xs sm:text-sm font-semibold border-b text-center border-gray-200 cursor-pointer hover:bg-blue-50 hover:text-secondary transition-colors duration-200"
-          onClick={() => onTrainingClick(training)}
+          onClick={() => onTrainingClick(training, trainingId)}
         >
           {truncatedTraining}
         </div>
@@ -113,8 +112,9 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
     }
   };
 
-  const handleTrainingClick = (trainingTitle) => {
-    navigate(`/training-history/${encodeURIComponent(trainingTitle)}`);
+  const handleTrainingClick = (trainingTitle, trainingId) => {
+    // Navigate to Fit Analysis page with training ID
+    navigate(`/fit-analysis?trainingId=${trainingId}&title=${encodeURIComponent(trainingTitle)}`);
   };
 
   useEffect(() => {
@@ -163,6 +163,7 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
 
     return {
       training: item.title,
+      trainingId: item._id, // Add training ID for navigation
       sport: item.sport,
       date: new Date(item.date).toLocaleDateString(),
       averagePace: pace,
