@@ -13,6 +13,17 @@ import LapsTable from '../components/FitAnalysis/LapsTable';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
 import WorkoutClustersList from '../components/WorkoutClustering/WorkoutClustersList';
 import SimilarWorkouts from '../components/WorkoutClustering/SimilarWorkouts';
+import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix Leaflet default icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
 // Strava Laps Table Component
 const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities }) => {
@@ -68,7 +79,48 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     }
   };
 
-  if (!selectedStrava?.laps || selectedStrava.laps.length === 0) {
+  // Deduplicate laps in StravaLapsTable
+  const uniqueLaps = React.useMemo(() => {
+    if (!selectedStrava?.laps || !Array.isArray(selectedStrava.laps)) return [];
+    
+    console.log('StravaLapsTable: Processing laps, count:', selectedStrava.laps.length);
+    
+    const seen = new Map();
+    const unique = [];
+    
+    selectedStrava.laps.forEach((lap, index) => {
+      // Use start_date or startTime as primary identifier
+      const startTime = lap.startTime || lap.start_date;
+      if (startTime) {
+        const key = `time_${startTime}`;
+        if (seen.has(key)) {
+          console.warn(`StravaLapsTable: Duplicate lap by startTime at index ${index}, removing:`, lap);
+          return; // Skip duplicate
+        }
+        seen.set(key, true);
+        unique.push(lap);
+        return;
+      }
+      
+      // Skip laps without start_date or startTime - they're duplicates
+      // These are the duplicate laps (17-31) that don't have start_date
+      console.warn(`StravaLapsTable: Skipping lap without start_date/startTime at index ${index} (duplicate):`, {
+        index,
+        elapsed_time: lap.elapsed_time,
+        distance: lap.distance,
+        power: lap.average_watts
+      });
+      return; // Skip this duplicate
+    });
+    
+    if (unique.length !== selectedStrava.laps.length) {
+      console.log(`StravaLapsTable: Removed ${selectedStrava.laps.length - unique.length} duplicate laps. Original: ${selectedStrava.laps.length}, Unique: ${unique.length}`);
+    }
+    
+    return unique;
+  }, [selectedStrava?.laps]);
+
+  if (!selectedStrava?.laps || uniqueLaps.length === 0) {
     return (
       <div>
         <h3 className="text-lg font-semibold mb-4">Intervals</h3>
@@ -82,12 +134,12 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">Intervals</h3>
         <div className="flex gap-2">
-          <button
-            onClick={() => setEditingLactate(!editingLactate)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
-          >
-            {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
-          </button>
+        <button
+          onClick={() => setEditingLactate(!editingLactate)}
+          className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-sm shadow-md transition-colors"
+        >
+          {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
+        </button>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -105,11 +157,11 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {selectedStrava.laps.map((lap, index) => {
+            {uniqueLaps.map((lap, index) => {
               // Calculate cumulative time for this lap
               let cumulativeTime = 0;
               for (let i = 0; i < index; i++) {
-                cumulativeTime += (selectedStrava.laps[i]?.elapsed_time || 0);
+                cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
               }
               const startTime = cumulativeTime;
               const endTime = cumulativeTime + (lap.elapsed_time || 0);
@@ -201,7 +253,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
           <button
             onClick={handleSaveLactate}
             disabled={saving}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+            className="px-4 py-2 bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors"
           >
             {saving ? 'Saving...' : 'Save Lactate Values'}
           </button>
@@ -247,6 +299,57 @@ const FitAnalysisPage = () => {
   const [stravaSelectedTimeRange, setStravaSelectedTimeRange] = useState({ start: 0, end: 0 });
   const [stravaSelectionStats, setStravaSelectionStats] = useState(null);
   const stravaDragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
+  
+  // Smoothness state
+  const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
+  
+  // Helper function to get GPS data from training or Strava
+  const getGpsData = React.useMemo(() => {
+    if (selectedStrava && selectedStravaStreams) {
+      // Get GPS from Strava latlng stream
+      const latlngArray = selectedStravaStreams?.latlng?.data || selectedStravaStreams?.latlng || [];
+      if (latlngArray.length > 0) {
+        return latlngArray.map(([lat, lng]) => [lat, lng]).filter(p => p[0] != null && p[1] != null);
+      }
+    } else if (selectedTraining && selectedTraining.records) {
+      // Get GPS from FIT file records
+      return selectedTraining.records
+        .filter(r => r.positionLat != null && r.positionLong != null)
+        .map(r => [
+          r.positionLat / 11930464.711111111, // Convert from semicircles to degrees
+          r.positionLong / 11930464.711111111
+        ]);
+    }
+    return [];
+  }, [selectedStrava, selectedStravaStreams, selectedTraining]);
+  
+  // Smoothing function
+  const smoothData = React.useCallback((data, windowSizeSeconds, timeArray) => {
+    if (!data || data.length === 0 || windowSizeSeconds <= 0) return data;
+    if (!timeArray || timeArray.length !== data.length) return data;
+    
+    const smoothed = [];
+    for (let i = 0; i < data.length; i++) {
+      const currentTime = timeArray[i];
+      const windowStart = currentTime - windowSizeSeconds / 2;
+      const windowEnd = currentTime + windowSizeSeconds / 2;
+      
+      const valuesInWindow = [];
+      for (let j = 0; j < data.length; j++) {
+        if (timeArray[j] >= windowStart && timeArray[j] <= windowEnd) {
+          const val = data[j];
+          if (val != null && !isNaN(val) && val > 0) {
+            valuesInWindow.push(val);
+          }
+        }
+      }
+      
+      smoothed.push(valuesInWindow.length > 0 
+        ? valuesInWindow.reduce((a, b) => a + b, 0) / valuesInWindow.length 
+        : data[i]);
+    }
+    return smoothed;
+  }, []);
 
   useEffect(() => {
     // Check if trainingId is in URL params (from TrainingTable click) - do this first
@@ -317,12 +420,53 @@ const FitAnalysisPage = () => {
         lapsCount: data.laps?.length || 0
       });
       
+      // Deduplicate laps before setting state
+      let uniqueLaps = data.laps || [];
+      if (uniqueLaps.length > 0) {
+        console.log('Original laps count from API:', uniqueLaps.length);
+        const seen = new Map();
+        const deduplicated = [];
+        
+        uniqueLaps.forEach((lap, index) => {
+          // Use start_date or startTime as primary identifier
+          const startTime = lap.startTime || lap.start_date;
+          if (startTime) {
+            const key = `time_${startTime}`;
+            if (seen.has(key)) {
+              console.warn(`Duplicate lap by startTime at index ${index}, removing:`, lap);
+              return;
+            }
+            seen.set(key, true);
+            deduplicated.push(lap);
+            return;
+          }
+          
+          // Fallback: use combination of properties
+          const elapsedTime = lap.elapsed_time || 0;
+          const distance = lap.distance || 0;
+          const power = lap.average_watts || 0;
+          const key = `t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power)}`;
+          
+          if (seen.has(key)) {
+            console.warn(`Duplicate lap at index ${index}, removing:`, lap);
+            return;
+          }
+          seen.set(key, true);
+          deduplicated.push(lap);
+        });
+        
+        if (deduplicated.length !== uniqueLaps.length) {
+          console.log(`Removed ${uniqueLaps.length - deduplicated.length} duplicate laps. Original: ${uniqueLaps.length}, Unique: ${deduplicated.length}`);
+        }
+        uniqueLaps = deduplicated;
+      }
+      
       // Merge titleManual and description into detail object
       const detailWithMeta = {
         ...data.detail,
         titleManual: data.titleManual,
         description: data.description,
-        laps: data.laps || []
+        laps: uniqueLaps
       };
       
       // Ensure streams data is properly set
@@ -635,8 +779,8 @@ const FitAnalysisPage = () => {
           const avgPower = powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b, 0) / powers.length) : null;
           const maxPower = powers.length > 0 ? Math.max(...powers) : null;
           const totalDistance = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) * (eTime - sTime) / selectedIndices.length : null;
-          
-          return {
+
+    return {
             duration: eTime - sTime,
             totalDistance,
             avgSpeed: avgSpeed ? (avgSpeed * 3.6).toFixed(1) : null,
@@ -702,6 +846,66 @@ const FitAnalysisPage = () => {
   const loadTrainingDetail = async (id) => {
     try {
       const data = await getFitTraining(id);
+      
+      // Check for duplicate laps and deduplicate if needed
+      if (data.laps && Array.isArray(data.laps)) {
+        console.log('Original laps count:', data.laps.length);
+        console.log('First few laps:', data.laps.slice(0, 3));
+        
+        // Remove duplicates - use a more robust deduplication
+        const seen = new Map();
+        const uniqueLaps = [];
+        
+        data.laps.forEach((lap, index) => {
+          // Try multiple strategies to identify duplicates
+          // 1. Use _id if available (MongoDB ObjectId)
+          if (lap._id) {
+            const idStr = lap._id.toString();
+            if (seen.has(`id_${idStr}`)) {
+              console.warn(`Duplicate lap by _id at index ${index}, removing:`, lap);
+              return;
+            }
+            seen.set(`id_${idStr}`, true);
+            uniqueLaps.push(lap);
+            return;
+          }
+          
+          // 2. Use combination of properties for unique identification
+          const elapsedTime = lap.totalElapsedTime || lap.total_elapsed_time || 0;
+          const distance = lap.totalDistance || lap.total_distance || 0;
+          const power = lap.avgPower || lap.avg_power || 0;
+          const hr = lap.avgHeartRate || lap.avg_heart_rate || 0;
+          const startTime = lap.startTime || lap.start_time || null;
+          
+          // Create a more unique key
+          const key = startTime 
+            ? `start_${startTime}` 
+            : `t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power)}_hr${Math.round(hr)}_i${index}`;
+          
+          if (seen.has(key)) {
+            console.warn(`Duplicate lap detected at index ${index}, removing:`, {
+              index,
+              key,
+              elapsedTime,
+              distance,
+              power,
+              existingIndex: seen.get(key)
+            });
+            return;
+          }
+          
+          seen.set(key, index);
+          uniqueLaps.push(lap);
+        });
+        
+        if (uniqueLaps.length !== data.laps.length) {
+          console.log(`Removed ${data.laps.length - uniqueLaps.length} duplicate laps. Original: ${data.laps.length}, Unique: ${uniqueLaps.length}`);
+        }
+        
+        data.laps = uniqueLaps;
+        console.log('Final laps count:', data.laps.length);
+      }
+      
       setSelectedTraining(data);
       // Persist selection to localStorage
       localStorage.setItem('fitAnalysis_selectedTrainingId', id);
@@ -743,8 +947,8 @@ const FitAnalysisPage = () => {
         laps: data.results?.map((result, index) => {
           // Get duration in seconds - use durationSeconds if available, otherwise parse from duration string
           const durationSec = result.durationSeconds || parseDurationToSeconds(result.duration) || 0;
-          
-          return {
+
+    return {
             lapNumber: index + 1,
             totalElapsedTime: durationSec,
             totalTimerTime: durationSec,
@@ -847,9 +1051,9 @@ const FitAnalysisPage = () => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">FIT Training Analysis</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">FIT Training Analysis</h1>
 
         {/* Integrations Section */}
         <FitUploadSection
@@ -889,11 +1093,11 @@ const FitAnalysisPage = () => {
 
         {/* Training Detail and Charts - Full Width */}
         {selectedTraining && (
-          <div className="w-full mt-6">
+          <div className="w-full mt-4 md:mt-6">
                 <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-white rounded-lg shadow-md p-6 space-y-6"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 space-y-4 md:space-y-6"
                 >
                   {/* Header Stats */}
               <TrainingStats 
@@ -1074,82 +1278,82 @@ const FitAnalysisPage = () => {
                     };
 
                     return (
-                      <div className="mb-6">
-                        <div className="flex justify-between items-center mb-4">
-                          <h3 className="text-lg font-semibold">Training Overview</h3>
+                      <div className="mb-4 md:mb-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                          <h3 className="text-lg md:text-xl font-semibold text-gray-900">Training Overview</h3>
                           <div className="flex gap-2 items-center">
                             <button
                               onClick={handleResetZoom}
-                              className="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                              className="px-4 py-2 text-sm bg-primary text-white rounded-xl shadow-md transition-colors hover:bg-primary-dark"
                             >
                               Reset Zoom
                             </button>
                           </div>
                         </div>
                         {showCreateLapButton && selectionStats && (
-                          <div className="mb-4 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <h4 className="text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
+                          <div className="mb-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-2xl p-4 md:p-6 shadow-lg">
+                            <div className="flex items-center justify-between mb-3 md:mb-4">
+                              <h4 className="text-base md:text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
                               <button
                                 onClick={() => {
                                   setShowCreateLapButton(false);
                                   setSelectedTimeRange({ start: 0, end: 0 });
                                   setSelectionStats(null);
                                 }}
-                                className="text-gray-500 hover:text-gray-700"
+                                className="text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
                               >
                                 ✕
                               </button>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                              <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                <div className="text-xs text-gray-600 mb-1">Duration</div>
-                                <div className="text-lg font-bold text-blue-700">{formatDuration(selectionStats.duration)}</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                              <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                <div className="text-xs md:text-sm text-gray-600 mb-1">Duration</div>
+                                <div className="text-base md:text-lg font-bold text-primary">{formatDuration(selectionStats.duration)}</div>
                               </div>
                               {selectionStats.totalDistance && (
-                                <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-600 mb-1">Distance</div>
-                                  <div className="text-lg font-bold text-blue-700">{formatDistance(selectionStats.totalDistance)}</div>
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Distance</div>
+                                  <div className="text-base md:text-lg font-bold text-primary">{formatDistance(selectionStats.totalDistance)}</div>
                                 </div>
                               )}
                               {selectionStats.avgSpeed && (
-                                <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-600 mb-1">Avg Speed</div>
-                                  <div className="text-lg font-bold text-blue-700">{selectionStats.avgSpeed} km/h</div>
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Speed</div>
+                                  <div className="text-base md:text-lg font-bold text-primary">{selectionStats.avgSpeed} km/h</div>
                                   {selectionStats.maxSpeed && (
                                     <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxSpeed} km/h</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgHeartRate && (
-                                <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-600 mb-1">Avg HR</div>
-                                  <div className="text-lg font-bold text-red-600">{selectionStats.avgHeartRate} bpm</div>
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg HR</div>
+                                  <div className="text-base md:text-lg font-bold text-red-600">{selectionStats.avgHeartRate} bpm</div>
                                   {selectionStats.maxHeartRate && (
                                     <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxHeartRate} bpm</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgPower && (
-                                <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-600 mb-1">Avg Power</div>
-                                  <div className="text-lg font-bold text-purple-600">{selectionStats.avgPower} W</div>
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Power</div>
+                                  <div className="text-base md:text-lg font-bold text-primary-dark">{selectionStats.avgPower} W</div>
                                   {selectionStats.maxPower && (
                                     <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxPower} W</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgCadence && (
-                                <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-600 mb-1">Avg Cadence</div>
-                                  <div className="text-lg font-bold text-green-600">{selectionStats.avgCadence} rpm</div>
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Cadence</div>
+                                  <div className="text-base md:text-lg font-bold text-greenos">{selectionStats.avgCadence} rpm</div>
                                 </div>
                               )}
                             </div>
                             <div className="mt-4 flex justify-end">
                               <button
                                 onClick={handleCreateLap}
-                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold shadow-md transition-colors flex items-center gap-2"
+                                className="px-5 md:px-6 py-2 bg-primary text-white rounded-xl font-semibold shadow-md transition-colors flex items-center gap-2 hover:bg-primary-dark"
                               >
                                 <span>✓</span> Create Interval
                               </button>
@@ -1157,20 +1361,20 @@ const FitAnalysisPage = () => {
                           </div>
                         )}
                         {!showCreateLapButton && (
-                          <div className="mb-2 text-xs text-gray-500 italic">
-                            💡 Tip: Click and drag to select an interval, or hold <kbd className="px-1 py-0.5 bg-gray-200 rounded text-xs">Shift</kbd> while dragging to zoom
+                          <div className="mb-2 text-xs md:text-sm text-gray-500 italic rounded-lg p-2 border border-primary/30 bg-primary/10">
+                            💡 Tip: Click and drag to select an interval, or hold <kbd className="px-1.5 py-0.5 bg-white/80 rounded text-xs font-mono border border-gray-300">Shift</kbd> while dragging to zoom
                           </div>
                         )}
                         <div 
                           ref={trainingChartRef}
-                          className="relative border rounded-lg bg-white p-4 select-none" 
+                          className="relative border border-white/40 rounded-2xl bg-white/70 backdrop-blur-sm p-3 md:p-4 select-none shadow-lg" 
                           style={{ height: `${chartHeight}px`, cursor: isDragging ? 'crosshair' : 'default' }}
                         >
                           {/* Drag selection rectangle */}
                           {isDragging && dragStart.x !== dragEnd.x && (
                             <>
                             <div
-                              className="absolute border-2 border-purple-500 bg-purple-200 bg-opacity-20 pointer-events-none z-40"
+                              className="absolute border-2 border-primary bg-primary/20 pointer-events-none z-40"
                               style={{
                                 left: `${Math.min(dragStart.x, dragEnd.x) + padding.left}px`,
                                 top: `${padding.top}px`,
@@ -1180,7 +1384,7 @@ const FitAnalysisPage = () => {
                             />
                               {/* Show hint text when dragging */}
                               <div
-                                className="absolute pointer-events-none z-50 text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded"
+                                className="absolute pointer-events-none z-50 text-xs text-primary-dark bg-primary/30 px-2 py-1 rounded"
                                 style={{
                                   left: `${(Math.min(dragStart.x, dragEnd.x) + Math.max(dragStart.x, dragEnd.x)) / 2 + padding.left}px`,
                                   top: `${padding.top + 5}px`,
@@ -1611,18 +1815,18 @@ const FitAnalysisPage = () => {
                                   border: '1px solid rgba(255, 255, 255, 0.3)'
                                 }}
                               >
-                                <div className="font-bold mb-2 text-purple-800">Training Data</div>
+                                <div className="font-bold mb-2 text-primary-dark">Training Data</div>
                                 <div className="text-sm space-y-1 text-gray-700">
                                   {hoveredTrainingRecord.speed && (
-                                    <div className="font-medium">Speed: <span className="text-blue-600">{hoveredTrainingRecord.speed.toFixed(1)} km/h</span></div>
+                                    <div className="font-medium">Speed: <span className="text-primary">{hoveredTrainingRecord.speed.toFixed(1)} km/h</span></div>
                                   )}
                                   {hoveredTrainingRecord.heartRate && (
-                                    <div className="font-medium">Heart Rate: <span className="text-red-500">{Math.round(hoveredTrainingRecord.heartRate)} bpm</span></div>
+                                    <div className="font-medium">Heart Rate: <span className="text-red">{Math.round(hoveredTrainingRecord.heartRate)} bpm</span></div>
                                   )}
                                   {hoveredTrainingRecord.power && (
-                                    <div className="font-medium">Power: <span className="text-purple-600">{Math.round(hoveredTrainingRecord.power)} W</span></div>
+                                    <div className="font-medium">Power: <span className="text-primary-dark">{Math.round(hoveredTrainingRecord.power)} W</span></div>
                                   )}
-                                  <div className="font-medium">Time: <span className="text-purple-600">{formatDuration(hoveredTrainingRecord.timeFromStart)}</span></div>
+                                  <div className="font-medium">Time: <span className="text-primary-dark">{formatDuration(hoveredTrainingRecord.timeFromStart)}</span></div>
                                 </div>
                               </div>
                               {/* Arrow */}
@@ -1666,11 +1870,11 @@ const FitAnalysisPage = () => {
 
         {/* Strava Activity Detail */}
         {selectedStrava && (
-          <div className="w-full mt-6">
+          <div className="w-full mt-4 md:mt-6">
             {!selectedStravaStreams ? (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-yellow-800">Loading graph data...</p>
-              </div>
+              <div className="p-4 md:p-6 bg-yellow-50/80 backdrop-blur-sm border border-yellow-200/60 rounded-2xl shadow-md">
+                <p className="text-yellow-800 text-sm md:text-base">Loading graph data...</p>
+                        </div>
             ) : (() => {
           const time = selectedStravaStreams?.time?.data || [];
           const speed = selectedStravaStreams?.velocity_smooth?.data || [];
@@ -1807,7 +2011,7 @@ const FitAnalysisPage = () => {
                                       setTitle(suggestion);
                                       setShowSuggestions(false);
                                     }}
-                                    className="px-4 py-2 hover:bg-purple-50 cursor-pointer text-sm"
+                                    className="px-4 py-2 hover:bg-primary/10 cursor-pointer text-sm transition-colors"
                                   >
                                     {suggestion}
                                     </div>
@@ -1818,7 +2022,7 @@ const FitAnalysisPage = () => {
                         <button
                             onClick={handleSaveTitle}
                             disabled={saving}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                            className="p-2 bg-greenos text-white rounded-lg hover:opacity-90 disabled:opacity-50"
                             title="Save title"
                           >
                             <CheckIcon className="w-5 h-5" />
@@ -1866,7 +2070,7 @@ const FitAnalysisPage = () => {
                         <button
                             onClick={handleSaveDescription}
                             disabled={saving}
-                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                            className="p-2 bg-greenos text-white rounded-lg hover:opacity-90 disabled:opacity-50"
                             title="Save description"
                           >
                             <CheckIcon className="w-5 h-5" />
@@ -1913,27 +2117,67 @@ const FitAnalysisPage = () => {
           };
 
           return (
-            <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
+            <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 space-y-4 md:space-y-6">
               {/* Title and Description */}
               <StravaTitleEditor />
               
+              {/* Map Section */}
+              {getGpsData.length > 0 && (
+                <div className="mb-4 md:mb-6">
+                  <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6">
+                    <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-3">Route Map</h3>
+                    <div className="relative rounded-2xl overflow-hidden border border-white/40" style={{ height: '400px' }}>
+                      <MapContainer
+                        center={getGpsData.length > 0 ? getGpsData[Math.floor(getGpsData.length / 2)] : [50.0755, 14.4378]}
+                        zoom={13}
+                        style={{ height: '100%', width: '100%', zIndex: 0 }}
+                        scrollWheelZoom={true}
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <Polyline
+                          positions={getGpsData}
+                          pathOptions={{
+                            color: '#767EB5',
+                            weight: 4,
+                            opacity: 0.8
+                          }}
+                        />
+                        {getGpsData.length > 0 && (
+                          <>
+                            <Marker position={getGpsData[0]}>
+                              <Popup>Start</Popup>
+                            </Marker>
+                            <Marker position={getGpsData[getGpsData.length - 1]}>
+                              <Popup>Finish</Popup>
+                            </Marker>
+                          </>
+                        )}
+                      </MapContainer>
+                </div>
+                </div>
+                </div>
+              )}
+              
               {/* Header Stats + Toggles */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600">Duration</div>
-                  <div className="text-xl font-bold mt-1">{formatDuration(selectedStrava.elapsed_time)}</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs md:text-sm text-gray-600">Duration</div>
+                  <div className="text-lg md:text-xl font-bold mt-1 text-primary">{formatDuration(selectedStrava.elapsed_time)}</div>
                 </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600">Distance</div>
-                  <div className="text-xl font-bold mt-1">{formatDistance(selectedStrava.distance)}</div>
+                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs md:text-sm text-gray-600">Distance</div>
+                  <div className="text-lg md:text-xl font-bold mt-1 text-primary">{formatDistance(selectedStrava.distance)}</div>
+              </div>
+                <div className="bg-red/10 backdrop-blur-sm p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
+                  <div className="text-xs md:text-sm text-gray-600">Avg Heart Rate</div>
+                  <div className="text-lg md:text-xl font-bold mt-1 text-red">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
                 </div>
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600">Avg Heart Rate</div>
-                  <div className="text-xl font-bold mt-1">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
-                </div>
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600">Avg Power</div>
-                  <div className="text-xl font-bold mt-1">{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
+                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs md:text-sm text-gray-600">Avg Power</div>
+                  <div className="text-lg md:text-xl font-bold mt-1 text-primary-dark">{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
                 </div>
               </div>
 
@@ -1949,10 +2193,47 @@ const FitAnalysisPage = () => {
                 const altitudeArray = selectedStravaStreams?.altitude?.data || selectedStravaStreams?.altitude || [];
                 
                 const time = timeArray;
-                const speed = speedArray;
-                const hr = hrArray;
-                const power = powerArray;
-                const altitude = altitudeArray;
+                // Apply smoothing if enabled
+                const speed = smoothData(speedArray, smoothingWindow, time);
+                const hr = smoothData(hrArray, smoothingWindow, time);
+                const power = smoothData(powerArray, smoothingWindow, time);
+                const altitude = altitudeArray; // Don't smooth altitude
+                
+                // Determine sport type
+                const sportType = selectedStrava?.sport_type || selectedStrava?.sport || selectedStrava?.type || '';
+                const isRun = sportType.toLowerCase().includes('run');
+                const isSwim = sportType.toLowerCase().includes('swim');
+                const usePace = isRun || isSwim;
+                
+                // Calculate pace from speed (in seconds per unit)
+                // For run: pace in seconds per km (1000 / speed)
+                // For swim: pace in seconds per 100m (100 / speed)
+                const calculatePace = (speedMps) => {
+                  if (!speedMps || speedMps <= 0) return null;
+                  if (isRun) {
+                    return 1000 / speedMps; // seconds per km
+                  } else if (isSwim) {
+                    return 100 / speedMps; // seconds per 100m
+                  }
+                  return null;
+                };
+                
+                // Calculate pace array from speed
+                const pace = usePace ? speed.map(s => calculatePace(s)) : null;
+                
+                // Calculate pace range for Y-axis
+                // For run: 5:00/km (300s) at bottom, 3:20/km (200s) at top (with padding)
+                // For swim: 2:00/100m (120s) at bottom, 1:20/100m (80s) at top (with padding)
+                let paceYAxisMin, paceYAxisMax;
+                if (usePace) {
+                  if (isRun) {
+                    paceYAxisMin = 200; // 3:20/km (rychlejší, nahoře) - s mezerou
+                    paceYAxisMax = 300; // 5:00/km (pomalejší, dole)
+                  } else { // swim
+                    paceYAxisMin = 80;  // 1:20/100m (rychlejší, nahoře) - s mezerou
+                    paceYAxisMax = 120; // 2:00/100m (pomalejší, dole)
+                  }
+                }
                 
                 // Calculate stats from selected time range for Strava
                 const calculateStravaSelectionStats = (startTime, endTime) => {
@@ -2017,7 +2298,61 @@ const FitAnalysisPage = () => {
                 };
                 
                 // Prepare interval bars data from laps
-                const laps = selectedStrava?.laps || [];
+                let laps = selectedStrava?.laps || [];
+                
+                // First, deduplicate laps - remove duplicates without start_date
+                console.log('Original laps count before deduplication:', laps.length);
+                const seenLaps = new Map();
+                const uniqueLapsForGraph = [];
+                
+                laps.forEach((lap, index) => {
+                  // Use start_date or startTime as primary identifier
+                  const startTime = lap.startTime || lap.start_date;
+                  if (startTime) {
+                    const key = `time_${startTime}`;
+                    if (seenLaps.has(key)) {
+                      console.warn(`Graph: Duplicate lap by startTime at index ${index}, removing:`, lap);
+                      return;
+                    }
+                    seenLaps.set(key, true);
+                    uniqueLapsForGraph.push(lap);
+                    return;
+                  }
+                  
+                  // Skip laps without start_date or startTime - they're duplicates
+                  console.warn(`Graph: Skipping lap without start_date/startTime at index ${index}:`, lap);
+                });
+                
+                if (uniqueLapsForGraph.length !== laps.length) {
+                  console.log(`Graph: Removed ${laps.length - uniqueLapsForGraph.length} duplicate laps. Original: ${laps.length}, Unique: ${uniqueLapsForGraph.length}`);
+                }
+                
+                laps = uniqueLapsForGraph;
+                
+                // Sort laps by startTime or start_date to ensure correct order
+                laps = [...laps].sort((a, b) => {
+                  const activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
+                  const activityStartDate = activityStartDateStr ? new Date(activityStartDateStr) : new Date();
+                  const activityStartTimeMs = activityStartDate.getTime();
+                  
+                  const getLapStartTime = (lap) => {
+                    if (lap.startTime && typeof lap.startTime === 'string') {
+                      return new Date(lap.startTime).getTime();
+                    } else if (lap.start_date) {
+                      return new Date(lap.start_date).getTime();
+                    }
+                    return null;
+                  };
+                  
+                  const aTime = getLapStartTime(a);
+                  const bTime = getLapStartTime(b);
+                  
+                  if (aTime && bTime) return aTime - bTime;
+                  if (aTime) return -1;
+                  if (bTime) return 1;
+                  return 0; // Keep original order if neither has startTime
+                });
+                
                 const intervalBars = [];
                 
                 // Calculate total activity time from streams (in seconds)
@@ -2025,28 +2360,95 @@ const FitAnalysisPage = () => {
                 
                 // Get activity start time as Date object
                 // Use start_date_local if available (consistent with backend), otherwise start_date
-                const activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
+                let activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
+                
+                // If we have laps with start_date, use the earliest one as the activity start
+                if (laps.length > 0) {
+                  const lapsWithStartDate = laps
+                    .map(lap => lap.start_date || lap.startTime)
+                    .filter(date => date)
+                    .map(date => new Date(date).getTime())
+                    .filter(time => !isNaN(time));
+                  
+                  if (lapsWithStartDate.length > 0) {
+                    const earliestLapTime = Math.min(...lapsWithStartDate);
+                    const activityStartFromStrava = activityStartDateStr ? new Date(activityStartDateStr).getTime() : null;
+                    
+                    // Use the earlier of activity start or earliest lap
+                    if (!activityStartFromStrava || earliestLapTime < activityStartFromStrava) {
+                      activityStartDateStr = new Date(earliestLapTime).toISOString();
+                      console.log('Using earliest lap start_date as activity start:', activityStartDateStr);
+                    }
+                  }
+                }
+                
                 const activityStartDate = activityStartDateStr 
                   ? new Date(activityStartDateStr)
                   : new Date();
                 const activityStartTimeMs = activityStartDate.getTime();
                 
+                console.log('Activity start time:', {
+                  activityStartDateStr: activityStartDateStr,
+                  activityStartTimeMs: activityStartTimeMs,
+                  activityStartDate: activityStartDate.toISOString()
+                });
+                
+                // Track cumulative time for sequential intervals
+                let cumulativeTimeSeconds = 0;
+                
                 laps.forEach((lap, idx) => {
                   const power = lap.average_watts || lap.average_power || 0;
                   const duration = lap.elapsed_time || 0;
+                  const lapSpeed = lap.average_speed || 0; // m/s
+                  
+                  // Calculate pace for run/swim
+                  let lapPace = null;
+                  if (usePace && lapSpeed > 0) {
+                    lapPace = calculatePace(lapSpeed);
+                  }
+                  
+                  console.log(`\n=== Lap ${idx + 1} ===`);
+                  console.log('Lap data:', {
+                    startTime: lap.startTime,
+                    start_date: lap.start_date,
+                    elapsed_time: duration,
+                    power: power,
+                    average_watts: lap.average_watts,
+                    average_power: lap.average_power,
+                    speed: lapSpeed,
+                    pace: lapPace
+                  });
                   
                   // Skip if no duration
-                  if (duration <= 0) return;
+                  if (duration <= 0) {
+                    console.log('Skipping: no duration');
+                    return;
+                  }
                   
-                  // For original Strava laps (from API), require power > 0
+                  // For original Strava laps (from API), require power > 0 for cycling, pace > 0 for run/swim
                   // Manually created laps have startTime as ISO timestamp, allow power = 0 for them
                   // Original Strava laps have start_date or no startTime at all
                   const isManuallyCreated = lap.startTime && typeof lap.startTime === 'string' && !lap.start_date;
-                  if (!isManuallyCreated && power <= 0) return;
+                  if (!isManuallyCreated) {
+                    if (usePace) {
+                      // For run/swim, require pace (speed > 0)
+                      if (!lapPace || lapSpeed <= 0) {
+                        console.log('Skipping: no pace/speed and not manually created');
+                        return;
+                      }
+                    } else {
+                      // For cycling, require power > 0
+                      if (power <= 0) {
+                        console.log('Skipping: no power and not manually created');
+                        return;
+                      }
+                    }
+                  }
                   
                   // Skip if this lap is the entire activity (likely the default Strava lap)
                   // If duration is within 95% of total activity time, it's probably the whole activity
                   if (maxTime > 0 && duration >= maxTime * 0.95) {
+                    console.log('Skipping: entire activity lap');
                     return;
                   }
                   
@@ -2058,49 +2460,246 @@ const FitAnalysisPage = () => {
                     const lapStartDate = new Date(lap.startTime);
                     const lapStartTimeMs = lapStartDate.getTime();
                     startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+                    console.log('Using lap.startTime:', {
+                      lapStartTime: lap.startTime,
+                      lapStartTimeMs: lapStartTimeMs,
+                      activityStartTimeMs: activityStartTimeMs,
+                      calculatedStartTimeSeconds: startTimeSeconds
+                    });
                     
                     // Ensure startTime is not negative (shouldn't happen, but safety check)
                     if (startTimeSeconds < 0) {
+                      console.log('Warning: startTimeSeconds < 0, setting to 0');
                       startTimeSeconds = 0;
                     }
                   } else if (lap.start_date) {
-                    // Fallback to start_date from Strava API
+                    // For laps with start_date, calculate relative time from activity start
                     const lapStartDate = new Date(lap.start_date);
                     const lapStartTimeMs = lapStartDate.getTime();
-                    startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+                    const calculatedStartTime = (lapStartTimeMs - activityStartTimeMs) / 1000;
                     
-                    if (startTimeSeconds < 0) {
-                      startTimeSeconds = 0;
+                    console.log('Using lap.start_date:', {
+                      lapStartDate: lap.start_date,
+                      lapStartTimeMs: lapStartTimeMs,
+                      activityStartTimeMs: activityStartTimeMs,
+                      calculatedStartTimeSeconds: calculatedStartTime
+                    });
+                    
+                    // If calculated time is negative or very small, it means the activity start time might be wrong
+                    // In this case, use cumulative time to ensure intervals are sequential
+                    if (calculatedStartTime < 0 || (idx === 0 && calculatedStartTime > 60)) {
+                      console.log('Warning: calculated startTime invalid, using cumulative time instead');
+                      if (idx === 0) {
+                        startTimeSeconds = 0;
+                      } else {
+                        startTimeSeconds = cumulativeTimeSeconds;
+                      }
+                    } else {
+                      // Use calculated time, but ensure it's not before previous lap
+                      if (idx > 0 && calculatedStartTime < cumulativeTimeSeconds) {
+                        console.log('Warning: calculated time before previous lap, using cumulative time');
+                        startTimeSeconds = cumulativeTimeSeconds;
+                      } else {
+                        startTimeSeconds = calculatedStartTime;
+                      }
                     }
                   } else {
-                    // Calculate cumulative time for laps without startTime or start_date
-                    let cumulativeTime = 0;
-                    for (let i = 0; i < idx; i++) {
-                      cumulativeTime += (laps[i]?.elapsed_time || 0);
+                    // For laps without startTime or start_date, use cumulative time
+                    // First lap starts at 0, subsequent laps continue from previous end
+                    if (idx === 0) {
+                      startTimeSeconds = 0;
+                      console.log('First lap: starting at 0');
+                    } else {
+                      startTimeSeconds = cumulativeTimeSeconds;
+                      console.log('Using cumulative time:', {
+                        cumulativeTimeSeconds: cumulativeTimeSeconds,
+                        previousLapEnd: cumulativeTimeSeconds
+                      });
                     }
-                    startTimeSeconds = cumulativeTime;
                   }
                   
-                  const endTimeSeconds = startTimeSeconds + duration;
+                  // Ensure startTime is within valid range
+                  if (startTimeSeconds < 0) {
+                    console.log('Warning: startTimeSeconds < 0, setting to 0');
+                    startTimeSeconds = 0;
+                  }
+                  if (maxTime > 0 && startTimeSeconds > maxTime) {
+                    console.log('Skipping: startTime beyond maxTime', { startTimeSeconds, maxTime });
+                    return;
+                  }
                   
-                  // For rendering: use actual power if > 0
-                  // For manually created intervals (with startTime), use minimum 50W if power is 0 for visibility
-                  // For original Strava laps, use actual power (they already passed the power > 0 check above)
-                  const displayPower = power > 0 ? power : (lap.startTime ? 50 : 0);
+                  let endTimeSeconds = startTimeSeconds + duration;
+                  
+                  // Ensure endTime is within valid range
+                  if (maxTime > 0 && endTimeSeconds > maxTime * 1.1) {
+                    console.log('Warning: endTime beyond maxTime, capping', { endTimeSeconds, maxTime: maxTime * 1.1 });
+                    endTimeSeconds = Math.min(endTimeSeconds, maxTime * 1.1);
+                  }
+                  
+                  // Update cumulative time for next lap
+                  cumulativeTimeSeconds = endTimeSeconds;
+                  
+                  console.log('Final interval times:', {
+                    startTimeSeconds: startTimeSeconds,
+                    endTimeSeconds: endTimeSeconds,
+                    duration: duration,
+                    startTimeMinutes: (startTimeSeconds / 60).toFixed(2),
+                    endTimeMinutes: (endTimeSeconds / 60).toFixed(2),
+                    nextCumulativeTime: cumulativeTimeSeconds
+                  });
+                  
+                  // For rendering: use actual power/pace
+                  // For run/swim: use pace directly (Y-axis is already set: dole pomalejší, nahoře rychlejší)
+                  // For cycling: use power
+                  let displayValue;
+                  let isVerySlowPace = false; // Flag for very slow pace (standing/walking)
+                  if (usePace) {
+                    // Use pace directly in seconds (Y-axis handles the display direction)
+                    // If pace is slower than max (larger value), it's very slow (standing/walking)
+                    // Show it as small bar at top (fast pace position)
+                    if (lapPace && lapPace > 0) {
+                      if (lapPace > paceYAxisMax) {
+                        // Very slow pace (standing) - show as small bar at top
+                        displayValue = paceYAxisMin; // Fast pace position (top)
+                        isVerySlowPace = true;
+                      } else {
+                        displayValue = lapPace;
+                      }
+                    } else {
+                      // Default to middle of range if no pace
+                      displayValue = isRun ? 240 : 90; // 4:00/km or 1:30/100m
+                    }
+                  } else {
+                    // For cycling, use power
+                    displayValue = power > 0 ? power : (lap.startTime ? 50 : 0);
+                  }
                   
                   intervalBars.push({
-                    value: [(startTimeSeconds + endTimeSeconds) / 2 / 60, displayPower], // [center time, power] in minutes
+                    value: [(startTimeSeconds + endTimeSeconds) / 2 / 60, displayValue], // [center time, power/pace] in minutes
                     interval: idx + 1,
                     startTime: startTimeSeconds / 60,
                     endTime: endTimeSeconds / 60,
                     duration: duration,
                     width: duration / 60, // Width in minutes
                     power: power, // Store original power
-                    displayPower: displayPower, // Store display power for rendering
+                    pace: lapPace, // Store pace for run/swim
+                    displayValue: displayValue, // Store display value for rendering
+                    isVerySlowPace: isVerySlowPace, // Flag for very slow pace (standing)
                     heartRate: lap.average_heartrate || lap.average_hr || null,
                     distance: lap.distance || 0,
+                    speed: lapSpeed,
                     lapIndex: idx
                   });
+                });
+                
+                // Cluster similar intervals (similar duration and power/pace)
+                // Similar = duration within ±5% and power/pace within ±10%
+                const clusterIntervals = (bars) => {
+                  const clusters = [];
+                  const barClusters = new Map(); // Map bar index to cluster ID
+                  
+                  bars.forEach((bar, idx) => {
+                    let assigned = false;
+                    
+                    // Try to find existing cluster
+                    for (let cluster of clusters) {
+                      const clusterBar = bars[cluster[0]];
+                      const durationDiff = Math.abs(bar.duration - clusterBar.duration) / clusterBar.duration;
+                      
+                      let valueDiff;
+                      if (usePace) {
+                        // For pace, compare pace values
+                        const barPace = bar.pace || 0;
+                        const clusterPace = clusterBar.pace || 0;
+                        valueDiff = Math.abs(barPace - clusterPace) / Math.max(clusterPace, 1);
+                      } else {
+                        // For power, compare power values
+                        const barPower = bar.power || 0;
+                        const clusterPower = clusterBar.power || 0;
+                        valueDiff = Math.abs(barPower - clusterPower) / Math.max(clusterPower, 1);
+                      }
+                      
+                      // Similar if duration within 5% and power/pace within 10%
+                      if (durationDiff <= 0.05 && valueDiff <= 0.10) {
+                        cluster.push(idx);
+                        barClusters.set(idx, clusters.indexOf(cluster));
+                        assigned = true;
+                        break;
+                      }
+                    }
+                    
+                    // Create new cluster if not assigned
+                    if (!assigned) {
+                      clusters.push([idx]);
+                      barClusters.set(idx, clusters.length - 1);
+                    }
+                  });
+                  
+                  return { clusters, barClusters };
+                };
+                
+                const { clusters, barClusters } = clusterIntervals(intervalBars);
+                
+                // Assign cluster colors - different hue for each cluster, saturation based on power
+                const clusterColors = [
+                  { h: 260, s: 60 }, // Purple
+                  { h: 200, s: 60 }, // Blue
+                  { h: 140, s: 60 }, // Green
+                  { h: 30, s: 60 },  // Orange
+                  { h: 320, s: 60 }, // Pink
+                  { h: 180, s: 60 }, // Cyan
+                  { h: 0, s: 60 },   // Red
+                  { h: 280, s: 60 }  // Magenta
+                ];
+                
+                // Calculate max and min power/pace for saturation scaling
+                let maxValue, minValue;
+                if (usePace) {
+                  const allPaces = intervalBars.map(b => b.pace).filter(p => p && p > 0);
+                  // For pace: minValue is faster (lower seconds), maxValue is slower (higher seconds)
+                  minValue = allPaces.length > 0 ? Math.min(...allPaces) : (isRun ? 180 : 30);
+                  maxValue = allPaces.length > 0 ? Math.max(...allPaces) : (isRun ? 300 : 120);
+                } else {
+                  const allPowers = intervalBars.map(b => b.power || 0).filter(p => p > 0);
+                  maxValue = allPowers.length > 0 ? Math.max(...allPowers, 100) : 100;
+                  minValue = allPowers.length > 0 ? Math.min(...allPowers, 50) : 50;
+                }
+                
+                // Assign cluster and color to each bar
+                intervalBars.forEach((bar, idx) => {
+                  const clusterId = barClusters.get(idx) || 0;
+                  const colorConfig = clusterColors[clusterId % clusterColors.length];
+                  
+                  // Calculate saturation based on power/pace
+                  // For pace: faster pace (lower seconds) = more saturated
+                  // For power: higher power = more saturated
+                  let valueRatio;
+                  if (usePace) {
+                    const barPace = bar.pace || maxValue;
+                    // Invert: faster pace (lower seconds) should be more saturated
+                    valueRatio = maxValue > minValue 
+                      ? 1 - (barPace - minValue) / (maxValue - minValue)
+                      : 0.5;
+                  } else {
+                    const barPower = bar.power || minValue;
+                    valueRatio = maxValue > minValue 
+                      ? (barPower - minValue) / (maxValue - minValue)
+                      : 0.5;
+                  }
+                  const saturation = Math.max(40, Math.min(80, 40 + valueRatio * 40)); // 40-80% saturation
+                  
+                  bar.clusterId = clusterId;
+                  bar.colorHue = colorConfig.h;
+                  bar.colorSaturation = saturation;
+                });
+                
+                console.log('Interval clusters:', {
+                  totalClusters: clusters.length,
+                  clusters: clusters.map((c, i) => ({
+                    clusterId: i,
+                    count: c.length,
+                    intervals: c.map(ci => intervalBars[ci].interval)
+                  }))
                 });
                 
 
@@ -2141,11 +2740,11 @@ const FitAnalysisPage = () => {
                           <div style="font-size: 12px; line-height: 1.8; color: #555;">
                             <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(barData.power || 0)} W</span></div>
                             ${barData.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(barData.heartRate)} bpm</span></div>` : ''}
-                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed} km/h</span></div>
+                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
                             <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(barData.distance || 0)}</span></div>
                             <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(barData.duration || 0)}</span></div>
                             <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #eee; font-size: 11px; color: #999;">
-                              ${barData.startTime?.toFixed(1)} - ${barData.endTime?.toFixed(1)} min
+                              ${Math.round(barData.startTime || 0)} - ${Math.round(barData.endTime || 0)} min
                             </div>
                           </div>
                         `;
@@ -2181,7 +2780,7 @@ const FitAnalysisPage = () => {
                           <div style="font-size: 12px; line-height: 1.8; color: #555;">
                             <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(hoveredInterval.power || 0)} W</span></div>
                             ${hoveredInterval.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(hoveredInterval.heartRate)} bpm</span></div>` : ''}
-                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed} km/h</span></div>
+                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
                             <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(hoveredInterval.distance || 0)}</span></div>
                             <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(hoveredInterval.duration || 0)}</span></div>
                           </div>
@@ -2193,10 +2792,21 @@ const FitAnalysisPage = () => {
                           if (param.seriesName && param.seriesName !== 'Intervals' && param.seriesName !== 'Elevation') {
                           const value = Array.isArray(param.value) ? param.value[1] : param.value;
                             if (value !== null && value !== undefined && value !== '' && !isNaN(value)) {
-                          const unit = param.seriesName === 'Speed' ? ' km/h' : 
+                          let displayValue, unit;
+                          if (param.seriesName === 'Pace') {
+                            // Value is already in seconds, just format it
+                            const paceSeconds = parseFloat(value);
+                            const minutes = Math.floor(paceSeconds / 60);
+                            const seconds = Math.floor(paceSeconds % 60);
+                            unit = isRun ? '/km' : '/100m';
+                            displayValue = `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
+                          } else {
+                            unit = param.seriesName === 'Speed' ? ' km/h' : 
                                      param.seriesName === 'Heart Rate' ? ' bpm' : 
                                      param.seriesName === 'Power' ? ' W' : '';
-                              result += `<div style="margin-top: 4px;"><span style="color: ${param.color || '#666'}; font-size: 14px;">●</span> <span style="font-weight: 500;">${param.seriesName}:</span> <span style="font-weight: 600;">${value}${unit}</span></div>`;
+                            displayValue = `${Math.round(parseFloat(value) || 0)}${unit}`;
+                          }
+                              result += `<div style="margin-top: 4px;"><span style="color: ${param.color || '#666'}; font-size: 14px;">●</span> <span style="font-weight: 500;">${param.seriesName}:</span> <span style="font-weight: 600;">${displayValue}</span></div>`;
                             }
                           }
                         });
@@ -2209,7 +2819,9 @@ const FitAnalysisPage = () => {
                     }
                   },
                   legend: {
-                    data: ['Speed','Heart Rate','Power','Elevation','Intervals'],
+                    data: usePace 
+                      ? ['Pace','Heart Rate','Elevation','Intervals']
+                      : ['Speed','Heart Rate','Power','Elevation','Intervals'],
                     textStyle: { fontSize: 12, fontWeight: 500 },
                     itemGap: 20,
                     top: 10,
@@ -2218,7 +2830,7 @@ const FitAnalysisPage = () => {
                   graphic: [
                     {
                       type: 'group',
-                      left: '70%', // Umístění více vpravo, aby nepřekrývalo legendu
+                      left: '70%',
                       top: 10,
                       children: [
                         {
@@ -2245,8 +2857,8 @@ const FitAnalysisPage = () => {
                             textAlign: 'center',
                             textVerticalAlign: 'middle'
                           },
-                          x: 50, // 50% z width obdélníku = střed
-                          y: 12, // 50% z height = střed
+                          x: 50,
+                          y: 12,
                           z: 101
                         }
                       ],
@@ -2282,7 +2894,7 @@ const FitAnalysisPage = () => {
                   ],
                   grid: { 
                     left: 60, 
-                    right: 50, 
+                    right: usePace ? 120 : 50, // More space for multiple right axes
                     top: 60, 
                     bottom: 80,
                     containLabel: false
@@ -2317,14 +2929,38 @@ const FitAnalysisPage = () => {
                   yAxis: [
                     { 
                       type: 'value', 
-                      name: '',
+                      name: usePace ? (isRun ? 'Pace (min/km)' : 'Pace (min/100m)') : '',
+                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#666' },
+                      min: usePace ? paceYAxisMin : undefined, // Rychlejší pace (menší hodnota)
+                      max: usePace ? paceYAxisMax : undefined, // Pomalejší pace (větší hodnota)
+                      inverse: usePace ? true : false, // Invertovat: dole pomalejší (větší hodnota), nahoře rychlejší (menší hodnota)
                       axisLine: { lineStyle: { color: '#E0E0E0' } },
                       axisTick: { show: false },
                       splitLine: { 
                         show: true, 
                         lineStyle: { type: 'dashed', color: '#F0F0F0' }
                       },
-                      axisLabel: { color: '#999', fontSize: 11 }
+                      axisLabel: { 
+                        color: '#999', 
+                        fontSize: 11,
+                        formatter: usePace ? (value) => {
+                          // value is in seconds, convert to min:sec format
+                          const minutes = Math.floor(value / 60);
+                          const seconds = Math.floor(value % 60);
+                          const unit = isRun ? '/km' : '/100m';
+                          return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
+                        } : undefined
+                      }
+                    },
+                    { 
+                      type: 'value', 
+                      name: 'Heart Rate (bpm)', 
+                      position: 'right',
+                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#FF6B6B' },
+                      axisLine: { show: true, lineStyle: { color: '#FF6B6B' } },
+                      axisTick: { show: false },
+                      splitLine: { show: false },
+                      axisLabel: { color: '#FF6B6B', fontSize: 11 }
                     },
                     { 
                       type: 'value', 
@@ -2334,10 +2970,67 @@ const FitAnalysisPage = () => {
                       axisLine: { show: true, lineStyle: { color: '#A07850' } },
                       axisTick: { show: false },
                       splitLine: { show: false },
-                      axisLabel: { color: '#A07850', fontSize: 11 }
+                      axisLabel: { color: '#A07850', fontSize: 11 },
+                      offset: 60 // Offset to avoid overlap with Heart Rate axis
                     }
                   ],
                   series: [
+                    // Pace series for run/swim (main curve)
+                    ...(usePace && pace ? [{
+                      name: 'Pace',
+                      type: 'line',
+                      smooth: true,
+                      data: time.map((t, i) => {
+                        const paceValue = pace[i];
+                        if (!paceValue || paceValue <= 0) return null;
+                        // Use pace directly in seconds (Y-axis is inverted: dole pomalejší, nahoře rychlejší)
+                        // Pace value is already in seconds per km or per 100m
+                        return [t / 60, paceValue];
+                      }).filter(d => d !== null && d[1] !== null),
+                      lineStyle: {
+                        color: '#4A90E2',
+                        width: 3,
+                        shadowBlur: 4,
+                        shadowColor: 'rgba(74, 144, 226, 0.3)'
+                      },
+                      symbol: 'none',
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
+                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
+                          ]
+                        }
+                      },
+                      z: 3
+                    }] : []),
+                    // Speed series for cycling
+                    ...(!usePace ? [{
+                      name: 'Speed',
+                      type: 'line',
+                      smooth: true,
+                      data: time.map((t, i) => [t / 60, speed[i] ? (speed[i] * 3.6) : null]).filter(d => d !== null && d[1] !== null),
+                      lineStyle: {
+                        color: '#4A90E2',
+                        width: 2.5,
+                        shadowBlur: 4,
+                        shadowColor: 'rgba(74, 144, 226, 0.3)'
+                      },
+                      symbol: 'none',
+                      areaStyle: {
+                        color: {
+                          type: 'linear',
+                          x: 0, y: 0, x2: 0, y2: 1,
+                          colorStops: [
+                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
+                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
+                          ]
+                        }
+                      },
+                      z: 2
+                    }] : []),
                     // Interval Bars - using custom renderer
                     ...(intervalBars.length > 0 ? [{
                       name: 'Intervals',
@@ -2357,18 +3050,30 @@ const FitAnalysisPage = () => {
                           const lap = laps[barData.lapIndex] || {};
                           const avgSpeed = lap.average_speed ? (lap.average_speed * 3.6).toFixed(1) : '-';
                           
+                          // Format pace for display
+                          const formatPaceDisplay = (paceSeconds) => {
+                            if (!paceSeconds || paceSeconds <= 0) return '-';
+                            const minutes = Math.floor(paceSeconds / 60);
+                            const seconds = Math.floor(paceSeconds % 60);
+                            const unit = isRun ? '/km' : '/100m';
+                            return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
+                          };
+                          
                           return `
                             <div style="font-weight: 600; color: #8B45D6; margin-bottom: 8px; font-size: 14px;">
                               Interval ${barData.interval || ''}
                             </div>
                             <div style="font-size: 12px; line-height: 1.8; color: #555;">
-                              <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(barData.power || 0)} W</span></div>
+                              ${usePace 
+                                ? `<div><span style="font-weight: 600;">Pace:</span> <span style="color: #8B45D6;">${formatPaceDisplay(barData.pace)}</span></div>`
+                                : `<div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(barData.power || 0)} W</span></div>`
+                              }
                               ${barData.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(barData.heartRate)} bpm</span></div>` : ''}
-                              <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed} km/h</span></div>
+                              <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
                               <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(barData.distance || 0)}</span></div>
                               <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(barData.duration || 0)}</span></div>
                               <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #eee; font-size: 11px; color: #999;">
-                                ${barData.startTime?.toFixed(1)} - ${barData.endTime?.toFixed(1)} min
+                                ${Math.round(barData.startTime || 0)} - ${Math.round(barData.endTime || 0)} min
                               </div>
                             </div>
                           `;
@@ -2395,61 +3100,115 @@ const FitAnalysisPage = () => {
                           
                           if (!barData || !barData.value) return null;
                           
-                          // Use barData.value directly - it's already [centerTime, power]
+                          // Use barData.value directly - it's already [centerTime, power/pace]
                           const dataValue = Array.isArray(barData.value) ? barData.value : [0, 0];
-                        const [centerTime, power] = dataValue;
+                        const [centerTime, value] = dataValue;
                           const startTime = barData.startTime;
                           const endTime = barData.endTime;
-                          const actualPower = barData.power || power || 0;
                           
-                          // Allow intervals with 0 power (they might still be valid intervals)
+                          // Allow intervals with 0 power/pace (they might still be valid intervals)
                           if (!startTime || !endTime || isNaN(startTime) || isNaN(endTime)) return null;
                           
-                          // Use displayPower if available (for intervals without power data), otherwise use actualPower or minimum 50W
-                          const displayPower = barData.displayPower || (actualPower > 0 ? actualPower : 50);
+                          // Use displayValue (for power or pace)
+                          const displayValue = barData.displayValue || value || (usePace ? 10 : 50);
                           
                           // Check if api.coord exists and is a function
                           if (!api.coord || typeof api.coord !== 'function') return null;
                           
-                          // Get coordinates
-                          const startXCoord = api.coord([startTime, 0]);
-                          const endXCoord = api.coord([endTime, 0]);
-                          const powerYCoord = api.coord([centerTime, displayPower]);
-                          const baseYCoord = api.coord([centerTime, 0]);
+                          // Get coordinates - ensure we're using the correct axis values
+                          // startTime and endTime are in minutes, displayValue is in watts or pace units
+                          // For X axis, we use time values; for Y axis, we use power/pace values
+                          // For pace (inverted axis), base should be at max pace (bottom of chart)
+                          const baseValue = usePace ? (paceYAxisMax || 300) : 0;
                           
-                          if (!startXCoord || !endXCoord || !powerYCoord || !baseYCoord) return null;
+                          // For very slow pace (standing), show as small bar at bottom (on X-axis)
+                          let finalDisplayValue = displayValue;
+                          let barHeight = null;
+                          let useBaseAsTop = false;
+                          if (usePace && barData.isVerySlowPace) {
+                            // Very slow pace - show as small bar at bottom (on X-axis, at baseValue)
+                            finalDisplayValue = baseValue; // Bottom position (base of pace axis)
+                            barHeight = 8; // Small fixed height (8 pixels)
+                            useBaseAsTop = true; // Bar extends upward from base
+                          }
                           
+                          const startXCoord = api.coord([startTime, baseValue]);
+                          const endXCoord = api.coord([endTime, baseValue]);
+                          const valueYCoord = api.coord([centerTime, finalDisplayValue]);
+                          const baseYCoord = api.coord([centerTime, baseValue]);
+                          
+                          if (!startXCoord || !endXCoord || !valueYCoord || !baseYCoord) return null;
+                          
+                          // Extract X and Y coordinates
+                          // api.coord returns [x, y] array
                           const startX = Array.isArray(startXCoord) ? startXCoord[0] : startXCoord;
                           const endX = Array.isArray(endXCoord) ? endXCoord[0] : endXCoord;
-                          const powerY = Array.isArray(powerYCoord) ? powerYCoord[1] : powerYCoord;
+                          const valueY = Array.isArray(valueYCoord) ? valueYCoord[1] : valueYCoord;
                           const baseY = Array.isArray(baseYCoord) ? baseYCoord[1] : baseYCoord;
                           
-                          if (startX === undefined || endX === undefined || powerY === undefined || baseY === undefined) return null;
+                          if (startX === undefined || endX === undefined || valueY === undefined || baseY === undefined) return null;
+                          
+                          // Ensure valid coordinates
+                          if (isNaN(startX) || isNaN(endX) || isNaN(valueY) || isNaN(baseY)) return null;
                           
                         const x = Math.min(startX, endX);
                           const width = Math.max(2, Math.abs(endX - startX));
-                          const height = Math.max(2, Math.abs(baseY - powerY));
-                          const y = Math.min(powerY, baseY);
+                          // Use fixed small height for very slow pace, otherwise calculate from coordinates
+                          const height = barHeight !== null ? barHeight : Math.max(2, Math.abs(baseY - valueY));
+                          // For very slow pace, bar should be at bottom (baseY), extending upward
+                          // For normal pace, bar extends from baseY to valueY
+                          const y = useBaseAsTop ? (baseY - barHeight) : Math.min(valueY, baseY);
                           
                           if (width < 2 || height < 2 || isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) return null;
                           
-                          // Lighter, more transparent color based on power
-                          const maxPower = Math.max(...intervalBars.map(b => (b.power || 0) > 0 ? b.power : 50), 100);
-                          const powerRatio = maxPower > 0 ? displayPower / maxPower : 0;
-                          // Lighter purple/lavender colors
-                          const baseR = 230, baseG = 220, baseB = 255;
-                          const r = Math.round(baseR - (powerRatio * 40));
-                          const g = Math.round(baseG - (powerRatio * 50));
-                          const b = Math.round(baseB - (powerRatio * 20));
+                          // Use cluster-based colors with saturation based on power
+                          const hue = barData.colorHue || 260; // Default purple
+                          const saturation = barData.colorSaturation || 60; // Default saturation
+                          const lightness = 75; // Base lightness for fill
+                          
+                          // Helper function to convert HSL to RGB
+                          const hslToRgb = (h, s, l) => {
+                            h = h / 360;
+                            const c = (1 - Math.abs(2 * l - 1)) * s;
+                            const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+                            const m = l - c / 2;
+                            
+                            let r, g, b;
+                            if (h < 1/6) {
+                              r = c; g = x; b = 0;
+                            } else if (h < 2/6) {
+                              r = x; g = c; b = 0;
+                            } else if (h < 3/6) {
+                              r = 0; g = c; b = x;
+                            } else if (h < 4/6) {
+                              r = 0; g = x; b = c;
+                            } else if (h < 5/6) {
+                              r = x; g = 0; b = c;
+                            } else {
+                              r = c; g = 0; b = x;
+                            }
+                            
+                            return [
+                              Math.round((r + m) * 255),
+                              Math.round((g + m) * 255),
+                              Math.round((b + m) * 255)
+                            ];
+                          };
+                          
+                          // Fill color
+                          const [r, g, b] = hslToRgb(hue, saturation / 100, lightness / 100);
+                          
+                          // Border color (darker)
+                          const [rBorder, gBorder, bBorder] = hslToRgb(hue, saturation / 100, (lightness - 15) / 100);
                         
                         return {
                           type: 'rect',
                             shape: { x, y, width, height, r: [2, 2, 0, 0] },
                           style: {
-                              fill: `rgba(${r}, ${g}, ${b}, 0.25)`, // More transparent
-                              stroke: `rgba(${r}, ${g}, ${b}, 0.4)`, // Lighter border
-                              lineWidth: 1 // Thinner border
-                            },
+                              fill: `rgba(${r}, ${g}, ${b}, 0.3)`, // Fill with cluster color
+                              stroke: `rgba(${rBorder}, ${gBorder}, ${bBorder}, 0.6)`, // Border with darker cluster color
+                            lineWidth: 1.5
+                          },
                             z2: 1
                           };
                         } catch (error) {
@@ -2487,8 +3246,9 @@ const FitAnalysisPage = () => {
                     {
                       name: 'Heart Rate', 
                       type: 'line', 
+                      yAxisIndex: 1, // Use right Y-axis (Heart Rate axis)
                       smooth: true,
-                      data: time.map((t, i) => [t / 60, hr[i] || null]).filter(d => d[1] !== null),
+                      data: time.map((t, i) => [t / 60, hr[i] || null]).filter(d => d !== null && d[1] !== null),
                       lineStyle: { 
                         color: '#FF6B6B',
                         width: 2.5,
@@ -2508,11 +3268,12 @@ const FitAnalysisPage = () => {
                       },
                       z: 2
                     },
-                    {
+                    // Power series only for cycling
+                    ...(!usePace ? [{
                       name: 'Power', 
                       type: 'line', 
                       smooth: true,
-                      data: time.map((t, i) => [t / 60, power[i] || null]).filter(d => d[1] !== null),
+                      data: time.map((t, i) => [t / 60, power[i] || null]).filter(d => d !== null && d[1] !== null),
                       lineStyle: { 
                         color: '#8B45D6',
                         width: 2.5,
@@ -2531,11 +3292,11 @@ const FitAnalysisPage = () => {
                         }
                       },
                       z: 2
-                    },
+                    }] : []),
                     {
                       name: 'Elevation', 
                       type: 'line', 
-                      yAxisIndex: 1, 
+                      yAxisIndex: 2, // Use third Y-axis (Elevation axis)
                       areaStyle: {
                         color: {
                           type: 'linear',
@@ -2546,7 +3307,7 @@ const FitAnalysisPage = () => {
                           ]
                         }
                       },
-                      data: time.map((t, i) => [t / 60, altitude[i] || null]).filter(d => d[1] !== null),
+                      data: time.map((t, i) => [t / 60, altitude[i] || null]).filter(d => d !== null && d[1] !== null),
                       lineStyle: { 
                         color: '#A07850',
                         width: 2,
@@ -2581,7 +3342,7 @@ const FitAnalysisPage = () => {
                     {stravaIsDragging && stravaDragStart.x !== stravaDragEnd.x && (
                       <>
                         <div
-                          className="absolute border-2 border-purple-500 bg-purple-200 bg-opacity-20 pointer-events-none z-50"
+                          className="absolute border-2 border-primary bg-primary/20 pointer-events-none z-50"
                           style={{
                             left: `${60 + Math.min(stravaDragStart.x - 60, stravaDragEnd.x - 60)}px`,
                             top: '60px',
@@ -2591,7 +3352,7 @@ const FitAnalysisPage = () => {
                         />
                         {/* Show hint text */}
                         <div
-                          className="absolute pointer-events-none z-50 text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded"
+                          className="absolute pointer-events-none z-50 text-xs text-primary-dark bg-primary/30 px-2 py-1 rounded"
                           style={{
                             left: `${(stravaDragStart.x + stravaDragEnd.x) / 2}px`,
                             top: '65px',
@@ -2611,6 +3372,25 @@ const FitAnalysisPage = () => {
                       </>
                     )}
                     
+                   <div className="relative">
+                     {/* Smoothness Slider Overlay */}
+                     <div className="absolute top-2 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg border border-primary/30 shadow-lg p-2" style={{ width: '180px' }}>
+                       <div className="flex items-center justify-between mb-1">
+                         <span className="text-xs font-semibold text-primary">Smoothness</span>
+                         <span className="text-xs font-medium text-gray-600">{smoothingWindow}s</span>
+                       </div>
+                       <input
+                         type="range"
+                         min="0"
+                         max="30"
+                         value={smoothingWindow}
+                         onChange={(e) => setSmoothingWindow(Number(e.target.value))}
+                         className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                         style={{
+                           background: `linear-gradient(to right, #767EB5 0%, #767EB5 ${(smoothingWindow / 30) * 100}%, #E0E0E0 ${(smoothingWindow / 30) * 100}%, #E0E0E0 100%)`
+                         }}
+                       />
+                     </div>
                   <ReactECharts 
                     ref={stravaChartRef}
                     option={option} 
@@ -2618,59 +3398,60 @@ const FitAnalysisPage = () => {
                     notMerge={true} 
                     lazyUpdate={true} 
                   />
+                   </div>
                   </div>
                 );
               })()}
 
               {/* Strava Interval Creation Stats */}
               {showStravaCreateLapButton && stravaSelectionStats && (
-                <div className="mt-4 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
+                <div className="mt-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-2xl p-4 md:p-6 shadow-lg">
+                  <div className="flex items-center justify-between mb-3 md:mb-4">
+                    <h4 className="text-base md:text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
                     <button
                       onClick={() => {
                         setShowStravaCreateLapButton(false);
                         setStravaSelectedTimeRange({ start: 0, end: 0 });
                         setStravaSelectionStats(null);
                       }}
-                      className="text-gray-500 hover:text-gray-700"
+                      className="text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors"
                     >
                       ✕
                     </button>
                 </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                      <div className="text-xs text-gray-600 mb-1">Duration</div>
-                      <div className="text-lg font-bold text-blue-700">{formatDuration(stravaSelectionStats.duration)}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                      <div className="text-xs md:text-sm text-gray-600 mb-1">Duration</div>
+                      <div className="text-base md:text-lg font-bold text-primary">{formatDuration(stravaSelectionStats.duration)}</div>
                     </div>
                     {stravaSelectionStats.totalDistance && (
-                      <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                        <div className="text-xs text-gray-600 mb-1">Distance</div>
-                        <div className="text-lg font-bold text-blue-700">{formatDistance(stravaSelectionStats.totalDistance)}</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs md:text-sm text-gray-600 mb-1">Distance</div>
+                        <div className="text-base md:text-lg font-bold text-primary">{formatDistance(stravaSelectionStats.totalDistance)}</div>
                       </div>
                     )}
                     {stravaSelectionStats.avgSpeed && (
-                      <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                        <div className="text-xs text-gray-600 mb-1">Avg Speed</div>
-                        <div className="text-lg font-bold text-blue-700">{stravaSelectionStats.avgSpeed} km/h</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Speed</div>
+                        <div className="text-base md:text-lg font-bold text-primary">{stravaSelectionStats.avgSpeed} km/h</div>
                         {stravaSelectionStats.maxSpeed && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxSpeed} km/h</div>
                         )}
                 </div>
                     )}
                     {stravaSelectionStats.avgHeartRate && (
-                      <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                        <div className="text-xs text-gray-600 mb-1">Avg HR</div>
-                        <div className="text-lg font-bold text-red-600">{stravaSelectionStats.avgHeartRate} bpm</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-blue-200/50 shadow-sm">
+                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg HR</div>
+                        <div className="text-base md:text-lg font-bold text-red-600">{stravaSelectionStats.avgHeartRate} bpm</div>
                         {stravaSelectionStats.maxHeartRate && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxHeartRate} bpm</div>
                         )}
               </div>
                     )}
                     {stravaSelectionStats.avgPower && (
-                      <div className="bg-white/70 rounded-lg p-3 border border-blue-200">
-                        <div className="text-xs text-gray-600 mb-1">Avg Power</div>
-                        <div className="text-lg font-bold text-purple-600">{stravaSelectionStats.avgPower} W</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Power</div>
+                        <div className="text-base md:text-lg font-bold text-primary-dark">{stravaSelectionStats.avgPower} W</div>
                         {stravaSelectionStats.maxPower && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxPower} W</div>
                         )}
@@ -2697,7 +3478,7 @@ const FitAnalysisPage = () => {
                           alert('Error creating interval: ' + (error.response?.data?.error || error.message));
                         }
                       }}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold shadow-md transition-colors flex items-center gap-2"
+                      className="px-5 md:px-6 py-2 bg-primary text-white rounded-xl font-semibold shadow-md transition-colors flex items-center gap-2 hover:bg-primary-dark"
                     >
                       <span>✓</span> Create Interval
                     </button>
@@ -2706,8 +3487,8 @@ const FitAnalysisPage = () => {
               )}
               
               {!showStravaCreateLapButton && (
-                <div className="mt-2 text-xs text-gray-500 italic">
-                  💡 Tip: Click and drag on the chart to select an interval, or hold <kbd className="px-1 py-0.5 bg-gray-200 rounded text-xs">Shift</kbd> while dragging to zoom
+                <div className="mt-2 text-xs md:text-sm text-gray-500 italic rounded-lg p-2 border border-primary/30 bg-primary/10">
+                  💡 Tip: Click and drag on the chart to select an interval, or hold <kbd className="px-1.5 py-0.5 bg-white/80 rounded text-xs font-mono border border-gray-300">Shift</kbd> while dragging to zoom
                 </div>
               )}
 
@@ -2726,17 +3507,17 @@ const FitAnalysisPage = () => {
         )}
 
         {/* Workout Clustering Section */}
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mt-6 md:mt-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
               <div>
-              <h2 className="text-2xl font-bold text-gray-900">Workout Clustering</h2>
-              <p className="text-sm text-gray-600 mt-1">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Workout Clustering</h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-1">
                 Automatically group and analyze similar workouts
               </p>
                 </div>
             <button
               onClick={() => setShowClustering(!showClustering)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              className="px-4 py-2 bg-primary text-white rounded-xl transition-colors shadow-md hover:bg-primary-dark"
             >
               {showClustering ? 'Hide Clustering' : 'Show Clustering'}
             </button>
@@ -2746,7 +3527,7 @@ const FitAnalysisPage = () => {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-lg shadow-md p-6"
+              className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6"
             >
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Main clusters list */}

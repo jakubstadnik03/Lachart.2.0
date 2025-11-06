@@ -18,6 +18,15 @@ function startOfMonth(date) {
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate()+n); return d; }
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
+// Helper function to get local date string (YYYY-MM-DD) without timezone issues
+function getLocalDateString(date) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function sportBadge(sport) {
   if (!sport) return '';
   const s = String(sport).toLowerCase();
@@ -33,6 +42,7 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
   const [view, setView] = useState('month'); // 'month' | 'week'
   const [anchorDate, setAnchorDate] = useState(new Date());
   const [sportFilter, setSportFilter] = useState('all');
+  const [expandedDays, setExpandedDays] = useState(new Set()); // Track which days are expanded
 
   const uniqueSports = useMemo(() => {
     const set = new Set();
@@ -49,7 +59,8 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
     const map = new Map();
     filteredActivities.forEach(act => {
       const d = new Date(act.date || act.timestamp || act.startDate || act.start_time || Date.now());
-      const key = d.toISOString().slice(0,10);
+      // Use local date string instead of ISO to avoid timezone offset issues
+      const key = getLocalDateString(d);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(act);
     });
@@ -70,49 +81,86 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
   const today = () => setAnchorDate(new Date());
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 mb-4 md:mb-6">
+      <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <button onClick={prev} className="px-2 py-1 rounded border">◀</button>
-          <button onClick={today} className="px-2 py-1 rounded border">Today</button>
-          <button onClick={next} className="px-2 py-1 rounded border">▶</button>
+          <button onClick={prev} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors">◀</button>
+          <button onClick={today} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors text-sm">Today</button>
+          <button onClick={next} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors">▶</button>
         </div>
-        <div className="text-lg font-semibold">
+        <div className="text-base md:text-lg font-semibold text-gray-900">
           {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
         </div>
         <div className="flex items-center gap-2">
-          <select value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} className="px-2 py-1 text-sm border rounded">
+          <select value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} className="px-3 py-1.5 text-sm border border-white/40 rounded-xl bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
             {uniqueSports.map(s => (
               <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
             ))}
           </select>
-          <button onClick={() => setView('week')} className={`px-3 py-1 rounded border ${view==='week'?'bg-gray-100':''}`}>Week</button>
-          <button onClick={() => setView('month')} className={`px-3 py-1 rounded border ${view==='month'?'bg-gray-100':''}`}>Month</button>
+          <button 
+            onClick={() => setView('week')} 
+            className={`px-3 py-1.5 rounded-xl border border-white/40 shadow-sm transition-colors text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':'bg-white/70 hover:bg-white/90 text-gray-700'}`}
+          >
+            Week
+          </button>
+          <button 
+            onClick={() => setView('month')} 
+            className={`px-3 py-1.5 rounded-xl border border-white/40 shadow-sm transition-colors text-sm ${view==='month'?'bg-primary text-white hover:bg-primary-dark':'bg-white/70 hover:bg-white/90 text-gray-700'}`}
+          >
+            Month
+          </button>
         </div>
       </div>
 
-      <div className={`grid ${view==='week' ? 'grid-cols-7' : 'grid-cols-7'} gap-px bg-gray-200 rounded`}> 
+      <div className={`grid ${view==='week' ? 'grid-cols-7' : 'grid-cols-7'} gap-px bg-gray-200/50 rounded-xl overflow-hidden`}> 
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
-          <div key={d} className="bg-gray-50 text-xs font-medium p-2 text-center">{d}</div>
+          <div key={d} className="bg-white/80 backdrop-blur-sm text-xs md:text-sm font-medium p-2 md:p-3 text-center text-gray-700">{d}</div>
         ))}
         {days.map((dayDate, idx) => {
-          const key = dayDate.toISOString().slice(0,10);
+          const key = getLocalDateString(dayDate);
           const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
           const acts = activitiesByDay.get(key) || [];
+          const isToday = isSameDay(dayDate, new Date());
+          const isExpanded = expandedDays.has(key);
+          const visibleActs = isExpanded ? acts : acts.slice(0, 3);
+          const remainingCount = acts.length - 3;
+          
+          const toggleExpand = (e) => {
+            e.stopPropagation();
+            setExpandedDays(prev => {
+              const newSet = new Set(prev);
+              if (newSet.has(key)) {
+                newSet.delete(key);
+              } else {
+                newSet.add(key);
+              }
+              return newSet;
+            });
+          };
+          
           return (
-            <div key={idx} className={`bg-white p-2 min-h-[90px] ${isCurrentMonth ? '' : 'opacity-50'}`}>
-              <div className={`text-xs font-semibold mb-1 ${isSameDay(dayDate, new Date()) ? 'text-blue-600' : 'text-gray-600'}`}>
+            <div key={idx} className={`bg-white/60 backdrop-blur-sm p-2 min-h-[80px] md:min-h-[90px] transition-colors ${isCurrentMonth ? '' : 'opacity-40'}`}>
+              <div className={`text-xs md:text-sm font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                 {dayDate.getDate()}
               </div>
               <div className="space-y-1">
-                {acts.slice(0,3).map((a, i) => (
-                  <button key={i} onClick={() => onSelectActivity && onSelectActivity(a)} className="w-full text-left text-[11px] truncate px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700">
+                {visibleActs.map((a, i) => (
+                  <button 
+                    key={i} 
+                    onClick={() => onSelectActivity && onSelectActivity(a)} 
+                    className="w-full text-left text-[10px] md:text-[11px] truncate px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors"
+                  >
                     <span className="mr-1">{sportBadge(a.sport)}</span>
                     {a.title || a.name || a.originalFileName || 'Activity'}
                   </button>
                 ))}
-                {acts.length > 3 && (
-                  <div className="text-[11px] text-gray-500">+ {acts.length - 3} more</div>
+                {remainingCount > 0 && (
+                  <button
+                    onClick={toggleExpand}
+                    className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium"
+                  >
+                    {isExpanded ? `▼ Show less (${remainingCount})` : `+ ${remainingCount} more`}
+                  </button>
                 )}
               </div>
             </div>

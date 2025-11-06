@@ -5,8 +5,80 @@ import { updateLactateValues } from '../../services/api';
 const LapsTable = ({ training, onUpdate }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
+  
+  // Additional safety check - ensure no duplicates in the component
+  const uniqueLaps = React.useMemo(() => {
+    if (!training || !training.laps || !Array.isArray(training.laps)) return [];
+    
+    console.log('LapsTable: Processing laps, count:', training.laps.length);
+    
+    const seen = new Map();
+    const unique = [];
+    
+    training.laps.forEach((lap, index) => {
+      // Strategy 1: Use startTime or start_date as primary identifier
+      const startTime = lap.startTime || lap.start_time || lap.start_date;
+      if (startTime) {
+        const key = `time_${startTime}`;
+        if (seen.has(key)) {
+          console.warn(`LapsTable: Duplicate lap by startTime at index ${index}:`, {
+            index,
+            startTime,
+            elapsedTime: lap.totalElapsedTime || lap.elapsed_time,
+            distance: lap.totalDistance || lap.distance,
+            power: lap.avgPower || lap.average_watts
+          });
+          return; // Skip this duplicate
+        }
+        seen.set(key, true);
+        unique.push(lap);
+        return;
+      }
+      
+      // Strategy 2: Use _id if available
+      if (lap._id) {
+        const idStr = lap._id.toString();
+        if (seen.has(`id_${idStr}`)) {
+          console.warn(`LapsTable: Duplicate lap by _id at index ${index}`);
+          return; // Skip this duplicate
+        }
+        seen.set(`id_${idStr}`, true);
+        unique.push(lap);
+        return;
+      }
+      
+      // Strategy 3: Use combination of properties (without index to detect true duplicates)
+      const elapsedTime = lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0;
+      const distance = lap.totalDistance || lap.total_distance || lap.distance || 0;
+      const power = lap.avgPower || lap.avg_power || lap.average_watts || 0;
+      const hr = lap.avgHeartRate || lap.avg_heart_rate || lap.average_heartrate || 0;
+      
+      // Create a key without index - if two laps have same values, they're duplicates
+      const key = `t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power)}_hr${Math.round(hr)}`;
+      
+      if (seen.has(key)) {
+        console.warn(`LapsTable: Duplicate lap at index ${index}:`, {
+          index,
+          elapsedTime,
+          distance,
+          power,
+          hr,
+          existingIndex: seen.get(key)
+        });
+        return; // Skip this duplicate
+      }
+      seen.set(key, index); // Store index for reference
+      unique.push(lap);
+    });
+    
+    if (unique.length !== training.laps.length) {
+      console.log(`LapsTable: Removed ${training.laps.length - unique.length} duplicate laps. Original: ${training.laps.length}, Unique: ${unique.length}`);
+    }
+    
+    return unique;
+  }, [training]);
 
-  if (!training || !training.laps || training.laps.length === 0) return null;
+  if (!training || !training.laps || uniqueLaps.length === 0) return null;
 
   const handleSaveLactate = async () => {
     const lactateValues = Object.entries(lactateInputs).map(([key, value]) => {
@@ -32,38 +104,38 @@ const LapsTable = ({ training, onUpdate }) => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Intervals</h3>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <h3 className="text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
         <button
           onClick={() => setEditingLactate(!editingLactate)}
-          className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+          className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-sm shadow-md transition-colors"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg">
+        <table className="min-w-full divide-y divide-gray-200/50">
+          <thead className="bg-white/80 backdrop-blur-sm">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Speed</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lactate</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Distance</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Speed</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
+              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {training.laps.map((lap, index) => (
-              <tr key={index} className={lap.lactate ? 'bg-purple-50' : ''}>
-                <td className="px-4 py-3 text-sm">{index + 1}</td>
-                <td className="px-4 py-3 text-sm">{formatDuration(lap.totalElapsedTime)}</td>
-                <td className="px-4 py-3 text-sm">{formatDistance(lap.totalDistance)}</td>
-                <td className="px-4 py-3 text-sm">{formatSpeed(lap.avgSpeed)}</td>
-                <td className="px-4 py-3 text-sm">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
-                <td className="px-4 py-3 text-sm">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
-                <td className="px-4 py-3 text-sm">
+          <tbody className="bg-white/40 backdrop-blur-sm divide-y divide-gray-200/30">
+            {uniqueLaps.map((lap, index) => (
+              <tr key={index} className={`transition-colors hover:bg-white/60 ${lap.lactate ? 'bg-primary/10' : ''}`}>
+                <td className="px-3 md:px-4 py-3 text-sm font-medium text-gray-900">{index + 1}</td>
+                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
+                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatDistance(lap.totalDistance)}</td>
+                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatSpeed(lap.avgSpeed)}</td>
+                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
+                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
+                <td className="px-3 md:px-4 py-3 text-sm">
                   {editingLactate ? (
                     <input
                       type="number"
@@ -74,10 +146,12 @@ const LapsTable = ({ training, onUpdate }) => {
                         ...lactateInputs,
                         [`lap-${index}`]: e.target.value
                       })}
-                      className="w-20 px-2 py-1 border rounded text-sm"
+                      className="w-20 md:w-24 px-2 py-1.5 border border-primary/50 rounded-lg text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                   ) : (
-                    lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'
+                    <span className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-500'}>
+                      {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'}
+                    </span>
                   )}
                 </td>
               </tr>
@@ -86,19 +160,19 @@ const LapsTable = ({ training, onUpdate }) => {
         </table>
       </div>
       {editingLactate && (
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
           <button
             onClick={() => {
               setEditingLactate(false);
               setLactateInputs({});
             }}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            className="px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveLactate}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            className="px-4 py-2 bg-greenos text-white rounded-xl shadow-md transition-colors hover:opacity-90"
           >
             Save Lactate Values
           </button>
