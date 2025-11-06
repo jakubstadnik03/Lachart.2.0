@@ -113,8 +113,8 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
   };
 
   const handleTrainingClick = (trainingTitle, trainingId) => {
-    // Navigate to Fit Analysis page with training ID
-    navigate(`/fit-analysis?trainingId=${trainingId}&title=${encodeURIComponent(trainingTitle)}`);
+    // Navigate to Training Calendar page with training ID
+    navigate(`/training-calendar?trainingId=${trainingId}&title=${encodeURIComponent(trainingTitle)}`);
   };
 
   useEffect(() => {

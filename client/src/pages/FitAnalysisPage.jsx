@@ -224,13 +224,12 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                     <button
                       onClick={() => handleDeleteLap(index)}
                       disabled={saving}
-                      className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-xs flex items-center gap-1"
+                      className="p-1 text-gray-500 hover:text-gray-700 disabled:opacity-50 transition-colors"
                       title="Delete interval"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
-                      Delete
                     </button>
                   </td>
                 </tr>
@@ -302,6 +301,7 @@ const FitAnalysisPage = () => {
   
   // Smoothness state
   const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
+  const [showSmoothnessSlider, setShowSmoothnessSlider] = useState(false);
   
   // Helper function to get GPS data from training or Strava
   const getGpsData = React.useMemo(() => {
@@ -2222,13 +2222,29 @@ const FitAnalysisPage = () => {
                 const pace = usePace ? speed.map(s => calculatePace(s)) : null;
                 
                 // Calculate pace range for Y-axis
-                // For run: 5:00/km (300s) at bottom, 3:20/km (200s) at top (with padding)
+                // For run: dynamically calculate from data with padding
                 // For swim: 2:00/100m (120s) at bottom, 1:20/100m (80s) at top (with padding)
                 let paceYAxisMin, paceYAxisMax;
                 if (usePace) {
                   if (isRun) {
-                    paceYAxisMin = 200; // 3:20/km (rychlejší, nahoře) - s mezerou
-                    paceYAxisMax = 300; // 5:00/km (pomalejší, dole)
+                    // Find min and max pace from data
+                    const validPaces = pace.filter(p => p && p > 0 && !isNaN(p));
+                    if (validPaces.length > 0) {
+                      const minPace = Math.min(...validPaces); // Nejrychlejší pace (nejmenší hodnota v sekundách)
+                      const maxPace = Math.max(...validPaces); // Nejpomalejší pace (největší hodnota v sekundách)
+                      
+                      // Přidat mezeru: min o něco pomalejší (větší hodnota), max o něco rychlejší (menší hodnota)
+                      // Ale protože osa je invertovaná, min je nahoře (rychlejší) a max je dole (pomalejší)
+                      // Takže paceYAxisMin (nahoře) = minPace - padding (ještě rychlejší)
+                      // A paceYAxisMax (dole) = maxPace + padding (ještě pomalejší)
+                      const padding = Math.max(10, (maxPace - minPace) * 0.1); // 10% nebo minimálně 10 sekund
+                      paceYAxisMin = Math.max(120, Math.floor(minPace - padding)); // Minimálně 2:00/km
+                      paceYAxisMax = Math.min(600, Math.ceil(maxPace + padding)); // Maximálně 10:00/km
+                    } else {
+                      // Fallback pokud nejsou data
+                      paceYAxisMin = 200; // 3:20/km
+                      paceYAxisMax = 300; // 5:00/km
+                    }
                   } else { // swim
                     paceYAxisMin = 80;  // 1:20/100m (rychlejší, nahoře) - s mezerou
                     paceYAxisMax = 120; // 2:00/100m (pomalejší, dole)
@@ -2356,31 +2372,16 @@ const FitAnalysisPage = () => {
                 const intervalBars = [];
                 
                 // Calculate total activity time from streams (in seconds)
-                const maxTime = time && time.length > 0 ? time[time.length - 1] : 0;
+                const streamMaxTime = time && time.length > 0 ? time[time.length - 1] : 0;
                 
                 // Get activity start time as Date object
                 // Use start_date_local if available (consistent with backend), otherwise start_date
+                // IMPORTANT: Use the same logic as backend - don't adjust based on laps
+                // Backend uses start_date_local or start_date from API detail
                 let activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
                 
-                // If we have laps with start_date, use the earliest one as the activity start
-                if (laps.length > 0) {
-                  const lapsWithStartDate = laps
-                    .map(lap => lap.start_date || lap.startTime)
-                    .filter(date => date)
-                    .map(date => new Date(date).getTime())
-                    .filter(time => !isNaN(time));
-                  
-                  if (lapsWithStartDate.length > 0) {
-                    const earliestLapTime = Math.min(...lapsWithStartDate);
-                    const activityStartFromStrava = activityStartDateStr ? new Date(activityStartDateStr).getTime() : null;
-                    
-                    // Use the earlier of activity start or earliest lap
-                    if (!activityStartFromStrava || earliestLapTime < activityStartFromStrava) {
-                      activityStartDateStr = new Date(earliestLapTime).toISOString();
-                      console.log('Using earliest lap start_date as activity start:', activityStartDateStr);
-                    }
-                  }
-                }
+                // Don't adjust activityStartDate based on laps - use the same as backend
+                // This ensures that manually created intervals use the correct startTime
                 
                 const activityStartDate = activityStartDateStr 
                   ? new Date(activityStartDateStr)
@@ -2393,10 +2394,64 @@ const FitAnalysisPage = () => {
                   activityStartDate: activityStartDate.toISOString()
                 });
                 
+                // Filter out laps that are the entire activity BEFORE processing
+                // This prevents them from interfering with manually created intervals
+                // Use streamMaxTime for filtering to correctly identify entire activity laps
+                const filteredLaps = laps.filter((lap) => {
+                  const duration = lap.elapsed_time || 0;
+                  // Skip if this lap is the entire activity (likely the default Strava lap)
+                  // If duration is within 95% of stream time, it's probably the whole activity
+                  if (streamMaxTime > 0 && duration >= streamMaxTime * 0.95) {
+                    console.log('Filtering out entire activity lap before processing:', {
+                      duration,
+                      streamMaxTime,
+                      ratio: duration / streamMaxTime
+                    });
+                    return false;
+                  }
+                  return true;
+                });
+                
+                // Calculate maxTime from intervals as well (to include manually created intervals that may extend beyond streams)
+                // Calculate from filteredLaps (after removing entire activity lap) to get accurate maxTime
+                let maxTime = streamMaxTime;
+                if (filteredLaps.length > 0) {
+                  const intervalEndTimes = filteredLaps
+                    .map(lap => {
+                      if (lap.startTime && typeof lap.startTime === 'string') {
+                        const lapStartTimeMs = new Date(lap.startTime).getTime();
+                        const startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+                        const duration = lap.elapsed_time || 0;
+                        return startTimeSeconds + duration;
+                      } else if (lap.start_date) {
+                        const lapStartTimeMs = new Date(lap.start_date).getTime();
+                        const startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+                        const duration = lap.elapsed_time || 0;
+                        return startTimeSeconds + duration;
+                      }
+                      // For laps without startTime/start_date, estimate from cumulative time
+                      // We'll calculate this during processing, so skip for now
+                      return null;
+                    })
+                    .filter(time => time !== null && !isNaN(time) && time > 0);
+                  
+                  if (intervalEndTimes.length > 0) {
+                    const maxIntervalTime = Math.max(...intervalEndTimes);
+                    maxTime = Math.max(maxTime, maxIntervalTime);
+                    console.log('Adjusted maxTime to include intervals:', {
+                      originalMaxTime: streamMaxTime,
+                      maxIntervalTime,
+                      finalMaxTime: maxTime
+                    });
+                  }
+                }
+                
+                console.log(`Filtered ${laps.length - filteredLaps.length} entire activity lap(s). Remaining: ${filteredLaps.length}`);
+                
                 // Track cumulative time for sequential intervals
                 let cumulativeTimeSeconds = 0;
                 
-                laps.forEach((lap, idx) => {
+                filteredLaps.forEach((lap, idx) => {
                   const power = lap.average_watts || lap.average_power || 0;
                   const duration = lap.elapsed_time || 0;
                   const lapSpeed = lap.average_speed || 0; // m/s
@@ -2443,13 +2498,6 @@ const FitAnalysisPage = () => {
                         return;
                       }
                     }
-                  }
-                  
-                  // Skip if this lap is the entire activity (likely the default Strava lap)
-                  // If duration is within 95% of total activity time, it's probably the whole activity
-                  if (maxTime > 0 && duration >= maxTime * 0.95) {
-                    console.log('Skipping: entire activity lap');
-                    return;
                   }
                   
                   // Use actual startTime from lap if available (for manually created laps)
@@ -2523,17 +2571,28 @@ const FitAnalysisPage = () => {
                     console.log('Warning: startTimeSeconds < 0, setting to 0');
                     startTimeSeconds = 0;
                   }
-                  if (maxTime > 0 && startTimeSeconds > maxTime) {
-                    console.log('Skipping: startTime beyond maxTime', { startTimeSeconds, maxTime });
-                    return;
-                  }
                   
                   let endTimeSeconds = startTimeSeconds + duration;
                   
-                  // Ensure endTime is within valid range
-                  if (maxTime > 0 && endTimeSeconds > maxTime * 1.1) {
-                    console.log('Warning: endTime beyond maxTime, capping', { endTimeSeconds, maxTime: maxTime * 1.1 });
-                    endTimeSeconds = Math.min(endTimeSeconds, maxTime * 1.1);
+                  // Ensure endTime is within valid range (allow some overflow for manually created intervals)
+                  // Only skip if endTime is way beyond maxTime (more than 20% over)
+                  if (maxTime > 0 && endTimeSeconds > maxTime * 1.2) {
+                    console.log('Skipping: endTime way beyond maxTime', { 
+                      startTimeSeconds, 
+                      endTimeSeconds, 
+                      maxTime, 
+                      overflow: ((endTimeSeconds - maxTime) / maxTime * 100).toFixed(1) + '%' 
+                    });
+                    return;
+                  }
+                  
+                  // Update maxTime if this interval extends beyond current maxTime
+                  if (endTimeSeconds > maxTime) {
+                    maxTime = endTimeSeconds;
+                    console.log('Extending maxTime to include interval:', { 
+                      newMaxTime: maxTime, 
+                      intervalEnd: endTimeSeconds 
+                    });
                   }
                   
                   // Update cumulative time for next lap
@@ -2825,52 +2884,8 @@ const FitAnalysisPage = () => {
                     textStyle: { fontSize: 12, fontWeight: 500 },
                     itemGap: 20,
                     top: 10,
-                    left: 'center'
+                    left: '20%'
                   },
-                  graphic: [
-                    {
-                      type: 'group',
-                      left: '70%',
-                      top: 10,
-                      children: [
-                        {
-                          type: 'rect',
-                          shape: {
-                            width: 100,
-                            height: 24,
-                            r: 4
-                          },
-                          style: {
-                            fill: '#f0f0f0',
-                            stroke: '#8B45D6',
-                            lineWidth: 1
-                          },
-                          z: 100
-                        },
-                        {
-                          type: 'text',
-                          style: {
-                            text: 'Reset Zoom',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            fill: '#8B45D6',
-                            textAlign: 'center',
-                            textVerticalAlign: 'middle'
-                          },
-                          x: 50,
-                          y: 12,
-                          z: 101
-                        }
-                      ],
-                      onclick: () => {
-                        if (stravaChartRef.current) {
-                          const chart = stravaChartRef.current.getEchartsInstance();
-                          chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
-                        }
-                      },
-                      cursor: 'pointer'
-                    }
-                  ],
                   dataZoom: [
                     { 
                       type: 'inside',
@@ -3373,24 +3388,58 @@ const FitAnalysisPage = () => {
                     )}
                     
                    <div className="relative">
-                     {/* Smoothness Slider Overlay */}
-                     <div className="absolute top-2 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-lg border border-primary/30 shadow-lg p-2" style={{ width: '180px' }}>
-                       <div className="flex items-center justify-between mb-1">
-                         <span className="text-xs font-semibold text-primary">Smoothness</span>
-                         <span className="text-xs font-medium text-gray-600">{smoothingWindow}s</span>
-                       </div>
-                       <input
-                         type="range"
-                         min="0"
-                         max="30"
-                         value={smoothingWindow}
-                         onChange={(e) => setSmoothingWindow(Number(e.target.value))}
-                         className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
-                         style={{
-                           background: `linear-gradient(to right, #767EB5 0%, #767EB5 ${(smoothingWindow / 30) * 100}%, #E0E0E0 ${(smoothingWindow / 30) * 100}%, #E0E0E0 100%)`
+                     {/* Legend buttons - styled as part of legend */}
+                     <div className="absolute top-2 z-20 flex items-center gap-3" style={{ left: '65%' }}>
+                       <button
+                         onClick={() => {
+                           if (stravaChartRef.current) {
+                             const chart = stravaChartRef.current.getEchartsInstance();
+                             chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+                           }
                          }}
-                       />
+                         className="px-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-medium text-gray-700 transition-colors flex items-center justify-center"
+                         style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
+                       >
+                         Reset Zoom
+                       </button>
+                       <button
+                         onClick={() => setShowSmoothnessSlider(!showSmoothnessSlider)}
+                         className="px-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-medium text-gray-700 transition-colors flex items-center justify-center"
+                         style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
+                       >
+                         Smoothness
+                       </button>
                      </div>
+                     {/* Smoothness Slider Popup */}
+                     {showSmoothnessSlider && (
+                       <div className="absolute top-10 z-30 bg-white/95 backdrop-blur-sm rounded-lg border border-primary/30 shadow-lg p-3" style={{ width: '200px', left: '65%' }}>
+                         <div className="flex items-center justify-between mb-2">
+                           <span className="text-sm font-semibold text-primary">Smoothness</span>
+                           <button
+                             onClick={() => setShowSmoothnessSlider(false)}
+                             className="text-gray-500 hover:text-gray-700 text-xs"
+                           >
+                             ✕
+                           </button>
+                         </div>
+                         <div className="flex items-center justify-between mb-1">
+                           <span className="text-xs text-gray-600">0s</span>
+                           <span className="text-xs font-medium text-primary">{smoothingWindow}s</span>
+                           <span className="text-xs text-gray-600">30s</span>
+                         </div>
+                         <input
+                           type="range"
+                           min="0"
+                           max="30"
+                           value={smoothingWindow}
+                           onChange={(e) => setSmoothingWindow(Number(e.target.value))}
+                           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                           style={{
+                             background: `linear-gradient(to right, #767EB5 0%, #767EB5 ${(smoothingWindow / 30) * 100}%, #E0E0E0 ${(smoothingWindow / 30) * 100}%, #E0E0E0 100%)`
+                           }}
+                         />
+                       </div>
+                     )}
                   <ReactECharts 
                     ref={stravaChartRef}
                     option={option} 

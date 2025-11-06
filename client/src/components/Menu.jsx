@@ -164,10 +164,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
     },
     {
-      name: "FIT Analysis",
-      path: "/fit-analysis",
-      icon: "/icon/fit-analysis.svg",
-      iconWhite: "/icon/fit-analysis-white.svg",
+      name: "Training Calendar",
+      path: "/training-calendar",
+      icon: "/icon/calendar.svg",
+      iconWhite: "/icon/calendar-white.svg",
       showFor: ["admin"]
     },
     {
@@ -469,7 +469,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           {!user?.role ? (
             <div className="p-4 border-t border-gray-200">
               <div className="text-center text-sm text-gray-500">
-                <p>© 2024 LaChart</p>
+                <p>© 2025 LaChart</p>
                 <p className="mt-1">All rights reserved</p>
               </div>
             </div>

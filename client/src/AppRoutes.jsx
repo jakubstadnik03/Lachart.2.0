@@ -20,7 +20,7 @@ const AppRoutes = () => {
         <Route path="/lactate-guide" element={<LactateGuide />} />
         <Route path="/lactate-testing" element={<LactateTestingPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/fit-analysis" element={<FitAnalysisPage />} />
+        <Route path="/training-calendar" element={<FitAnalysisPage />} />
         <Route path="/lactate-curve-calculator" element={<LactateCurveCalculatorPage />} />
         {/* ... další routy */}
       </Route>

@@ -90,7 +90,7 @@ function AppRoutes() {
           } 
         />
         <Route 
-          path="/fit-analysis" 
+          path="/training-calendar" 
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <FitAnalysisPage />
