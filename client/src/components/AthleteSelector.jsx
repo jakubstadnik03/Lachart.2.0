@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 
-const AthleteSelector = ({ selectedAthleteId, onAthleteChange }) => {
+const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -45,6 +45,11 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange }) => {
           className="w-full p-2 border rounded-lg bg-white text-sm sm:text-base"
         >
           <option value="">Vyberte atleta</option>
+          {user && user.role === 'coach' && (
+            <option key={user._id} value={user._id}>
+              {user.name} {user.surname} (Me)
+            </option>
+          )}
           {athletes.map((athlete) => (
             <option key={athlete._id} value={athlete._id}>
               {athlete.name} {athlete.surname}

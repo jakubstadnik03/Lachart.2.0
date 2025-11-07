@@ -74,9 +74,9 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         } = req.body;
         
         // Validate required fields
-        if (!email || !name || !surname) {
+        if (!name || !surname) {
             console.log("Missing required fields");
-            return res.status(400).json({ error: "Email, name and surname are required" });
+            return res.status(400).json({ error: "Name and surname are required" });
         }
 
         console.log("Looking up coach with ID:", req.user.userId);
@@ -87,11 +87,13 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coaches" });
         }
 
-        // Check if email is already registered
-        const existingUser = await userDao.findByEmail(email);
-        if (existingUser) {
-            console.log("Email already registered:", email);
-            return res.status(400).json({ error: "Email is already registered" });
+        // Check if email is already registered (only if email is provided)
+        if (email) {
+            const existingUser = await userDao.findByEmail(email.toLowerCase());
+            if (existingUser) {
+                console.log("Email already registered:", email);
+                return res.status(400).json({ error: "Email is already registered" });
+            }
         }
 
         // Generate temporary password
@@ -103,7 +105,7 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         const athleteData = {
             name,
             surname,
-            email: email.toLowerCase(),
+            email: email ? email.toLowerCase() : undefined,
             password: hashedPassword,
             role: 'athlete',
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
@@ -124,34 +126,44 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         // Add athlete to coach
         await userDao.addAthleteToCoach(coach._id, athlete._id);
 
-        // Send email with instructions
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
+        // Send email with instructions (only if email is provided)
+        if (email) {
+            try {
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: {
+                        user: process.env.EMAIL_USER,
+                        pass: process.env.EMAIL_APP_PASSWORD
+                    }
+                });
+
+                const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${athlete.registrationToken}`;
+                
+                await transporter.sendMail({
+                    from: process.env.EMAIL_USER,
+                    to: email.toLowerCase(),
+                    subject: 'Complete Your Registration in LaChart',
+                    html: `
+                        <h2>Welcome to LaChart!</h2>
+                        <p>Your coach ${coach.name} ${coach.surname} has registered you in the LaChart system.</p>
+                        <p>To complete your registration and set your password, click on the following link:</p>
+                        <a href="${registrationLink}">Complete Registration</a>
+                        <p>The link is valid for 7 days.</p>
+                        <p>If you did not request this email, you can ignore it.</p>
+                    `
+                });
+                console.log("Successfully sent registration email");
+            } catch (emailError) {
+                console.error("Error sending email:", emailError);
+                // Don't fail the request if email fails
             }
-        });
+        }
 
-        const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${athlete.registrationToken}`;
-        
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: email,
-            subject: 'Complete Your Registration in LaChart',
-            html: `
-                <h2>Welcome to LaChart!</h2>
-                <p>Your coach ${coach.name} ${coach.surname} has registered you in the LaChart system.</p>
-                <p>To complete your registration and set your password, click on the following link:</p>
-                <a href="${registrationLink}">Complete Registration</a>
-                <p>The link is valid for 7 days.</p>
-                <p>If you did not request this email, you can ignore it.</p>
-            `
-        });
-
-        console.log("Successfully created athlete and sent registration email");
+        console.log("Successfully created athlete" + (email ? " and sent registration email" : ""));
         res.status(201).json({ 
-            message: "Athlete successfully registered and email with instructions has been sent",
+            message: email 
+                ? "Athlete successfully registered and email with instructions has been sent"
+                : "Athlete successfully registered",
             athlete: {
                 _id: athlete._id,
                 name: athlete.name,

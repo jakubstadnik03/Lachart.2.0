@@ -11,13 +11,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
+  const { user, isAuthenticated } = useAuth();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const sports = [
@@ -45,8 +45,11 @@ const TestingPage = () => {
   useEffect(() => {
     if (athleteId) {
       setSelectedAthleteId(athleteId);
+    } else if (user?.role === 'coach' && !selectedAthleteId) {
+      // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
+      setSelectedAthleteId(user._id);
     }
-  }, [athleteId]);
+  }, [athleteId, user, selectedAthleteId]);
 
   // Načtení dat při prvním načtení stránky nebo změně atleta
   useEffect(() => {
@@ -136,6 +139,7 @@ const TestingPage = () => {
           <AthleteSelector
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
+            user={user}
           />
         </motion.div>
       )}

@@ -565,12 +565,11 @@ const AthletesPage = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Date of Birth<span className="text-orange-500">*</span>
+                      Date of Birth
                     </label>
                     <input
                       type="date"
                       name="dateOfBirth"
-                      required
                       value={formData.dateOfBirth ? formData.dateOfBirth.split('.').reverse().join('-') : ''}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
@@ -585,12 +584,11 @@ const AthletesPage = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email<span className="text-orange-500">*</span>
+                      Email
                     </label>
                     <input
                       type="email"
                       name="email"
-                      required
                       value={formData.email}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
@@ -600,12 +598,11 @@ const AthletesPage = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone<span className="text-orange-500">*</span>
+                      Phone
                     </label>
                     <input
                       type="tel"
                       name="phone"
-                      required
                       value={formData.phone}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"

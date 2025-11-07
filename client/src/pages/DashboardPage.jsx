@@ -26,7 +26,8 @@ import { useNotification } from '../context/NotificationContext';
 
 const DashboardPage = () => {
   const { athleteId } = useParams();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
+  const { user, isAuthenticated } = useAuth();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,7 +36,6 @@ const DashboardPage = () => {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
-  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { addNotification } = useNotification();
   const [selectedTests, setSelectedTests] = useState([]);
@@ -96,6 +96,12 @@ const DashboardPage = () => {
       return;
     }
 
+    // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
+    if (user?.role === 'coach' && !selectedAthleteId) {
+      setSelectedAthleteId(user._id);
+      return;
+    }
+
     const targetId = selectedAthleteId || user._id;
     const loadData = async () => {
       try {
@@ -124,7 +130,7 @@ const DashboardPage = () => {
     };
 
     loadData();
-  }, [user?._id, selectedAthleteId]);
+  }, [user?._id, selectedAthleteId, isAuthenticated, navigate]);
 
   useEffect(() => {
     if (trainings.length > 0) {
@@ -200,6 +206,7 @@ const DashboardPage = () => {
           <AthleteSelector
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
+            user={user}
           />
         </motion.div>
       )}

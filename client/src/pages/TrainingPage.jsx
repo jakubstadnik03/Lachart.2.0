@@ -13,7 +13,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const TrainingPage = () => {
   const { athleteId } = useParams();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId);
+  const { user, isAuthenticated } = useAuth();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
   const [trainings, setTrainings] = useState([]);
   const [selectedSport, setSelectedSport] = useState('bike');
   const [selectedTitle, setSelectedTitle] = useState(null);
@@ -21,7 +22,6 @@ const TrainingPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -54,6 +54,12 @@ const TrainingPage = () => {
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', { replace: true });
+      return;
+    }
+
+    // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
+    if (user?.role === 'coach' && !selectedAthleteId) {
+      setSelectedAthleteId(user._id);
       return;
     }
 
@@ -196,6 +202,7 @@ const TrainingPage = () => {
           <AthleteSelector
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
+            user={user}
           />
         </motion.div>
       )}

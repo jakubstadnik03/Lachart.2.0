@@ -25,6 +25,55 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+const deduplicateStravaLaps = (laps = []) => {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+
+  const seen = new Map();
+  const unique = [];
+
+  const buildKey = (lap) => {
+    if (lap.__sourceIndex !== undefined && lap.__sourceIndex !== null) {
+      return `source_${lap.__sourceIndex}`;
+    }
+    if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+      return `lap_${lap.lapNumber}`;
+    }
+    const startTime = lap.startTime || lap.start_date;
+    if (startTime) {
+      return `time_${startTime}`;
+    }
+    const elapsedTime = lap.elapsed_time || 0;
+    const distance = lap.distance || 0;
+    const power = lap.average_watts || 0;
+    return `fallback_t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power * 10)}`;
+  };
+
+  laps.forEach((lap, index) => {
+    const enriched = { ...lap };
+    if (enriched.__sourceIndex === undefined || enriched.__sourceIndex === null) {
+      enriched.__sourceIndex = index;
+    }
+
+    const key = buildKey(enriched);
+    const hasLactate = enriched.lactate !== null && enriched.lactate !== undefined;
+
+    if (seen.has(key)) {
+      const existingIdx = seen.get(key);
+      const existingLap = unique[existingIdx];
+      const existingHasLactate = existingLap?.lactate !== null && existingLap?.lactate !== undefined;
+
+      if (hasLactate && !existingHasLactate) {
+        unique[existingIdx] = enriched;
+      }
+    } else {
+      seen.set(key, unique.length);
+      unique.push(enriched);
+    }
+  });
+
+  return unique;
+};
+
 // Strava Laps Table Component
 const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities }) => {
   const [editingLactate, setEditingLactate] = useState(false);
@@ -32,13 +81,63 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   const [saving, setSaving] = useState(false);
 
   const handleSaveLactate = async () => {
+    // Map uniqueLaps index to original laps index
+    const originalLaps = selectedStrava?.laps || [];
+    console.log('handleSaveLactate: originalLaps count:', originalLaps.length);
+    console.log('handleSaveLactate: uniqueLaps count:', uniqueLaps.length);
+    console.log('handleSaveLactate: lactateInputs:', lactateInputs);
+    
     const lactateValues = Object.entries(lactateInputs).map(([key, value]) => {
-      const index = parseInt(key.replace('lap-', ''));
+      const uniqueIndex = parseInt(key.replace('lap-', ''));
+      const uniqueLap = uniqueLaps[uniqueIndex];
+      if (!uniqueLap) {
+        console.warn('Could not find unique lap at index', uniqueIndex);
+        return null;
+      }
+      
+      // Find the original index in selectedStrava.laps by matching startTime
+      const startTime = uniqueLap.startTime || uniqueLap.start_date;
+      let originalIndex = uniqueLap.__sourceIndex ?? -1;
+      
+      if (originalIndex === -1 || originalIndex === undefined) {
+        if (startTime) {
+          originalIndex = originalLaps.findIndex(lap => {
+            const lapStartTime = lap.startTime || lap.start_date;
+            return lapStartTime && lapStartTime === startTime;
+          });
+        }
+      }
+      
+      if ((originalIndex === -1 || originalIndex === undefined) && !startTime) {
+        // If no startTime or direct source index, try to match by elapsed_time, distance, and power
+        originalIndex = originalLaps.findIndex(lap => {
+          return Math.abs((lap.elapsed_time || 0) - (uniqueLap.elapsed_time || 0)) < 1 &&
+                 Math.abs((lap.distance || 0) - (uniqueLap.distance || 0)) < 0.1 &&
+                 Math.abs((lap.average_watts || 0) - (uniqueLap.average_watts || 0)) < 1;
+        });
+      }
+      
+      if (originalIndex === -1) {
+        console.warn('Could not find original lap index for unique lap at index', uniqueIndex, {
+          uniqueLap: {
+            startTime: uniqueLap.startTime || uniqueLap.start_date,
+            elapsed_time: uniqueLap.elapsed_time,
+            distance: uniqueLap.distance,
+            power: uniqueLap.average_watts
+          }
+        });
+        return null;
+      }
+      
+      console.log(`Mapping uniqueIndex ${uniqueIndex} (sourceIndex: ${uniqueLap.__sourceIndex}) to originalIndex ${originalIndex}, lactate: ${value}`);
+      
       return {
-        lapIndex: index,
+        lapIndex: originalIndex,
         lactate: parseFloat(value)
       };
-    }).filter(lv => lv.lactate && !isNaN(lv.lactate));
+    }).filter(lv => lv && lv.lactate && !isNaN(lv.lactate));
+
+    console.log('handleSaveLactate: final lactateValues to send:', lactateValues);
 
     if (lactateValues.length === 0) {
       alert('Please enter at least one lactate value');
@@ -81,43 +180,11 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
   // Deduplicate laps in StravaLapsTable
   const uniqueLaps = React.useMemo(() => {
-    if (!selectedStrava?.laps || !Array.isArray(selectedStrava.laps)) return [];
-    
-    console.log('StravaLapsTable: Processing laps, count:', selectedStrava.laps.length);
-    
-    const seen = new Map();
-    const unique = [];
-    
-    selectedStrava.laps.forEach((lap, index) => {
-      // Use start_date or startTime as primary identifier
-      const startTime = lap.startTime || lap.start_date;
-      if (startTime) {
-        const key = `time_${startTime}`;
-        if (seen.has(key)) {
-          console.warn(`StravaLapsTable: Duplicate lap by startTime at index ${index}, removing:`, lap);
-          return; // Skip duplicate
-        }
-        seen.set(key, true);
-        unique.push(lap);
-        return;
-      }
-      
-      // Skip laps without start_date or startTime - they're duplicates
-      // These are the duplicate laps (17-31) that don't have start_date
-      console.warn(`StravaLapsTable: Skipping lap without start_date/startTime at index ${index} (duplicate):`, {
-        index,
-        elapsed_time: lap.elapsed_time,
-        distance: lap.distance,
-        power: lap.average_watts
-      });
-      return; // Skip this duplicate
-    });
-    
-    if (unique.length !== selectedStrava.laps.length) {
-      console.log(`StravaLapsTable: Removed ${selectedStrava.laps.length - unique.length} duplicate laps. Original: ${selectedStrava.laps.length}, Unique: ${unique.length}`);
+    const deduped = deduplicateStravaLaps(selectedStrava?.laps || []);
+    if (deduped.length !== (selectedStrava?.laps?.length || 0)) {
+      console.log(`StravaLapsTable: Removed ${(selectedStrava?.laps?.length || 0) - deduped.length} duplicate laps. Original: ${selectedStrava?.laps?.length || 0}, Unique: ${deduped.length}`);
     }
-    
-    return unique;
+    return deduped;
   }, [selectedStrava?.laps]);
 
   if (!selectedStrava?.laps || uniqueLaps.length === 0) {
@@ -2314,36 +2381,8 @@ const FitAnalysisPage = () => {
                 };
                 
                 // Prepare interval bars data from laps
-                let laps = selectedStrava?.laps || [];
-                
-                // First, deduplicate laps - remove duplicates without start_date
-                console.log('Original laps count before deduplication:', laps.length);
-                const seenLaps = new Map();
-                const uniqueLapsForGraph = [];
-                
-                laps.forEach((lap, index) => {
-                  // Use start_date or startTime as primary identifier
-                  const startTime = lap.startTime || lap.start_date;
-                  if (startTime) {
-                    const key = `time_${startTime}`;
-                    if (seenLaps.has(key)) {
-                      console.warn(`Graph: Duplicate lap by startTime at index ${index}, removing:`, lap);
-                      return;
-                    }
-                    seenLaps.set(key, true);
-                    uniqueLapsForGraph.push(lap);
-                    return;
-                  }
-                  
-                  // Skip laps without start_date or startTime - they're duplicates
-                  console.warn(`Graph: Skipping lap without start_date/startTime at index ${index}:`, lap);
-                });
-                
-                if (uniqueLapsForGraph.length !== laps.length) {
-                  console.log(`Graph: Removed ${laps.length - uniqueLapsForGraph.length} duplicate laps. Original: ${laps.length}, Unique: ${uniqueLapsForGraph.length}`);
-                }
-                
-                laps = uniqueLapsForGraph;
+                let laps = deduplicateStravaLaps(selectedStrava?.laps || []);
+                console.log(`Graph: Deduplicated laps count: ${laps.length}`);
                 
                 // Sort laps by startTime or start_date to ensure correct order
                 laps = [...laps].sort((a, b) => {

@@ -55,7 +55,7 @@ router.get('/strava/callback', async (req, res) => {
     await user.save();
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
     // Redirect back to app with a flag
-    return res.redirect(`${frontend}/fit-analysis?strava=connected`);
+    return res.redirect(`${frontend}/training-calendar?strava=connected`);
   } catch (err) {
     console.error('Strava callback error', err.response?.data || err.message);
     res.status(500).json({ error: 'Strava callback failed' });
@@ -414,7 +414,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Strava activity not found' });
     }
 
-    const oldTitle = activity.titleManual || activity.name;
+    const oldTitle = activity.titleManual || activity.name || null;
     
     // Update title if provided
     if (title !== undefined) {
@@ -429,25 +429,37 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     await activity.save();
 
     // Update Training records with the same title
-    if (title !== undefined && title) {
-      const Training = require('../models/training');
-      const newTitle = title.trim();
-      
-      // Find Training records with the same title (old or new)
-      const trainingRecords = await Training.find({
-        athleteId: user._id.toString(),
-        title: { $in: [oldTitle, newTitle] }
-      });
-      
-      // Update all matching Training records
-      for (const trainingRecord of trainingRecords) {
-        if (trainingRecord.title === oldTitle || trainingRecord.title === newTitle) {
-          trainingRecord.title = newTitle;
-          if (description !== undefined) {
-            trainingRecord.description = description || null;
-          }
-          await trainingRecord.save();
+    if (title !== undefined && title && typeof title === 'string' && title.trim()) {
+      try {
+        const Training = require('../models/training');
+        const newTitle = title.trim();
+        
+        // Build query for finding Training records
+        const titleQuery = [];
+        if (oldTitle && typeof oldTitle === 'string') {
+          titleQuery.push(oldTitle);
         }
+        titleQuery.push(newTitle);
+        
+        // Find Training records with the same title (old or new)
+        const trainingRecords = await Training.find({
+          athleteId: user._id ? user._id.toString() : String(user._id),
+          title: { $in: titleQuery.filter(t => t) }
+        });
+        
+        // Update all matching Training records
+        for (const trainingRecord of trainingRecords) {
+          if (trainingRecord.title === oldTitle || trainingRecord.title === newTitle) {
+            trainingRecord.title = newTitle;
+            if (description !== undefined) {
+              trainingRecord.description = description || null;
+            }
+            await trainingRecord.save();
+          }
+        }
+      } catch (trainingError) {
+        // Log error but don't fail the request if Training update fails
+        console.error('Error updating Training records:', trainingError);
       }
     }
 
@@ -492,13 +504,19 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
     }
 
     // Update lactate values
+    console.log('Updating lactate values:', { lactateValues, lapsCount: activity.laps?.length });
     lactateValues.forEach(({ lapIndex, lactate }) => {
+      console.log(`Setting lactate for lapIndex ${lapIndex}: ${lactate}, lap exists: ${!!activity.laps[lapIndex]}`);
       if (activity.laps[lapIndex]) {
         activity.laps[lapIndex].lactate = lactate || null;
+        console.log(`Lactate set for lapIndex ${lapIndex}:`, activity.laps[lapIndex].lactate);
+      } else {
+        console.warn(`Lap at index ${lapIndex} does not exist. Total laps: ${activity.laps?.length}`);
       }
     });
 
     await activity.save();
+    console.log('Activity saved. Laps with lactate:', activity.laps?.map((lap, idx) => ({ idx, lactate: lap.lactate })).filter(l => l.lactate !== null && l.lactate !== undefined));
 
     // Sync to Training model - sync all intervals (not just those with lactate)
     try {

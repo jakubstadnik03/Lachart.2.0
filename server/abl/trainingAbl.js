@@ -243,7 +243,30 @@ class TrainingAbl {
             const results = [];
             const laps = sourceData.laps || [];
             
-            laps.forEach((lap, index) => {
+            // For Strava activities, filter to only include intervals with higher power
+            // First, calculate average power from all laps
+            let filteredLaps = laps;
+            if (sourceType === 'strava' && laps.length > 0) {
+                const powers = laps
+                    .map(lap => lap.average_watts || lap.max_watts || lap.avgPower || lap.maxPower || null)
+                    .filter(p => p !== null && p > 0);
+                
+                if (powers.length > 0) {
+                    const avgPower = powers.reduce((sum, p) => sum + p, 0) / powers.length;
+                    // Only keep laps with power above average
+                    const powerThreshold = avgPower;
+                    
+                    filteredLaps = laps.filter(lap => {
+                        const lapPower = lap.average_watts || lap.max_watts || lap.avgPower || lap.maxPower || null;
+                        // If lap has no power data, exclude it (we only want intervals with power)
+                        if (lapPower === null || lapPower === 0) return false;
+                        // Include if power is above or equal to average
+                        return lapPower >= powerThreshold;
+                    });
+                }
+            }
+            
+            filteredLaps.forEach((lap, index) => {
                 // Skip if this lap is likely the entire activity (duration >= 95% of total time)
                 const totalTime = sourceType === 'fit'
                     ? (sourceData.totalElapsedTime || sourceData.totalTimerTime || 0)
@@ -264,12 +287,12 @@ class TrainingAbl {
 
                 // Calculate rest time (time between laps) in seconds
                 let restSeconds = 0;
-                if (index > 0 && laps[index - 1]) {
+                if (index > 0 && filteredLaps[index - 1]) {
                     // Calculate rest based on startTime if available
-                    if (lap.startTime && laps[index - 1].startTime) {
+                    if (lap.startTime && filteredLaps[index - 1].startTime) {
                         const currentStart = new Date(lap.startTime).getTime();
-                        const prevStart = new Date(laps[index - 1].startTime).getTime();
-                        const prevDuration = laps[index - 1].totalElapsedTime || laps[index - 1].totalTimerTime || laps[index - 1].elapsed_time || 0;
+                        const prevStart = new Date(filteredLaps[index - 1].startTime).getTime();
+                        const prevDuration = filteredLaps[index - 1].totalElapsedTime || filteredLaps[index - 1].totalTimerTime || filteredLaps[index - 1].elapsed_time || 0;
                         const prevEnd = prevStart + (prevDuration * 1000);
                         restSeconds = Math.max(0, Math.round((currentStart - prevEnd) / 1000));
                     }
