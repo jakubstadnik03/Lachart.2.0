@@ -1,8 +1,86 @@
 import React from 'react';
 import { prepareIntervalBarsData } from '../../utils/fitAnalysisUtils';
 
+// Deduplicate FIT training laps
+const deduplicateFitTrainingLaps = (laps = []) => {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+
+  const seen = new Map();
+  const unique = [];
+
+  const normalizeTime = (timeStr) => {
+    if (!timeStr) return null;
+    try {
+      const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return null;
+      // Round to nearest second to handle small differences
+      return Math.floor(date.getTime() / 1000);
+    } catch {
+      return null;
+    }
+  };
+
+  laps.forEach((lap, index) => {
+    // Strategy 1: Use _id if available (MongoDB ObjectId)
+    if (lap._id) {
+      const idStr = lap._id.toString();
+      if (seen.has(`id_${idStr}`)) {
+        console.log(`IntervalBars: Skipping duplicate lap by _id at index ${index}`);
+        return;
+      }
+      seen.set(`id_${idStr}`, true);
+      unique.push(lap);
+      return;
+    }
+    
+    // Strategy 2: Use startTime or start_date as primary identifier
+    const startTime = lap.startTime || lap.start_time || lap.start_date;
+    if (startTime) {
+      const normalizedTime = normalizeTime(startTime);
+      if (normalizedTime !== null) {
+        const key = `time_${normalizedTime}`;
+        if (seen.has(key)) {
+          console.log(`IntervalBars: Skipping duplicate lap by startTime at index ${index}`);
+          return;
+        }
+        seen.set(key, true);
+        unique.push(lap);
+        return;
+      }
+    }
+    
+    // Strategy 3: Use combination of properties
+    const elapsedTime = Math.round(lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0);
+    const distance = Math.round((lap.totalDistance || lap.total_distance || lap.distance || 0) * 10) / 10;
+    const power = Math.round((lap.avgPower || lap.avg_power || lap.average_watts || 0) * 10) / 10;
+    const hr = Math.round((lap.avgHeartRate || lap.avg_heart_rate || lap.average_heartrate || 0) * 10) / 10;
+    
+    const key = `t${elapsedTime}_d${distance}_p${power}_hr${hr}`;
+    
+    if (seen.has(key)) {
+      console.log(`IntervalBars: Skipping duplicate lap at index ${index}, key: ${key}`);
+      return;
+    }
+    seen.set(key, index);
+    unique.push(lap);
+  });
+
+  if (unique.length !== laps.length) {
+    console.log(`IntervalBars: Removed ${laps.length - unique.length} duplicate laps. Original: ${laps.length}, Unique: ${unique.length}`);
+  }
+
+  return unique;
+};
+
 const IntervalBars = ({ training, chartData, zoomedMinTime, zoomedMaxTime, zoomedXScale, padding, graphHeight, effectiveMaxPower }) => {
   if (!training?.laps || training.laps.length === 0) return null;
+
+  // Deduplicate laps before processing
+  const uniqueLaps = React.useMemo(() => {
+    return deduplicateFitTrainingLaps(training.laps);
+  }, [training.laps]);
+
+  if (uniqueLaps.length === 0) return null;
 
   // Get training start time from first record
   const trainingStartTime = chartData.records[0]?.timestamp 
@@ -10,7 +88,7 @@ const IntervalBars = ({ training, chartData, zoomedMinTime, zoomedMaxTime, zoome
     : Date.now();
 
   // Prepare interval bars data
-  const allIntervalBars = prepareIntervalBarsData(training.laps, chartData, trainingStartTime);
+  const allIntervalBars = prepareIntervalBarsData(uniqueLaps, chartData, trainingStartTime);
 
   if (allIntervalBars.length === 0) return null;
 

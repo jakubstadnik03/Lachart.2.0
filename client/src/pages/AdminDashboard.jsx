@@ -25,6 +25,23 @@ const AdminDashboard = () => {
         getEventStats(null, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), new Date().toISOString())
       ]);
       
+      // Debug: Log coach users data
+      const coachUsers = usersData.filter(u => u.role === 'coach');
+      console.log('[AdminDashboard] Coach users data:', coachUsers.map(u => ({
+        name: `${u.name} ${u.surname}`,
+        testCount: u.testCount,
+        testCountType: typeof u.testCount,
+        trainingCount: u.trainingCount,
+        trainingCountType: typeof u.trainingCount,
+        _id: u._id,
+        role: u.role
+      })));
+      
+      // Also log raw data for first coach to see structure
+      if (coachUsers.length > 0) {
+        console.log('[AdminDashboard] First coach raw data:', coachUsers[0]);
+      }
+      
       setUsers(usersData);
       setStats(statsData);
       setEventStats(eventStatsData);
@@ -254,6 +271,9 @@ const AdminDashboard = () => {
                               {user.name} {user.surname}
                             </div>
                             <div className="text-sm text-gray-500">{user.email}</div>
+                            {user.role === 'coach' && user._id && (
+                              <div className="text-xs text-gray-400 mt-0.5">ID: {user._id}</div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -278,8 +298,20 @@ const AdminDashboard = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="flex items-center">
-                          <span className="text-lg font-semibold text-purple-600">{user.testCount || 0}</span>
+                          <span className="text-lg font-semibold text-purple-600">
+                            {(() => {
+                              const count = user.testCount !== undefined && user.testCount !== null ? user.testCount : 0;
+                              // Debug log for coaches
+                              if (user.role === 'coach' && count === 0) {
+                                console.log(`[AdminDashboard] Coach ${user.name} ${user.surname} has testCount:`, user.testCount, 'type:', typeof user.testCount);
+                              }
+                              return count;
+                            })()}
+                          </span>
                           <span className="ml-1 text-xs text-gray-500">tests</span>
+                          {user.role === 'coach' && (
+                            <span className="ml-2 text-xs text-gray-400">(athletes + own)</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

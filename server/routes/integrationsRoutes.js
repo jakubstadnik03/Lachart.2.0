@@ -362,16 +362,48 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         return savedLap;
       });
       
-      // Add any API laps that don't have matches in saved laps (shouldn't happen often, but just in case)
+      // Add any API laps that don't have matches in saved laps
+      // Use a Set to track which saved laps we've already matched
+      const matchedSavedLapIndices = new Set();
       laps.forEach(apiLap => {
-        const hasMatch = savedActivity.laps.some(savedLap => {
+        let hasMatch = false;
+        
+        // Try to find match by startTime/start_date
+        savedActivity.laps.forEach((savedLap, savedIdx) => {
+          if (matchedSavedLapIndices.has(savedIdx)) return; // Already matched
+          
           if (apiLap.start_date && savedLap.startTime) {
             const apiTime = new Date(apiLap.start_date).getTime();
             const savedTime = new Date(savedLap.startTime).getTime();
-            return Math.abs(apiTime - savedTime) < 5000;
+            if (Math.abs(apiTime - savedTime) < 5000) {
+              hasMatch = true;
+              matchedSavedLapIndices.add(savedIdx);
+              return;
+            }
           }
-          return false;
+          
+          // Also try matching by lapNumber if available
+          if (apiLap.lap_index !== undefined && savedLap.lapNumber !== undefined) {
+            if (apiLap.lap_index === savedLap.lapNumber) {
+              hasMatch = true;
+              matchedSavedLapIndices.add(savedIdx);
+              return;
+            }
+          }
+          
+          // Try matching by elapsed_time, distance, and power (for laps without time)
+          if (!apiLap.start_date && !savedLap.startTime) {
+            const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (savedLap.elapsed_time || 0)) < 1;
+            const distMatch = Math.abs((apiLap.distance || 0) - (savedLap.distance || 0)) < 0.1;
+            const powerMatch = Math.abs((apiLap.average_watts || 0) - (savedLap.average_watts || 0)) < 1;
+            if (timeMatch && distMatch && powerMatch) {
+              hasMatch = true;
+              matchedSavedLapIndices.add(savedIdx);
+              return;
+            }
+          }
         });
+        
         if (!hasMatch) {
           mergedLaps.push(apiLap);
         }
@@ -383,6 +415,42 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         const timeB = b.startTime ? new Date(b.startTime).getTime() : (b.start_date ? new Date(b.start_date).getTime() : 0);
         return timeA - timeB;
       });
+      
+      // Final deduplication pass to ensure no duplicates
+      const seen = new Map();
+      const deduplicatedLaps = [];
+      mergedLaps.forEach((lap, index) => {
+        // Build unique key
+        let key = null;
+        if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+          key = `lap_${lap.lapNumber}`;
+        } else {
+          const startTime = lap.startTime || lap.start_date;
+          if (startTime) {
+            const time = new Date(startTime).getTime();
+            key = `time_${Math.floor(time / 1000)}`; // Round to nearest second
+          } else {
+            const elapsedTime = Math.round(lap.elapsed_time || 0);
+            const distance = Math.round((lap.distance || 0) * 10) / 10;
+            const power = Math.round((lap.average_watts || 0) * 10) / 10;
+            key = `fallback_t${elapsedTime}_d${distance}_p${power}`;
+          }
+        }
+        
+        if (key && !seen.has(key)) {
+          seen.set(key, true);
+          deduplicatedLaps.push(lap);
+        } else if (!key) {
+          // If no key can be generated, still add it (shouldn't happen often)
+          deduplicatedLaps.push(lap);
+        }
+      });
+      
+      if (deduplicatedLaps.length !== mergedLaps.length) {
+        console.log(`Backend deduplication: Removed ${mergedLaps.length - deduplicatedLaps.length} duplicate laps. Original: ${mergedLaps.length}, Unique: ${deduplicatedLaps.length}`);
+      }
+      
+      mergedLaps = deduplicatedLaps;
     }
     
     res.json({ 

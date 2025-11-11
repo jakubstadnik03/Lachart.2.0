@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const registerAbl = require("../abl/user-abl/register-abl");
 const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
@@ -1402,15 +1403,126 @@ router.get("/admin/users", verifyToken, async (req, res) => {
             // Count trainings and tests for athletes
             if (user.role === 'athlete') {
                 try {
-                    console.log(`Counting data for athlete ${user._id} (${user.name} ${user.surname})`);
-                    const trainings = await trainingDao.findByAthleteId(user._id);
-                    const tests = await Test.find({ athleteId: user._id });
+                    const athleteIdStr = String(user._id);
+                    console.log(`[Admin Users] Counting data for athlete ${user._id} (${user.name} ${user.surname}), athleteIdStr: ${athleteIdStr}`);
+                    
+                    const trainings = await trainingDao.findByAthleteId(athleteIdStr);
+                    
+                    // Get all tests and filter manually to handle any ID format mismatch
+                    const allTests = await Test.find({});
+                    const matchingTests = allTests.filter(t => {
+                        const testAthleteId = String(t.athleteId || '');
+                        const athleteId = athleteIdStr;
+                        // Try exact match
+                        if (testAthleteId === athleteId) return true;
+                        // Try without any whitespace
+                        if (testAthleteId.trim() === athleteId.trim()) return true;
+                        // Try comparing ObjectId strings
+                        try {
+                            if (mongoose.Types.ObjectId.isValid(testAthleteId) && mongoose.Types.ObjectId.isValid(athleteId)) {
+                                return new mongoose.Types.ObjectId(testAthleteId).equals(new mongoose.Types.ObjectId(athleteId));
+                            }
+                        } catch (e) {
+                            // Ignore conversion errors
+                        }
+                        return false;
+                    });
+                    
                     trainingCount = trainings.length;
-                    testCount = tests.length;
-                    console.log(`Found ${trainingCount} trainings and ${testCount} tests for ${user.name}`);
+                    testCount = matchingTests.length;
+                    console.log(`[Admin Users] Found ${trainingCount} trainings and ${testCount} tests for ${user.name}`);
                 } catch (error) {
-                    console.error(`Error counting data for user ${user._id}:`, error);
+                    console.error(`[Admin Users] Error counting data for user ${user._id}:`, error);
                 }
+            }
+            
+            // Count trainings and tests for coaches (sum of all their athletes' data)
+            if (user.role === 'coach') {
+                try {
+                    console.log(`[Admin Users] Counting data for coach ${user._id} (${user.name} ${user.surname})`);
+                    // Find all athletes assigned to this coach
+                    const athletes = await userDao.findAthletesByCoachId(user._id);
+                    console.log(`[Admin Users] Found ${athletes.length} athletes for coach ${user.name}:`, athletes.map(a => `${a.name} ${a.surname} (${a._id})`));
+                    
+                    // Count trainings and tests for all athletes
+                    for (const athlete of athletes) {
+                        try {
+                            const athleteIdStr = String(athlete._id);
+                            const trainings = await trainingDao.findByAthleteId(athleteIdStr);
+                            const tests = await Test.find({ athleteId: athleteIdStr });
+                            const athleteTrainingCount = trainings.length;
+                            const athleteTestCount = tests.length;
+                            trainingCount += athleteTrainingCount;
+                            testCount += athleteTestCount;
+                            console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
+                        } catch (error) {
+                            console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
+                        }
+                    }
+                    
+                    // Also count coach's own data (coaches can also be athletes)
+                    try {
+                        const coachIdStr = String(user._id);
+                        console.log(`[Admin Users] Looking for coach's own data with ID: ${coachIdStr} (original: ${user._id}, type: ${typeof user._id})`);
+                        
+                        // Get all tests and filter manually to handle any ID format mismatch
+                        const allTests = await Test.find({});
+                        const matchingTests = allTests.filter(t => {
+                            const testAthleteId = String(t.athleteId || '');
+                            const coachId = coachIdStr;
+                            // Try exact match
+                            if (testAthleteId === coachId) return true;
+                            // Try without any whitespace
+                            if (testAthleteId.trim() === coachId.trim()) return true;
+                            // Try comparing ObjectId strings
+                            try {
+                                if (mongoose.Types.ObjectId.isValid(testAthleteId) && mongoose.Types.ObjectId.isValid(coachId)) {
+                                    return new mongoose.Types.ObjectId(testAthleteId).equals(new mongoose.Types.ObjectId(coachId));
+                                }
+                            } catch (e) {
+                                // Ignore conversion errors
+                            }
+                            return false;
+                        });
+                        
+                        const ownTrainings = await trainingDao.findByAthleteId(coachIdStr);
+                        const ownTrainingCount = ownTrainings.length;
+                        const ownTestCount = matchingTests.length;
+                        
+                        trainingCount += ownTrainingCount;
+                        testCount += ownTestCount;
+                        
+                        console.log(`[Admin Users] Coach's own data (${coachIdStr}): ${ownTrainingCount} trainings, ${ownTestCount} tests`);
+                        
+                        // Debug: Show sample of what's in DB if no tests found
+                        if (ownTestCount === 0 && allTests.length > 0) {
+                            const sampleTests = allTests.slice(0, 5);
+                            console.log(`[Admin Users] Sample test athleteIds in DB:`, sampleTests.map(t => ({ 
+                                testId: t._id, 
+                                athleteId: t.athleteId, 
+                                athleteIdType: typeof t.athleteId,
+                                athleteIdString: String(t.athleteId),
+                                coachIdStr: coachIdStr,
+                                matches: String(t.athleteId) === coachIdStr
+                            })));
+                        }
+                    } catch (error) {
+                        // Ignore if coach has no own data
+                        console.error(`[Admin Users] Error getting coach's own data:`, error);
+                    }
+                    
+                    console.log(`[Admin Users] Total for coach ${user.name}: ${trainingCount} trainings, ${testCount} tests (from ${athletes.length} athletes + own)`);
+                } catch (error) {
+                    console.error(`[Admin Users] Error counting data for coach ${user._id}:`, error);
+                }
+            }
+            
+            // Ensure counts are numbers
+            const finalTrainingCount = Number(trainingCount) || 0;
+            const finalTestCount = Number(testCount) || 0;
+            
+            if (user.role === 'coach') {
+                console.log(`[Admin Users] Coach ${user.name} ${user.surname} (${user._id}): trainingCount=${finalTrainingCount}, testCount=${finalTestCount}`);
             }
             
             return {
@@ -1425,8 +1537,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 createdAt: user.createdAt,
                 lastLogin: user.lastLogin,
                 isActive: user.isActive !== false, // Default to true if not set
-                trainingCount,
-                testCount
+                trainingCount: finalTrainingCount,
+                testCount: finalTestCount
             };
         }));
 

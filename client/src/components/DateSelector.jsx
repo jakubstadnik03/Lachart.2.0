@@ -78,8 +78,15 @@ function DateSelector({ dates, onSelectDate }) {
       if (scrollContainerRef.current) {
         const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
         const hasScroll = scrollWidth > clientWidth;
-        setShowLeftArrow(hasScroll && scrollLeft > 10);
-        setShowRightArrow(hasScroll && scrollLeft < scrollWidth - clientWidth - 10);
+        // On desktop, only show arrows if there's actual scrolling needed
+        if (!isMobile) {
+          setShowLeftArrow(hasScroll && scrollLeft > 10);
+          setShowRightArrow(hasScroll && scrollLeft < scrollWidth - clientWidth - 10);
+        } else {
+          // On mobile, use the page-based logic
+          setShowLeftArrow(false);
+          setShowRightArrow(false);
+        }
       }
     };
 
@@ -92,19 +99,23 @@ function DateSelector({ dates, onSelectDate }) {
       const resizeObserver = new ResizeObserver(checkScroll);
       resizeObserver.observe(container);
       
-      // Listen to scroll events
-      container.addEventListener('scroll', checkScroll, { passive: true });
+      // Listen to scroll events (only on desktop)
+      if (!isMobile) {
+        container.addEventListener('scroll', checkScroll, { passive: true });
+      }
       
       // Also check after a short delay to ensure layout is complete
       const timeoutId = setTimeout(checkScroll, 100);
 
       return () => {
-        container.removeEventListener('scroll', checkScroll);
+        if (!isMobile) {
+          container.removeEventListener('scroll', checkScroll);
+        }
         resizeObserver.disconnect();
         clearTimeout(timeoutId);
       };
     }
-  }, [dates]);
+  }, [dates, isMobile]);
 
   const handleDateSelect = (date) => {
     setSelectedDate(date);
@@ -154,27 +165,20 @@ function DateSelector({ dates, onSelectDate }) {
       <div className="text-lg sm:text-xl font-semibold text-black mb-2 sm:mb-3">Previous testings</div>
       <div className="relative">
         {/* Vlevo */}
-        <motion.button
-          whileHover={customShowLeftArrow || (!isMobile && showLeftArrow) ? { scale: 1.14 } : false}
-          onClick={() => {
-            if ((isMobile && customShowLeftArrow) || (!isMobile && showLeftArrow)) {
+        {((isMobile && customShowLeftArrow) || (!isMobile && showLeftArrow)) && (
+          <motion.button
+            whileHover={{ scale: 1.14 }}
+            onClick={() => {
               isMobile ? scrollPage('left') : scroll('left');
-            }
-          }}
-          disabled={isMobile ? !customShowLeftArrow : !showLeftArrow}
-          aria-disabled={isMobile ? !customShowLeftArrow : !showLeftArrow}
-          className={
-            `absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center
-            ${((isMobile && !customShowLeftArrow) || (!isMobile && !showLeftArrow)) ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-white active:bg-white'}
-            `
-          }
-          aria-label="Scroll left"
-          tabIndex={((isMobile && !customShowLeftArrow) || (!isMobile && !showLeftArrow)) ? -1 : 0}
-        >
-          <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </motion.button>
+            }}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center hover:bg-white active:bg-white"
+            aria-label="Scroll left"
+          >
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </motion.button>
+        )}
         {/* Datumy */}
         <div
           ref={scrollContainerRef}
@@ -214,27 +218,20 @@ function DateSelector({ dates, onSelectDate }) {
           )}
         </div>
         {/* Vpravo */}
-        <motion.button
-          whileHover={customShowRightArrow || (!isMobile && showRightArrow) ? { scale: 1.14 } : false}
-          onClick={() => {
-            if ((isMobile && customShowRightArrow) || (!isMobile && showRightArrow)) {
+        {((isMobile && customShowRightArrow) || (!isMobile && showRightArrow)) && (
+          <motion.button
+            whileHover={{ scale: 1.14 }}
+            onClick={() => {
               isMobile ? scrollPage('right') : scroll('right');
-            }
-          }}
-          disabled={isMobile ? !customShowRightArrow : !showRightArrow}
-          aria-disabled={isMobile ? !customShowRightArrow : !showRightArrow}
-          className={
-            `absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center
-            ${((isMobile && !customShowRightArrow) || (!isMobile && !showRightArrow)) ? 'opacity-40 grayscale pointer-events-none' : 'hover:bg-white active:bg-white'}
-            `
-          }
-          aria-label="Scroll right"
-          tabIndex={((isMobile && !customShowRightArrow) || (!isMobile && !showRightArrow)) ? -1 : 0}
-        >
-          <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </motion.button>
+            }}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 p-1.5 sm:p-1 rounded-full shadow-md touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center transition origin-center hover:bg-white active:bg-white"
+            aria-label="Scroll right"
+          >
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </motion.button>
+        )}
       </div>
     </div>
   );

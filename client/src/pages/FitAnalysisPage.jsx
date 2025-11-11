@@ -7,6 +7,7 @@ import ReactECharts from 'echarts-for-react';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById } from '../services/api';
+import { clusterWorkouts } from '../services/api';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
@@ -31,30 +32,52 @@ const deduplicateStravaLaps = (laps = []) => {
   const seen = new Map();
   const unique = [];
 
-  const buildKey = (lap) => {
-    if (lap.__sourceIndex !== undefined && lap.__sourceIndex !== null) {
-      return `source_${lap.__sourceIndex}`;
+  const normalizeTime = (timeStr) => {
+    if (!timeStr) return null;
+    try {
+      const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return null;
+      // Round to nearest second to handle small differences
+      return Math.floor(date.getTime() / 1000);
+    } catch {
+      return null;
     }
+  };
+
+  const buildKey = (lap, index, cumulativeTime = 0) => {
+    // Priority 1: lapNumber (most reliable)
     if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
       return `lap_${lap.lapNumber}`;
     }
+    
+    // Priority 2: startTime or start_date (normalized)
     const startTime = lap.startTime || lap.start_date;
-    if (startTime) {
-      return `time_${startTime}`;
+    const normalizedTime = normalizeTime(startTime);
+    if (normalizedTime !== null) {
+      return `time_${normalizedTime}`;
     }
-    const elapsedTime = lap.elapsed_time || 0;
-    const distance = lap.distance || 0;
-    const power = lap.average_watts || 0;
-    return `fallback_t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power * 10)}`;
+    
+    // Priority 3: Combination of elapsed_time, distance, power, heartrate, and cadence
+    // Use cumulative time to better identify sequential duplicates
+    const elapsedTime = Math.round(lap.elapsed_time || 0);
+    const distance = Math.round((lap.distance || 0) * 10) / 10; // Round to 1 decimal
+    const power = Math.round((lap.average_watts || 0) * 10) / 10; // Round to 1 decimal
+    const hr = Math.round((lap.average_heartrate || 0) * 10) / 10; // Round to 1 decimal
+    const cadence = Math.round((lap.average_cadence || 0) * 10) / 10; // Round to 1 decimal
+    // Include cumulative time to distinguish sequential laps with similar values
+    const cumTime = Math.round(cumulativeTime);
+    return `fallback_c${cumTime}_t${elapsedTime}_d${distance}_p${power}_hr${hr}_c${cadence}`;
   };
 
+  let cumulativeTime = 0;
   laps.forEach((lap, index) => {
     const enriched = { ...lap };
     if (enriched.__sourceIndex === undefined || enriched.__sourceIndex === null) {
       enriched.__sourceIndex = index;
     }
 
-    const key = buildKey(enriched);
+    // Calculate cumulative time for this lap (before adding current lap duration)
+    const key = buildKey(enriched, index, cumulativeTime);
     const hasLactate = enriched.lactate !== null && enriched.lactate !== undefined;
 
     if (seen.has(key)) {
@@ -62,14 +85,118 @@ const deduplicateStravaLaps = (laps = []) => {
       const existingLap = unique[existingIdx];
       const existingHasLactate = existingLap?.lactate !== null && existingLap?.lactate !== undefined;
 
+      // Prefer lap with lactate, or keep the first one if both have or both don't have lactate
       if (hasLactate && !existingHasLactate) {
         unique[existingIdx] = enriched;
+        console.log(`Deduplicate: Replacing lap at index ${existingIdx} with one that has lactate`);
+        // Update cumulative time even when replacing
+        cumulativeTime += enriched.elapsed_time || 0;
+      } else {
+        console.log(`Deduplicate: Skipping duplicate lap at index ${index}, key: ${key}`);
+        // Don't update cumulative time for skipped duplicates
       }
     } else {
       seen.set(key, unique.length);
       unique.push(enriched);
+      // Update cumulative time for next lap
+      cumulativeTime += enriched.elapsed_time || 0;
     }
   });
+
+  if (unique.length !== laps.length) {
+    console.log(`Deduplicate Strava: Removed ${laps.length - unique.length} duplicate laps. Original: ${laps.length}, Unique: ${unique.length}`);
+    // Log first few duplicate keys for debugging
+    const duplicateKeys = [];
+    const seenKeys = new Set();
+    laps.forEach((lap, idx) => {
+      let cumulativeTime = 0;
+      for (let i = 0; i < idx; i++) {
+        cumulativeTime += (laps[i]?.elapsed_time || 0);
+      }
+      const key = buildKey(lap, idx, cumulativeTime);
+      if (seenKeys.has(key)) {
+        duplicateKeys.push({ index: idx, key, lap: { elapsed_time: lap.elapsed_time, distance: lap.distance, average_watts: lap.average_watts } });
+      } else {
+        seenKeys.add(key);
+      }
+    });
+    if (duplicateKeys.length > 0) {
+      console.log('Deduplicate Strava: First few duplicates:', duplicateKeys.slice(0, 5));
+    }
+  } else {
+    console.log(`Deduplicate Strava: No duplicates found. Original: ${laps.length}, Unique: ${unique.length}`);
+  }
+
+  return unique;
+};
+
+// Deduplicate FIT training laps
+const deduplicateFitTrainingLaps = (laps = []) => {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+
+  const seen = new Map();
+  const unique = [];
+
+  const normalizeTime = (timeStr) => {
+    if (!timeStr) return null;
+    try {
+      const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return null;
+      // Round to nearest second to handle small differences
+      return Math.floor(date.getTime() / 1000);
+    } catch {
+      return null;
+    }
+  };
+
+  laps.forEach((lap, index) => {
+    // Strategy 1: Use _id if available (MongoDB ObjectId)
+    if (lap._id) {
+      const idStr = lap._id.toString();
+      if (seen.has(`id_${idStr}`)) {
+        console.log(`Deduplicate FIT: Skipping duplicate lap by _id at index ${index}`);
+        return;
+      }
+      seen.set(`id_${idStr}`, true);
+      unique.push(lap);
+      return;
+    }
+    
+    // Strategy 2: Use startTime or start_date as primary identifier
+    const startTime = lap.startTime || lap.start_time || lap.start_date;
+    if (startTime) {
+      const normalizedTime = normalizeTime(startTime);
+      if (normalizedTime !== null) {
+        const key = `time_${normalizedTime}`;
+        if (seen.has(key)) {
+          console.log(`Deduplicate FIT: Skipping duplicate lap by startTime at index ${index}`);
+          return;
+        }
+        seen.set(key, true);
+        unique.push(lap);
+        return;
+      }
+    }
+    
+    // Strategy 3: Use combination of properties
+    const elapsedTime = Math.round(lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0);
+    const distance = Math.round((lap.totalDistance || lap.total_distance || lap.distance || 0) * 10) / 10;
+    const power = Math.round((lap.avgPower || lap.avg_power || lap.average_watts || 0) * 10) / 10;
+    const hr = Math.round((lap.avgHeartRate || lap.avg_heart_rate || lap.average_heartrate || 0) * 10) / 10;
+    
+    const key = `t${elapsedTime}_d${distance}_p${power}_hr${hr}`;
+    
+    if (seen.has(key)) {
+      console.log(`Deduplicate FIT: Skipping duplicate lap at index ${index}, key: ${key}`);
+      return;
+    }
+    seen.set(key, index);
+    unique.push(lap);
+  });
+
+  if (unique.length !== laps.length) {
+    console.log(`Deduplicate FIT: Removed ${laps.length - unique.length} duplicate laps. Original: ${laps.length}, Unique: ${unique.length}`);
+  }
 
   return unique;
 };
@@ -180,9 +307,23 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
   // Deduplicate laps in StravaLapsTable
   const uniqueLaps = React.useMemo(() => {
-    const deduped = deduplicateStravaLaps(selectedStrava?.laps || []);
-    if (deduped.length !== (selectedStrava?.laps?.length || 0)) {
-      console.log(`StravaLapsTable: Removed ${(selectedStrava?.laps?.length || 0) - deduped.length} duplicate laps. Original: ${selectedStrava?.laps?.length || 0}, Unique: ${deduped.length}`);
+    const originalLaps = selectedStrava?.laps || [];
+    console.log(`StravaLapsTable: Processing ${originalLaps.length} laps`);
+    const deduped = deduplicateStravaLaps(originalLaps);
+    if (deduped.length !== originalLaps.length) {
+      console.log(`StravaLapsTable: Removed ${originalLaps.length - deduped.length} duplicate laps. Original: ${originalLaps.length}, Unique: ${deduped.length}`);
+      // Log duplicate details
+      const seenKeys = new Set();
+      originalLaps.forEach((lap, idx) => {
+        const key = lap.lapNumber !== undefined ? `lap_${lap.lapNumber}` : 
+                   (lap.startTime || lap.start_date ? `time_${lap.startTime || lap.start_date}` : 
+                   `fallback_${idx}`);
+        if (seenKeys.has(key)) {
+          console.log(`StravaLapsTable: Duplicate found at index ${idx}:`, { lapNumber: lap.lapNumber, startTime: lap.startTime || lap.start_date, elapsed_time: lap.elapsed_time });
+        } else {
+          seenKeys.add(key);
+        }
+      });
     }
     return deduped;
   }, [selectedStrava?.laps]);
@@ -356,6 +497,8 @@ const FitAnalysisPage = () => {
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
   const stravaChartRef = useRef(null);
   const [showClustering, setShowClustering] = useState(false);
+  const [autoNaming, setAutoNaming] = useState(false);
+  const [autoNamingProgress, setAutoNamingProgress] = useState(null);
   
   // Strava interval creation state
   const [stravaIsDragging, setStravaIsDragging] = useState(false);
@@ -487,45 +630,10 @@ const FitAnalysisPage = () => {
         lapsCount: data.laps?.length || 0
       });
       
-      // Deduplicate laps before setting state
-      let uniqueLaps = data.laps || [];
-      if (uniqueLaps.length > 0) {
-        console.log('Original laps count from API:', uniqueLaps.length);
-        const seen = new Map();
-        const deduplicated = [];
-        
-        uniqueLaps.forEach((lap, index) => {
-          // Use start_date or startTime as primary identifier
-          const startTime = lap.startTime || lap.start_date;
-          if (startTime) {
-            const key = `time_${startTime}`;
-            if (seen.has(key)) {
-              console.warn(`Duplicate lap by startTime at index ${index}, removing:`, lap);
-              return;
-            }
-            seen.set(key, true);
-            deduplicated.push(lap);
-            return;
-          }
-          
-          // Fallback: use combination of properties
-          const elapsedTime = lap.elapsed_time || 0;
-          const distance = lap.distance || 0;
-          const power = lap.average_watts || 0;
-          const key = `t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power)}`;
-          
-          if (seen.has(key)) {
-            console.warn(`Duplicate lap at index ${index}, removing:`, lap);
-            return;
-          }
-          seen.set(key, true);
-          deduplicated.push(lap);
-        });
-        
-        if (deduplicated.length !== uniqueLaps.length) {
-          console.log(`Removed ${uniqueLaps.length - deduplicated.length} duplicate laps. Original: ${uniqueLaps.length}, Unique: ${deduplicated.length}`);
-        }
-        uniqueLaps = deduplicated;
+      // Deduplicate laps before setting state using the same function as elsewhere
+      let uniqueLaps = deduplicateStravaLaps(data.laps || []);
+      if (uniqueLaps.length !== (data.laps?.length || 0)) {
+        console.log(`loadStravaDetail: Removed ${(data.laps?.length || 0) - uniqueLaps.length} duplicate laps. Original: ${data.laps?.length || 0}, Unique: ${uniqueLaps.length}`);
       }
       
       // Merge titleManual and description into detail object
@@ -916,61 +1024,17 @@ const FitAnalysisPage = () => {
       
       // Check for duplicate laps and deduplicate if needed
       if (data.laps && Array.isArray(data.laps)) {
-        console.log('Original laps count:', data.laps.length);
-        console.log('First few laps:', data.laps.slice(0, 3));
+        console.log('loadTrainingDetail: Original laps count:', data.laps.length);
         
-        // Remove duplicates - use a more robust deduplication
-        const seen = new Map();
-        const uniqueLaps = [];
-        
-        data.laps.forEach((lap, index) => {
-          // Try multiple strategies to identify duplicates
-          // 1. Use _id if available (MongoDB ObjectId)
-          if (lap._id) {
-            const idStr = lap._id.toString();
-            if (seen.has(`id_${idStr}`)) {
-              console.warn(`Duplicate lap by _id at index ${index}, removing:`, lap);
-              return;
-            }
-            seen.set(`id_${idStr}`, true);
-            uniqueLaps.push(lap);
-            return;
-          }
-          
-          // 2. Use combination of properties for unique identification
-          const elapsedTime = lap.totalElapsedTime || lap.total_elapsed_time || 0;
-          const distance = lap.totalDistance || lap.total_distance || 0;
-          const power = lap.avgPower || lap.avg_power || 0;
-          const hr = lap.avgHeartRate || lap.avg_heart_rate || 0;
-          const startTime = lap.startTime || lap.start_time || null;
-          
-          // Create a more unique key
-          const key = startTime 
-            ? `start_${startTime}` 
-            : `t${Math.round(elapsedTime)}_d${Math.round(distance)}_p${Math.round(power)}_hr${Math.round(hr)}_i${index}`;
-          
-          if (seen.has(key)) {
-            console.warn(`Duplicate lap detected at index ${index}, removing:`, {
-              index,
-              key,
-              elapsedTime,
-              distance,
-              power,
-              existingIndex: seen.get(key)
-            });
-            return;
-          }
-          
-          seen.set(key, index);
-          uniqueLaps.push(lap);
-        });
+        // Use the same deduplication function as elsewhere
+        const uniqueLaps = deduplicateFitTrainingLaps(data.laps);
         
         if (uniqueLaps.length !== data.laps.length) {
-          console.log(`Removed ${data.laps.length - uniqueLaps.length} duplicate laps. Original: ${data.laps.length}, Unique: ${uniqueLaps.length}`);
+          console.log(`loadTrainingDetail: Removed ${data.laps.length - uniqueLaps.length} duplicate laps. Original: ${data.laps.length}, Unique: ${uniqueLaps.length}`);
         }
         
         data.laps = uniqueLaps;
-        console.log('Final laps count:', data.laps.length);
+        console.log('loadTrainingDetail: Final laps count:', data.laps.length);
       }
       
       setSelectedTraining(data);
@@ -1115,6 +1179,42 @@ const FitAnalysisPage = () => {
     }
   };
 
+  const handleAutoNameWorkouts = async () => {
+    if (!window.confirm('This will analyze all your workouts and automatically name similar ones with the same title. Continue?')) {
+      return;
+    }
+
+    try {
+      setAutoNaming(true);
+      setAutoNamingProgress('Analyzing workout patterns...');
+      
+      // Cluster workouts - this automatically assigns titleAuto to similar workouts
+      const response = await clusterWorkouts(null, 0.25, 3);
+      
+      if (response.success) {
+        const clusterCount = response.clusters?.length || 0;
+        const workoutCount = response.workouts?.length || 0;
+        
+        setAutoNamingProgress(`Found ${clusterCount} groups of similar workouts. Updating ${workoutCount} workouts...`);
+        
+        // Reload trainings to see updated names
+        await loadTrainings();
+        await loadExternalActivities();
+        
+        setAutoNamingProgress(null);
+        alert(`Auto-naming completed!\n\n• Found ${clusterCount} groups of similar workouts\n• Updated ${workoutCount} workouts with automatic names\n\nSimilar workouts now have the same title.`);
+      } else {
+        throw new Error('Clustering failed');
+      }
+    } catch (error) {
+      console.error('Error auto-naming workouts:', error);
+      setAutoNamingProgress(null);
+      alert('Error auto-naming workouts: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setAutoNaming(false);
+    }
+  };
+
 
 
   return (
@@ -1131,6 +1231,41 @@ const FitAnalysisPage = () => {
           onUpload={handleUpload}
           onSyncComplete={loadExternalActivities}
         />
+
+        {/* Auto-Naming Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200 shadow-md p-4 md:p-6 mb-6"
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex-1">
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-2">Auto-Name Similar Workouts</h2>
+              <p className="text-sm text-gray-600">
+                Automatically analyze your workouts and give similar interval-based workouts the same name. 
+                This helps you quickly identify and organize your training patterns.
+              </p>
+              {autoNamingProgress && (
+                <div className="mt-3 text-sm text-purple-700 font-medium">
+                  {autoNamingProgress}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleAutoNameWorkouts}
+              disabled={autoNaming}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
+            >
+              {autoNaming && (
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+              {autoNaming ? 'Analyzing...' : 'Auto-Name Workouts'}
+            </button>
+          </div>
+        </motion.div>
 
         {/* Calendar Section */}
         <CalendarView
@@ -1607,6 +1742,10 @@ const FitAnalysisPage = () => {
                             {(() => {
                               if (!selectedTraining?.laps || selectedTraining.laps.length === 0) return null;
                               
+                              // Deduplicate laps before processing
+                              const uniqueLaps = deduplicateFitTrainingLaps(selectedTraining.laps);
+                              if (uniqueLaps.length === 0) return null;
+                              
                               // Get training start time from first record
                               const trainingStartTime = chartData.records[0]?.timestamp 
                                 ? new Date(chartData.records[0].timestamp).getTime() 
@@ -1614,7 +1753,7 @@ const FitAnalysisPage = () => {
                               
                               // Calculate time positions for each lap
                               let cumulativeTime = 0;
-                              const allIntervalBars = selectedTraining.laps.map((lap, index) => {
+                              const allIntervalBars = uniqueLaps.map((lap, index) => {
                                 let startTime = cumulativeTime;
                                 if (lap.startTime) {
                                   const lapStartTime = new Date(lap.startTime).getTime();

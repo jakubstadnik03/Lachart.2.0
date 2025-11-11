@@ -53,27 +53,64 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
   const calculateTrainingZones = useCallback(() => {
     if (!mockData || !mockData.results || mockData.results.length < 3) {
+      console.warn('[Zones] Not enough data for zone calculation:', {
+        hasMockData: !!mockData,
+        resultsCount: mockData?.results?.length || 0,
+        required: 3
+      });
+      setZones(null);
       return;
     }
     const sport = mockData.sport || 'bike';
     setSelectedSport(sport);
     
+    console.log('[Zones] Calculating zones for sport:', sport, {
+      resultsCount: mockData.results.length,
+      baseLactate: mockData.baseLactate,
+      results: mockData.results.map(r => ({ power: r.power, lactate: r.lactate, hr: r.heartRate }))
+    });
+    
     const thresholds = calculateThresholds(mockData);
+    console.log('[Zones] Thresholds calculated:', {
+      hasLTP1: !!thresholds['LTP1'],
+      hasLTP2: !!thresholds['LTP2'],
+      hasHR1: !!thresholds.heartRates['LTP1'],
+      hasHR2: !!thresholds.heartRates['LTP2'],
+      allThresholds: Object.keys(thresholds).filter(k => k !== 'heartRates' && k !== 'lactates')
+    });
+    
     const lt1_value = thresholds['LTP1'];
     const lt2_value = thresholds['LTP2'];
     const hr1 = thresholds.heartRates['LTP1'];
     const hr2 = thresholds.heartRates['LTP2'];
     
     if (!lt1_value || !lt2_value || !hr1 || !hr2) {
-      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { lt1_value, lt2_value, hr1, hr2 });
+      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { 
+        lt1_value, 
+        lt2_value, 
+        hr1, 
+        hr2,
+        allThresholds: Object.keys(thresholds),
+        availableHRs: Object.keys(thresholds.heartRates || {})
+      });
       setZones(null);
       return;
     }
     
-    if (lt2_value <= lt1_value) {
-      console.warn('[Zones] LTP2 <= LTP1, invalid combination', { lt1_value, lt2_value });
-      setZones(null);
-      return;
+    // Validace: Pro bike (power) musí být LTP2 > LTP1, pro run/swim (pace) musí být LTP2 < LTP1
+    if (sport === 'bike') {
+      if (lt2_value <= lt1_value) {
+        console.warn('[Zones] LTP2 <= LTP1, invalid combination for bike', { lt1_value, lt2_value, sport });
+        setZones(null);
+        return;
+      }
+    } else {
+      // Pro run/swim: pace v sekundách, takže LTP2 (rychlejší tempo) musí být < LTP1 (pomalejší tempo)
+      if (lt2_value >= lt1_value) {
+        console.warn('[Zones] LTP2 >= LTP1, invalid combination for run/swim (pace)', { lt1_value, lt2_value, sport });
+        setZones(null);
+        return;
+      }
     }
     
     // Pro bike: použít power hodnoty (watty), pro run/swim: použít tempo (sekundy)
@@ -139,39 +176,40 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       console.log(`[Zones Run/Swim] LTP1: ${lt1_sec} (${fmt(lt1_sec)}) LTP2: ${lt2_sec} (${fmt(lt2_sec)})`);
       
       // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
+      // Pro pace: min = pomalejší (více sekund), max = rychlejší (méně sekund)
       setZones({
         pace: {
           zone1: {
-            min: fmt(lt1_sec / 0.90),
-            max: fmt(lt1_sec / 0.70),
+            min: fmt(lt1_sec / 0.70), // pomalejší (více sekund)
+            max: fmt(lt1_sec / 0.90), // rychlejší (méně sekund)
             description: '70–90% LT1 (recovery, reference wide zone)',
             hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
             percent: '70–90% LT1',
           },
           zone2: {
-            min: fmt(lt1_sec / 1.00),
-            max: fmt(lt1_sec / 0.90),
+            min: fmt(lt1_sec / 0.90), // pomalejší
+            max: fmt(lt1_sec / 1.00), // rychlejší
             description: '90%–100% LT1',
             hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
             percent: '90–100% LT1',
           },
           zone3: {
-            min: fmt(lt2_sec / 0.95),
-            max: fmt(lt1_sec / 1.00),
+            min: fmt(lt1_sec / 1.00), // pomalejší
+            max: fmt(lt2_sec / 0.95), // rychlejší
             description: '100% LT1 – 95% LT2',
             hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
             percent: '100% LT1 – 95% LT2',
           },
           zone4: {
-            min: fmt(lt2_sec / 1.04),
-            max: fmt(lt2_sec / 0.96),
+            min: fmt(lt2_sec / 0.96), // pomalejší
+            max: fmt(lt2_sec / 1.04), // rychlejší
             description: '96%–104% LT2 (threshold)',
             hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
             percent: '96–104% LT2',
           },
           zone5: {
-            min: fmt(lt2_sec / 1.20),
-            max: fmt(lt2_sec / 1.05),
+            min: fmt(lt2_sec / 1.05), // pomalejší
+            max: fmt(lt2_sec / 1.20), // rychlejší
             description: '105–120% LT2 (sprint/VO2max+ reference)',
             hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
             percent: '105–120% LT2',
@@ -206,7 +244,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   }
 
   return (
-    <div className="space-y-6">
+<div className="space-y-6">       
 
 
 
@@ -349,7 +387,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                               (inputMode === 'speed' ? 
                                 `${powerZone[zoneKey].min}-${powerZone[zoneKey].max}${unitSystem === 'imperial' ? 'mph' : 'km/h'}` :
                                 (powerZone[zoneKey].max && powerZone[zoneKey].min) ?
-                                  `${powerZone[zoneKey].max}–${powerZone[zoneKey].min}` :
+                                  `${powerZone[zoneKey].min}–${powerZone[zoneKey].max}` :
                                   powerZone[zoneKey].min ?
                                     `>${powerZone[zoneKey].min}` :
                                   powerZone[zoneKey].max ?

@@ -211,15 +211,16 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       thresholds.lactates['IAT'] = iatThreshold.lactate;
     }
   
-    // Najít LTP body
+    // Najít LTP body pomocí D-max metody
     const { ltp1, ltp2 } = findLactateThresholds(sortedResults, baseLactate);
     
-    // Definice cílových laktátů
+    // Definice cílových laktátů (použít baseLactate pokud je definováno, jinak použít výchozí hodnoty)
+    const effectiveBaseLactate = baseLactate || 1.0; // Fallback na 1.0 pokud není definováno
     const targets = [
       2.0, 2.5, 3.0, 3.5,  // OBLA hodnoty
-      baseLactate + 0.5, baseLactate + 1.0, baseLactate + 1.5,  // Baseline + delta
-      baseLactate * 1.5,  // LTP1 target
-      baseLactate * 3.0   // LTP2 target
+      effectiveBaseLactate + 0.5, effectiveBaseLactate + 1.0, effectiveBaseLactate + 1.5,  // Baseline + delta
+      effectiveBaseLactate * 1.5,  // LTP1 target
+      effectiveBaseLactate * 3.0   // LTP2 target
     ];
   
     // Projít všechny sousední body a najít thresholdy
@@ -255,6 +256,71 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       });
     }
   
+    // Fallback: Pokud se LTP1/LTP2 nenajdou pomocí interpolace, použít hodnoty z D-max metody
+    if (!thresholds['LTP1'] && ltp1) {
+      // Najít dva nejbližší body pro interpolaci HR
+      let prevLap = sortedResults[0];
+      let nextLap = sortedResults[sortedResults.length - 1];
+      
+      for (let i = 0; i < sortedResults.length - 1; i++) {
+        if (sortedResults[i].power <= ltp1 && sortedResults[i + 1].power >= ltp1) {
+          prevLap = sortedResults[i];
+          nextLap = sortedResults[i + 1];
+          break;
+        }
+      }
+      
+      // Interpolovat HR mezi nejbližšími body
+      const hr1 = prevLap.heartRate || null;
+      const hr2 = nextLap.heartRate || null;
+      let interpolatedHR = null;
+      
+      if (hr1 && hr2 && prevLap.power !== nextLap.power) {
+        interpolatedHR = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp1);
+      } else if (hr1) {
+        interpolatedHR = hr1;
+      } else if (hr2) {
+        interpolatedHR = hr2;
+      }
+      
+      thresholds['LTP1'] = ltp1;
+      thresholds.heartRates['LTP1'] = interpolatedHR;
+      thresholds.lactates['LTP1'] = prevLap.lactate || nextLap.lactate || null;
+      console.log('[calculateThresholds] Using D-max fallback for LTP1:', { ltp1, hr: interpolatedHR });
+    }
+    
+    if (!thresholds['LTP2'] && ltp2) {
+      // Najít dva nejbližší body pro interpolaci HR
+      let prevLap = sortedResults[0];
+      let nextLap = sortedResults[sortedResults.length - 1];
+      
+      for (let i = 0; i < sortedResults.length - 1; i++) {
+        if (sortedResults[i].power <= ltp2 && sortedResults[i + 1].power >= ltp2) {
+          prevLap = sortedResults[i];
+          nextLap = sortedResults[i + 1];
+          break;
+        }
+      }
+      
+      // Interpolovat HR mezi nejbližšími body
+      const hr1 = prevLap.heartRate || null;
+      const hr2 = nextLap.heartRate || null;
+      let interpolatedHR = null;
+      
+      if (hr1 && hr2 && prevLap.power !== nextLap.power) {
+        interpolatedHR = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp2);
+      } else if (hr1) {
+        interpolatedHR = hr1;
+      } else if (hr2) {
+        interpolatedHR = hr2;
+      }
+      
+      thresholds['LTP2'] = ltp2;
+      thresholds.heartRates['LTP2'] = interpolatedHR;
+      thresholds.lactates['LTP2'] = prevLap.lactate || nextLap.lactate || null;
+      console.log('[calculateThresholds] Using D-max fallback for LTP2:', { ltp2, hr: interpolatedHR });
+    }
+  
     // Výpočet LTRatio pouze pokud máme oba LTP body
     if (ltp1 && ltp2 && ltp1 > 0 && ltp2 > 0) {
       const ratio = ltp2 / ltp1;
@@ -262,6 +328,22 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       if (ratio >= 1.1 && ratio <= 1.3) {
         thresholds['LTRatio'] = ratio.toFixed(2);
       }
+    }
+  
+    // Debug logging
+    if (!thresholds['LTP1'] || !thresholds['LTP2']) {
+      console.warn('[calculateThresholds] Missing LTP values:', {
+        hasLTP1: !!thresholds['LTP1'],
+        hasLTP2: !!thresholds['LTP2'],
+        ltp1_dmax: ltp1,
+        ltp2_dmax: ltp2,
+        baseLactate: effectiveBaseLactate,
+        resultsCount: sortedResults.length,
+        maxLactate: Math.max(...sortedResults.map(r => r.lactate)),
+        minLactate: Math.min(...sortedResults.map(r => r.lactate)),
+        targetLTP1: effectiveBaseLactate * 1.5,
+        targetLTP2: effectiveBaseLactate * 3.0
+      });
     }
   
     return thresholds;

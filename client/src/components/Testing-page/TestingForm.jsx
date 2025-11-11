@@ -163,8 +163,18 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
   const convertPaceToSeconds = (paceString) => {
-    if (!paceString || typeof paceString !== 'string') return 0;
-    const [minutes, seconds] = paceString.split(':').map(Number);
+    if (!paceString) return 0;
+    const paceStr = String(paceString).trim();
+    if (!paceStr.includes(':')) {
+      // If no colon, try to parse as number (might already be seconds)
+      const num = parseFloat(paceStr.replace(',', '.'));
+      return isNaN(num) ? 0 : num;
+    }
+    const parts = paceStr.split(':');
+    if (parts.length < 2) return 0;
+    const minutes = parseInt(parts[0], 10) || 0;
+    const seconds = parseInt(parts[1], 10) || 0;
+    if (isNaN(minutes) || isNaN(seconds)) return 0;
     return (minutes * 60) + seconds;
   };
 
@@ -182,15 +192,20 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
   const convertSpeedToSeconds = (speed, unitSystem) => {
-    if (!speed) return 0;
+    if (!speed || speed === 0) return 0;
+    const speedNum = typeof speed === 'string' ? parseFloat(speed.replace(',', '.')) : speed;
+    if (isNaN(speedNum) || speedNum <= 0) return 0;
+    
     if (unitSystem === 'imperial') {
       // Convert speed (mph) to pace (seconds per km)
       // First convert mph to km/h, then to seconds per km
-      const kmh = speed / 0.621371; // Convert mph to km/h
+      const kmh = speedNum / 0.621371; // Convert mph to km/h
+      if (kmh <= 0) return 0;
       return 3600 / kmh; // Convert km/h to seconds per km
     } else {
       // Convert speed (km/h) to pace (seconds per km)
-      return 3600 / speed;
+      if (speedNum <= 0) return 0;
+      return 3600 / speedNum;
     }
   };
 
@@ -222,10 +237,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       const updatedRows = rows.map(row => {
         if (!row.power || row.power === '') return row;
         
+        const powerStr = String(row.power).trim();
+        let powerNum = parseFloat(powerStr.replace(',', '.'));
+        
         // Convert based on current inputMode
         if (inputMode === 'pace') {
           // Convert to pace format (MM:SS)
-          const powerStr = String(row.power);
           
           // If it already has ':', keep as is (already in pace format)
           if (powerStr.includes(':')) {
@@ -233,21 +250,20 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           }
           
           // If it's a number, try to convert
-          const powerNum = parseFloat(powerStr);
           if (!isNaN(powerNum)) {
-            // If it's a large number (> 100), assume it's seconds - convert to pace
-            if (powerNum > 100) {
+            // If it's a large number (>= 60), assume it's seconds from backend - convert to pace
+            if (powerNum >= 60) {
               return { ...row, power: convertSecondsToPace(powerNum) };
             }
             // If it's a small number (< 50), assume it's speed - convert to pace
-            else if (powerNum < 50 && powerNum > 0) {
+            else if (powerNum > 0 && powerNum < 50) {
               const seconds = convertSpeedToSeconds(powerNum, unitSystem);
               return { ...row, power: convertSecondsToPace(seconds) };
             }
+            // For values 50-60, might be ambiguous - keep as is or convert based on context
           }
         } else if (inputMode === 'speed') {
           // Convert to speed format
-          const powerStr = String(row.power);
           
           // If it has ':', it's pace format - convert to speed
           if (powerStr.includes(':')) {
@@ -257,14 +273,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           }
           
           // If it's a number, check what it is
-          const powerNum = parseFloat(powerStr);
           if (!isNaN(powerNum)) {
-            // If it's a large number (> 100), assume it's seconds - convert to speed
-            if (powerNum > 100) {
+            // If it's a large number (>= 60), assume it's seconds from backend - convert to speed
+            if (powerNum >= 60) {
               const speed = convertSecondsToSpeed(powerNum, unitSystem);
               return { ...row, power: speed.toFixed(1) };
             }
-            // If it's already a small number, assume it's already speed, keep as is
+            // If it's already a small number (< 50), assume it's already speed, keep as is
+            // But might need to convert if unitSystem changed
+            if (powerNum > 0 && powerNum < 50) {
+              // Check if unitSystem changed - if so, might need conversion
+              // For now, keep as is (user might have typed it in current unitSystem)
+              return row;
+            }
           }
         }
         
@@ -273,6 +294,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       
       // Only update if rows actually changed
       if (JSON.stringify(updatedRows) !== JSON.stringify(rows)) {
+        console.log('[useEffect inputMode/unitSystem] Converting rows:', { inputMode, unitSystem, rowsCount: rows.length });
         setRows(updatedRows);
       }
     }
@@ -395,13 +417,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         const initialRows = testData.results.map(row => {
           let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
           
-          // For existing tests (from backend), convert seconds to MM:SS format for display
-          // Only for run/swim sports and only if power is a number > 60 (likely seconds)
+          // For existing tests (from backend), convert seconds to display format
+          // Backend always stores pace in seconds for run/swim
           if (!isNewTest && (testData.sport === 'run' || testData.sport === 'swim') && power) {
             const powerNum = parseFloat(power);
-            // If it's a number > 60, assume it's seconds from backend and convert to MM:SS
+            // If it's a number > 60, it's seconds from backend - convert to display format
             if (!isNaN(powerNum) && powerNum > 60 && !power.includes(':')) {
-              power = convertSecondsToPace(powerNum);
+              // Convert based on current inputMode and unitSystem
+              if (inputMode === 'pace') {
+                // Convert seconds to MM:SS format
+                power = convertSecondsToPace(powerNum);
+              } else if (inputMode === 'speed') {
+                // Convert seconds to speed (km/h or mph)
+                const speed = convertSecondsToSpeed(powerNum, unitSystem);
+                power = speed.toFixed(1);
+              } else {
+                // Fallback: convert to pace format
+                power = convertSecondsToPace(powerNum);
+              }
             }
           }
           
@@ -439,11 +472,76 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
 // NO AUTOMATIC CONVERSIONS - let user type anything
 
+  // Helper function to convert power value to seconds for backend
+  const convertPowerToSeconds = (powerValue, currentInputMode, currentUnitSystem, sport) => {
+    if (!powerValue || powerValue === '' || powerValue === null || powerValue === undefined) {
+      return 0;
+    }
+    
+    // For bike, power is already in watts, return as is
+    if (sport === 'bike') {
+      const num = parseFloat(String(powerValue).replace(',', '.'));
+      return isNaN(num) ? 0 : num;
+    }
+    
+    // For run/swim, we need to convert to seconds
+    const powerStr = String(powerValue).trim();
+    
+    // Check if it's already in pace format (MM:SS)
+    if (powerStr.includes(':')) {
+      // It's pace format, convert to seconds
+      const seconds = convertPaceToSeconds(powerStr);
+      console.log(`[convertPowerToSeconds] Pace "${powerStr}" -> ${seconds}s`);
+      return seconds;
+    }
+    
+    // Try to parse as number
+    const powerNum = parseFloat(powerStr.replace(',', '.'));
+    if (isNaN(powerNum)) {
+      console.warn(`[convertPowerToSeconds] Cannot parse "${powerStr}" as number`);
+      return 0;
+    }
+    
+    // Determine if it's speed or already seconds based on value and current mode
+    // Speed values are typically: 8-25 km/h (or 5-15 mph) for running
+    // Seconds values are typically: 180-600+ for pace
+    const isLikelySpeed = (currentInputMode === 'speed') || 
+                          (powerNum > 0 && powerNum < 50 && !powerStr.includes(':')) ||
+                          (powerNum > 0 && powerNum < 30 && currentUnitSystem === 'imperial');
+    
+    const isLikelySeconds = powerNum >= 100; // Pace in seconds is usually 100+
+    
+    let result;
+    if (isLikelySpeed && !isLikelySeconds) {
+      // It's speed, convert to seconds
+      result = convertSpeedToSeconds(powerNum, currentUnitSystem);
+      console.log(`[convertPowerToSeconds] Speed ${powerNum} ${currentUnitSystem === 'imperial' ? 'mph' : 'km/h'} -> ${result}s`);
+    } else if (isLikelySeconds) {
+      // It's already in seconds, return as is
+      result = powerNum;
+      console.log(`[convertPowerToSeconds] Already seconds: ${powerNum}s`);
+    } else {
+      // Ambiguous case: use current inputMode to decide
+      if (currentInputMode === 'speed') {
+        result = convertSpeedToSeconds(powerNum, currentUnitSystem);
+        console.log(`[convertPowerToSeconds] Ambiguous, using speed mode: ${powerNum} -> ${result}s`);
+      } else {
+        // Assume it's already seconds if in pace mode
+        result = powerNum;
+        console.log(`[convertPowerToSeconds] Ambiguous, using pace mode (assume seconds): ${powerNum}s`);
+      }
+    }
+    
+    return result;
+  };
+
   const handleSaveChanges = () => {
     if (!validateForm()) {
       return;
     }
-    const finalInputMode = inputMode; // místo nedefinovaných propInputMode/localInputMode
+    const finalInputMode = inputMode;
+    const finalUnitSystem = unitSystem;
+    
     const updatedTest = {
       ...testData,
       title: formData.title.trim(),
@@ -454,20 +552,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       date: formData.date,
       specifics: formData.specifics || { specific: '', weather: '' },
       comments: formData.comments?.trim() || '',
-      unitSystem: unitSystem, // <--- přidáno
-      inputMode: inputMode, // <--- přidáno
+      unitSystem: finalUnitSystem,
+      inputMode: finalInputMode,
       results: rows.map((row, index) => {
-        let powerValue = row.power;
-        if ((formData.sport === 'run' || formData.sport === 'swim')) {
-          if (finalInputMode === 'pace' && typeof powerValue === 'string' && powerValue.includes(':')) {
-            // Convert pace (MM:SS) to seconds for backend
-            powerValue = convertPaceToSeconds(powerValue);
-          } else if (finalInputMode === 'speed' && !isNaN(Number(powerValue)) && !powerValue.includes(':')) {
-            // Convert speed to seconds for backend
-            const speed = parseFloat(powerValue.toString().replace(',', '.'));
-            powerValue = convertSpeedToSeconds(speed, unitSystem);
-          }
-        }
+        // Convert power to seconds for backend
+        const powerInSeconds = convertPowerToSeconds(
+          row.power, 
+          finalInputMode, 
+          finalUnitSystem, 
+          formData.sport
+        );
+        
         const convertToNumber = (value) => {
           if (value === '' || value === undefined || value === null) return 0;
           if (typeof value !== 'string') {
@@ -476,9 +571,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           }
           return parseFloat(value.replace(',', '.'));
         };
+        
         return {
           interval: index + 1,
-          power: convertToNumber(powerValue),
+          power: powerInSeconds,
           heartRate: convertToNumber(row.heartRate),
           lactate: convertToNumber(row.lactate),
           glucose: convertToNumber(row.glucose),
@@ -747,16 +843,35 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       comments: originalTestData.comments || ''
                     });
                     
-                    // Restore rows with proper formatting
+                    // Restore inputMode and unitSystem first (before restoring rows)
+                    const restoredInputMode = originalTestData.inputMode || inputMode;
+                    const restoredUnitSystem = originalTestData.unitSystem || unitSystem;
+                    if (originalTestData.inputMode) {
+                      setInputMode(originalTestData.inputMode);
+                    }
+                    if (originalTestData.unitSystem) {
+                      setUnitSystem(originalTestData.unitSystem);
+                    }
+                    
+                    // Restore rows with proper formatting based on restored inputMode/unitSystem
                     if (originalTestData.results && originalTestData.results.length > 0) {
                       const restoredRows = originalTestData.results.map(row => {
                         let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
                         
-                        // For existing tests, convert seconds to MM:SS format for display
+                        // For existing tests, convert seconds from backend to display format
                         if ((originalTestData.sport === 'run' || originalTestData.sport === 'swim') && power) {
                           const powerNum = parseFloat(power);
-                          if (!isNaN(powerNum) && powerNum > 60 && !power.includes(':')) {
-                            power = convertSecondsToPace(powerNum);
+                          // If it's a number >= 60, it's seconds from backend - convert to display format
+                          if (!isNaN(powerNum) && powerNum >= 60 && !power.includes(':')) {
+                            if (restoredInputMode === 'pace') {
+                              power = convertSecondsToPace(powerNum);
+                            } else if (restoredInputMode === 'speed') {
+                              const speed = convertSecondsToSpeed(powerNum, restoredUnitSystem);
+                              power = speed.toFixed(1);
+                            } else {
+                              // Fallback: convert to pace
+                              power = convertSecondsToPace(powerNum);
+                            }
                           }
                         }
                         
@@ -770,14 +885,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                         };
                       });
                       setRows(restoredRows);
-                    }
-                    
-                    // Restore inputMode and unitSystem if they were in original data
-                    if (originalTestData.inputMode) {
-                      setInputMode(originalTestData.inputMode);
-                    }
-                    if (originalTestData.unitSystem) {
-                      setUnitSystem(originalTestData.unitSystem);
                     }
                     
                     setOriginalTestData(null);
