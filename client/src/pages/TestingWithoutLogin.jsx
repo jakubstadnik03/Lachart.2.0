@@ -54,6 +54,8 @@ const LactateCurveCalculatorPage = () => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    console.log(isMenuOpen);
+    
     const menuRef = useRef(null);
     const [testData, setTestData] = useState(() => {
         // Try to load data from localStorage on initial render

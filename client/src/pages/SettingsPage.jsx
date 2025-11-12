@@ -124,7 +124,6 @@ const SettingsPage = () => {
         throw new Error('Google authentication failed');
       }
 
-      
       // Then link the account
       const linkResult = await fetch(`${API_ENDPOINTS.AUTH}/link-social`, {
         method: 'POST',

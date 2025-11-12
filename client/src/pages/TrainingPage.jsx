@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -28,7 +28,7 @@ const TrainingPage = () => {
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
 
-  const loadTrainings = async (targetId) => {
+  const loadTrainings = useCallback(async (targetId) => {
     try {
       setLoading(true);
       setError(null);
@@ -49,7 +49,7 @@ const TrainingPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedSport]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -65,7 +65,7 @@ const TrainingPage = () => {
 
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings]);
 
   // Posluchač pro změnu atleta
   useEffect(() => {
@@ -87,7 +87,7 @@ const TrainingPage = () => {
 
     window.addEventListener('athleteChanged', handleAthleteChange);
     return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, [navigate]);
+  }, [navigate, selectedSport]);
 
   const handleAthleteChange = (newAthleteId) => {
     setSelectedAthleteId(newAthleteId);
@@ -160,12 +160,6 @@ const TrainingPage = () => {
     }
   };
 
-  // Helper funkce pro převod formátu MM:SS na sekundy
-  const parseMMSSToSeconds = (mmss) => {
-    if (!mmss) return null;
-    const [minutes, seconds] = mmss.split(':').map(Number);
-    return minutes * 60 + (seconds || 0);
-  };
 
   if (loading) return (
     <motion.div 

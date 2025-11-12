@@ -29,11 +29,6 @@ const ResetPasswordPage = () => {
 
     setIsSubmitting(true);
     try {
-      // const response = await axios.post(`${API_BASE_URL}/user/reset-password`, {
-      //   token,
-      //   newPassword: password
-      // });
-
       setStatus({
         type: 'success',
         message: 'Heslo bylo úspěšně změněno'
