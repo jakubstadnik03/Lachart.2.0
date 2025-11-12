@@ -491,7 +491,7 @@ const FitAnalysisPage = () => {
   const [selectionStats, setSelectionStats] = useState(null);
   const dragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
   const [stravaConnected, setStravaConnected] = useState(false);
-  const [garminConnected, setGarminConnected] = useState(false);
+  const [, setGarminConnected] = useState(false);
   const [externalActivities, setExternalActivities] = useState([]);
   const [selectedStrava, setSelectedStrava] = useState(null);
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
@@ -570,6 +570,7 @@ const FitAnalysisPage = () => {
     } else {
     loadTrainings();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -592,6 +593,7 @@ const FitAnalysisPage = () => {
       checkStatus();
       loadExternalActivities();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadExternalActivities = async () => {
@@ -1260,10 +1262,10 @@ const FitAnalysisPage = () => {
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                      </svg>
               )}
               {autoNaming ? 'Analyzing...' : 'Auto-Name Workouts'}
-            </button>
+                </button>
           </div>
         </motion.div>
 
@@ -2083,10 +2085,6 @@ const FitAnalysisPage = () => {
                         </div>
             ) : (() => {
           const time = selectedStravaStreams?.time?.data || [];
-          const speed = selectedStravaStreams?.velocity_smooth?.data || [];
-          const hr = selectedStravaStreams?.heartrate?.data || [];
-          const power = selectedStravaStreams?.watts?.data || [];
-          const altitude = selectedStravaStreams?.altitude?.data || [];
           const maxTime = time.length > 0 ? time[time.length-1] : 0;
 
           // Strava Title and Description Editor Component
@@ -2457,48 +2455,6 @@ const FitAnalysisPage = () => {
                   }
                 }
                 
-                // Calculate stats from selected time range for Strava
-                const calculateStravaSelectionStats = (startTime, endTime) => {
-                  if (!time || time.length === 0) return null;
-                  
-                  // Find indices in the selected time range (time is in seconds)
-                  const selectedIndices = [];
-                  for (let i = 0; i < time.length; i++) {
-                    if (time[i] >= startTime && time[i] <= endTime) {
-                      selectedIndices.push(i);
-                    }
-                  }
-                  
-                  if (selectedIndices.length === 0) return null;
-                  
-                  // Calculate statistics
-                  const speeds = selectedIndices.map(i => speed[i]).filter(v => v && v > 0);
-                  const heartRates = selectedIndices.map(i => hr[i]).filter(v => v && v > 0);
-                  const powers = selectedIndices.map(i => power[i]).filter(v => v && v > 0);
-                  
-                  const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
-                  const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : null;
-                  const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : null;
-                  const maxHeartRate = heartRates.length > 0 ? Math.max(...heartRates) : null;
-                  const avgPower = powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b, 0) / powers.length) : null;
-                  const maxPower = powers.length > 0 ? Math.max(...powers) : null;
-                  
-                  // Calculate distance (approximate from speed)
-                  const totalDistance = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) * (endTime - startTime) / selectedIndices.length : null;
-                  const duration = endTime - startTime;
-                  
-                  return {
-                    duration,
-                    totalDistance,
-                    avgSpeed: avgSpeed ? (avgSpeed * 3.6).toFixed(1) : null, // km/h
-                    maxSpeed: maxSpeed ? (maxSpeed * 3.6).toFixed(1) : null,
-                    avgHeartRate,
-                    maxHeartRate,
-                    avgPower,
-                    maxPower
-                  };
-                };
-                
                 // Handler for creating Strava lap
                 const handleCreateStravaLap = async () => {
                   try {
@@ -2512,7 +2468,6 @@ const FitAnalysisPage = () => {
                     setShowStravaCreateLapButton(false);
                     setStravaSelectedTimeRange({ start: 0, end: 0 });
                     setStravaSelectionStats(null);
-                    alert('Interval created successfully!');
                   } catch (error) {
                     console.error('Error creating Strava lap:', error);
                     alert('Error creating interval: ' + (error.response?.data?.error || error.message));
@@ -2525,10 +2480,6 @@ const FitAnalysisPage = () => {
                 
                 // Sort laps by startTime or start_date to ensure correct order
                 laps = [...laps].sort((a, b) => {
-                  const activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
-                  const activityStartDate = activityStartDateStr ? new Date(activityStartDateStr) : new Date();
-                  const activityStartTimeMs = activityStartDate.getTime();
-                  
                   const getLapStartTime = (lap) => {
                     if (lap.startTime && typeof lap.startTime === 'string') {
                       return new Date(lap.startTime).getTime();

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
-import { Lock, Mail, User, Phone, MapPin, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
+import { Mail, User, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
 
 const SettingsPage = () => {
   const { user } = useAuth();

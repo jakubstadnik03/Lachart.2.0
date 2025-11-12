@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { DropdownMenu } from "../DropDownMenu";
-import { Line } from "react-chartjs-2";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 
 const maxGraphHeight = 200;

@@ -37,7 +37,7 @@ const DashboardPage = () => {
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
   const navigate = useNavigate();
-  const { addNotification } = useNotification();
+  //const { addNotification } = useNotification();
   const [selectedTests, setSelectedTests] = useState([]);
 
   const loadTrainings = async (targetId) => {

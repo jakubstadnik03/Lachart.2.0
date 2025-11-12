@@ -11,7 +11,7 @@ import 'swiper/css/effect-coverflow';
 import ContactUs from '../components/ContactUs';
 
 // Lazy load the ContactForm component
-const ContactForm = lazy(() => import('../components/ContactForm'));
+//const ContactForm = lazy(() => import('../components/ContactForm'));
 
 // FAQ Accordion Item Component
 const FAQItem = ({ icon, question, answer }) => {
