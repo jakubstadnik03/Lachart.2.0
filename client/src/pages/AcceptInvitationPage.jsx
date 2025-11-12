@@ -1,21 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 
 const AcceptInvitationPage = () => {
   const { token } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [invitationData, setInvitationData] = useState(null);
 
   useEffect(() => {
     const verifyInvitation = async () => {
       try {
-        const response = await api.get(`/user/verify-invitation-token/${token}`);
-        setInvitationData(response.data);
+        await api.get(`/user/verify-invitation-token/${token}`);
         setLoading(false);
       } catch (error) {
         setError(error.response?.data?.error || 'Neplatná nebo expirovaná pozvánka');

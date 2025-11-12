@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getClusters, clusterWorkouts, updateClusterTitle } from '../../services/api';
-import { formatDuration } from '../../utils/fitAnalysisUtils';
 
 const WorkoutClustersList = ({ onSelectWorkout, ftp = null }) => {
   const [clusters, setClusters] = useState([]);

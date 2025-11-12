@@ -57,7 +57,6 @@ const colorMap = {
   ];
   const Legend = ({ chartRef }) => {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
-    const [hoveredDataset, setHoveredDataset] = useState(null);
   
     React.useEffect(() => {
       const chart = chartRef?.current;
@@ -84,7 +83,6 @@ const colorMap = {
       setHiddenDatasets(prev => ({ ...prev, [dsLabel]: isVisible }));
     };
     const handleMouseEnter = (dsLabel) => {
-      setHoveredDataset(dsLabel);
       const chart = chartRef?.current;
       if (!chart) return;
     
@@ -118,7 +116,6 @@ const colorMap = {
     };
     
     const handleMouseLeave = () => {
-      setHoveredDataset(null);
       const chart = chartRef?.current;
       if (!chart) return;
     
@@ -436,7 +433,6 @@ const LactateCurveCalculator = ({ mockData }) => {
             const label = ctx.dataset.label;
             const xVal = ctx.parsed.x;
             const yVal = ctx.parsed.y;
-            const dataPoint = ctx.dataset.data[ctx.dataIndex];
             
             if (isPaceSport) {
               if (inputMode === 'pace') {
@@ -510,38 +506,5 @@ const LactateCurveCalculator = ({ mockData }) => {
     </div>
   );
 };
-
-function StatCard({ stats }) {
-  return (
-    <div className="flex flex-col text-xs rounded-none max-w-[192px]" >
-      <div className="flex z-10 flex-col justify-center items-center px-3 py-2 bg-white/95 backdrop-blur-sm shadow-lg rounded-xl border border-gray-100 text-sm">
-        {stats
-          .filter(stat => stat.value && stat.value !== "-")
-          .map((stat, index) => (
-            <div
-              key={`stat-${index}`}
-              className="flex items-center gap-2"
-            >
-              <span className={`w-2 h-2 rounded-full ${
-                stat.unit === "W" ? "bg-violet-500" :
-                stat.unit === "Bpm" ? "bg-red-500" :
-                stat.unit === "mmol/L" ? "bg-blue-500" :
-                "bg-green-500"
-              }`}></span>
-              <span className={`${stat.unit === "W" ? "font-semibold text-gray-900" : ""}`}>
-                {stat.label}: {stat.value} {stat.unit}
-              </span>
-            </div>
-          ))}
-      </div>
-      <div className="absolute w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-8 border-t-white"
-           style={{
-             left: "50%",
-             bottom: "-8px",
-             transform: "translateX(-50%)",
-           }} />
-    </div>
-  );
-}
 
 export default LactateCurveCalculator;

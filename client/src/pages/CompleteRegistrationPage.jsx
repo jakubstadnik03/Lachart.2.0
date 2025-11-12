@@ -12,14 +12,12 @@ const CompleteRegistrationPage = () => {
     confirmPassword: '',
   });
   const [error, setError] = useState(null);
-  const [athlete, setAthlete] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const verifyToken = async () => {
       try {
-        const response = await api.get(`/user/verify-registration-token/${token}`);
-        setAthlete(response.data);
+        await api.get(`/user/verify-registration-token/${token}`);
         setLoading(false);
       } catch (error) {
         setError('Invalid or expired registration link');

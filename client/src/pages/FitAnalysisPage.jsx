@@ -2103,7 +2103,8 @@ const FitAnalysisPage = () => {
             useEffect(() => {
               setTitle(selectedStrava?.titleManual || selectedStrava?.name || '');
               setDescription(selectedStrava?.description || '');
-            }, [selectedStrava]);
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            }, []);
 
             // Load all titles when editing starts
             useEffect(() => {
@@ -2454,25 +2455,6 @@ const FitAnalysisPage = () => {
                     paceYAxisMax = 120; // 2:00/100m (pomalejší, dole)
                   }
                 }
-                
-                // Handler for creating Strava lap
-                const handleCreateStravaLap = async () => {
-                  try {
-                    const { start, end } = stravaSelectedTimeRange;
-                    await createStravaLap(selectedStrava.id, {
-                      startTime: Math.min(start, end),
-                      endTime: Math.max(start, end)
-                    });
-                    await loadStravaDetail(selectedStrava.id);
-                    await loadExternalActivities(); // Reload Strava activities to update calendar
-                    setShowStravaCreateLapButton(false);
-                    setStravaSelectedTimeRange({ start: 0, end: 0 });
-                    setStravaSelectionStats(null);
-                  } catch (error) {
-                    console.error('Error creating Strava lap:', error);
-                    alert('Error creating interval: ' + (error.response?.data?.error || error.message));
-                  }
-                };
                 
                 // Prepare interval bars data from laps
                 let laps = deduplicateStravaLaps(selectedStrava?.laps || []);

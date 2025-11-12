@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 
 const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testState, currentStep = 0 }) => {
   const [editedSteps, setEditedSteps] = useState([]);
@@ -52,11 +52,7 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
     onClose();
   };
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+
 
   if (!isOpen) return null;
 

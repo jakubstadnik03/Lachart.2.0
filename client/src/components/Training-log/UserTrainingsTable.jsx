@@ -114,24 +114,6 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   // Přidáme nový state pro sledování rozbalených položek
   const [expandedItems, setExpandedItems] = useState({});
 
-  const getStatusIcon = (status) => {
-    const icons = {
-      up: "/icon/arrow-up.svg",
-      down: "/icon/arrow-down.svg",
-      same: "/icon/arrow-same.svg"
-    };
-    return icons[status];
-  };
-
-  const getLactateStatus = (current, previous) => {
-    // Převedeme prázdné hodnoty na 0
-    const currentValue = current === '' || current === null || current === undefined ? 0 : Number(current);
-    const previousValue = previous === '' || previous === null || previous === undefined ? 0 : Number(previous);
-    
-    if (previousValue === 0) return "same"; // První hodnota nemá s čím srovnat
-    return currentValue > previousValue ? "up" : currentValue < previousValue ? "down" : "same";
-  };
-
   // Funkce pro přepínání rozbalení položky
   const toggleExpand = (trainingId) => {
     setExpandedItems(prev => ({
@@ -244,18 +226,13 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
       console.log('Training data to update:', updatedTraining);
       
       // Volání API pro aktualizaci tréninku
-      const response = await updateTraining(updatedTraining._id, updatedTraining);
+      await updateTraining(updatedTraining._id, updatedTraining);
       console.log('API call successful');
       
       // Aktualizace kontextu nebo znovu načtení dat
       if (onTrainingUpdate) {
         await onTrainingUpdate();
       }
-      
-      // Aktualizace lokálního stavu
-      const updatedTrainings = trainings.map(training => 
-        training._id === updatedTraining._id ? response : training
-      );
       
       // Zavření modálního okna
       setShowEditModal(false);
@@ -267,89 +244,6 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const renderWorkoutRow = (workout, index, array) => {
-    const isLastRow = index === array.length - 1;
-    const borderClass = isLastRow ? '' : 'border-solid border-b-[0.3px] border-b-[#686868]';
-    
-    const prevLactate = index > 0 ? array[index - 1].lactate : undefined;
-    const lactateStatus = getLactateStatus(workout.lactate, prevLactate);
-    const lactateIcon = lactateStatus !== "same" ? getStatusIcon(lactateStatus) : null;
-  
-    const efficiencyColor = lactateStatus === "down" 
-      ? "text-red-700 bg-red-600"
-      : lactateStatus === "up"
-      ? "text-green-600 bg-green-600"
-      : "text-gray-500 bg-gray-400";
-
-    const getDurationUnit = (durationType, duration) => {
-      if (!duration) return '';
-      
-      // Kontrola, zda hodnota obsahuje něco jiného než čísla a dvojtečku
-      const hasNonNumeric = /[^\d:]/.test(duration);
-      
-      // Pokud obsahuje něco jiného než čísla a dvojtečku, nezobrazujeme jednotku
-      if (hasNonNumeric) return '';
-      
-      return durationType === 'time' ? 'min' : 'm';
-    };
-
-    const formatDuration = (duration, durationType) => {
-      if (!duration) return '';
-      
-      if (durationType === 'time') {
-        // Pokud je duration ve formátu sekund, převedeme na MM:SS
-        if (!duration.includes(':')) {
-          const seconds = parseInt(duration);
-          if (!isNaN(seconds)) {
-            const minutes = Math.floor(seconds / 60);
-            const remainingSeconds = seconds % 60;
-            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-          }
-        }
-        return duration;
-      }
-      
-      return duration;
-    };
-  
-    return (
-      <div key={`workout-${workout.interval}-${index}`} className={`grid grid-cols-6 sm:grid-cols-6 gap-1 sm:gap-2 justify-items-center w-full items-center py-1.5 ${borderClass} text-[#686868] text-sm sm:text-base`}>
-        <div className="text-center w-8">{workout.interval}</div>
-        <div className="text-center w-12 sm:w-16">{workout.power}</div>
-        <div className="flex gap-0.5 items-center w-16">
-          <img
-            loading="lazy"
-            src="/icon/heart-rate.svg"
-            className="w-3 h-3 sm:w-4 sm:h-4"
-            alt="Heart rate"
-          />
-          <div>{workout.heartRate}</div>
-        </div>
-        <div className="flex gap-0.5 items-center text-secondary w-12">
-          <img
-            loading="lazy"
-            src="/icon/rpe.svg"
-            className="w-3 h-3 sm:w-4 sm:h-4"
-            alt="RPE"
-          />
-          <div>{workout.RPE}</div>
-        </div>
-        <div className={`flex gap-1 items-center p-1 w-12 sm:w-22 text-xs justify-center ${efficiencyColor} bg-opacity-10 rounded-md`}>
-          {lactateIcon && <img
-            loading="lazy"
-            src={lactateIcon}
-            className="w-2 h-2 sm:w-3 sm:h-3"
-            alt="Lactate status"
-          />}
-          <div>{workout.lactate || ''}</div>
-        </div>
-        <div className="w-16">
-          {formatDuration(workout.duration, workout.durationType)} {getDurationUnit(workout.durationType, workout.duration)}
-        </div>
-      </div>
-    );
   };
 
   if (!trainings || trainings.length === 0) {

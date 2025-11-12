@@ -22,10 +22,10 @@ const ACTIVITIES = [
   }
 ];
 
-const DURATION_TYPES = [
-  { type: "time", options: ["00:30", "01:00", "02:00", "05:00", "10:00", "15:00", "20:00"] },
-  { type: "distance", options: ["100m", "200m", "400m", "800m", "1km", "2km", "5km"] }
-];
+// const DURATION_TYPES = [
+//   { type: "time", options: ["00:30", "01:00", "02:00", "05:00", "10:00", "15:00", "20:00"] },
+//   { type: "distance", options: ["100m", "200m", "400m", "800m", "1km", "2km", "5km"] }
+// ];
 
 const TERRAIN_OPTIONS = {
   bike: ["track", "road", "trail", "indoor"],
@@ -40,12 +40,6 @@ const formatSecondsToMMSS = (seconds) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
-const parseMMSSToSeconds = (mmss) => {
-  if (!mmss) return "";
-  const [mins, secs] = mmss.split(":").map(Number);
-  return mins * 60 + (secs || 0);
 };
 
 const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false, isLoading = false }) => {
@@ -100,9 +94,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       };
       setFormData(formattedData);
     }
-  }, [initialData]);
-
-  const filteredTrainingTitles = trainingTitles;
+  }, [initialData, formData.sport]);
 
   const handlePaceChange = (index, value) => {
     // Povolíme pouze čísla a dvojtečku

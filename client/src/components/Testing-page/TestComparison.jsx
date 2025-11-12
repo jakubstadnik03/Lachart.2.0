@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
-import { calculateThresholds, methodDescriptions, calculatePolynomialRegression } from './DataTable';
-import { convertPowerToPace, getPaceAxisLimits } from '../../utils/paceConverter';
-import * as math from 'mathjs';
+import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
+import { convertPowerToPace } from '../../utils/paceConverter';
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
@@ -39,7 +38,6 @@ const TestComparison = ({ tests = [] }) => {
   }
 
   const sport = validTests[0]?.sport;
-  const colorPalette = ['#2196F3', '#dc2626', '#16a34a', '#9333ea', '#ea580c'];
 
   // Pomocná funkce pro převod hex na rgb
   const hexToRgb = (hex) => {

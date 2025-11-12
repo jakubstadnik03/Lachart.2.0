@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { getSimilarWorkouts } from '../../services/api';
 
@@ -6,13 +6,7 @@ const SimilarWorkouts = ({ workoutId, onSelectWorkout, threshold = 0.75 }) => {
   const [similar, setSimilar] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (workoutId) {
-      loadSimilar();
-    }
-  }, [workoutId]);
-
-  const loadSimilar = async () => {
+  const loadSimilar = useCallback(async () => {
     try {
       setLoading(true);
       const response = await getSimilarWorkouts(workoutId, threshold);
@@ -24,7 +18,13 @@ const SimilarWorkouts = ({ workoutId, onSelectWorkout, threshold = 0.75 }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [workoutId, threshold]);
+
+  useEffect(() => {
+    if (workoutId) {
+      loadSimilar();
+    }
+  }, [workoutId, loadSimilar]);
 
   if (!workoutId) {
     return (

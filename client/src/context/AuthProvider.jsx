@@ -12,9 +12,17 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
-  const [welcomeTimer, setWelcomeTimer] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const removeToken = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    delete api.defaults.headers.common["Authorization"];
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -46,22 +54,13 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuth();
-  }, []);
+  }, [removeToken]);
 
   const saveToken = useCallback((token) => {
     localStorage.setItem("token", token);
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     setToken(token);
     setIsAuthenticated(true);
-  }, []);
-
-  const removeToken = useCallback(() => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    delete api.defaults.headers.common["Authorization"];
-    setToken(null);
-    setUser(null);
-    setIsAuthenticated(false);
   }, []);
 
   const login = useCallback(async (email, password, token, user) => {
@@ -73,11 +72,10 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem("user", JSON.stringify(user));
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
-          const t = setTimeout(() => {
+          setTimeout(() => {
             setShowWelcome(true);
             sessionStorage.setItem('welcomed', '1');
           }, 10000); // show after 10 seconds
-          setWelcomeTimer(t);
         }
         return Promise.resolve({ success: true });
       } else {
@@ -90,11 +88,10 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem("user", JSON.stringify(loginUser));
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
-          const t = setTimeout(() => {
+          setTimeout(() => {
             setShowWelcome(true);
             sessionStorage.setItem('welcomed', '1');
           }, 10000); // show after 10 seconds
-          setWelcomeTimer(t);
         }
         return Promise.resolve({ success: true });
       }

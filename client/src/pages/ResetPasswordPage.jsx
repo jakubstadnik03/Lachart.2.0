@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { API_BASE_URL } from '../config/api.config';
+import { useNavigate } from 'react-router-dom';
 
 const ResetPasswordPage = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { token } = useParams();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -32,10 +29,10 @@ const ResetPasswordPage = () => {
 
     setIsSubmitting(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/user/reset-password`, {
-        token,
-        newPassword: password
-      });
+      // const response = await axios.post(`${API_BASE_URL}/user/reset-password`, {
+      //   token,
+      //   newPassword: password
+      // });
 
       setStatus({
         type: 'success',

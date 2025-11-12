@@ -17,7 +17,7 @@ export default function AthleteProfile() {
   const [athlete, setAthlete] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
-  const [selectedSport, setSelectedSport] = useState('bike');
+  const [selectedSport] = useState('bike');
   const [selectedTestingSport, setSelectedTestingSport] = useState('all');
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);

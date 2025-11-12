@@ -124,7 +124,6 @@ const SettingsPage = () => {
         throw new Error('Google authentication failed');
       }
 
-      const authData = await authResult.json();
       
       // Then link the account
       const linkResult = await fetch(`${API_ENDPOINTS.AUTH}/link-social`, {
@@ -253,7 +252,7 @@ const SettingsPage = () => {
         throw new Error(errorData.error || 'Failed to invite coach');
       }
 
-      const data = await response.json();
+      await response.json();
       addNotification('Coach invitation sent successfully', 'success');
       setFormData(prev => ({ ...prev, newCoachEmail: '' }));
       // In case the backend immediately assigns a coach, refresh coach data

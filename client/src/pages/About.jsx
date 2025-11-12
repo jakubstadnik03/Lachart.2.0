@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { trackEvent } from '../utils/analytics';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';

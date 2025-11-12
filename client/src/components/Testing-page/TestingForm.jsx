@@ -468,7 +468,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         RPE: ''
       }]);
     }
-  }, [testData, isNewTest]);
+  }, [testData, isNewTest, inputMode, unitSystem]);
 
 // NO AUTOMATIC CONVERSIONS - let user type anything
 

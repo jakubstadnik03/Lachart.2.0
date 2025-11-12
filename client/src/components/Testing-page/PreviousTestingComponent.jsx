@@ -13,7 +13,6 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
-  const [didRestoreFromStorage, setDidRestoreFromStorage] = useState(false);
 
   // Filter tests based on selected sport
   const filteredTests = selectedSport === 'all' 

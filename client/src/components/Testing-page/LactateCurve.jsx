@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -16,75 +16,75 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 
 // Info tooltip component
-const InfoTooltip = ({ content }) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const buttonRef = useRef(null);
+// const InfoTooltip = ({ content }) => {
+//   const [isVisible, setIsVisible] = useState(false);
+//   const [position, setPosition] = useState({ top: 0, left: 0 });
+//   const buttonRef = useRef(null);
 
-  const updatePosition = () => {
-    if (buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setPosition({
-        top: rect.top,
-        left: rect.left + rect.width / 2
-      });
-    }
-  };
+//   const updatePosition = () => {
+//     if (buttonRef.current) {
+//       const rect = buttonRef.current.getBoundingClientRect();
+//       setPosition({
+//         top: rect.top,
+//         left: rect.left + rect.width / 2
+//       });
+//     }
+//   };
 
-  useEffect(() => {
-    if (isVisible) {
-      updatePosition();
-      window.addEventListener('scroll', updatePosition);
-      window.addEventListener('resize', updatePosition);
-    }
-    return () => {
-      window.removeEventListener('scroll', updatePosition);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }, [isVisible]);
+//   useEffect(() => {
+//     if (isVisible) {
+//       updatePosition();
+//       window.addEventListener('scroll', updatePosition);
+//       window.addEventListener('resize', updatePosition);
+//     }
+//     return () => {
+//       window.removeEventListener('scroll', updatePosition);
+//       window.removeEventListener('resize', updatePosition);
+//     };
+//   }, [isVisible]);
 
-  return (
-    <div className="relative inline-block">
-      <button
-        ref={buttonRef}
-        onMouseEnter={() => {
-          updatePosition();
-          setIsVisible(true);
-        }}
-        onMouseLeave={() => setIsVisible(false)}
-        className="text-gray-400 hover:text-gray-600 transition-colors"
-      >
-        <Info size={16} />
-      </button>
-      {isVisible && (
-        <div 
-          className="absolute z-[9999] bg-white text-sm px-4 py-2 rounded-lg shadow-lg border border-gray-100"
-          style={{
-            position: 'fixed',
-            top: `${position.top}px`,
-            left: `${position.left}px`,
-            transform: 'translate(-50%, -100%)',
-            marginTop: '-8px',
-            minWidth: '200px',
-            maxWidth: '300px',
-            whiteSpace: 'normal',
-            wordWrap: 'break-word'
-          }}
-        >
-          {content}
-          <div 
-            className="absolute w-2 h-2 bg-white border-l border-b border-gray-100 transform rotate-45"
-            style={{
-              left: '50%',
-              bottom: '-6px',
-              transform: 'translateX(-50%) rotate(45deg)'
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
+//   return (
+//     <div className="relative inline-block">
+//       <button
+//         ref={buttonRef}
+//         onMouseEnter={() => {
+//           updatePosition();
+//           setIsVisible(true);
+//         }}
+//         onMouseLeave={() => setIsVisible(false)}
+//         className="text-gray-400 hover:text-gray-600 transition-colors"
+//       >
+//         <Info size={16} />
+//       </button>
+//       {isVisible && (
+//         <div 
+//           className="absolute z-[9999] bg-white text-sm px-4 py-2 rounded-lg shadow-lg border border-gray-100"
+//           style={{
+//             position: 'fixed',
+//             top: `${position.top}px`,
+//             left: `${position.left}px`,
+//             transform: 'translate(-50%, -100%)',
+//             marginTop: '-8px',
+//             minWidth: '200px',
+//             maxWidth: '300px',
+//             whiteSpace: 'normal',
+//             wordWrap: 'break-word'
+//           }}
+//         >
+//           {content}
+//           <div 
+//             className="absolute w-2 h-2 bg-white border-l border-b border-gray-100 transform rotate-45"
+//             style={{
+//               left: '50%',
+//               bottom: '-6px',
+//               transform: 'translateX(-50%) rotate(45deg)'
+//             }}
+//           />
+//         </div>
+//       )}
+//     </div>
+//   );
+// };
 
 const convertSecondsToPace = (seconds) => {
   if (!seconds && seconds !== 0) return '0:00';
@@ -101,21 +101,9 @@ const convertSecondsToSpeed = (seconds, unitSystem) => {
 
 
 const LactateCurve = ({ mockData, demoMode = false }) => {
-  const [showGuide, setShowGuide] = useState(demoMode);
-  
   // Get unit system and input mode from mockData or default to metric/pace
   const unitSystem = mockData?.unitSystem || 'metric';
   const inputMode = mockData?.inputMode || 'pace';
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('cs-CZ', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit'
-    });
-  };
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (

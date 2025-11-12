@@ -194,7 +194,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, isFullW
   });
   const [progressIndex, setProgressIndex] = useState(0);
   const settingsRef = useRef(null);
-  const visibleTrainingsCount = 2;
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -287,7 +286,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, isFullW
     }
   };
 
-  const { powerValues, heartRateValues, minPower, maxPower, minHeartRate, maxHeartRate, averagePower, averageHeartRate } = useMemo(() => {
+  const { powerValues, minPower, maxPower, averagePower } = useMemo(() => {
     if (filteredTrainings.length === 0) return { 
       powerValues: [], 
       heartRateValues: [], 
@@ -352,22 +351,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, isFullW
   
   const barColors = ["bg-violet-500", "bg-violet-400", "bg-violet-300", "bg-violet-200", "bg-violet-100"];
 
-  const getColumnWidth = () => {
-    // Šířka sloupce se zvětšuje s menším počtem zobrazených tréninků
-    const baseWidth = 50;
-    const maxWidth = 80;
-    const minWidth = 30;
-    const width = Math.min(maxWidth, Math.max(minWidth, baseWidth * (6 / displayCount)));
-    return `${width}px`;
-  };
 
-  // Calculate total duration for each training
-  const getTotalDuration = (training) => {
-    return training.results.reduce((total, result) => {
-      const duration = Number(result.duration) || 0;
-      return total + duration;
-    }, 0);
-  };
+
 
   return (
     <div className="flex flex-col p-3 sm:p-5 bg-white rounded-3xl shadow-md relative h-full">

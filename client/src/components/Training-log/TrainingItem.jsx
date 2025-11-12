@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   const navigate = useNavigate();

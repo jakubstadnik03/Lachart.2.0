@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -7,7 +7,6 @@ import SportsSelector from "../components/Header/SportsSelector";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
 import { updateUserProfile } from '../services/api';
-import { useAuth } from '../context/AuthProvider';
 import { 
   PencilIcon, 
   KeyIcon,
@@ -22,17 +21,14 @@ import {
   AcademicCapIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import axios from 'axios';
-import { API_ENDPOINTS } from '../config/api.config';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ProfilePage = () => {
-  const { user, token } = useAuth();
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
-  const [selectedSport, setSelectedSport] = useState('bike');
+  const [selectedSport] = useState('bike');
   const [selectedTestingSport, setSelectedTestingSport] = useState('all');
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -95,7 +91,7 @@ const ProfilePage = () => {
     return `${day}.${month}.${year}`;
   };
 
-  const loadProfileData = async () => {
+  const loadProfileData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -146,11 +142,11 @@ const ProfilePage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProfileData();
-  }, [user?._id]);
+  }, [loadProfileData]);
 
   // Přidáme efekt pro změnu sportu
   useEffect(() => {
@@ -166,7 +162,7 @@ const ProfilePage = () => {
         }
       }
     }
-  }, [selectedSport, trainings]);
+  }, [selectedSport, trainings, selectedTitle]);
 
   const handleProfileUpdate = async (updatedData) => {
     try {

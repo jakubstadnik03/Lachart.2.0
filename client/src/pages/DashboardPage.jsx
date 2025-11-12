@@ -13,7 +13,7 @@ import TestComparison from "../components/Testing-page/TestComparison";
 import TestSelector from "../components/Testing-page/TestSelector";
 import DateSelector from "../components/DateSelector";
 import { motion } from 'framer-motion';
-import { useNotification } from '../context/NotificationContext';
+//import { useNotification } from '../context/NotificationContext';
 // import { 
 //   CalendarIcon, 
 //   ClockIcon, 
@@ -102,7 +102,7 @@ const DashboardPage = () => {
       return;
     }
 
-    const targetId = selectedAthleteId || user._id;
+   // const targetId = selectedAthleteId || user._id;
     const loadData = async () => {
       try {
         if (!user || !user._id) return;
@@ -111,7 +111,7 @@ const DashboardPage = () => {
         // Jinak načteme data pro samotného uživatele
         const athleteId = user.role === 'coach' && selectedAthleteId ? selectedAthleteId : user._id;
         
-        const [trainingsData, athleteData, testsData] = await Promise.all([
+        const [trainingsData, athleteData] = await Promise.all([
           loadTrainings(athleteId),
           loadAthlete(athleteId),
           loadTests(athleteId)
@@ -130,7 +130,7 @@ const DashboardPage = () => {
     };
 
     loadData();
-  }, [user?._id, selectedAthleteId, isAuthenticated, navigate]);
+  }, [user?._id, user, selectedAthleteId, isAuthenticated, navigate]);
 
   useEffect(() => {
     if (trainings.length > 0) {
@@ -145,7 +145,7 @@ const DashboardPage = () => {
         }
       }
     }
-  }, [selectedSport, trainings]);
+  }, [selectedSport, trainings, selectedTitle]);
 
   const handleDateSelect = (date) => {
     const selectedTest = tests.find(test => new Date(test.date).toISOString() === new Date(date).toISOString());

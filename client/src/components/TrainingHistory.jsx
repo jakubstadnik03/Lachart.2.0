@@ -45,14 +45,6 @@ const TrainingHistory = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { addNotification } = useNotification();
 
-  // Format pace from seconds to MM:SS
-  const formatPace = (seconds) => {
-    if (!seconds) return '00:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
   // Format duration based on durationType
   const formatDuration = (duration, durationType) => {
     if (!duration) return '00:00';
@@ -66,13 +58,6 @@ const TrainingHistory = () => {
     const minutes = Math.floor(duration / 60);
     const remainingSeconds = Math.floor(duration % 60);
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  // Convert pace to seconds for calculations
-  const paceToSeconds = (pace) => {
-    if (!pace) return 0;
-    const [minutes, seconds] = pace.split(':').map(Number);
-    return minutes * 60 + seconds;
   };
 
   // Convert seconds to pace for display

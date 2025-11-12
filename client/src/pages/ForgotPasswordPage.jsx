@@ -83,7 +83,7 @@ const ForgotPasswordPage = () => {
     setEmailError('');
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/user/forgot-password`, 
+      await axios.post(`${API_BASE_URL}/user/forgot-password`, 
         { email },
         {
           headers: {

@@ -152,7 +152,6 @@ const TrainingGraph = ({
 }) => {
   const [selectedSport, setSelectedSport] = useState('bike');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -256,7 +255,7 @@ const TrainingGraph = ({
       setSelectedTitle(newestTraining.title);
       setSelectedTraining(newestTraining._id);
     }
-  }, [selectedSport, trainingList]);
+  }, [selectedSport, trainingList, setSelectedTitle, setSelectedTraining]);
 
   // Sloučíme dva useEffects do jednoho pro optimalizaci
   useEffect(() => {
@@ -296,7 +295,6 @@ const TrainingGraph = ({
 
   if (!trainingList) return <div>Loading trainings...</div>;
   if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
   if (!trainingList.length) return <div>No trainings available</div>;
 
   const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
@@ -494,19 +492,6 @@ const TrainingGraph = ({
         }
       }
     },
-  };
-
-  const getPowerUnit = (sport) => {
-    switch (sport) {
-      case 'run':
-        return '/km';
-      case 'swim':
-        return '/100m';
-      case 'bike':
-        return 'W';
-      default:
-        return '';
-    }
   };
 
   return (
