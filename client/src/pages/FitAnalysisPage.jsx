@@ -1064,7 +1064,61 @@ const FitAnalysisPage = () => {
         return;
       }
       
-      // Convert Training model to format compatible with FitAnalysisPage
+      // Try to load original FitTraining or StravaActivity if reference exists
+      if (data.sourceFitTrainingId) {
+        try {
+          console.log('Found FitTraining reference, loading original:', data.sourceFitTrainingId);
+          const fitTraining = await getFitTraining(data.sourceFitTrainingId);
+          console.log('Loaded FitTraining:', fitTraining);
+          
+          // Check for duplicate laps and deduplicate if needed
+          if (fitTraining.laps && Array.isArray(fitTraining.laps)) {
+            const uniqueLaps = deduplicateFitTrainingLaps(fitTraining.laps);
+            if (uniqueLaps.length !== fitTraining.laps.length) {
+              console.log(`Removed ${fitTraining.laps.length - uniqueLaps.length} duplicate laps`);
+            }
+            fitTraining.laps = uniqueLaps;
+          }
+          
+          setSelectedTraining(fitTraining);
+          setSelectedStrava(null);
+          localStorage.setItem('fitAnalysis_selectedTrainingId', data.sourceFitTrainingId);
+          localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+          localStorage.removeItem('fitAnalysis_selectedStravaId');
+          
+          // Clean URL params
+          const url = new URL(window.location.href);
+          url.searchParams.delete('trainingId');
+          url.searchParams.delete('title');
+          window.history.replaceState({}, '', url);
+          return;
+        } catch (fitError) {
+          console.error('Error loading FitTraining, falling back to Training model:', fitError);
+        }
+      } else if (data.sourceStravaActivityId) {
+        try {
+          console.log('Found StravaActivity reference, loading original:', data.sourceStravaActivityId);
+          const stravaDetail = await getStravaActivityDetail(data.sourceStravaActivityId);
+          console.log('Loaded StravaActivity:', stravaDetail);
+          
+          setSelectedStrava(stravaDetail);
+          setSelectedTraining(null);
+          localStorage.setItem('fitAnalysis_selectedStravaId', data.sourceStravaActivityId);
+          localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+          localStorage.removeItem('fitAnalysis_selectedTrainingId');
+          
+          // Clean URL params
+          const url = new URL(window.location.href);
+          url.searchParams.delete('trainingId');
+          url.searchParams.delete('title');
+          window.history.replaceState({}, '', url);
+          return;
+        } catch (stravaError) {
+          console.error('Error loading StravaActivity, falling back to Training model:', stravaError);
+        }
+      }
+      
+      // Fallback: Convert Training model to format compatible with FitAnalysisPage
       // Training model has results array, not records/laps like FitTraining
       const convertedTraining = {
         _id: data._id,
@@ -1081,7 +1135,7 @@ const FitAnalysisPage = () => {
           // Get duration in seconds - use durationSeconds if available, otherwise parse from duration string
           const durationSec = result.durationSeconds || parseDurationToSeconds(result.duration) || 0;
 
-    return {
+          return {
             lapNumber: index + 1,
             totalElapsedTime: durationSec,
             totalTimerTime: durationSec,

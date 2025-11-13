@@ -4,6 +4,198 @@ const UserDao = require('../dao/userDao');
 const FitTraining = require('../models/fitTraining');
 const StravaActivity = require('../models/StravaActivity');
 
+const toNumber = (value) => {
+    if (value === undefined || value === null) return null;
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+    const parsed = parseFloat(value);
+    return Number.isNaN(parsed) ? null : parsed;
+};
+
+const getLapDurationSeconds = (lap = {}) => {
+    const candidates = [
+        lap.totalElapsedTime,
+        lap.total_elapsed_time,
+        lap.totalTimerTime,
+        lap.total_timer_time,
+        lap.elapsed_time,
+        lap.duration
+    ];
+
+    for (const candidate of candidates) {
+        const numeric = toNumber(candidate);
+        if (numeric && numeric > 0) {
+            return numeric;
+        }
+    }
+
+    return 0;
+};
+
+const getLapPowerValue = (lap = {}) => {
+    const candidates = [
+        lap.avgPower,
+        lap.avg_power,
+        lap.average_watts,
+        lap.average_watt,
+        lap.power,
+        lap.maxPower,
+        lap.max_power,
+        lap.max_watts
+    ];
+
+    for (const candidate of candidates) {
+        const numeric = toNumber(candidate);
+        if (numeric !== null && numeric !== undefined) {
+            return numeric;
+        }
+    }
+
+    return null;
+};
+
+const calculateMedian = (values = []) => {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+
+    if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    return sorted[mid];
+};
+
+const selectImportantLaps = (laps = [], sourceType = 'fit') => {
+    if (!Array.isArray(laps) || laps.length === 0) {
+        return [];
+    }
+
+    const metrics = laps.map((lap, index) => {
+        const durationSeconds = getLapDurationSeconds(lap);
+        const power = getLapPowerValue(lap);
+
+        return {
+            index,
+            lap,
+            durationSeconds,
+            power
+        };
+    });
+
+    const validDuration = metrics.filter(m => m.durationSeconds > 0);
+
+    if (!validDuration.length) {
+        return [];
+    }
+
+    let selectedIndices = validDuration.map(m => m.index);
+
+    if (sourceType === 'strava') {
+        const powerValues = validDuration
+            .map(m => m.power)
+            .filter(p => p !== null && p > 0);
+
+        if (powerValues.length) {
+            const avgPower = powerValues.reduce((sum, p) => sum + p, 0) / powerValues.length;
+            selectedIndices = validDuration
+                .filter(m => m.power !== null && m.power >= avgPower)
+                .map(m => m.index);
+
+            if (!selectedIndices.length) {
+                selectedIndices = validDuration
+                    .filter(m => m.power !== null && m.power > 0)
+                    .sort((a, b) => b.power - a.power)
+                    .slice(0, Math.min(6, powerValues.length))
+                    .map(m => m.index);
+            }
+        } else {
+            selectedIndices = validDuration.map(m => m.index);
+        }
+    } else if (sourceType === 'fit') {
+        const workCandidates = validDuration.filter(m => m.power !== null && m.power > 0);
+
+        if (workCandidates.length) {
+            const durations = workCandidates.map(m => m.durationSeconds);
+            const powers = workCandidates.map(m => m.power);
+            const medianDuration = calculateMedian(durations);
+            const medianPower = calculateMedian(powers);
+
+            const durationTolerance = Math.max(10, medianDuration * 0.25);
+            const powerTolerance = medianPower > 0 ? Math.max(15, medianPower * 0.3) : 25;
+
+            const maxDuration = Math.max(...workCandidates.map(m => m.durationSeconds));
+            const longDurationThreshold = Math.max(20 * 60, Math.round(maxDuration * 0.6));
+            const longDurationCandidates = workCandidates.filter(m => m.durationSeconds >= longDurationThreshold);
+            if (longDurationCandidates.length > 0) {
+                selectedIndices = longDurationCandidates
+                    .sort((a, b) => a.index - b.index)
+                    .map(m => m.index);
+            }
+
+            if (selectedIndices.length === 0) {
+                const extendedThreshold = Math.max(15 * 60, Math.round(medianDuration * 1.2));
+                const extendedCandidates = workCandidates.filter(m => m.durationSeconds >= extendedThreshold);
+                if (extendedCandidates.length > 0) {
+                    selectedIndices = extendedCandidates
+                        .sort((a, b) => a.index - b.index)
+                        .map(m => m.index);
+                }
+            }
+
+            const primary = workCandidates.filter(m => {
+                const durationMatch = Math.abs(m.durationSeconds - medianDuration) <= durationTolerance;
+                const powerMatch = Math.abs(m.power - medianPower) <= powerTolerance;
+                return durationMatch && powerMatch;
+            });
+
+            if (selectedIndices.length === 0 && primary.length >= 2) {
+                selectedIndices = primary.map(m => m.index);
+            } else if (selectedIndices.length === 0) {
+                const ranked = workCandidates
+                    .map(m => {
+                        const durationScore = medianDuration > 0
+                            ? Math.abs(m.durationSeconds - medianDuration) / medianDuration
+                            : 0;
+                        const powerScore = medianPower > 0
+                            ? Math.abs(m.power - medianPower) / medianPower
+                            : 0;
+
+                        return {
+                            ...m,
+                            score: durationScore + powerScore
+                        };
+                    })
+                    .sort((a, b) => a.score - b.score);
+
+                selectedIndices = ranked
+                    .slice(0, Math.min(8, ranked.length))
+                    .map(m => m.index);
+            }
+        } else {
+            selectedIndices = validDuration
+                .filter(m => m.durationSeconds >= 30)
+                .map(m => m.index);
+        }
+    }
+
+    if (!selectedIndices.length) {
+        selectedIndices = [validDuration[0].index];
+    }
+
+    const limitedIndices = selectedIndices
+        .sort((a, b) => a - b)
+        .slice(0, 20);
+
+    const indexSet = new Set(limitedIndices);
+
+    return metrics
+        .filter(m => indexSet.has(m.index))
+        .sort((a, b) => a.index - b.index)
+        .map(m => m.lap);
+};
+
 class TrainingAbl {
     constructor() {
         this.trainingDao = new TrainingDao();
@@ -66,61 +258,37 @@ class TrainingAbl {
     async getTrainingTitles(userId) {
         try {
             console.log('Getting training titles for user:', userId);
-            
-            // Získání uživatele pro zjištění role
+
             const user = await this.userDao.findById(userId);
             if (!user) {
                 console.error('User not found:', userId);
                 throw new Error('Uživatel nenalezen');
             }
-            console.log('Found user:', { id: user._id, role: user.role });
 
-            // Pokud je uživatel trenér, získat všechny tréninky jeho atletů
-            // Pokud je uživatel atlet, získat jen jeho tréninky
             let trainings = [];
-            let fitTrainings = [];
-            let stravaActivities = [];
-            
+
             if (user.role === 'coach') {
-                // Získat ID všech atletů tohoto trenéra
                 const athletes = await this.userDao.findAthletesByCoachId(userId);
                 console.log('Found athletes:', athletes.length);
-                
+
                 if (athletes && athletes.length > 0) {
                     const athleteIds = athletes.map(athlete => athlete._id);
-                    // Získat tréninky všech těchto atletů
                     trainings = await this.trainingDao.findByAthleteIds(athleteIds);
-                    // FitTraining
-                    fitTrainings = await FitTraining.find({ athleteId: { $in: athleteIds.map(id => id.toString()) } });
-                    // StravaActivity
-                    stravaActivities = await StravaActivity.find({ userId: { $in: athleteIds } });
-                } else {
-                    // Trenér nemá žádné atlety, vrátit prázdné pole
-                    trainings = [];
                 }
             } else {
-                // Atlet vidí jen své tréninky
                 trainings = await this.trainingDao.findByAthleteId(userId);
-                // FitTraining
-                fitTrainings = await FitTraining.find({ athleteId: userId.toString() });
-                // StravaActivity
-                stravaActivities = await StravaActivity.find({ userId: userId });
             }
-            console.log('Found trainings:', trainings.length);
-            console.log('Found FitTrainings:', fitTrainings.length);
-            console.log('Found StravaActivities:', stravaActivities.length);
 
-            // Extrahovat unikátní názvy z Training
-            const trainingTitles = trainings.map(t => t.title).filter(Boolean);
-            // Extrahovat názvy z FitTraining (titleManual || titleAuto || originalFileName)
-            const fitTitles = fitTrainings.map(t => t.titleManual || t.titleAuto || t.originalFileName).filter(Boolean);
-            // Extrahovat názvy z StravaActivity (titleManual || name)
-            const stravaTitles = stravaActivities.map(a => a.titleManual || a.name).filter(Boolean);
-            
-            // Kombinovat a získat unikátní názvy
-            const allTitles = [...new Set([...trainingTitles, ...fitTitles, ...stravaTitles])];
-            console.log('Unique titles:', allTitles.length);
-            return allTitles.sort();
+            console.log('Found trainings:', trainings.length);
+
+            const titles = [...new Set(
+                trainings
+                    .map(t => t.title)
+                    .filter(Boolean)
+            )].sort();
+
+            console.log('Unique titles:', titles.length);
+            return titles;
         } catch (error) {
             console.error('Error in getTrainingTitles:', error);
             console.error('Stack:', error.stack);
@@ -196,7 +364,7 @@ class TrainingAbl {
     /**
      * Create or update Training record from FitTraining or StravaActivity when lactate is added
      */
-    async syncTrainingFromSource(sourceType, sourceData, userId) {
+    async syncTrainingFromSource(sourceType, sourceData, userId, options = {}) {
         try {
             // Map sport from source to Training format
             let sport = 'run'; // default
@@ -223,13 +391,13 @@ class TrainingAbl {
                 : (sourceData.startDate || new Date());
 
             // Get duration in format "HH:MM:SS" or "MM:SS"
-            const totalTime = sourceType === 'fit'
+            const totalActivitySeconds = sourceType === 'fit'
                 ? (sourceData.totalElapsedTime || sourceData.totalTimerTime || 0)
                 : (sourceData.elapsedTime || sourceData.movingTime || 0);
             
-            const hours = Math.floor(totalTime / 3600);
-            const minutes = Math.floor((totalTime % 3600) / 60);
-            const seconds = totalTime % 60;
+            const hours = Math.floor(totalActivitySeconds / 3600);
+            const minutes = Math.floor((totalActivitySeconds % 3600) / 60);
+            const seconds = totalActivitySeconds % 60;
             const duration = hours > 0 
                 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
                 : `${minutes}:${String(seconds).padStart(2, '0')}`;
@@ -239,107 +407,113 @@ class TrainingAbl {
                 ? sourceData.description
                 : sourceData.description;
 
-            // Convert all laps to results array (not just those with lactate)
             const results = [];
-            const laps = sourceData.laps || [];
-            
-            // For Strava activities, filter to only include intervals with higher power
-            // First, calculate average power from all laps
-            let filteredLaps = laps;
-            if (sourceType === 'strava' && laps.length > 0) {
-                const powers = laps
-                    .map(lap => lap.average_watts || lap.max_watts || lap.avgPower || lap.maxPower || null)
-                    .filter(p => p !== null && p > 0);
-                
-                if (powers.length > 0) {
-                    const avgPower = powers.reduce((sum, p) => sum + p, 0) / powers.length;
-                    // Only keep laps with power above average
-                    const powerThreshold = avgPower;
-                    
-                    filteredLaps = laps.filter(lap => {
-                        const lapPower = lap.average_watts || lap.max_watts || lap.avgPower || lap.maxPower || null;
-                        // If lap has no power data, exclude it (we only want intervals with power)
-                        if (lapPower === null || lapPower === 0) return false;
-                        // Include if power is above or equal to average
-                        return lapPower >= powerThreshold;
-                    });
-                }
+            const laps = Array.isArray(sourceData.laps) ? sourceData.laps : [];
+
+            let filteredLaps;
+            const optionLapIndices = Array.isArray(options.selectedLapIndices)
+                ? options.selectedLapIndices
+                    .map((value) => typeof value === 'number' ? value : parseInt(value, 10))
+                    .filter((value) => Number.isInteger(value) && value >= 0)
+                : [];
+
+            if (optionLapIndices.length > 0) {
+                const uniqueIndices = [...new Set(optionLapIndices)].sort((a, b) => a - b);
+                filteredLaps = uniqueIndices
+                    .map(index => laps[index])
+                    .filter(lap => lap);
+            } else {
+                filteredLaps = selectImportantLaps(laps, sourceType);
             }
             
             filteredLaps.forEach((lap, index) => {
-                // Skip if this lap is likely the entire activity (duration >= 95% of total time)
-                const totalTime = sourceType === 'fit'
-                    ? (sourceData.totalElapsedTime || sourceData.totalTimerTime || 0)
-                    : (sourceData.elapsedTime || sourceData.movingTime || 0);
-                // Get lap duration in seconds - ensure it's a number
-                let lapDuration = 0;
-                if (lap.totalElapsedTime !== undefined && lap.totalElapsedTime !== null) {
-                    lapDuration = typeof lap.totalElapsedTime === 'number' ? lap.totalElapsedTime : parseFloat(lap.totalElapsedTime) || 0;
-                } else if (lap.totalTimerTime !== undefined && lap.totalTimerTime !== null) {
-                    lapDuration = typeof lap.totalTimerTime === 'number' ? lap.totalTimerTime : parseFloat(lap.totalTimerTime) || 0;
-                } else if (lap.elapsed_time !== undefined && lap.elapsed_time !== null) {
-                    lapDuration = typeof lap.elapsed_time === 'number' ? lap.elapsed_time : parseFloat(lap.elapsed_time) || 0;
-                }
-                
-                // Skip if duration is 0 or if this is the whole activity lap
-                if (lapDuration <= 0) return;
-                if (totalTime > 0 && lapDuration >= totalTime * 0.95) return;
+                const lapDuration = getLapDurationSeconds(lap);
 
-                // Calculate rest time (time between laps) in seconds
+                if (lapDuration <= 0) {
+                    return;
+                }
+
+                if (totalActivitySeconds > 0 && lapDuration >= totalActivitySeconds * 0.95) {
+                    return;
+                }
+
                 let restSeconds = 0;
                 if (index > 0 && filteredLaps[index - 1]) {
-                    // Calculate rest based on startTime if available
-                    if (lap.startTime && filteredLaps[index - 1].startTime) {
+                    const previousLap = filteredLaps[index - 1];
+                    if (lap.startTime && previousLap.startTime) {
                         const currentStart = new Date(lap.startTime).getTime();
-                        const prevStart = new Date(filteredLaps[index - 1].startTime).getTime();
-                        const prevDuration = filteredLaps[index - 1].totalElapsedTime || filteredLaps[index - 1].totalTimerTime || filteredLaps[index - 1].elapsed_time || 0;
+                        const prevStart = new Date(previousLap.startTime).getTime();
+                        const prevDuration = getLapDurationSeconds(previousLap);
                         const prevEnd = prevStart + (prevDuration * 1000);
                         restSeconds = Math.max(0, Math.round((currentStart - prevEnd) / 1000));
                     }
                 }
 
-                // Format duration as string for display, but also store duration in seconds
-                const lapHours = Math.floor(lapDuration / 3600);
-                const lapMinutes = Math.floor((lapDuration % 3600) / 60);
-                const lapSeconds = lapDuration % 60;
-                const lapDurationStr = lapHours > 0
-                    ? `${lapHours}:${String(lapMinutes).padStart(2, '0')}:${String(lapSeconds).padStart(2, '0')}`
-                    : `${lapMinutes}:${String(lapSeconds).padStart(2, '0')}`;
-
-                // Format rest as string for display
-                const restHours = Math.floor(restSeconds / 3600);
-                const restMinutes = Math.floor((restSeconds % 3600) / 60);
-                const restSecs = restSeconds % 60;
-                const restStr = restHours > 0
-                    ? `${restHours}:${String(restMinutes).padStart(2, '0')}:${String(restSecs).padStart(2, '0')}`
-                    : `${restMinutes}:${String(restSecs).padStart(2, '0')}`;
-
-                // Use durationSeconds as the primary duration value (in seconds)
                 const durationSecondsValue = Math.round(lapDuration);
+                const lapPower = getLapPowerValue(lap);
+                const lapHeartRate = lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null;
                 
                 results.push({
                     interval: index + 1,
-                    duration: durationSecondsValue, // Store duration in seconds as number
-                    durationSeconds: durationSecondsValue, // Also store in durationSeconds for clarity
+                    duration: durationSecondsValue,
+                    durationSeconds: durationSecondsValue,
                     durationType: 'time',
-                    rest: restSeconds, // Store rest in seconds as number
-                    restSeconds: restSeconds, // Also store in restSeconds for clarity
-                    intensity: '', // Could be calculated from power/HR zones
-                    power: lap.avgPower || lap.maxPower || lap.average_watts || lap.max_watts || null,
-                    heartRate: lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null,
-                    lactate: lap.lactate || null, // Include lactate if available, otherwise null
+                    rest: restSeconds,
+                    restSeconds: restSeconds,
+                    intensity: '',
+                    power: lapPower,
+                    heartRate: lapHeartRate,
+                    lactate: lap.lactate || null,
                     RPE: null
                 });
             });
 
             // Check if Training record already exists
+            // Use date and timestamp to find the correct training, not just title
+            // This ensures we update the right training even if title changes
             const athleteId = userId.toString();
-            const existingTraining = await this.trainingDao.findByTitle(title, athleteId);
-            const matchingTraining = existingTraining.find(t => 
-                t.title === title && 
-                t.athleteId === athleteId &&
-                Math.abs(new Date(t.date).getTime() - new Date(date).getTime()) < 24 * 60 * 60 * 1000 // Same day
-            );
+            const allTrainings = await this.trainingDao.findByAthleteId(athleteId);
+            
+            // Find training by date and timestamp (within 1 hour window for same activity)
+            const sourceTimestamp = sourceType === 'fit' 
+                ? (sourceData.timestamp ? new Date(sourceData.timestamp).getTime() : null)
+                : (sourceData.startDate ? new Date(sourceData.startDate).getTime() : null);
+            
+            let matchingTraining = null;
+            
+            if (sourceTimestamp) {
+                // First try to find by exact or very close timestamp (within 1 hour)
+                matchingTraining = allTrainings.find(t => {
+                    const trainingDate = new Date(t.date).getTime();
+                    const timeDiff = Math.abs(trainingDate - sourceTimestamp);
+                    return timeDiff < 60 * 60 * 1000; // Within 1 hour
+                });
+            }
+            
+            // If not found by timestamp, try to find by date and similar duration
+            if (!matchingTraining && totalActivitySeconds > 0) {
+                const dateStart = new Date(date);
+                dateStart.setHours(0, 0, 0, 0);
+                const dateEnd = new Date(date);
+                dateEnd.setHours(23, 59, 59, 999);
+                
+                matchingTraining = allTrainings.find(t => {
+                    const trainingDate = new Date(t.date);
+                    const isSameDay = trainingDate >= dateStart && trainingDate <= dateEnd;
+                    
+                    if (!isSameDay) return false;
+                    
+                    // Check if duration is similar (within 10% difference)
+                    const trainingDuration = this.parseDurationToSeconds(t.duration);
+                    if (trainingDuration > 0) {
+                        const durationDiff = Math.abs(trainingDuration - totalActivitySeconds);
+                        const durationTolerance = Math.max(60, totalActivitySeconds * 0.1); // 10% or 1 minute
+                        return durationDiff <= durationTolerance;
+                    }
+                    
+                    return false;
+                });
+            }
 
             if (matchingTraining) {
                 // Update existing Training with all results
@@ -370,11 +544,26 @@ class TrainingAbl {
                 // Sort by interval
                 updatedResults.sort((a, b) => a.interval - b.interval);
 
-                return await this.trainingDao.update(matchingTraining._id, {
+                // Update references if not already set
+                const updateData = {
+                    title: title, // Update title to match the new title
                     results: updatedResults,
                     description: description || matchingTraining.description,
                     duration: duration || matchingTraining.duration
-                });
+                };
+                
+                // Set source reference if not already set
+                if (sourceType === 'fit' && sourceData._id && !matchingTraining.sourceFitTrainingId) {
+                    updateData.sourceFitTrainingId = sourceData._id.toString();
+                } else if (sourceType === 'strava' && sourceData._id && !matchingTraining.sourceStravaActivityId) {
+                    updateData.sourceStravaActivityId = sourceData._id.toString();
+                }
+                
+                updateData.athleteId = matchingTraining.athleteId;
+                updateData.sport = matchingTraining.sport;
+                updateData.date = matchingTraining.date;
+
+                return await this.trainingDao.update(matchingTraining._id, updateData);
             } else {
                 // Create new Training record with all intervals
                 const trainingData = {
@@ -392,6 +581,13 @@ class TrainingAbl {
                     unitSystem: 'metric',
                     inputMode: 'pace'
                 };
+                
+                // Set source reference
+                if (sourceType === 'fit' && sourceData._id) {
+                    trainingData.sourceFitTrainingId = sourceData._id.toString();
+                } else if (sourceType === 'strava' && sourceData._id) {
+                    trainingData.sourceStravaActivityId = sourceData._id.toString();
+                }
 
                 return await this.trainingDao.createTraining(trainingData);
             }
@@ -400,6 +596,26 @@ class TrainingAbl {
             // Don't throw - this is a background sync, shouldn't fail the main operation
             return null;
         }
+    }
+
+    /**
+     * Parse duration string (HH:MM:SS or MM:SS) to seconds
+     */
+    parseDurationToSeconds(durationStr) {
+        if (!durationStr || typeof durationStr !== 'string') {
+            return 0;
+        }
+        
+        const parts = durationStr.split(':').map(Number);
+        if (parts.length === 3) {
+            // HH:MM:SS
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) {
+            // MM:SS
+            return parts[0] * 60 + parts[1];
+        }
+        
+        return 0;
     }
 }
 

@@ -2,52 +2,41 @@
 module.exports = {
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
-    "./public/index.html"
+    "./public/index.html",
   ],
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Hind Vadodara', 'sans-serif'], // Setting Hind Vadodara as the default font
+        sans: ['Hind Vadodara', 'sans-serif'], // Default font
       },
       colors: {
-        'custom-gray': '#FCFCFC', // Adding new color
+        'custom-gray': '#FCFCFC',
         primary: {
           DEFAULT: '#767EB5',
           dark: '#5E6590',
         },
-        'secondary': {
+        secondary: {
           DEFAULT: '#599FD0',
           dark: '#4780A8',
         },
-        'tertiary': '#7BC2EB',
+        tertiary: '#7BC2EB',
         white: '#F9FBFD',
-        'text': '#1D2C4C',
-        'lighterText': '#4A5E82',
-        'greenos': '#4BA87D',
+        text: '#1D2C4C',
+        lighterText: '#4A5E82',
+        greenos: '#4BA87D',
         red: {
           DEFAULT: '#E05347',
-          dark: '#B84238', // Darker version of the red color
+          dark: '#B84238',
         },
         zinc: {
-          150: '#e5e5e5', // Slightly darker than bg-zinc-100
+          150: '#e5e5e5', // Custom shade
         },
       },
     },
   },
   plugins: [],
-  // Production optimizations
-  purge: {
-    enabled: process.env.NODE_ENV === 'production',
-    content: [
-      './src/**/*.{js,jsx,ts,tsx}',
-      './public/index.html'
-    ],
-    options: {
-      safelist: ['html', 'body']
-    }
-  },
-  future: {
-    removeDeprecatedGapUtilities: true,
-    purgeLayersByDefault: true,
-  }
-}
+  safelist: [
+    'html',
+    'body',
+  ],
+};

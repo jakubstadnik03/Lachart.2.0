@@ -59,6 +59,15 @@ const trainingSchema = new mongoose.Schema({
         enum: ['pace', 'speed'],
         default: 'pace',
         required: false
+    },
+    // References to source training data
+    sourceFitTrainingId: {
+        type: String,
+        default: null
+    },
+    sourceStravaActivityId: {
+        type: String,
+        default: null
     }
 }, {
     timestamps: true,

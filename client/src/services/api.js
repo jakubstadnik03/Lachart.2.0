@@ -304,11 +304,12 @@ export const updateLactateValues = async (trainingId, lactateValues) => {
   }
 };
 
-export const updateFitTraining = async (trainingId, { title, description }) => {
+export const updateFitTraining = async (trainingId, { title, description, selectedLapIndices }) => {
   try {
     const response = await api.put(`/api/fit/trainings/${trainingId}`, {
       title,
-      description
+      description,
+      selectedLapIndices
     });
     return response.data;
   } catch (error) {

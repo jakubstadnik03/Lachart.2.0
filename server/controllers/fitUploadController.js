@@ -2,6 +2,7 @@ const FitTraining = require('../models/fitTraining');
 const fs = require('fs');
 const path = require('path');
 const FitParser = require('fit-file-parser').default;
+const TrainingAbl = require('../abl/trainingAbl');
 
 /**
  * Parse FIT file and extract training data
@@ -444,7 +445,6 @@ async function updateLactate(req, res) {
 
     // Sync to Training model - sync all intervals (not just those with lactate)
     try {
-      const TrainingAbl = require('../abl/trainingAbl');
       await TrainingAbl.syncTrainingFromSource('fit', training, userId);
     } catch (syncError) {
       console.error('Error syncing to Training model:', syncError);
@@ -468,7 +468,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-    const { title, description } = req.body;
+  const { title, description, selectedLapIndices } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -516,6 +516,33 @@ async function updateFitTraining(req, res) {
       }
     }
 
+    try {
+    let lapIndices = null;
+    if (Array.isArray(selectedLapIndices)) {
+      lapIndices = selectedLapIndices
+        .map((value) => {
+          const parsed = typeof value === 'number' ? value : parseInt(value, 10);
+          return Number.isInteger(parsed) ? parsed : null;
+        })
+        .filter((value) => value !== null && value >= 0);
+
+      if (lapIndices && training.laps && training.laps.length > 0) {
+        const maxIndex = training.laps.length - 1;
+        lapIndices = lapIndices.filter((value) => value <= maxIndex);
+      }
+
+      if (lapIndices.length === 0) {
+        lapIndices = null;
+      }
+    }
+
+    await TrainingAbl.syncTrainingFromSource('fit', training, userId, {
+      selectedLapIndices: lapIndices
+    });
+    } catch (syncError) {
+      console.error('Error syncing training after update:', syncError);
+    }
+
     res.json({
       success: true,
       training
@@ -556,7 +583,7 @@ async function deleteFitTraining(req, res) {
 }
 
 /**
- * Get all unique titles from FitTraining and StravaActivity
+ * Get all unique training titles available to the user
  */
 async function getAllTitles(req, res) {
   try {
@@ -565,22 +592,9 @@ async function getAllTitles(req, res) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Get titles from FitTraining
-    const fitTrainings = await FitTraining.find({ athleteId: userId });
-    const fitTitles = fitTrainings
-      .map(t => t.titleManual || t.titleAuto || t.originalFileName)
-      .filter(Boolean);
+    const titles = await TrainingAbl.getTrainingTitles(userId);
 
-    // Get titles from StravaActivity
-    const stravaActivities = await StravaActivity.find({ userId: userId });
-    const stravaTitles = stravaActivities
-      .map(a => a.titleManual || a.name)
-      .filter(Boolean);
-
-    // Combine and get unique titles
-    const allTitles = [...new Set([...fitTitles, ...stravaTitles])].sort();
-
-    res.json(allTitles);
+    res.json(titles);
   } catch (error) {
     console.error('Error getting all titles:', error);
     res.status(500).json({ error: error.message });
