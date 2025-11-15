@@ -9,13 +9,76 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return x0 + ((targetY - y0) * (x1 - x0)) / (y1 - y0);
   };
   
+  // Pomocná funkce pro filtrování outlierů a vytvoření monotónně rostoucí křivky
+  const filterOutliersAndCreateMonotonic = (points, isPaceSport = false) => {
+    if (!points || points.length < 2) return points;
+    
+    // Seřadit body podle power/pace
+    const sortedPoints = [...points].sort((a, b) => {
+      if (isPaceSport) {
+        return b.power - a.power; // Sestupně pro pace (pomalejší -> rychlejší)
+      }
+      return a.power - b.power; // Vzestupně pro power (nižší -> vyšší)
+    });
+    
+    // Pro laktát: při zvyšující se intenzitě by měl laktát obecně růst
+    // Filtrovat body, které mají laktát výrazně nižší než předchozí bod
+    const filtered = [sortedPoints[0]]; // Vždy zahrnout první bod
+    
+    for (let i = 1; i < sortedPoints.length; i++) {
+      const prev = filtered[filtered.length - 1];
+      const curr = sortedPoints[i];
+      
+      // Pokud je laktát nižší než předchozí o více než 0.5 mmol/L, je to pravděpodobně outlier
+      // Ale pokud je intenzita výrazně nižší (pro pace: vyšší power = pomalejší), může to být OK
+      const intensityDiff = isPaceSport 
+        ? (prev.power - curr.power) / prev.power // Pro pace: relativní změna
+        : (curr.power - prev.power) / prev.power; // Pro power: relativní změna
+      
+      const lactateDiff = curr.lactate - prev.lactate;
+      
+      // Pokud je laktát výrazně nižší (>0.5 mmol/L) a intenzita se nezměnila výrazně (<10%), je to outlier
+      if (lactateDiff < -0.5 && Math.abs(intensityDiff) < 0.1) {
+        console.log(`[filterOutliers] Skipping outlier point: power=${curr.power}, lactate=${curr.lactate} (prev: ${prev.lactate})`);
+        continue;
+      }
+      
+      filtered.push(curr);
+    }
+    
+    return filtered;
+  };
+
   // D-max metoda pro nalezení thresholdu
-  const calculateDmax = (points) => {
+  const calculateDmax = (points, isPaceSport = false) => {
     if (!points || points.length < 3) return null;
     
-    // Najít první a poslední bod
-    const firstPoint = points[0];
-    const lastPoint = points[points.length - 1];
+    // Filtrovat outliery a vytvořit monotónně rostoucí křivku
+    const filteredPoints = filterOutliersAndCreateMonotonic(points, isPaceSport);
+    
+    let sortedPoints;
+    if (filteredPoints.length < 3) {
+      console.warn('[D-max] Not enough points after filtering outliers, using original points');
+      // Pokud filtrování odstranilo příliš mnoho bodů, použít původní body
+      sortedPoints = [...points].sort((a, b) => {
+        if (isPaceSport) {
+          return b.power - a.power;
+        }
+        return a.power - b.power;
+      });
+    } else {
+      sortedPoints = filteredPoints;
+    }
+    
+    // Najít první a poslední bod (po seřazení)
+    const firstPoint = sortedPoints[0];
+    const lastPoint = sortedPoints[sortedPoints.length - 1];
+    
+    // Validace: první a poslední bod by neměly být stejné
+    if (firstPoint.power === lastPoint.power) {
+      console.warn('[D-max] First and last points have same power, cannot calculate D-max');
+      return null;
+    }
     
     // Vypočítat přímku mezi prvním a posledním bodem
     const slope = (lastPoint.lactate - firstPoint.lactate) / 
@@ -23,10 +86,13 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     const intercept = firstPoint.lactate - slope * firstPoint.power;
     
     // Najít bod s největší kolmou vzdáleností od přímky
+    // Ignorovat první a poslední bod (mohou být outliery)
     let maxDistance = 0;
     let dmaxPoint = null;
+    let dmaxIndex = -1;
     
-    points.forEach(point => {
+    for (let i = 1; i < sortedPoints.length - 1; i++) {
+      const point = sortedPoints[i];
       // Vypočítat vzdálenost bodu od přímky
       const distance = Math.abs(
         point.lactate - (slope * point.power + intercept)
@@ -35,8 +101,28 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       if (distance > maxDistance) {
         maxDistance = distance;
         dmaxPoint = point;
+        dmaxIndex = i;
       }
-    });
+    }
+    
+    // Pokud se nenašel žádný bod (málo dat), použít střední bod
+    if (!dmaxPoint && sortedPoints.length >= 2) {
+      const midIndex = Math.floor(sortedPoints.length / 2);
+      dmaxPoint = sortedPoints[midIndex];
+      dmaxIndex = midIndex;
+      console.warn('[D-max] No point found with max distance, using middle point');
+    }
+    
+    if (dmaxPoint) {
+      console.log(`[D-max] Found point at index ${dmaxIndex}/${sortedPoints.length - 1}:`, {
+        power: dmaxPoint.power,
+        lactate: dmaxPoint.lactate,
+        hr: dmaxPoint.heartRate,
+        maxDistance: maxDistance.toFixed(4),
+        firstPoint: { power: firstPoint.power, lactate: firstPoint.lactate },
+        lastPoint: { power: lastPoint.power, lactate: lastPoint.lactate }
+      });
+    }
     
     return dmaxPoint;
   };
@@ -136,33 +222,310 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
   
   // Vylepšená funkce pro nalezení LTP bodů
-  const findLactateThresholds = (results, baseLactate) => {
+  const findLactateThresholds = (results, baseLactate, sport = 'bike') => {
     if (!results || results.length < 3) {
-      return { ltp1: null, ltp2: null };
+      return { ltp1: null, ltp2: null, ltp1Point: null, ltp2Point: null };
     }
 
-    // Použít D-max pro LTP2
-    const ltp2Point = calculateDmax(results);
+    const isPaceSport = sport === 'run' || sport === 'swim';
+
+    console.log(`[findLactateThresholds] Calculating for sport: ${sport}, isPaceSport: ${isPaceSport}, points: ${results.length}`);
     
-    if (!ltp2Point) return { ltp1: null, ltp2: null };
+    // Použít D-max pro LTP2 (na celé křivce)
+    let ltp2Point = calculateDmax(results, isPaceSport);
     
-    // Pro LTP1 použít modifikovanou D-max metodu na první část křivky
-    const firstHalfPoints = results.filter(p => p.power <= ltp2Point.power);
-    const ltp1Point = calculateDmax(firstHalfPoints);
+    if (!ltp2Point) {
+      console.warn('[findLactateThresholds] Could not find LTP2 using D-max');
+      return { ltp1: null, ltp2: null, ltp1Point: null, ltp2Point: null };
+    }
+    
+    console.log(`[findLactateThresholds] LTP2 found: power=${ltp2Point.power}, lactate=${ltp2Point.lactate}, hr=${ltp2Point.heartRate}`);
+    
+    // Validace LTP2: měl by mít laktát vyšší než base lactate (typicky 1.5-3x base), ale ne příliš vysoký
+    const effectiveBaseLactate = baseLactate || 1.0;
+    const minLactateForLTP2 = effectiveBaseLactate * 1.5;
+    const maxLactateForLTP2 = 5.5; // Maximální rozumný laktát pro LTP2 (anaerobní threshold)
+    
+    if (ltp2Point.lactate < minLactateForLTP2) {
+      console.warn(`[findLactateThresholds] LTP2 lactate (${ltp2Point.lactate}) is too low compared to base (${effectiveBaseLactate}). D-max may have found wrong point.`);
+      // Zkusit najít bod s laktátem alespoň 1.5x base lactate
+      const sortedResults = [...results].sort((a, b) => {
+        if (isPaceSport) return b.power - a.power;
+        return a.power - b.power;
+      });
+      // Najít bod nejblíže ideálnímu rozsahu (3.5-5.5 mmol/L)
+      const idealLactate = 4.5;
+      const candidates = sortedResults.filter(p => p.lactate >= minLactateForLTP2 && p.lactate <= maxLactateForLTP2);
+      let betterLTP2Point = null;
+      if (candidates.length > 0) {
+        // Najít bod nejblíže ideálnímu laktátu (4.5 mmol/L)
+        betterLTP2Point = candidates.reduce((best, current) => {
+          const bestDiff = Math.abs(best.lactate - idealLactate);
+          const currentDiff = Math.abs(current.lactate - idealLactate);
+          return currentDiff < bestDiff ? current : best;
+        });
+      } else {
+        // Pokud není žádný kandidát v ideálním rozsahu, najít nejbližší nad minLactateForLTP2
+        const fallbackCandidates = sortedResults.filter(p => p.lactate >= minLactateForLTP2);
+        if (fallbackCandidates.length > 0) {
+          betterLTP2Point = fallbackCandidates.reduce((best, current) => {
+            const bestDiff = Math.abs(best.lactate - idealLactate);
+            const currentDiff = Math.abs(current.lactate - idealLactate);
+            return currentDiff < bestDiff ? current : best;
+          });
+        }
+      }
+      if (betterLTP2Point) {
+        console.log(`[findLactateThresholds] Using alternative LTP2 point with lactate >= ${minLactateForLTP2}:`, betterLTP2Point);
+        // Použít D-max na části křivky od tohoto bodu dál (rychlejší část)
+        const fasterPoints = isPaceSport
+          ? sortedResults.filter(p => p.power <= betterLTP2Point.power)
+          : sortedResults.filter(p => p.power >= betterLTP2Point.power);
+        if (fasterPoints.length >= 3) {
+          const altLTP2Point = calculateDmax(fasterPoints, isPaceSport);
+          if (altLTP2Point && altLTP2Point.lactate >= minLactateForLTP2 && altLTP2Point.lactate <= maxLactateForLTP2) {
+            console.log(`[findLactateThresholds] Using improved LTP2:`, altLTP2Point);
+            if (altLTP2Point.lactate > ltp2Point.lactate) {
+              ltp2Point = altLTP2Point;
+            }
+          }
+        }
+      }
+    } else if (ltp2Point.lactate > maxLactateForLTP2) {
+      console.warn(`[findLactateThresholds] LTP2 lactate (${ltp2Point.lactate}) is too high (>${maxLactateForLTP2} mmol/L). This may result in training zones that are too hard. Looking for a better point.`);
+      // Pokud je laktát příliš vysoký, najít bod s laktátem kolem 4-5 mmol/L (typický anaerobní threshold)
+      const sortedResults = [...results].sort((a, b) => {
+        if (isPaceSport) return b.power - a.power;
+        return a.power - b.power;
+      });
+      // Najít bod s laktátem mezi 3.5 a 5.5 mmol/L (ideální rozsah pro LTP2)
+      // Preferovat bod nejblíže 4.5 mmol/L (střed ideálního rozsahu)
+      const idealLactate = 4.5;
+      const candidates = sortedResults.filter(p => p.lactate >= 3.5 && p.lactate <= 5.5);
+      let idealLTP2Point = null;
+      if (candidates.length > 0) {
+        // Najít bod nejblíže ideálnímu laktátu
+        idealLTP2Point = candidates.reduce((best, current) => {
+          const bestDiff = Math.abs(best.lactate - idealLactate);
+          const currentDiff = Math.abs(current.lactate - idealLactate);
+          return currentDiff < bestDiff ? current : best;
+        });
+      }
+      if (idealLTP2Point) {
+        console.log(`[findLactateThresholds] Found ideal LTP2 point with lactate in range 3.5-5.5:`, idealLTP2Point);
+        // Použít D-max na části křivky od tohoto bodu dál (rychlejší část)
+        const fasterPoints = isPaceSport
+          ? sortedResults.filter(p => p.power <= idealLTP2Point.power)
+          : sortedResults.filter(p => p.power >= idealLTP2Point.power);
+        if (fasterPoints.length >= 3) {
+          const altLTP2Point = calculateDmax(fasterPoints, isPaceSport);
+          // Použít alternativní bod, pokud má laktát v rozumném rozsahu
+          if (altLTP2Point && altLTP2Point.lactate >= 3.5 && altLTP2Point.lactate <= 5.5) {
+            console.log(`[findLactateThresholds] Using improved LTP2 with reasonable lactate:`, altLTP2Point);
+            ltp2Point = altLTP2Point;
+          } else if (idealLTP2Point.lactate < ltp2Point.lactate) {
+            // Pokud D-max nenašel lepší, použít přímo ideální bod
+            console.log(`[findLactateThresholds] Using ideal LTP2 point directly:`, idealLTP2Point);
+            ltp2Point = idealLTP2Point;
+          }
+        } else if (idealLTP2Point.lactate < ltp2Point.lactate) {
+          // Pokud není dostatek bodů pro D-max, použít přímo ideální bod
+          console.log(`[findLactateThresholds] Not enough points for D-max, using ideal LTP2 point directly:`, idealLTP2Point);
+          ltp2Point = idealLTP2Point;
+        }
+      }
+    }
+    
+    // Pro LTP1: najít první bod po poklesu, kde laktát začíná stabilně růst
+    // Seřadit data podle power/pace
+    const sortedForLTP1 = [...results].sort((a, b) => {
+      if (isPaceSport) {
+        return b.power - a.power; // Sestupně pro pace (pomalejší -> rychlejší)
+      }
+      return a.power - b.power; // Vzestupně pro power (nižší -> vyšší)
+    });
+    
+    // Najít nejnižší laktát v křivce (nejhlubší pokles)
+    let minLactate = Infinity;
+    let minLactateIndex = -1;
+    for (let i = 0; i < sortedForLTP1.length; i++) {
+      if (sortedForLTP1[i].lactate < minLactate) {
+        minLactate = sortedForLTP1[i].lactate;
+        minLactateIndex = i;
+      }
+    }
+    
+    console.log(`[findLactateThresholds] Minimum lactate found at index ${minLactateIndex}: ${minLactate} mmol/L`);
+    
+    // Najít první bod PO poklesu, kde laktát začíná stabilně růst
+    // LTP1 by měl být první bod, kde laktát >= base lactate a už neklesá
+    let ltp1Point = null;
+    let ltp1StartIndex = minLactateIndex + 1; // Začít hledat po poklesu
+    
+    // Najít první bod, kde laktát >= base lactate * 0.9 a už stabilně roste
+    for (let i = ltp1StartIndex; i < sortedForLTP1.length; i++) {
+      const point = sortedForLTP1[i];
+      // Kontrola, že laktát je alespoň 0.9x base lactate
+      if (point.lactate >= effectiveBaseLactate * 0.9) {
+        // Kontrola, že následující body také rostou (nebo jsou stabilní)
+        let isStableRising = true;
+        if (i < sortedForLTP1.length - 1) {
+          // Zkontrolovat následující 2-3 body, zda laktát roste nebo je stabilní
+          for (let j = i + 1; j < Math.min(i + 3, sortedForLTP1.length); j++) {
+            if (sortedForLTP1[j].lactate < point.lactate - 0.3) {
+              // Pokud následující bod má laktát o více než 0.3 mmol/L nižší, není to stabilní růst
+              isStableRising = false;
+              break;
+            }
+          }
+        }
+        
+        if (isStableRising) {
+          ltp1Point = point;
+          console.log(`[findLactateThresholds] LTP1 found after lactate drop: power=${ltp1Point.power}, lactate=${ltp1Point.lactate}, hr=${ltp1Point.heartRate}, index=${i}`);
+          break;
+        }
+      }
+    }
+    
+    // Pokud se nenašel bod po poklesu, použít D-max na první polovině
+    if (!ltp1Point) {
+      console.warn('[findLactateThresholds] Could not find LTP1 after lactate drop, using D-max on first half');
+      const firstHalfIndex = Math.ceil(sortedForLTP1.length / 2);
+      const firstHalfPoints = sortedForLTP1.slice(0, firstHalfIndex);
+      
+      if (firstHalfPoints.length >= 3) {
+        ltp1Point = calculateDmax(firstHalfPoints, isPaceSport);
+      } else {
+        // Fallback: použít první bod s laktátem >= base lactate
+        ltp1Point = sortedForLTP1.find(p => p.lactate >= effectiveBaseLactate * 0.9) || sortedForLTP1[0];
+      }
+    }
+    
+    if (ltp1Point) {
+      console.log(`[findLactateThresholds] LTP1 found: power=${ltp1Point.power}, lactate=${ltp1Point.lactate}, hr=${ltp1Point.heartRate}`);
+      
+      // Validace LTP1: měl by mít laktát alespoň kolem base lactate nebo mírně vyšší
+      if (ltp1Point.lactate < effectiveBaseLactate * 0.8) {
+        console.warn(`[findLactateThresholds] LTP1 lactate (${ltp1Point.lactate}) is too low compared to base (${effectiveBaseLactate}). Trying to find better point.`);
+        // Najít bod s laktátem nejblíže base lactate (ideálně mezi 0.9x a 1.3x base lactate)
+        // Použít body po poklesu (od minLactateIndex dál)
+        const pointsAfterDrop = sortedForLTP1.slice(minLactateIndex + 1);
+        const candidates = pointsAfterDrop.filter(p => 
+          p.lactate >= effectiveBaseLactate * 0.9 && p.lactate <= effectiveBaseLactate * 1.3
+        );
+        let betterLTP1Point = null;
+        if (candidates.length > 0) {
+          // Najít bod nejblíže base lactate
+          betterLTP1Point = candidates.reduce((best, current) => {
+            const bestDiff = Math.abs(best.lactate - effectiveBaseLactate);
+            const currentDiff = Math.abs(current.lactate - effectiveBaseLactate);
+            return currentDiff < bestDiff ? current : best;
+          });
+        } else {
+          // Pokud není žádný kandidát v ideálním rozsahu, najít nejbližší nad 0.9x base
+          const fallbackCandidates = pointsAfterDrop.filter(p => p.lactate >= effectiveBaseLactate * 0.9);
+          if (fallbackCandidates.length > 0) {
+            betterLTP1Point = fallbackCandidates.reduce((best, current) => {
+              const bestDiff = Math.abs(best.lactate - effectiveBaseLactate);
+              const currentDiff = Math.abs(current.lactate - effectiveBaseLactate);
+              return currentDiff < bestDiff ? current : best;
+            });
+          }
+        }
+        if (betterLTP1Point) {
+          console.log(`[findLactateThresholds] Found alternative LTP1 point:`, betterLTP1Point);
+          // Použít D-max na části od tohoto bodu
+          const slowerPoints = isPaceSport
+            ? sortedForLTP1.filter(p => p.power >= betterLTP1Point.power)
+            : sortedForLTP1.filter(p => p.power <= betterLTP1Point.power);
+          if (slowerPoints.length >= 3) {
+            const altLTP1Point = calculateDmax(slowerPoints, isPaceSport);
+            if (altLTP1Point && altLTP1Point.lactate >= effectiveBaseLactate * 0.8) {
+              console.log(`[findLactateThresholds] D-max on slower section found:`, altLTP1Point);
+              // Použít bod s lepším laktátem (blíže k base lactate nebo vyšší)
+              if (altLTP1Point.lactate > ltp1Point.lactate) {
+                console.log(`[findLactateThresholds] Using improved LTP1 from D-max:`, altLTP1Point);
+                ltp1Point = altLTP1Point;
+              } else if (betterLTP1Point.lactate > ltp1Point.lactate) {
+                // Pokud D-max nenašel lepší, použít přímo alternativní bod
+                console.log(`[findLactateThresholds] Using alternative LTP1 point directly:`, betterLTP1Point);
+                ltp1Point = betterLTP1Point;
+              }
+            } else if (betterLTP1Point.lactate > ltp1Point.lactate) {
+              // Pokud D-max selhal, použít přímo alternativní bod
+              console.log(`[findLactateThresholds] D-max failed, using alternative LTP1 point directly:`, betterLTP1Point);
+              ltp1Point = betterLTP1Point;
+            }
+          } else if (betterLTP1Point.lactate > ltp1Point.lactate) {
+            // Pokud není dostatek bodů pro D-max, použít přímo alternativní bod
+            console.log(`[findLactateThresholds] Not enough points for D-max, using alternative LTP1 point directly:`, betterLTP1Point);
+            ltp1Point = betterLTP1Point;
+          }
+        }
+      }
+    }
 
     // Záložní metoda pomocí derivací, pokud D-max selže
     if (!ltp1Point) {
+      console.warn('[findLactateThresholds] D-max failed for LTP1, trying derivatives');
       const { secondDerivative } = calculateDerivatives(results);
       const ltp1Candidate = secondDerivative.find(d => d.value > 0.0005);
+      if (ltp1Candidate) {
+        // Najít odpovídající bod v results
+        const matchingPoint = results.find(r => Math.abs(r.power - ltp1Candidate.power) < 0.1) || results[0];
+        return {
+          ltp1: ltp1Candidate.power,
+          ltp2: ltp2Point.power,
+          ltp1Point: matchingPoint,
+          ltp2Point: ltp2Point
+        };
+      }
+      // Úplný fallback: použít první bod
       return {
-        ltp1: ltp1Candidate?.power || null,
-        ltp2: ltp2Point.power
+        ltp1: results[0].power,
+        ltp2: ltp2Point.power,
+        ltp1Point: results[0],
+        ltp2Point: ltp2Point
       };
+    }
+
+    // Validace: Pro bike musí být LTP2 > LTP1, pro run/swim musí být LTP2 < LTP1
+    if (isPaceSport) {
+      if (ltp1Point.power <= ltp2Point.power) {
+        console.warn('[findLactateThresholds] Invalid LTP values for pace sport (LTP1 should be > LTP2):', {
+          ltp1: ltp1Point.power,
+          ltp2: ltp2Point.power
+        });
+        // Swap pokud jsou opačně
+        return {
+          ltp1: ltp2Point.power,
+          ltp2: ltp1Point.power,
+          ltp1Point: ltp2Point,
+          ltp2Point: ltp1Point
+        };
+      }
+    } else {
+      if (ltp1Point.power >= ltp2Point.power) {
+        console.warn('[findLactateThresholds] Invalid LTP values for power sport (LTP1 should be < LTP2):', {
+          ltp1: ltp1Point.power,
+          ltp2: ltp2Point.power
+        });
+        // Swap pokud jsou opačně
+        return {
+          ltp1: ltp2Point.power,
+          ltp2: ltp1Point.power,
+          ltp1Point: ltp2Point,
+          ltp2Point: ltp1Point
+        };
+      }
     }
 
     return {
       ltp1: ltp1Point.power,
-      ltp2: ltp2Point.power
+      ltp2: ltp2Point.power,
+      ltp1Point: ltp1Point,
+      ltp2Point: ltp2Point
     };
   };
 
@@ -211,19 +574,42 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       thresholds.lactates['IAT'] = iatThreshold.lactate;
     }
   
-    // Najít LTP body pomocí D-max metody
-    const { ltp1, ltp2 } = findLactateThresholds(sortedResults, baseLactate);
+    // Najít LTP body pomocí D-max metody (PŘED interpolací, aby měly prioritu)
+    const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport);
     
     // Definice cílových laktátů (použít baseLactate pokud je definováno, jinak použít výchozí hodnoty)
     const effectiveBaseLactate = baseLactate || 1.0; // Fallback na 1.0 pokud není definováno
+    
+    // Nejdřív použít D-max body pro LTP1 a LTP2 (mají prioritu před interpolací)
+    if (ltp1 && ltp1Point) {
+      thresholds['LTP1'] = ltp1;
+      thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+      thresholds.lactates['LTP1'] = ltp1Point.lactate || null;
+      console.log('[calculateThresholds] Using D-max LTP1:', { 
+        power: ltp1, 
+        hr: thresholds.heartRates['LTP1'],
+        lactate: thresholds.lactates['LTP1']
+      });
+    }
+    
+    if (ltp2 && ltp2Point) {
+      thresholds['LTP2'] = ltp2;
+      thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+      thresholds.lactates['LTP2'] = ltp2Point.lactate || null;
+      console.log('[calculateThresholds] Using D-max LTP2:', { 
+        power: ltp2, 
+        hr: thresholds.heartRates['LTP2'],
+        lactate: thresholds.lactates['LTP2']
+      });
+    }
+    
     const targets = [
       2.0, 2.5, 3.0, 3.5,  // OBLA hodnoty
       effectiveBaseLactate + 0.5, effectiveBaseLactate + 1.0, effectiveBaseLactate + 1.5,  // Baseline + delta
-      effectiveBaseLactate * 1.5,  // LTP1 target
-      effectiveBaseLactate * 3.0   // LTP2 target
+      // LTP1 a LTP2 už máme z D-max, takže je přeskočíme v interpolaci
     ];
   
-    // Projít všechny sousední body a najít thresholdy
+    // Projít všechny sousední body a najít thresholdy (kromě LTP1/LTP2, které už máme)
     for (let i = 1; i < sortedResults.length; i++) {
       const prev = sortedResults[i - 1];
       const curr = sortedResults[i];
@@ -233,7 +619,6 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           const key = [
             'OBLA 2.0', 'OBLA 2.5', 'OBLA 3.0', 'OBLA 3.5',
             'Bsln + 0.5', 'Bsln + 1.0', 'Bsln + 1.5',
-            'LTP1', 'LTP2'
           ][index];
   
           // Interpolovaný výkon/tempo
@@ -256,77 +641,123 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       });
     }
   
-    // Fallback: Pokud se LTP1/LTP2 nenajdou pomocí interpolace, použít hodnoty z D-max metody
-    if (!thresholds['LTP1'] && ltp1) {
-      // Najít dva nejbližší body pro interpolaci HR
-      let prevLap = sortedResults[0];
-      let nextLap = sortedResults[sortedResults.length - 1];
-      
-      for (let i = 0; i < sortedResults.length - 1; i++) {
-        if (sortedResults[i].power <= ltp1 && sortedResults[i + 1].power >= ltp1) {
-          prevLap = sortedResults[i];
-          nextLap = sortedResults[i + 1];
-          break;
+    // Fallback: Pokud se LTP1 nenajde pomocí D-max, zkusit interpolovat HR
+    if (thresholds['LTP1'] && !thresholds.heartRates['LTP1'] && ltp1 && ltp1Point) {
+      // Validace laktátu - měl by být v rozumném rozsahu
+      const ltp1Lactate = ltp1Point.lactate;
+      if (ltp1Lactate) {
+        if (ltp1Lactate < 0.5 || ltp1Lactate > 8.0) {
+          console.warn('[calculateThresholds] LTP1 lactate value seems invalid (out of range):', ltp1Lactate);
+        } else if (ltp1Lactate > 4.0) {
+          console.warn('[calculateThresholds] LTP1 lactate value is high (>4.0 mmol/L):', ltp1Lactate,
+            '- This may indicate the D-max point is too late in the curve.');
+        } else if (ltp1Lactate < 1.0) {
+          console.warn('[calculateThresholds] LTP1 lactate value is low (<1.0 mmol/L):', ltp1Lactate,
+            '- This may indicate the D-max point is too early in the curve.');
         }
       }
       
-      // Interpolovat HR mezi nejbližšími body
-      const hr1 = prevLap.heartRate || null;
-      const hr2 = nextLap.heartRate || null;
-      let interpolatedHR = null;
-      
-      if (hr1 && hr2 && prevLap.power !== nextLap.power) {
-        interpolatedHR = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp1);
-      } else if (hr1) {
-        interpolatedHR = hr1;
-      } else if (hr2) {
-        interpolatedHR = hr2;
+      // Pokud nemáme HR z bodu, zkusit interpolovat
+      if (!thresholds.heartRates['LTP1']) {
+        let prevLap = sortedResults[0];
+        let nextLap = sortedResults[sortedResults.length - 1];
+        
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const isPace = sport === 'run' || sport === 'swim';
+          const condition = isPace 
+            ? (sortedResults[i].power >= ltp1 && sortedResults[i + 1].power <= ltp1)
+            : (sortedResults[i].power <= ltp1 && sortedResults[i + 1].power >= ltp1);
+          
+          if (condition) {
+            prevLap = sortedResults[i];
+            nextLap = sortedResults[i + 1];
+            break;
+          }
+        }
+        
+        const hr1 = prevLap.heartRate || null;
+        const hr2 = nextLap.heartRate || null;
+        
+        if (hr1 && hr2 && prevLap.power !== nextLap.power) {
+          thresholds.heartRates['LTP1'] = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp1);
+        } else if (hr1) {
+          thresholds.heartRates['LTP1'] = hr1;
+        } else if (hr2) {
+          thresholds.heartRates['LTP1'] = hr2;
+        }
       }
       
-      thresholds['LTP1'] = ltp1;
-      thresholds.heartRates['LTP1'] = interpolatedHR;
-      thresholds.lactates['LTP1'] = prevLap.lactate || nextLap.lactate || null;
-      console.log('[calculateThresholds] Using D-max fallback for LTP1:', { ltp1, hr: interpolatedHR });
+      console.log('[calculateThresholds] Interpolated HR for LTP1:', { 
+        ltp1, 
+        hr: thresholds.heartRates['LTP1']
+      });
     }
     
-    if (!thresholds['LTP2'] && ltp2) {
-      // Najít dva nejbližší body pro interpolaci HR
-      let prevLap = sortedResults[0];
-      let nextLap = sortedResults[sortedResults.length - 1];
-      
-      for (let i = 0; i < sortedResults.length - 1; i++) {
-        if (sortedResults[i].power <= ltp2 && sortedResults[i + 1].power >= ltp2) {
-          prevLap = sortedResults[i];
-          nextLap = sortedResults[i + 1];
-          break;
+    // Fallback: Pokud se LTP2 nenajde pomocí D-max, zkusit interpolovat HR
+    if (thresholds['LTP2'] && !thresholds.heartRates['LTP2'] && ltp2 && ltp2Point) {
+      // Pokud nemáme HR z bodu, zkusit interpolovat
+      if (!thresholds.heartRates['LTP2']) {
+        let prevLap = sortedResults[0];
+        let nextLap = sortedResults[sortedResults.length - 1];
+        
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const isPace = sport === 'run' || sport === 'swim';
+          const condition = isPace 
+            ? (sortedResults[i].power >= ltp2 && sortedResults[i + 1].power <= ltp2)
+            : (sortedResults[i].power <= ltp2 && sortedResults[i + 1].power >= ltp2);
+          
+          if (condition) {
+            prevLap = sortedResults[i];
+            nextLap = sortedResults[i + 1];
+            break;
+          }
+        }
+        
+        const hr1 = prevLap.heartRate || null;
+        const hr2 = nextLap.heartRate || null;
+        
+        if (hr1 && hr2 && prevLap.power !== nextLap.power) {
+          thresholds.heartRates['LTP2'] = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp2);
+        } else if (hr1) {
+          thresholds.heartRates['LTP2'] = hr1;
+        } else if (hr2) {
+          thresholds.heartRates['LTP2'] = hr2;
         }
       }
       
-      // Interpolovat HR mezi nejbližšími body
-      const hr1 = prevLap.heartRate || null;
-      const hr2 = nextLap.heartRate || null;
-      let interpolatedHR = null;
-      
-      if (hr1 && hr2 && prevLap.power !== nextLap.power) {
-        interpolatedHR = interpolate(prevLap.power, hr1, nextLap.power, hr2, ltp2);
-      } else if (hr1) {
-        interpolatedHR = hr1;
-      } else if (hr2) {
-        interpolatedHR = hr2;
-      }
-      
-      thresholds['LTP2'] = ltp2;
-      thresholds.heartRates['LTP2'] = interpolatedHR;
-      thresholds.lactates['LTP2'] = prevLap.lactate || nextLap.lactate || null;
-      console.log('[calculateThresholds] Using D-max fallback for LTP2:', { ltp2, hr: interpolatedHR });
+      console.log('[calculateThresholds] Interpolated HR for LTP2:', { 
+        ltp2, 
+        hr: thresholds.heartRates['LTP2']
+      });
     }
   
     // Výpočet LTRatio pouze pokud máme oba LTP body
     if (ltp1 && ltp2 && ltp1 > 0 && ltp2 > 0) {
-      const ratio = ltp2 / ltp1;
-      // Kontrola, zda je poměr v rozumném rozsahu (typicky 1.1 - 1.3)
-      if (ratio >= 1.1 && ratio <= 1.3) {
+      const isPaceSport = sport === 'run' || sport === 'swim';
+      // Pro bike: LTP2 > LTP1, takže ratio = LTP2/LTP1 (typicky 1.1-1.3)
+      // Pro run/swim: LTP2 < LTP1 (pace), takže ratio = LTP1/LTP2 (typicky 1.1-1.6, může být i vyšší)
+      const ratio = isPaceSport ? ltp1 / ltp2 : ltp2 / ltp1;
+      // Kontrola, zda je poměr v rozumném rozsahu
+      // Pro bike: 1.1-1.3, pro pace: 1.1-1.8 (může být vyšší u méně trénovaných)
+      const minRatio = 1.1;
+      const maxRatio = isPaceSport ? 1.8 : 1.3;
+      if (ratio >= minRatio && ratio <= maxRatio) {
         thresholds['LTRatio'] = ratio.toFixed(2);
+      } else {
+        // Pro pace sporty může být ratio vyšší, takže jen varování, ne chyba
+        if (isPaceSport && ratio > maxRatio) {
+          console.log(`[calculateThresholds] LTRatio is high (${ratio.toFixed(2)}) for pace sport - this may be normal for less trained athletes.`);
+          thresholds['LTRatio'] = ratio.toFixed(2); // Stále uložit, i když je vyšší
+        } else {
+          console.warn('[calculateThresholds] LTRatio out of expected range:', {
+            ratio: ratio.toFixed(2),
+            ltp1,
+            ltp2,
+            sport,
+            isPaceSport,
+            expectedRange: `${minRatio}-${maxRatio}`
+          });
+        }
       }
     }
   
