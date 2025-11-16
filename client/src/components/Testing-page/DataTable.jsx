@@ -474,7 +474,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       if (ltp1Candidate) {
         // Najít odpovídající bod v results
         const matchingPoint = results.find(r => Math.abs(r.power - ltp1Candidate.power) < 0.1) || results[0];
-        return {
+      return {
           ltp1: ltp1Candidate.power,
           ltp2: ltp2Point.power,
           ltp1Point: matchingPoint,
@@ -498,7 +498,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           ltp2: ltp2Point.power
         });
         // Swap pokud jsou opačně
-        return {
+    return {
           ltp1: ltp2Point.power,
           ltp2: ltp1Point.power,
           ltp1Point: ltp2Point,
@@ -508,8 +508,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     } else {
       if (ltp1Point.power >= ltp2Point.power) {
         console.warn('[findLactateThresholds] Invalid LTP values for power sport (LTP1 should be < LTP2):', {
-          ltp1: ltp1Point.power,
-          ltp2: ltp2Point.power
+      ltp1: ltp1Point.power,
+      ltp2: ltp2Point.power
         });
         // Swap pokud jsou opačně
         return {

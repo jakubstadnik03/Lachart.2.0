@@ -31,6 +31,7 @@ const LactateTestingPage = () => {
   const [totalTestTime, setTotalTestTime] = useState(0);
   const [phase, setPhase] = useState('work'); // 'work', 'recovery', 'countdown'
   const [countdown, setCountdown] = useState(0); // Countdown before interval start (3, 2, 1, 0)
+  const [recoveryTimer, setRecoveryTimer] = useState(0); // Recovery timer (counts up during recovery)
 
   // Device connections
   const [devices, setDevices] = useState({
@@ -52,8 +53,26 @@ const LactateTestingPage = () => {
     vo2: 0,
     vco2: 0,
     ventilation: 0,
+    speed: 0,
     timestamp: Date.now()
   });
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    liveDataRef.current = liveData;
+  }, [liveData]);
+  
+  useEffect(() => {
+    currentStepRef.current = currentStep;
+  }, [currentStep]);
+  
+  useEffect(() => {
+    intervalTimerRef2.current = intervalTimer;
+  }, [intervalTimer]);
+  
+  useEffect(() => {
+    totalTestTimeRef.current = totalTestTime;
+  }, [totalTestTime]);
 
   // Historical data for charts
   const [historicalData, setHistoricalData] = useState([]);
@@ -85,6 +104,11 @@ const LactateTestingPage = () => {
   const dataCollectionIntervalRef = useRef(null);
   const testTimerRef = useRef(null);
   const countdownRef = useRef(null);
+  const recoveryTimerRef = useRef(null);
+  const liveDataRef = useRef(liveData);
+  const currentStepRef = useRef(currentStep);
+  const intervalTimerRef2 = useRef(intervalTimer);
+  const totalTestTimeRef = useRef(totalTestTime);
 
   // Initialize protocol steps
   useEffect(() => {
@@ -101,17 +125,36 @@ const LactateTestingPage = () => {
     setProtocol(prev => ({ ...prev, steps }));
   }, [protocol.startPower, protocol.powerIncrement, protocol.maxSteps, protocol.workDuration, protocol.recoveryDuration]);
 
-  // Data collection
+  // Data collection - collect data every second from test start
   const collectDataPoint = useCallback(() => {
-    const dataPoint = {
-      ...liveData,
-      timestamp: Date.now(),
-      step: currentStep,
-      intervalTime: intervalTimer,
-      totalTime: totalTestTime
-    };
-    setHistoricalData(prev => [...prev, dataPoint]);
-  }, [liveData, currentStep, intervalTimer, totalTestTime]);
+    // Always collect data, even if values are 0/null - this creates the curves from the start
+    // Use refs to get the latest values (since they update asynchronously)
+    setHistoricalData(prev => {
+      const currentLiveData = liveDataRef.current;
+      const currentTotalTime = totalTestTimeRef.current;
+      const dataPoint = {
+        ...currentLiveData,
+        timestamp: Date.now(),
+        step: currentStepRef.current,
+        intervalTime: intervalTimerRef2.current,
+        totalTime: currentTotalTime
+      };
+      
+      // Debug logging
+      if (prev.length % 10 === 0 || prev.length < 5) {
+        console.log(`[collectDataPoint] Collected data point #${prev.length + 1}:`, {
+          totalTime: currentTotalTime,
+          power: currentLiveData.power,
+          heartRate: currentLiveData.heartRate,
+          cadence: currentLiveData.cadence,
+          speed: currentLiveData.speed
+        });
+      }
+      
+      // Add new data point to the end
+      return [...prev, dataPoint];
+    });
+  }, []);
 
   // Start interval timer for current phase
   const startIntervalTimer = useCallback(() => {
@@ -128,7 +171,17 @@ const LactateTestingPage = () => {
           // Interval finished, move to recovery
           setPhase('recovery');
           setIntervalTimer(0);
-          addNotification('Interval completed. Ready for recovery.', 'info');
+          setRecoveryTimer(0);
+          // Start recovery timer
+          if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
+          recoveryTimerRef.current = setInterval(() => {
+            setRecoveryTimer(prev => prev + 1);
+          }, 1000);
+          // Automatically open lactate entry modal
+          setTimeout(() => {
+            setShowLactateModal(true);
+            addNotification('Interval completed. Enter lactate value.', 'info');
+          }, 0);
           return 0;
         }
         return prev + 1;
@@ -153,10 +206,16 @@ const LactateTestingPage = () => {
 
     // Set initial power target on trainer
     const firstStep = protocol.steps[0];
-    if (firstStep && devices.bikeTrainer.connected) {
-      deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower).catch(err => {
-        console.error('Failed to set initial power on trainer:', err);
-      });
+    if (firstStep && devices.bikeTrainer?.connected) {
+      // Wait a bit for connection to stabilize, then set power
+      setTimeout(async () => {
+        try {
+          await deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower);
+          console.log(`Initial power set to ${firstStep.targetPower}W on trainer`);
+        } catch (err) {
+          console.error('Failed to set initial power on trainer:', err);
+        }
+      }, 500);
     }
 
     // Start interval timer
@@ -167,15 +226,25 @@ const LactateTestingPage = () => {
       setTotalTestTime(prev => prev + 1);
     }, 1000);
 
-    // Start data collection (collect every second, including during recovery)
+    // Start data collection immediately and then every second
+    // Collect first data point immediately (at time 0)
+    setTimeout(() => {
+      collectDataPoint();
+      console.log('[handleStartTest] First data point collected');
+    }, 100);
+    
+    // Then collect data every second throughout the entire test (including countdown)
     dataCollectionIntervalRef.current = setInterval(() => {
-      // Only collect data during work or recovery phases, not during countdown
-      if (phase === 'work' || phase === 'recovery') {
-        collectDataPoint();
-      }
+      // Collect data throughout the entire test (including countdown)
+      collectDataPoint();
     }, 1000);
+    
+    console.log('[handleStartTest] Data collection started, interval:', dataCollectionIntervalRef.current);
 
-    addNotification('Test started', 'success');
+    // Use setTimeout to avoid setState during render
+    setTimeout(() => {
+      addNotification('Test started', 'success');
+    }, 0);
   };
 
   // Pause test
@@ -185,7 +254,10 @@ const LactateTestingPage = () => {
     if (testTimerRef.current) clearInterval(testTimerRef.current);
     if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
-    addNotification('Test paused', 'info');
+    if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
+    setTimeout(() => {
+      addNotification('Test paused', 'info');
+    }, 0);
   };
 
   // Resume test
@@ -202,14 +274,15 @@ const LactateTestingPage = () => {
       setTotalTestTime(prev => prev + 1);
     }, 1000);
     
-    // Resume data collection
+    // Resume data collection (collect every second from test start)
     dataCollectionIntervalRef.current = setInterval(() => {
-      if (phase === 'work' || phase === 'recovery') {
-        collectDataPoint();
-      }
+      // Collect data throughout the entire test
+      collectDataPoint();
     }, 1000);
     
-    addNotification('Test resumed', 'success');
+    setTimeout(() => {
+      addNotification('Test resumed', 'success');
+    }, 0);
   };
 
   // Stop test
@@ -221,26 +294,33 @@ const LactateTestingPage = () => {
     if (testTimerRef.current) clearInterval(testTimerRef.current);
     if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
-    addNotification('Test completed', 'success');
+    setTimeout(() => {
+      addNotification('Test completed', 'success');
+    }, 0);
   };
 
   // Add lactate value and BORG
-  const handleAddLactate = (lactateValue, borgValue) => {
+  const handleAddLactate = (lactateValue, borgValue, manualPower = null) => {
     const currentStepData = protocol.steps[currentStep];
     const avgPower = historicalData
       .filter(d => d.step === currentStep)
       .reduce((sum, d) => sum + (d.power || 0), 0) / (historicalData.filter(d => d.step === currentStep).length || 1);
 
+    // Use manual power if provided, otherwise use average from historical data, otherwise use target power
+    const finalPower = manualPower !== null ? manualPower : (avgPower || currentStepData?.targetPower || 0);
+
     setLactateValues(prev => [...prev, {
       step: currentStep + 1,
-      power: avgPower || currentStepData?.targetPower || 0,
+      power: finalPower,
       lactate: parseFloat(lactateValue),
       borg: borgValue ? parseFloat(borgValue) : null,
       time: totalTestTime
     }]);
 
     setShowLactateModal(false);
-    addNotification('Lactate value and BORG added', 'success');
+    setTimeout(() => {
+      addNotification('Lactate value and BORG added', 'success');
+    }, 0);
   };
 
   // Skip/End current interval early
@@ -258,9 +338,10 @@ const LactateTestingPage = () => {
     setIntervalTimer(0);
     
     // Show lactate entry modal
-    setShowLactateModal(true);
-    
-    addNotification('Interval ended. Enter lactate value.', 'info');
+    setTimeout(() => {
+      setShowLactateModal(true);
+      addNotification('Interval ended. Enter lactate value.', 'info');
+    }, 0);
   };
 
   // Start next interval (after recovery)
@@ -268,10 +349,15 @@ const LactateTestingPage = () => {
     if (testState !== 'running' || phase !== 'recovery') return;
     
     // Stop any recovery timer
+    if (recoveryTimerRef.current) {
+      clearInterval(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
     if (intervalTimerRef.current) {
       clearInterval(intervalTimerRef.current);
       intervalTimerRef.current = null;
     }
+    setRecoveryTimer(0);
     
     // Start 3-second countdown
     setPhase('countdown');
@@ -293,20 +379,30 @@ const LactateTestingPage = () => {
               const newStep = prevStep + 1;
               // Set power target on trainer when step changes
               const nextStepData = protocol.steps[newStep];
-              if (nextStepData && devices.bikeTrainer.connected) {
-                deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower).catch(err => {
-                  console.error('Failed to set power on trainer:', err);
-                });
+              if (nextStepData && devices.bikeTrainer?.connected) {
+                setTimeout(async () => {
+                  try {
+                    await deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower);
+                    console.log(`Power set to ${nextStepData.targetPower}W for step ${newStep + 1}`);
+                  } catch (err) {
+                    console.error('Failed to set power on trainer:', err);
+                  }
+                }, 100);
               }
               return newStep;
             });
           } else {
             // Even if staying on current step, update power if needed
             const currentStepData = protocol.steps[currentStep];
-            if (currentStepData && devices.bikeTrainer.connected) {
-              deviceConnectivity.setPower('bikeTrainer', currentStepData.targetPower).catch(err => {
-                console.error('Failed to set power on trainer:', err);
-              });
+            if (currentStepData && devices.bikeTrainer?.connected) {
+              setTimeout(async () => {
+                try {
+                  await deviceConnectivity.setPower('bikeTrainer', currentStepData.targetPower);
+                  console.log(`Power set to ${currentStepData.targetPower}W for current step`);
+                } catch (err) {
+                  console.error('Failed to set power on trainer:', err);
+                }
+              }, 100);
             }
           }
           
@@ -323,7 +419,9 @@ const LactateTestingPage = () => {
       });
     }, 1000);
     
-    addNotification('Starting interval in 3 seconds...', 'info');
+    setTimeout(() => {
+      addNotification('Starting interval in 3 seconds...', 'info');
+    }, 0);
   };
 
   // Save test session
@@ -508,19 +606,13 @@ const LactateTestingPage = () => {
     return { historical: [], lactateValues: [] };
   };
 
-  // Update data collection based on phase
+  // Update data collection based on test state
+  // Note: Data collection is started in handleStartTest and handleResumeTest
+  // This effect only handles cleanup when test stops
   useEffect(() => {
-    if (dataCollectionIntervalRef.current) {
+    if (testState !== 'running' && dataCollectionIntervalRef.current) {
       clearInterval(dataCollectionIntervalRef.current);
-    }
-    
-    if (testState === 'running') {
-      dataCollectionIntervalRef.current = setInterval(() => {
-        // Only collect data during work or recovery phases, not during countdown
-        if (phase === 'work' || phase === 'recovery') {
-          collectDataPoint();
-        }
-      }, 1000);
+      dataCollectionIntervalRef.current = null;
     }
     
     return () => {
@@ -528,7 +620,7 @@ const LactateTestingPage = () => {
         clearInterval(dataCollectionIntervalRef.current);
       }
     };
-  }, [phase, testState, collectDataPoint]);
+  }, [testState]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -748,13 +840,11 @@ const LactateTestingPage = () => {
           )}
         </motion.div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Device Connection & Interval Setup */}
-          <div className="lg:col-span-1 space-y-6">
-            <DeviceConnectionPanel
-              devices={devices}
-              onDeviceConnect={async (deviceType) => {
+        {/* Device Connection Panel & Interval Protocol - Top, Collapsible */}
+        <div className="mb-6 space-y-4">
+          <DeviceConnectionPanel
+            devices={devices}
+            onDeviceConnect={async (deviceType) => {
                 console.log('Connecting to device:', deviceType);
                 
                 // Check if Web Bluetooth is available
@@ -770,18 +860,74 @@ const LactateTestingPage = () => {
                   addNotification(`Connecting to ${deviceType}...`, 'info');
                   const connected = await deviceConnectivity.connectWebBluetooth(deviceType, (data) => {
                     updateDeviceData(deviceType, data);
+                    
+                    // Check if power is missing for bikeTrainer
+                    if (deviceType === 'bikeTrainer' && (data.power === null || data.power === undefined)) {
+                      // Power is not available - this is expected for some Tacx trainers that only have CSC Service
+                      // We'll show a one-time warning
+                      if (!devices.bikeTrainer?.powerWarningShown) {
+                        console.warn('Power data is not available from this trainer. Only speed and cadence are available via Bluetooth.');
+                        // Note: We'll show this in console, but won't spam notifications
+                      }
+                    }
                   });
                   
                   if (connected) {
-                    addNotification(`${deviceType} connected successfully`, 'success');
+                    setTimeout(() => {
+                      addNotification(`${deviceType} connected successfully`, 'success');
+                    }, 0);
+                    
+                    // For bikeTrainer, try to enable ERGO mode and set initial power
+                    if (deviceType === 'bikeTrainer') {
+                      // Give it a moment to establish connection, then try to set ERGO mode
+                      setTimeout(async () => {
+                        try {
+                          // Check if we can control the trainer (FE-C support)
+                          if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
+                            // Trainer supports FE-C control - we can set power
+                            setTimeout(() => {
+                              addNotification('Trainer supports ERGO mode control. Power can be set from the app.', 'success');
+                            }, 0);
+                            
+                            // Set initial power if test is running or if we have a protocol
+                            if (protocol.steps.length > 0) {
+                              const initialPower = protocol.steps[0]?.targetPower || protocol.startPower || 100;
+                              await deviceConnectivity.setPower('bikeTrainer', initialPower);
+                              setTimeout(() => {
+                                addNotification(`Initial power set to ${initialPower}W`, 'info');
+                              }, 0);
+                            }
+                          } else {
+                            // Trainer doesn't support FE-C control, but check if power reading is available
+                            setTimeout(() => {
+                              const trainerData = devices.bikeTrainer?.data;
+                              if (trainerData && (trainerData.power === null || trainerData.power === undefined)) {
+                                addNotification('Note: This trainer does not support ERGO mode control. Power cannot be set automatically. You may need to set it manually on the trainer or use a separate power meter.', 'warning');
+                              } else if (trainerData && trainerData.power !== null && trainerData.power !== undefined) {
+                                addNotification(`Power reading available: ${trainerData.power.toFixed(0)}W`, 'success');
+                              }
+                            }, 2000);
+                          }
+                        } catch (error) {
+                          console.error('Error setting up trainer control:', error);
+                          setTimeout(() => {
+                            addNotification(`Warning: Could not set up trainer control: ${error.message}`, 'warning');
+                          }, 0);
+                        }
+                      }, 1000);
+                    }
                   } else {
                     // Connection failed
                     console.log('Web Bluetooth connection failed');
-                    addNotification('Failed to connect to device. Please check if your device is turned on and in pairing mode.', 'error');
+                    setTimeout(() => {
+                      addNotification('Failed to connect to device. Please check if your device is turned on and in pairing mode.', 'error');
+                    }, 0);
                   }
                 } catch (error) {
                   console.error('Error connecting to device:', error);
-                  addNotification(`Failed to connect: ${error.message}`, 'error');
+                  setTimeout(() => {
+                    addNotification(`Failed to connect: ${error.message}`, 'error');
+                  }, 0);
                 }
               }}
               onDeviceDisconnect={async (deviceType) => {
@@ -798,29 +944,36 @@ const LactateTestingPage = () => {
                     [deviceType]: { connected: false, data: null }
                   }));
                   
-                  addNotification(`${deviceType} disconnected`, 'success');
+                  setTimeout(() => {
+                    addNotification(`${deviceType} disconnected`, 'success');
+                  }, 0);
                 } catch (error) {
                   console.error('Error disconnecting device:', error);
-                  addNotification(`Error disconnecting ${deviceType}`, 'error');
+                  setTimeout(() => {
+                    addNotification(`Error disconnecting ${deviceType}`, 'error');
+                  }, 0);
                 }
               }}
-            />
+          />
+          
+          <IntervalManager
+            protocol={protocol}
+            onProtocolChange={setProtocol}
+            testState={testState}
+            onEditProtocol={() => setShowProtocolEdit(true)}
+          />
+        </div>
 
-            <IntervalManager
-              protocol={protocol}
-              onProtocolChange={setProtocol}
-              testState={testState}
-              onEditProtocol={() => setShowProtocolEdit(true)}
-            />
-          </div>
-
-          {/* Right Column - Live Dashboard & Charts */}
-          <div className="lg:col-span-2 space-y-6">
+        {/* Main Content - Live Dashboard & Charts */}
+        <div className="space-y-6">
             <LiveDashboard
               liveData={liveData}
               devices={devices}
               testState={testState}
               historicalData={historicalData}
+              intervalTimer={intervalTimer}
+              protocol={protocol}
+              currentStep={currentStep}
             />
 
             <LactateChart
@@ -828,7 +981,6 @@ const LactateTestingPage = () => {
               historicalData={historicalData}
               protocol={protocol}
             />
-          </div>
         </div>
 
         {/* Lactate Entry Modal */}
@@ -839,6 +991,15 @@ const LactateTestingPage = () => {
             onSubmit={handleAddLactate}
             currentStep={currentStep + 1}
             suggestedPower={currentStepData?.targetPower || 0}
+            allowManualPower={devices.bikeTrainer?.connected && (devices.bikeTrainer?.data?.power === null || devices.bikeTrainer?.data?.power === undefined)}
+            actualPower={historicalData
+              .filter(d => d.step === currentStep)
+              .reduce((sum, d) => sum + (d.power || 0), 0) / (historicalData.filter(d => d.step === currentStep).length || 1) || null}
+            currentHeartRate={liveData.heartRate || devices.heartRate?.data?.heartRate || null}
+            recoveryTime={recoveryTimer}
+            onStartNextInterval={handleStartInterval}
+            testState={testState}
+            phase={phase}
             onCompleteInterval={() => {
               // Move to next step after adding lactate
               if (currentStep < protocol.steps.length - 1) {

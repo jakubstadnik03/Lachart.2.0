@@ -15,6 +15,10 @@ class DeviceConnectivityService {
     this.isWebSocketConnected = false;
     // Track previous CSC values for calculating speed and cadence
     this.cscPreviousValues = new Map(); // deviceType -> { wheelRevolutions, lastWheelTime, crankRevolutions, lastCrankTime, timestamp }
+    // Track previous Power Service values for calculating cadence
+    this.powerPreviousValues = new Map(); // deviceType -> { crankRevolutions, lastCrankTime, timestamp }
+    // Queue for GATT operations to prevent "operation already in progress" errors
+    this.gattOperationQueue = new Map(); // deviceType -> Promise queue
   }
 
   /**
@@ -39,9 +43,23 @@ class DeviceConnectivityService {
       // Request device connection
       let device;
       try {
+        // For bikeTrainer, ensure we request CPS and FTMS services for power reading
+        let optionalServices = deviceService.optionalServices || [];
+        if (deviceType === 'bikeTrainer') {
+          // Add Cycling Power Service (CPS) and FTMS if not already present
+          const requiredServices = [
+            '00001816-0000-1000-8000-00805f9b34fb', // CSCS - speed/cadence + FE-C control point
+            '00001818-0000-1000-8000-00805f9b34fb', // CPS - Cycling Power Service (watts)
+            '00001826-0000-1000-8000-00805f9b34fb', // FTMS - Fitness Machine Service (alternative power source)
+            '0000180a-0000-1000-8000-00805f9b34fb'  // Device Information (optional)
+          ];
+          // Merge with existing optionalServices, avoiding duplicates
+          optionalServices = [...new Set([...optionalServices, ...requiredServices])];
+        }
+        
         device = await navigator.bluetooth.requestDevice({
           filters: deviceService.filters,
-          optionalServices: deviceService.optionalServices || []
+          optionalServices: optionalServices
         });
       } catch (error) {
         if (error.name === 'NotFoundError') {
@@ -60,6 +78,7 @@ class DeviceConnectivityService {
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
         this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
+        this.powerPreviousValues.delete(deviceType); // Clear Power Service tracking data
       });
 
       // Connect to GATT server
@@ -72,46 +91,78 @@ class DeviceConnectivityService {
 
       // Get primary service - try multiple services for bikeTrainer
       let service;
-      let serviceUUIDs = [deviceService.serviceUUID];
+      let powerService = null;
+      let cscService = null;
       
-      // For bikeTrainer, try alternative services if primary not found
+      // For bikeTrainer, try to connect to both Power Service and CSC Service simultaneously
       if (deviceType === 'bikeTrainer') {
-        // Try primary service first, then optional services
-        serviceUUIDs = [
-          deviceService.serviceUUID, // Cycling Power Service (primary)
-          '00001816-0000-1000-8000-00805f9b34fb' // Cycling Speed and Cadence Service (alternative)
-        ];
-        // Also try optional services if defined
-        if (deviceService.optionalServices) {
-          serviceUUIDs.push(...deviceService.optionalServices.filter(s => typeof s === 'string'));
-        }
-      }
-      
-      for (const uuid of serviceUUIDs) {
-        try {
-          service = await server.getPrimaryService(uuid);
-          console.log(`Found service: ${uuid} for ${deviceType}`);
-          break; // Success, exit loop
-        } catch (error) {
-          console.warn(`Service ${uuid} not found, trying next...`);
-          continue;
-        }
-      }
-      
-      if (!service) {
-        // Get available services for better error message
+        // First, get all available services for diagnostics
         let availableServices = [];
         try {
-          const services = await server.getPrimaryServices();
-          availableServices = services.map(s => s.uuid);
-          console.log('Available services on device:', availableServices);
+          const allServices = await server.getPrimaryServices();
+          availableServices = allServices.map(s => s.uuid);
+          console.log('All available services on device:', availableServices);
         } catch (e) {
           console.warn('Could not list available services:', e);
         }
         
-        await server.disconnect();
-        const errorMsg = `Service not found. Your device may not support ${deviceType}.${availableServices.length > 0 ? ` Available services: ${availableServices.join(', ')}` : ''}`;
-        throw new Error(errorMsg);
+        // Try to get Cycling Power Service (CPS) - UUID 0x1818
+        try {
+          powerService = await server.getPrimaryService('00001818-0000-1000-8000-00805f9b34fb'); // Cycling Power Service (CPS)
+          console.log('Found Cycling Power Service (CPS)');
+        } catch (error) {
+          console.warn('Cycling Power Service (CPS) not found, trying FTMS...');
+          // Try FTMS as alternative
+          try {
+            powerService = await server.getPrimaryService('00001826-0000-1000-8000-00805f9b34fb'); // FTMS
+            console.log('Found FTMS (Fitness Machine Service)');
+          } catch (error2) {
+            console.warn('FTMS also not found. Power data will not be available via Bluetooth.');
+          }
+        }
+        
+        try {
+          cscService = await server.getPrimaryService('00001816-0000-1000-8000-00805f9b34fb'); // Cycling Speed and Cadence Service
+          console.log('Found Cycling Speed and Cadence Service');
+        } catch (error) {
+          console.warn('Cycling Speed and Cadence Service not found');
+        }
+        
+        // Use Power Service as primary if available, otherwise use CSC Service
+        service = powerService || cscService;
+        
+        if (!service) {
+          await server.disconnect();
+          const errorMsg = `No compatible service found. Your device may not support ${deviceType}.${availableServices.length > 0 ? ` Available services: ${availableServices.join(', ')}` : ''}`;
+          throw new Error(errorMsg);
+        }
+        
+        // Warn if power is not available
+        if (!powerService && cscService) {
+          console.warn('⚠️ Power data is not available via Bluetooth. This Tacx trainer only provides speed and cadence through CSC Service. Power may need to be calculated from speed/resistance or obtained from a separate power meter.');
+        }
+      } else {
+        // For other device types, use standard service lookup
+        const serviceUUIDs = [deviceService.serviceUUID];
+        if (deviceService.optionalServices) {
+          serviceUUIDs.push(...deviceService.optionalServices.filter(s => typeof s === 'string'));
+        }
+        
+        for (const uuid of serviceUUIDs) {
+          try {
+            service = await server.getPrimaryService(uuid);
+            console.log(`Found service: ${uuid} for ${deviceType}`);
+            break;
+          } catch (error) {
+            console.warn(`Service ${uuid} not found, trying next...`);
+            continue;
+          }
+        }
+        
+        if (!service) {
+          await server.disconnect();
+          throw new Error(`Service not found. Your device may not support ${deviceType}.`);
+        }
       }
 
       // Register data callback
@@ -120,30 +171,65 @@ class DeviceConnectivityService {
       }
 
       // Start notifications for characteristic updates
-      // For bikeTrainer, try to find appropriate characteristics based on found service
+      // For bikeTrainer, try to connect to both Power and CSC services if available
       let characteristicsToTry = [];
       
       if (deviceType === 'bikeTrainer') {
-        // Check which service we found
-        const serviceUUID = service.uuid;
+        // If we have Power Service (CPS), connect to Cycling Power Measurement
+        if (powerService) {
+          const powerServiceUUID = powerService.uuid;
+          if (powerServiceUUID === '00001818-0000-1000-8000-00805f9b34fb') {
+            // Cycling Power Service (CPS) - use Cycling Power Measurement characteristic
+            characteristicsToTry.push({
+              uuid: '00002a63-0000-1000-8000-00805f9b34fb', // Cycling Power Measurement
+              type: 'power',
+              service: powerService
+            });
+          } else if (powerServiceUUID === '00001826-0000-1000-8000-00805f9b34fb') {
+            // FTMS - use Fitness Machine Status/Measurement characteristic
+            characteristicsToTry.push({
+              uuid: '00002ad9-0000-1000-8000-00805f9b34fb', // FTMS Measurement
+              type: 'ftms',
+              service: powerService
+            });
+          }
+        }
         
-        if (serviceUUID === '00001826-0000-1000-8000-00805f9b34fb') {
-          // Cycling Power Service - use power measurement characteristic
-          characteristicsToTry = [
-            { uuid: '00002a63-0000-1000-8000-00805f9b34fb', type: 'power' } // Cycling Power Measurement
-          ];
-        } else if (serviceUUID === '00001816-0000-1000-8000-00805f9b34fb') {
-          // Cycling Speed and Cadence Service - use CSC measurement characteristic
-          characteristicsToTry = [
-            { uuid: '00002a5b-0000-1000-8000-00805f9b34fb', type: 'csc' } // CSC Measurement
-          ];
-        } else {
-          // Try default characteristics from config
-          characteristicsToTry = (deviceService.characteristics || []).map(c => ({ ...c, type: 'default' }));
+        // If we have CSC Service, connect to CSC Measurement
+        if (cscService) {
+          characteristicsToTry.push({
+            uuid: '00002a5b-0000-1000-8000-00805f9b34fb', // CSC Measurement
+            type: 'csc',
+            service: cscService
+          });
+        }
+        
+        // If no services found, try default
+        if (characteristicsToTry.length === 0) {
+          const serviceUUID = service.uuid;
+          if (serviceUUID === '00001818-0000-1000-8000-00805f9b34fb' || serviceUUID === '00001826-0000-1000-8000-00805f9b34fb') {
+            characteristicsToTry.push({
+              uuid: serviceUUID === '00001818-0000-1000-8000-00805f9b34fb' 
+                ? '00002a63-0000-1000-8000-00805f9b34fb'  // CPS Power Measurement
+                : '00002ad9-0000-1000-8000-00805f9b34fb', // FTMS Measurement
+              type: serviceUUID === '00001818-0000-1000-8000-00805f9b34fb' ? 'power' : 'ftms',
+              service: service
+            });
+          } else if (serviceUUID === '00001816-0000-1000-8000-00805f9b34fb') {
+            characteristicsToTry.push({
+              uuid: '00002a5b-0000-1000-8000-00805f9b34fb',
+              type: 'csc',
+              service: service
+            });
+          }
         }
       } else {
         // For other device types, use configured characteristics
-        characteristicsToTry = (deviceService.characteristics || []).map(c => ({ ...c, type: 'default' }));
+        characteristicsToTry = (deviceService.characteristics || []).map(c => ({
+          ...c,
+          type: 'default',
+          service: service
+        }));
       }
       
       // If no characteristics found, try to discover available characteristics
@@ -159,25 +245,49 @@ class DeviceConnectivityService {
         }
       }
       
+      // Store combined data for bikeTrainer
+      const combinedData = { power: null, cadence: null, speed: null };
+      
       let notificationStarted = false;
       for (const charInfo of characteristicsToTry) {
         try {
-          const characteristic = await service.getCharacteristic(charInfo.uuid);
+          const charService = charInfo.service || service;
+          const characteristic = await charService.getCharacteristic(charInfo.uuid);
           await characteristic.startNotifications();
           
           characteristic.addEventListener('characteristicvaluechanged', (event) => {
             try {
               // Pass the characteristic type to parser
               const data = this.parseCharacteristicData(deviceType, event.target.value, charInfo.type);
-              if (onData) {
-                onData(data);
+              
+              // For bikeTrainer, combine data from multiple characteristics
+              if (deviceType === 'bikeTrainer') {
+                if (charInfo.type === 'power' || charInfo.type === 'ftms') {
+                  // Update power and cadence from Power Service (CPS) or FTMS
+                  if (data.power !== undefined && data.power !== null) combinedData.power = data.power;
+                  if (data.cadence !== undefined && data.cadence !== null) combinedData.cadence = data.cadence;
+                } else if (charInfo.type === 'csc') {
+                  // Update speed and cadence from CSC Service
+                  if (data.speed !== undefined && data.speed !== null) combinedData.speed = data.speed;
+                  if (data.cadence !== undefined && data.cadence !== null) combinedData.cadence = data.cadence;
+                }
+                
+                // Send combined data
+                if (onData) {
+                  onData({ ...combinedData });
+                }
+              } else {
+                // For other devices, send data directly
+                if (onData) {
+                  onData(data);
+                }
               }
             } catch (error) {
               console.error(`Error parsing data from ${deviceType}:`, error);
             }
           });
           
-          console.log(`Successfully started notifications for characteristic ${charInfo.uuid}`);
+          console.log(`Successfully started notifications for characteristic ${charInfo.uuid} (type: ${charInfo.type})`);
           notificationStarted = true;
         } catch (error) {
           console.warn(`Could not start notifications for characteristic ${charInfo.uuid}:`, error);
@@ -189,7 +299,50 @@ class DeviceConnectivityService {
         console.warn('No characteristics could be started for notifications. Device may not support data streaming.');
       }
 
-      this.connections.set(deviceType, { device, server, service });
+      // Store connection info - for bikeTrainer, store both services if available
+      const connectionInfo = { device, server, service };
+      if (deviceType === 'bikeTrainer') {
+        if (powerService) connectionInfo.powerService = powerService;
+        if (cscService) {
+          connectionInfo.cscService = cscService;
+          // Try to get CSC Control Point for FE-C control
+          // Control Point UUID is different from Measurement UUID
+          try {
+            const controlPoint = await cscService.getCharacteristic('00002a55-0000-1000-8000-00805f9b34fb');
+            connectionInfo.controlPoint = controlPoint;
+            connectionInfo.controlPointType = 'csc';
+            console.log('Found CSC Control Point for FE-C control');
+          } catch (error) {
+            console.warn('CSC Control Point not found - ERGO mode control may not be available:', error);
+            // Some trainers might use a different UUID, try alternative
+            try {
+              const controlPoint = await cscService.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');
+              connectionInfo.controlPoint = controlPoint;
+              connectionInfo.controlPointType = 'csc-alt';
+              console.log('Found alternative Control Point for FE-C control');
+            } catch (error2) {
+              console.warn('Alternative Control Point also not found:', error2);
+            }
+          }
+        }
+        
+        // Also try FTMS Control Point if FTMS service is available
+        if (powerService && powerService.uuid === '00001826-0000-1000-8000-00805f9b34fb') {
+          try {
+            const ftmsControlPoint = await powerService.getCharacteristic('00002ad9-0000-1000-8000-00805f9b34fb');
+            // Check if it supports write (control)
+            const properties = ftmsControlPoint.properties;
+            if (properties.write || properties.writeWithoutResponse) {
+              connectionInfo.ftmsControlPoint = ftmsControlPoint;
+              connectionInfo.controlPointType = 'ftms';
+              console.log('Found FTMS Control Point for trainer control');
+            }
+          } catch (error) {
+            console.warn('FTMS Control Point not found:', error);
+          }
+        }
+      }
+      this.connections.set(deviceType, connectionInfo);
       return true;
     } catch (error) {
       console.error(`Error connecting to ${deviceType}:`, error);
@@ -267,6 +420,7 @@ class DeviceConnectivityService {
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
         this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
+        this.powerPreviousValues.delete(deviceType); // Clear Power Service tracking data
         return true;
       } catch (error) {
         console.error(`Error disconnecting ${deviceType}:`, error);
@@ -274,6 +428,7 @@ class DeviceConnectivityService {
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
         this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
+        this.powerPreviousValues.delete(deviceType); // Clear Power Service tracking data
         return false;
       }
     }
@@ -479,18 +634,48 @@ class DeviceConnectivityService {
               crankRevolutions,
               lastCrankTime
             };
+          } else if (charType === 'ftms') {
+            // Parse FTMS (Fitness Machine Service) Measurement
+            // Format varies, but typically includes instantaneous power
+            if (dataView.byteLength < 4) {
+              console.warn('FTMS data too short');
+              return {};
+            }
+            
+            // FTMS Measurement format: [Flags (2 bytes), ...]
+            // Instantaneous power is typically at offset 2-3 (Int16 LE) or later depending on flags
+            // This is a simplified parser - full FTMS spec is more complex
+            let instantPower = null;
+            if (dataView.byteLength >= 4) {
+              // Try to read power from common FTMS positions
+              // Position 2-3 is often instantaneous power (Int16 LE)
+              instantPower = dataView.getInt16(2, true);
+              if (instantPower < 0 || instantPower > 2000) {
+                // If value seems invalid, try other positions
+                if (dataView.byteLength >= 6) {
+                  instantPower = dataView.getInt16(4, true);
+                }
+              }
+            }
+            
+            return { power: instantPower, cadence: null };
           } else {
             // Parse Cycling Power Measurement (CPM) - Bluetooth SIG standard
-            // Format: [Flags (2 bytes), Instantaneous Power (2 bytes), Cumulative Wheel Revolutions (optional), Last Wheel Event Time (optional), Cumulative Crank Revolutions (optional), Last Crank Event Time (optional)]
+            // Format: [Flags (2 bytes), Instantaneous Power (2 bytes, Int16 LE, in W), ...]
             if (dataView.byteLength < 4) {
               console.warn('Power data too short');
               return {};
             }
             
             const flags = dataView.getUint16(0, true);
-            const instantPower = dataView.getUint16(2, true);
+            // Instantaneous Power is Int16 (signed) at offset 2, little-endian, in watts
+            const instantPower = dataView.getInt16(2, true);
             
-            // Check if cadence data is present (bit 0 of flags)
+            // Log power for debugging (only occasionally to avoid spam)
+            if (Math.random() < 0.01) { // Log ~1% of readings
+              console.log(`[CPS] Power: ${instantPower}W, Flags: 0x${flags.toString(16)}`);
+            }
+            
             let cadence = null;
             let offset = 4;
             
@@ -501,12 +686,38 @@ class DeviceConnectivityService {
             
             // If crank revolutions present (for cadence)
             if (flags & 0x20 && dataView.byteLength >= offset + 4) {
-              // Note: Real cadence calculation would need previous values for RPM
-              // For now, we'd need to track these values across notifications
-              // const crankRevolutions = dataView.getUint16(offset, true);
-              // const lastCrankEventTime = dataView.getUint16(offset + 2, true);
-              // Simplified: cadence would be calculated from delta of crank revolutions over time
-              cadence = null; // Would need to calculate from delta
+              const crankRevolutions = dataView.getUint16(offset, true);
+              const lastCrankEventTime = dataView.getUint16(offset + 2, true);
+              
+              // Calculate cadence from delta of crank revolutions over time
+              const prev = this.powerPreviousValues.get('bikeTrainer');
+              const now = Date.now();
+              
+              if (prev && prev.crankRevolutions !== null && prev.lastCrankTime !== null) {
+                // Handle rollover for crank revolutions (16-bit, max 65535)
+                let crankDelta = crankRevolutions - prev.crankRevolutions;
+                if (crankDelta < 0) {
+                  crankDelta += 65536; // Rollover handling
+                }
+                
+                // Handle rollover for time (lastCrankEventTime is in 1/1024 seconds, max 65535)
+                let timeDelta = lastCrankEventTime - prev.lastCrankTime;
+                if (timeDelta < 0) {
+                  timeDelta += 65536; // Rollover handling
+                }
+                const timeDeltaSeconds = timeDelta / 1024.0;
+                
+                if (timeDeltaSeconds > 0 && crankDelta > 0) {
+                  cadence = (crankDelta / timeDeltaSeconds) * 60; // Convert to RPM
+                }
+              }
+              
+              // Store current values for next calculation
+              this.powerPreviousValues.set('bikeTrainer', {
+                crankRevolutions,
+                lastCrankTime: lastCrankEventTime,
+                timestamp: now
+              });
             }
             
             return { power: instantPower, cadence };
@@ -647,6 +858,184 @@ class DeviceConnectivityService {
    */
   isDeviceConnected(deviceType) {
     return this.connections.has(deviceType);
+  }
+
+  /**
+   * Queue GATT operation to prevent "operation already in progress" errors
+   * @param {string} deviceType - Device type
+   * @param {Function} operation - Async function to execute
+   * @returns {Promise} - Result of operation
+   */
+  async queueGattOperation(deviceType, operation) {
+    // Get or create queue for this device
+    if (!this.gattOperationQueue.has(deviceType)) {
+      this.gattOperationQueue.set(deviceType, Promise.resolve());
+    }
+    
+    // Chain the new operation after the previous one
+    const queue = this.gattOperationQueue.get(deviceType);
+    const newOperation = queue.then(() => operation()).catch(err => {
+      console.error(`GATT operation failed for ${deviceType}:`, err);
+      throw err;
+    });
+    
+    this.gattOperationQueue.set(deviceType, newOperation);
+    return newOperation;
+  }
+
+  /**
+   * Set target power on trainer (ERGO mode) using FE-C protocol
+   * @param {string} deviceType - Type of device (should be 'bikeTrainer')
+   * @param {number} powerWatts - Target power in watts
+   * @returns {Promise<boolean>} - Success status
+   */
+  async setPower(deviceType, powerWatts) {
+    return this.queueGattOperation(deviceType, async () => {
+      const connection = this.connections.get(deviceType);
+      if (!connection) {
+        throw new Error(`Device ${deviceType} is not connected`);
+      }
+
+      if (deviceType !== 'bikeTrainer') {
+        throw new Error('setPower is only available for bikeTrainer devices');
+      }
+
+      // Check if we have control point for FE-C
+      if (!connection.controlPoint) {
+        // Try to get control point if we have CSC service
+        if (connection.cscService) {
+          try {
+            // Try standard Control Point UUID first
+            connection.controlPoint = await connection.cscService.getCharacteristic('00002a55-0000-1000-8000-00805f9b34fb');
+            console.log('Found CSC Control Point for FE-C control');
+          } catch (error) {
+            // Try alternative UUID (some trainers use Measurement UUID for control)
+            try {
+              connection.controlPoint = await connection.cscService.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');
+              console.log('Found alternative Control Point for FE-C control');
+            } catch (error2) {
+              throw new Error('CSC Control Point not available - cannot set power. Make sure your trainer supports FE-C protocol.');
+            }
+          }
+        } else {
+          throw new Error('CSC Service not available - cannot set power. Make sure your trainer supports FE-C protocol.');
+        }
+      }
+
+      try {
+        // FE-C protocol for Tacx trainers:
+        // 1. Request Control (opcode 0x00) - some trainers need this first
+        // 2. Set Training Mode to ERGO (opcode 0x05, value 0x04) - optional but recommended
+        // 3. Set Target Power (opcode 0x01)
+        
+        // Step 1: Request Control (if not already done)
+        if (!connection.controlRequested) {
+          try {
+            const requestControl = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            await connection.controlPoint.writeValue(requestControl);
+            await new Promise(resolve => setTimeout(resolve, 150)); // Wait for response
+            connection.controlRequested = true;
+            console.log('Requested control from trainer');
+          } catch (e) {
+            // Request control might not be needed or might fail - continue anyway
+            console.log('Request control skipped or failed, continuing...');
+            connection.controlRequested = true; // Mark as attempted
+          }
+        }
+
+        // Step 2: Set Training Mode to ERGO (0x04 = ERGO mode)
+        // Opcode 0x05 = Set Training Mode
+        // Only set once, not on every power change
+        if (!connection.ergoModeSet) {
+          try {
+            const setErgoMode = new Uint8Array([
+              0x05,        // Opcode: Set Training Mode
+              0x00,        // Reserved
+              0x00,        // Reserved
+              0x00,        // Reserved
+              0x04,        // Training Mode: 0x04 = ERGO mode
+              0x00         // Reserved
+            ]);
+            await connection.controlPoint.writeValue(setErgoMode);
+            await new Promise(resolve => setTimeout(resolve, 150)); // Wait for response
+            connection.ergoModeSet = true;
+            console.log('Set training mode to ERGO');
+          } catch (e) {
+            // Setting training mode might not be needed - continue
+            console.log('Set training mode skipped or failed, continuing...');
+            connection.ergoModeSet = true; // Mark as attempted
+          }
+        }
+
+        // Step 3: Set Target Power
+        // FE-C Set Target Power command format:
+        // [Opcode (1 byte), Reserved (3 bytes), Power (2 bytes, little-endian, in 0.1W units)]
+        // Opcode 0x01 = Set Target Power (ERGO mode)
+        const powerInTenths = Math.round(powerWatts * 10); // Convert to 0.1W units
+        const powerLow = powerInTenths & 0xFF;
+        const powerHigh = (powerInTenths >> 8) & 0xFF;
+
+        const command = new Uint8Array([
+          0x01,        // Opcode: Set Target Power (ERGO mode)
+          0x00,        // Reserved
+          0x00,        // Reserved
+          0x00,        // Reserved
+          powerLow,    // Power low byte (0.1W units)
+          powerHigh    // Power high byte (0.1W units)
+        ]);
+
+        await connection.controlPoint.writeValue(command);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait a bit for command to process
+        console.log(`Set target power to ${powerWatts}W (${powerInTenths} x 0.1W) on trainer`);
+        return true;
+      } catch (error) {
+        console.error(`Error setting power on trainer:`, error);
+        // If it's a "GATT operation already in progress" error, wait and retry once
+        if (error.message && error.message.includes('already in progress')) {
+          console.log('GATT operation in progress, waiting and retrying...');
+          await new Promise(resolve => setTimeout(resolve, 300));
+          try {
+            const powerInTenths = Math.round(powerWatts * 10);
+            const powerLow = powerInTenths & 0xFF;
+            const powerHigh = (powerInTenths >> 8) & 0xFF;
+            const command = new Uint8Array([0x01, 0x00, 0x00, 0x00, powerLow, powerHigh]);
+            await connection.controlPoint.writeValue(command);
+            console.log(`Retry: Set target power to ${powerWatts}W on trainer`);
+            return true;
+          } catch (retryError) {
+            throw new Error(`Failed to set power after retry: ${retryError.message}`);
+          }
+        }
+        throw new Error(`Failed to set power: ${error.message}`);
+      }
+    });
+  }
+
+  /**
+   * Request current power from trainer (if available via FE-C or Power Service)
+   * @param {string} deviceType - Type of device (should be 'bikeTrainer')
+   * @returns {Promise<number|null>} - Current power in watts, or null if not available
+   */
+  async getCurrentPower(deviceType) {
+    const connection = this.connections.get(deviceType);
+    if (!connection) {
+      return null;
+    }
+
+    // If we have Power Service, power should be coming through notifications
+    // This method is mainly for requesting power if needed
+    // For now, return null and rely on notification data
+    return null;
+  }
+
+  /**
+   * Check if trainer supports ERGO mode control (FE-C)
+   * @param {string} deviceType - Type of device (should be 'bikeTrainer')
+   * @returns {boolean} - True if ERGO mode is supported
+   */
+  supportsErgoMode(deviceType) {
+    const connection = this.connections.get(deviceType);
+    return !!(connection && connection.controlPoint);
   }
 }
 

@@ -309,29 +309,38 @@ const LactateCurveCalculatorPage = () => {
                 ...prevData,
                 [newData.field]: newData.value
                 };
-                // If baseLa is updated, also update baseLactate
-                if (newData.field === 'baseLa') {
-                    updatedData.baseLactate = parseFloat(String(newData.value).replace(',', '.'));
-                }
+                // Don't parse baseLa immediately - keep it as string for user input
+                // It will be parsed only when saving
+                // Preserve exact string value including partial inputs like "1." or "1,"
+                // Don't convert to String() if it's already a string to preserve partial inputs
                 return updatedData;
             });
             return;
         }
 
         // If newData is a complete data object
+        // IMPORTANT: Preserve baseLa as exact string, don't convert to number
+        // Don't use String() conversion if it's already a string to preserve partial inputs like "1."
         const updatedData = {
             ...newData,
-            weight: newData.weight || '',
-            baseLa: newData.baseLa || '',
-            baseLactate: newData.baseLa ? parseFloat(String(newData.baseLa).replace(',', '.')) : 
-                         (newData.baseLactate ? parseFloat(String(newData.baseLactate).replace(',', '.')) : 0),
+            weight: newData.weight !== undefined ? (typeof newData.weight === 'string' ? newData.weight : String(newData.weight)) : '',
+            baseLa: newData.baseLa !== undefined && newData.baseLa !== null 
+                ? (typeof newData.baseLa === 'string' ? newData.baseLa : String(newData.baseLa)) 
+                : '',
+            // Keep baseLactate as string if baseLa is provided, otherwise use existing baseLactate
+            // Don't parse immediately - let user type with comma or dot, including partial values like "1."
+            baseLactate: newData.baseLa !== undefined && newData.baseLa !== null 
+                ? (typeof newData.baseLa === 'string' ? newData.baseLa : String(newData.baseLa))
+                : (newData.baseLactate !== undefined && newData.baseLactate !== null 
+                    ? (typeof newData.baseLactate === 'string' ? newData.baseLactate : String(newData.baseLactate))
+                    : ''),
             results: (newData.results || []).map(result => ({
                 ...result,
-                power: result.power || '',
-                heartRate: result.heartRate || '',
-                lactate: result.lactate || '',
-                glucose: result.glucose || '',
-                RPE: result.RPE || ''
+                power: result.power !== undefined && result.power !== null ? String(result.power) : '',
+                heartRate: result.heartRate !== undefined && result.heartRate !== null ? String(result.heartRate) : '',
+                lactate: result.lactate !== undefined && result.lactate !== null ? String(result.lactate) : '',
+                glucose: result.glucose !== undefined && result.glucose !== null ? String(result.glucose) : '',
+                RPE: result.RPE !== undefined && result.RPE !== null ? String(result.RPE) : ''
             }))
         };
         setTestData(updatedData);
@@ -401,15 +410,20 @@ const LactateCurveCalculatorPage = () => {
             };
         }
         
-        // Ensure baseLactate is properly processed
-        const baseLactate = testData.baseLa ? 
-            parseFloat(String(testData.baseLa).replace(',', '.')) : 
-            (testData.baseLactate ? parseFloat(String(testData.baseLactate).replace(',', '.')) : 0);
+        // Ensure baseLactate is properly processed for calculations
+        // Parse only for calculations, don't modify the original testData.baseLa (which is used for display)
+        const baseLaStr = testData.baseLa !== undefined && testData.baseLa !== null 
+            ? String(testData.baseLa) 
+            : (testData.baseLactate !== undefined && testData.baseLactate !== null 
+                ? String(testData.baseLactate) 
+                : '0');
+        const baseLactate = baseLaStr === '' ? 0 : parseFloat(baseLaStr.replace(',', '.'));
 
         const processedData = {
             ...testData,
             baseLactate: baseLactate,
-            baseLa: baseLactate, // Ensure both fields are set
+            // Keep baseLa as original string for display purposes
+            baseLa: testData.baseLa !== undefined ? testData.baseLa : baseLaStr,
             results: testData.results.map(result => {
                 if (!result) return null;
 

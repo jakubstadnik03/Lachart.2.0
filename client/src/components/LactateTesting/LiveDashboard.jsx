@@ -5,84 +5,155 @@ import {
   BoltIcon,
   HeartIcon,
   WifiIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  ClockIcon
 } from '@heroicons/react/24/outline';
 
-const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
+const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalTimer, protocol, currentStep }) => {
   const isActive = testState === 'running';
 
+  // Check which devices are connected and have valid data
+  const isDeviceConnected = (deviceType) => {
+    return devices[deviceType]?.connected === true;
+  };
+
+  const hasValidData = (value) => {
+    return value !== null && value !== undefined && value > 0;
+  };
+
   // Prepare chart data from all historical data (from test start)
+  // This will update in real-time as new data points are added
   const chartData = React.useMemo(() => {
     if (!historicalData || historicalData.length === 0) {
-      // If no historical data yet, show current live data point
-      return [{
-        time: 0,
-        power: liveData.power || null,
-        speed: liveData.speed || null,
-        heartRate: liveData.heartRate || 0,
-        cadence: liveData.cadence || 0
-      }];
+      // If no historical data yet, return empty array (will show empty chart)
+      return [];
     }
 
     // Convert historical data to chart format
     // Time is relative to test start (in seconds)
-    return historicalData.map((dataPoint, index) => ({
-      time: Math.floor((dataPoint.totalTime || index) / 60), // Convert to minutes for better readability
-      power: dataPoint.power || null,
-      speed: dataPoint.speed || null,
-      heartRate: dataPoint.heartRate || 0,
-      cadence: dataPoint.cadence || 0,
-      smo2: dataPoint.smo2 || null,
-      vo2: dataPoint.vo2 || null
-    }));
-  }, [historicalData, liveData]);
+    // Always use totalTime from dataPoint to ensure accurate time tracking
+    const converted = historicalData.map((dataPoint, index) => {
+      // Use totalTime if available, otherwise calculate from index
+      // This ensures time is always accurate even if data collection started late
+      const timeValue = dataPoint.totalTime !== undefined && dataPoint.totalTime !== null 
+        ? dataPoint.totalTime 
+        : index;
+      
+      // Always include values, even if 0/null - this allows curves to be drawn from the start
+      // Recharts will handle null values by not drawing points, but we want to show the curve
+      return {
+        time: timeValue,
+        power: dataPoint.power !== undefined && dataPoint.power !== null && dataPoint.power > 0 ? dataPoint.power : (dataPoint.power === 0 ? 0 : null),
+        speed: dataPoint.speed !== undefined && dataPoint.speed !== null && dataPoint.speed > 0 ? (dataPoint.speed * 3.6) : (dataPoint.speed === 0 ? 0 : null), // Convert m/s to km/h
+        heartRate: dataPoint.heartRate !== undefined && dataPoint.heartRate !== null && dataPoint.heartRate > 0 ? dataPoint.heartRate : (dataPoint.heartRate === 0 ? 0 : null),
+        cadence: dataPoint.cadence !== undefined && dataPoint.cadence !== null && dataPoint.cadence > 0 ? dataPoint.cadence : (dataPoint.cadence === 0 ? 0 : null),
+        smo2: dataPoint.smo2 !== undefined && dataPoint.smo2 !== null && dataPoint.smo2 > 0 ? dataPoint.smo2 : null,
+        vo2: dataPoint.vo2 !== undefined && dataPoint.vo2 !== null && dataPoint.vo2 > 0 ? dataPoint.vo2 : null
+      };
+    });
+    
+    // Debug logging
+    if (converted.length > 0 && converted.length % 10 === 0) {
+      console.log(`[LiveDashboard] Chart data updated: ${converted.length} points, latest time: ${converted[converted.length - 1].time}s`);
+    }
+    
+    return converted;
+  }, [historicalData]);
 
-  // Use speed if power is not available (for CSC devices)
-  // Check if speed is available (from CSC service) or power (from Power service)
-  const hasSpeedInHistory = historicalData.some(d => d.speed !== null && d.speed !== undefined && d.speed > 0);
-  const hasPowerInHistory = historicalData.some(d => d.power !== null && d.power !== undefined && d.power > 0 && !hasSpeedInHistory);
-  const hasSpeed = (liveData.speed !== null && liveData.speed !== undefined && liveData.speed > 0) || hasSpeedInHistory;
-  const hasPower = hasSpeed ? false : ((liveData.power !== null && liveData.power !== undefined && liveData.power > 0) || hasPowerInHistory);
+  // Determine which metrics to show based on connected devices
+  const hasBikeTrainer = isDeviceConnected('bikeTrainer');
+  const hasHeartRate = isDeviceConnected('heartRate');
+  const hasMoxy = isDeviceConnected('moxy');
+  const hasCoreTemp = isDeviceConnected('coreTemp');
+  const hasVo2Master = isDeviceConnected('vo2master');
+
+  // Check if we have power or speed data
+  const hasSpeed = hasBikeTrainer && (hasValidData(liveData.speed) || historicalData.some(d => hasValidData(d.speed)));
+  const hasPower = hasBikeTrainer && (hasValidData(liveData.power) || historicalData.some(d => hasValidData(d.power)));
   
-  const metricCards = [
-    {
-      label: hasSpeed ? 'Speed' : (hasPower ? 'Power' : 'Power'),
-      value: hasSpeed ? `${liveData.speed.toFixed(1)}` :
-             (hasPower ? `${liveData.power.toFixed(0)}` : '0'),
-      unit: hasSpeed ? 'km/h' : (hasPower ? 'W' : 'W'),
-      icon: BoltIcon,
-      color: 'blue'
-    },
-    {
+  // Build metric cards - only show connected devices
+  const metricCards = [];
+  
+  // Power or Speed (from bikeTrainer)
+  if (hasBikeTrainer) {
+    if (hasPower) {
+      metricCards.push({
+        label: 'Power',
+        value: `${(liveData.power || 0).toFixed(0)}`,
+        unit: 'W',
+        icon: BoltIcon,
+        color: 'blue'
+      });
+    } else if (hasSpeed) {
+      metricCards.push({
+        label: 'Speed',
+        value: `${(liveData.speed || 0).toFixed(1)}`,
+        unit: 'km/h',
+        icon: BoltIcon,
+        color: 'blue'
+      });
+    }
+  }
+  
+  // Heart Rate
+  if (hasHeartRate) {
+    metricCards.push({
       label: 'Heart Rate',
-      value: `${liveData.heartRate?.toFixed(0) || 0}`,
+      value: `${(liveData.heartRate || 0).toFixed(0)}`,
       unit: 'bpm',
       icon: HeartIcon,
       color: 'red'
-    },
-    {
+    });
+  }
+  
+  // Cadence (from bikeTrainer)
+  if (hasBikeTrainer && (hasValidData(liveData.cadence) || historicalData.some(d => hasValidData(d.cadence)))) {
+    metricCards.push({
       label: 'Cadence',
-      value: `${liveData.cadence?.toFixed(0) || 0}`,
+      value: `${(liveData.cadence || 0).toFixed(0)}`,
       unit: 'rpm',
       icon: ChartBarIcon,
       color: 'green'
-    },
-    {
-      label: 'SmO2',
-      value: `${liveData.smo2?.toFixed(1) || '--'}`,
-      unit: '%',
-      icon: WifiIcon,
-      color: 'purple'
-    }
-  ];
+    });
+  }
+  
+  // Interval Time
+  if (isActive && protocol?.steps && protocol.steps.length > 0) {
+    const currentStepData = protocol.steps[currentStep];
+    const intervalDuration = currentStepData?.duration || protocol.workDuration || 0;
+    const remainingTime = Math.max(0, intervalDuration - (intervalTimer || 0));
+    const minutes = Math.floor(remainingTime / 60);
+    const seconds = remainingTime % 60;
+    
+    metricCards.push({
+      label: 'Interval Time',
+      value: `${minutes}:${seconds.toString().padStart(2, '0')}`,
+      unit: '',
+      icon: ClockIcon,
+      color: 'orange'
+    });
+  }
 
-  const additionalMetrics = [
-    { label: 'THb', value: liveData.thb?.toFixed(1) || '--', unit: '' },
-    { label: 'Core Temp', value: liveData.coreTemp?.toFixed(1) || '--', unit: '°C' },
-    { label: 'VO2', value: liveData.vo2?.toFixed(1) || '--', unit: 'ml/min/kg' },
-    { label: 'VCO2', value: liveData.vco2?.toFixed(1) || '--', unit: 'ml/min' },
-    { label: 'Ventilation', value: liveData.ventilation?.toFixed(1) || '--', unit: 'L/min' }
-  ];
+  // Additional metrics - only if device is connected
+  const additionalMetrics = [];
+  if (hasMoxy && hasValidData(liveData.smo2)) {
+    additionalMetrics.push({ label: 'SmO2', value: liveData.smo2.toFixed(1), unit: '%' });
+  }
+  if (hasMoxy && hasValidData(liveData.thb)) {
+    additionalMetrics.push({ label: 'THb', value: liveData.thb.toFixed(1), unit: '' });
+  }
+  if (hasCoreTemp && hasValidData(liveData.coreTemp)) {
+    additionalMetrics.push({ label: 'Core Temp', value: liveData.coreTemp.toFixed(1), unit: '°C' });
+  }
+  if (hasVo2Master && hasValidData(liveData.vo2)) {
+    additionalMetrics.push({ label: 'VO2', value: liveData.vo2.toFixed(1), unit: 'ml/min/kg' });
+  }
+  if (hasVo2Master && hasValidData(liveData.vco2)) {
+    additionalMetrics.push({ label: 'VCO2', value: liveData.vco2.toFixed(1), unit: 'ml/min' });
+  }
+  if (hasVo2Master && hasValidData(liveData.ventilation)) {
+    additionalMetrics.push({ label: 'Ventilation', value: liveData.ventilation.toFixed(1), unit: 'L/min' });
+  }
 
   return (
     <motion.div
@@ -96,8 +167,9 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
       </h2>
 
       {/* Main Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {metricCards.map((metric, index) => {
+      {metricCards.length > 0 && (
+        <div className={`grid grid-cols-2 ${metricCards.length > 2 ? 'md:grid-cols-4' : metricCards.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1'} gap-4 mb-6`}>
+          {metricCards.map((metric, index) => {
           const Icon = metric.icon;
           return (
             <motion.div
@@ -120,7 +192,8 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             </motion.div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* Additional Metrics */}
       {additionalMetrics.some(m => m.value !== '--') && (
@@ -145,16 +218,26 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
           Real-Time Chart - Full Training (from start)
         </h3>
         <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={chartData}>
+        {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={400} key={`chart-container-${chartData.length}`}>
+            <LineChart 
+              data={chartData}
+              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+              syncId="live-dashboard-chart"
+            >
             <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
             <XAxis 
               dataKey="time" 
-              label={{ value: 'Time (minutes)', position: 'insideBottom', offset: -5 }}
+              label={{ value: 'Time (MM:SS)', position: 'insideBottom', offset: -5 }}
               stroke="#666"
               type="number"
               scale="linear"
-              domain={['dataMin', 'dataMax']}
+              domain={chartData.length > 0 ? ['dataMin', 'dataMax'] : [0, 1]}
+              tickFormatter={(value) => {
+                const minutes = Math.floor(value / 60);
+                const seconds = Math.floor(value % 60);
+                return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+              }}
             />
             <YAxis 
               yAxisId="left"
@@ -184,37 +267,53 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
               }}
             />
             <Legend />
-            <Line 
-              yAxisId="left"
-              type="monotone" 
-              dataKey={hasSpeed ? "speed" : "power"} 
-              stroke="#3b82f6" 
-              strokeWidth={2}
-              dot={false}
-              name={hasSpeed ? "Speed (km/h)" : "Power (W)"}
-              isAnimationActive={false}
-            />
-            <Line 
-              yAxisId="left"
-              type="monotone" 
-              dataKey="heartRate" 
-              stroke="#ef4444" 
-              strokeWidth={2}
-              dot={false}
-              name="HR (bpm)"
-              isAnimationActive={false}
-            />
-            <Line 
-              yAxisId="left"
-              type="monotone" 
-              dataKey="cadence" 
-              stroke="#10b981" 
-              strokeWidth={2}
-              dot={false}
-              name="Cadence (rpm)"
-              isAnimationActive={false}
-            />
-            {chartData.some(d => d.smo2 !== null && d.smo2 !== undefined) && (
+            {/* Power or Speed line - only if device is connected */}
+            {hasBikeTrainer && (hasPower || hasSpeed) && (
+              <Line 
+                yAxisId="left"
+                type="monotone" 
+                dataKey={hasSpeed ? "speed" : "power"} 
+                stroke="#3b82f6" 
+                strokeWidth={2}
+                dot={false}
+                name={hasSpeed ? "Speed (km/h)" : "Power (W)"}
+                isAnimationActive={false}
+                connectNulls={true}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            {/* Heart Rate line - only if device is connected */}
+            {hasHeartRate && (
+              <Line 
+                yAxisId="left"
+                type="monotone" 
+                dataKey="heartRate" 
+                stroke="#ef4444" 
+                strokeWidth={2}
+                dot={false}
+                name="HR (bpm)"
+                isAnimationActive={false}
+                connectNulls={true}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            {/* Cadence line - only if bikeTrainer is connected */}
+            {hasBikeTrainer && (
+              <Line 
+                yAxisId="left"
+                type="monotone" 
+                dataKey="cadence" 
+                stroke="#10b981" 
+                strokeWidth={2}
+                dot={false}
+                name="Cadence (rpm)"
+                isAnimationActive={false}
+                connectNulls={true}
+                activeDot={{ r: 4 }}
+              />
+            )}
+            {/* SmO2 line - only if moxy is connected */}
+            {hasMoxy && chartData.some(d => d.smo2 !== null && d.smo2 !== undefined) && (
               <Line 
                 yAxisId="right"
                 type="monotone" 
@@ -227,7 +326,8 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
                 connectNulls
               />
             )}
-            {chartData.some(d => d.vo2 !== null && d.vo2 !== undefined) && (
+            {/* VO2 line - only if vo2master is connected */}
+            {hasVo2Master && chartData.some(d => d.vo2 !== null && d.vo2 !== undefined) && (
               <Line 
                 yAxisId="right"
                 type="monotone" 
@@ -242,10 +342,20 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData }) => {
             )}
           </LineChart>
         </ResponsiveContainer>
+        ) : (
+          <div className="h-[400px] flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <p className="text-lg font-semibold mb-2">Waiting for data...</p>
+              <p className="text-sm">Start the test to begin recording data</p>
+            </div>
+          </div>
+        )}
         </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Showing all data points from test start ({chartData.length} data points)
-        </p>
+        {chartData.length > 0 && (
+          <p className="text-xs text-gray-500 mt-2">
+            Showing all data points from test start ({chartData.length} data points, {chartData.length > 0 ? `${Math.floor(chartData[chartData.length - 1].time / 60)}:${String(Math.floor(chartData[chartData.length - 1].time % 60)).padStart(2, '0')}` : '0:00'})
+          </p>
+        )}
       </div>
 
       {/* Connection Status */}

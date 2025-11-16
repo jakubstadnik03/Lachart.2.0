@@ -1559,6 +1559,26 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
 
         const users = await userDao.findAll();
         
+        // Get test statistics by sport
+        const allTests = await Test.find({});
+        const testsBySport = {
+            run: 0,
+            bike: 0,
+            swim: 0,
+            total: allTests.length
+        };
+        
+        allTests.forEach(test => {
+            const sport = test.sport || '';
+            if (sport === 'run') {
+                testsBySport.run++;
+            } else if (sport === 'bike') {
+                testsBySport.bike++;
+            } else if (sport === 'swim') {
+                testsBySport.swim++;
+            }
+        });
+        
         const stats = {
             totalUsers: users.length,
             usersByRole: {
@@ -1571,6 +1591,7 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
                 acc[sport] = (acc[sport] || 0) + 1;
                 return acc;
             }, {}),
+            testsBySport: testsBySport,
             recentRegistrations: users
                 .filter(u => u.createdAt && new Date(u.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
                 .length,

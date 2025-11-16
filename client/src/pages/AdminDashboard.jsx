@@ -109,23 +109,24 @@ const AdminDashboard = () => {
     { id: 'analytics', name: 'Analytics', icon: '📈' }
   ];
 
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 py-4 sm:py-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-              <p className="text-gray-600">Manage your application and users</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+              <p className="text-sm sm:text-base text-gray-600">Manage your application and users</p>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-500">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:space-x-4 w-full sm:w-auto">
+              <div className="text-xs sm:text-sm text-gray-500">
                 Last updated: {new Date().toLocaleString()}
               </div>
               <button
                 onClick={fetchData}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                className="w-full sm:w-auto px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm sm:text-base"
               >
                 Refresh
               </button>
@@ -137,18 +138,18 @@ const AdminDashboard = () => {
       {/* Tabs */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
+          <nav className="flex space-x-2 sm:space-x-8 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-3 sm:py-4 px-2 sm:px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'border-primary text-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
+                <span className="mr-1 sm:mr-2">{tab.icon}</span>
                 {tab.name}
               </button>
             ))}
@@ -157,74 +158,99 @@ const AdminDashboard = () => {
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {activeTab === 'overview' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6"
           >
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-lg shadow p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
                   <div className="p-2 bg-blue-100 rounded-lg">
-                    <span className="text-2xl">👥</span>
+                    <span className="text-xl sm:text-2xl">👥</span>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Total Users</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats?.totalUsers || 0}</p>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Total Users</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats?.totalUsers || 0}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
                   <div className="p-2 bg-green-100 rounded-lg">
-                    <span className="text-2xl">🏃</span>
+                    <span className="text-xl sm:text-2xl">🏃</span>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Athletes</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats?.usersByRole?.athlete || 0}</p>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Athletes</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats?.usersByRole?.athlete || 0}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
                   <div className="p-2 bg-purple-100 rounded-lg">
-                    <span className="text-2xl">👨‍🏫</span>
+                    <span className="text-xl sm:text-2xl">👨‍🏫</span>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Coaches</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats?.usersByRole?.coach || 0}</p>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">Coaches</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats?.usersByRole?.coach || 0}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <div className="flex items-center">
                   <div className="p-2 bg-yellow-100 rounded-lg">
-                    <span className="text-2xl">📈</span>
+                    <span className="text-xl sm:text-2xl">📈</span>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">New This Month</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats?.recentRegistrations || 0}</p>
+                  <div className="ml-3 sm:ml-4">
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">New This Month</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats?.recentRegistrations || 0}</p>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Sports Distribution */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Users by Sport</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
-                  <div key={sport} className="text-center">
-                    <p className="text-2xl font-bold text-primary">{count}</p>
-                    <p className="text-sm text-gray-600">{sport}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Users by Sport</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
+                    <div key={sport} className="text-center">
+                      <p className="text-xl sm:text-2xl font-bold text-primary">{count}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 capitalize">{sport}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tests by Sport */}
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Tests by Sport</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-blue-600">{stats?.testsBySport?.run || 0}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Run</p>
                   </div>
-                ))}
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-green-600">{stats?.testsBySport?.bike || 0}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Bike</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-purple-600">{stats?.testsBySport?.swim || 0}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Swim</p>
+                  </div>
+                  <div className="text-center col-span-2 sm:col-span-1">
+                    <p className="text-xl sm:text-2xl font-bold text-primary">{stats?.testsBySport?.total || 0}</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Total</p>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -236,103 +262,102 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="bg-white rounded-lg shadow overflow-hidden"
           >
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-              <p className="text-sm text-gray-600">Manage user accounts and permissions</p>
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">User Management</h3>
+              <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
             </div>
             
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sport</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
-                              <span className="text-white font-medium">
-                                {user.name?.[0]}{user.surname?.[0]}
-                              </span>
+              <div className="inline-block min-w-full align-middle">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Sport</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Status</th>
+                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user._id} className="hover:bg-gray-50">
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
+                              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary flex items-center justify-center">
+                                <span className="text-white font-medium text-xs sm:text-sm">
+                                  {user.name?.[0]}{user.surname?.[0]}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="ml-2 sm:ml-4 min-w-0">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">
+                                {user.name} {user.surname}
+                              </div>
+                              <div className="text-xs text-gray-500 truncate">{user.email}</div>
+                              <div className="text-xs text-gray-500 sm:hidden capitalize">{user.sport || 'Not specified'}</div>
+                              {user.role === 'coach' && user._id && (
+                                <div className="text-xs text-gray-400 mt-0.5 hidden sm:block">ID: {user._id.substring(0, 8)}...</div>
+                              )}
                             </div>
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.name} {user.surname}
-                            </div>
-                            <div className="text-sm text-gray-500">{user.email}</div>
-                            {user.role === 'coach' && user._id && (
-                              <div className="text-xs text-gray-400 mt-0.5">ID: {user._id}</div>
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4">
+                          <span className={`inline-flex px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full ${
+                            user.role === 'admin' ? 'bg-red-100 text-red-800' :
+                            user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {user.role}
+                            {user.admin && <span className="hidden sm:inline"> (Admin)</span>}
+                          </span>
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900 hidden sm:table-cell capitalize">
+                          {user.sport || 'Not specified'}
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900">
+                          <div className="flex flex-col sm:flex-row sm:items-center">
+                            <span className="text-sm sm:text-base lg:text-lg font-semibold text-blue-600">{user.trainingCount || 0}</span>
+                            <span className="text-xs text-gray-500 sm:ml-1">trainings</span>
+                          </div>
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900">
+                          <div className="flex flex-col sm:flex-row sm:items-center">
+                            <span className="text-sm sm:text-base lg:text-lg font-semibold text-purple-600">
+                              {(() => {
+                                const count = user.testCount !== undefined && user.testCount !== null ? user.testCount : 0;
+                                return count;
+                              })()}
+                            </span>
+                            <span className="text-xs text-gray-500 sm:ml-1">tests</span>
+                            {user.role === 'coach' && (
+                              <span className="text-xs text-gray-400 sm:ml-2 hidden lg:inline">(athletes + own)</span>
                             )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                          user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
-                          {user.role}
-                          {user.admin && ' (Admin)'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {user.sport || 'Not specified'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <span className="text-lg font-semibold text-blue-600">{user.trainingCount || 0}</span>
-                          <span className="ml-1 text-xs text-gray-500">trainings</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex items-center">
-                          <span className="text-lg font-semibold text-purple-600">
-                            {(() => {
-                              const count = user.testCount !== undefined && user.testCount !== null ? user.testCount : 0;
-                              // Debug log for coaches
-                              if (user.role === 'coach' && count === 0) {
-                                console.log(`[AdminDashboard] Coach ${user.name} ${user.surname} has testCount:`, user.testCount, 'type:', typeof user.testCount);
-                              }
-                              return count;
-                            })()}
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 hidden md:table-cell">
+                          <span className={`inline-flex px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full ${
+                            user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {user.isActive ? 'Active' : 'Inactive'}
                           </span>
-                          <span className="ml-1 text-xs text-gray-500">tests</span>
-                          {user.role === 'coach' && (
-                            <span className="ml-2 text-xs text-gray-400">(athletes + own)</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => setEditingUser(user)}
-                          className="text-primary hover:text-primary-dark mr-3"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm font-medium">
+                          <button
+                            onClick={() => setEditingUser(user)}
+                            className="text-primary hover:text-primary-dark"
+                          >
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </motion.div>
         )}
@@ -341,17 +366,17 @@ const AdminDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-4 sm:space-y-6"
           >
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Analytics</h3>
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Event Analytics</h3>
               {eventStats?.byType && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {eventStats.byType.map((event) => (
-                    <div key={event._id} className="border rounded-lg p-4">
-                      <h4 className="font-medium text-gray-900">{event._id}</h4>
-                      <p className="text-2xl font-bold text-primary">{event.count}</p>
-                      <p className="text-sm text-gray-500">
+                    <div key={event._id} className="border rounded-lg p-3 sm:p-4">
+                      <h4 className="text-sm sm:text-base font-medium text-gray-900 truncate">{event._id}</h4>
+                      <p className="text-xl sm:text-2xl font-bold text-primary mt-1">{event.count}</p>
+                      <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         Last: {new Date(event.lastOccurrence).toLocaleDateString()}
                       </p>
                     </div>
@@ -365,9 +390,9 @@ const AdminDashboard = () => {
 
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.target);
@@ -380,40 +405,40 @@ const AdminDashboard = () => {
                 isActive: formData.get('isActive') === 'on'
               });
             }}>
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700">Name</label>
                   <input
                     type="text"
                     name="name"
                     defaultValue={editingUser.name}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-2 sm:px-3 py-1.5 sm:py-2 text-sm sm:text-base"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Surname</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700">Surname</label>
                   <input
                     type="text"
                     name="surname"
                     defaultValue={editingUser.surname}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-2 sm:px-3 py-1.5 sm:py-2 text-sm sm:text-base"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700">Email</label>
                   <input
                     type="email"
                     name="email"
                     defaultValue={editingUser.email}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-2 sm:px-3 py-1.5 sm:py-2 text-sm sm:text-base"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Role</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700">Role</label>
                   <select
                     name="role"
                     defaultValue={editingUser.role}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-2 sm:px-3 py-1.5 sm:py-2 text-sm sm:text-base"
                   >
                     <option value="athlete">Athlete</option>
                     <option value="coach">Coach</option>
@@ -427,7 +452,7 @@ const AdminDashboard = () => {
                     defaultChecked={editingUser.admin}
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
                   />
-                  <label className="ml-2 block text-sm text-gray-900">Admin privileges</label>
+                  <label className="ml-2 block text-xs sm:text-sm text-gray-900">Admin privileges</label>
                 </div>
                 <div className="flex items-center">
                   <input
@@ -436,20 +461,20 @@ const AdminDashboard = () => {
                     defaultChecked={editingUser.isActive}
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
                   />
-                  <label className="ml-2 block text-sm text-gray-900">Active</label>
+                  <label className="ml-2 block text-xs sm:text-sm text-gray-900">Active</label>
                 </div>
               </div>
-              <div className="mt-6 flex justify-end space-x-3">
+              <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:space-x-3">
                 <button
                   type="button"
                   onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 text-sm sm:text-base"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark"
+                  className="w-full sm:w-auto px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark text-sm sm:text-base"
                 >
                   Save Changes
                 </button>

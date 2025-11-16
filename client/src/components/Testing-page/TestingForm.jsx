@@ -64,7 +64,7 @@ const TutorialMessagePortal = ({ step, onNext, onSkip, inputRef }) => {
   return ReactDOM.createPortal(
     <div 
       ref={tooltipRef}
-      className="z-50 bg-white rounded-lg shadow-lg border border-primary/10 p-4 max-w-xs"
+      className="bg-white rounded-lg shadow-lg border border-primary/10 p-4 max-w-xs"
       style={{
         position: 'absolute',
         top: coords.top - 16, // 16px above input
@@ -72,6 +72,7 @@ const TutorialMessagePortal = ({ step, onNext, onSkip, inputRef }) => {
         transform: 'translate(-50%, -100%)',
         animation: 'fadeIn 0.3s ease-out',
         pointerEvents: 'auto',
+        zIndex: 9999, // High z-index to be above everything
       }}
     >
       <div className="flex items-start gap-3">
@@ -214,7 +215,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     description: testData?.description || '',
     weight: testData?.weight || '',
     sport: testData?.sport || '',
-    baseLa: testData?.baseLactate || '',
+    baseLa: testData?.baseLa !== undefined && testData?.baseLa !== null ? String(testData.baseLa) : (testData?.baseLactate !== undefined && testData?.baseLactate !== null ? String(testData.baseLactate) : ''),
     date: formatDate(testData?.date),
     specifics: testData?.specifics || { specific: '', weather: '' },
     comments: testData?.comments || ''
@@ -401,17 +402,48 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
   // Update useEffect for testData changes to preserve raw values
+  // Use ref to track if we're currently updating from user input to avoid circular updates
+  const isUpdatingFromUserInput = useRef(false);
+  const lastBaseLaValue = useRef('');
+  
   useEffect(() => {
-    if (testData) {
-      setFormData({
-        title: testData.title || '',
-        description: testData.description || '',
-        weight: testData.weight?.toString() || '',
-        sport: testData.sport || '',
-        baseLa: testData.baseLactate?.toString() || '',
-        date: formatDate(testData.date),
-        specifics: testData.specifics || { specific: '', weather: '' },
-        comments: testData.comments || ''
+    if (testData && !isUpdatingFromUserInput.current) {
+      // Use baseLa if available (string from user input), otherwise use baseLactate
+      // IMPORTANT: Preserve the exact string value, including partial inputs like "1."
+      // Don't use String() conversion if it's already a string to preserve partial inputs
+      let baseLaValue = '';
+      if (testData.baseLa !== undefined && testData.baseLa !== null) {
+        // If it's already a string, use it directly (preserves "1." or "1,")
+        // If it's a number, convert to string
+        baseLaValue = typeof testData.baseLa === 'string' ? testData.baseLa : String(testData.baseLa);
+      } else if (testData.baseLactate !== undefined && testData.baseLactate !== null) {
+        baseLaValue = typeof testData.baseLactate === 'string' ? testData.baseLactate : String(testData.baseLactate);
+      }
+      
+      // Only update formData if the value actually changed to avoid unnecessary re-renders
+      // that might cause input to lose focus or cursor position
+      setFormData(prevFormData => {
+        // If baseLa is the same, don't update (preserves user's partial input like "1.")
+        // Also check if user is currently typing (value hasn't changed from last known value)
+        if (prevFormData.baseLa === baseLaValue && 
+            prevFormData.title === (testData.title || '') &&
+            prevFormData.sport === (testData.sport || '')) {
+          return prevFormData; // No change needed
+        }
+        
+        // Store the last known value
+        lastBaseLaValue.current = baseLaValue;
+        
+        return {
+          title: testData.title || '',
+          description: testData.description || '',
+          weight: testData.weight?.toString() || '',
+          sport: testData.sport || '',
+          baseLa: baseLaValue,
+          date: formatDate(testData.date),
+          specifics: testData.specifics || { specific: '', weather: '' },
+          comments: testData.comments || ''
+        };
       });
       if (testData.results && testData.results.length > 0) {
         const initialRows = testData.results.map(row => {
@@ -624,6 +656,16 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const handleFormDataChange = (field, value) => {
     logClick('Form Field Change', { field, value });
     
+    // Mark that we're updating from user input to prevent useEffect from overwriting
+    if (field === 'baseLa') {
+      isUpdatingFromUserInput.current = true;
+      lastBaseLaValue.current = String(value); // Store the value user is typing
+      // Keep the flag set longer to prevent useEffect from overwriting during typing
+      setTimeout(() => {
+        isUpdatingFromUserInput.current = false;
+      }, 300);
+    }
+    
     if (field === 'sport') {
       const newFormData = {
         ...formData,
@@ -662,6 +704,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
 
     // For other field changes
+    // IMPORTANT: For baseLa, preserve the exact string value as typed by user (including "1." or "1,")
     const newFormData = { ...formData, [field]: value };
     setFormData(newFormData);
 
@@ -671,7 +714,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       description: newFormData.description,
       weight: newFormData.weight,
       sport: newFormData.sport,
-      baseLactate: newFormData.baseLa,
+      // For baseLa, keep exact string value - don't convert, don't parse, don't format
+      // Use the value directly as string, preserving partial inputs like "1." or "1,"
+      baseLa: field === 'baseLa' ? (typeof value === 'string' ? value : String(value)) : newFormData.baseLa,
+      // Also store in baseLactate as string for compatibility (will be parsed only when saving)
+      baseLactate: field === 'baseLa' ? (typeof value === 'string' ? value : String(value)) : newFormData.baseLa,
       date: newFormData.date,
       specifics: newFormData.specifics,
       comments: newFormData.comments,

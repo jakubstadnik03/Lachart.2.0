@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
-const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPower, onCompleteInterval }) => {
+const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPower, onCompleteInterval, currentHeartRate, recoveryTime, onStartNextInterval, testState, phase }) => {
   const [lactateValue, setLactateValue] = useState('');
   const [borgValue, setBorgValue] = useState('');
 
@@ -45,14 +45,20 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 z-50"
+            className="fixed inset-0 bg-black bg-opacity-50 z-[9998]"
             onClick={onClose}
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/70 backdrop-blur-lg rounded-2xl p-6 max-w-md w-full mx-4 z-50 shadow-xl border border-white/40"
+            initial={{ opacity: 0, scale: 0.9, x: '-50%', y: '-50%' }}
+            animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+            exit={{ opacity: 0, scale: 0.9, x: '-50%', y: '-50%' }}
+            className="fixed top-1/2 left-1/2 bg-white/70 backdrop-blur-lg rounded-2xl p-6 max-w-md w-[90%] sm:w-full z-[9999] shadow-xl border border-white/40"
+            style={{ 
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              maxWidth: '28rem'
+            }}
           >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">Add Lactate Value</h2>
@@ -70,6 +76,20 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Step {currentStep}
                   </label>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-600 mb-1">Current Heart Rate</div>
+                      <div className="text-lg font-semibold text-blue-700">
+                        {currentHeartRate ? `${Math.round(currentHeartRate)} bpm` : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <div className="text-xs text-gray-600 mb-1">Recovery Time</div>
+                      <div className="text-lg font-semibold text-green-700">
+                        {recoveryTime ? `${Math.floor(recoveryTime / 60)}:${String(recoveryTime % 60).padStart(2, '0')}` : '0:00'}
+                      </div>
+                    </div>
+                  </div>
                   <div className="text-sm text-gray-600 mb-4">
                     Suggested Power: {suggestedPower} W
                   </div>
@@ -119,20 +139,35 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white border border-white/40 shadow"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
-                >
-                  Add Values & Continue
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white border border-white/40 shadow"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
+                  >
+                    Add Values
+                  </button>
+                </div>
+                {testState === 'running' && phase === 'recovery' && onStartNextInterval && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSubmit(lactateValue || '0', borgValue || null);
+                      onStartNextInterval();
+                    }}
+                    disabled={!lactateValue || isNaN(parseFloat(lactateValue)) || parseFloat(lactateValue) <= 0}
+                    className="w-full px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    Add Values & Start Next Interval
+                  </button>
+                )}
               </div>
             </form>
           </motion.div>

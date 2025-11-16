@@ -1,12 +1,15 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   SignalIcon,
   SignalSlashIcon,
-  WifiIcon
+  WifiIcon,
+  ChevronDownIcon,
+  ChevronUpIcon
 } from '@heroicons/react/24/outline';
 
 const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const deviceList = [
     {
       key: 'bikeTrainer',
@@ -40,18 +43,44 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
     }
   ];
 
+  const connectedCount = Object.values(devices).filter(d => d?.connected).length;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6"
+      className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl overflow-hidden"
     >
-      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <WifiIcon className="w-6 h-6" />
-        Device Connections
-      </h2>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-4 flex items-center justify-between hover:bg-white/40 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <WifiIcon className="w-6 h-6" />
+          <h2 className="text-xl font-bold">Device Connections</h2>
+          {connectedCount > 0 && (
+            <span className="px-2 py-0.5 bg-emerald-500 text-white text-xs font-semibold rounded-full">
+              {connectedCount} connected
+            </span>
+          )}
+        </div>
+        {isExpanded ? (
+          <ChevronUpIcon className="w-5 h-5 text-gray-600" />
+        ) : (
+          <ChevronDownIcon className="w-5 h-5 text-gray-600" />
+        )}
+      </button>
 
-      <div className="space-y-3">
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 space-y-3">
         {deviceList.map((device) => {
           const deviceState = devices[device.key];
           const isConnected = deviceState?.connected || false;
@@ -132,7 +161,10 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
             </div>
           );
         })}
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
