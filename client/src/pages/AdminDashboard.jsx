@@ -221,8 +221,8 @@ const AdminDashboard = () => {
               <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Users by Sport</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                  {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
-                    <div key={sport} className="text-center">
+                {Object.entries(stats?.usersBySport || {}).map(([sport, count]) => (
+                  <div key={sport} className="text-center">
                       <p className="text-xl sm:text-2xl font-bold text-primary">{count}</p>
                       <p className="text-xs sm:text-sm text-gray-600 capitalize">{sport}</p>
                     </div>
@@ -260,103 +260,173 @@ const AdminDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-lg shadow overflow-hidden"
+            className="space-y-4"
           >
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">User Management</h3>
-              <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <div className="inline-block min-w-full align-middle">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Sport</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Status</th>
-                      <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {users.map((user) => (
-                      <tr key={user._id} className="hover:bg-gray-50">
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4">
-                          <div className="flex items-center">
-                            <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
-                              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary flex items-center justify-center">
-                                <span className="text-white font-medium text-xs sm:text-sm">
-                                  {user.name?.[0]}{user.surname?.[0]}
-                                </span>
+            <div className="bg-white rounded-lg shadow overflow-hidden -mx-4 sm:mx-0">
+              <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+                <h3 className="text-sm sm:text-lg font-semibold text-gray-900">User Management</h3>
+                <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
+              </div>
+              
+              {/* Mobile Card View */}
+              <div className="block md:hidden divide-y divide-gray-200">
+                {users.map((user) => (
+                  <div key={user._id} className="p-3 hover:bg-gray-50">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center flex-1 min-w-0 pr-2">
+                        <div className="flex-shrink-0 h-8 w-8">
+                          <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                            <span className="text-white font-medium text-xs">
+                              {user.name?.[0]}{user.surname?.[0]}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="ml-2 min-w-0 flex-1">
+                          <div className="text-xs font-medium text-gray-900 truncate">
+                            {user.name} {user.surname}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">{user.email}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setEditingUser(user)}
+                        className="flex-shrink-0 px-2 py-1 text-xs font-medium text-primary hover:text-primary-dark border border-primary rounded hover:bg-primary/5"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
+                        user.role === 'admin' ? 'bg-red-100 text-red-800' :
+                        user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {user.role}
+                        {user.admin && ' (Admin)'}
+                      </span>
+                      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
+                        user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {user.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                        <div>
+                          <div className="text-xs text-gray-500">Sport</div>
+                          <div className="text-xs font-medium text-gray-900 capitalize mt-0.5 truncate">{user.sport || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500">Trainings</div>
+                          <div className="text-base font-semibold text-blue-600 mt-0.5">{user.trainingCount || 0}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500">Tests</div>
+                          <div className="text-base font-semibold text-purple-600 mt-0.5">
+                            {user.testCount !== undefined && user.testCount !== null ? user.testCount : 0}
+                          </div>
+                        </div>
+                      </div>
+                      {user.role === 'coach' && (
+                        <div className="text-xs text-gray-400 mt-1.5 text-center">
+                          Tests include athletes + own
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <div className="inline-block min-w-full align-middle">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sport</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Status</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {users.map((user) => (
+                        <tr key={user._id} className="hover:bg-gray-50">
+                          <td className="px-4 lg:px-6 py-4">
+                            <div className="flex items-center">
+                              <div className="flex-shrink-0 h-10 w-10">
+                                <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+                                  <span className="text-white font-medium text-sm">
+                                    {user.name?.[0]}{user.surname?.[0]}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="ml-4 min-w-0">
+                                <div className="text-sm font-medium text-gray-900 truncate">
+                                  {user.name} {user.surname}
+                                </div>
+                                <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                                {user.role === 'coach' && user._id && (
+                                  <div className="text-xs text-gray-400 mt-0.5">ID: {user._id.substring(0, 8)}...</div>
+                                )}
                               </div>
                             </div>
-                            <div className="ml-2 sm:ml-4 min-w-0">
-                              <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">
-                                {user.name} {user.surname}
-                              </div>
-                              <div className="text-xs text-gray-500 truncate">{user.email}</div>
-                              <div className="text-xs text-gray-500 sm:hidden capitalize">{user.sport || 'Not specified'}</div>
-                              {user.role === 'coach' && user._id && (
-                                <div className="text-xs text-gray-400 mt-0.5 hidden sm:block">ID: {user._id.substring(0, 8)}...</div>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              user.role === 'admin' ? 'bg-red-100 text-red-800' :
+                              user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}>
+                              {user.role}
+                              {user.admin && ' (Admin)'}
+                            </span>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900 capitalize">
+                            {user.sport || 'Not specified'}
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                            <div className="flex items-center">
+                              <span className="text-base lg:text-lg font-semibold text-blue-600">{user.trainingCount || 0}</span>
+                              <span className="ml-1 text-xs text-gray-500">trainings</span>
+                            </div>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                            <div className="flex items-center">
+                              <span className="text-base lg:text-lg font-semibold text-purple-600">
+                                {user.testCount !== undefined && user.testCount !== null ? user.testCount : 0}
+                              </span>
+                              <span className="ml-1 text-xs text-gray-500">tests</span>
+                              {user.role === 'coach' && (
+                                <span className="ml-2 text-xs text-gray-400 hidden xl:inline">(athletes + own)</span>
                               )}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4">
-                          <span className={`inline-flex px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full ${
-                            user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                            user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {user.role}
-                            {user.admin && <span className="hidden sm:inline"> (Admin)</span>}
-                          </span>
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900 hidden sm:table-cell capitalize">
-                          {user.sport || 'Not specified'}
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900">
-                          <div className="flex flex-col sm:flex-row sm:items-center">
-                            <span className="text-sm sm:text-base lg:text-lg font-semibold text-blue-600">{user.trainingCount || 0}</span>
-                            <span className="text-xs text-gray-500 sm:ml-1">trainings</span>
-                          </div>
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm text-gray-900">
-                          <div className="flex flex-col sm:flex-row sm:items-center">
-                            <span className="text-sm sm:text-base lg:text-lg font-semibold text-purple-600">
-                              {(() => {
-                                const count = user.testCount !== undefined && user.testCount !== null ? user.testCount : 0;
-                                return count;
-                              })()}
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 hidden lg:table-cell">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {user.isActive ? 'Active' : 'Inactive'}
                             </span>
-                            <span className="text-xs text-gray-500 sm:ml-1">tests</span>
-                            {user.role === 'coach' && (
-                              <span className="text-xs text-gray-400 sm:ml-2 hidden lg:inline">(athletes + own)</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 hidden md:table-cell">
-                          <span className={`inline-flex px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full ${
-                            user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {user.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 text-xs sm:text-sm font-medium">
-                          <button
-                            onClick={() => setEditingUser(user)}
-                            className="text-primary hover:text-primary-dark"
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm font-medium">
+                            <button
+                              onClick={() => setEditingUser(user)}
+                              className="text-primary hover:text-primary-dark"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </motion.div>

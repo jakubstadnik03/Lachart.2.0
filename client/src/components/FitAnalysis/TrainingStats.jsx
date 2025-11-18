@@ -442,82 +442,83 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
   return (
     <>
       {intervalModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-gray-200 flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Select Intervals to Sync</h2>
-                <p className="text-sm text-gray-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4">
+          <div className="w-full max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden rounded-xl sm:rounded-3xl bg-white shadow-2xl border border-gray-200 flex flex-col">
+            <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-4 border-b border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex-1">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Select Intervals to Sync</h2>
+                <p className="text-xs sm:text-sm text-gray-600 mt-1">
                   Review the workout data, then choose which intervals should be saved to the training overview.
                 </p>
               </div>
               <button
                 onClick={handleModalCancel}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors self-end sm:self-auto"
                 title="Close"
               >
-                <XMarkIcon className="w-6 h-6" />
+                <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
-            <div className="px-6 py-4 overflow-y-auto">
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center gap-3">
+            <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-4 overflow-y-auto">
+              <div className="space-y-4 sm:space-y-6">
+                <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2 sm:gap-3">
                   <button
                     onClick={handleSelectRecommended}
-                    className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm shadow hover:bg-primary-dark transition-colors"
+                    className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs sm:text-sm shadow hover:bg-primary-dark transition-colors w-full sm:w-auto"
                   >
                     Use Recommended Intervals
                   </button>
                   <button
                     onClick={handleSelectAllLaps}
-                    className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200 transition-colors"
+                    className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs sm:text-sm hover:bg-blue-200 transition-colors w-full sm:w-auto"
                   >
                     Select All
                   </button>
                   <button
                     onClick={handleClearSelection}
-                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition-colors"
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs sm:text-sm hover:bg-gray-200 transition-colors w-full sm:w-auto"
                   >
                     Clear Selection
                   </button>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-xs sm:text-sm text-gray-600 w-full sm:w-auto">
                     Selected: {selectedLapIndices.length} / {training?.laps?.length || 0}
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 shadow-sm p-2 sm:p-4">
                   {trainingChartOption ? (
                     <ReactECharts
                       option={trainingChartOption}
-                      style={{ height: 320, width: '100%' }}
+                      style={{ height: '320px', width: '100%' }}
+                      className="min-h-[240px] sm:min-h-[320px]"
                       notMerge
                     />
                   ) : (
-                    <div className="text-sm text-gray-600">
+                    <div className="text-xs sm:text-sm text-gray-600">
                       Detailed record data is not available for this training, so the chart preview is unavailable.
                     </div>
                   )}
                 </div>
 
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
-                  <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900">Intervals</h3>
-                    <div className="text-sm text-gray-600">
+                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 shadow-sm">
+                  <div className="px-3 sm:px-4 py-2 sm:py-3 border-b border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900">Intervals</h3>
+                    <div className="text-xs sm:text-sm text-gray-600">
                       Click any interval to include or exclude it from synchronization.
                     </div>
                   </div>
-                  <div className="max-h-64 overflow-y-auto">
+                  <div className="max-h-48 sm:max-h-64 overflow-y-auto overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Use</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Start</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Power</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg HR</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rest</th>
-                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Lactate</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Use</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Start</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Power</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg HR</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Rest</th>
+                          <th className="px-2 sm:px-3 md:px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Lactate</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-100">
@@ -529,7 +530,7 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
                               className={`transition-colors cursor-pointer ${isSelected ? 'bg-primary/10' : 'hover:bg-gray-50'}`}
                               onClick={() => toggleLapSelection(lap.index)}
                             >
-                              <td className="px-4 py-2">
+                              <td className="px-2 sm:px-3 md:px-4 py-2">
                                 <input
                                   type="checkbox"
                                   className="form-checkbox h-4 w-4 text-primary"
@@ -538,13 +539,13 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               </td>
-                              <td className="px-4 py-2 text-sm text-gray-800 font-medium">{lap.index + 1}</td>
-                              <td className="px-4 py-2 text-sm text-gray-700">{formatDuration(Math.round(lap.duration))}</td>
-                              <td className="px-4 py-2 text-sm text-gray-500">{formatDuration(Math.max(0, Math.round(lap.start)))}</td>
-                              <td className="px-4 py-2 text-sm text-gray-700">{lap.power ? `${Math.round(lap.power)} W` : '-'}</td>
-                              <td className="px-4 py-2 text-sm text-gray-700">{lap.heartRate ? `${Math.round(lap.heartRate)} bpm` : '-'}</td>
-                              <td className="px-4 py-2 text-sm text-gray-500">{lap.rest ? formatDuration(Math.round(lap.rest)) : '-'}</td>
-                              <td className="px-4 py-2 text-sm text-gray-700">{lap.lactate !== null && lap.lactate !== undefined ? `${lap.lactate.toFixed(1)} mmol/L` : '-'}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-800 font-medium">{lap.index + 1}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-700">{formatDuration(Math.round(lap.duration))}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-500 hidden sm:table-cell">{formatDuration(Math.max(0, Math.round(lap.start)))}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-700">{lap.power ? `${Math.round(lap.power)} W` : '-'}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-700">{lap.heartRate ? `${Math.round(lap.heartRate)} bpm` : '-'}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-500 hidden md:table-cell">{lap.rest ? formatDuration(Math.round(lap.rest)) : '-'}</td>
+                              <td className="px-2 sm:px-3 md:px-4 py-2 text-xs sm:text-sm text-gray-700 hidden lg:table-cell">{lap.lactate !== null && lap.lactate !== undefined ? `${lap.lactate.toFixed(1)} mmol/L` : '-'}</td>
                             </tr>
                           );
                         })}
@@ -554,21 +555,21 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
                 </div>
 
                 {modalError && (
-                  <div className="text-sm text-red-600">{modalError}</div>
+                  <div className="text-xs sm:text-sm text-red-600">{modalError}</div>
                 )}
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+            <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-4 border-t border-gray-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
               <button
                 onClick={handleModalCancel}
-                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                className="px-3 sm:px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors text-sm w-full sm:w-auto"
                 disabled={saving}
               >
                 Cancel
               </button>
               <button
                 onClick={handleModalConfirm}
-                className="px-4 py-2 rounded-lg bg-greenos text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="px-3 sm:px-4 py-2 rounded-lg bg-greenos text-white hover:opacity-90 transition-opacity disabled:opacity-50 text-sm w-full sm:w-auto"
                 disabled={saving}
               >
                 {saving ? 'Saving...' : 'Save Selection'}

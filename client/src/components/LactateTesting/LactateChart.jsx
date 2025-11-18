@@ -1,54 +1,120 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { ScatterChart, Scatter, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart } from 'recharts';
+import {
+  ComposedChart,
+  Line,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
 import { ChartBarIcon } from '@heroicons/react/24/outline';
 
-const LactateChart = ({ lactateValues, historicalData, protocol }) => {
-  // Prepare lactate curve data
-  const lactateCurveData = useMemo(() => {
-    return lactateValues.map(lv => ({
-      power: lv.power,
-      lactate: lv.lactate,
-      borg: lv.borg,
-      step: lv.step,
-      time: lv.time
-    })).sort((a, b) => a.power - b.power);
-  }, [lactateValues]);
+const roundValue = (value, decimals = 0) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  if (decimals === 0) {
+    return Math.round(value);
+  }
+  return Number(value.toFixed(decimals));
+};
 
-  // Prepare multi-sensor comparison data
-  const multiSensorData = useMemo(() => {
-    if (lactateValues.length === 0) return [];
+const formatValue = (value, unit = '') => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${Math.round(value)}${unit}`;
+};
 
-    return lactateValues.map(lv => {
-      // Find average values for this power level from historical data
-      const relevantData = historicalData.filter(hd => 
-        Math.abs(hd.power - lv.power) < 10 // Within 10W
-      );
+const LactateChart = ({ lactateValues, historicalData }) => {
+  const lactateChartData = useMemo(() => {
+    if (!lactateValues.length) return [];
 
-      const avgSmO2 = relevantData.length > 0
-        ? relevantData.reduce((sum, d) => sum + (d.smo2 || 0), 0) / relevantData.length
-        : null;
+    return lactateValues.map((lv) => {
+      const stepIndex = (lv.step ?? 1) - 1;
+      const relevantData = historicalData.filter((hd) => hd.step === stepIndex);
 
-      const avgHR = relevantData.length > 0
-        ? relevantData.reduce((sum, d) => sum + (d.heartRate || 0), 0) / relevantData.length
-        : null;
+      const calcAverage = (key) => {
+        const values = relevantData
+          .map((d) => d[key])
+          .filter((val) => val !== null && val !== undefined);
+        if (!values.length) return null;
+        return values.reduce((sum, val) => sum + val, 0) / values.length;
+      };
 
-      const avgVO2 = relevantData.length > 0
-        ? relevantData.reduce((sum, d) => sum + (d.vo2 || 0), 0) / relevantData.length
-        : null;
+      const lastPoint = relevantData.length > 0 ? relevantData[relevantData.length - 1] : null;
 
       return {
-        power: lv.power,
-        lactate: lv.lactate,
-        borg: lv.borg,
-        smo2: avgSmO2,
-        heartRate: avgHR,
-        vo2: avgVO2
+        step: lv.step,
+        power: roundValue(lv.power),
+        lactate: roundValue(lv.lactate, 2),
+        borg: lv.borg ? roundValue(lv.borg) : null,
+        avgPower: roundValue(calcAverage('power')),
+        avgHeartRate: roundValue(calcAverage('heartRate')),
+        avgCadence: roundValue(calcAverage('cadence')),
+        avgSpeed: roundValue(calcAverage('speed')),
+        avgSmO2: roundValue(calcAverage('smo2')),
+        avgVo2: roundValue(calcAverage('vo2')),
+        avgThb: roundValue(calcAverage('thb')),
+        avgVentilation: roundValue(calcAverage('ventilation')),
+        endHeartRate: lastPoint?.heartRate ? roundValue(lastPoint.heartRate) : null,
+        endCadence: lastPoint?.cadence ? roundValue(lastPoint.cadence) : null
       };
-    }).sort((a, b) => a.power - b.power);
+    }).sort((a, b) => (a.power || 0) - (b.power || 0));
   }, [lactateValues, historicalData]);
 
-  const hasData = lactateValues.length > 0;
+  const hasData = lactateChartData.length > 0;
+
+  const renderTooltip = ({ active, payload }) => {
+    if (!active || !payload || !payload.length) return null;
+    const data = payload[0].payload;
+
+    return (
+      <div className="bg-white/95 p-3 border border-gray-200 rounded-xl shadow-lg text-sm">
+        <p className="font-semibold text-gray-800 mb-1">Step {data.step}</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <span className="text-gray-500">Power</span>
+          <span className="font-semibold text-gray-900">{formatValue(data.power, ' W')}</span>
+
+          <span className="text-gray-500">Lactate</span>
+          <span className="font-semibold text-gray-900">
+            {data.lactate !== null ? `${Number(data.lactate).toFixed(2)} mmol/L` : '—'}
+          </span>
+
+          <span className="text-gray-500">Avg HR</span>
+          <span className="text-gray-900">{formatValue(data.avgHeartRate, ' bpm')}</span>
+
+          <span className="text-gray-500">HR (interval end)</span>
+          <span className="text-gray-900">{formatValue(data.endHeartRate, ' bpm')}</span>
+
+          <span className="text-gray-500">Avg Cadence</span>
+          <span className="text-gray-900">{formatValue(data.avgCadence, ' rpm')}</span>
+
+          <span className="text-gray-500">Avg Speed</span>
+          <span className="text-gray-900">{formatValue(data.avgSpeed, ' km/h')}</span>
+
+          <span className="text-gray-500">Avg SmO₂</span>
+          <span className="text-gray-900">{formatValue(data.avgSmO2, ' %')}</span>
+
+          <span className="text-gray-500">Avg VO₂</span>
+          <span className="text-gray-900">{formatValue(data.avgVo2)}</span>
+
+          <span className="text-gray-500">Avg tHb</span>
+          <span className="text-gray-900">{formatValue(data.avgThb)}</span>
+
+          <span className="text-gray-500">Avg Ventilation</span>
+          <span className="text-gray-900">{formatValue(data.avgVentilation)}</span>
+
+          {data.borg && (
+            <>
+              <span className="text-gray-500">BORG</span>
+              <span className="text-gray-900">{data.borg}</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <motion.div
@@ -68,147 +134,49 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Primary Lactate Curve */}
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Lactate vs Power</h3>
             <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
-            <ResponsiveContainer width="100%" height={300}>
-              <ScatterChart data={lactateCurveData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis 
-                  dataKey="power" 
-                  name="Power" 
-                  unit="W"
-                  label={{ value: 'Power (W)', position: 'insideBottom', offset: -5 }}
-                  stroke="#666"
-                />
-                <YAxis 
-                  dataKey="lactate" 
-                  name="Lactate" 
-                  unit="mmol/L"
-                  label={{ value: 'Lactate (mmol/L)', angle: -90, position: 'insideLeft' }}
-                  stroke="#666"
-                />
-                <Tooltip 
-                  cursor={{ strokeDasharray: '3 3' }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
-                          <p className="font-semibold">Step {data.step}</p>
-                          <p>Power: {data.power} W</p>
-                          <p>Lactate: {data.lactate} mmol/L</p>
-                          {data.borg && <p>BORG: {data.borg}</p>}
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Scatter 
-                  dataKey="lactate" 
-                  fill="#8b5cf6" 
-                  shape="circle"
-                  name="Lactate"
-                />
-              </ScatterChart>
-            </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Multi-Sensor Comparison */}
-          {multiSensorData.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Multi-Sensor Comparison</h3>
-              <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-2">
-              <ResponsiveContainer width="100%" height={300}>
-                <ComposedChart data={multiSensorData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis 
-                    dataKey="power" 
+              <ResponsiveContainer width="100%" height={320}>
+                <ComposedChart data={lactateChartData}>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="power"
                     name="Power"
                     unit="W"
                     label={{ value: 'Power (W)', position: 'insideBottom', offset: -5 }}
                     stroke="#666"
+                    allowDecimals={false}
                   />
-                  <YAxis 
-                    yAxisId="left"
+                  <YAxis
+                    dataKey="lactate"
+                    name="Lactate"
+                    unit="mmol/L"
                     label={{ value: 'Lactate (mmol/L)', angle: -90, position: 'insideLeft' }}
                     stroke="#666"
                   />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right"
-                    label={{ value: 'Other Metrics', angle: 90, position: 'insideRight' }}
-                    stroke="#666"
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #ccc' }}
-                  />
+                  <Tooltip content={renderTooltip} />
                   <Legend />
-                  <Scatter 
-                    yAxisId="left"
-                    dataKey="lactate" 
-                    fill="#8b5cf6" 
-                    name="Lactate (mmol/L)"
+                  <Line
+                    type="monotone"
+                    dataKey="lactate"
+                    stroke="#8b5cf6"
+                    strokeWidth={3}
+                    dot={false}
+                    name="Lactate Curve"
+                    connectNulls
+                  />
+                  <Scatter
+                    dataKey="lactate"
+                    fill="#7c3aed"
+                    name="Lactate Sample"
                     shape="circle"
                   />
-                  {multiSensorData.some(d => d.smo2) && (
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="smo2" 
-                      stroke="#10b981" 
-                      strokeWidth={2}
-                      dot={{ fill: '#10b981', r: 4 }}
-                      name="SmO2 (%)"
-                      connectNulls
-                    />
-                  )}
-                  {multiSensorData.some(d => d.heartRate) && (
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="heartRate" 
-                      stroke="#ef4444" 
-                      strokeWidth={2}
-                      dot={{ fill: '#ef4444', r: 4 }}
-                      name="HR (bpm)"
-                      connectNulls
-                    />
-                  )}
-                  {multiSensorData.some(d => d.vo2) && (
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="vo2" 
-                      stroke="#3b82f6" 
-                      strokeWidth={2}
-                      dot={{ fill: '#3b82f6', r: 4 }}
-                      name="VO2 (ml/min/kg)"
-                      connectNulls
-                    />
-                  )}
-                  {multiSensorData.some(d => d.borg) && (
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="borg" 
-                      stroke="#f59e0b" 
-                      strokeWidth={2}
-                      dot={{ fill: '#f59e0b', r: 4 }}
-                      name="BORG (RPE)"
-                      connectNulls
-                    />
-                  )}
                 </ComposedChart>
               </ResponsiveContainer>
-              </div>
             </div>
-          )}
+          </div>
 
-          {/* Data Summary */}
           <div className="mt-4 pt-4 border-t border-white/40">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Test Summary</h3>
             <div className="grid grid-cols-3 gap-4 text-sm">
@@ -219,13 +187,14 @@ const LactateChart = ({ lactateValues, historicalData, protocol }) => {
               <div>
                 <div className="text-gray-600">Power Range</div>
                 <div className="font-semibold text-gray-900">
-                  {lactateCurveData[0]?.power || 0} - {lactateCurveData[lactateCurveData.length - 1]?.power || 0} W
+                  {formatValue(lactateChartData[0]?.power, ' W')} -{' '}
+                  {formatValue(lactateChartData[lactateChartData.length - 1]?.power, ' W')}
                 </div>
               </div>
               <div>
                 <div className="text-gray-600">Max Lactate</div>
                 <div className="font-semibold text-gray-900">
-                  {Math.max(...lactateValues.map(lv => lv.lactate)).toFixed(1)} mmol/L
+                  {Math.max(...lactateValues.map((lv) => lv.lactate)).toFixed(2)} mmol/L
                 </div>
               </div>
             </div>

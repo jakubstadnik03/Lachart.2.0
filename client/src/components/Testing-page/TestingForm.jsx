@@ -258,8 +258,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
             // If it's a small number (< 50), assume it's speed - convert to pace
             else if (powerNum > 0 && powerNum < 50) {
-              const seconds = convertSpeedToSeconds(powerNum, unitSystem);
-              return { ...row, power: convertSecondsToPace(seconds) };
+            const seconds = convertSpeedToSeconds(powerNum, unitSystem);
+            return { ...row, power: convertSecondsToPace(seconds) };
             }
             // For values 50-60, might be ambiguous - keep as is or convert based on context
           }
@@ -435,14 +435,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         lastBaseLaValue.current = baseLaValue;
         
         return {
-          title: testData.title || '',
-          description: testData.description || '',
-          weight: testData.weight?.toString() || '',
-          sport: testData.sport || '',
+        title: testData.title || '',
+        description: testData.description || '',
+        weight: testData.weight?.toString() || '',
+        sport: testData.sport || '',
           baseLa: baseLaValue,
-          date: formatDate(testData.date),
-          specifics: testData.specifics || { specific: '', weather: '' },
-          comments: testData.comments || ''
+        date: formatDate(testData.date),
+        specifics: testData.specifics || { specific: '', weather: '' },
+        comments: testData.comments || ''
         };
       });
       if (testData.results && testData.results.length > 0) {
@@ -463,11 +463,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 // Convert seconds to speed (km/h or mph)
                 const speed = convertSecondsToSpeed(powerNum, unitSystem);
                 power = speed.toFixed(1);
-              } else {
+            } else {
                 // Fallback: convert to pace format
                 power = convertSecondsToPace(powerNum);
-              }
             }
+          }
           }
           
           return {

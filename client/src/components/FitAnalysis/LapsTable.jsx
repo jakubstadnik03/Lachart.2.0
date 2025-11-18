@@ -105,37 +105,37 @@ const LapsTable = ({ training, onUpdate }) => {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-        <h3 className="text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
+        <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
         <button
           onClick={() => setEditingLactate(!editingLactate)}
-          className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-sm shadow-md transition-colors"
+          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg">
+      <div className="overflow-x-auto rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0">
         <table className="min-w-full divide-y divide-gray-200/50">
           <thead className="bg-white/80 backdrop-blur-sm">
             <tr>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Distance</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Speed</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
-              <th className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden sm:table-cell">Distance</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden md:table-cell">Avg Speed</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
             </tr>
           </thead>
           <tbody className="bg-white/40 backdrop-blur-sm divide-y divide-gray-200/30">
             {uniqueLaps.map((lap, index) => (
               <tr key={index} className={`transition-colors hover:bg-white/60 ${lap.lactate ? 'bg-primary/10' : ''}`}>
-                <td className="px-3 md:px-4 py-3 text-sm font-medium text-gray-900">{index + 1}</td>
-                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
-                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatDistance(lap.totalDistance)}</td>
-                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{formatSpeed(lap.avgSpeed)}</td>
-                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
-                <td className="px-3 md:px-4 py-3 text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
-                <td className="px-3 md:px-4 py-3 text-sm">
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">{formatSpeed(lap.avgSpeed)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                   {editingLactate ? (
                     <input
                       type="number"
@@ -146,7 +146,7 @@ const LapsTable = ({ training, onUpdate }) => {
                         ...lactateInputs,
                         [`lap-${index}`]: e.target.value
                       })}
-                      className="w-20 md:w-24 px-2 py-1.5 border border-primary/50 rounded-lg text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="w-16 sm:w-20 md:w-24 px-1.5 sm:px-2 py-1 sm:py-1.5 border border-primary/50 rounded-lg text-xs sm:text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                   ) : (
                     <span className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-500'}>
@@ -166,13 +166,13 @@ const LapsTable = ({ training, onUpdate }) => {
               setEditingLactate(false);
               setLactateInputs({});
             }}
-            className="px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors"
+            className="px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors text-sm w-full sm:w-auto"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveLactate}
-            className="px-4 py-2 bg-greenos text-white rounded-xl shadow-md transition-colors hover:opacity-90"
+            className="px-3 sm:px-4 py-2 bg-greenos text-white rounded-xl shadow-md transition-colors hover:opacity-90 text-sm w-full sm:w-auto"
           >
             Save Lactate Values
           </button>

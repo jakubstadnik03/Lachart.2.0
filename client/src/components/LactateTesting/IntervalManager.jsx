@@ -2,14 +2,46 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Cog6ToothIcon, PencilIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 
-const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol }) => {
+const IntervalManager = ({ protocol, onProtocolSubmit, testState, onEditProtocol }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [draftProtocol, setDraftProtocol] = useState(protocol);
+
+  React.useEffect(() => {
+    setDraftProtocol(protocol);
+  }, [protocol]);
+
+  const generateSteps = React.useCallback((proto) => {
+    const steps = [];
+    for (let i = 0; i < proto.maxSteps; i++) {
+      steps.push({
+        stepNumber: i + 1,
+        targetPower: proto.startPower + (i * proto.powerIncrement),
+        phase: 'work',
+        duration: proto.workDuration,
+        recoveryDuration: proto.recoveryDuration
+      });
+    }
+    return steps;
+  }, []);
+
+  const previewSteps = React.useMemo(() => {
+    return generateSteps(draftProtocol);
+  }, [draftProtocol, generateSteps]);
   
   const handleChange = (field, value) => {
-    onProtocolChange(prev => ({
+    setDraftProtocol(prev => ({
       ...prev,
-      [field]: typeof value === 'string' ? parseInt(value) || 0 : value
+      [field]: typeof value === 'string' ? parseInt(value, 10) || 0 : value
     }));
+  };
+
+  const handleSubmit = () => {
+    if (!onProtocolSubmit) return;
+    const updatedProtocol = {
+      ...draftProtocol,
+      steps: generateSteps(draftProtocol)
+    };
+    onProtocolSubmit(updatedProtocol);
   };
 
   const isEditable = testState === 'idle';
@@ -57,7 +89,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
             </label>
             <input
               type="number"
-              value={protocol.workDuration}
+              value={draftProtocol.workDuration}
               onChange={(e) => handleChange('workDuration', e.target.value)}
               disabled={!isEditable}
               className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
@@ -70,7 +102,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
             </label>
             <input
               type="number"
-              value={protocol.recoveryDuration}
+              value={draftProtocol.recoveryDuration}
               onChange={(e) => handleChange('recoveryDuration', e.target.value)}
               disabled={!isEditable}
               className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
@@ -83,7 +115,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
             </label>
             <input
               type="number"
-              value={protocol.startPower}
+              value={draftProtocol.startPower}
               onChange={(e) => handleChange('startPower', e.target.value)}
               disabled={!isEditable}
               className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
@@ -96,7 +128,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
             </label>
             <input
               type="number"
-              value={protocol.powerIncrement}
+              value={draftProtocol.powerIncrement}
               onChange={(e) => handleChange('powerIncrement', e.target.value)}
               disabled={!isEditable}
               className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
@@ -109,7 +141,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
             </label>
             <input
               type="number"
-              value={protocol.maxSteps}
+              value={draftProtocol.maxSteps}
               onChange={(e) => handleChange('maxSteps', e.target.value)}
               disabled={!isEditable}
               className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
@@ -132,7 +164,7 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   <div className="space-y-2">
-                    {protocol.steps.map((step, index) => (
+                    {previewSteps.map((step, index) => (
                       <div
                         key={index}
                         className="p-2 bg-white/60 backdrop-blur rounded-lg text-sm flex justify-between items-center border border-white/40"
@@ -143,6 +175,19 @@ const IntervalManager = ({ protocol, onProtocolChange, testState, onEditProtocol
                     ))}
                   </div>
                 </div>
+              </div>
+              <div className="flex justify-end pt-3 border-t border-white/40">
+                <button
+                  onClick={handleSubmit}
+                  disabled={!isEditable}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold shadow ${
+                    isEditable
+                      ? 'bg-primary text-white hover:bg-primary/90'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  Apply Protocol
+                </button>
               </div>
             </div>
           </motion.div>

@@ -19,6 +19,16 @@ import {
   PlusIcon,
   ArrowDownTrayIcon as DownloadIcon
 } from '@heroicons/react/24/outline';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  CartesianGrid
+} from 'recharts';
 
 const LactateTestingPage = () => {
   const { user } = useAuth();
@@ -57,6 +67,16 @@ const LactateTestingPage = () => {
     timestamp: Date.now()
   });
   
+  // Interval protocol
+  const [protocol, setProtocol] = useState({
+    workDuration: 360, // seconds
+    recoveryDuration: 60, // seconds
+    steps: [],
+    startPower: 100, // watts
+    powerIncrement: 20, // watts per step
+    maxSteps: 8
+  });
+
   // Keep refs in sync with state
   useEffect(() => {
     liveDataRef.current = liveData;
@@ -74,24 +94,31 @@ const LactateTestingPage = () => {
     totalTestTimeRef.current = totalTestTime;
   }, [totalTestTime]);
 
+  useEffect(() => {
+    testStateRef.current = testState;
+  }, [testState]);
+
+  const protocolRef = useRef(protocol);
+  useEffect(() => {
+    protocolRef.current = protocol;
+  }, [protocol]);
+
   // Historical data for charts
   const [historicalData, setHistoricalData] = useState([]);
   const [lactateValues, setLactateValues] = useState([]); // [{step, power, lactate, borg, time}]
 
-  // Interval protocol
-  const [protocol, setProtocol] = useState({
-    workDuration: 360, // seconds
-    recoveryDuration: 60, // seconds
-    steps: [],
-    startPower: 100, // watts
-    powerIncrement: 20, // watts per step
-    maxSteps: 8
-  });
+  const handleProtocolSubmit = useCallback((nextProtocol) => {
+    setProtocol(nextProtocol);
+    setTimeout(() => {
+      addNotification('Interval protocol updated', 'success');
+    }, 0);
+  }, [addNotification]);
 
   // UI state
   const [showLactateModal, setShowLactateModal] = useState(false);
   const [showCalibration, setShowCalibration] = useState(false);
   const [showProtocolEdit, setShowProtocolEdit] = useState(false);
+  const [mockDataMode, setMockDataMode] = useState(false); // Mock data mode for testing
 
   // Previous Lactate Sessions
   const [previousSessions, setPreviousSessions] = useState([]);
@@ -109,6 +136,8 @@ const LactateTestingPage = () => {
   const currentStepRef = useRef(currentStep);
   const intervalTimerRef2 = useRef(intervalTimer);
   const totalTestTimeRef = useRef(totalTestTime);
+  const testStateRef = useRef(testState);
+  const mockDeviceIntervalsRef = useRef({}); // For mock data generation per device
 
   // Initialize protocol steps
   useEffect(() => {
@@ -126,35 +155,201 @@ const LactateTestingPage = () => {
   }, [protocol.startPower, protocol.powerIncrement, protocol.maxSteps, protocol.workDuration, protocol.recoveryDuration]);
 
   // Data collection - collect data every second from test start
+  // This function MUST be called every second to save all data
   const collectDataPoint = useCallback(() => {
-    // Always collect data, even if values are 0/null - this creates the curves from the start
-    // Use refs to get the latest values (since they update asynchronously)
+    // Always collect data when called - save EVERY value, even if 0 or null
+    const currentLiveData = liveDataRef.current;
+    const currentTotalTime = totalTestTimeRef.current;
+    const currentStep = currentStepRef.current;
+    const currentIntervalTime = intervalTimerRef2.current;
+    
+    // Create data point with ALL values - save everything every second
+    const dataPoint = {
+      power: currentLiveData.power !== undefined ? currentLiveData.power : null,
+      cadence: currentLiveData.cadence !== undefined ? currentLiveData.cadence : null,
+      speed: currentLiveData.speed !== undefined ? currentLiveData.speed : null,
+      heartRate: currentLiveData.heartRate !== undefined ? currentLiveData.heartRate : null,
+      smo2: currentLiveData.smo2 !== undefined ? currentLiveData.smo2 : null,
+      thb: currentLiveData.thb !== undefined ? currentLiveData.thb : null,
+      coreTemp: currentLiveData.coreTemp !== undefined ? currentLiveData.coreTemp : null,
+      vo2: currentLiveData.vo2 !== undefined ? currentLiveData.vo2 : null,
+      vco2: currentLiveData.vco2 !== undefined ? currentLiveData.vco2 : null,
+      ventilation: currentLiveData.ventilation !== undefined ? currentLiveData.ventilation : null,
+      timestamp: Date.now(),
+      step: currentStep,
+      intervalTime: currentIntervalTime,
+      totalTime: currentTotalTime
+    };
+    
+    // Always add to historical data - save every second
     setHistoricalData(prev => {
-      const currentLiveData = liveDataRef.current;
-      const currentTotalTime = totalTestTimeRef.current;
-      const dataPoint = {
-        ...currentLiveData,
-        timestamp: Date.now(),
-        step: currentStepRef.current,
-        intervalTime: intervalTimerRef2.current,
-        totalTime: currentTotalTime
-      };
+      const newData = [...prev, dataPoint];
       
-      // Debug logging
-      if (prev.length % 10 === 0 || prev.length < 5) {
-        console.log(`[collectDataPoint] Collected data point #${prev.length + 1}:`, {
-          totalTime: currentTotalTime,
-          power: currentLiveData.power,
-          heartRate: currentLiveData.heartRate,
-          cadence: currentLiveData.cadence,
-          speed: currentLiveData.speed
-        });
+      // Log every point for first 20, then every 10
+      if (newData.length <= 20 || newData.length % 10 === 0) {
+        console.log(`[collectDataPoint] ✅ #${newData.length} | Time: ${currentTotalTime}s | Power: ${dataPoint.power ?? 'null'}W | HR: ${dataPoint.heartRate ?? 'null'} | Cadence: ${dataPoint.cadence?.toFixed(0) ?? 'null'}rpm | Speed: ${dataPoint.speed?.toFixed(1) ?? 'null'}km/h`);
       }
       
-      // Add new data point to the end
-      return [...prev, dataPoint];
+      return newData;
+    });
+  }, []); // No dependencies - uses refs
+
+  const stopMockDeviceStream = useCallback((deviceType) => {
+    const intervals = mockDeviceIntervalsRef.current;
+    if (intervals[deviceType]) {
+      clearInterval(intervals[deviceType]);
+      delete intervals[deviceType];
+    }
+  }, []);
+
+  const stopAllMockDeviceStreams = useCallback(() => {
+    const intervals = mockDeviceIntervalsRef.current;
+    Object.keys(intervals).forEach((deviceType) => {
+      clearInterval(intervals[deviceType]);
+      delete intervals[deviceType];
     });
   }, []);
+
+  const updateDeviceData = useCallback((deviceType, data) => {
+    setDevices(prev => ({
+      ...prev,
+      [deviceType]: {
+        ...prev[deviceType],
+        connected: true,
+        data
+      }
+    }));
+
+    setLiveData(prev => {
+      const updated = {
+        ...prev,
+        timestamp: Date.now()
+      };
+      
+      if (deviceType === 'bikeTrainer') {
+        if (data.power !== null && data.power !== undefined) {
+          updated.power = data.power;
+        }
+        if (data.cadence !== null && data.cadence !== undefined) {
+          updated.cadence = data.cadence;
+        }
+        if (data.speed !== null && data.speed !== undefined) {
+          updated.speed = data.speed;
+        }
+      }
+      
+      if (data.heartRate !== null && data.heartRate !== undefined) updated.heartRate = data.heartRate;
+      if (data.smo2 !== null && data.smo2 !== undefined) updated.smo2 = data.smo2;
+      if (data.thb !== null && data.thb !== undefined) updated.thb = data.thb;
+      if (data.coreTemp !== null && data.coreTemp !== undefined) updated.coreTemp = data.coreTemp;
+      if (data.vo2 !== null && data.vo2 !== undefined) updated.vo2 = data.vo2;
+      if (data.vco2 !== null && data.vco2 !== undefined) updated.vco2 = data.vco2;
+      if (data.ventilation !== null && data.ventilation !== undefined) updated.ventilation = data.ventilation;
+      
+      liveDataRef.current = updated;
+      
+      if (deviceType === 'bikeTrainer' && (data.power !== null || data.cadence !== null || data.speed !== null)) {
+        if (Math.random() < 0.1) {
+          console.log(`[updateDeviceData] bikeTrainer: Power=${data.power ?? 'null'}W, Cadence=${data.cadence?.toFixed(0) ?? 'null'}rpm, Speed=${data.speed?.toFixed(1) ?? 'null'}km/h`);
+        }
+      }
+      
+      return updated;
+    });
+  }, []);
+
+  const startMockDeviceStream = useCallback((deviceType) => {
+    if (!mockDataMode) return;
+    stopMockDeviceStream(deviceType);
+    const intervals = mockDeviceIntervalsRef.current;
+
+    if (deviceType === 'bikeTrainer') {
+      setDevices(prev => ({
+        ...prev,
+        bikeTrainer: {
+          connected: true,
+          data: prev.bikeTrainer?.data || { power: 0, cadence: 0, speed: 0 }
+        }
+      }));
+
+      let mockPower = 0;
+      let mockCadence = 0;
+      let mockSpeed = 0;
+
+      intervals[deviceType] = setInterval(() => {
+        const currentProtocol = protocolRef.current;
+        const steps = currentProtocol?.steps || [];
+        const currentStepValue = currentStepRef.current;
+        const currentStepData = steps[currentStepValue];
+        const targetPower = currentStepData?.targetPower || currentProtocol?.startPower || 100;
+
+        const powerDiff = targetPower - mockPower;
+        mockPower = mockPower + (powerDiff * 0.1) + ((Math.random() - 0.5) * 10);
+        mockPower = Math.max(0, mockPower);
+
+        mockCadence = 70 + (Math.random() * 20) + (mockPower / 10);
+        mockCadence = Math.min(105, Math.max(60, mockCadence));
+
+        mockSpeed = (mockPower / 10) + (mockCadence / 3) + (Math.random() * 2);
+        mockSpeed = Math.max(10, Math.min(40, mockSpeed));
+
+        updateDeviceData('bikeTrainer', {
+          power: Math.round(mockPower),
+          cadence: Math.round(mockCadence),
+          speed: Math.round(mockSpeed * 10) / 10
+        });
+      }, 500);
+      return;
+    }
+
+    if (deviceType === 'heartRate') {
+      setDevices(prev => ({
+        ...prev,
+        heartRate: {
+          connected: true,
+          data: prev.heartRate?.data || { heartRate: 0 }
+        }
+      }));
+
+      let mockHeartRate = 120;
+      intervals[deviceType] = setInterval(() => {
+        const targetPower = liveDataRef.current.power || 120;
+        const hrTrend = targetPower / 2;
+        mockHeartRate += (hrTrend - mockHeartRate) * 0.05 + (Math.random() - 0.5) * 4;
+        mockHeartRate = Math.min(190, Math.max(80, mockHeartRate));
+
+        updateDeviceData('heartRate', { heartRate: Math.round(mockHeartRate) });
+      }, 700);
+      return;
+    }
+
+    if (deviceType === 'moxy') {
+      setDevices(prev => ({
+        ...prev,
+        moxy: {
+          connected: true,
+          data: prev.moxy?.data || { smo2: 0, thb: 0 }
+        }
+      }));
+
+      let mockSmo2 = 70;
+      let mockThb = 12;
+      intervals[deviceType] = setInterval(() => {
+        const loadFactor = (liveDataRef.current.power || 100) / 300;
+        mockSmo2 += ((65 - (loadFactor * 10)) - mockSmo2) * 0.05 + (Math.random() - 0.5);
+        mockSmo2 = Math.min(80, Math.max(55, mockSmo2));
+
+        mockThb += (Math.random() - 0.5) * 0.1;
+        mockThb = Math.min(13.5, Math.max(10, mockThb));
+
+        updateDeviceData('moxy', {
+          smo2: Math.round(mockSmo2 * 10) / 10,
+          thb: Math.round(mockThb * 10) / 10
+        });
+      }, 900);
+      return;
+    }
+  }, [mockDataMode, stopMockDeviceStream, setDevices, updateDeviceData]);
 
   // Start interval timer for current phase
   const startIntervalTimer = useCallback(() => {
@@ -195,14 +390,98 @@ const LactateTestingPage = () => {
       setShowCalibration(false);
     }
 
-    setTestState('running');
+    // Reset all state
     setCurrentStep(0);
+    currentStepRef.current = 0; // Update ref immediately
     setIntervalTimer(0);
+    intervalTimerRef2.current = 0; // Update ref immediately
     setTotalTestTime(0);
+    totalTestTimeRef.current = 0; // Update ref immediately
     setHistoricalData([]);
     setLactateValues([]);
     setPhase('work');
     setCountdown(0);
+    
+    console.log('[handleStartTest] 🔄 Starting test, resetting all state...');
+    
+    // Update testStateRef FIRST, before setting state (React state is async)
+    testStateRef.current = 'running';
+    setTestState('running');
+    
+    console.log('[handleStartTest] ✅ Test state set to running, testStateRef:', testStateRef.current);
+
+    // Auto-connect mock devices if mock mode is enabled
+    if (mockDataMode) {
+      if (!devices.bikeTrainer?.connected) {
+        startMockDeviceStream('bikeTrainer');
+      }
+      if (!devices.heartRate?.connected) {
+        startMockDeviceStream('heartRate');
+      }
+      if (!devices.moxy?.connected) {
+        startMockDeviceStream('moxy');
+      }
+    }
+
+    // Start total test timer FIRST
+    if (testTimerRef.current) {
+      clearInterval(testTimerRef.current);
+    }
+    testTimerRef.current = setInterval(() => {
+      setTotalTestTime(prev => {
+        const newTime = prev + 1;
+        totalTestTimeRef.current = newTime; // Update ref immediately
+        if (newTime % 10 === 0) {
+          console.log(`[Test Timer] ⏱️ Total time: ${newTime}s`);
+        }
+        return newTime;
+      });
+    }, 1000);
+    console.log('[handleStartTest] ✅ Test timer started, interval ID:', testTimerRef.current);
+
+    // Start data collection interval
+    if (dataCollectionIntervalRef.current) {
+      clearInterval(dataCollectionIntervalRef.current);
+      dataCollectionIntervalRef.current = null;
+    }
+    
+    // Collect first data point immediately (at time 0)
+    setTimeout(() => {
+      console.log('[handleStartTest] 🔄 Collecting first data point, testStateRef:', testStateRef.current);
+      collectDataPoint();
+      console.log('[handleStartTest] ✅ First data point collected, totalTestTime:', totalTestTimeRef.current);
+    }, 500);
+    
+    // Start interval for continuous data collection
+    // Clear any existing interval first
+    if (dataCollectionIntervalRef.current) {
+      clearInterval(dataCollectionIntervalRef.current);
+      dataCollectionIntervalRef.current = null;
+    }
+    
+    // Start data collection interval - MUST run every second to save all data
+    // Clear any existing interval first
+    if (dataCollectionIntervalRef.current) {
+      clearInterval(dataCollectionIntervalRef.current);
+      dataCollectionIntervalRef.current = null;
+    }
+    
+    // Start interval immediately - collect data every second
+    console.log('[handleStartTest] 🔄 Starting data collection interval (every 1 second)...');
+    
+    dataCollectionIntervalRef.current = setInterval(() => {
+      // Always check if test is running
+      if (testStateRef.current === 'running') {
+        // Collect data point - this saves ALL values every second
+        collectDataPoint();
+      }
+    }, 1000); // Every 1000ms = 1 second
+    
+    console.log('[handleStartTest] ✅ Data collection interval started, ID:', dataCollectionIntervalRef.current);
+    console.log('[handleStartTest] 📝 Data will be saved every second while test is running');
+    
+    // Start interval timer
+    startIntervalTimer();
 
     // Set initial power target on trainer
     const firstStep = protocol.steps[0];
@@ -210,36 +489,31 @@ const LactateTestingPage = () => {
       // Wait a bit for connection to stabilize, then set power
       setTimeout(async () => {
         try {
-          await deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower);
-          console.log(`Initial power set to ${firstStep.targetPower}W on trainer`);
+          // Double-check connection before setting power
+          if (!deviceConnectivity.isDeviceConnected('bikeTrainer')) {
+            console.warn('Trainer not connected, skipping power set');
+            return;
+          }
+          
+          if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
+            await deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower);
+            console.log(`✅ Initial power set to ${firstStep.targetPower}W on trainer`);
+            setTimeout(() => {
+              addNotification(`Initial power set to ${firstStep.targetPower}W`, 'info');
+            }, 0);
+          } else {
+            console.warn('Trainer does not support ERGO mode');
+          }
         } catch (err) {
           console.error('Failed to set initial power on trainer:', err);
+          setTimeout(() => {
+            addNotification(`Failed to set initial power: ${err.message}`, 'warning');
+          }, 0);
         }
-      }, 500);
+      }, 2000); // Increased delay to ensure connection is stable
     }
-
-    // Start interval timer
-    startIntervalTimer();
-
-    // Start total test timer
-    testTimerRef.current = setInterval(() => {
-      setTotalTestTime(prev => prev + 1);
-    }, 1000);
-
-    // Start data collection immediately and then every second
-    // Collect first data point immediately (at time 0)
-    setTimeout(() => {
-      collectDataPoint();
-      console.log('[handleStartTest] First data point collected');
-    }, 100);
     
-    // Then collect data every second throughout the entire test (including countdown)
-    dataCollectionIntervalRef.current = setInterval(() => {
-      // Collect data throughout the entire test (including countdown)
-      collectDataPoint();
-    }, 1000);
-    
-    console.log('[handleStartTest] Data collection started, interval:', dataCollectionIntervalRef.current);
+    console.log('[handleStartTest] ✅ Test started, testStateRef:', testStateRef.current, 'Total time:', totalTestTimeRef.current);
 
     // Use setTimeout to avoid setState during render
     setTimeout(() => {
@@ -380,30 +654,26 @@ const LactateTestingPage = () => {
               // Set power target on trainer when step changes
               const nextStepData = protocol.steps[newStep];
               if (nextStepData && devices.bikeTrainer?.connected) {
+                // Wait a bit longer to ensure previous commands are processed
                 setTimeout(async () => {
                   try {
-                    await deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower);
-                    console.log(`Power set to ${nextStepData.targetPower}W for step ${newStep + 1}`);
+                    // Double-check connection before setting power
+                    if (!deviceConnectivity.isDeviceConnected('bikeTrainer')) {
+                      console.warn('Trainer not connected, skipping power set');
+                      return;
+                    }
+                    
+                    if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
+                      await deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower);
+                      console.log(`✅ Power set to ${nextStepData.targetPower}W for step ${newStep + 1}`);
+                    }
                   } catch (err) {
                     console.error('Failed to set power on trainer:', err);
                   }
-                }, 100);
+                }, 1000); // Increased delay to avoid conflicts
               }
               return newStep;
             });
-          } else {
-            // Even if staying on current step, update power if needed
-            const currentStepData = protocol.steps[currentStep];
-            if (currentStepData && devices.bikeTrainer?.connected) {
-              setTimeout(async () => {
-                try {
-                  await deviceConnectivity.setPower('bikeTrainer', currentStepData.targetPower);
-                  console.log(`Power set to ${currentStepData.targetPower}W for current step`);
-                } catch (err) {
-                  console.error('Failed to set power on trainer:', err);
-                }
-              }, 100);
-            }
           }
           
           // Start work phase
@@ -427,6 +697,22 @@ const LactateTestingPage = () => {
   // Save test session
   const handleSaveTest = async () => {
     try {
+      if (!user?._id) {
+        addNotification('You must be logged in to save a test', 'error');
+        return;
+      }
+
+      if (historicalData.length === 0) {
+        addNotification('No data to save. Please run a test first.', 'warning');
+        return;
+      }
+
+      console.log('[handleSaveTest] Starting save...', {
+        dataPoints: historicalData.length,
+        totalTime: totalTestTime,
+        userId: user._id
+      });
+
       const startTime = new Date(Date.now() - totalTestTime * 1000);
       const endTime = new Date();
       
@@ -453,12 +739,25 @@ const LactateTestingPage = () => {
         maxPower: historicalData.length > 0 
           ? Math.max(...historicalData.map(d => d.power || 0)) 
           : 0,
+        // Save ALL data points - every value that was recorded
         records: historicalData.map((m, index) => ({
           timestamp: new Date(startTime.getTime() + (m.totalTime || index) * 1000),
-          power: m.power || 0,
-          heartRate: m.heartRate || 0,
-          speed: m.speed || 0,
-          cadence: m.cadence || 0,
+          // Core metrics
+          power: m.power !== null && m.power !== undefined ? m.power : null,
+          heartRate: m.heartRate !== null && m.heartRate !== undefined ? m.heartRate : null,
+          speed: m.speed !== null && m.speed !== undefined ? m.speed : null,
+          cadence: m.cadence !== null && m.cadence !== undefined ? m.cadence : null,
+          // Additional metrics
+          smo2: m.smo2 !== null && m.smo2 !== undefined ? m.smo2 : null,
+          thb: m.thb !== null && m.thb !== undefined ? m.thb : null,
+          coreTemp: m.coreTemp !== null && m.coreTemp !== undefined ? m.coreTemp : null,
+          vo2: m.vo2 !== null && m.vo2 !== undefined ? m.vo2 : null,
+          vco2: m.vco2 !== null && m.vco2 !== undefined ? m.vco2 : null,
+          ventilation: m.ventilation !== null && m.ventilation !== undefined ? m.ventilation : null,
+          // Test metadata
+          step: m.step !== null && m.step !== undefined ? m.step : null,
+          intervalTime: m.intervalTime !== null && m.intervalTime !== undefined ? m.intervalTime : null,
+          totalTime: m.totalTime !== null && m.totalTime !== undefined ? m.totalTime : null,
           lactate: m.lactate || null
         })),
         laps: protocol.steps.map((step, index) => {
@@ -486,52 +785,66 @@ const LactateTestingPage = () => {
         lactateValues: lactateValues,
         testDuration: totalTestTime,
         currentStep: currentStep,
-        status: 'completed'
+        status: 'completed',
+        sport: 'bike', // Required by backend
+        title: `Lactate Test - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}` // Required by backend
       };
 
+      console.log('[handleSaveTest] Session data prepared:', {
+        measurements: sessionData.measurements.length,
+        lactateValues: sessionData.lactateValues.length,
+        testDuration: sessionData.testDuration,
+        fitRecords: fitFileData.records.length,
+        fitLaps: fitFileData.laps.length
+      });
+      
+      // Log first few records to verify data
+      if (fitFileData.records.length > 0) {
+        console.log('[handleSaveTest] ✅ First 3 FIT records:', fitFileData.records.slice(0, 3));
+        console.log('[handleSaveTest] ✅ Last 3 FIT records:', fitFileData.records.slice(-3));
+      } else {
+        console.warn('[handleSaveTest] ⚠️ No FIT records to save!');
+      }
+
       // First create the session
+      setTimeout(() => {
+        addNotification('Saving test session...', 'info');
+      }, 0);
+
       const response = await saveLactateSession(sessionData);
-      const sessionId = response.session?._id || response.data?.session?._id || response._id;
+      console.log('[handleSaveTest] Save response:', response);
+      
+      const sessionId = response?.data?.session?._id || response?.data?._id || response?.session?._id || response?._id;
 
       if (sessionId) {
+        console.log('[handleSaveTest] Session created with ID:', sessionId);
         // Then complete the session with FIT file data
         try {
           await completeLactateSession(sessionId, { fitFileData });
-          addNotification('Test session saved successfully with FIT file', 'success');
+          setTimeout(() => {
+            addNotification('Test session saved successfully with FIT file', 'success');
+          }, 0);
         } catch (fitError) {
-          console.error('Error saving FIT file:', fitError);
-          addNotification('Test session saved, but FIT file generation failed', 'warning');
+          console.error('[handleSaveTest] Error saving FIT file:', fitError);
+          setTimeout(() => {
+            addNotification('Test session saved, but FIT file generation failed', 'warning');
+          }, 0);
         }
       } else {
-        addNotification('Test session saved successfully', 'success');
+        console.warn('[handleSaveTest] No session ID returned:', response);
+        setTimeout(() => {
+          addNotification('Test session saved, but no session ID returned', 'warning');
+        }, 0);
       }
     } catch (error) {
       console.error('Error saving test:', error);
+      const backendMessage = error.response?.data?.message || error.response?.data?.error;
       if (error.response) {
         console.error('Backend error detail:', error.response.data);
       }
-      addNotification('Failed to save test session', 'error');
+      addNotification(backendMessage ? `Failed to save test: ${backendMessage}` : 'Failed to save test session', 'error');
     }
   };
-
-  // Update live data from devices
-  const updateDeviceData = useCallback((deviceType, data) => {
-    setDevices(prev => ({
-      ...prev,
-      [deviceType]: {
-        ...prev[deviceType],
-        connected: true,
-        data
-      }
-    }));
-
-    // Update live data stream
-    setLiveData(prev => ({
-      ...prev,
-      ...data,
-      timestamp: Date.now()
-    }));
-  }, []);
 
   // Previous Lactate Sessions
   useEffect(() => {
@@ -572,54 +885,112 @@ const LactateTestingPage = () => {
 
   // Helper: transform lactate session to chart data
   const transformSessionToChartData = (session) => {
-    // Prefer FIT file if present
+    const empty = { historical: [], lactateValues: [], laps: [] };
+    if (!session) return empty;
+
+    const normalizeRecord = (record, index, startTimestamp) => {
+      const ts = record.timestamp ? new Date(record.timestamp).getTime() : startTimestamp ? startTimestamp + index * 1000 : Date.now();
+      const time = startTimestamp ? Math.max(0, (ts - startTimestamp) / 1000) : index;
+      const toNumber = (value) => (value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value));
+      return {
+        timestamp: ts,
+        time,
+        power: toNumber(record.power),
+        heartRate: toNumber(record.heartRate),
+        cadence: toNumber(record.cadence),
+        speed: toNumber(record.speed),
+        smo2: toNumber(record.smo2),
+        vo2: toNumber(record.vo2),
+        thb: toNumber(record.thb),
+        ventilation: toNumber(record.ventilation)
+      };
+    };
+
+    // Prefer FIT data if available
     if (session?.fitFile?.fitData) {
       const fit = session.fitFile.fitData;
-      const fitHistorical = Array.isArray(fit.records) ? fit.records.map(r => ({
-        power: Number(r.power || 0),
-        heartRate: Number(r.heartRate || 0),
-        timestamp: r.timestamp ? new Date(r.timestamp).getTime() : Date.now()
-      })) : [];
-      const fitLactate = Array.isArray(fit.laps) ? fit.laps.filter(l => typeof l.lactate === 'number').map((l, i) => ({
-        step: l.lapNumber || i+1,
-        power: Number(l.avgPower || 0),
-        lactate: Number(l.lactate),
-        time: (l.totalElapsedTime||0) * (l.lapNumber||i+1)
-      })) : [];
-      return { historical: fitHistorical, lactateValues: fitLactate };
+      const records = Array.isArray(fit.records) ? fit.records : [];
+      const startTimestamp = records.length > 0 && records[0].timestamp ? new Date(records[0].timestamp).getTime() : null;
+      const fitHistorical = records.map((record, index) => normalizeRecord(record, index, startTimestamp));
+
+      const fitLaps = Array.isArray(fit.laps)
+        ? fit.laps.map((lap, idx) => ({
+            lapNumber: lap.lapNumber || idx + 1,
+            startTime: lap.startTime ? new Date(lap.startTime).toLocaleTimeString() : null,
+            totalElapsedTime: lap.totalElapsedTime || lap.duration || lap.total_timer_time || lap.totalTimerTime || null,
+            totalDistance: lap.totalDistance || lap.total_distance || null,
+            avgPower: lap.avgPower || lap.averagePower || null,
+            avgHeartRate: lap.avgHeartRate || lap.averageHeartRate || null,
+            avgCadence: lap.avgCadence || lap.averageCadence || null,
+            lactate: typeof lap.lactate === 'number' ? lap.lactate : null
+          }))
+        : [];
+
+      const fitLactate = fitLaps
+        .filter((lap) => typeof lap.lactate === 'number')
+        .map((lap, i) => ({
+          step: lap.lapNumber || i + 1,
+          power: lap.avgPower || 0,
+          lactate: lap.lactate,
+          time: lap.totalElapsedTime || 0
+        }));
+
+      return {
+        historical: fitHistorical,
+        lactateValues: fitLactate,
+        laps: fitLaps
+      };
     }
-    // Else parse realtime measurements
+
+    // Fallback to stored realtime measurements
     if (Array.isArray(session?.measurements) && session.measurements.length > 0) {
-      const mesHistorical = session.measurements.map(m => ({
-        power: Number(m.power || 0),
-        heartRate: Number(m.heartRate || 0),
-        timestamp: new Date(m.timestamp).getTime() || Date.now()
-      }));
-      // If measurements have lactate, try to extract based on intervals
+      const measurements = session.measurements.map((measurement, index) =>
+        normalizeRecord(measurement, index, measurement.timestamp ? new Date(measurement.timestamp).getTime() : null)
+      );
+
       let mesLactate = session.measurements
-        .filter(m => typeof m.lactate === 'number')
-        .map((m, i) => ({ step: m.interval || i + 1, power: m.power, lactate: m.lactate, time: m.timestamp ? new Date(m.timestamp).getTime() : i * 60 }));
-      // Or if explicit intervals, session.results/lactateValues
+        .filter((m) => typeof m.lactate === 'number')
+        .map((m, i) => ({
+          step: m.interval || i + 1,
+          power: m.power,
+          lactate: m.lactate,
+          time: m.timestamp ? new Date(m.timestamp).getTime() : i * 60
+        }));
       if (Array.isArray(session.lactateValues)) mesLactate = session.lactateValues;
-      return { historical: mesHistorical, lactateValues: mesLactate };
+
+      const laps = Array.isArray(session.laps)
+        ? session.laps
+        : (session.protocol?.steps || []).map((step, idx) => ({
+            lapNumber: idx + 1,
+            avgPower: step.targetPower || step.power || null,
+            avgHeartRate: null,
+            totalElapsedTime: step.duration || session.protocol.workDuration,
+            lactate: mesLactate[idx]?.lactate ?? null
+          }));
+
+      return {
+        historical: measurements,
+        lactateValues: mesLactate,
+        laps
+      };
     }
-    return { historical: [], lactateValues: [] };
+
+    return empty;
   };
 
   // Update data collection based on test state
   // Note: Data collection is started in handleStartTest and handleResumeTest
-  // This effect only handles cleanup when test stops
+  // This effect only handles cleanup when test stops (paused, completed, idle)
   useEffect(() => {
-    if (testState !== 'running' && dataCollectionIntervalRef.current) {
-      clearInterval(dataCollectionIntervalRef.current);
-      dataCollectionIntervalRef.current = null;
-    }
-    
-    return () => {
+    // Only clean up if test is explicitly stopped (not running)
+    // Don't clean up during state transitions
+    if (testState === 'paused' || testState === 'completed' || testState === 'idle') {
       if (dataCollectionIntervalRef.current) {
+        console.log('[useEffect] 🛑 Stopping data collection, test state:', testState);
         clearInterval(dataCollectionIntervalRef.current);
+        dataCollectionIntervalRef.current = null;
       }
-    };
+    }
   }, [testState]);
 
   // Cleanup on unmount
@@ -805,22 +1176,35 @@ const LactateTestingPage = () => {
           {/* Current Step Info */}
           {testState !== 'idle' && currentStepData && (
             <div className="mt-4 p-4 bg-white/70 backdrop-blur rounded-2xl border border-white/40">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div>
-                  <div className="text-sm text-gray-600">Current Phase</div>
-                  <div className="text-lg font-semibold text-primary">
+                  <div className="text-xs sm:text-sm text-gray-600">Current Phase</div>
+                  <div className="text-base sm:text-lg font-semibold text-primary">
                     {phase === 'countdown' ? 'Countdown' : phase === 'recovery' ? 'Recovery' : 'Work'}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-600">Target Power</div>
-                  <div className="text-lg font-semibold text-primary">
+                  <div className="text-xs sm:text-sm text-gray-600">Target Power</div>
+                  <div className="text-base sm:text-lg font-semibold text-primary">
                     {currentStepData.targetPower} W
                   </div>
+                  {/* Show actual power vs target power if bikeTrainer is connected */}
+                  {devices.bikeTrainer?.connected && devices.bikeTrainer?.data?.power !== null && devices.bikeTrainer?.data?.power !== undefined && (
+                    <div className="text-xs mt-1">
+                      <span className={Math.abs((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower) <= 30 
+                        ? 'text-green-600' 
+                        : 'text-orange-600'}>
+                        Actual: {Math.round(devices.bikeTrainer.data.power)}W
+                        {Math.abs((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower) <= 30 
+                          ? ' ✅' 
+                          : ` (${Math.round((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower)}W)`}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <div className="text-sm text-gray-600">Step Duration</div>
-                  <div className="text-lg font-semibold text-primary">
+                  <div className="text-xs sm:text-sm text-gray-600">Step Duration</div>
+                  <div className="text-base sm:text-lg font-semibold text-primary">
                     {formatTime(currentStepData.duration)}
                   </div>
                 </div>
@@ -842,10 +1226,52 @@ const LactateTestingPage = () => {
 
         {/* Device Connection Panel & Interval Protocol - Top, Collapsible */}
         <div className="mb-6 space-y-4">
+          {/* Mock Data Mode Toggle */}
+          <div className="bg-white/80 backdrop-blur rounded-xl border border-gray-200 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={mockDataMode}
+                  onChange={(e) => {
+                    setMockDataMode(e.target.checked);
+                    if (e.target.checked) {
+                      setTimeout(() => {
+                        addNotification('Mock data mode enabled. Connect bike trainer to use mock data.', 'info');
+                      }, 0);
+                      startMockDeviceStream('bikeTrainer');
+                      startMockDeviceStream('heartRate');
+                      startMockDeviceStream('moxy');
+                    } else {
+                    stopAllMockDeviceStreams();
+                    setDevices(prev => ({
+                      ...prev,
+                      bikeTrainer: { connected: false, data: null },
+                      heartRate: { connected: false, data: null },
+                      moxy: { connected: false, data: null }
+                    }));
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span>🔧 Mock Data Mode (for testing without real trainer)</span>
+              </label>
+            </div>
+          </div>
+          
           <DeviceConnectionPanel
             devices={devices}
             onDeviceConnect={async (deviceType) => {
                 console.log('Connecting to device:', deviceType);
+                
+                // Mock data mode for supported devices
+                if (mockDataMode && ['bikeTrainer', 'heartRate', 'moxy'].includes(deviceType)) {
+                  startMockDeviceStream(deviceType);
+                  setTimeout(() => {
+                    addNotification(`${deviceType} connected in mock mode`, 'info');
+                  }, 0);
+                  return;
+                }
                 
                 // Check if Web Bluetooth is available
                 if (!navigator.bluetooth) {
@@ -890,12 +1316,20 @@ const LactateTestingPage = () => {
                             }, 0);
                             
                             // Set initial power if test is running or if we have a protocol
-                            if (protocol.steps.length > 0) {
+                            // Wait a bit longer to ensure connection is fully established
+                            if (protocol.steps.length > 0 && testState === 'running') {
                               const initialPower = protocol.steps[0]?.targetPower || protocol.startPower || 100;
-                              await deviceConnectivity.setPower('bikeTrainer', initialPower);
-                              setTimeout(() => {
-                                addNotification(`Initial power set to ${initialPower}W`, 'info');
-                              }, 0);
+                              // Wait a bit more before setting power
+                              setTimeout(async () => {
+                                try {
+                                  await deviceConnectivity.setPower('bikeTrainer', initialPower);
+                                  setTimeout(() => {
+                                    addNotification(`Initial power set to ${initialPower}W`, 'info');
+                                  }, 0);
+                                } catch (err) {
+                                  console.error('Failed to set initial power:', err);
+                                }
+                              }, 500);
                             }
                           } else {
                             // Trainer doesn't support FE-C control, but check if power reading is available
@@ -914,7 +1348,7 @@ const LactateTestingPage = () => {
                             addNotification(`Warning: Could not set up trainer control: ${error.message}`, 'warning');
                           }, 0);
                         }
-                      }, 1000);
+                      }, 1500); // Increased delay to ensure connection is stable
                     }
                   } else {
                     // Connection failed
@@ -932,6 +1366,8 @@ const LactateTestingPage = () => {
               }}
               onDeviceDisconnect={async (deviceType) => {
                 try {
+                  stopMockDeviceStream(deviceType);
+                  
                   // Stop simulated data first
                   deviceConnectivity.stopSimulatedData(deviceType);
                   
@@ -958,7 +1394,7 @@ const LactateTestingPage = () => {
           
           <IntervalManager
             protocol={protocol}
-            onProtocolChange={setProtocol}
+            onProtocolSubmit={handleProtocolSubmit}
             testState={testState}
             onEditProtocol={() => setShowProtocolEdit(true)}
           />
@@ -1139,16 +1575,148 @@ const LactateTestingPage = () => {
                   </button>
                 )}
               </div>
-              <div className="mt-2">
+              <div className="mt-2 space-y-6">
                 {/* Transform session data for chart rendering */}
                 {(() => {
-                  const { historical, lactateValues } = transformSessionToChartData(selectedSession);
+                  const { historical, lactateValues, laps } = transformSessionToChartData(selectedSession);
+                  const sessionChartData = historical.map((point, index) => ({
+                    time: point.time ?? index,
+                    power: point.power ?? null,
+                    heartRate: point.heartRate ?? null,
+                    cadence: point.cadence ?? null,
+                    speed: point.speed ?? null
+                  }));
+                  const hasHistorical = sessionChartData.length > 0;
+                  const hasLaps = Array.isArray(laps) && laps.length > 0;
+
+                  const formatTime = (seconds) => {
+                    if (seconds === null || seconds === undefined) return '0s';
+                    const mins = Math.floor(seconds / 60);
+                    const secs = Math.floor(seconds % 60);
+                    if (mins <= 0) return `${secs}s`;
+                    return `${mins}:${secs.toString().padStart(2, '0')}`;
+                  };
+
                   return (
-                    <LactateChart
-                      lactateValues={lactateValues}
-                      historicalData={historical}
-                      protocol={{ steps: [] }}
-                    />
+                    <>
+                      <LactateChart
+                        lactateValues={lactateValues}
+                        historicalData={historical}
+                        protocol={{ steps: [] }}
+                      />
+
+                      {hasHistorical && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-700 mb-2">Session Metrics</h3>
+                          <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-4">
+                            <ResponsiveContainer width="100%" height={320}>
+                              <LineChart data={sessionChartData}>
+                                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
+                                <XAxis
+                                  dataKey="time"
+                                  label={{ value: 'Time', position: 'insideBottom', offset: -5 }}
+                                  tickFormatter={formatTime}
+                                  stroke="#666"
+                                />
+                                <YAxis
+                                  yAxisId="left"
+                                  stroke="#666"
+                                  label={{ value: 'Power / HR / Cadence', angle: -90, position: 'insideLeft' }}
+                                />
+                                <YAxis
+                                  yAxisId="right"
+                                  orientation="right"
+                                  stroke="#666"
+                                  label={{ value: 'Speed', angle: 90, position: 'insideRight' }}
+                                />
+                                <Tooltip
+                                  contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #e5e7eb' }}
+                                  formatter={(value, name) => {
+                                    if (value === null || value === undefined) return ['—', name];
+                                    if (name === 'Power (W)') return [`${Math.round(value)} W`, name];
+                                    if (name === 'Heart Rate (bpm)') return [`${Math.round(value)} bpm`, name];
+                                    if (name === 'Cadence (rpm)') return [`${Math.round(value)} rpm`, name];
+                                    if (name === 'Speed (km/h)') return [`${value.toFixed(1)} km/h`, name];
+                                    return [value, name];
+                                  }}
+                                />
+                                <Legend />
+                                <Line
+                                  yAxisId="left"
+                                  type="monotone"
+                                  dataKey="power"
+                                  stroke="#3b82f6"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Power (W)"
+                                />
+                                <Line
+                                  yAxisId="left"
+                                  type="monotone"
+                                  dataKey="heartRate"
+                                  stroke="#ef4444"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Heart Rate (bpm)"
+                                />
+                                <Line
+                                  yAxisId="left"
+                                  type="monotone"
+                                  dataKey="cadence"
+                                  stroke="#10b981"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Cadence (rpm)"
+                                />
+                                <Line
+                                  yAxisId="right"
+                                  type="monotone"
+                                  dataKey="speed"
+                                  stroke="#f97316"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  name="Speed (km/h)"
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {hasLaps && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-700 mb-2">Lap Summary</h3>
+                          <div className="overflow-x-auto bg-white/60 backdrop-blur rounded-2xl border border-white/40">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-white/70 text-gray-600">
+                                <tr>
+                                  <th className="px-4 py-2 text-left font-medium">Lap</th>
+                                  <th className="px-4 py-2 text-left font-medium">Duration</th>
+                                  <th className="px-4 py-2 text-left font-medium">Avg Power</th>
+                                  <th className="px-4 py-2 text-left font-medium">Avg HR</th>
+                                  <th className="px-4 py-2 text-left font-medium">Avg Cadence</th>
+                                  <th className="px-4 py-2 text-left font-medium">Lactate</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {laps.map((lap) => (
+                                  <tr key={`lap-${lap.lapNumber}`}>
+                                    <td className="px-4 py-2 font-semibold text-gray-900">#{lap.lapNumber}</td>
+                                    <td className="px-4 py-2 text-gray-700">{formatTime(lap.totalElapsedTime)}</td>
+                                    <td className="px-4 py-2 text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '—'}</td>
+                                    <td className="px-4 py-2 text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '—'}</td>
+                                    <td className="px-4 py-2 text-gray-700">{lap.avgCadence ? `${Math.round(lap.avgCadence)} rpm` : '—'}</td>
+                                    <td className="px-4 py-2 text-gray-700">
+                                      {lap.lactate !== null && lap.lactate !== undefined ? `${Number(lap.lactate).toFixed(2)} mmol/L` : '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
               </div>

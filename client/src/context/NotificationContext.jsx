@@ -16,7 +16,8 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
   const addNotification = (message, type = 'success') => {
-    const id = Date.now();
+    // Use timestamp + random number to ensure unique IDs even if called rapidly
+    const id = Date.now() + Math.random();
     setNotifications((prev) => [...prev, { id, message, type }]);
     
     // Auto-remove after 3 seconds

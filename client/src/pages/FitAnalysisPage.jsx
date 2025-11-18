@@ -339,29 +339,29 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Intervals</h3>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <h3 className="text-base sm:text-lg font-semibold">Intervals</h3>
+        <div className="flex gap-2 w-full sm:w-auto">
         <button
           onClick={() => setEditingLactate(!editingLactate)}
-          className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-sm shadow-md transition-colors"
+          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto -mx-2 sm:mx-0">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Speed</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lactate</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Distance</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Avg Speed</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Lactate</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -404,13 +404,13 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   }}
                   className={`${lap.lactate ? 'bg-purple-50' : ''} ${!editingLactate ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}
                 >
-                  <td className="px-4 py-3 text-sm">{index + 1}</td>
-                  <td className="px-4 py-3 text-sm">{formatDuration(lap.elapsed_time)}</td>
-                  <td className="px-4 py-3 text-sm">{formatDistance(lap.distance)}</td>
-                  <td className="px-4 py-3 text-sm">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
-                  <td className="px-4 py-3 text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
-                  <td className="px-4 py-3 text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
-                  <td className="px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm hidden sm:table-cell">{formatDistance(lap.distance)}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm hidden md:table-cell">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
                     {editingLactate ? (
                       <input
                         type="number"
@@ -421,14 +421,14 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                           ...lactateInputs,
                           [`lap-${index}`]: e.target.value
                         })}
-                        className="w-20 px-2 py-1 border rounded text-sm"
+                        className="w-16 sm:w-20 md:w-24 px-1.5 sm:px-2 py-1 sm:py-1.5 border rounded text-xs sm:text-sm"
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
                       lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => handleDeleteLap(index)}
                       disabled={saving}
@@ -447,20 +447,20 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         </table>
       </div>
       {editingLactate && (
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
           <button
             onClick={() => {
               setEditingLactate(false);
               setLactateInputs({});
             }}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            className="px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm w-full sm:w-auto"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveLactate}
             disabled={saving}
-            className="px-4 py-2 bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors"
+            className="px-3 sm:px-4 py-2 bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors text-sm w-full sm:w-auto"
           >
             {saving ? 'Saving...' : 'Save Lactate Values'}
           </button>
@@ -2383,9 +2383,9 @@ const FitAnalysisPage = () => {
               {/* Map Section */}
               {getGpsData.length > 0 && (
                 <div className="mb-4 md:mb-6">
-                  <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6">
-                    <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-3">Route Map</h3>
-                    <div className="relative rounded-2xl overflow-hidden border border-white/40" style={{ height: '400px' }}>
+                  <div className="bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl p-3 sm:p-4 md:p-6">
+                    <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900 mb-3">Route Map</h3>
+                    <div className="relative rounded-xl sm:rounded-2xl overflow-hidden border border-white/40 h-[250px] sm:h-[400px]">
                       <MapContainer
                         center={getGpsData.length > 0 ? getGpsData[Math.floor(getGpsData.length / 2)] : [50.0755, 14.4378]}
                         zoom={13}
@@ -2421,22 +2421,22 @@ const FitAnalysisPage = () => {
               )}
               
               {/* Header Stats + Toggles */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-                  <div className="text-xs md:text-sm text-gray-600">Duration</div>
-                  <div className="text-lg md:text-xl font-bold mt-1 text-primary">{formatDuration(selectedStrava.elapsed_time)}</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+                <div className="backdrop-blur-sm p-2 sm:p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs sm:text-sm text-gray-600">Duration</div>
+                  <div className="text-base sm:text-lg md:text-xl font-bold mt-1 text-primary">{formatDuration(selectedStrava.elapsed_time)}</div>
                 </div>
-                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-                  <div className="text-xs md:text-sm text-gray-600">Distance</div>
-                  <div className="text-lg md:text-xl font-bold mt-1 text-primary">{formatDistance(selectedStrava.distance)}</div>
+                <div className="backdrop-blur-sm p-2 sm:p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs sm:text-sm text-gray-600">Distance</div>
+                  <div className="text-base sm:text-lg md:text-xl font-bold mt-1 text-primary">{formatDistance(selectedStrava.distance)}</div>
               </div>
-                <div className="bg-red/10 backdrop-blur-sm p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
-                  <div className="text-xs md:text-sm text-gray-600">Avg Heart Rate</div>
-                  <div className="text-lg md:text-xl font-bold mt-1 text-red">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                <div className="bg-red/10 backdrop-blur-sm p-2 sm:p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
+                  <div className="text-xs sm:text-sm text-gray-600">Avg Heart Rate</div>
+                  <div className="text-base sm:text-lg md:text-xl font-bold mt-1 text-red">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
                 </div>
-                <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-                  <div className="text-xs md:text-sm text-gray-600">Avg Power</div>
-                  <div className="text-lg md:text-xl font-bold mt-1 text-primary-dark">{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
+                <div className="backdrop-blur-sm p-2 sm:p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+                  <div className="text-xs sm:text-sm text-gray-600">Avg Power</div>
+                  <div className="text-base sm:text-lg md:text-xl font-bold mt-1 text-primary-dark">{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
                 </div>
               </div>
 
@@ -3608,7 +3608,8 @@ const FitAnalysisPage = () => {
                   <ReactECharts 
                     ref={stravaChartRef}
                     option={option} 
-                    style={{ height: 320 }} 
+                    style={{ height: '320px' }}
+                    className="min-h-[240px] sm:min-h-[320px]"
                     notMerge={true} 
                     lazyUpdate={true} 
                   />
@@ -3619,9 +3620,9 @@ const FitAnalysisPage = () => {
 
               {/* Strava Interval Creation Stats */}
               {showStravaCreateLapButton && stravaSelectionStats && (
-                <div className="mt-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-2xl p-4 md:p-6 shadow-lg">
+                <div className="mt-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 md:p-6 shadow-lg">
                   <div className="flex items-center justify-between mb-3 md:mb-4">
-                    <h4 className="text-base md:text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
+                    <h4 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
                     <button
                       onClick={() => {
                         setShowStravaCreateLapButton(false);
@@ -3633,39 +3634,39 @@ const FitAnalysisPage = () => {
                       ✕
                     </button>
                 </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                    <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                      <div className="text-xs md:text-sm text-gray-600 mb-1">Duration</div>
-                      <div className="text-base md:text-lg font-bold text-primary">{formatDuration(stravaSelectionStats.duration)}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
+                      <div className="text-xs sm:text-sm text-gray-600 mb-1">Duration</div>
+                      <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{formatDuration(stravaSelectionStats.duration)}</div>
                     </div>
                     {stravaSelectionStats.totalDistance && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Distance</div>
-                        <div className="text-base md:text-lg font-bold text-primary">{formatDistance(stravaSelectionStats.totalDistance)}</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Distance</div>
+                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{formatDistance(stravaSelectionStats.totalDistance)}</div>
                       </div>
                     )}
                     {stravaSelectionStats.avgSpeed && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Speed</div>
-                        <div className="text-base md:text-lg font-bold text-primary">{stravaSelectionStats.avgSpeed} km/h</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg Speed</div>
+                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{stravaSelectionStats.avgSpeed} km/h</div>
                         {stravaSelectionStats.maxSpeed && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxSpeed} km/h</div>
                         )}
                 </div>
                     )}
                     {stravaSelectionStats.avgHeartRate && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-blue-200/50 shadow-sm">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg HR</div>
-                        <div className="text-base md:text-lg font-bold text-red-600">{stravaSelectionStats.avgHeartRate} bpm</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-blue-200/50 shadow-sm">
+                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg HR</div>
+                        <div className="text-sm sm:text-base md:text-lg font-bold text-red-600">{stravaSelectionStats.avgHeartRate} bpm</div>
                         {stravaSelectionStats.maxHeartRate && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxHeartRate} bpm</div>
                         )}
               </div>
                     )}
                     {stravaSelectionStats.avgPower && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Power</div>
-                        <div className="text-base md:text-lg font-bold text-primary-dark">{stravaSelectionStats.avgPower} W</div>
+                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
+                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg Power</div>
+                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary-dark">{stravaSelectionStats.avgPower} W</div>
                         {stravaSelectionStats.maxPower && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxPower} W</div>
                         )}
@@ -3692,7 +3693,7 @@ const FitAnalysisPage = () => {
                           alert('Error creating interval: ' + (error.response?.data?.error || error.message));
                         }
                       }}
-                      className="px-5 md:px-6 py-2 bg-primary text-white rounded-xl font-semibold shadow-md transition-colors flex items-center gap-2 hover:bg-primary-dark"
+                      className="px-4 sm:px-5 md:px-6 py-2 bg-primary text-white rounded-xl font-semibold shadow-md transition-colors flex items-center gap-2 hover:bg-primary-dark text-sm sm:text-base w-full sm:w-auto"
                     >
                       <span>✓</span> Create Interval
                     </button>
@@ -3701,8 +3702,8 @@ const FitAnalysisPage = () => {
               )}
               
               {!showStravaCreateLapButton && (
-                <div className="mt-2 text-xs md:text-sm text-gray-500 italic rounded-lg p-2 border border-primary/30 bg-primary/10">
-                  💡 Tip: Click and drag on the chart to select an interval, or hold <kbd className="px-1.5 py-0.5 bg-white/80 rounded text-xs font-mono border border-gray-300">Shift</kbd> while dragging to zoom
+                <div className="mt-2 text-xs sm:text-sm text-gray-500 italic rounded-lg p-2 border border-primary/30 bg-primary/10">
+                  💡 Tip: Click and drag on the chart to select an interval, or hold <kbd className="px-1 sm:px-1.5 py-0.5 bg-white/80 rounded text-xs font-mono border border-gray-300">Shift</kbd> while dragging to zoom
                 </div>
               )}
 
