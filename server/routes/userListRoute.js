@@ -426,12 +426,18 @@ router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
 
         // Allow access either to the athlete's coach or to the athlete for their own trainings
         if (user.role === 'coach') {
+            // If coach is loading their own trainings (athleteId === userId), allow access
+            if (athleteId.toString() === userId.toString()) {
+                // Coach can view their own trainings
+            } else {
+                // Coach is loading trainings for an athlete - check if athlete belongs to coach
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
             }
             if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
+                }
             }
         } else if (user.role === 'athlete' && userId !== athleteId) {
             return res.status(403).json({ error: "You are not authorized to view these trainings" });
