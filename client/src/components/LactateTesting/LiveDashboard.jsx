@@ -14,6 +14,7 @@ const METRIC_CONFIGS = {
   heartRate: { label: 'Heart Rate', unit: 'bpm', color: '#ef4444', dataKey: 'heartRate', axis: 'left' },
   cadence: { label: 'Cadence', unit: 'rpm', color: '#10b981', dataKey: 'cadence', axis: 'left' },
   smo2: { label: 'SmO₂', unit: '%', color: '#facc15', dataKey: 'smo2', axis: 'right' },
+  thb: { label: 'THb', unit: 'μM', color: '#fb923c', dataKey: 'thb', axis: 'right' },
   vo2: { label: 'VO₂', unit: '', color: '#a855f7', dataKey: 'vo2', axis: 'right' }
 };
 
@@ -23,6 +24,7 @@ const DEFAULT_VISIBLE_METRICS = {
   heartRate: true,
   cadence: true,
   smo2: false,
+  thb: false,
   vo2: false
 };
 
@@ -59,6 +61,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
         heartRate: dataPoint.heartRate !== null && dataPoint.heartRate !== undefined ? dataPoint.heartRate : null,
         cadence: dataPoint.cadence !== null && dataPoint.cadence !== undefined ? dataPoint.cadence : null,
         smo2: dataPoint.smo2 !== null && dataPoint.smo2 !== undefined ? dataPoint.smo2 : null,
+        thb: dataPoint.thb !== null && dataPoint.thb !== undefined ? dataPoint.thb : null,
         vo2: dataPoint.vo2 !== null && dataPoint.vo2 !== undefined ? dataPoint.vo2 : null
       };
     });
@@ -99,6 +102,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
   const hasSpeed = hasBikeTrainer && (hasValidData(liveData.speed) || historicalData.some(d => hasValidData(d.speed)));
   const hasCadence = hasBikeTrainer && (hasValidData(liveData.cadence) || historicalData.some(d => hasValidData(d.cadence)));
   const hasSmO2 = hasMoxy && (hasValidData(liveData.smo2) || historicalData.some(d => hasValidData(d.smo2)));
+  const hasThb = hasMoxy && (hasValidData(liveData.thb) || historicalData.some(d => hasValidData(d.thb)));
   const hasVo2 = hasVo2Master && (hasValidData(liveData.vo2) || historicalData.some(d => hasValidData(d.vo2)));
 
   const metricAvailability = useMemo(() => ({
@@ -107,8 +111,9 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
     heartRate: hasHeartRate,
     cadence: hasCadence,
     smo2: hasSmO2,
+    thb: hasThb,
     vo2: hasVo2
-  }), [hasPower, hasSpeed, hasHeartRate, hasCadence, hasSmO2, hasVo2]);
+  }), [hasPower, hasSpeed, hasHeartRate, hasCadence, hasSmO2, hasThb, hasVo2]);
 
   const selectedMetricKeys = Object.keys(visibleMetrics).filter(
     (key) => visibleMetrics[key] && metricAvailability[key]
@@ -212,6 +217,9 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
   const additionalMetrics = [];
   if (hasMoxy && hasValidData(liveData.smo2)) {
     additionalMetrics.push({ label: 'SmO2', value: (liveData.smo2 || 0).toFixed(1), unit: '%' });
+  }
+  if (hasMoxy && hasValidData(liveData.thb)) {
+    additionalMetrics.push({ label: 'THb', value: (liveData.thb || 0).toFixed(1), unit: 'μM' });
   }
   if (hasCoreTemp && hasValidData(liveData.coreTemp)) {
     additionalMetrics.push({ label: 'Core Temp', value: (liveData.coreTemp || 0).toFixed(1), unit: '°C' });

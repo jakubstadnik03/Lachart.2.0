@@ -42,7 +42,9 @@ app.use(helmet()); // Security headers
 app.use(compression()); // Compress responses
 
 // Základní middleware
-app.use(express.json());
+// Increase JSON body size limit to 50MB for large FIT file data
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Logování pro debugging
 app.use((req, res, next) => {
@@ -126,6 +128,46 @@ app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/workout-clustering", workoutClusteringRoutes);
+
+// Simple trainer test API (demo - no auth required)
+// In-memory storage for demo purposes
+const trainerTests = new Map();
+
+app.post("/api/tests", (req, res) => {
+  try {
+    const { startedAt, samples } = req.body;
+    const id = require("crypto").randomUUID();
+    
+    const record = { 
+      id, 
+      startedAt, 
+      samples,
+      createdAt: new Date().toISOString()
+    };
+    
+    trainerTests.set(id, record);
+    
+    console.log(`Test saved: ${id} with ${samples?.length || 0} samples`);
+    
+    res.json({ id });
+  } catch (error) {
+    console.error("Error saving test:", error);
+    res.status(500).json({ error: "Failed to save test" });
+  }
+});
+
+app.get("/api/tests/:id", (req, res) => {
+  try {
+    const test = trainerTests.get(req.params.id);
+    if (!test) {
+      return res.status(404).json({ error: "Test not found" });
+    }
+    res.json(test);
+  } catch (error) {
+    console.error("Error fetching test:", error);
+    res.status(500).json({ error: "Failed to fetch test" });
+  }
+});
 
 // Apply cache middleware to routes that can be cached
 app.use('/api/training', cacheMiddleware(600), trainingRoute);

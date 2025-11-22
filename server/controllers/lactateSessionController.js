@@ -125,12 +125,26 @@ const lactateSessionController = {
       
       // Save FIT file data if provided
       if (fitFileData) {
+        const actualFitData = fitFileData.data || fitFileData;
+        
+        // Log FIT data structure for debugging
+        console.log('[completeSession] Saving FIT file data:', {
+          hasRecords: !!actualFitData.records,
+          recordsCount: actualFitData.records?.length || 0,
+          hasLaps: !!actualFitData.laps,
+          lapsCount: actualFitData.laps?.length || 0,
+          firstRecord: actualFitData.records?.[0],
+          lastRecord: actualFitData.records?.[actualFitData.records?.length - 1]
+        });
+        
         session.fitFile = {
           originalName: fitFileData.originalName || `lactate-session-${session._id}.fit`,
-          fileSize: fitFileData.fileSize || JSON.stringify(fitFileData.data || fitFileData).length,
+          fileSize: fitFileData.fileSize || JSON.stringify(actualFitData).length,
           uploadDate: new Date(),
-          fitData: fitFileData.data || fitFileData // Support both formats
+          fitData: actualFitData // Support both formats
         };
+      } else {
+        console.warn('[completeSession] No fitFileData provided!');
       }
       
       // Save analysis results
@@ -264,6 +278,16 @@ const lactateSessionController = {
       // Generate FIT file from fitData
       // Note: This is a simplified approach - in production, you'd use a proper FIT file generator library
       const fitData = session.fitFile.fitData;
+      
+      // Log FIT data structure before download
+      console.log('[downloadFitFile] FIT data structure:', {
+        hasRecords: !!fitData.records,
+        recordsCount: fitData.records?.length || 0,
+        hasLaps: !!fitData.laps,
+        lapsCount: fitData.laps?.length || 0,
+        firstRecord: fitData.records?.[0],
+        lastRecord: fitData.records?.[fitData.records?.length - 1]
+      });
       
       // Convert fitData to a JSON string that can be downloaded
       // For actual .fit binary format, you'd need a library like @garmin/fitsdk

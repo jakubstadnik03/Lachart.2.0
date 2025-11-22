@@ -108,9 +108,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Pro run/swim: pace v sekundách, takže LTP2 (rychlejší tempo) musí být < LTP1 (pomalejší tempo)
       if (lt2_value >= lt1_value) {
         console.warn('[Zones] LTP2 >= LTP1, invalid combination for run/swim (pace)', { lt1_value, lt2_value, sport });
-        setZones(null);
-        return;
-      }
+      setZones(null);
+      return;
+    }
     }
     
     // Pro bike: použít power hodnoty (watty), pro run/swim: použít tempo (sekundy)
@@ -171,58 +171,58 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Pro run/swim: použít tempo (sekundy)
       const lt1_sec = lt1_value;
       const lt2_sec = lt2_value;
-      const fmt = s => formatPace(s);
+    const fmt = s => formatPace(s);
       
       console.log(`[Zones Run/Swim] LTP1: ${lt1_sec} (${fmt(lt1_sec)}) LTP2: ${lt2_sec} (${fmt(lt2_sec)})`);
       
-      // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
+    // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
       // Pro pace: min = pomalejší (více sekund), max = rychlejší (méně sekund)
-      setZones({
-        pace: {
-          zone1: {
+    setZones({
+      pace: {
+        zone1: {
             min: fmt(lt1_sec / 0.70), // pomalejší (více sekund)
             max: fmt(lt1_sec / 0.90), // rychlejší (méně sekund)
-            description: '70–90% LT1 (recovery, reference wide zone)',
-            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
-            percent: '70–90% LT1',
-          },
-          zone2: {
+          description: '70–90% LT1 (recovery, reference wide zone)',
+          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
+          percent: '70–90% LT1',
+        },
+        zone2: {
             min: fmt(lt1_sec / 0.90), // pomalejší
             max: fmt(lt1_sec / 1.00), // rychlejší
-            description: '90%–100% LT1',
-            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
-            percent: '90–100% LT1',
-          },
-          zone3: {
+          description: '90%–100% LT1',
+          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
+          percent: '90–100% LT1',
+        },
+        zone3: {
             min: fmt(lt1_sec / 1.00), // pomalejší
             max: fmt(lt2_sec / 0.95), // rychlejší
-            description: '100% LT1 – 95% LT2',
-            hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
-            percent: '100% LT1 – 95% LT2',
-          },
-          zone4: {
+          description: '100% LT1 – 95% LT2',
+          hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
+          percent: '100% LT1 – 95% LT2',
+        },
+        zone4: {
             min: fmt(lt2_sec / 0.96), // pomalejší
             max: fmt(lt2_sec / 1.04), // rychlejší
-            description: '96%–104% LT2 (threshold)',
-            hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
-            percent: '96–104% LT2',
-          },
-          zone5: {
+          description: '96%–104% LT2 (threshold)',
+          hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
+          percent: '96–104% LT2',
+        },
+        zone5: {
             min: fmt(lt2_sec / 1.05), // pomalejší
             max: fmt(lt2_sec / 1.20), // rychlejší
-            description: '105–120% LT2 (sprint/VO2max+ reference)',
-            hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
-            percent: '105–120% LT2',
-          },
+          description: '105–120% LT2 (sprint/VO2max+ reference)',
+          hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
+          percent: '105–120% LT2',
         },
-        heartRate: {
-          zone1: { min: Math.round(hr1*0.90), max: Math.round(hr1*0.70) },
-          zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
-          zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
-          zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
-        }
-      });
+      },
+      heartRate: {
+        zone1: { min: Math.round(hr1*0.90), max: Math.round(hr1*0.70) },
+        zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
+        zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
+        zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
+        zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
+      }
+    });
     }
   }, [mockData]);
 
@@ -244,7 +244,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   }
 
   return (
-<div className="space-y-6">       
+    <div className="space-y-6">
 
 
 
@@ -259,29 +259,29 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
           <div className="inline-block min-w-full align-middle">
             <table className="w-full min-w-[300px] sm:min-w-full md:min-w-full select-text">
-              <thead className="bg-white/10">
-                <tr>
+            <thead className="bg-white/10">
+              <tr>
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
-                  {selectedSport === 'bike' && (
+                {selectedSport === 'bike' && (
                     <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Power (W)</th>
-                  )}
-                  {(selectedSport === 'run' || selectedSport === 'swim') && (
+                )}
+                {(selectedSport === 'run' || selectedSport === 'swim') && (
                     <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
-                      {inputMode === 'pace' ? 
-                        (selectedSport === 'swim' ? 
-                          (unitSystem === 'imperial' ? 'Pace /100yd' : 'Pace /100m') :
-                          (unitSystem === 'imperial' ? 'Pace /mile' : 'Pace /km')
-                        ) :
-                        (unitSystem === 'imperial' ? 'Speed (mph)' : 'Speed (km/h)')
-                      }
-                    </th>
-                  )}
+                    {inputMode === 'pace' ? 
+                      (selectedSport === 'swim' ? 
+                        (unitSystem === 'imperial' ? 'Pace /100yd' : 'Pace /100m') :
+                        (unitSystem === 'imperial' ? 'Pace /mile' : 'Pace /km')
+                      ) :
+                      (unitSystem === 'imperial' ? 'Speed (mph)' : 'Speed (km/h)')
+                    }
+                  </th>
+                )}
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden md:table-cell">Lactate</th>
                   <th className="px-0.5 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Edit</th>
-                </tr>
-              </thead>
+              </tr>
+            </thead>
             <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
               {Object.entries((isEditingZones ? editableZones : zones).power || (isEditingZones ? editableZones : zones).pace || (isEditingZones ? editableZones : zones).speed || (isEditingZones ? editableZones : zones).heartRate).map(([zoneKey, zone], index) => {
                 const zoneNumber = parseInt(zoneKey.replace('zone', ''));

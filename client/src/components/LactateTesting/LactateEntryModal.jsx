@@ -12,9 +12,7 @@ const LactateEntryModal = ({ isOpen, onClose, onSubmit, currentStep, suggestedPo
       onSubmit(lactateValue, borgValue || null);
       setLactateValue('');
       setBorgValue('');
-      if (onCompleteInterval) {
-        onCompleteInterval();
-      }
+      // Don't call onCompleteInterval - let recovery phase handle next interval automatically
     }
   };
 

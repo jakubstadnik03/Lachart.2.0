@@ -17,19 +17,9 @@ import {
   ClockIcon,
   ChartBarIcon,
   PlusIcon,
-  ArrowDownTrayIcon as DownloadIcon
+  ArrowDownTrayIcon as DownloadIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid
-} from 'recharts';
-
 const LactateTestingPage = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
@@ -137,7 +127,14 @@ const LactateTestingPage = () => {
   const intervalTimerRef2 = useRef(intervalTimer);
   const totalTestTimeRef = useRef(totalTestTime);
   const testStateRef = useRef(testState);
+  const phaseRef = useRef(phase);
   const mockDeviceIntervalsRef = useRef({}); // For mock data generation per device
+  const handleStartIntervalRef = useRef(null);
+  
+  // Keep phase ref in sync
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Initialize protocol steps
   useEffect(() => {
@@ -227,36 +224,54 @@ const LactateTestingPage = () => {
       };
       
       if (deviceType === 'bikeTrainer') {
-        if (data.power !== null && data.power !== undefined) {
-          updated.power = data.power;
-        }
-        if (data.cadence !== null && data.cadence !== undefined) {
-          updated.cadence = data.cadence;
-        }
-        if (data.speed !== null && data.speed !== undefined) {
-          updated.speed = data.speed;
+        // During recovery phase, force power/cadence/speed to 0
+        if (phase === 'recovery') {
+          updated.power = 0;
+          updated.cadence = 0;
+          updated.speed = 0;
+        } else {
+          if (data.power !== null && data.power !== undefined) {
+            updated.power = data.power;
+          }
+          if (data.cadence !== null && data.cadence !== undefined) {
+            updated.cadence = data.cadence;
+          }
+          if (data.speed !== null && data.speed !== undefined) {
+            updated.speed = data.speed;
+          }
         }
       }
       
-      if (data.heartRate !== null && data.heartRate !== undefined) updated.heartRate = data.heartRate;
-      if (data.smo2 !== null && data.smo2 !== undefined) updated.smo2 = data.smo2;
-      if (data.thb !== null && data.thb !== undefined) updated.thb = data.thb;
-      if (data.coreTemp !== null && data.coreTemp !== undefined) updated.coreTemp = data.coreTemp;
-      if (data.vo2 !== null && data.vo2 !== undefined) updated.vo2 = data.vo2;
-      if (data.vco2 !== null && data.vco2 !== undefined) updated.vco2 = data.vco2;
-      if (data.ventilation !== null && data.ventilation !== undefined) updated.ventilation = data.ventilation;
+      if (deviceType === 'heartRate') {
+        // During recovery, simulate gradually decreasing HR
+        if (phase === 'recovery' && data.heartRate !== null && data.heartRate !== undefined) {
+          // Gradually decrease HR during recovery (about 1-2 bpm per 10 seconds)
+          const decreaseRate = recoveryTimer / 10; // Decrease by ~1 bpm per 10 seconds
+          updated.heartRate = Math.max(data.heartRate - decreaseRate, data.heartRate * 0.85); // Don't go below 85% of current HR
+        } else {
+          if (data.heartRate !== null && data.heartRate !== undefined) updated.heartRate = data.heartRate;
+        }
+      } else {
+        // For other devices, update normally
+        if (data.smo2 !== null && data.smo2 !== undefined) updated.smo2 = data.smo2;
+        if (data.thb !== null && data.thb !== undefined) updated.thb = data.thb;
+        if (data.coreTemp !== null && data.coreTemp !== undefined) updated.coreTemp = data.coreTemp;
+        if (data.vo2 !== null && data.vo2 !== undefined) updated.vo2 = data.vo2;
+        if (data.vco2 !== null && data.vco2 !== undefined) updated.vco2 = data.vco2;
+        if (data.ventilation !== null && data.ventilation !== undefined) updated.ventilation = data.ventilation;
+      }
       
       liveDataRef.current = updated;
       
       if (deviceType === 'bikeTrainer' && (data.power !== null || data.cadence !== null || data.speed !== null)) {
         if (Math.random() < 0.1) {
-          console.log(`[updateDeviceData] bikeTrainer: Power=${data.power ?? 'null'}W, Cadence=${data.cadence?.toFixed(0) ?? 'null'}rpm, Speed=${data.speed?.toFixed(1) ?? 'null'}km/h`);
+          console.log(`[updateDeviceData] bikeTrainer: Power=${updated.power ?? 'null'}W, Cadence=${updated.cadence?.toFixed(0) ?? 'null'}rpm, Speed=${updated.speed?.toFixed(1) ?? 'null'}km/h (phase: ${phase})`);
         }
       }
       
       return updated;
     });
-  }, []);
+  }, [phase, recoveryTimer]);
 
   const startMockDeviceStream = useCallback((deviceType) => {
     if (!mockDataMode) return;
@@ -277,6 +292,30 @@ const LactateTestingPage = () => {
       let mockSpeed = 0;
 
       intervals[deviceType] = setInterval(() => {
+        const currentPhase = phaseRef.current;
+        const isRunning = testStateRef.current === 'running';
+        
+        // During recovery phase, generate 0W (not pedaling)
+        if (isRunning && currentPhase === 'recovery') {
+          // Gradually decrease power, cadence, speed to 0
+          mockPower = mockPower * 0.9; // Decay to 0
+          mockPower = Math.max(0, mockPower);
+          
+          mockCadence = mockCadence * 0.9; // Decay to 0
+          mockCadence = Math.max(0, mockCadence);
+          
+          mockSpeed = mockSpeed * 0.9; // Decay to 0
+          mockSpeed = Math.max(0, mockSpeed);
+
+          updateDeviceData('bikeTrainer', {
+            power: Math.round(mockPower),
+            cadence: Math.round(mockCadence),
+            speed: Math.round(mockSpeed * 10) / 10
+          });
+          return;
+        }
+
+        // During work phase, generate normal power
         const currentProtocol = protocolRef.current;
         const steps = currentProtocol?.steps || [];
         const currentStepValue = currentStepRef.current;
@@ -349,6 +388,70 @@ const LactateTestingPage = () => {
       }, 900);
       return;
     }
+
+    if (deviceType === 'coreTemp') {
+      setDevices(prev => ({
+        ...prev,
+        coreTemp: {
+          connected: true,
+          data: prev.coreTemp?.data || { coreTemp: 37.0 }
+        }
+      }));
+
+      let mockCoreTemp = 37.0;
+      intervals[deviceType] = setInterval(() => {
+        const loadFactor = (liveDataRef.current.power || 100) / 300;
+        // Core temp increases with load, typically 37-39°C range
+        const targetTemp = 37.0 + (loadFactor * 1.5);
+        mockCoreTemp += (targetTemp - mockCoreTemp) * 0.02 + (Math.random() - 0.5) * 0.1;
+        mockCoreTemp = Math.min(39.5, Math.max(36.5, mockCoreTemp));
+
+        updateDeviceData('coreTemp', {
+          coreTemp: Math.round(mockCoreTemp * 10) / 10
+        });
+      }, 2000);
+      return;
+    }
+
+    if (deviceType === 'vo2master') {
+      setDevices(prev => ({
+        ...prev,
+        vo2master: {
+          connected: true,
+          data: prev.vo2master?.data || { vo2: 30, vco2: 25, ventilation: 60 }
+        }
+      }));
+
+      let mockVo2 = 30;
+      let mockVco2 = 25;
+      let mockVentilation = 60;
+      intervals[deviceType] = setInterval(() => {
+        const loadFactor = (liveDataRef.current.power || 100) / 300;
+        const hrFactor = (liveDataRef.current.heartRate || 120) / 180;
+        
+        // VO2 increases with load (typically 20-60 ml/kg/min)
+        const targetVo2 = 20 + (loadFactor * 40);
+        mockVo2 += (targetVo2 - mockVo2) * 0.05 + (Math.random() - 0.5) * 2;
+        mockVo2 = Math.min(65, Math.max(20, mockVo2));
+
+        // VCO2 is typically 0.8-1.0x VO2 (RER)
+        const targetVco2 = mockVo2 * 0.9;
+        mockVco2 += (targetVco2 - mockVco2) * 0.05 + (Math.random() - 0.5) * 1.5;
+        mockVco2 = Math.min(65, Math.max(20, mockVco2));
+
+        // Ventilation increases with load and HR (typically 40-150 L/min)
+        const targetVentilation = 40 + (loadFactor * 80) + (hrFactor * 30);
+        mockVentilation += (targetVentilation - mockVentilation) * 0.05 + (Math.random() - 0.5) * 5;
+        mockVentilation = Math.min(160, Math.max(35, mockVentilation));
+
+        updateDeviceData('vo2master', {
+          vo2: Math.round(mockVo2 * 10) / 10,
+          vco2: Math.round(mockVco2 * 10) / 10,
+          ventilation: Math.round(mockVentilation * 10) / 10
+        });
+      }, 1500);
+      return;
+    }
   }, [mockDataMode, stopMockDeviceStream, setDevices, updateDeviceData]);
 
   // Start interval timer for current phase
@@ -367,11 +470,44 @@ const LactateTestingPage = () => {
           setPhase('recovery');
           setIntervalTimer(0);
           setRecoveryTimer(0);
-          // Start recovery timer
+          
+          // Set power to 0 W on trainer during recovery
+          if (devices.bikeTrainer?.connected && deviceConnectivity.isDeviceConnected('bikeTrainer')) {
+            setTimeout(async () => {
+              try {
+                if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
+                  await deviceConnectivity.setPower('bikeTrainer', 0);
+                  console.log('✅ Power set to 0W during recovery');
+                }
+              } catch (err) {
+                console.error('Failed to set power to 0 during recovery:', err);
+              }
+            }, 100);
+          }
+          
+          // Start recovery timer with auto-start next interval
           if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
           recoveryTimerRef.current = setInterval(() => {
-            setRecoveryTimer(prev => prev + 1);
+            setRecoveryTimer(prev => {
+              const recoveryDuration = protocol.recoveryDuration || 60;
+              // Auto-start next interval when recovery duration is reached
+              if (prev + 1 >= recoveryDuration) {
+                if (recoveryTimerRef.current) {
+                  clearInterval(recoveryTimerRef.current);
+                  recoveryTimerRef.current = null;
+                }
+                // Automatically start next interval
+                setTimeout(() => {
+                  if (handleStartIntervalRef.current) {
+                    handleStartIntervalRef.current();
+                  }
+                }, 100);
+                return recoveryDuration;
+              }
+              return prev + 1;
+            });
           }, 1000);
+          
           // Automatically open lactate entry modal
           setTimeout(() => {
             setShowLactateModal(true);
@@ -382,7 +518,7 @@ const LactateTestingPage = () => {
         return prev + 1;
       });
     }, 1000);
-  }, [currentStep, protocol.steps, addNotification]);
+  }, [currentStep, protocol.steps, protocol.recoveryDuration, devices.bikeTrainer?.connected, addNotification]);
 
   // Start test
   const handleStartTest = () => {
@@ -420,6 +556,12 @@ const LactateTestingPage = () => {
       }
       if (!devices.moxy?.connected) {
         startMockDeviceStream('moxy');
+      }
+      if (!devices.coreTemp?.connected) {
+        startMockDeviceStream('coreTemp');
+      }
+      if (!devices.vo2master?.connected) {
+        startMockDeviceStream('vo2master');
       }
     }
 
@@ -573,6 +715,68 @@ const LactateTestingPage = () => {
     }, 0);
   };
 
+  // Clear/Reset test data
+  const handleClearTest = () => {
+    // Confirm before clearing
+    if (!window.confirm('Are you sure you want to clear all test data? This action cannot be undone.')) {
+      return;
+    }
+
+    // Stop all timers
+    if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
+    if (testTimerRef.current) clearInterval(testTimerRef.current);
+    if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
+
+    // Reset all state
+    setTestState('idle');
+    setCurrentStep(0);
+    setIntervalTimer(0);
+    setTotalTestTime(0);
+    setPhase('work');
+    setCountdown(0);
+    setRecoveryTimer(0);
+    setHistoricalData([]);
+    setLactateValues([]);
+    setLiveData({
+      power: 0,
+      cadence: 0,
+      heartRate: 0,
+      smo2: 0,
+      thb: 0,
+      coreTemp: 0,
+      vo2: 0,
+      vco2: 0,
+      ventilation: 0,
+      speed: 0,
+      timestamp: Date.now()
+    });
+
+    // Reset refs
+    liveDataRef.current = {
+      power: 0,
+      cadence: 0,
+      heartRate: 0,
+      smo2: 0,
+      thb: 0,
+      coreTemp: 0,
+      vo2: 0,
+      vco2: 0,
+      ventilation: 0,
+      speed: 0,
+      timestamp: Date.now()
+    };
+    currentStepRef.current = 0;
+    intervalTimerRef2.current = 0;
+    totalTestTimeRef.current = 0;
+    testStateRef.current = 'idle';
+
+    setTimeout(() => {
+      addNotification('Test data cleared', 'success');
+    }, 0);
+  };
+
   // Add lactate value and BORG
   const handleAddLactate = (lactateValue, borgValue, manualPower = null) => {
     const currentStepData = protocol.steps[currentStep];
@@ -592,8 +796,61 @@ const LactateTestingPage = () => {
     }]);
 
     setShowLactateModal(false);
+    
+    // Stay in recovery phase after saving lactate
+    // Set power to 0 W on trainer during recovery
+    if (devices.bikeTrainer?.connected && deviceConnectivity.isDeviceConnected('bikeTrainer')) {
+      setTimeout(async () => {
+        try {
+          if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
+            await deviceConnectivity.setPower('bikeTrainer', 0);
+            console.log('✅ Power set to 0W during recovery');
+          }
+        } catch (err) {
+          console.error('Failed to set power to 0 during recovery:', err);
+        }
+      }, 100);
+    }
+    
+    // Ensure recovery phase is active and recovery timer is running
+    if (phase !== 'recovery') {
+      setPhase('recovery');
+    }
+    
+    // Ensure recovery timer is running (restart if needed)
+    if (testState === 'running') {
+      // Stop existing recovery timer if running
+      if (recoveryTimerRef.current) {
+        clearInterval(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
+      
+      // Reset recovery timer to 0 and start it
+      setRecoveryTimer(0);
+      recoveryTimerRef.current = setInterval(() => {
+        setRecoveryTimer(prev => {
+          const recoveryDuration = protocol.recoveryDuration || 60;
+          // Auto-start next interval when recovery duration is reached
+          if (prev + 1 >= recoveryDuration) {
+            if (recoveryTimerRef.current) {
+              clearInterval(recoveryTimerRef.current);
+              recoveryTimerRef.current = null;
+            }
+            // Automatically start next interval
+            setTimeout(() => {
+              if (handleStartIntervalRef.current) {
+                handleStartIntervalRef.current();
+              }
+            }, 100);
+            return recoveryDuration;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+    
     setTimeout(() => {
-      addNotification('Lactate value and BORG added', 'success');
+      addNotification('Lactate value and BORG added. Recovery phase active.', 'success');
     }, 0);
   };
 
@@ -619,7 +876,7 @@ const LactateTestingPage = () => {
   };
 
   // Start next interval (after recovery)
-  const handleStartInterval = () => {
+  const handleStartInterval = useCallback(() => {
     if (testState !== 'running' || phase !== 'recovery') return;
     
     // Stop any recovery timer
@@ -692,7 +949,12 @@ const LactateTestingPage = () => {
     setTimeout(() => {
       addNotification('Starting interval in 3 seconds...', 'info');
     }, 0);
-  };
+  }, [testState, phase, currentStep, protocol.steps, devices.bikeTrainer?.connected, addNotification, startIntervalTimer]);
+  
+  // Store handleStartInterval in ref
+  useEffect(() => {
+    handleStartIntervalRef.current = handleStartInterval;
+  }, [handleStartInterval]);
 
   // Save test session
   const handleSaveTest = async () => {
@@ -902,7 +1164,10 @@ const LactateTestingPage = () => {
         smo2: toNumber(record.smo2),
         vo2: toNumber(record.vo2),
         thb: toNumber(record.thb),
-        ventilation: toNumber(record.ventilation)
+        ventilation: toNumber(record.ventilation),
+        step: toNumber(record.step),
+        intervalTime: toNumber(record.intervalTime),
+        totalTime: toNumber(record.totalTime)
       };
     };
 
@@ -1162,13 +1427,22 @@ const LactateTestingPage = () => {
                 </>
               )}
               {testState === 'completed' && (
-                <button
-                  onClick={handleSaveTest}
-                  className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
-                >
-                  <ChartBarIcon className="w-5 h-5" />
-                  Save Test
-                </button>
+                <>
+                  <button
+                    onClick={handleSaveTest}
+                    className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
+                  >
+                    <ChartBarIcon className="w-5 h-5" />
+                    Save Test
+                  </button>
+                  <button
+                    onClick={handleClearTest}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 flex items-center gap-2 shadow"
+                  >
+                    <TrashIcon className="w-5 h-5" />
+                    Clear Test
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1242,13 +1516,17 @@ const LactateTestingPage = () => {
                       startMockDeviceStream('bikeTrainer');
                       startMockDeviceStream('heartRate');
                       startMockDeviceStream('moxy');
+                      startMockDeviceStream('coreTemp');
+                      startMockDeviceStream('vo2master');
                     } else {
                     stopAllMockDeviceStreams();
                     setDevices(prev => ({
                       ...prev,
                       bikeTrainer: { connected: false, data: null },
                       heartRate: { connected: false, data: null },
-                      moxy: { connected: false, data: null }
+                      moxy: { connected: false, data: null },
+                      coreTemp: { connected: false, data: null },
+                      vo2master: { connected: false, data: null }
                     }));
                     }
                   }}
@@ -1265,7 +1543,7 @@ const LactateTestingPage = () => {
                 console.log('Connecting to device:', deviceType);
                 
                 // Mock data mode for supported devices
-                if (mockDataMode && ['bikeTrainer', 'heartRate', 'moxy'].includes(deviceType)) {
+                if (mockDataMode && ['bikeTrainer', 'heartRate', 'moxy', 'coreTemp', 'vo2master'].includes(deviceType)) {
                   startMockDeviceStream(deviceType);
                   setTimeout(() => {
                     addNotification(`${deviceType} connected in mock mode`, 'info');
@@ -1579,109 +1857,15 @@ const LactateTestingPage = () => {
                 {/* Transform session data for chart rendering */}
                 {(() => {
                   const { historical, lactateValues, laps } = transformSessionToChartData(selectedSession);
-                  const sessionChartData = historical.map((point, index) => ({
-                    time: point.time ?? index,
-                    power: point.power ?? null,
-                    heartRate: point.heartRate ?? null,
-                    cadence: point.cadence ?? null,
-                    speed: point.speed ?? null
-                  }));
-                  const hasHistorical = sessionChartData.length > 0;
                   const hasLaps = Array.isArray(laps) && laps.length > 0;
-
-                  const formatTime = (seconds) => {
-                    if (seconds === null || seconds === undefined) return '0s';
-                    const mins = Math.floor(seconds / 60);
-                    const secs = Math.floor(seconds % 60);
-                    if (mins <= 0) return `${secs}s`;
-                    return `${mins}:${secs.toString().padStart(2, '0')}`;
-                  };
 
                   return (
                     <>
                       <LactateChart
                         lactateValues={lactateValues}
                         historicalData={historical}
-                        protocol={{ steps: [] }}
+                        laps={laps}
                       />
-
-                      {hasHistorical && (
-                        <div>
-                          <h3 className="text-sm font-semibold text-gray-700 mb-2">Session Metrics</h3>
-                          <div className="bg-white/60 backdrop-blur rounded-2xl border border-white/40 p-4">
-                            <ResponsiveContainer width="100%" height={320}>
-                              <LineChart data={sessionChartData}>
-                                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
-                                <XAxis
-                                  dataKey="time"
-                                  label={{ value: 'Time', position: 'insideBottom', offset: -5 }}
-                                  tickFormatter={formatTime}
-                                  stroke="#666"
-                                />
-                                <YAxis
-                                  yAxisId="left"
-                                  stroke="#666"
-                                  label={{ value: 'Power / HR / Cadence', angle: -90, position: 'insideLeft' }}
-                                />
-                                <YAxis
-                                  yAxisId="right"
-                                  orientation="right"
-                                  stroke="#666"
-                                  label={{ value: 'Speed', angle: 90, position: 'insideRight' }}
-                                />
-                                <Tooltip
-                                  contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #e5e7eb' }}
-                                  formatter={(value, name) => {
-                                    if (value === null || value === undefined) return ['—', name];
-                                    if (name === 'Power (W)') return [`${Math.round(value)} W`, name];
-                                    if (name === 'Heart Rate (bpm)') return [`${Math.round(value)} bpm`, name];
-                                    if (name === 'Cadence (rpm)') return [`${Math.round(value)} rpm`, name];
-                                    if (name === 'Speed (km/h)') return [`${value.toFixed(1)} km/h`, name];
-                                    return [value, name];
-                                  }}
-                                />
-                                <Legend />
-                                <Line
-                                  yAxisId="left"
-                                  type="monotone"
-                                  dataKey="power"
-                                  stroke="#3b82f6"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Power (W)"
-                                />
-                                <Line
-                                  yAxisId="left"
-                                  type="monotone"
-                                  dataKey="heartRate"
-                                  stroke="#ef4444"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Heart Rate (bpm)"
-                                />
-                                <Line
-                                  yAxisId="left"
-                                  type="monotone"
-                                  dataKey="cadence"
-                                  stroke="#10b981"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Cadence (rpm)"
-                                />
-                                <Line
-                                  yAxisId="right"
-                                  type="monotone"
-                                  dataKey="speed"
-                                  stroke="#f97316"
-                                  strokeWidth={2}
-                                  dot={false}
-                                  name="Speed (km/h)"
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-                      )}
 
                       {hasLaps && (
                         <div>
