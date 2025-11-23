@@ -4,6 +4,8 @@ import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 import { Mail, User, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
+import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile } from '../services/api';
 
 const SettingsPage = () => {
   const { user } = useAuth();
@@ -11,6 +13,9 @@ const SettingsPage = () => {
   const [linkedAccounts, setLinkedAccounts] = useState({
     google: false
   });
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
 
   const [formData, setFormData] = useState({
     currentPassword: '',
@@ -77,6 +82,52 @@ const SettingsPage = () => {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchCurrentCoach]);
+
+  // Load integration status for admin
+  useEffect(() => {
+    const checkIntegrationStatus = async () => {
+      if (user?.admin) {
+        try {
+          const status = await getIntegrationStatus();
+          setStravaConnected(Boolean(status.stravaConnected));
+        } catch (e) {
+          // ignore if not logged
+        }
+      }
+    };
+    checkIntegrationStatus();
+  }, [user?.admin]);
+
+  const handleFileSelect = (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    setFiles(selectedFiles);
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) return;
+
+    try {
+      setUploading(true);
+      for (const file of files) {
+        await uploadFitFile(file);
+      }
+      setFiles([]);
+      addNotification('Trainings uploaded successfully!', 'success');
+    } catch (error) {
+      console.error('Upload error:', error);
+      addNotification('Error uploading file: ' + (error.response?.data?.message || error.message), 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSyncComplete = async () => {
+    try {
+      await listExternalActivities();
+    } catch (e) {
+      // ignore
+    }
+  };
 
   const handleRemoveCoach = async () => {
     if (!window.confirm('Are you sure you want to remove your coach?')) {
@@ -449,6 +500,21 @@ const SettingsPage = () => {
               </div>
             </div>
           </div>
+
+          {/* Integrations Section - Only for Admin */}
+          {user?.admin && (
+            <div className="bg-white shadow rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Integrations & Sync</h2>
+              <FitUploadSection
+                files={files}
+                uploading={uploading}
+                stravaConnected={stravaConnected}
+                onFileSelect={handleFileSelect}
+                onUpload={handleUpload}
+                onSyncComplete={handleSyncComplete}
+              />
+            </div>
+          )}
 
           {/* Contact Information Section */}
           <div className="bg-white shadow rounded-lg p-6">

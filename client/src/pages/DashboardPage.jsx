@@ -31,14 +31,8 @@ const DashboardPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Initialize selectedSport with first available sport from trainings
-  const [selectedSport, setSelectedSport] = useState(() => {
-    if (trainings.length > 0) {
-      const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
-      return availableSports.length > 0 ? availableSports[0] : 'bike';
-    }
-    return 'bike';
-  });
+  // Initialize selectedSport with 'all' by default
+  const [selectedSport, setSelectedSport] = useState('all');
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);

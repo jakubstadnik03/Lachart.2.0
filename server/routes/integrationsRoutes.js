@@ -295,53 +295,95 @@ router.get('/status', verifyToken, async (req, res) => {
 });
 
 // Detailed activity with streams (time, speed, HR, power)
+// Supports both MongoDB _id and stravaId
 router.get('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const token = await getValidStravaToken(user);
     const id = req.params.id;
-    const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${id}`, {
+    
+    // Check if id is MongoDB ObjectId (24 hex characters)
+    const mongoose = require('mongoose');
+    let stravaId = null;
+    let savedActivity = null;
+    
+    if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+      // It's a MongoDB _id, find the activity by _id
+      savedActivity = await StravaActivity.findOne({ 
+        _id: id,
+        userId: user._id 
+      });
+      
+      if (!savedActivity) {
+        return res.status(404).json({ error: 'Strava activity not found' });
+      }
+      
+      stravaId = savedActivity.stravaId;
+    } else {
+      // It's a stravaId (number)
+      stravaId = parseInt(id);
+      savedActivity = await StravaActivity.findOne({ 
+        userId: user._id, 
+        stravaId: stravaId 
+      });
+    }
+    
+    if (!stravaId) {
+      return res.status(404).json({ error: 'Strava activity ID not found' });
+    }
+    
+    const token = await getValidStravaToken(user);
+    const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${id}/streams`, {
+    const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
       headers: { Authorization: `Bearer ${token}` },
       params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
     });
     // Laps (intervals)
     let laps = [];
     try {
-      const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${id}/laps`, {
+      const lapsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/laps`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       laps = lapsResp.data || [];
     } catch (e) {}
     
-    // Get saved title, description and laps with lactate from database
-    const savedActivity = await StravaActivity.findOne({ userId: user._id, stravaId: parseInt(id) });
+    // Get saved title, description and laps with lactate from database (if not already loaded)
+    if (!savedActivity) {
+      savedActivity = await StravaActivity.findOne({ userId: user._id, stravaId: stravaId });
+    }
     
     // Merge saved laps with lactate values into laps from API
     // Always use saved laps from database as base (they include manually created laps)
     // Then enrich with API lap data where available
     let mergedLaps = laps;
     if (savedActivity?.laps && savedActivity.laps.length > 0) {
-      // Deduplicate saved laps first to prevent duplicates
+      // Build helper function for lap key matching (same as deduplication)
+      // Must be defined before deduplication to use consistent key format
+      const buildLapKeyForMatching = (lap) => {
+        if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+          return `lap_${lap.lapNumber}`;
+        }
+        const startTime = lap.startTime || lap.start_date;
+        if (startTime) {
+          const time = new Date(startTime).getTime();
+          return `time_${Math.floor(time / 1000)}`;
+        }
+        const elapsedTime = Math.round(lap.elapsed_time || 0);
+        const distance = Math.round((lap.distance || 0) * 10) / 10;
+        const power = Math.round((lap.average_watts || 0) * 10) / 10;
+        return `fallback_t${elapsedTime}_d${distance}_p${power}`;
+      };
+      
+      // Deduplicate saved laps first to prevent duplicates using the same key format
       const seenSavedLaps = new Map();
       const uniqueSavedLaps = [];
       savedActivity.laps.forEach((savedLap, idx) => {
-        const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
-                         (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
-        const elapsedTime = Math.round(savedLap.elapsed_time || 0);
-        const distance = Math.round((savedLap.distance || 0) * 10) / 10;
-        const power = Math.round((savedLap.average_watts || 0) * 10) / 10;
-        
-        const key = savedTime ? `time_${Math.floor(savedTime / 1000)}` :
-                   `t${elapsedTime}_d${distance}_p${power}`;
+        const key = buildLapKeyForMatching(savedLap);
         
         if (!seenSavedLaps.has(key)) {
           seenSavedLaps.set(key, true);
           uniqueSavedLaps.push(savedLap);
-        } else {
-          console.log(`Backend: Skipping duplicate saved lap at index ${idx}, key: ${key}`);
         }
       });
       
@@ -349,28 +391,49 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         console.log(`Backend: Removed ${savedActivity.laps.length - uniqueSavedLaps.length} duplicate saved laps. Original: ${savedActivity.laps.length}, Unique: ${uniqueSavedLaps.length}`);
       }
       
+      // Track which API laps have been matched to avoid duplicates
+      const matchedApiLapIndicesForMerge = new Set();
+      
       // Start with deduplicated saved laps from database (they include manually created ones)
       mergedLaps = uniqueSavedLaps.map(savedLap => {
-        // Try to find matching API lap by checking if startTime/start_date matches (within 5 seconds)
-        const apiLap = laps.find(lap => {
-          const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
-                           (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
-          const apiTime = lap.start_date ? new Date(lap.start_date).getTime() : null;
-          
-          if (savedTime && apiTime) {
-            return Math.abs(apiTime - savedTime) < 5000;
+        const savedLapKey = buildLapKeyForMatching(savedLap);
+        let matchedApiIdx = null;
+        
+        // Try to find matching API lap using key matching first (most reliable)
+        const apiLapWithKey = laps.find((lap, idx) => {
+          if (matchedApiLapIndicesForMerge.has(idx)) return false; // Already matched
+          const apiLapKey = buildLapKeyForMatching(lap);
+          if (apiLapKey === savedLapKey) {
+            matchedApiIdx = idx;
+            return true;
           }
-          
-          // Fallback: match by elapsed_time, distance, and power if no time available
-          if (!savedTime && !apiTime) {
+          return false;
+        });
+        
+        let apiLap = apiLapWithKey;
+        
+        // If no key match, try to find by elapsed_time, distance, and power
+        if (!apiLap) {
+          const apiLapWithProps = laps.find((lap, idx) => {
+            if (matchedApiLapIndicesForMerge.has(idx)) return false; // Already matched
+            
+            // Match by elapsed_time, distance, and power (strict matching)
             const timeMatch = Math.abs((lap.elapsed_time || 0) - (savedLap.elapsed_time || 0)) < 1;
             const distMatch = Math.abs((lap.distance || 0) - (savedLap.distance || 0)) < 0.1;
             const powerMatch = Math.abs((lap.average_watts || 0) - (savedLap.average_watts || 0)) < 1;
-            return timeMatch && distMatch && powerMatch;
-          }
-          
-          return false;
-        });
+            if (timeMatch && distMatch && powerMatch) {
+              matchedApiIdx = idx;
+              return true;
+            }
+            return false;
+          });
+          apiLap = apiLapWithProps;
+        }
+        
+        // Mark API lap as matched if found
+        if (matchedApiIdx !== null) {
+          matchedApiLapIndicesForMerge.add(matchedApiIdx);
+        }
         
         // If we found a matching API lap, merge the data (keep saved lap structure but add API data)
         if (apiLap) {
@@ -399,44 +462,41 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       });
       
       // Add any API laps that don't have matches in saved laps
-      // Use a Set to track which saved laps we've already matched
-      const matchedSavedLapIndices = new Set();
-      const matchedApiLapIndices = new Set(); // Track which API laps we've already matched
+      // Use the same key matching function
+      const mergedLapKeys = new Set(mergedLaps.map(lap => buildLapKeyForMatching(lap)));
       
       laps.forEach((apiLap, apiIdx) => {
-        if (matchedApiLapIndices.has(apiIdx)) return; // Already matched
+        // Skip if already matched during merge phase
+        if (matchedApiLapIndicesForMerge.has(apiIdx)) return;
         
-        let hasMatch = false;
+        // Check if this API lap matches any already merged lap using the same key logic
+        const apiLapKey = buildLapKeyForMatching(apiLap);
         
-        // Try to find match by startTime/start_date
-        // Check if this API lap was already merged into mergedLaps
-        const alreadyMerged = mergedLaps.some(mergedLap => {
-          const mergedTime = mergedLap.startTime ? new Date(mergedLap.startTime).getTime() : 
-                            (mergedLap.start_date ? new Date(mergedLap.start_date).getTime() : null);
-          const apiTime = apiLap.start_date ? new Date(apiLap.start_date).getTime() : null;
-          
-          if (mergedTime && apiTime) {
-            return Math.abs(apiTime - mergedTime) < 5000;
-          }
-          
-          // Fallback: match by elapsed_time, distance, and power
-          if (!mergedTime && !apiTime) {
-            const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (mergedLap.elapsed_time || 0)) < 1;
-            const distMatch = Math.abs((apiLap.distance || 0) - (mergedLap.distance || 0)) < 0.1;
-            const powerMatch = Math.abs((apiLap.average_watts || 0) - (mergedLap.average_watts || 0)) < 1;
-            return timeMatch && distMatch && powerMatch;
-          }
-          
-          return false;
-        });
-        
-        if (alreadyMerged) {
-          hasMatch = true;
-          matchedApiLapIndices.add(apiIdx);
+        if (mergedLapKeys.has(apiLapKey)) {
+          // This API lap is already represented in mergedLaps, skip it
+          return;
         }
         
-        if (!hasMatch) {
+        // Also try to match by elapsed_time, distance, and power (in case keys differ slightly)
+        const alreadyMerged = mergedLaps.some(mergedLap => {
+          // If both have the same key, they're already matched
+          if (buildLapKeyForMatching(mergedLap) === apiLapKey) {
+            return true;
+          }
+          
+          // Fallback: match by elapsed_time, distance, and power (strict matching)
+          const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (mergedLap.elapsed_time || 0)) < 1;
+          const distMatch = Math.abs((apiLap.distance || 0) - (mergedLap.distance || 0)) < 0.1;
+          const powerMatch = Math.abs((apiLap.average_watts || 0) - (mergedLap.average_watts || 0)) < 1;
+          
+          // Only match if all three match (strict matching to avoid false positives)
+          return timeMatch && distMatch && powerMatch;
+        });
+        
+        if (!alreadyMerged) {
+          // Only add if it's truly a new lap
           mergedLaps.push(apiLap);
+          mergedLapKeys.add(apiLapKey);
         }
       });
       
@@ -447,26 +507,11 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         return timeA - timeB;
       });
       
-      // Final deduplication pass to ensure no duplicates
+      // Final deduplication pass to ensure no duplicates using the same key function
       const seen = new Map();
       const deduplicatedLaps = [];
-      mergedLaps.forEach((lap, index) => {
-        // Build unique key
-        let key = null;
-        if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-          key = `lap_${lap.lapNumber}`;
-        } else {
-          const startTime = lap.startTime || lap.start_date;
-          if (startTime) {
-            const time = new Date(startTime).getTime();
-            key = `time_${Math.floor(time / 1000)}`; // Round to nearest second
-          } else {
-            const elapsedTime = Math.round(lap.elapsed_time || 0);
-            const distance = Math.round((lap.distance || 0) * 10) / 10;
-            const power = Math.round((lap.average_watts || 0) * 10) / 10;
-            key = `fallback_t${elapsedTime}_d${distance}_p${power}`;
-          }
-        }
+      mergedLaps.forEach((lap) => {
+        const key = buildLapKeyForMatching(lap);
         
         if (key && !seen.has(key)) {
           seen.set(key, true);

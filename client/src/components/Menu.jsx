@@ -168,7 +168,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/training-calendar",
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
-      showFor: ["admin"]
+      showFor: ["coach", "athlete"]
     },
     {
       name: "Testing",
