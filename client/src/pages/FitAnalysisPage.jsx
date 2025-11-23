@@ -2609,8 +2609,36 @@ const FitAnalysisPage = () => {
                 }
                 
                 // Prepare interval bars data from laps
-                let laps = deduplicateStravaLaps(selectedStrava?.laps || []);
+                // First check if laps are already duplicated
+                const originalLaps = selectedStrava?.laps || [];
+                console.log(`Graph: Original laps count from selectedStrava: ${originalLaps.length}`);
+                
+                let laps = deduplicateStravaLaps(originalLaps);
                 console.log(`Graph: Deduplicated laps count: ${laps.length}`);
+                
+                // Additional safety check: remove duplicates by elapsed_time + distance + power combination
+                const seenLapKeys = new Set();
+                const finalLaps = [];
+                laps.forEach((lap, idx) => {
+                  // Create unique key based on elapsed_time, distance, and power
+                  const elapsedTime = Math.round(lap.elapsed_time || 0);
+                  const distance = Math.round((lap.distance || 0) * 10) / 10;
+                  const power = Math.round((lap.average_watts || 0) * 10) / 10;
+                  const key = `t${elapsedTime}_d${distance}_p${power}_i${idx}`;
+                  
+                  if (seenLapKeys.has(key)) {
+                    console.log(`Graph: Skipping duplicate lap at index ${idx} (key: ${key})`);
+                    return;
+                  }
+                  seenLapKeys.add(key);
+                  finalLaps.push(lap);
+                });
+                
+                if (finalLaps.length !== laps.length) {
+                  console.log(`Graph: Removed ${laps.length - finalLaps.length} additional duplicates. Final count: ${finalLaps.length}`);
+                }
+                
+                laps = finalLaps;
                 
                 // Sort laps by startTime or start_date to ensure correct order
                 laps = [...laps].sort((a, b) => {
@@ -2633,6 +2661,9 @@ const FitAnalysisPage = () => {
                 });
                 
                 const intervalBars = [];
+                
+                // Track all processed interval keys to prevent duplicates across multiple renders
+                const globalProcessedKeys = new Set();
                 
                 // Calculate total activity time from streams (in seconds)
                 const streamMaxTime = time && time.length > 0 ? time[time.length - 1] : 0;
@@ -2722,15 +2753,23 @@ const FitAnalysisPage = () => {
                 
                 filteredLaps.forEach((lap, idx) => {
                   // Create unique key for this lap to prevent duplicates
+                  // Use elapsed_time, distance, and power for more reliable identification
+                  const elapsedTime = Math.round(lap.elapsed_time || 0);
+                  const distance = Math.round((lap.distance || 0) * 10) / 10;
+                  const lapPower = Math.round((lap.average_watts || 0) * 10) / 10;
+                  
                   const lapKey = lap.startTime ? `time_${new Date(lap.startTime).getTime()}` :
                                  lap.start_date ? `date_${new Date(lap.start_date).getTime()}` :
-                                 `idx_${idx}_t${lap.elapsed_time}_d${lap.distance}_p${lap.average_watts}`;
+                                 `t${elapsedTime}_d${distance}_p${lapPower}`;
                   
-                  if (processedLapKeys.has(lapKey)) {
+                  // Check both local and global processed keys
+                  if (processedLapKeys.has(lapKey) || globalProcessedKeys.has(lapKey)) {
                     console.log(`Skipping duplicate lap at index ${idx}, key: ${lapKey}`);
                     return;
                   }
                   processedLapKeys.add(lapKey);
+                  globalProcessedKeys.add(lapKey);
+                  
                   const power = lap.average_watts || lap.average_power || 0;
                   const duration = lap.elapsed_time || 0;
                   const lapSpeed = lap.average_speed || 0; // m/s

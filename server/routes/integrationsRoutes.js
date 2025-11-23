@@ -324,8 +324,33 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     // Then enrich with API lap data where available
     let mergedLaps = laps;
     if (savedActivity?.laps && savedActivity.laps.length > 0) {
-      // Start with saved laps from database (they include manually created ones)
-      mergedLaps = savedActivity.laps.map(savedLap => {
+      // Deduplicate saved laps first to prevent duplicates
+      const seenSavedLaps = new Map();
+      const uniqueSavedLaps = [];
+      savedActivity.laps.forEach((savedLap, idx) => {
+        const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
+                         (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
+        const elapsedTime = Math.round(savedLap.elapsed_time || 0);
+        const distance = Math.round((savedLap.distance || 0) * 10) / 10;
+        const power = Math.round((savedLap.average_watts || 0) * 10) / 10;
+        
+        const key = savedTime ? `time_${Math.floor(savedTime / 1000)}` :
+                   `t${elapsedTime}_d${distance}_p${power}`;
+        
+        if (!seenSavedLaps.has(key)) {
+          seenSavedLaps.set(key, true);
+          uniqueSavedLaps.push(savedLap);
+        } else {
+          console.log(`Backend: Skipping duplicate saved lap at index ${idx}, key: ${key}`);
+        }
+      });
+      
+      if (uniqueSavedLaps.length !== savedActivity.laps.length) {
+        console.log(`Backend: Removed ${savedActivity.laps.length - uniqueSavedLaps.length} duplicate saved laps. Original: ${savedActivity.laps.length}, Unique: ${uniqueSavedLaps.length}`);
+      }
+      
+      // Start with deduplicated saved laps from database (they include manually created ones)
+      mergedLaps = uniqueSavedLaps.map(savedLap => {
         // Try to find matching API lap by checking if startTime/start_date matches (within 5 seconds)
         const apiLap = laps.find(lap => {
           const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
@@ -376,46 +401,39 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // Add any API laps that don't have matches in saved laps
       // Use a Set to track which saved laps we've already matched
       const matchedSavedLapIndices = new Set();
-      laps.forEach(apiLap => {
+      const matchedApiLapIndices = new Set(); // Track which API laps we've already matched
+      
+      laps.forEach((apiLap, apiIdx) => {
+        if (matchedApiLapIndices.has(apiIdx)) return; // Already matched
+        
         let hasMatch = false;
         
         // Try to find match by startTime/start_date
-        savedActivity.laps.forEach((savedLap, savedIdx) => {
-          if (matchedSavedLapIndices.has(savedIdx)) return; // Already matched
-          
-          const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
-                           (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
+        // Check if this API lap was already merged into mergedLaps
+        const alreadyMerged = mergedLaps.some(mergedLap => {
+          const mergedTime = mergedLap.startTime ? new Date(mergedLap.startTime).getTime() : 
+                            (mergedLap.start_date ? new Date(mergedLap.start_date).getTime() : null);
           const apiTime = apiLap.start_date ? new Date(apiLap.start_date).getTime() : null;
           
-          if (savedTime && apiTime) {
-            if (Math.abs(apiTime - savedTime) < 5000) {
-              hasMatch = true;
-              matchedSavedLapIndices.add(savedIdx);
-              return;
-            }
+          if (mergedTime && apiTime) {
+            return Math.abs(apiTime - mergedTime) < 5000;
           }
           
-          // Also try matching by lapNumber if available
-          if (apiLap.lap_index !== undefined && savedLap.lapNumber !== undefined) {
-            if (apiLap.lap_index === savedLap.lapNumber) {
-              hasMatch = true;
-              matchedSavedLapIndices.add(savedIdx);
-              return;
-            }
+          // Fallback: match by elapsed_time, distance, and power
+          if (!mergedTime && !apiTime) {
+            const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (mergedLap.elapsed_time || 0)) < 1;
+            const distMatch = Math.abs((apiLap.distance || 0) - (mergedLap.distance || 0)) < 0.1;
+            const powerMatch = Math.abs((apiLap.average_watts || 0) - (mergedLap.average_watts || 0)) < 1;
+            return timeMatch && distMatch && powerMatch;
           }
           
-          // Try matching by elapsed_time, distance, and power (for laps without time)
-          if (!savedTime && !apiTime) {
-            const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (savedLap.elapsed_time || 0)) < 1;
-            const distMatch = Math.abs((apiLap.distance || 0) - (savedLap.distance || 0)) < 0.1;
-            const powerMatch = Math.abs((apiLap.average_watts || 0) - (savedLap.average_watts || 0)) < 1;
-            if (timeMatch && distMatch && powerMatch) {
-              hasMatch = true;
-              matchedSavedLapIndices.add(savedIdx);
-              return;
-            }
-          }
+          return false;
         });
+        
+        if (alreadyMerged) {
+          hasMatch = true;
+          matchedApiLapIndices.add(apiIdx);
+        }
         
         if (!hasMatch) {
           mergedLaps.push(apiLap);
