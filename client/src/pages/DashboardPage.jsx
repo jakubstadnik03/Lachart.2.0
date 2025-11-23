@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from 'react-router-dom';
 // import SportsSelector from "../components/Header/SportsSelector";
 import TrainingTable from "../components/DashboardPage/TrainingTable";
@@ -41,7 +41,7 @@ const DashboardPage = () => {
   //const { addNotification } = useNotification();
   const [selectedTests, setSelectedTests] = useState([]);
 
-  const loadTrainings = async (targetId) => {
+  const loadTrainings = useCallback(async (targetId) => {
     try {
       setLoading(true);
       setError(null);
@@ -55,9 +55,9 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const loadTests = async (targetId) => {
+  const loadTests = useCallback(async (targetId) => {
     try {
       setLoading(true);
       setError(null);
@@ -73,9 +73,9 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const loadAthlete = async (targetId) => {
+  const loadAthlete = useCallback(async (targetId) => {
     try {
       setLoading(true);
       setError(null);
@@ -89,11 +89,51 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Sync selectedAthleteId with URL parameter when it changes
+  useEffect(() => {
+    if (athleteId) {
+      // If URL has athleteId, use it
+      if (athleteId !== selectedAthleteId) {
+        setSelectedAthleteId(athleteId);
+      }
+    } else if (user?.role === 'coach') {
+      // If no athleteId in URL and user is coach, default to coach's own ID
+      if (!selectedAthleteId || selectedAthleteId !== user._id) {
+        setSelectedAthleteId(user._id);
+      }
+    }
+  }, [athleteId, user, selectedAthleteId]);
+
+  // Listen for athlete change from Menu (for immediate update before URL changes)
+  useEffect(() => {
+    const handleAthleteChange = (event) => {
+      const { athleteId: newAthleteId } = event.detail;
+      if (newAthleteId && newAthleteId !== selectedAthleteId) {
+        setSelectedAthleteId(newAthleteId);
+        // Menu already navigates, so we don't need to navigate here
+      }
+    };
+
+    window.addEventListener('athleteChanged', handleAthleteChange);
+    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
+  }, [selectedAthleteId]);
+
+  // Track last loaded athleteId to prevent duplicate loads
+  const lastLoadedAthleteIdRef = React.useRef(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', { replace: true });
+      return;
+    }
+
+    // Determine target athlete ID
+    const targetAthleteId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user?._id;
+    
+    // Skip if we already loaded data for this athlete
+    if (!targetAthleteId || lastLoadedAthleteIdRef.current === targetAthleteId) {
       return;
     }
 
@@ -103,35 +143,32 @@ const DashboardPage = () => {
       return;
     }
 
-   // const targetId = selectedAthleteId || user._id;
     const loadData = async () => {
       try {
-        if (!user || !user._id) return;
-        
-        // Pokud je uživatel trenér a má vybraného atleta, načteme data pro atleta
-        // Jinak načteme data pro samotného uživatele
-        const athleteId = user.role === 'coach' && selectedAthleteId ? selectedAthleteId : user._id;
+        // Mark as loading for this athlete
+        lastLoadedAthleteIdRef.current = targetAthleteId;
         
         const [trainingsData, athleteData] = await Promise.all([
-          loadTrainings(athleteId),
-          loadAthlete(athleteId),
-          loadTests(athleteId)
+          loadTrainings(targetAthleteId),
+          loadAthlete(targetAthleteId),
+          loadTests(targetAthleteId)
         ]);
 
         if (trainingsData) {
           setTrainings(trainingsData);
         }
-        if (athleteData) {
+        if (athleteData && athleteData._id !== selectedAthleteId) {
           setSelectedAthleteId(athleteData._id);
         }
       } catch (error) {
         console.error('Error loading data:', error);
-       // setError(error.message);
+        // Reset ref on error so we can retry
+        lastLoadedAthleteIdRef.current = null;
       }
     };
 
     loadData();
-  }, [user?._id, user, selectedAthleteId, isAuthenticated, navigate]);
+  }, [user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests]);
 
   useEffect(() => {
     if (trainings.length > 0) {

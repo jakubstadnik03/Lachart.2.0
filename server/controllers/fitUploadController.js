@@ -319,7 +319,8 @@ async function uploadFitFile(req, res) {
     });
     
     // Convert to our schema
-    const trainingData = convertFitToTraining(fitData, userId, originalFileName);
+    // Ensure athleteId is stored as string (schema expects String type)
+    const trainingData = convertFitToTraining(fitData, String(userId), originalFileName);
     trainingData.fileSize = fileSize;
     
     console.log('Converted training data:', {
@@ -386,44 +387,79 @@ async function getFitTrainings(req, res) {
     }
 
     // Determine which athleteId to use
-    let targetAthleteId = userId;
-    if (req.query.athleteId) {
+    let targetAthleteId = userId.toString(); // Always convert to string for consistency
+    
+    // Only process athleteId if it's provided and not empty/null/undefined
+    const athleteIdParam = req.query.athleteId;
+    if (athleteIdParam && 
+        athleteIdParam !== 'null' && 
+        athleteIdParam !== 'undefined' && 
+        String(athleteIdParam).trim() !== '' &&
+        athleteIdParam !== null &&
+        athleteIdParam !== undefined) {
       // If query parameter is provided, validate access
       if (user.role === 'coach') {
         // Coach can view their own trainings or their athletes' trainings
-        if (req.query.athleteId === userId.toString()) {
-          targetAthleteId = userId;
+        if (String(athleteIdParam) === String(userId)) {
+          targetAthleteId = String(userId);
         } else {
           // Check if athlete belongs to coach
-          const athlete = await User.findById(req.query.athleteId);
+          const athlete = await User.findById(athleteIdParam);
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+          if (!athlete.coachId || String(athlete.coachId) !== String(userId)) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
-          targetAthleteId = req.query.athleteId;
+          targetAthleteId = String(athleteIdParam);
         }
       } else if (user.role === 'athlete') {
-        // Athlete can only view their own trainings
-        if (req.query.athleteId !== userId.toString()) {
-          return res.status(403).json({ error: 'You are not authorized to view these trainings' });
-        }
-        targetAthleteId = userId;
+        // Athlete can only view their own trainings - ignore athleteId parameter
+        targetAthleteId = String(userId);
       }
-    } else if (user.role === 'athlete') {
-      // Athlete always sees their own trainings
-      targetAthleteId = userId;
+    } else {
+      // No athleteId provided - use user's own ID
+      targetAthleteId = String(userId);
     }
 
-    const trainings = await FitTraining.find({ athleteId: targetAthleteId.toString() })
-      .sort({ timestamp: -1 })
-      .select('-records'); // Don't send all records by default
+    // Ensure targetAthleteId is a string
+    // athleteId is stored as String in the schema, so we need to match it exactly
+    // When userId is ObjectId, convert it to string
+    const targetAthleteIdStr = targetAthleteId ? String(targetAthleteId) : String(userId);
+    
+    console.log('Fetching FIT trainings:', {
+      userId: String(userId),
+      userIdType: typeof userId,
+      targetAthleteId: targetAthleteIdStr,
+      userRole: user.role,
+      athleteIdParam: req.query.athleteId
+    });
+    
+    try {
+      // Find trainings with the athleteId as string
+      // Try both userId.toString() and String(userId) to handle different formats
+      let trainings = await FitTraining.find({ athleteId: targetAthleteIdStr })
+        .sort({ timestamp: -1 })
+        .select('-records'); // Don't send all records by default
 
-    res.json(trainings);
+      // If no results and userId is ObjectId, try with ObjectId.toString() format
+      if (trainings.length === 0 && userId && userId.toString && userId.toString() !== targetAthleteIdStr) {
+        trainings = await FitTraining.find({ athleteId: userId.toString() })
+          .sort({ timestamp: -1 })
+          .select('-records');
+      }
+
+      console.log(`Found ${trainings.length} FIT trainings for athleteId: ${targetAthleteIdStr}`);
+
+      res.json(trainings);
+    } catch (dbError) {
+      console.error('Database error fetching FIT trainings:', dbError);
+      throw dbError;
+    }
   } catch (error) {
     console.error('Error fetching FIT trainings:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }
 

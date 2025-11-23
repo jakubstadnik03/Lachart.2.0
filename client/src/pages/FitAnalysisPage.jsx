@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap } from '../services/api';
 import { motion } from 'framer-motion';
@@ -7,6 +8,7 @@ import ReactECharts from 'echarts-for-react';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById } from '../services/api';
+import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
 import AthleteSelector from '../components/AthleteSelector';
@@ -438,8 +440,10 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
 const FitAnalysisPage = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [trainings, setTrainings] = useState([]);
+  const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   const [selectedTraining, setSelectedTraining] = useState(null);
   
   // Training chart hover state
@@ -564,13 +568,28 @@ const FitAnalysisPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadExternalActivities = async () => {
+  const lastLoadedExternalAthleteIdRef = useRef(null);
+  const lastLoadedRegularAthleteIdRef = useRef(null);
+
+  const loadExternalActivities = useCallback(async () => {
     try {
-      const athleteId = selectedAthleteId || (user?.role === 'coach' ? user._id : null);
-      const acts = await listExternalActivities({ athleteId });
+      // For athlete, don't send athleteId (backend will use their own userId)
+      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
+      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      
+      // Skip if we already loaded for this athlete
+      const cacheKey = athleteId || user?._id || 'default';
+      if (lastLoadedExternalAthleteIdRef.current === cacheKey) {
+        return;
+      }
+      
+      lastLoadedExternalAthleteIdRef.current = cacheKey;
+      
+      const params = athleteId ? { athleteId } : {};
+      const acts = await listExternalActivities(params);
       setExternalActivities(acts || []);
       
-      // Check if we should restore Strava selection
+      // Check if we should restore Strava selection (only on initial load or when athlete changes)
       const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
       if (savedStravaId) {
         // Verify the activity still exists
@@ -587,8 +606,9 @@ const FitAnalysisPage = () => {
       }
     } catch (e) {
       // ignore
+      lastLoadedExternalAthleteIdRef.current = null; // Reset on error
     }
-  };
+  }, [selectedAthleteId, user?.role, user?._id, selectedStrava]);
 
   const loadStravaDetail = async (id) => {
     try {
@@ -962,9 +982,11 @@ const FitAnalysisPage = () => {
     };
   }, [selectedStrava, selectedStravaStreams]);
 
-  const loadTrainings = async () => {
+  const loadTrainings = useCallback(async () => {
     try {
-      const athleteId = selectedAthleteId || (user?.role === 'coach' ? user._id : null);
+      // For athlete, don't send athleteId (backend will use their own userId)
+      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
+      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
       const data = await getFitTrainings(athleteId);
       
       // Remove duplicates based on _id before setting
@@ -1001,8 +1023,59 @@ const FitAnalysisPage = () => {
     } catch (error) {
       console.error('Error loading trainings:', error);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAthleteId, user?.role, user?._id, selectedTraining]);
 
+  // Load regular trainings from /training route
+  const loadRegularTrainings = useCallback(async () => {
+    try {
+      // For athlete, use their own ID
+      // For coach, use selectedAthleteId or their own ID
+      const athleteId = user?.role === 'athlete' ? user._id : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      
+      if (!athleteId) {
+        return; // Skip if no athleteId
+      }
+      
+      // Skip if we already loaded for this athlete
+      if (lastLoadedRegularAthleteIdRef.current === athleteId) {
+        return;
+      }
+      
+      lastLoadedRegularAthleteIdRef.current = athleteId;
+      
+      const response = await api.get(`/user/athlete/${athleteId}/trainings`);
+      if (response && response.data) {
+        setRegularTrainings(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading regular trainings:', error);
+      lastLoadedRegularAthleteIdRef.current = null; // Reset on error
+    }
+  }, [selectedAthleteId, user?.role, user?._id]);
+
+  // Load regular training detail from /training route
+  const loadRegularTrainingDetail = useCallback(async (id) => {
+    try {
+      const response = await api.get(`/api/training/${id}`);
+      if (response && response.data) {
+        // Convert regular training format to match selectedTraining structure
+        const trainingData = {
+          ...response.data,
+          isRegularTraining: true // Flag to identify regular training
+        };
+        setSelectedTraining(trainingData);
+        setSelectedStrava(null);
+        // Persist selection to localStorage
+        localStorage.setItem('fitAnalysis_selectedRegularTrainingId', id);
+        localStorage.removeItem('fitAnalysis_selectedTrainingId');
+        localStorage.removeItem('fitAnalysis_selectedStravaId');
+        localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+      }
+    } catch (error) {
+      console.error('Error loading regular training detail:', error);
+    }
+  }, []);
 
   const loadTrainingDetail = async (id) => {
     try {
@@ -1054,8 +1127,8 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedStravaId');
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
       
-      // Reload trainings to ensure calendar is up to date (but don't add duplicates)
-      await loadTrainings();
+      // Don't reload trainings here - it's expensive and usually not needed
+      // Only reload if training was deleted or modified externally
     } catch (error) {
       console.error('Error loading training detail:', error);
       // Remove invalid ID from localStorage
@@ -1237,24 +1310,54 @@ const FitAnalysisPage = () => {
 
 
 
-  // Initialize selectedAthleteId on mount for coach
+  // Initialize selectedAthleteId on mount for coach or when returning to page
   useEffect(() => {
-    if (user?.role === 'coach' && !selectedAthleteId) {
-      setSelectedAthleteId(user._id);
-    }
-  }, [user, selectedAthleteId]);
-
-  // Reload data when selectedAthleteId changes
-  useEffect(() => {
-    if (user) {
-      loadTrainings();
-      loadExternalActivities();
+    if (user?.role === 'coach') {
+      // Always check localStorage first when component mounts or when location changes (returning to page)
+      const savedAthleteId = localStorage.getItem('trainingCalendar_selectedAthleteId');
+      if (savedAthleteId) {
+        // Always use saved value if it exists
+        setSelectedAthleteId(savedAthleteId);
+      } else {
+        // If no saved athleteId, default to coach's own ID
+        setSelectedAthleteId(user._id);
+        localStorage.setItem('trainingCalendar_selectedAthleteId', user._id);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAthleteId, user]);
+  }, [user, location.pathname]); // Run when user changes or when pathname changes (returning to page)
+
+  // Listen for athlete selection from Menu (when on training-calendar page)
+  useEffect(() => {
+    const handleAthleteSelected = (event) => {
+      const { athleteId } = event.detail;
+      if (athleteId && athleteId !== selectedAthleteId) {
+        setSelectedAthleteId(athleteId);
+        localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
+      }
+    };
+
+    window.addEventListener('athleteSelected', handleAthleteSelected);
+    return () => window.removeEventListener('athleteSelected', handleAthleteSelected);
+  }, [selectedAthleteId]);
+
+  // Reload data when selectedAthleteId changes (debounced to prevent multiple calls)
+  useEffect(() => {
+    if (user && selectedAthleteId) {
+      // Use a small timeout to debounce rapid changes
+      const timeoutId = setTimeout(() => {
+        loadTrainings();
+        loadExternalActivities();
+        loadRegularTrainings();
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedAthleteId, user, loadTrainings, loadExternalActivities, loadRegularTrainings]);
 
   const handleAthleteChange = (athleteId) => {
     setSelectedAthleteId(athleteId);
+    localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
     // Clear selected training when switching athletes
     setSelectedTraining(null);
     setSelectedStrava(null);
@@ -1284,18 +1387,28 @@ const FitAnalysisPage = () => {
               id: t._id, 
               date: t.timestamp, 
               title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
-              sport: t.sport 
+              sport: t.sport,
+              type: 'fit'
+            })),
+            ...regularTrainings.map(t => ({ 
+              id: `regular-${t._id}`, 
+              date: t.date || t.timestamp, 
+              title: t.title || 'Untitled Training', 
+              sport: t.sport,
+              type: 'regular'
             })),
             ...externalActivities.map(a => ({ 
               id: `strava-${a.stravaId}`, 
               date: a.startDate, 
               title: a.titleManual || a.name || 'Untitled Activity', 
-              sport: a.sport 
+              sport: a.sport,
+              type: 'strava'
             }))
           ]}
           selectedActivityId={
             selectedTraining?._id || 
             (selectedTraining?.isFromTrainingModel ? localStorage.getItem('fitAnalysis_selectedTrainingModelId') : null) ||
+            (selectedTraining?.isRegularTraining ? `regular-${localStorage.getItem('fitAnalysis_selectedRegularTrainingId')}` : null) ||
             localStorage.getItem('fitAnalysis_selectedTrainingId')
           }
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
@@ -1303,6 +1416,9 @@ const FitAnalysisPage = () => {
             if (a?.id && String(a.id).startsWith('strava-')) {
               const sid = String(a.id).replace('strava-','');
               loadStravaDetail(sid);
+            } else if (a?.id && String(a.id).startsWith('regular-')) {
+              const regularId = String(a.id).replace('regular-','');
+              loadRegularTrainingDetail(regularId);
             } else if (a?.id) {
               loadTrainingDetail(a.id);
             }

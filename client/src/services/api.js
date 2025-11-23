@@ -264,7 +264,8 @@ export const uploadFitFile = async (file) => {
 
 export const getFitTrainings = async (athleteId = null) => {
   try {
-    const params = athleteId ? { athleteId } : {};
+    // Only send athleteId if it's provided and not null/undefined
+    const params = athleteId ? { athleteId: String(athleteId) } : {};
     const response = await api.get('/api/fit/trainings', { params });
     return response.data;
   } catch (error) {

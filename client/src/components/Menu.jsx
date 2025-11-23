@@ -74,6 +74,19 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         return;
       }
 
+      // Pro training-calendar: nastav selectedAthleteId a zobraz profil
+      if (currentPath === 'training-calendar') {
+        // Ulož selectedAthleteId do localStorage
+        localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
+        // Nastav selectedAthleteId přes custom event (pro případ, že je stránka stále otevřená)
+        window.dispatchEvent(new CustomEvent('athleteSelected', { 
+          detail: { athleteId }
+        }));
+        // Zobraz profil atleta
+        navigate(`/athlete/${athleteId}`, { replace: true });
+        return;
+      }
+
       // Pokud klikneme na stejného atleta, zrušíme výběr
       if (currentAthleteId === athleteId) {
         navigate(`/${currentPath}`, { replace: true });
