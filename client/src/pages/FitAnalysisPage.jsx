@@ -870,7 +870,27 @@ const FitAnalysisPage = () => {
       const chartWidth = chartRect.width - chartLeft - chartRight;
       const relativeX = clickX - chartLeft;
       const normalizedX = Math.max(0, Math.min(1, relativeX / chartWidth));
-      const timeInSeconds = normalizedX * currentMaxTime;
+      
+      // Get zoom state from chart if available
+      let timeInSeconds = normalizedX * currentMaxTime;
+      if (stravaChartRef.current) {
+        try {
+          const chart = stravaChartRef.current.getEchartsInstance();
+          const option = chart.getOption();
+          const dataZoom = option.dataZoom?.[0];
+          if (dataZoom && dataZoom.start !== undefined && dataZoom.end !== undefined) {
+            // Chart is zoomed - adjust time calculation
+            const zoomStart = dataZoom.start / 100; // Convert percentage to ratio
+            const zoomEnd = dataZoom.end / 100;
+            const zoomRange = zoomEnd - zoomStart;
+            const zoomedMinTime = currentMaxTime * zoomStart;
+            timeInSeconds = zoomedMinTime + (normalizedX * zoomRange * currentMaxTime);
+          }
+        } catch (e) {
+          // Fallback to original calculation if chart access fails
+          timeInSeconds = normalizedX * currentMaxTime;
+        }
+      }
       
       stravaDragStateRef.current.isActive = true;
       stravaDragStateRef.current.start = { x: clickX, time: timeInSeconds };
@@ -893,7 +913,27 @@ const FitAnalysisPage = () => {
       const chartWidth = chartRect.width - chartLeft - chartRight;
       const relativeX = clickX - chartLeft;
       const normalizedX = Math.max(0, Math.min(1, relativeX / chartWidth));
-      const timeInSeconds = normalizedX * currentMaxTime;
+      
+      // Get zoom state from chart if available
+      let timeInSeconds = normalizedX * currentMaxTime;
+      if (stravaChartRef.current) {
+        try {
+          const chart = stravaChartRef.current.getEchartsInstance();
+          const option = chart.getOption();
+          const dataZoom = option.dataZoom?.[0];
+          if (dataZoom && dataZoom.start !== undefined && dataZoom.end !== undefined) {
+            // Chart is zoomed - adjust time calculation
+            const zoomStart = dataZoom.start / 100; // Convert percentage to ratio
+            const zoomEnd = dataZoom.end / 100;
+            const zoomRange = zoomEnd - zoomStart;
+            const zoomedMinTime = currentMaxTime * zoomStart;
+            timeInSeconds = zoomedMinTime + (normalizedX * zoomRange * currentMaxTime);
+          }
+        } catch (e) {
+          // Fallback to original calculation if chart access fails
+          timeInSeconds = normalizedX * currentMaxTime;
+        }
+      }
       
       stravaDragStateRef.current.end = { x: clickX, time: timeInSeconds };
       setStravaDragEnd({ x: clickX, time: timeInSeconds });
@@ -2581,8 +2621,24 @@ const FitAnalysisPage = () => {
                       paceYAxisMax = 300; // 5:00/km
                     }
                   } else { // swim
-                    paceYAxisMin = 80;  // 1:20/100m (rychlejší, nahoře) - s mezerou
-                    paceYAxisMax = 120; // 2:00/100m (pomalejší, dole)
+                    // Find min and max pace from data (similar to run)
+                    const validPaces = pace.filter(p => p && p > 0 && !isNaN(p));
+                    if (validPaces.length > 0) {
+                      const minPace = Math.min(...validPaces); // Nejrychlejší pace (nejmenší hodnota v sekundách)
+                      const maxPace = Math.max(...validPaces); // Nejpomalejší pace (největší hodnota v sekundách)
+                      
+                      // Přidat mezeru: min o něco pomalejší (větší hodnota), max o něco rychlejší (menší hodnota)
+                      // Ale protože osa je invertovaná, min je nahoře (rychlejší) a max je dole (pomalejší)
+                      // Takže paceYAxisMin (nahoře) = minPace - padding (ještě rychlejší)
+                      // A paceYAxisMax (dole) = maxPace + padding (ještě pomalejší)
+                      const padding = Math.max(5, (maxPace - minPace) * 0.1); // 10% nebo minimálně 5 sekund
+                      paceYAxisMin = Math.max(30, Math.floor(minPace - padding)); // Minimálně 0:30/100m
+                      paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
+                    } else {
+                      // Fallback pokud nejsou data
+                      paceYAxisMin = 80;  // 1:20/100m
+                      paceYAxisMax = 120; // 2:00/100m
+                    }
                   }
                 }
                 
@@ -2672,12 +2728,11 @@ const FitAnalysisPage = () => {
                 const streamMaxTime = time && time.length > 0 ? time[time.length - 1] : 0;
                 
                 // Get activity start time as Date object
-                // IMPORTANT: Use start_date (UTC) not start_date_local, because lap.start_date is in UTC
-                // This ensures that intervals with start_date align correctly with activity start
-                // If start_date is not available, fall back to start_date_local or startDate
-                let activityStartDateStr = selectedStrava?.start_date || 
+                // Backend uses start_date_local for creating intervals, so we should use the same
+                // This ensures that manually created intervals align correctly
+                let activityStartDateStr = selectedStrava?.start_date_local || 
+                                         selectedStrava?.start_date || 
                                          selectedStrava?.raw?.start_date || 
-                                         selectedStrava?.start_date_local || 
                                          selectedStrava?.startDate;
                 
                 // Don't adjust activityStartDate based on laps - use the same as backend
@@ -2915,6 +2970,27 @@ const FitAnalysisPage = () => {
                     lapIndex: idx
                   });
                 });
+                
+                // Recalculate paceYAxisMin/Max for swim to include interval bars pace values
+                if (usePace && isSwim && intervalBars.length > 0) {
+                  // Collect all pace values from interval bars
+                  const intervalPaces = intervalBars
+                    .map(bar => bar.pace)
+                    .filter(p => p && p > 0 && !isNaN(p));
+                  
+                  // Also include pace values from stream (recalculate validPaces)
+                  const streamPaces = pace ? pace.filter(p => p && p > 0 && !isNaN(p)) : [];
+                  const allPaces = [...streamPaces, ...intervalPaces];
+                  
+                  if (allPaces.length > 0) {
+                    const minPace = Math.min(...allPaces);
+                    const maxPace = Math.max(...allPaces);
+                    
+                    const padding = Math.max(5, (maxPace - minPace) * 0.1); // 10% nebo minimálně 5 sekund
+                    paceYAxisMin = Math.max(30, Math.floor(minPace - padding)); // Minimálně 0:30/100m
+                    paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
+                  }
+                }
                 
                 // Cluster similar intervals (similar duration and power/pace)
                 // Similar = duration within ±5% and power/pace within ±10%
@@ -3387,6 +3463,17 @@ const FitAnalysisPage = () => {
                           // Check if api.coord exists and is a function
                           if (!api.coord || typeof api.coord !== 'function') return null;
                           
+                          // Get grid dimensions for clipping (use values from grid config)
+                          // Grid config: left: 60, right: usePace ? 120 : 50, top: 60, bottom: 80
+                          const gridLeft = 60;
+                          const gridTop = 60;
+                          const chartWidth = (api.getWidth && api.getWidth()) || 800;
+                          const chartHeight = (api.getHeight && api.getHeight()) || 320;
+                          const gridRight = usePace ? (chartWidth - 120) : (chartWidth - 50);
+                          const gridBottom = chartHeight - 80;
+                          const gridWidth = gridRight - gridLeft;
+                          const gridHeight = gridBottom - gridTop;
+                          
                           // Get coordinates - ensure we're using the correct axis values
                           // startTime and endTime are in minutes, displayValue is in watts or pace units
                           // For X axis, we use time values; for Y axis, we use power/pace values
@@ -3395,13 +3482,9 @@ const FitAnalysisPage = () => {
                           
                           // For very slow pace (standing), show as small bar at bottom (on X-axis)
                           let finalDisplayValue = displayValue;
-                          let barHeight = null;
-                          let useBaseAsTop = false;
                           if (usePace && barData.isVerySlowPace) {
                             // Very slow pace - show as small bar at bottom (on X-axis, at baseValue)
                             finalDisplayValue = baseValue; // Bottom position (base of pace axis)
-                            barHeight = 8; // Small fixed height (8 pixels)
-                            useBaseAsTop = true; // Bar extends upward from base
                           }
                           
                           const startXCoord = api.coord([startTime, baseValue]);
@@ -3423,15 +3506,43 @@ const FitAnalysisPage = () => {
                           // Ensure valid coordinates
                           if (isNaN(startX) || isNaN(endX) || isNaN(valueY) || isNaN(baseY)) return null;
                           
-                        const x = Math.min(startX, endX);
-                          const width = Math.max(2, Math.abs(endX - startX));
-                          // Use fixed small height for very slow pace, otherwise calculate from coordinates
-                          const height = barHeight !== null ? barHeight : Math.max(2, Math.abs(baseY - valueY));
-                          // For very slow pace, bar should be at bottom (baseY), extending upward
-                          // For normal pace, bar extends from baseY to valueY
-                          const y = useBaseAsTop ? (baseY - barHeight) : Math.min(valueY, baseY);
+                          // Check if interval is completely outside visible area
+                          const minX = Math.min(startX, endX);
+                          const maxX = Math.max(startX, endX);
+                          if (maxX < gridLeft || minX > gridRight) {
+                            // Completely outside horizontal bounds
+                            return null;
+                          }
                           
-                          if (width < 2 || height < 2 || isNaN(x) || isNaN(y) || isNaN(width) || isNaN(height)) return null;
+                          // Clip coordinates to grid bounds
+                          const x = Math.max(gridLeft, Math.min(startX, endX));
+                          const maxEndX = Math.max(startX, endX);
+                          const clippedEndX = Math.min(gridRight, maxEndX);
+                          const width = Math.max(2, clippedEndX - x);
+                          
+                          // Clip Y coordinates to grid bounds
+                          // For pace (inverted axis), bars extend from base (bottom) to value (top)
+                          // For power, bars extend from base (bottom) to value (top)
+                          let clippedY, clippedHeight;
+                          
+                          if (usePace && barData.isVerySlowPace) {
+                            // Very slow pace - small bar at bottom
+                            clippedY = Math.max(gridTop, gridBottom - 8);
+                            clippedHeight = Math.min(8, gridBottom - clippedY);
+                          } else {
+                            // Normal bars - clip to grid bounds
+                            const barTop = Math.min(valueY, baseY);
+                            const barBottom = Math.max(valueY, baseY);
+                            
+                            // Clip top and bottom to grid
+                            const clippedTop = Math.max(gridTop, Math.min(gridBottom, barTop));
+                            const clippedBottom = Math.max(gridTop, Math.min(gridBottom, barBottom));
+                            
+                            clippedY = clippedTop;
+                            clippedHeight = Math.max(2, clippedBottom - clippedTop);
+                          }
+                          
+                          if (width < 2 || clippedHeight < 2 || isNaN(x) || isNaN(clippedY) || isNaN(width) || isNaN(clippedHeight)) return null;
                           
                           // Use cluster-based colors with saturation based on power
                           const hue = barData.colorHue || 260; // Default purple
@@ -3475,13 +3586,23 @@ const FitAnalysisPage = () => {
                         
                         return {
                           type: 'rect',
-                            shape: { x, y, width, height, r: [2, 2, 0, 0] },
+                            shape: { x, y: clippedY, width, height: clippedHeight, r: [2, 2, 0, 0] },
                           style: {
                               fill: `rgba(${r}, ${g}, ${b}, 0.3)`, // Fill with cluster color
                               stroke: `rgba(${rBorder}, ${gBorder}, ${bBorder}, 0.6)`, // Border with darker cluster color
                             lineWidth: 1.5
                           },
-                            z2: 1
+                            z2: 1,
+                            // Add clipPath to ensure bar doesn't render outside grid
+                            clipPath: {
+                              type: 'rect',
+                              shape: {
+                                x: gridLeft,
+                                y: gridTop,
+                                width: gridWidth,
+                                height: gridHeight
+                              }
+                            }
                           };
                         } catch (error) {
                           console.error(`Error rendering interval ${params?.dataIndex}:`, error);
@@ -3665,6 +3786,189 @@ const FitAnalysisPage = () => {
                          style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
                        >
                          Smoothness
+                       </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            // Detect intervals automatically
+                            const timeArray = selectedStravaStreams?.time?.data || selectedStravaStreams?.time || [];
+                            const powerArray = selectedStravaStreams?.watts?.data || selectedStravaStreams?.watts || [];
+                            const speedArray = selectedStravaStreams?.velocity_smooth?.data || selectedStravaStreams?.velocity_smooth || [];
+                            
+                            if (timeArray.length === 0) {
+                              alert('No time data available');
+                              return;
+                            }
+                            
+                            // Use power for cycling, speed for run/swim
+                            const dataArray = powerArray.length > 0 && powerArray.some(p => p > 0) ? powerArray : speedArray;
+                            
+                            if (dataArray.length === 0 || dataArray.length !== timeArray.length) {
+                              alert('No power or speed data available');
+                              return;
+                            }
+                            
+                            // Detect intervals using change point detection
+                            // Detects ALL intervals by finding all significant changes in power/speed
+                            const intervals = [];
+                            const minIntervalDuration = 8; // Minimum 8 seconds for any interval
+                            const changeThreshold = 0.12; // 12% change to detect interval boundaries (more sensitive)
+                            const smoothingWindow = 3; // 3 seconds moving average (less smoothing = more sensitive)
+                            const stabilityWindow = 3; // Require 3 seconds of stable value before detecting change
+                            
+                            // Calculate moving average for smoothing
+                            const smoothed = [];
+                            for (let i = 0; i < dataArray.length; i++) {
+                              let sum = 0;
+                              let count = 0;
+                              for (let j = Math.max(0, i - smoothingWindow); j <= Math.min(dataArray.length - 1, i + smoothingWindow); j++) {
+                                if (dataArray[j] && dataArray[j] > 0) {
+                                  sum += dataArray[j];
+                                  count++;
+                                }
+                              }
+                              smoothed.push(count > 0 ? sum / count : 0);
+                            }
+                            
+                            // Find all intervals by detecting significant changes in intensity
+                            // Detects ALL changes regardless of absolute value - works for any intensity level
+                            let currentIntervalStart = 0;
+                            let currentIntervalAvg = smoothed[0] || 0;
+                            let changeStartTime = null; // When change was first detected
+                            let changeStartIndex = null;
+                            
+                            for (let i = 1; i < smoothed.length; i++) {
+                              const currentValue = smoothed[i] || 0;
+                              const currentTime = timeArray[i];
+                              
+                              // Skip if no valid value
+                              if (currentValue <= 0) {
+                                continue;
+                              }
+                              
+                              // Calculate relative change from current interval average
+                              const maxValue = Math.max(currentIntervalAvg, currentValue);
+                              const change = maxValue > 0 ? Math.abs(currentValue - currentIntervalAvg) / maxValue : 0;
+                              
+                              // Check if significant change detected
+                              if (change > changeThreshold) {
+                                // Change detected - start tracking it
+                                if (changeStartTime === null) {
+                                  changeStartTime = currentTime;
+                                  changeStartIndex = i;
+                                }
+                                
+                                // Update average towards new value (slowly)
+                                currentIntervalAvg = currentIntervalAvg * 0.97 + currentValue * 0.03;
+                                
+                                // Check if change has been stable long enough
+                                if (changeStartTime !== null && (currentTime - changeStartTime) >= stabilityWindow) {
+                                  // Change confirmed - create interval for previous period
+                                  const intervalDuration = changeStartTime - timeArray[currentIntervalStart];
+                                  
+                                  if (intervalDuration >= minIntervalDuration) {
+                                    intervals.push({
+                                      start: timeArray[currentIntervalStart],
+                                      end: changeStartTime
+                                    });
+                                  }
+                                  
+                                  // Start new interval at the point where change was detected
+                                  currentIntervalStart = changeStartIndex;
+                                  currentIntervalAvg = smoothed[changeStartIndex] || currentValue;
+                                  changeStartTime = null;
+                                  changeStartIndex = null;
+                                }
+                              } else {
+                                // Value is stable - update interval average
+                                currentIntervalAvg = currentIntervalAvg * 0.92 + currentValue * 0.08;
+                                
+                                // Reset change tracking if value stabilized before threshold
+                                if (changeStartTime !== null && (currentTime - changeStartTime) < stabilityWindow) {
+                                  // Change was too short - ignore it, continue with current interval
+                                  changeStartTime = null;
+                                  changeStartIndex = null;
+                                }
+                              }
+                            }
+                            
+                            // Add last interval if long enough
+                            if (currentIntervalStart < timeArray.length - 1) {
+                              const intervalDuration = timeArray[timeArray.length - 1] - timeArray[currentIntervalStart];
+                              if (intervalDuration >= minIntervalDuration) {
+                                intervals.push({
+                                  start: timeArray[currentIntervalStart],
+                                  end: timeArray[timeArray.length - 1]
+                                });
+                              }
+                            }
+                            
+                            // Filter and merge intervals
+                            const filteredIntervals = [];
+                            const mergeThreshold = 20; // Merge intervals closer than 20 seconds
+                            
+                            for (let i = 0; i < intervals.length; i++) {
+                              const current = intervals[i];
+                              
+                              // Skip if too short
+                              if (current.end - current.start < minIntervalDuration) {
+                                continue;
+                              }
+                              
+                              // Check if we should merge with previous interval
+                              if (filteredIntervals.length > 0) {
+                                const last = filteredIntervals[filteredIntervals.length - 1];
+                                const gap = current.start - last.end;
+                                
+                                // If gap is very small, merge intervals
+                                if (gap >= 0 && gap <= mergeThreshold) {
+                                  filteredIntervals[filteredIntervals.length - 1] = {
+                                    start: last.start,
+                                    end: current.end
+                                  };
+                                  continue;
+                                }
+                              }
+                              
+                              filteredIntervals.push(current);
+                            }
+                            
+                            // Use filtered intervals
+                            const finalIntervals = filteredIntervals;
+                            
+                            if (finalIntervals.length === 0) {
+                              alert('No intervals detected. Try adjusting the detection parameters.');
+                              return;
+                            }
+                            
+                            // Create all detected intervals
+                            let createdCount = 0;
+                            for (const interval of finalIntervals) {
+                              try {
+                                await createStravaLap(selectedStrava.id, {
+                                  startTime: interval.start,
+                                  endTime: interval.end
+                                });
+                                createdCount++;
+                              } catch (error) {
+                                console.error('Error creating interval:', error);
+                              }
+                            }
+                            
+                            // Reload data
+                            await loadStravaDetail(selectedStrava.id);
+                            await loadExternalActivities();
+                            
+                            alert(`Successfully created ${createdCount} out of ${intervals.length} detected intervals!`);
+                          } catch (error) {
+                            console.error('Error detecting intervals:', error);
+                            alert('Error detecting intervals: ' + (error.response?.data?.error || error.message));
+                          }
+                        }}
+                        className="px-3 bg-primary text-white hover:bg-primary-dark border border-primary rounded text-xs font-medium transition-colors flex items-center justify-center"
+                        style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
+                      >
+                        Detect Intervals
                        </button>
                      </div>
                      {/* Smoothness Slider Popup */}

@@ -388,16 +388,16 @@ const LactateGuide = () => {
           </div>
           <div className="mt-4 grid md:grid-cols-3 gap-4">
             <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold text-gray-900">Zone 1–2 (pod LT1/LTP1)</h3>
-              <p className="text-gray-600 text-sm mt-1">Aerobní kapacita, regenerace, dlouhé objemy.</p>
+              <h3 className="font-semibold text-gray-900">Zone 1–2 (below LT1/LTP1)</h3>
+              <p className="text-gray-600 text-sm mt-1">Aerobic capacity, recovery, long volume training.</p>
             </div>
             <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold text-gray-900">Zone 3–4 (kolem LT2/LTP2)</h3>
-              <p className="text-gray-600 text-sm mt-1">Tempo/Threshold – rozvoj udržitelné rychlosti.</p>
+              <h3 className="font-semibold text-gray-900">Zone 3–4 (around LT2/LTP2)</h3>
+              <p className="text-gray-600 text-sm mt-1">Tempo/Threshold – sustainable speed development.</p>
             </div>
             <div className="p-4 border rounded-lg">
-              <h3 className="font-semibold text-gray-900">Zone 5+ (nad LT2)</h3>
-              <p className="text-gray-600 text-sm mt-1">Krátké, intenzivní úseky – VO2max, ekonomika.</p>
+              <h3 className="font-semibold text-gray-900">Zone 5+ (above LT2)</h3>
+              <p className="text-gray-600 text-sm mt-1">Short, intense intervals – VO2max, economy.</p>
             </div>
           </div>
         </motion.section>
@@ -456,23 +456,23 @@ const LactateGuide = () => {
             <div className="p-4 border rounded-lg">
               <h3 className="font-semibold text-gray-900">Cycling – graded ramp</h3>
               <ul className="text-gray-600 text-sm mt-1 list-disc pl-5 space-y-1">
-                <li>Start 100–150 W, zvyšujte o 25–30 W každé 3–4 min.</li>
-                <li>Na konci každého stupně odeberte kapku krve (u prstu), zaznamenejte W, HR, La.</li>
-                <li>Pokračujte do blízkosti závodního tempa nebo do odmítnutí.</li>
+                <li>Start at 100–150 W, increase by 25–30 W every 3–4 minutes.</li>
+                <li>At the end of each stage, take a blood sample (finger prick), record power (W), heart rate (HR), and lactate (La).</li>
+                <li>Continue until near race pace or until exhaustion.</li>
               </ul>
             </div>
             <div className="p-4 border rounded-lg">
               <h3 className="font-semibold text-gray-900">Running – track/treadmill</h3>
               <ul className="text-gray-600 text-sm mt-1 list-disc pl-5 space-y-1">
-                <li>Start v lehkém tempu, zvyšujte rychlost každé 3–4 min (např. +0.5 km/h).</li>
-                <li>Odběr laktátu na konci stupně, zaznamenejte pace/speed, HR, La.</li>
-                <li>Ukončete, když se přiblížíte závodnímu tempu nebo při vysoké únavě.</li>
+                <li>Start at easy pace, increase speed every 3–4 minutes (e.g., +0.5 km/h).</li>
+                <li>Take lactate sample at the end of each stage, record pace/speed, HR, and La.</li>
+                <li>Stop when approaching race pace or at high fatigue.</li>
               </ul>
             </div>
           </div>
           <div className="mt-4 bg-gray-50 border rounded-xl p-4">
             <h3 className="font-semibold text-gray-900">Norwegian method</h3>
-            <p className="text-gray-600 text-sm mt-1">Práce okolo prahů (často 2–3 mmol/L a ~4 mmol/L) s přesným řízením intenzit dle laktátu; cílem je vysoký objem kvalitní práce bez přestřelení.</p>
+            <p className="text-gray-600 text-sm mt-1">Training around thresholds (typically 2–3 mmol/L and ~4 mmol/L) with precise intensity control based on lactate; goal is high volume of quality work without overreaching.</p>
           </div>
         </motion.section>
 
@@ -487,10 +487,12 @@ const LactateGuide = () => {
               <ul className="text-gray-700 space-y-2">
                 <li><strong>LTP1 (LT1):</strong> ~210 W (La ~2.0) via curve shape/log-log</li>
                 <li><strong>LTP2 (LT2):</strong> ~285-300 W (Dmax/OBLA ~4 mmol/L)</li>
-                <li><strong>Training Zones:</strong></li>
-                <li className="ml-4">• Zone 1-2: &lt;210 W (aerobic base)</li>
-                <li className="ml-4">• Zone 3-4: 210-285 W (threshold)</li>
-                <li className="ml-4">• Zone 5+: &gt;285 W (VO2max)</li>
+                <li><strong>Training Zones (automatically generated):</strong></li>
+                <li className="ml-4">• <strong>Zone 1:</strong> 70–90% LT1 (147–189 W) – Recovery, reference wide zone</li>
+                <li className="ml-4">• <strong>Zone 2:</strong> 90–100% LT1 (189–210 W) – Aerobic base building</li>
+                <li className="ml-4">• <strong>Zone 3:</strong> 100% LT1 – 95% LT2 (210–271 W) – Tempo, sweet spot</li>
+                <li className="ml-4">• <strong>Zone 4:</strong> 96–104% LT2 (274–312 W) – Threshold, high aerobic</li>
+                <li className="ml-4">• <strong>Zone 5:</strong> 105–120% LT2 (299–360 W) – VO2max+, sprint intervals</li>
               </ul>
             </div>
             <div className="bg-blue-50 p-4 rounded-lg">

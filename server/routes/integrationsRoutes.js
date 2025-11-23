@@ -341,6 +341,9 @@ router.get('/status', verifyToken, async (req, res) => {
 router.get('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     const id = req.params.id;
     
     // Check if id is MongoDB ObjectId (24 hex characters)
@@ -374,13 +377,26 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     }
     
     const token = await getValidStravaToken(user);
-    const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
-      headers: { Authorization: `Bearer ${token}` },
-      params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
-    });
+    if (!token) {
+      return res.status(401).json({ error: 'Strava not connected or token invalid' });
+    }
+    
+    let detailResp, streamsResp;
+    try {
+      detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
+      });
+    } catch (apiError) {
+      console.error('Strava API error:', apiError.response?.data || apiError.message);
+      return res.status(apiError.response?.status || 500).json({ 
+        error: 'Failed to fetch activity from Strava',
+        details: apiError.response?.data || apiError.message 
+      });
+    }
     // Laps (intervals)
     let laps = [];
     try {
