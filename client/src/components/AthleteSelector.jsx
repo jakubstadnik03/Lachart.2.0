@@ -28,7 +28,10 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
     const newAthleteId = e.target.value;
     if (newAthleteId) {
       onAthleteChange(newAthleteId);
-      navigate(`/${currentPath}/${newAthleteId}`);
+      // Only navigate if not on training-calendar (which doesn't use athleteId in URL)
+      if (currentPath !== 'training-calendar') {
+        navigate(`/${currentPath}/${newAthleteId}`);
+      }
     }
   };
 

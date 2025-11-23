@@ -275,11 +275,53 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 
 // List normalized activities
 router.get('/activities', verifyToken, async (req, res) => {
-  // Remove limit to show all activities, but add reasonable safety limit
-  const acts = await StravaActivity.find({ userId: req.user.userId })
-    .sort({ startDate: -1 })
-    .limit(50000); // Safety limit: max 50,000 activities
-  res.json(acts);
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Determine which userId to use
+    let targetUserId = userId;
+    if (req.query.athleteId) {
+      // If query parameter is provided, validate access
+      if (user.role === 'coach') {
+        // Coach can view their own activities or their athletes' activities
+        if (req.query.athleteId === userId.toString()) {
+          targetUserId = userId;
+        } else {
+          // Check if athlete belongs to coach
+          const athlete = await User.findById(req.query.athleteId);
+          if (!athlete) {
+            return res.status(404).json({ error: 'Athlete not found' });
+          }
+          if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+            return res.status(403).json({ error: 'This athlete does not belong to your team' });
+          }
+          targetUserId = req.query.athleteId;
+        }
+      } else if (user.role === 'athlete') {
+        // Athlete can only view their own activities
+        if (req.query.athleteId !== userId.toString()) {
+          return res.status(403).json({ error: 'You are not authorized to view these activities' });
+        }
+        targetUserId = userId;
+      }
+    } else if (user.role === 'athlete') {
+      // Athlete always sees their own activities
+      targetUserId = userId;
+    }
+
+    // Remove limit to show all activities, but add reasonable safety limit
+    const acts = await StravaActivity.find({ userId: targetUserId.toString() })
+      .sort({ startDate: -1 })
+      .limit(50000); // Safety limit: max 50,000 activities
+    res.json(acts);
+  } catch (error) {
+    console.error('Error fetching external activities:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Connection status

@@ -9,6 +9,8 @@ import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById } from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
+import AthleteSelector from '../components/AthleteSelector';
+import { useAuth } from '../context/AuthProvider';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -435,6 +437,8 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 };
 
 const FitAnalysisPage = () => {
+  const { user } = useAuth();
+  const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [selectedTraining, setSelectedTraining] = useState(null);
   
@@ -562,7 +566,8 @@ const FitAnalysisPage = () => {
 
   const loadExternalActivities = async () => {
     try {
-      const acts = await listExternalActivities();
+      const athleteId = selectedAthleteId || (user?.role === 'coach' ? user._id : null);
+      const acts = await listExternalActivities({ athleteId });
       setExternalActivities(acts || []);
       
       // Check if we should restore Strava selection
@@ -959,7 +964,8 @@ const FitAnalysisPage = () => {
 
   const loadTrainings = async () => {
     try {
-      const data = await getFitTrainings();
+      const athleteId = selectedAthleteId || (user?.role === 'coach' ? user._id : null);
+      const data = await getFitTrainings(athleteId);
       
       // Remove duplicates based on _id before setting
       const uniqueTrainings = [];
@@ -1231,10 +1237,45 @@ const FitAnalysisPage = () => {
 
 
 
+  // Initialize selectedAthleteId on mount for coach
+  useEffect(() => {
+    if (user?.role === 'coach' && !selectedAthleteId) {
+      setSelectedAthleteId(user._id);
+    }
+  }, [user, selectedAthleteId]);
+
+  // Reload data when selectedAthleteId changes
+  useEffect(() => {
+    if (user) {
+      loadTrainings();
+      loadExternalActivities();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAthleteId, user]);
+
+  const handleAthleteChange = (athleteId) => {
+    setSelectedAthleteId(athleteId);
+    // Clear selected training when switching athletes
+    setSelectedTraining(null);
+    setSelectedStrava(null);
+    localStorage.removeItem('fitAnalysis_selectedTrainingId');
+    localStorage.removeItem('fitAnalysis_selectedStravaId');
+    localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">Training calendar</h1>
+
+        {/* Athlete Selector for Coach */}
+        {user?.role === 'coach' && (
+          <AthleteSelector
+            selectedAthleteId={selectedAthleteId}
+            onAthleteChange={handleAthleteChange}
+            user={user}
+          />
+        )}
 
         {/* Calendar Section */}
         <CalendarView

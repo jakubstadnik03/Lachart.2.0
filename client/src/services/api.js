@@ -262,9 +262,10 @@ export const uploadFitFile = async (file) => {
   }
 };
 
-export const getFitTrainings = async () => {
+export const getFitTrainings = async (athleteId = null) => {
   try {
-    const response = await api.get('/api/fit/trainings');
+    const params = athleteId ? { athleteId } : {};
+    const response = await api.get('/api/fit/trainings', { params });
     return response.data;
   } catch (error) {
     console.error('Error fetching FIT trainings:', error);

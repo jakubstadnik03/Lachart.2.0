@@ -378,7 +378,45 @@ async function getFitTrainings(req, res) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const trainings = await FitTraining.find({ athleteId: userId })
+    // Get user to check role
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Determine which athleteId to use
+    let targetAthleteId = userId;
+    if (req.query.athleteId) {
+      // If query parameter is provided, validate access
+      if (user.role === 'coach') {
+        // Coach can view their own trainings or their athletes' trainings
+        if (req.query.athleteId === userId.toString()) {
+          targetAthleteId = userId;
+        } else {
+          // Check if athlete belongs to coach
+          const athlete = await User.findById(req.query.athleteId);
+          if (!athlete) {
+            return res.status(404).json({ error: 'Athlete not found' });
+          }
+          if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+            return res.status(403).json({ error: 'This athlete does not belong to your team' });
+          }
+          targetAthleteId = req.query.athleteId;
+        }
+      } else if (user.role === 'athlete') {
+        // Athlete can only view their own trainings
+        if (req.query.athleteId !== userId.toString()) {
+          return res.status(403).json({ error: 'You are not authorized to view these trainings' });
+        }
+        targetAthleteId = userId;
+      }
+    } else if (user.role === 'athlete') {
+      // Athlete always sees their own trainings
+      targetAthleteId = userId;
+    }
+
+    const trainings = await FitTraining.find({ athleteId: targetAthleteId.toString() })
       .sort({ timestamp: -1 })
       .select('-records'); // Don't send all records by default
 
