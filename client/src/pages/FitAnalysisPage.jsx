@@ -562,14 +562,21 @@ const FitAnalysisPage = () => {
   }, []);
 
   useEffect(() => {
-    // Check if trainingId is in URL params (from TrainingTable click) - do this first
+    // Always load trainings first, then check for trainingId in URL params
     const params = new URLSearchParams(window.location.search);
     const trainingId = params.get('trainingId');
-    if (trainingId) {
-      loadTrainingFromTrainingModel(trainingId);
-    } else {
-    loadTrainings();
-    }
+    
+    const initialize = async () => {
+      await loadTrainings();
+      if (trainingId) {
+        // Wait a bit for trainings to be loaded before loading specific training
+        setTimeout(() => {
+          loadTrainingFromTrainingModel(trainingId);
+        }, 100);
+      }
+    };
+    
+    initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -995,7 +1002,23 @@ const FitAnalysisPage = () => {
   const loadTrainings = async () => {
     try {
       const data = await getFitTrainings();
-      setTrainings(data);
+      
+      // Remove duplicates based on _id before setting
+      const uniqueTrainings = [];
+      const seenIds = new Set();
+      
+      data.forEach(training => {
+        if (training._id && !seenIds.has(training._id.toString())) {
+          seenIds.add(training._id.toString());
+          uniqueTrainings.push(training);
+        }
+      });
+      
+      if (uniqueTrainings.length !== data.length) {
+        console.log(`loadTrainings: Removed ${data.length - uniqueTrainings.length} duplicate trainings. Original: ${data.length}, Unique: ${uniqueTrainings.length}`);
+      }
+      
+      setTrainings(uniqueTrainings);
       
       // Check if we should restore training selection
       const savedTrainingId = localStorage.getItem('fitAnalysis_selectedTrainingId');
@@ -1003,7 +1026,7 @@ const FitAnalysisPage = () => {
       
       if (savedTrainingId && !selectedTraining) {
         // Verify the training still exists
-        const trainingExists = data?.some(t => t._id === savedTrainingId);
+        const trainingExists = uniqueTrainings?.some(t => t._id === savedTrainingId);
         if (trainingExists) {
           loadTrainingDetail(savedTrainingId);
         } else {
@@ -1039,11 +1062,58 @@ const FitAnalysisPage = () => {
         console.log('loadTrainingDetail: Final laps count:', data.laps.length);
       }
       
+      // Check for duplicate records and deduplicate if needed
+      if (data.records && Array.isArray(data.records)) {
+        console.log('loadTrainingDetail: Original records count:', data.records.length);
+        
+        const seenRecords = new Map();
+        const uniqueRecords = [];
+        
+        data.records.forEach((record, index) => {
+          // Use timestamp as primary identifier
+          const timestamp = record.timestamp ? new Date(record.timestamp).getTime() : null;
+          if (timestamp) {
+            const key = `time_${timestamp}`;
+            if (seenRecords.has(key)) {
+              console.log(`loadTrainingDetail: Skipping duplicate record by timestamp at index ${index}`);
+              return;
+            }
+            seenRecords.set(key, true);
+            uniqueRecords.push(record);
+            return;
+          }
+          
+          // Fallback: Use combination of properties if no timestamp
+          const distance = Math.round((record.distance || 0) * 100) / 100;
+          const power = Math.round((record.power || 0) * 10) / 10;
+          const hr = Math.round((record.heartRate || 0) * 10) / 10;
+          const speed = Math.round((record.speed || 0) * 1000) / 1000;
+          const key = `d${distance}_p${power}_hr${hr}_s${speed}_i${index}`;
+          
+          if (seenRecords.has(key)) {
+            console.log(`loadTrainingDetail: Skipping duplicate record at index ${index}`);
+            return;
+          }
+          seenRecords.set(key, true);
+          uniqueRecords.push(record);
+        });
+        
+        if (uniqueRecords.length !== data.records.length) {
+          console.log(`loadTrainingDetail: Removed ${data.records.length - uniqueRecords.length} duplicate records. Original: ${data.records.length}, Unique: ${uniqueRecords.length}`);
+        }
+        
+        data.records = uniqueRecords;
+        console.log('loadTrainingDetail: Final records count:', data.records.length);
+      }
+      
       setSelectedTraining(data);
       // Persist selection to localStorage
       localStorage.setItem('fitAnalysis_selectedTrainingId', id);
       localStorage.removeItem('fitAnalysis_selectedStravaId');
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+      
+      // Reload trainings to ensure calendar is up to date (but don't add duplicates)
+      await loadTrainings();
     } catch (error) {
       console.error('Error loading training detail:', error);
       // Remove invalid ID from localStorage
@@ -1152,6 +1222,28 @@ const FitAnalysisPage = () => {
       };
       
       console.log('Converted training:', convertedTraining);
+      
+      // Add converted training to trainings array if not already present
+      // Use a Set to track IDs to prevent duplicates
+      setTrainings(prev => {
+        const seenIds = new Set(prev.map(t => t._id?.toString()));
+        const exists = seenIds.has(convertedTraining._id?.toString());
+        if (!exists) {
+          // Also check for duplicates in the new array
+          const newTrainings = [...prev, convertedTraining];
+          const uniqueTrainings = [];
+          const newSeenIds = new Set();
+          newTrainings.forEach(t => {
+            const id = t._id?.toString();
+            if (id && !newSeenIds.has(id)) {
+              newSeenIds.add(id);
+              uniqueTrainings.push(t);
+            }
+          });
+          return uniqueTrainings;
+        }
+        return prev;
+      });
       
       setSelectedTraining(convertedTraining);
       setSelectedStrava(null);
@@ -1339,6 +1431,12 @@ const FitAnalysisPage = () => {
               sport: a.sport 
             }))
           ]}
+          selectedActivityId={
+            selectedTraining?._id || 
+            (selectedTraining?.isFromTrainingModel ? localStorage.getItem('fitAnalysis_selectedTrainingModelId') : null) ||
+            localStorage.getItem('fitAnalysis_selectedTrainingId')
+          }
+          initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={(a) => { 
             if (a?.id && String(a.id).startsWith('strava-')) {
               const sid = String(a.id).replace('strava-','');
@@ -2540,10 +2638,13 @@ const FitAnalysisPage = () => {
                 const streamMaxTime = time && time.length > 0 ? time[time.length - 1] : 0;
                 
                 // Get activity start time as Date object
-                // Use start_date_local if available (consistent with backend), otherwise start_date
-                // IMPORTANT: Use the same logic as backend - don't adjust based on laps
-                // Backend uses start_date_local or start_date from API detail
-                let activityStartDateStr = selectedStrava?.start_date_local || selectedStrava?.start_date;
+                // IMPORTANT: Use start_date (UTC) not start_date_local, because lap.start_date is in UTC
+                // This ensures that intervals with start_date align correctly with activity start
+                // If start_date is not available, fall back to start_date_local or startDate
+                let activityStartDateStr = selectedStrava?.start_date || 
+                                         selectedStrava?.raw?.start_date || 
+                                         selectedStrava?.start_date_local || 
+                                         selectedStrava?.startDate;
                 
                 // Don't adjust activityStartDate based on laps - use the same as backend
                 // This ensures that manually created intervals use the correct startTime
@@ -2616,7 +2717,20 @@ const FitAnalysisPage = () => {
                 // Track cumulative time for sequential intervals
                 let cumulativeTimeSeconds = 0;
                 
+                // Track processed laps to prevent duplicates
+                const processedLapKeys = new Set();
+                
                 filteredLaps.forEach((lap, idx) => {
+                  // Create unique key for this lap to prevent duplicates
+                  const lapKey = lap.startTime ? `time_${new Date(lap.startTime).getTime()}` :
+                                 lap.start_date ? `date_${new Date(lap.start_date).getTime()}` :
+                                 `idx_${idx}_t${lap.elapsed_time}_d${lap.distance}_p${lap.average_watts}`;
+                  
+                  if (processedLapKeys.has(lapKey)) {
+                    console.log(`Skipping duplicate lap at index ${idx}, key: ${lapKey}`);
+                    return;
+                  }
+                  processedLapKeys.add(lapKey);
                   const power = lap.average_watts || lap.average_power || 0;
                   const duration = lap.elapsed_time || 0;
                   const lapSpeed = lap.average_speed || 0; // m/s
@@ -2687,6 +2801,7 @@ const FitAnalysisPage = () => {
                     }
                   } else if (lap.start_date) {
                     // For laps with start_date, calculate relative time from activity start
+                    // start_date is in UTC, so activityStartDate should also be in UTC
                     const lapStartDate = new Date(lap.start_date);
                     const lapStartTimeMs = lapStartDate.getTime();
                     const calculatedStartTime = (lapStartTimeMs - activityStartTimeMs) / 1000;
@@ -2698,15 +2813,28 @@ const FitAnalysisPage = () => {
                       calculatedStartTimeSeconds: calculatedStartTime
                     });
                     
-                    // If calculated time is negative or very small, it means the activity start time might be wrong
+                    // If calculated time is negative, it means the activity start time is wrong (probably using local instead of UTC)
                     // In this case, use cumulative time to ensure intervals are sequential
-                    if (calculatedStartTime < 0 || (idx === 0 && calculatedStartTime > 60)) {
-                      console.log('Warning: calculated startTime invalid, using cumulative time instead');
+                    if (calculatedStartTime < -300) {
+                      // More than 5 minutes negative - definitely wrong, use cumulative
+                      console.log('Warning: calculated startTime very negative (timezone mismatch?), using cumulative time instead');
                       if (idx === 0) {
                         startTimeSeconds = 0;
                       } else {
                         startTimeSeconds = cumulativeTimeSeconds;
                       }
+                    } else if (calculatedStartTime < 0) {
+                      // Small negative (within 5 minutes) - might be timezone offset, use cumulative
+                      console.log('Warning: calculated startTime slightly negative, using cumulative time instead');
+                      if (idx === 0) {
+                        startTimeSeconds = 0;
+                      } else {
+                        startTimeSeconds = cumulativeTimeSeconds;
+                      }
+                    } else if (idx === 0 && calculatedStartTime > 60) {
+                      // First lap should start near 0, if it's more than 60s, use 0
+                      console.log('Warning: first lap startTime too large, using 0');
+                      startTimeSeconds = 0;
                     } else {
                       // Use calculated time, but ensure it's not before previous lap
                       if (idx > 0 && calculatedStartTime < cumulativeTimeSeconds) {

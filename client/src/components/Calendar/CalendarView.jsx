@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -38,11 +38,34 @@ function sportBadge(sport) {
   return '🏋️';
 }
 
-export default function CalendarView({ activities = [], onSelectActivity }) {
+export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate }) {
+  // Initialize anchorDate from initialAnchorDate prop if provided, otherwise use today
   const [view, setView] = useState('month'); // 'month' | 'week'
-  const [anchorDate, setAnchorDate] = useState(new Date());
+  const [anchorDate, setAnchorDate] = useState(initialAnchorDate || new Date());
   const [sportFilter, setSportFilter] = useState('all');
   const [expandedDays, setExpandedDays] = useState(new Set()); // Track which days are expanded
+  
+  // Update anchorDate when initialAnchorDate changes (e.g., when navigating to a specific training)
+  useEffect(() => {
+    if (initialAnchorDate) {
+      setAnchorDate(initialAnchorDate);
+    }
+  }, [initialAnchorDate]);
+  
+  // Auto-expand the day containing the selected activity
+  useEffect(() => {
+    if (selectedActivityId && activities.length > 0) {
+      const selectedActivity = activities.find(a => {
+        const id = a.id || a._id;
+        return String(id) === String(selectedActivityId);
+      });
+      if (selectedActivity) {
+        const activityDate = new Date(selectedActivity.date || selectedActivity.timestamp || selectedActivity.startDate || Date.now());
+        const dateKey = getLocalDateString(activityDate);
+        setExpandedDays(prev => new Set([...prev, dateKey]));
+      }
+    }
+  }, [selectedActivityId, activities]);
 
   const uniqueSports = useMemo(() => {
     const set = new Set();
@@ -144,16 +167,24 @@ export default function CalendarView({ activities = [], onSelectActivity }) {
                 {dayDate.getDate()}
               </div>
               <div className="space-y-1">
-                {visibleActs.map((a, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => onSelectActivity && onSelectActivity(a)} 
-                    className="w-full text-left text-[10px] md:text-[11px] truncate px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors"
-                  >
-                    <span className="mr-1">{sportBadge(a.sport)}</span>
-                    {a.title || a.name || a.originalFileName || 'Activity'}
-                  </button>
-                ))}
+                {visibleActs.map((a, i) => {
+                  const activityId = a.id || a._id;
+                  const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                  return (
+                    <button 
+                      key={i} 
+                      onClick={() => onSelectActivity && onSelectActivity(a)} 
+                      className={`w-full text-left text-[10px] md:text-[11px] truncate px-1.5 md:px-2 py-1 rounded-lg border shadow-sm transition-colors ${
+                        isSelected 
+                          ? 'bg-primary text-white border-primary hover:bg-primary-dark' 
+                          : 'bg-primary/10 hover:bg-primary/20 text-primary-dark border-primary/30'
+                      }`}
+                    >
+                      <span className="mr-1">{sportBadge(a.sport)}</span>
+                      {a.title || a.name || a.originalFileName || 'Activity'}
+                    </button>
+                  );
+                })}
                 {remainingCount > 0 && (
                   <button
                     onClick={toggleExpand}

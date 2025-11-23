@@ -31,7 +31,14 @@ const DashboardPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedSport, setSelectedSport] = useState('bike');
+  // Initialize selectedSport with first available sport from trainings
+  const [selectedSport, setSelectedSport] = useState(() => {
+    if (trainings.length > 0) {
+      const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+      return availableSports.length > 0 ? availableSports[0] : 'bike';
+    }
+    return 'bike';
+  });
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
@@ -134,6 +141,15 @@ const DashboardPage = () => {
 
   useEffect(() => {
     if (trainings.length > 0) {
+      // Get available sports from trainings
+      const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+      
+      // If current selectedSport is not available, switch to first available
+      if (availableSports.length > 0 && !availableSports.includes(selectedSport)) {
+        setSelectedSport(availableSports[0]);
+        return;
+      }
+      
       const sportTrainings = trainings.filter(t => t.sport === selectedSport);
       const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
       
@@ -246,6 +262,11 @@ const DashboardPage = () => {
           <TrainingStats 
             trainings={trainings}
             selectedSport={selectedSport}
+            onSportChange={setSelectedSport}
+            selectedTitle={selectedTitle}
+            setSelectedTitle={setSelectedTitle}
+            selectedTrainingId={selectedTraining}
+            setSelectedTrainingId={setSelectedTraining}
           />
         </motion.div>
 
@@ -258,6 +279,7 @@ const DashboardPage = () => {
           <TrainingGraph 
             trainingList={trainings}
             selectedSport={selectedSport}
+            setSelectedSport={setSelectedSport}
             selectedTitle={selectedTitle}
             setSelectedTitle={setSelectedTitle}
             selectedTraining={selectedTraining}

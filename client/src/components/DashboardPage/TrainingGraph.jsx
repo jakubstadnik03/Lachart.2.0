@@ -148,9 +148,22 @@ const TrainingGraph = ({
   selectedTitle, 
   setSelectedTitle, 
   selectedTraining, 
-  setSelectedTraining 
+  setSelectedTraining,
+  selectedSport,
+  setSelectedSport
 }) => {
-  const [selectedSport, setSelectedSport] = useState('bike');
+  // Get available sports from trainings
+  const availableSports = [...new Set(trainingList.map(t => t.sport))].filter(Boolean);
+  
+  // Initialize selectedSport with first available sport if not provided
+  const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
+    if (selectedSport) return selectedSport;
+    return availableSports.length > 0 ? availableSports[0] : 'bike';
+  });
+  
+  // Use external selectedSport if provided, otherwise use internal
+  const currentSelectedSport = selectedSport || internalSelectedSport;
+  const setCurrentSelectedSport = setSelectedSport || setInternalSelectedSport;
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
@@ -179,7 +192,7 @@ const TrainingGraph = ({
     // console.log('Current selectedSport:', selectedSport);
     
     // Nejprve aktualizujeme sport
-    setSelectedSport(newSport);
+    setCurrentSelectedSport(newSport);
     // console.log('setSelectedSport called with:', newSport);
     
     // Pak aktualizujeme data pro nový sport
@@ -211,7 +224,7 @@ const TrainingGraph = ({
 
   // Handler pro změnu názvu tréninku
   const handleTitleChange = (newTitle) => {
-    const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
+    const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
     const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
     
     // Seřadíme tréninky podle data od nejnovějšího
@@ -220,28 +233,58 @@ const TrainingGraph = ({
     // Vybereme nejnovější trénink
     const newestTraining = trainingsWithTitle[0]?._id;
     
-    setSelectedTitle(newTitle);
-    setSelectedTraining(newestTraining);
+    if (setSelectedTitle) setSelectedTitle(newTitle);
+    if (setSelectedTraining && newestTraining) setSelectedTraining(newestTraining);
   };
 
   // Handler pro změnu konkrétního tréninku podle data
   const handleTrainingChange = (trainingId) => {
     setSelectedTraining(trainingId);
+    // Aktualizujeme také selectedTitle, aby se synchronizovalo s TrainingStats
+    const training = trainingList.find(t => t._id === trainingId);
+    if (training && setSelectedTitle) {
+      setSelectedTitle(training.title);
+    }
   };
 
   useEffect(() => {
     if (!trainingList || trainingList.length === 0) return;
     
     setLoading(false);
-    const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
+    const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
     
     if (sportTrainings.length === 0) {
-      setSelectedTitle(null);
-      setSelectedTraining(null);
+      if (setSelectedTitle) setSelectedTitle(null);
+      if (setSelectedTraining) setSelectedTraining(null);
       return;
     }
 
-    // Seřadíme všechny tréninky podle data od nejnovějšího
+    // Pokud už máme vybraný trénink a je stále platný, necháme ho
+    if (selectedTraining) {
+      const currentTraining = trainingList.find(t => t._id === selectedTraining);
+      if (currentTraining && currentTraining.sport === currentSelectedSport) {
+        // Trénink je stále platný, aktualizujeme pouze title pokud se změnil
+        if (setSelectedTitle && currentTraining.title !== selectedTitle) {
+          setSelectedTitle(currentTraining.title);
+        }
+        return;
+      }
+    }
+
+    // Pokud máme vybraný title, zkusíme najít trénink s tímto názvem
+    if (selectedTitle) {
+      const trainingsWithTitle = sportTrainings
+        .filter(t => t.title === selectedTitle)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      if (trainingsWithTitle.length > 0) {
+        if (setSelectedTraining) {
+          setSelectedTraining(trainingsWithTitle[0]._id);
+        }
+        return;
+      }
+    }
+
+    // Jinak nastavíme nejnovější trénink
     const sortedTrainings = [...sportTrainings].sort((a, b) => {
       const dateA = new Date(a.date);
       const dateB = new Date(b.date);
@@ -252,10 +295,10 @@ const TrainingGraph = ({
     
     // Nastavíme název a trénink na nejnovější
     if (newestTraining) {
-      setSelectedTitle(newestTraining.title);
-      setSelectedTraining(newestTraining._id);
+      if (setSelectedTitle) setSelectedTitle(newestTraining.title);
+      if (setSelectedTraining) setSelectedTraining(newestTraining._id);
     }
-  }, [selectedSport, trainingList, setSelectedTitle, setSelectedTraining]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining]);
 
   // Sloučíme dva useEffects do jednoho pro optimalizaci
   useEffect(() => {
@@ -298,7 +341,7 @@ const TrainingGraph = ({
   if (!trainingList.length) return <div>No trainings available</div>;
 
   const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
-  const sportTrainings = trainingList.filter(t => t.sport === selectedSport);
+  const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
@@ -306,7 +349,7 @@ const TrainingGraph = ({
     return (
       <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold text-gray-500">No trainings for {selectedSport}</h2>
+          <h2 className="text-lg font-semibold text-gray-500">No trainings for {currentSelectedSport}</h2>
           <div className="flex items-center gap-4">
             {/* Settings menu */}
             <div className="relative" ref={settingsRef}>
@@ -325,10 +368,10 @@ const TrainingGraph = ({
                       <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
                       <select 
                         className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
-                        value={selectedSport}
+                        value={currentSelectedSport}
                         onChange={(e) => handleSportChange(e.target.value)}
                       >
-                        {['bike', 'run', 'swim'].map((sport) => (
+                        {availableSports.map((sport) => (
                           <option key={sport} value={sport}>
                             {sport.charAt(0).toUpperCase() + sport.slice(1)}
                           </option>
@@ -344,7 +387,7 @@ const TrainingGraph = ({
 
         <div className="relative" style={{ height: '300px' }}>
           <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-            No training data available for {selectedSport}
+            No training data available for {currentSelectedSport}
           </div>
         </div>
       </div>
@@ -375,10 +418,10 @@ const TrainingGraph = ({
                       <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
                       <select 
                         className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
-                        value={selectedSport}
+                        value={currentSelectedSport}
                         onChange={(e) => handleSportChange(e.target.value)}
                       >
-                        {['bike', 'run', 'swim'].map((sport) => (
+                        {availableSports.map((sport) => (
                           <option key={sport} value={sport}>
                             {sport.charAt(0).toUpperCase() + sport.slice(1)}
                           </option>
@@ -451,7 +494,7 @@ const TrainingGraph = ({
         max: ranges.power.max,
         ticks: {
           stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
-          callback: (value) => formatPowerValue(value, selectedSport),
+          callback: (value) => formatPowerValue(value, currentSelectedSport),
           display: true,
           autoSkip: false,
         },
@@ -523,10 +566,10 @@ const TrainingGraph = ({
                     <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
                     <select 
                       className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
-                      value={selectedSport}
+                      value={currentSelectedSport}
                       onChange={(e) => handleSportChange(e.target.value)}
                     >
-                      {['bike', 'run', 'swim'].map((sport) => (
+                      {availableSports.map((sport) => (
                         <option key={sport} value={sport}>
                           {sport.charAt(0).toUpperCase() + sport.slice(1)}
                         </option>
@@ -562,7 +605,7 @@ const TrainingGraph = ({
             labels: selectedTrainingData.results.map(r => r.interval.toString()),
             datasets: [
               {
-                label: selectedSport === 'bike' ? "Power" : "Pace",
+                label: currentSelectedSport === 'bike' ? "Power" : "Pace",
                 data: selectedTrainingData.results.map(r => r.power),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",
@@ -593,9 +636,9 @@ const TrainingGraph = ({
             tooltip={tooltip} 
             datasets={selectedTrainingData.results.map(r => ({
               ...r,
-              power: formatPowerValue(r.power, selectedSport)
+              power: formatPowerValue(r.power, currentSelectedSport)
             }))} 
-            sport={selectedSport}
+            sport={currentSelectedSport}
           />
         )}
       </div>

@@ -17,11 +17,24 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
 // Registrace modulů pro Chart.js
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-export default function SpiderChart({ trainings = [], userTrainings = [] }) {
-  const [selectedSport, setSelectedSport] = useState('bike');
+export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport }) {
+  // Get available sports from trainings
+  const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+  
+  // Initialize selectedSport with first available sport if not provided
+  const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
+    if (selectedSport) return selectedSport;
+    return availableSports.length > 0 ? availableSports[0] : 'bike';
+  });
+  
+  // Use external selectedSport if provided, otherwise use internal
+  const currentSelectedSport = selectedSport || internalSelectedSport;
+  const setCurrentSelectedSport = setSelectedSport || setInternalSelectedSport;
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedTrainings, setSelectedTrainings] = useState([]);
+  const [selectedMonths, setSelectedMonths] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMonthsExpanded, setIsMonthsExpanded] = useState(false);
 
   // Funkce pro formátování času do formátu mm:ss
   const formatPace = (seconds) => {
@@ -42,19 +55,42 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     }
   };
 
+  // Parse pace from mm:ss format to seconds
+  const parsePaceToSeconds = (paceValue) => {
+    if (!paceValue) return null;
+    if (typeof paceValue === 'number') return paceValue;
+    if (typeof paceValue === 'string') {
+      const parts = paceValue.split(':');
+      if (parts.length === 2) {
+        const minutes = parseInt(parts[0], 10);
+        const seconds = parseInt(parts[1], 10);
+        if (!isNaN(minutes) && !isNaN(seconds)) {
+          return minutes * 60 + seconds;
+        }
+      }
+      const num = Number(paceValue);
+      if (!isNaN(num)) return num;
+    }
+    return null;
+  };
+
   // Funkce pro výpočet průměrné hodnoty tréninku
   const calculateTrainingValue = (training, sport) => {
     if (!training.results || training.results.length === 0) return 0;
     
     // Pro kolo bereme průměrný výkon
-    if (sport === 'bike') {
-      const value = training.results.reduce((sum, r) => sum + r.power, 0) / training.results.length;
-      // console.log(`Training: ${training.title}, Value: ${value}W`);
+    if (sport === 'bike' || sport === 'Bike') {
+      const powers = training.results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
+      if (powers.length === 0) return 0;
+      const value = powers.reduce((sum, p) => sum + p, 0) / powers.length;
       return value;
     } else {
-      // Pro běh a plavání bereme průměrný pace
-      const value = training.results.reduce((sum, r) => sum + r.pace, 0) / training.results.length;
-      // console.log(`Training: ${training.title}, Value: ${value} pace`);
+      // Pro běh a plavání: power obsahuje pace v mm:ss formátu
+      const paces = training.results
+        .map(r => parsePaceToSeconds(r.power))
+        .filter(p => p !== null && p > 0);
+      if (paces.length === 0) return 0;
+      const value = paces.reduce((sum, p) => sum + p, 0) / paces.length;
       return value;
     }
   };
@@ -63,33 +99,65 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
     return <div className="text-gray-500 text-center">No data available</div>;
   }
 
-  // Připravíme options pro dropdown sportu
-  const sportOptions = [
-    { value: 'bike', label: 'Bike' },
-    { value: 'swim', label: 'Swim' },
-    { value: 'run', label: 'Run' }
-  ];
+  // Připravíme options pro dropdown sportu - pouze sporty, které mají tréninky
+  const sportOptions = availableSports.map(sport => ({
+    value: sport,
+    label: sport.charAt(0).toUpperCase() + sport.slice(1)
+  }));
 
   // Filtrování podle sportu a roku
   const filteredTrainings = trainings.filter(
-    (t) => t.sport === selectedSport && 
+    (t) => t.sport === currentSelectedSport && 
     new Date(t.date).getFullYear() === selectedYear &&
     (selectedTrainings.length === 0 || selectedTrainings.includes(t.title))
   );
 
   // Získání unikátních názvů tréninků pro daný sport a rok
   const trainingOptions = [...new Set(trainings
-    .filter(t => t.sport === selectedSport && new Date(t.date).getFullYear() === selectedYear)
+    .filter(t => t.sport === currentSelectedSport && new Date(t.date).getFullYear() === selectedYear)
     .map(t => t.title)
   )].map(title => ({
     value: title,
     label: title
   }));
 
-  // Získání unikátních měsíců ze vstupních dat a omezení jejich počtu
-  const uniqueMonths = [...new Set(filteredTrainings.map(t => new Date(t.date).toLocaleString('default', { month: 'long' })))];
-  const months = uniqueMonths.slice(0, 4);
-  const monthColors = ["#00AC07", "#7755FF", "#AC0000", "#3F8CFE"];
+  // Získání unikátních měsíců ze vstupních dat seřazených chronologicky
+  const monthData = filteredTrainings.map(t => ({
+    month: new Date(t.date).toLocaleString('default', { month: 'long' }),
+    date: new Date(t.date),
+    year: new Date(t.date).getFullYear()
+  }));
+  
+  // Seřadit měsíce chronologicky (nejnovější první)
+  const sortedMonths = [...new Map(
+    monthData
+      .sort((a, b) => b.date - a.date) // Seřadit podle data (nejnovější první)
+      .map(item => [item.month + '-' + item.year, item])
+  ).values()].map(item => item.month);
+  
+  // Odstranit duplicity a zachovat pořadí
+  const uniqueMonths = [...new Set(sortedMonths)];
+  const months = uniqueMonths; // Zobrazit všechny měsíce s daty
+  
+  // Rozšířená paleta barev pro více měsíců
+  const monthColors = [
+    "#00AC07", // Zelená
+    "#7755FF", // Fialová
+    "#AC0000", // Červená
+    "#3F8CFE", // Modrá
+    "#FF9500", // Oranžová
+    "#00D4AA", // Tyrkysová
+    "#FF6B9D", // Růžová
+    "#8B5A2B", // Hnědá
+    "#9B59B6", // Fialová 2
+    "#E74C3C", // Červená 2
+    "#3498DB", // Modrá 2
+    "#1ABC9C", // Zelená 2
+    "#F39C12", // Oranžová 2
+    "#E67E22", // Oranžová 3
+    "#16A085", // Zelená 3
+    "#27AE60", // Zelená 4
+  ];
 
   // Strukturování dat podle měsíců a tréninků
   const transformedData = {};
@@ -110,21 +178,34 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
   filteredTrainings.forEach(training => {
     const month = new Date(training.date).toLocaleString('default', { month: 'long' });
     if (transformedData[month]) {
-      const value = calculateTrainingValue(training, selectedSport);
+      const value = calculateTrainingValue(training, currentSelectedSport);
       if (value > 0) {
-        transformedData[month][training.title] = value;
+        // Pokud už existuje hodnota pro tento trénink v měsíci, vezmeme průměr
+        if (transformedData[month][training.title] !== null) {
+          transformedData[month][training.title] = 
+            (transformedData[month][training.title] + value) / 2;
+        } else {
+          transformedData[month][training.title] = value;
+        }
       }
     }
   });
 
-  // Filter out months with no data (all values are null or 0)
-  const monthsWithData = months.filter(month => 
+  // Filter out months with no data (all values are null or 0) a seřadit podle původního pořadí
+  const allMonthsWithData = months.filter(month => 
+    transformedData[month] && 
     Object.values(transformedData[month]).some(value => value !== null && value > 0)
   );
+  
+  // Pokud nejsou vybrané žádné měsíce, zobrazit všechny
+  // Pokud jsou vybrané měsíce, zobrazit pouze vybrané
+  const monthsWithData = selectedMonths.length > 0 
+    ? allMonthsWithData.filter(month => selectedMonths.includes(month))
+    : allMonthsWithData;
 
   // Calculate minimum value for the scale
   const getMinScaleValue = () => {
-    if (selectedSport !== 'bike') return 0;
+    if (currentSelectedSport !== 'bike') return 0;
     
     // Get all non-null values from the data
     const allValues = Object.values(transformedData)
@@ -179,14 +260,14 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
         suggestedMin: getMinScaleValue(),
         ticks: {
           font: { size: 14 },
-          callback: (value) => formatValue(value, selectedSport),
+          callback: (value) => formatValue(value, currentSelectedSport),
         },
         pointLabels: {
           font: {
-            size: 12,
+            size: 11,
           },
-          padding: 10,
-          maxWidth: 120,
+          padding: 6,
+          maxWidth: 100,
           callback: function(value) {
             if (value.length > 15) {
               return value.substring(0, 15) + '...';
@@ -200,12 +281,12 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
       legend: {
         position: 'bottom',
         labels: {
-          font: { size: 12 },
+          font: { size: 11 },
           usePointStyle: true,
-          padding: 5,
-          boxWidth: 12,
+          padding: 2,
+          boxWidth: 10,
         },
-        padding: 0,
+        padding: 2,
         margin: 0,
       },
       tooltip: {
@@ -226,7 +307,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
           label: (context) => {
             const value = context.raw;
             if (value === null || value === 0) return `${context.dataset.label}: No data`;
-            return `${context.dataset.label}: ${formatValue(value, selectedSport)}`;
+            return `${context.dataset.label}: ${formatValue(value, currentSelectedSport)}`;
           },
           labelPointStyle: (context) => {
             return {
@@ -241,16 +322,17 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
 
   return (
     <div className="w-full h-full flex flex-col items-center bg-white p-1 sm:p-2 rounded-3xl shadow-md relative">
-      <div className="flex flex-col sm:flex-row items-center w-full justify-between gap-1 sm:gap-0 mb-1">
+      <div className="flex flex-col sm:flex-row items-center w-full justify-between gap-1 sm:gap-0 mb-2">
         <h2 className="text-base sm:text-lg font-semibold">Training Power Chart</h2>
         <div className="flex items-center gap-2">
           {/* Dropdown pro výběr sportu */}
           <DropdownMenu
-            selectedValue={selectedSport}
+            selectedValue={currentSelectedSport}
             options={sportOptions}
             onChange={(value) => {
-              setSelectedSport(value);
+              setCurrentSelectedSport(value);
               setSelectedTrainings([]);
+              setSelectedMonths([]);
             }}
             displayKey="label"
             valueKey="value"
@@ -280,12 +362,69 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
                       onChange={(e) => {
                         setSelectedYear(Number(e.target.value));
                         setSelectedTrainings([]);
+                        setSelectedMonths([]);
                       }}
                     >
                       {[2022, 2023, 2024, 2025].map((year) => (
                         <option key={year} value={year}>{year}</option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700">Select Months</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (selectedMonths.length === allMonthsWithData.length) {
+                              setSelectedMonths([]);
+                            } else {
+                              setSelectedMonths([...allMonthsWithData]);
+                            }
+                          }}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          {selectedMonths.length === allMonthsWithData.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                        <button
+                          onClick={() => setIsMonthsExpanded(!isMonthsExpanded)}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          {isMonthsExpanded ? 'Collapse' : 'Expand'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className={`mt-1 space-y-1 ${isMonthsExpanded ? 'max-h-60 overflow-y-auto' : 'max-h-0 overflow-hidden'} transition-all duration-200 shadow-sm focus:ring focus:ring-indigo-200 text-xs sm:text-sm`}>
+                      {allMonthsWithData.map((month) => (
+                        <div key={month} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id={`month-${month}`}
+                            checked={selectedMonths.includes(month)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMonths([...selectedMonths, month]);
+                              } else {
+                                setSelectedMonths(selectedMonths.filter(m => m !== month));
+                              }
+                            }}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                          <label
+                            htmlFor={`month-${month}`}
+                            className="ml-2 text-xs sm:text-sm text-gray-700 flex items-center"
+                          >
+                            <span 
+                              className="w-1.5 h-1.5 rounded-full mr-2"
+                              style={{ 
+                                backgroundColor: monthColors[allMonthsWithData.indexOf(month) % monthColors.length] 
+                              }}
+                            ></span>
+                            {month}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between">
@@ -331,11 +470,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [] }) {
         </div>
       </div>
       {filteredTrainings.length > 0 ? (
-        <div className="w-full h-[350px] lg:h-[450px]">
+        <div className="w-full h-[280px] sm:h-[320px] lg:h-[380px]">
           <Radar data={data} options={options} />
         </div>
       ) : (
-        <div className="text-gray-500 mt-10 text-sm sm:text-lg">No data available for {selectedSport}</div>
+        <div className="text-gray-500 mt-10 text-sm sm:text-lg">No data available for {currentSelectedSport}</div>
       )}
     </div>
   );

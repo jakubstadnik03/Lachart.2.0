@@ -326,13 +326,24 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     if (savedActivity?.laps && savedActivity.laps.length > 0) {
       // Start with saved laps from database (they include manually created ones)
       mergedLaps = savedActivity.laps.map(savedLap => {
-        // Try to find matching API lap by checking if startTime matches (within 5 seconds)
+        // Try to find matching API lap by checking if startTime/start_date matches (within 5 seconds)
         const apiLap = laps.find(lap => {
-          if (lap.start_date && savedLap.startTime) {
-            const apiTime = new Date(lap.start_date).getTime();
-            const savedTime = new Date(savedLap.startTime).getTime();
+          const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
+                           (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
+          const apiTime = lap.start_date ? new Date(lap.start_date).getTime() : null;
+          
+          if (savedTime && apiTime) {
             return Math.abs(apiTime - savedTime) < 5000;
           }
+          
+          // Fallback: match by elapsed_time, distance, and power if no time available
+          if (!savedTime && !apiTime) {
+            const timeMatch = Math.abs((lap.elapsed_time || 0) - (savedLap.elapsed_time || 0)) < 1;
+            const distMatch = Math.abs((lap.distance || 0) - (savedLap.distance || 0)) < 0.1;
+            const powerMatch = Math.abs((lap.average_watts || 0) - (savedLap.average_watts || 0)) < 1;
+            return timeMatch && distMatch && powerMatch;
+          }
+          
           return false;
         });
         
@@ -372,9 +383,11 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         savedActivity.laps.forEach((savedLap, savedIdx) => {
           if (matchedSavedLapIndices.has(savedIdx)) return; // Already matched
           
-          if (apiLap.start_date && savedLap.startTime) {
-            const apiTime = new Date(apiLap.start_date).getTime();
-            const savedTime = new Date(savedLap.startTime).getTime();
+          const savedTime = savedLap.startTime ? new Date(savedLap.startTime).getTime() : 
+                           (savedLap.start_date ? new Date(savedLap.start_date).getTime() : null);
+          const apiTime = apiLap.start_date ? new Date(apiLap.start_date).getTime() : null;
+          
+          if (savedTime && apiTime) {
             if (Math.abs(apiTime - savedTime) < 5000) {
               hasMatch = true;
               matchedSavedLapIndices.add(savedIdx);
@@ -392,7 +405,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           }
           
           // Try matching by elapsed_time, distance, and power (for laps without time)
-          if (!apiLap.start_date && !savedLap.startTime) {
+          if (!savedTime && !apiTime) {
             const timeMatch = Math.abs((apiLap.elapsed_time || 0) - (savedLap.elapsed_time || 0)) < 1;
             const distMatch = Math.abs((apiLap.distance || 0) - (savedLap.distance || 0)) < 0.1;
             const powerMatch = Math.abs((apiLap.average_watts || 0) - (savedLap.average_watts || 0)) < 1;

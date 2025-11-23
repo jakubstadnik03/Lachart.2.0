@@ -1,5 +1,5 @@
 // Event logging utility for client-side
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://lachart.onrender.com';
+import { API_BASE_URL } from '../config/api.config';
 
 export const logEvent = async (type, metadata = {}, userId = null) => {
   try {

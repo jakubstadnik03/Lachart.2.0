@@ -101,6 +101,8 @@ function convertPowerToPace(seconds, sport) {
 }
 
 export default function TrainingTable({ trainings = [], selectedSport = 'all', onSportChange }) {
+  // Get available sports from trainings
+  const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [displayCount, setDisplayCount] = useState(6);
   const settingsRef = useRef(null);
@@ -211,8 +213,10 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
                           value={selectedSport}
                           onChange={(e) => handleSportChange(e.target.value)}
                         >
-                          <option value="all">All Sports</option>
-                          {['bike', 'run', 'swim'].map((sport) => (
+                          {availableSports.length > 1 && (
+                            <option value="all">All Sports</option>
+                          )}
+                          {availableSports.map((sport) => (
                             <option key={sport} value={sport}>
                               {sport.charAt(0).toUpperCase() + sport.slice(1)}
                             </option>

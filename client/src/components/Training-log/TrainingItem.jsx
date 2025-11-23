@@ -8,14 +8,6 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
   if (!training) return null;
   const { date, title, specifics, comments, results, sport, description } = training;
 
-  // Handle click on the training item
-  const handleTrainingClick = (e) => {
-    // Prevent navigation if clicking on buttons or links
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') {
-      return;
-    }
-    navigate(`/training-history/${encodeURIComponent(title)}`);
-  };
 
   const getSportIcon = (sport) => {
     switch (sport) {
@@ -114,11 +106,14 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
     };
 
     const formatDuration = (duration, durationType) => {
-      if (!duration) return '';
+      if (!duration && duration !== 0) return '';
+      
+      // Převést duration na string pro kontrolu
+      const durationStr = String(duration);
       
       if (durationType === 'time') {
-        // Pokud je duration ve formátu sekund, převedeme na MM:SS
-        if (!duration.includes(':')) {
+        // Pokud je duration ve formátu sekund (číslo nebo string bez dvojtečky), převedeme na MM:SS
+        if (typeof duration === 'number' || !durationStr.includes(':')) {
           const seconds = parseInt(duration);
           if (!isNaN(seconds)) {
             const minutes = Math.floor(seconds / 60);
@@ -126,10 +121,10 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
             return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
           }
         }
-        return duration;
+        return durationStr;
       }
       
-      return duration;
+      return durationStr;
     };
   
     return (
@@ -175,14 +170,16 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="bg-white rounded-lg shadow-md p-4 mb-4 cursor-pointer hover:shadow-lg transition-shadow"
-      onClick={handleTrainingClick}
+      className="bg-white rounded-lg shadow-md p-4 mb-4 hover:shadow-lg transition-shadow"
     >
       {/* Header - vždy viditelný - upravený pro lepší zarovnání s hlavičkou tabulky */}
       <div 
-        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center hover:bg-gray-50"
+        className="grid grid-cols-3 sm:grid-cols-8 gap-2 p-4 items-center hover:bg-gray-50 cursor-pointer"
         onClick={(e) => {
-          e.stopPropagation(); // Prevent navigation when toggling expand
+          // Prevent navigation when clicking on buttons
+          if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            return;
+          }
           onToggleExpand();
         }}
       >
@@ -206,19 +203,18 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
 
       {/* Expandovaný obsah */}
       {isExpanded && (
-        <div className="p-4 border-t border-gray-200">
-          {/* Compare button */}
+        <div className="p-4 border-t border-gray-200" onClick={(e) => e.stopPropagation()}>
+          {/* View Training button */}
           <div className="flex justify-end mb-4">
             <button
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const urlTitle = title.replace(/\s+/g, '-');
-                window.location.href = `/training-history/${urlTitle}`;
+                navigate(`/training-calendar?trainingId=${training._id}&title=${encodeURIComponent(title)}`);
               }}
               className="bg-secondary hover:bg-secondary-dark text-white px-4 py-2 rounded-md text-sm"
             >
-              Compare Training
+              View Training
             </button>
           </div>
 
