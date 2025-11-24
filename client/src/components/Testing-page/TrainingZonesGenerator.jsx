@@ -431,39 +431,39 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       </span>
                     </td>
                     {/* ACTION BUTTONS */}
-                    <td className="px-0.5 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center">
+                    <td className="px-1 sm:px-2 md:px-4 py-1.5 sm:py-2.5 text-center">
                       {!isEditingZones ? (
                         <button
                           onClick={handleEditZones}
-                          className="p-2 sm:p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition border-none bg-white/60 hover:bg-blue-100/80 rounded-xl shadow hover:scale-110 hover:ring-2 hover:ring-blue-300/60 duration-150 active:scale-95"
+                          className="px-2 sm:px-3 py-1.5 sm:py-2 flex items-center justify-center transition border border-blue-100 bg-white/80 hover:bg-blue-50 rounded-lg shadow-sm text-blue-600 text-xs sm:text-sm gap-1"
                           title="Edit zones"
                         >
-                          {/* Pencil Icon (lucide style) */}
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" className="sm:w-[22px] sm:h-[22px]" fill="none" viewBox="0 0 24 24" stroke="#246bfd" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6-6M4 20h7" />
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z" />
                           </svg>
+                          <span className="font-medium hidden sm:inline">Edit</span>
                         </button>
                       ) : (
-                        <div className="flex space-x-1 sm:space-x-2 justify-center">
+                        <div className="flex space-x-1 justify-center">
                           <button
                             onClick={handleSaveZones}
-                            className="p-2 sm:p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition border-none bg-white/70 hover:bg-green-100/90 rounded-xl shadow hover:scale-110 hover:ring-2 hover:ring-green-300/40 duration-150 active:scale-95"
+                            className="px-2 py-1.5 sm:px-3 sm:py-2 flex items-center justify-center border border-green-100 bg-white/90 text-green-600 rounded-lg shadow-sm hover:bg-green-50 text-xs sm:text-sm gap-1"
                             title="Save Changes"
                           >
-                            {/* Check Icon */}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" className="sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="#44b672" strokeWidth={2}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
+                            <span className="font-medium hidden sm:inline">Save</span>
                           </button>
                           <button
                             onClick={handleCancelEdit}
-                            className="p-2 sm:p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition border-none bg-white/70 hover:bg-red-100/90 rounded-xl shadow hover:scale-110 hover:ring-2 hover:ring-red-300/40 duration-150 active:scale-95"
+                            className="px-2 py-1.5 sm:px-3 sm:py-2 flex items-center justify-center border border-red-100 bg-white/90 text-red-500 rounded-lg shadow-sm hover:bg-red-50 text-xs sm:text-sm gap-1"
                             title="Cancel"
                           >
-                            {/* X Icon */}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" className="sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="#e3342f" strokeWidth={2}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
+                            <span className="font-medium hidden sm:inline">Cancel</span>
                           </button>
                         </div>
                       )}

@@ -701,7 +701,7 @@ const LactateCurveCalculatorPage = () => {
                         </div>
                         </div>
                                     <div className="w-full overflow-x-auto">
-                                        <div className="lg:min-w-[800px] lg:min-w-full">
+                                        <div className="w-full min-w-0">
                             <TestingForm
                                 testData={testData}
                                 onTestDataChange={handleTestDataChange}
@@ -728,8 +728,8 @@ const LactateCurveCalculatorPage = () => {
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Lactate Curve Analysis</h2>
-                                        <div className="w-full overflow-x-auto">
-                                            <div className="lg:min-w-[800px] lg:min-w-full">
+                                        <div className="w-full">
+                                            <div className="w-full min-w-0">
                                                 <LactateCurve 
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 
@@ -751,8 +751,8 @@ const LactateCurveCalculatorPage = () => {
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
                                         <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Calculator</h2>
-                                        <div className="w-full overflow-x-auto">
-                                            <div className="lg:min-w-[800px] lg:min-w-full">
+                                        <div className="w-full">
+                                            <div className="w-full min-w-0">
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
                                                     demoMode={true} 

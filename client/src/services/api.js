@@ -419,6 +419,18 @@ export const createStravaLap = async (stravaId, { startTime, endTime }) => {
   }
 };
 
+export const createStravaLapsBulk = async (stravaId, intervals = []) => {
+  try {
+    const response = await api.post(`/api/integrations/strava/activities/${stravaId}/laps/bulk`, {
+      intervals
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating Strava laps in bulk:', error);
+    throw error;
+  }
+};
+
 export const deleteStravaLap = async (stravaId, lapIndex) => {
   try {
     const response = await api.delete(`/api/integrations/strava/activities/${stravaId}/laps/${lapIndex}`);

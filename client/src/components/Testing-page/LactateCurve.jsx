@@ -404,8 +404,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     };
 
     return (
-      <div className="relative w-full max-w-full overflow-x-auto p-2 md:p-4 bg-white rounded-2xl shadow-lg">
-        <div style={{ width: '100%', minWidth: 0, maxWidth: '100vw', height: '400px' }}>
+      <div className="relative w-full p-2 md:p-4 bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div style={{ width: '100%', minWidth: 0, maxWidth: '100%', height: '360px' }}>
           <Line data={data} options={options} />
         </div>
       </div>

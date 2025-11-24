@@ -7,7 +7,7 @@ import CalendarView from '../components/Calendar/CalendarView';
 import ReactECharts from 'echarts-for-react';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
-import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById } from '../services/api';
+import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById } from '../services/api';
 import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
@@ -45,16 +45,16 @@ const deduplicateStravaLaps = (laps = []) => {
   };
 
   const buildKey = (lap, index, cumulativeTime = 0) => {
-    // Priority 1: lapNumber (most reliable)
-    if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-      return `lap_${lap.lapNumber}`;
-    }
-    
-    // Priority 2: startTime or start_date (normalized)
+    // Priority 1: startTime or start_date (most reliable for identifying duplicates)
     const startTime = lap.startTime || lap.start_date;
     const normalizedTime = normalizeTime(startTime);
     if (normalizedTime !== null) {
       return `time_${normalizedTime}`;
+    }
+    
+    // Priority 2: lapNumber (fallback when timestamp is unavailable)
+    if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+      return `lap_${lap.lapNumber}`;
     }
     
     // Priority 3: Combination of elapsed_time, distance, and power
@@ -192,15 +192,15 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     };
     
     const buildLapKeyForSave = (lap) => {
-      // Priority 1: lapNumber (most reliable)
-      if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-        return `lap_${lap.lapNumber}`;
-      }
-      // Priority 2: startTime or start_date (normalized)
+      // Priority 1: startTime or start_date (normalized)
       const startTime = lap.startTime || lap.start_date;
       const normalizedTime = normalizeTimeForSave(startTime);
       if (normalizedTime !== null) {
         return `time_${normalizedTime}`;
+      }
+      // Priority 2: lapNumber fallback when timestamp missing
+      if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+        return `lap_${lap.lapNumber}`;
       }
       // Priority 3: Combination of elapsed_time, distance, power (match backend format)
       const elapsedTime = Math.round(lap.elapsed_time || 0);
@@ -465,6 +465,26 @@ const FitAnalysisPage = () => {
   const [selectedStrava, setSelectedStrava] = useState(null);
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
   const stravaChartRef = useRef(null);
+  const formatDateTime = useCallback((dateStr) => {
+    if (!dateStr) return '-';
+    try {
+      return new Date(dateStr).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  }, []);
+  const stravaActivityDate = selectedStrava?.start_date_local || selectedStrava?.start_date || selectedStrava?.startDate;
+  const stravaActivityTitle = selectedStrava?.name || selectedStrava?.titleManual || 'Strava Activity';
+  const stravaActivitySport = selectedStrava?.sport_type || selectedStrava?.type || selectedStrava?.sport;
+  const stravaActivityDistance = selectedStrava?.distance ?? null;
+  const stravaActivityDuration = selectedStrava?.moving_time || selectedStrava?.elapsed_time || null;
+  const stravaElevationGain = selectedStrava?.total_elevation_gain;
+  const hasStravaDistance = stravaActivityDistance !== null && stravaActivityDistance !== undefined;
+  const hasStravaDuration = stravaActivityDuration !== null && stravaActivityDuration !== undefined;
+  const hasStravaElevation = stravaElevationGain !== null && stravaElevationGain !== undefined;
   
   // Strava interval creation state
   const [stravaIsDragging, setStravaIsDragging] = useState(false);
@@ -2665,16 +2685,16 @@ const FitAnalysisPage = () => {
                 };
                 
                 const buildLapKeyForGraph = (lap) => {
-                  // Priority 1: lapNumber (most reliable)
-                  if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-                    return `lap_${lap.lapNumber}`;
-                  }
-                  
-                  // Priority 2: startTime or start_date (normalized)
+                  // Priority 1: startTime or start_date (normalized)
                   const startTime = lap.startTime || lap.start_date;
                   const normalizedTime = normalizeTimeForGraph(startTime);
                   if (normalizedTime !== null) {
                     return `time_${normalizedTime}`;
+                  }
+                  
+                  // Priority 2: lapNumber fallback
+                  if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+                    return `lap_${lap.lapNumber}`;
                   }
                   
                   // Priority 3: Combination of elapsed_time, distance, power (match backend format)
@@ -3211,9 +3231,10 @@ const FitAnalysisPage = () => {
                     }
                   },
                   legend: {
-                    data: usePace 
-                      ? ['Pace','Heart Rate','Elevation','Intervals']
-                      : ['Speed','Heart Rate','Power','Elevation','Intervals'],
+                    data: (usePace 
+                      ? ['Pace','Heart Rate','Elevation']
+                      : ['Speed','Heart Rate','Power','Elevation']
+                    ).concat(intervalBars.length > 0 ? ['Intervals'] : []),
                     textStyle: { fontSize: 12, fontWeight: 500 },
                     itemGap: 20,
                     top: 10,
@@ -3714,60 +3735,39 @@ const FitAnalysisPage = () => {
                 };
 
                 return (
-                  <div className="relative" id="strava-chart-container">
-                    {/* Drag selection overlay for Strava chart - only visible when dragging */}
-                    {stravaIsDragging && (
-                      <div
-                        className="absolute"
-                        style={{
-                          left: '60px',
-                          top: '60px',
-                          right: '50px',
-                          bottom: '80px',
-                          cursor: 'crosshair',
-                          zIndex: 10,
-                          pointerEvents: 'auto'
-                        }}
-                      />
-                    )}
-                    
-                    {/* Drag selection rectangle */}
-                    {stravaIsDragging && stravaDragStart.x !== stravaDragEnd.x && (
-                      <>
-                        <div
-                          className="absolute border-2 border-primary bg-primary/20 pointer-events-none z-50"
-                          style={{
-                            left: `${60 + Math.min(stravaDragStart.x - 60, stravaDragEnd.x - 60)}px`,
-                            top: '60px',
-                            width: `${Math.abs(stravaDragEnd.x - stravaDragStart.x)}px`,
-                            height: '240px'
-                          }}
-                        />
-                        {/* Show hint text */}
-                        <div
-                          className="absolute pointer-events-none z-50 text-xs text-primary-dark bg-primary/30 px-2 py-1 rounded"
-                          style={{
-                            left: `${(stravaDragStart.x + stravaDragEnd.x) / 2}px`,
-                            top: '65px',
-                            transform: 'translateX(-50%)'
-                          }}
-                        >
-                          {(() => {
-                            const startTime = Math.min(stravaDragStart.time || 0, stravaDragEnd.time || 0);
-                            const endTime = Math.max(stravaDragStart.time || 0, stravaDragEnd.time || 0);
-                            const duration = Math.max(0, endTime - startTime);
-                            if (duration > 0) {
-                              return `${formatDuration(duration)} - Release to create interval`;
-                            }
-                            return 'Drag to select interval';
-                          })()}
+                  <div className="space-y-3">
+                    {selectedStrava && (
+                      <div className="w-full overflow-x-auto">
+                        <div className="flex flex-wrap gap-2 sm:gap-3">
+                          <div className="flex-1 min-w-[180px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Activity</div>
+                            <div className="text-base font-semibold text-gray-900 truncate">{stravaActivityTitle}</div>
+                          </div>
+                          <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
+                            <div className="text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
+                          </div>
+                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
+                            <div className="text-base font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
+                          </div>
+                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Distance</div>
+                            <div className="text-base font-semibold text-gray-900">{hasStravaDistance ? formatDistance(stravaActivityDistance) : '-'}</div>
+                          </div>
+                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Duration</div>
+                            <div className="text-base font-semibold text-gray-900">{hasStravaDuration ? formatDuration(stravaActivityDuration) : '-'}</div>
+                          </div>
+                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Elevation</div>
+                            <div className="text-base font-semibold text-gray-900">{hasStravaElevation ? `${Math.round(stravaElevationGain)} m` : '-'}</div>
+                          </div>
                         </div>
-                      </>
+                      </div>
                     )}
                     
-                   <div className="relative">
-                     {/* Legend buttons - styled as part of legend */}
-                     <div className="absolute top-2 z-20 flex items-center gap-3" style={{ left: '65%' }}>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                        <button
                          onClick={() => {
                            if (stravaChartRef.current) {
@@ -3941,25 +3941,99 @@ const FitAnalysisPage = () => {
                               return;
                             }
                             
-                            // Create all detected intervals
-                            let createdCount = 0;
-                            for (const interval of finalIntervals) {
-                              try {
-                                await createStravaLap(selectedStrava.id, {
-                                  startTime: interval.start,
-                                  endTime: interval.end
-                                });
-                                createdCount++;
-                              } catch (error) {
-                                console.error('Error creating interval:', error);
+                            // Build existing interval key map to prevent duplicates
+                            const buildActivityStart = () => {
+                              const startDateStr = selectedStrava?.start_date_local ||
+                                selectedStrava?.start_date ||
+                                selectedStrava?.raw?.start_date ||
+                                selectedStrava?.startDate;
+                              const parsed = startDateStr ? new Date(startDateStr) : new Date();
+                              return isNaN(parsed.getTime()) ? new Date() : parsed;
+                            };
+
+                            const activityStartDate = buildActivityStart();
+                            const activityStartTimeMs = activityStartDate.getTime();
+
+                            const normalizeIntervalKey = (startSeconds, endSeconds) => {
+                              const normalizedStart = Math.round(startSeconds);
+                              const normalizedDuration = Math.round(endSeconds - startSeconds);
+                              return `${normalizedStart}_${normalizedDuration}`;
+                            };
+
+                            const existingIntervalKeys = (() => {
+                              const keys = new Set();
+                              const laps = deduplicateStravaLaps(selectedStrava?.laps || []);
+                              let cumulativeTimeSeconds = 0;
+
+                              laps.forEach((lap, idx) => {
+                                let startSeconds = 0;
+                                if (lap.startTime) {
+                                  startSeconds = (new Date(lap.startTime).getTime() - activityStartTimeMs) / 1000;
+                                } else if (lap.start_date) {
+                                  startSeconds = (new Date(lap.start_date).getTime() - activityStartTimeMs) / 1000;
+                                } else {
+                                  startSeconds = idx === 0 ? 0 : cumulativeTimeSeconds;
+                                }
+
+                                if (startSeconds < 0) {
+                                  startSeconds = 0;
+                                }
+
+                                const duration = lap.elapsed_time || 0;
+                                const endSeconds = startSeconds + duration;
+                                const key = normalizeIntervalKey(startSeconds, endSeconds);
+                                keys.add(key);
+                                cumulativeTimeSeconds = Math.max(cumulativeTimeSeconds, startSeconds) + duration;
+                              });
+
+                              return keys;
+                            })();
+
+                            const intervalsToCreate = [];
+                            let duplicatesSkipped = 0;
+
+                            finalIntervals.forEach((interval) => {
+                              const startSeconds = Math.max(0, Math.round(interval.start * 10) / 10);
+                              const endSeconds = Math.max(startSeconds + minIntervalDuration, Math.round(interval.end * 10) / 10);
+                              const key = normalizeIntervalKey(startSeconds, endSeconds);
+
+                              if (existingIntervalKeys.has(key)) {
+                                duplicatesSkipped += 1;
+                                return;
                               }
+
+                              existingIntervalKeys.add(key);
+                              intervalsToCreate.push({
+                                startTime: startSeconds,
+                                endTime: endSeconds
+                              });
+                            });
+
+                            if (intervalsToCreate.length === 0) {
+                              alert('All detected intervals already exist. Try adjusting detection parameters for different sections.');
+                              return;
+                            }
+
+                            let createdCount = 0;
+                            let skippedResponse = {};
+                            try {
+                              const response = await createStravaLapsBulk(selectedStrava.id, intervalsToCreate);
+                              createdCount = response?.created || 0;
+                              skippedResponse = response?.skipped || {};
+                            } catch (bulkError) {
+                              console.error('Error creating intervals in bulk:', bulkError);
+                              alert('Failed to create detected intervals: ' + (bulkError.response?.data?.error || bulkError.message));
+                              return;
                             }
                             
                             // Reload data
                             await loadStravaDetail(selectedStrava.id);
                             await loadExternalActivities();
                             
-                            alert(`Successfully created ${createdCount} out of ${intervals.length} detected intervals!`);
+                            const totalSkipped = duplicatesSkipped + (skippedResponse?.duplicates || 0);
+                            const skippedInvalid = (skippedResponse?.invalid || 0) + (skippedResponse?.empty || 0);
+                            
+                            alert(`Created ${createdCount} intervals. Skipped duplicates: ${totalSkipped}. Skipped invalid/empty: ${skippedInvalid}.`);
                           } catch (error) {
                             console.error('Error detecting intervals:', error);
                             alert('Error detecting intervals: ' + (error.response?.data?.error || error.message));
@@ -4001,6 +4075,58 @@ const FitAnalysisPage = () => {
                          />
                        </div>
                      )}
+                    
+                    <div className="relative mt-2" id="strava-chart-container">
+                      {/* Drag selection overlay for Strava chart - only visible when dragging */}
+                      {stravaIsDragging && (
+                        <div
+                          className="absolute"
+                          style={{
+                            left: '60px',
+                            top: '60px',
+                            right: '50px',
+                            bottom: '80px',
+                            cursor: 'crosshair',
+                            zIndex: 10,
+                            pointerEvents: 'auto'
+                          }}
+                        />
+                      )}
+                      
+                      {/* Drag selection rectangle */}
+                      {stravaIsDragging && stravaDragStart.x !== stravaDragEnd.x && (
+                        <>
+                          <div
+                            className="absolute border-2 border-primary bg-primary/20 pointer-events-none z-50"
+                            style={{
+                              left: `${60 + Math.min(stravaDragStart.x - 60, stravaDragEnd.x - 60)}px`,
+                              top: '60px',
+                              width: `${Math.abs(stravaDragEnd.x - stravaDragStart.x)}px`,
+                              height: '240px'
+                            }}
+                          />
+                          {/* Show hint text */}
+                          <div
+                            className="absolute pointer-events-none z-50 text-xs text-primary-dark bg-primary/30 px-2 py-1 rounded"
+                            style={{
+                              left: `${(stravaDragStart.x + stravaDragEnd.x) / 2}px`,
+                              top: '65px',
+                              transform: 'translateX(-50%)'
+                            }}
+                          >
+                            {(() => {
+                              const startTime = Math.min(stravaDragStart.time || 0, stravaDragEnd.time || 0);
+                              const endTime = Math.max(stravaDragStart.time || 0, stravaDragEnd.time || 0);
+                              const duration = Math.max(0, endTime - startTime);
+                              if (duration > 0) {
+                                return `${formatDuration(duration)} - Release to create interval`;
+                              }
+                              return 'Drag to select interval';
+                            })()}
+                          </div>
+                        </>
+                      )}
+                      
                   <ReactECharts 
                     ref={stravaChartRef}
                     option={option} 
@@ -4030,42 +4156,67 @@ const FitAnalysisPage = () => {
                       ✕
                     </button>
                 </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
-                    <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
-                      <div className="text-xs sm:text-sm text-gray-600 mb-1">Duration</div>
-                      <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{formatDuration(stravaSelectionStats.duration)}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div className="bg-white/90 border border-primary/20 rounded-2xl p-3 sm:p-4 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-gray-500">Duration</div>
+                          <div className="text-lg sm:text-xl font-bold text-primary">{formatDuration(stravaSelectionStats.duration)}</div>
+                        </div>
+                        <div className="text-2xl">⏱️</div>
+                      </div>
                     </div>
                     {stravaSelectionStats.totalDistance && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Distance</div>
-                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{formatDistance(stravaSelectionStats.totalDistance)}</div>
+                      <div className="bg-white/90 border border-primary/20 rounded-2xl p-3 sm:p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Distance</div>
+                            <div className="text-lg sm:text-xl font-bold text-primary">{formatDistance(stravaSelectionStats.totalDistance)}</div>
+                          </div>
+                          <div className="text-2xl">📏</div>
+                        </div>
                       </div>
                     )}
                     {stravaSelectionStats.avgSpeed && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg Speed</div>
-                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary">{stravaSelectionStats.avgSpeed} km/h</div>
+                      <div className="bg-white/90 border border-primary/20 rounded-2xl p-3 sm:p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Speed</div>
+                            <div className="text-lg sm:text-xl font-bold text-primary">{stravaSelectionStats.avgSpeed} km/h</div>
                         {stravaSelectionStats.maxSpeed && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxSpeed} km/h</div>
                         )}
+                          </div>
+                          <div className="text-2xl">⚡</div>
+                        </div>
                 </div>
                     )}
                     {stravaSelectionStats.avgHeartRate && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-blue-200/50 shadow-sm">
-                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg HR</div>
-                        <div className="text-sm sm:text-base md:text-lg font-bold text-red-600">{stravaSelectionStats.avgHeartRate} bpm</div>
+                      <div className="bg-white/90 border border-rose-200 rounded-2xl p-3 sm:p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg HR</div>
+                            <div className="text-lg sm:text-xl font-bold text-rose-500">{stravaSelectionStats.avgHeartRate} bpm</div>
                         {stravaSelectionStats.maxHeartRate && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxHeartRate} bpm</div>
                         )}
+                          </div>
+                          <div className="text-2xl text-rose-400">❤️</div>
+                        </div>
               </div>
                     )}
                     {stravaSelectionStats.avgPower && (
-                      <div className="bg-white/80 backdrop-blur-sm rounded-xl p-2 sm:p-3 md:p-4 border border-primary/30 shadow-sm">
-                        <div className="text-xs sm:text-sm text-gray-600 mb-1">Avg Power</div>
-                        <div className="text-sm sm:text-base md:text-lg font-bold text-primary-dark">{stravaSelectionStats.avgPower} W</div>
+                      <div className="bg-white/90 border border-indigo-200 rounded-2xl p-3 sm:p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                            <div className="text-lg sm:text-xl font-bold text-indigo-600">{stravaSelectionStats.avgPower} W</div>
                         {stravaSelectionStats.maxPower && (
                           <div className="text-xs text-gray-500 mt-1">Max: {stravaSelectionStats.maxPower} W</div>
                         )}
+                          </div>
+                          <div className="text-2xl text-indigo-500">⚙️</div>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -419,13 +419,15 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // Build helper function for lap key matching (same as deduplication)
       // Must be defined before deduplication to use consistent key format
       const buildLapKeyForMatching = (lap) => {
-        if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-          return `lap_${lap.lapNumber}`;
-        }
         const startTime = lap.startTime || lap.start_date;
         if (startTime) {
           const time = new Date(startTime).getTime();
-          return `time_${Math.floor(time / 1000)}`;
+          if (!Number.isNaN(time)) {
+            return `time_${Math.floor(time / 1000)}`;
+          }
+        }
+        if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+          return `lap_${lap.lapNumber}`;
         }
         const elapsedTime = Math.round(lap.elapsed_time || 0);
         const distance = Math.round((lap.distance || 0) * 10) / 10;
@@ -874,6 +876,216 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating Strava lap:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk create laps from detected intervals
+router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    const stravaId = parseInt(req.params.id);
+    const intervals = Array.isArray(req.body.intervals) ? req.body.intervals : [];
+    
+    if (!intervals.length) {
+      return res.status(400).json({ error: 'No intervals provided' });
+    }
+
+    const activity = await StravaActivity.findOne({
+      userId: user._id,
+      stravaId: stravaId
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: 'Strava activity not found' });
+    }
+
+    const token = await getValidStravaToken(user);
+    let streams = null;
+    try {
+      const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { keys: 'time,velocity_smooth,heartrate,watts,altitude,cadence', key_by_type: true }
+      });
+      streams = streamsResp.data;
+    } catch (e) {
+      return res.status(400).json({ error: 'Could not fetch activity streams from Strava' });
+    }
+
+    // Fetch activity detail once to determine start date
+    let activityStartDate = null;
+    try {
+      const detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const startDateStr = detailResp.data.start_date_local || detailResp.data.start_date;
+      if (startDateStr) {
+        activityStartDate = new Date(startDateStr);
+      }
+    } catch (e) {
+      activityStartDate = activity.startDate ? new Date(activity.startDate) : new Date();
+    }
+
+    if (!activityStartDate || isNaN(activityStartDate.getTime())) {
+      activityStartDate = activity.startDate ? new Date(activity.startDate) : new Date();
+    }
+
+    const activityStartMs = activityStartDate.getTime();
+
+    const timeStream = streams.time?.data || [];
+    const speedStream = streams.velocity_smooth?.data || [];
+    const hrStream = streams.heartrate?.data || [];
+    const powerStream = streams.watts?.data || [];
+    const cadenceStream = streams.cadence?.data || [];
+
+    if (!timeStream.length) {
+      return res.status(400).json({ error: 'No time stream data available' });
+    }
+
+    const buildLapKey = (lap) => {
+      const startTime = lap.startTime || lap.start_date;
+      if (startTime) {
+        const time = new Date(startTime).getTime();
+        if (!Number.isNaN(time)) {
+          return `time_${Math.floor(time / 1000)}`;
+        }
+      }
+      if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
+        return `lap_${lap.lapNumber}`;
+      }
+      const elapsedTime = Math.round(lap.elapsed_time || 0);
+      const distance = Math.round((lap.distance || 0) * 10) / 10;
+      const power = Math.round((lap.average_watts || 0) * 10) / 10;
+      return `fallback_t${elapsedTime}_d${distance}_p${power}`;
+    };
+
+    const existingKeys = new Set();
+    if (activity.laps && activity.laps.length > 0) {
+      activity.laps.forEach(lap => {
+        const key = buildLapKey(lap);
+        if (key) existingKeys.add(key);
+      });
+    }
+
+    const computeStatsForInterval = (startTime, endTime) => {
+      if (endTime <= startTime) return null;
+      const selectedIndices = [];
+      for (let i = 0; i < timeStream.length; i++) {
+        const time = timeStream[i];
+        if (time >= startTime && time <= endTime) {
+          selectedIndices.push(i);
+        }
+        if (time > endTime) {
+          break;
+        }
+      }
+
+      if (!selectedIndices.length) {
+        return null;
+      }
+
+      const collectValues = (stream) => selectedIndices.map(i => stream[i]).filter(v => v && v > 0);
+
+      const speeds = collectValues(speedStream);
+      const heartRates = collectValues(hrStream);
+      const powers = collectValues(powerStream);
+      const cadences = collectValues(cadenceStream);
+
+      const avg = (values) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+      const max = (values) => values.length ? Math.max(...values) : null;
+
+      const avgSpeed = avg(speeds);
+      const avgHeartRate = heartRates.length ? Math.round(avg(heartRates)) : null;
+      const avgPower = powers.length ? Math.round(avg(powers)) : null;
+      const avgCadence = cadences.length ? Math.round(avg(cadences)) : null;
+
+      const duration = endTime - startTime;
+      const totalDistance = avgSpeed ? avgSpeed * duration : 0;
+
+      return {
+        elapsed_time: duration,
+        moving_time: duration,
+        distance: totalDistance || 0,
+        average_speed: avgSpeed || 0,
+        max_speed: max(speeds) || 0,
+        average_heartrate: avgHeartRate,
+        max_heartrate: max(heartRates) || null,
+        average_watts: avgPower,
+        max_watts: max(powers) || null,
+        average_cadence: avgCadence,
+        max_cadence: max(cadences) || null
+      };
+    };
+
+    const results = {
+      created: 0,
+      skipped: {
+        duplicates: 0,
+        invalid: 0,
+        empty: 0
+      }
+    };
+
+    const newLaps = [];
+
+    intervals.forEach((interval) => {
+      const start = typeof interval.startTime === 'number' ? interval.startTime : interval.start;
+      const end = typeof interval.endTime === 'number' ? interval.endTime : interval.end;
+
+      if (!isFinite(start) || !isFinite(end) || end <= start) {
+        results.skipped.invalid += 1;
+        return;
+      }
+
+      const duration = end - start;
+      if (duration < 5) {
+        results.skipped.invalid += 1;
+        return;
+      }
+
+      const lapStartDate = new Date(activityStartMs + start * 1000);
+      const lapKey = buildLapKey({ startTime: lapStartDate.toISOString(), elapsed_time: duration });
+
+      if (lapKey && existingKeys.has(lapKey)) {
+        results.skipped.duplicates += 1;
+        return;
+      }
+
+      const stats = computeStatsForInterval(start, end);
+      if (!stats) {
+        results.skipped.empty += 1;
+        return;
+      }
+
+      const newLap = {
+        lapNumber: (activity.laps?.length || 0) + newLaps.length + 1,
+        startTime: lapStartDate,
+        ...stats
+      };
+
+      newLaps.push(newLap);
+      if (lapKey) {
+        existingKeys.add(lapKey);
+      }
+    });
+
+    if (!newLaps.length) {
+      return res.json({ success: false, created: 0, ...results });
+    }
+
+    activity.laps = activity.laps ? activity.laps.concat(newLaps) : newLaps;
+    await activity.save();
+
+    results.created = newLaps.length;
+
+    res.json({
+      success: true,
+      created: newLaps.length,
+      skipped: results.skipped,
+      activity
+    });
+  } catch (error) {
+    console.error('Error creating Strava laps in bulk:', error);
     res.status(500).json({ error: error.message });
   }
 });

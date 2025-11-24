@@ -406,8 +406,26 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const isUpdatingFromUserInput = useRef(false);
   const lastBaseLaValue = useRef('');
   
+  const lastResultsSignatureRef = useRef(null);
+
   useEffect(() => {
-    if (testData && !isUpdatingFromUserInput.current) {
+    if (!testData) {
+      setRows([{
+        interval: 1,
+        power: '',
+        heartRate: '',
+        lactate: '',
+        glucose: '',
+        RPE: ''
+      }]);
+      return;
+    }
+
+    if (isUpdatingFromUserInput.current) {
+      return;
+    }
+
+    if (testData) {
       // Use baseLa if available (string from user input), otherwise use baseLactate
       // IMPORTANT: Preserve the exact string value, including partial inputs like "1."
       // Don't use String() conversion if it's already a string to preserve partial inputs
@@ -445,13 +463,29 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         comments: testData.comments || ''
         };
       });
+      const resultsSignature = JSON.stringify(
+        (testData.results || []).map(row => ({
+          interval: row.interval,
+          power: row.power,
+          heartRate: row.heartRate,
+          lactate: row.lactate,
+          glucose: row.glucose,
+          RPE: row.RPE
+        }))
+      );
+
+      if (resultsSignature === lastResultsSignatureRef.current) {
+        return;
+      }
+      lastResultsSignatureRef.current = resultsSignature;
+
       if (testData.results && testData.results.length > 0) {
         const initialRows = testData.results.map(row => {
           let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
           
           // For existing tests (from backend), convert seconds to display format
           // Backend always stores pace in seconds for run/swim
-          if (!isNewTest && (testData.sport === 'run' || testData.sport === 'swim') && power) {
+          if ((testData.sport === 'run' || testData.sport === 'swim') && power) {
             const powerNum = parseFloat(power);
             // If it's a number > 60, it's seconds from backend - convert to display format
             if (!isNaN(powerNum) && powerNum > 60 && !power.includes(':')) {
@@ -490,15 +524,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           RPE: ''
         }]);
       }
-    } else {
-      setRows([{
-        interval: 1,
-        power: '',
-        heartRate: '',
-        lactate: '',
-        glucose: '',
-        RPE: ''
-      }]);
     }
   }, [testData, isNewTest, inputMode, unitSystem]);
 
@@ -659,11 +684,20 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     // Mark that we're updating from user input to prevent useEffect from overwriting
     if (field === 'baseLa') {
       isUpdatingFromUserInput.current = true;
-      lastBaseLaValue.current = String(value); // Store the value user is typing
-      // Keep the flag set longer to prevent useEffect from overwriting during typing
+      const stringValue = typeof value === 'string' ? value : String(value);
+      lastBaseLaValue.current = stringValue;
+      setFormData(prev => ({ ...prev, baseLa: stringValue }));
+      const updatedTestData = {
+        ...testData,
+        baseLa: stringValue,
+        baseLactate: stringValue,
+        results: rows
+      };
+      onTestDataChange(updatedTestData);
       setTimeout(() => {
         isUpdatingFromUserInput.current = false;
       }, 300);
+      return;
     }
     
     if (field === 'sport') {
