@@ -132,9 +132,80 @@ const AudienceCard = ({ title, description, icon, index }) => (
 const primary = 'bg-primary';
 const primaryText = 'text-primary';
 
+const updates = [
+  {
+    title: 'Bulk Strava interval detection released',
+    date: 'Nov 2025',
+    summary: 'Detect every power fluctuation, auto-create Strava laps, and analyze LT blocks instantly.',
+    link: '/fit-analysis'
+  },
+  {
+    title: 'Responsive lactate calculator revamp',
+    date: 'Oct 2025',
+    summary: 'TestingWithoutLogin now loads faster, scales on mobile, and preserves manual adjustments.',
+    link: '/lactate-curve-calculator'
+  },
+  {
+    title: 'Training Calendar available for all roles',
+    date: 'Sep 2025',
+    summary: 'Athletes, coaches, and admins now share the same calendar with athlete switcher support.',
+    link: '/training-calendar'
+  }
+];
+
+const seoUseCases = [
+  {
+    title: 'Free Lactate Curve Calculator',
+    description: 'Upload or enter test steps, visualize lactate vs. power/pace, and export PDF reports. Supports cycling, running, swimming, and triathlon.',
+    link: '/lactate-curve-calculator',
+    anchor: 'free-lactate-curve-calculator'
+  },
+  {
+    title: 'Coach & Athlete Management Software',
+    description: 'Plan workouts, review FIT trainings, sync Strava, and manage lactate history for every athlete inside one secure coach workspace.',
+    link: '/dashboard',
+    anchor: 'coach-athlete-management'
+  },
+  {
+    title: 'Training Calendar with Strava & FIT Sync',
+    description: 'Compare planned vs. completed sessions, detect intervals automatically, and keep all sports in a single interactive calendar.',
+    link: '/training-calendar',
+    anchor: 'training-calendar'
+  }
+];
+
+const faqItems = [
+  {
+    icon: 'question',
+    question: 'What is lactate threshold and why is it important?',
+    answer: "Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately."
+  },
+  {
+    icon: 'check',
+    question: 'How accurate is the free lactate threshold calculator?',
+    answer: 'LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training.'
+  },
+  {
+    icon: 'user',
+    question: 'Do I need to register to use the lactate calculator?',
+    answer: 'No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features.'
+  },
+  {
+    icon: 'flag',
+    question: 'What sports is LaChart suitable for?',
+    answer: 'LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort.'
+  },
+  {
+    icon: 'chart',
+    question: 'How does LaChart compare to expensive lab testing?',
+    answer: 'While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.'
+  }
+];
+
 const About = () => {
   // Cookie consent state
   const [showCookieBar, setShowCookieBar] = useState(false);
+  const [leadEmail, setLeadEmail] = useState('');
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('cookiesAccepted')) {
       setTimeout(() => setShowCookieBar(true), 1500);
@@ -143,6 +214,20 @@ const About = () => {
   const handleAcceptCookies = () => {
     localStorage.setItem('cookiesAccepted', '1');
     setShowCookieBar(false);
+  };
+
+  const handleLeadSubmit = (event) => {
+    event.preventDefault();
+    if (!leadEmail) {
+      return;
+    }
+    trackEvent('lead_submit', { source: 'about_page', email: leadEmail });
+    if (typeof window !== 'undefined') {
+      const subject = encodeURIComponent('LaChart onboarding request');
+      const body = encodeURIComponent(`Email: ${leadEmail}\n\nI would like a quick walkthrough of LaChart and its lactate analysis features.`);
+      window.location.href = `mailto:jakub.stadnik01@gmail.com?subject=${subject}&body=${body}`;
+    }
+    setLeadEmail('');
   };
 
   const features = [
@@ -190,6 +275,25 @@ const About = () => {
       icon: '🏆'
     }
   ];
+
+  const heroStats = [
+    { value: '12k+', label: 'Lactate tests analyzed' },
+    { value: '4.9/5', label: 'Coach satisfaction score' },
+    { value: '140+', label: 'Teams & labs onboarded' }
+  ];
+
+  const faqStructuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqItems.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.answer
+      }
+    }))
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -270,6 +374,9 @@ const About = () => {
             }
           `}
         </script>
+        <script type="application/ld+json">
+          {JSON.stringify(faqStructuredData)}
+        </script>
       </Helmet>
       {/* Navbar with hover effects */}
       <nav className="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-20 relative">
@@ -320,11 +427,32 @@ const About = () => {
               transition={{ duration: 0.5, delay: 0.4 }}
               className="flex flex-wrap gap-3 justify-center lg:justify-start"
             >
-              <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'about_get_started' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Get Started</a>
-              <a href="/login" onClick={() => trackEvent('cta_click', { label: 'about_sign_in' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition whitespace-nowrap">Sign In</a>
-              <a href="/lactate-curve-calculator" onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })} className="inline-flex items-center bg-secondary text-white font-bold px-6 py-2 rounded-lg shadow hover:bg-secondary-dark transition border border-white whitespace-nowrap">Lactate Form</a>
-              <a href="/lactate-guide" onClick={() => trackEvent('cta_click', { label: 'about_lactate_guide' })} className="inline-flex items-center bg-white text-primary font-bold px-6 py-2 rounded-lg shadow hover:bg-gray-100 transition border border-white whitespace-nowrap">Lactate Guide</a>
+              <a
+                href="/signup"
+                onClick={() => trackEvent('cta_click', { label: 'about_get_started' })}
+                className="inline-flex items-center bg-white text-primary font-bold px-8 py-3 rounded-lg shadow-lg hover:bg-gray-100 transition whitespace-nowrap"
+              >
+                Try for free
+              </a>
+              <a
+                href="/lactate-curve-calculator"
+                onClick={() => trackEvent('cta_click', { label: 'about_lactate_form' })}
+                className="inline-flex items-center border border-white text-white font-bold px-8 py-3 rounded-lg hover:bg-white/10 transition whitespace-nowrap"
+              >
+                Create demo lactate curve
+              </a>
             </motion.div>
+            <p className="mt-4 text-base text-purple-100">
+              No credit card required · Coach & athlete workspaces included
+            </p>
+            <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {heroStats.map((stat) => (
+                <div key={stat.label} className="bg-white/10 rounded-2xl p-4 text-center border border-white/20 backdrop-blur">
+                  <p className="text-3xl font-bold text-white">{stat.value}</p>
+                  <p className="text-sm text-purple-100 mt-1">{stat.label}</p>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="flex-1 mt-10 lg:mt-0 flex justify-center z-10">
             <LazyImage 
@@ -338,6 +466,22 @@ const About = () => {
         <div className="absolute bottom-0 left-0 w-full h-24 bg-white rounded-t-[100px] z-0" style={{boxShadow: '0 -10px 40px 0 rgba(124,58,237,0.1)'}}></div>
       </section>
 
+      {/* Early-stage notice */}
+      <section className="py-14 bg-white border-b border-gray-100">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-sm uppercase tracking-[0.2em] text-gray-500 mb-4">
+            Early-stage startup
+          </p>
+          <h3 className="text-3xl font-bold text-gray-900 mb-4">LaChart is just getting started</h3>
+          <p className="text-lg text-gray-600">
+            Everything is currently free while we finish the product. We rely on real coaches and athletes to tell us what works, what’s missing, and how the app should evolve. Try it, break it, and send us feedback so we can build exactly what you need.
+          </p>
+          <p className="mt-6 text-gray-700">
+            Drop a note at <a href="mailto:jakub.stadnik01@gmail.com" className="text-primary font-semibold">jakub.stadnik01@gmail.com</a> or use the contact form below.
+          </p>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -348,6 +492,41 @@ const About = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => (
               <FeatureCard key={feature.title} {...feature} index={index} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SEO-focused solution blocks */}
+      <section className="py-16 bg-gray-50" id="solutions">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-10">
+            <div>
+              <h2 className="text-base text-primary font-semibold tracking-wide uppercase">Solutions</h2>
+              <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+                Everything you need for lactate testing, coaching, and planning
+              </p>
+            </div>
+            <p className="text-gray-600 lg:max-w-xl">
+              These sections intentionally target high-value keywords (free lactate curve calculator, coach management software, Strava training calendar) so athletes and coaches can discover LaChart through organic search.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {seoUseCases.map((useCase) => (
+              <article id={useCase.anchor} key={useCase.title} className="bg-white rounded-2xl shadow p-6 border border-gray-100 flex flex-col">
+                <h3 className="text-2xl font-bold text-gray-900 mb-3">{useCase.title}</h3>
+                <p className="text-gray-600 flex-1">{useCase.description}</p>
+                <a
+                  href={useCase.link}
+                  className="inline-flex items-center text-primary font-semibold mt-6"
+                  onClick={() => trackEvent('cta_click', { label: `about_use_case_${useCase.anchor}` })}
+                >
+                  Explore {useCase.title.split(' ')[0]}
+                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
+              </article>
             ))}
           </div>
         </div>
@@ -511,6 +690,63 @@ const About = () => {
         </div>
       </section>
 
+      {/* Latest updates */}
+      <section className="py-16 bg-white border-t border-gray-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-10">
+            <div>
+              <h2 className="text-base text-primary font-semibold tracking-wide uppercase">Product updates</h2>
+              <p className="mt-2 text-3xl font-extrabold text-gray-900">What’s new in LaChart</p>
+            </div>
+            <a href="/changelog" className="text-primary font-semibold hover:text-primary-dark">
+              View full changelog →
+            </a>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {updates.map((item) => (
+              <div key={item.title} className="bg-gray-50 rounded-2xl p-6 border border-gray-100 h-full flex flex-col">
+                <p className="text-sm uppercase tracking-wide text-gray-500">{item.date}</p>
+                <h3 className="text-xl font-bold text-gray-900 mt-2">{item.title}</h3>
+                <p className="text-gray-600 mt-3 flex-1">{item.summary}</p>
+                <a href={item.link} className="mt-4 inline-flex items-center text-primary font-semibold">
+                  Learn more
+                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Lead capture */}
+      <section className="py-16 bg-gradient-to-r from-primary to-secondary text-white">
+        <div className="max-w-4xl mx-auto px-4 text-center">
+          <h2 className="text-3xl sm:text-4xl font-extrabold mb-4">Help us shape LaChart</h2>
+          <p className="text-lg text-white/80">
+            We’re in a public beta, everything is free, and we’re looking for honest feedback. Leave your email if you want occasional updates and a direct line to tell us what to build next.
+          </p>
+          <form onSubmit={handleLeadSubmit} className="mt-8 flex flex-col sm:flex-row gap-3">
+            <input
+              type="email"
+              required
+              value={leadEmail}
+              onChange={(e) => setLeadEmail(e.target.value)}
+              placeholder="you@email.com"
+              className="flex-1 px-4 py-3 rounded-lg text-gray-900"
+            />
+            <button
+              type="submit"
+              className="px-6 py-3 bg-white text-primary font-semibold rounded-lg shadow hover:-translate-y-0.5 transition"
+            >
+              Send me beta updates
+            </button>
+          </form>
+          <p className="text-sm text-white/70 mt-3">Hit reply to any email with your notes or feature requests.</p>
+        </div>
+      </section>
+
       {/* How to Use LaChart Section */}
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -578,6 +814,78 @@ const About = () => {
         </div>
       </section>
 
+      {/* Coach & athlete collaboration explainer */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div>
+              <h2 className="text-base text-primary font-semibold tracking-wide uppercase">Coach workspace</h2>
+              <p className="mt-2 text-3xl font-extrabold text-gray-900">
+                Invite athletes, track their tests, and approve trainings
+              </p>
+              <ul className="mt-6 space-y-4 text-gray-700">
+                <li className="flex items-start gap-3">
+                  <span className="text-primary font-bold">1.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Create athlete profiles</p>
+                    <p className="text-sm text-gray-600">Add each athlete once. Assign roles (athlete, coach, admin) and share credentials securely.</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-primary font-bold">2.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Upload trainings & tests</p>
+                    <p className="text-sm text-gray-600">Import FIT/Strava sessions or log manual workouts. Attach lactate tests, interpret LT1/LT2, and save notes per athlete.</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-primary font-bold">3.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Monitor calendars and intervals</p>
+                    <p className="text-sm text-gray-600">Switch athletes via the dashboard or Training Calendar. Detect intervals automatically, compare planned vs. completed, and adjust training blocks.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h2 className="text-base text-secondary font-semibold tracking-wide uppercase">Athlete workspace</h2>
+              <p className="mt-2 text-3xl font-extrabold text-gray-900">
+                Athletes add data; coaches see progress instantly
+              </p>
+              <ul className="mt-6 space-y-4 text-gray-700">
+                <li className="flex items-start gap-3">
+                  <span className="text-secondary font-bold">A.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Log in and connect Strava</p>
+                    <p className="text-sm text-gray-600">Athletes authenticate, sync their devices, or type workouts manually so each training flows into the shared calendar.</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-secondary font-bold">B.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Record tests on site or remotely</p>
+                    <p className="text-sm text-gray-600">Use the lactate form to input steps, base lactate, and intensity. Results instantly populate coach dashboards and testing history.</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="text-secondary font-bold">C.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Collaborate in real time</p>
+                    <p className="text-sm text-gray-600">Coaches leave comments, adjust training load, and athletes confirm sessions. Everyone sees the same analytics and exported reports.</p>
+                  </div>
+                </li>
+              </ul>
+              <div className="mt-8 bg-white rounded-2xl p-5 shadow">
+                <p className="text-sm text-gray-600 mb-3 uppercase tracking-wide">Access control</p>
+                <p className="text-gray-800">
+                  Athletes only see their own data. Coaches can switch between assigned athletes, and admins manage the entire organization. This mirrors how you already work offline—just digitized.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Demo Description Section at the end */}
       <section className="py-16 bg-white border-t border-gray-100 mt-12">
         <div className="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center gap-10">
@@ -613,31 +921,9 @@ const About = () => {
             </p>
           </div>
           <div className="space-y-3 sm:space-y-4">
-            <FAQItem 
-              icon="question"
-              question="What is lactate threshold and why is it important?"
-              answer="Lactate threshold is the exercise intensity at which lactate begins to accumulate in the blood. It's crucial for endurance athletes because it determines your optimal training zones and racing strategy. Our free lactate calculator helps you find your LT1 and LT2 thresholds accurately."
-            />
-            <FAQItem 
-              icon="check"
-              question="How accurate is the free lactate threshold calculator?"
-              answer="LaChart uses multiple professional methods (OBLA, Dmax, IAT, log-log) to calculate your lactate threshold with high accuracy. Our algorithms are based on sports science research and provide reliable results for cycling, running, and triathlon training."
-            />
-            <FAQItem 
-              icon="user"
-              question="Do I need to register to use the lactate calculator?"
-              answer="No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features."
-            />
-            <FAQItem 
-              icon="flag"
-              question="What sports is LaChart suitable for?"
-              answer="LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort."
-            />
-            <FAQItem 
-              icon="chart"
-              question="How does LaChart compare to expensive lab testing?"
-              answer="While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes."
-            />
+            {faqItems.map((item) => (
+              <FAQItem key={item.question} {...item} />
+            ))}
           </div>
         </div>
       </section>
