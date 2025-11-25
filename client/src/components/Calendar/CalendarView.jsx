@@ -115,11 +115,18 @@ export default function CalendarView({ activities = [], onSelectActivity, select
           {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
         </div>
         <div className="flex items-center gap-2">
-          <select value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} className="px-3 py-1.5 text-sm border border-white/40 rounded-xl bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary">
-            {uniqueSports.map(s => (
-              <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <select 
+              value={sportFilter} 
+              onChange={(e) => setSportFilter(e.target.value)} 
+              className="appearance-none pr-8 pl-3 py-1.5 text-sm border border-white/40 rounded-xl bg-white/80 hover:bg-white focus:bg-white text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+            >
+              {uniqueSports.map(s => (
+                <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400 text-xs">⌄</span>
+          </div>
           <button 
             onClick={() => setView('week')} 
             className={`px-3 py-1.5 rounded-xl border border-white/40 shadow-sm transition-colors text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':'bg-white/70 hover:bg-white/90 text-gray-700'}`}

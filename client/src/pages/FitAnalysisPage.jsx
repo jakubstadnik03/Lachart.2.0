@@ -167,79 +167,56 @@ const deduplicateFitTrainingLaps = (laps = []) => {
   return unique;
 };
 
+const INTERVAL_SENSITIVITY_CONFIG = {
+  high: {
+    label: 'High',
+    changeThreshold: 0.06,
+    stabilityWindow: 2,
+    minIntervalDuration: 6,
+    mergeThreshold: 8,
+    smoothingMultiplier: 0.4,
+    smoothingMin: 1
+  },
+  medium: {
+    label: 'Medium',
+    changeThreshold: 0.1,
+    stabilityWindow: 3,
+    minIntervalDuration: 8,
+    mergeThreshold: 15,
+    smoothingMultiplier: 0.6,
+    smoothingMin: 2
+  },
+  low: {
+    label: 'Low',
+    changeThreshold: 0.18,
+    stabilityWindow: 4,
+    minIntervalDuration: 12,
+    mergeThreshold: 25,
+    smoothingMultiplier: 0.8,
+    smoothingMin: 3
+  }
+};
+
 // Strava Laps Table Component
 const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   const [saving, setSaving] = useState(false);
 
+  // Use laps passed from selectedStrava (already deduplicated during load)
+  const uniqueLaps = selectedStrava?.laps || [];
+
   const handleSaveLactate = async () => {
-    // Use uniqueLaps directly - they are already deduplicated and match what user sees
-    // Map uniqueLaps index to backend index using the same key matching logic
-    const originalLaps = selectedStrava?.laps || [];
-    
-    // Build a map from unique lap to original index using consistent key matching
-    // Use the same key building logic as deduplicateStravaLaps (which matches backend)
-    const normalizeTimeForSave = (timeStr) => {
-      if (!timeStr) return null;
-      try {
-        const date = new Date(timeStr);
-        if (isNaN(date.getTime())) return null;
-        return Math.floor(date.getTime() / 1000);
-      } catch {
-        return null;
-      }
-    };
-    
-    const buildLapKeyForSave = (lap) => {
-      // Priority 1: startTime or start_date (normalized)
-      const startTime = lap.startTime || lap.start_date;
-      const normalizedTime = normalizeTimeForSave(startTime);
-      if (normalizedTime !== null) {
-        return `time_${normalizedTime}`;
-      }
-      // Priority 2: lapNumber fallback when timestamp missing
-      if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-        return `lap_${lap.lapNumber}`;
-      }
-      // Priority 3: Combination of elapsed_time, distance, power (match backend format)
-      const elapsedTime = Math.round(lap.elapsed_time || 0);
-      const distance = Math.round((lap.distance || 0) * 10) / 10;
-      const power = Math.round((lap.average_watts || 0) * 10) / 10;
-      return `fallback_t${elapsedTime}_d${distance}_p${power}`;
-    };
-    
-    // Create a map from lap key to original index
-    const lapKeyToOriginalIndex = new Map();
-    originalLaps.forEach((lap, idx) => {
-      const key = buildLapKeyForSave(lap);
-      // If key already exists, prefer the one with lactate (if current doesn't have it)
-      if (!lapKeyToOriginalIndex.has(key)) {
-        lapKeyToOriginalIndex.set(key, idx);
-      } else {
-        const existingIdx = lapKeyToOriginalIndex.get(key);
-        const existingLap = originalLaps[existingIdx];
-        const existingHasLactate = existingLap?.lactate !== null && existingLap?.lactate !== undefined;
-        const currentHasLactate = lap?.lactate !== null && lap?.lactate !== undefined;
-        // Prefer lap with lactate, or keep first one
-        if (currentHasLactate && !existingHasLactate) {
-          lapKeyToOriginalIndex.set(key, idx);
-        }
-      }
-    });
-    
     const lactateValues = Object.entries(lactateInputs).map(([key, value]) => {
-      const uniqueIndex = parseInt(key.replace('lap-', ''));
+      const uniqueIndex = parseInt(key.replace('lap-', ''), 10);
       const uniqueLap = uniqueLaps[uniqueIndex];
       if (!uniqueLap) {
         console.warn('Could not find unique lap at index', uniqueIndex);
         return null;
       }
       
-      // Find original index using the same key matching logic
-      const lapKey = buildLapKeyForSave(uniqueLap);
-      const originalIndex = lapKeyToOriginalIndex.get(lapKey);
-      
+      const originalIndex = uniqueLap.__sourceIndex ?? uniqueIndex;
+
       if (originalIndex === undefined || originalIndex === null) {
         return null;
       }
@@ -278,7 +255,12 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
     try {
       setSaving(true);
-      await deleteStravaLap(selectedStrava.id, lapIndex);
+      const uniqueLap = uniqueLaps[lapIndex];
+      const originalIndex = uniqueLap?.__sourceIndex;
+      const indexToDelete = (originalIndex !== undefined && originalIndex !== null)
+        ? originalIndex
+        : lapIndex;
+      await deleteStravaLap(selectedStrava.id, indexToDelete);
       await loadStravaDetail(selectedStrava.id);
       await loadExternalActivities(); // Reload to update calendar
       alert('Interval deleted successfully!');
@@ -289,12 +271,6 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       setSaving(false);
     }
   };
-
-  // Deduplicate laps in StravaLapsTable
-  const uniqueLaps = React.useMemo(() => {
-    const originalLaps = selectedStrava?.laps || [];
-    return deduplicateStravaLaps(originalLaps);
-  }, [selectedStrava?.laps]);
 
   if (!selectedStrava?.laps || uniqueLaps.length === 0) {
     return (
@@ -498,6 +474,7 @@ const FitAnalysisPage = () => {
   // Smoothness state
   const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
   const [showSmoothnessSlider, setShowSmoothnessSlider] = useState(false);
+  const [intervalSensitivity, setIntervalSensitivity] = useState('medium');
   
   // Helper function to get GPS data from training or Strava
   const getGpsData = React.useMemo(() => {
@@ -634,8 +611,10 @@ const FitAnalysisPage = () => {
     try {
       const data = await getStravaActivityDetail(id);
       
-      console.log('Backend returned laps count:', data.laps?.length || 0);
-      console.log('Backend laps:', data.laps?.map((lap, idx) => ({
+      const rawLaps = Array.isArray(data.laps) ? data.laps : [];
+
+      console.log('Backend returned laps count:', rawLaps.length);
+      console.log('Backend laps:', rawLaps.map((lap, idx) => ({
         index: idx,
         elapsed_time: lap.elapsed_time,
         distance: lap.distance,
@@ -646,7 +625,7 @@ const FitAnalysisPage = () => {
       })));
       
       // Deduplicate laps before setting state using the same function as elsewhere
-      let uniqueLaps = deduplicateStravaLaps(data.laps || []);
+      let uniqueLaps = deduplicateStravaLaps(rawLaps);
       
       console.log('After deduplication:', uniqueLaps.length);
       
@@ -655,7 +634,8 @@ const FitAnalysisPage = () => {
         ...data.detail,
         titleManual: data.titleManual,
         description: data.description,
-        laps: uniqueLaps
+        laps: uniqueLaps,
+        rawLaps
       };
       
       // Ensure streams data is properly set
@@ -3742,7 +3722,7 @@ const FitAnalysisPage = () => {
                           <div className="flex-1 min-w-[180px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500">Activity</div>
                             <div className="text-base font-semibold text-gray-900 truncate">{stravaActivityTitle}</div>
-                          </div>
+                        </div>
                           <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
                             <div className="text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
@@ -3793,148 +3773,112 @@ const FitAnalysisPage = () => {
                             // Detect intervals automatically
                             const timeArray = selectedStravaStreams?.time?.data || selectedStravaStreams?.time || [];
                             const powerArray = selectedStravaStreams?.watts?.data || selectedStravaStreams?.watts || [];
-                            const speedArray = selectedStravaStreams?.velocity_smooth?.data || selectedStravaStreams?.velocity_smooth || [];
                             
                             if (timeArray.length === 0) {
                               alert('No time data available');
                               return;
                             }
                             
-                            // Use power for cycling, speed for run/swim
-                            const dataArray = powerArray.length > 0 && powerArray.some(p => p > 0) ? powerArray : speedArray;
+                            const dataArray = powerArray;
                             
-                            if (dataArray.length === 0 || dataArray.length !== timeArray.length) {
-                              alert('No power or speed data available');
+                            if (dataArray.length === 0 || dataArray.length !== timeArray.length || !dataArray.some((v) => v > 0)) {
+                              alert('No power data available. Interval detection requires power stream.');
                               return;
                             }
                             
-                            // Detect intervals using change point detection
-                            // Detects ALL intervals by finding all significant changes in power/speed
-                            const intervals = [];
-                            const minIntervalDuration = 8; // Minimum 8 seconds for any interval
-                            const changeThreshold = 0.12; // 12% change to detect interval boundaries (more sensitive)
-                            const smoothingWindow = 3; // 3 seconds moving average (less smoothing = more sensitive)
-                            const stabilityWindow = 3; // Require 3 seconds of stable value before detecting change
-                            
-                            // Calculate moving average for smoothing
+                            // Sensitivity configuration (controls how aggressive detection is)
+                            const sensitivity = INTERVAL_SENSITIVITY_CONFIG[intervalSensitivity] || INTERVAL_SENSITIVITY_CONFIG.medium;
+                            const changeThreshold = sensitivity.changeThreshold;
+                            const stabilityWindow = sensitivity.stabilityWindow;
+                            const minIntervalDuration = sensitivity.minIntervalDuration;
+                            const mergeThreshold = sensitivity.mergeThreshold;
+                            const detectionSmoothingWindow = Math.max(
+                              sensitivity.smoothingMin,
+                              Math.round((smoothingWindow || 1) * sensitivity.smoothingMultiplier)
+                            );
+
+                            // Detect intervals by segmenting stable sections of the power/speed trace
                             const smoothed = [];
                             for (let i = 0; i < dataArray.length; i++) {
                               let sum = 0;
                               let count = 0;
-                              for (let j = Math.max(0, i - smoothingWindow); j <= Math.min(dataArray.length - 1, i + smoothingWindow); j++) {
-                                if (dataArray[j] && dataArray[j] > 0) {
-                                  sum += dataArray[j];
+                              for (let j = Math.max(0, i - detectionSmoothingWindow); j <= Math.min(dataArray.length - 1, i + detectionSmoothingWindow); j++) {
+                                const val = dataArray[j];
+                                if (val && val >= 0) {
+                                  sum += val;
                                   count++;
                                 }
                               }
                               smoothed.push(count > 0 ? sum / count : 0);
                             }
-                            
-                            // Find all intervals by detecting significant changes in intensity
-                            // Detects ALL changes regardless of absolute value - works for any intensity level
-                            let currentIntervalStart = 0;
-                            let currentIntervalAvg = smoothed[0] || 0;
-                            let changeStartTime = null; // When change was first detected
-                            let changeStartIndex = null;
-                            
+
+                            const intervals = [];
+                            let segmentStartIdx = 0;
+                            let changeCandidate = null;
+                            let segmentSum = smoothed[0] || 0;
+                            let segmentCount = 1;
+
+                            const addInterval = (startIdx, endTime) => {
+                              const startTime = timeArray[startIdx];
+                              if (endTime - startTime >= minIntervalDuration) {
+                                intervals.push({ start: startTime, end: endTime });
+                              }
+                            };
+
                             for (let i = 1; i < smoothed.length; i++) {
-                              const currentValue = smoothed[i] || 0;
+                              const value = smoothed[i] || 0;
                               const currentTime = timeArray[i];
-                              
-                              // Skip if no valid value
-                              if (currentValue <= 0) {
-                                continue;
-                              }
-                              
-                              // Calculate relative change from current interval average
-                              const maxValue = Math.max(currentIntervalAvg, currentValue);
-                              const change = maxValue > 0 ? Math.abs(currentValue - currentIntervalAvg) / maxValue : 0;
-                              
-                              // Check if significant change detected
-                              if (change > changeThreshold) {
-                                // Change detected - start tracking it
-                                if (changeStartTime === null) {
-                                  changeStartTime = currentTime;
-                                  changeStartIndex = i;
-                                }
-                                
-                                // Update average towards new value (slowly)
-                                currentIntervalAvg = currentIntervalAvg * 0.97 + currentValue * 0.03;
-                                
-                                // Check if change has been stable long enough
-                                if (changeStartTime !== null && (currentTime - changeStartTime) >= stabilityWindow) {
-                                  // Change confirmed - create interval for previous period
-                                  const intervalDuration = changeStartTime - timeArray[currentIntervalStart];
-                                  
-                                  if (intervalDuration >= minIntervalDuration) {
-                                    intervals.push({
-                                      start: timeArray[currentIntervalStart],
-                                      end: changeStartTime
-                                    });
+                              const segmentAvg = segmentCount > 0 ? segmentSum / segmentCount : value;
+                              const reference = Math.max(segmentAvg, value, 50); // avoid division by tiny numbers
+                              const diffRatio = reference > 0 ? Math.abs(value - segmentAvg) / reference : 0;
+
+                              if (diffRatio > changeThreshold) {
+                                if (!changeCandidate) {
+                                  changeCandidate = { idx: i, time: currentTime };
+                                } else if (currentTime - changeCandidate.time >= stabilityWindow) {
+                                  addInterval(segmentStartIdx, changeCandidate.time);
+                                  // start new segment at change point
+                                  segmentStartIdx = changeCandidate.idx;
+                                  segmentSum = 0;
+                                  segmentCount = 0;
+                                  for (let j = segmentStartIdx; j <= i; j++) {
+                                    const val = smoothed[j] || 0;
+                                    segmentSum += val;
+                                    segmentCount += 1;
                                   }
-                                  
-                                  // Start new interval at the point where change was detected
-                                  currentIntervalStart = changeStartIndex;
-                                  currentIntervalAvg = smoothed[changeStartIndex] || currentValue;
-                                  changeStartTime = null;
-                                  changeStartIndex = null;
-                                }
-                              } else {
-                                // Value is stable - update interval average
-                                currentIntervalAvg = currentIntervalAvg * 0.92 + currentValue * 0.08;
-                                
-                                // Reset change tracking if value stabilized before threshold
-                                if (changeStartTime !== null && (currentTime - changeStartTime) < stabilityWindow) {
-                                  // Change was too short - ignore it, continue with current interval
-                                  changeStartTime = null;
-                                  changeStartIndex = null;
-                                }
-                              }
-                            }
-                            
-                            // Add last interval if long enough
-                            if (currentIntervalStart < timeArray.length - 1) {
-                              const intervalDuration = timeArray[timeArray.length - 1] - timeArray[currentIntervalStart];
-                              if (intervalDuration >= minIntervalDuration) {
-                                intervals.push({
-                                  start: timeArray[currentIntervalStart],
-                                  end: timeArray[timeArray.length - 1]
-                                });
-                              }
-                            }
-                            
-                            // Filter and merge intervals
-                            const filteredIntervals = [];
-                            const mergeThreshold = 20; // Merge intervals closer than 20 seconds
-                            
-                            for (let i = 0; i < intervals.length; i++) {
-                              const current = intervals[i];
-                              
-                              // Skip if too short
-                              if (current.end - current.start < minIntervalDuration) {
-                                continue;
-                              }
-                              
-                              // Check if we should merge with previous interval
-                              if (filteredIntervals.length > 0) {
-                                const last = filteredIntervals[filteredIntervals.length - 1];
-                                const gap = current.start - last.end;
-                                
-                                // If gap is very small, merge intervals
-                                if (gap >= 0 && gap <= mergeThreshold) {
-                                  filteredIntervals[filteredIntervals.length - 1] = {
-                                    start: last.start,
-                                    end: current.end
-                                  };
+                                  changeCandidate = null;
                                   continue;
                                 }
+                              } else if (changeCandidate) {
+                                changeCandidate = null;
                               }
-                              
-                              filteredIntervals.push(current);
+
+                              segmentSum += value;
+                              segmentCount += 1;
                             }
-                            
-                            // Use filtered intervals
-                            const finalIntervals = filteredIntervals;
+
+                            // Close final segment
+                            const finalEndTime = timeArray[timeArray.length - 1];
+                            addInterval(segmentStartIdx, finalEndTime);
+
+                            // Merge short gaps between intervals
+                            const filteredIntervals = [];
+                            intervals.forEach((interval) => {
+                              if (filteredIntervals.length === 0) {
+                                filteredIntervals.push(interval);
+                                return;
+                              }
+                              const last = filteredIntervals[filteredIntervals.length - 1];
+                              if (interval.start - last.end <= mergeThreshold) {
+                                last.end = Math.max(last.end, interval.end);
+                              } else {
+                                filteredIntervals.push(interval);
+                              }
+                            });
+
+                            const finalIntervals = filteredIntervals.filter(
+                              (interval) => interval.end - interval.start >= minIntervalDuration
+                            );
                             
                             if (finalIntervals.length === 0) {
                               alert('No intervals detected. Try adjusting the detection parameters.');
@@ -4044,6 +3988,18 @@ const FitAnalysisPage = () => {
                       >
                         Detect Intervals
                        </button>
+                       <div className="flex items-center gap-1 text-[11px] text-gray-600">
+                         <span>Sensitivity</span>
+                         <select
+                           value={intervalSensitivity}
+                           onChange={(e) => setIntervalSensitivity(e.target.value)}
+                           className="text-xs border border-gray-300 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary text-gray-700"
+                         >
+                           <option value="high">High</option>
+                           <option value="medium">Medium</option>
+                           <option value="low">Low</option>
+                         </select>
+                       </div>
                      </div>
                      {/* Smoothness Slider Popup */}
                      {showSmoothnessSlider && (
