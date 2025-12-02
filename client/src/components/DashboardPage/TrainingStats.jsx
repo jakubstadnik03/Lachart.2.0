@@ -142,20 +142,68 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     return `${minutes}:${String(remainingSeconds).padStart(2, '0')}/km`;
   };
 
-  const formatDistance = (value) => {
+  // Parse distance from various formats (1km, 1000m, etc.) to km
+  const parseDistanceToKm = (value) => {
     if (!value) return null;
-    // If it's already a string with units, return it as is
-    if (typeof value === 'string' && (value.includes('km') || value.includes('m'))) {
+    
+    // If it's already a number, assume it's in km (don't auto-convert large numbers)
+    if (typeof value === 'number') {
       return value;
     }
-    const numValue = Number(value);
-    if (isNaN(numValue)) return null;
-    // Pokud je hodnota menší než 1, zobrazíme v metrech
-    if (numValue < 1) {
-      return `${Math.round(numValue * 1000)}m`;
+    
+    // If it's a string with units
+    if (typeof value === 'string') {
+      // Remove whitespace and convert to lowercase
+      const cleanValue = value.trim().toLowerCase();
+      
+      // Match patterns like "1km", "1 km", "1000m", "1000 m", "1.5km", etc.
+      const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
+      if (kmMatch) {
+        return parseFloat(kmMatch[1]);
+      }
+      
+      const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
+      if (mMatch) {
+        return parseFloat(mMatch[1]) / 1000; // Convert meters to km
+      }
+      
+      // Try to parse as number
+      // Only assume meters if it's a whole number > 100 and looks like meters (no decimals)
+      const numValue = parseFloat(cleanValue);
+      if (!isNaN(numValue)) {
+        // If it's a whole number > 100 with no decimal point, likely meters
+        if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
+          return numValue / 1000;
+        }
+        // Otherwise assume km (could be 1.5, 2.3, etc. or already in km)
+        return numValue;
+      }
     }
-    // Jinak v kilometrech s jednou desetinnou čárkou
-    return `${numValue.toFixed(1)}km`;
+    
+    return null;
+  };
+
+  const formatDistance = (value) => {
+    if (!value) return null;
+    
+    // Parse to km first
+    const kmValue = parseDistanceToKm(value);
+    if (kmValue === null) return null;
+    
+    // If it's already a string with units, return it as is (but normalized)
+    if (typeof value === 'string' && (value.includes('km') || value.includes('m'))) {
+      // Normalize: if less than 1km, show in meters, otherwise in km
+      if (kmValue < 1) {
+        return `${Math.round(kmValue * 1000)}m`;
+      }
+      return `${kmValue.toFixed(1)}km`;
+    }
+    
+    // If it's a number or parsed value
+    if (kmValue < 1) {
+      return `${Math.round(kmValue * 1000)}m`;
+    }
+    return `${kmValue.toFixed(1)}km`;
   };
 
   const formatDurationDisplay = (durationValue) => {
@@ -204,6 +252,8 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
               ...(duration ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }] : []),
               ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}/km` : formatPace(power), unit: "" }] : []),
               ...(sport === 'run' && distance ? [{ label: "Distance", value: formatDistance(distance), unit: "" }] : []),
+              // Parse distance from duration if it's a distance type
+              ...(sport === 'run' && duration && typeof duration === 'string' && (duration.includes('km') || duration.includes('m')) ? [{ label: "Distance", value: formatDistance(duration), unit: "" }] : []),
               ...(sport !== 'run' && power ? [{ label: "Power", value: power, unit: "W" }] : []),
               ...(heartRate ? [{ label: "Heart Rate", value: heartRate, unit: "Bpm" }] : []),
               ...(lactate ? [{ label: "Lactate", value: lactate, unit: "mmol/L" }] : []),
@@ -215,10 +265,14 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
   );
 }
 
-function Scale({ values, unit, formatValue }) {
+function Scale({ values, unit, formatValue, isPace = false }) {
+  // For pace: fastest (smallest) at top, slowest (largest) at bottom
+  // values array: [minPace, ..., maxPace] -> display: [minPace, ..., maxPace] (no reverse)
+  const displayValues = values;
+  
   return (
     <div className="relative flex flex-col justify-between py-2 sm:py-2 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap min-h-[150px] sm:min-h-[200px] text-zinc-500">
-      {values.map((value, index) => (
+      {displayValues.map((value, index) => (
         <div key={`scale-${unit}-${index}`} className="relative flex items-center w-full">
           <div className="absolute left-0 right-0 h-px border-t border-dashed border-gray-200" />
           <span className="relative z-10 bg-white px-0.5 sm:px-1">{formatValue ? formatValue(value) : `${value}${unit}`}</span>
@@ -338,12 +392,34 @@ function TrainingComparison({ training, previousTraining, sport }) {
 }
 
 export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false }) {
-  // Fallback pro onSportChange, pokud není poskytnut
-  const handleSportChange = onSportChange || ((sport) => {
-    console.warn('onSportChange not provided, sport change ignored:', sport);
-  });
   // Get available sports from trainings
   const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+  
+  // Initialize selectedSport with localStorage or default to 'all' if not provided
+  const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
+    if (selectedSport !== undefined && selectedSport !== null) return selectedSport;
+    const saved = localStorage.getItem('trainingStats_selectedSport');
+    return saved || 'all';
+  });
+  
+  // Use external selectedSport if provided, otherwise use internal
+  const currentSelectedSport = selectedSport !== undefined && selectedSport !== null ? selectedSport : internalSelectedSport;
+  
+  // Fallback pro onSportChange, pokud není poskytnut
+  const handleSportChange = (sport) => {
+    // Save to localStorage
+    localStorage.setItem('trainingStats_selectedSport', sport);
+    // Update internal state if not controlled by parent
+    if (selectedSport === undefined || selectedSport === null) {
+      setInternalSelectedSport(sport);
+    }
+    // Call parent callback if provided
+    if (onSportChange) {
+      onSportChange(sport);
+    } else {
+      console.warn('onSportChange not provided, sport change ignored:', sport);
+    }
+  };
   
   // Use external selectedTitle if provided, otherwise use internal state
   const [internalSelectedTitle, setInternalSelectedTitle] = useState(null);
@@ -374,7 +450,9 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
   useEffect(() => {
     if (trainings.length > 0) {
-      const relevantTrainings = trainings.filter(t => t.sport === selectedSport);
+      const relevantTrainings = currentSelectedSport === 'all' 
+        ? trainings 
+        : trainings.filter(t => t.sport === currentSelectedSport);
       if (relevantTrainings.length > 0) {
         const firstTitle = relevantTrainings[0].title;
         if (!currentSelectedTitle || !relevantTrainings.some(t => t.title === currentSelectedTitle)) {
@@ -389,7 +467,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         }
       }
     }
-  }, [trainings, selectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
+  }, [trainings, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -406,7 +484,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   const trainingOptions = useMemo(() => {
     const uniqueTitles = [...new Set(
       trainings
-        .filter(t => t.sport === selectedSport)
+        .filter(t => currentSelectedSport === 'all' || t.sport === currentSelectedSport)
         .map(t => t.title)
     )];
 
@@ -414,24 +492,24 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       value: title,
       label: title
     }));
-  }, [trainings, selectedSport]);
+  }, [trainings, currentSelectedSport]);
 
   const filteredTrainings = useMemo(() => {
     // Filter trainings by sport and title
     const filtered = trainings
-      .filter(t => t.sport === selectedSport && t.title === currentSelectedTitle)
+      .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === currentSelectedTitle)
       // Sort by date from newest to oldest
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     
     return filtered;
-  }, [trainings, selectedSport, currentSelectedTitle]);
+  }, [trainings, currentSelectedSport, currentSelectedTitle]);
   
   // Handler pro změnu názvu tréninku - synchronizace s TrainingGraph
   const handleTrainingTitleChange = (newTitle) => {
     setCurrentSelectedTitle(newTitle);
     // Najdeme nejnovější trénink s tímto názvem
     const trainingsWithTitle = trainings
-      .filter(t => t.sport === selectedSport && t.title === newTitle)
+      .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === newTitle)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     if (trainingsWithTitle.length > 0 && setSelectedTrainingId) {
       setSelectedTrainingId(trainingsWithTitle[0]._id);
@@ -500,6 +578,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
     return null;
   };
 
+  // Determine if we should show pace (for run) or power (for other sports)
+  // For 'all' sport, check if there are any run trainings in the filtered data
+  const hasRunTrainings = filteredTrainings.some(t => t.sport === 'run');
+  const isRun = currentSelectedSport === 'run' || (currentSelectedSport === 'all' && hasRunTrainings);
+
   const { powerValues, paceValues, minPower, maxPower, minPace, maxPace, averagePower, averagePace } = useMemo(() => {
     if (filteredTrainings.length === 0) return { 
       powerValues: [], 
@@ -516,8 +599,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       averageHeartRate: []
     };
   
-    const isRun = selectedSport === 'run';
-
     if (isRun) {
       // Pro běh: používáme pace z power pole (uložené jako mm:ss string)
       const allPaces = filteredTrainings.flatMap((t) => 
@@ -561,9 +642,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
       });
 
+      // Pro pace: nejrychlejší (nejmenší hodnota) nahoře, nejpomalejší (největší hodnota) dole
+      // Takže reverse() není potřeba - minPace je nahoře, maxPace je dole
       return {
         powerValues: [],
-        paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minPace + (i * (maxPace - minPace)) / 5)).reverse(),
+        paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minPace + (i * (maxPace - minPace)) / 5)),
         heartRateValues: Array.from({ length: 6 }, (_, i) => Math.round(minHeartRate + (i * (maxHeartRate - minHeartRate)) / 5)).reverse(),
         minPower: 0,
         maxPower: 100,
@@ -631,7 +714,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         averageHeartRate
       };
     }
-  }, [filteredTrainings, selectedSport]);
+  }, [filteredTrainings, isRun]);
   
   const barColors = ["bg-violet-500", "bg-violet-400", "bg-violet-300", "bg-violet-200", "bg-violet-100"];
 
@@ -687,37 +770,51 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                 <div className="p-2">
                   <div className="mb-2 sm:mb-3">
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Sport</label>
-                    <select 
-                      className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
-                      value={selectedSport}
-                      onChange={(e) => handleSportChange(e.target.value)}
-                    >
-                      {availableSports.length > 1 && (
+                    <div className="relative">
+                      <select 
+                        className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                        value={currentSelectedSport || 'all'}
+                        onChange={(e) => handleSportChange(e.target.value)}
+                      >
                         <option value="all">All Sports</option>
-                      )}
-                      {availableSports.map((sport) => (
-                        <option key={sport} value={sport}>
-                          {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                        </option>
-                      ))}
-                    </select>
+                        {availableSports.map((sport) => (
+                          <option key={sport} value={sport}>
+                            {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
-                    <select 
-                      className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
-                      value={displayCount}
-                      onChange={(e) => {
-                        setDisplayCount(Number(e.target.value));
-                        setVisibleTrainingIndex(0);
-                      }}
-                    >
-                      {[3, 6, 9, 12].map((count) => (
-                        <option key={count} value={count}>
-                          {count} trainings
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select 
+                        className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                        value={displayCount}
+                        onChange={(e) => {
+                          setDisplayCount(Number(e.target.value));
+                          setVisibleTrainingIndex(0);
+                        }}
+                      >
+                        {[3, 6, 9, 12].map((count) => (
+                          <option key={count} value={count}>
+                            {count} trainings
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -728,8 +825,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
       <div className="flex gap-1 sm:gap-2 items-stretch px-1 sm:px-1.5 relative w-full" 
            style={{ height: `${maxGraphHeight + 30}px` }}>
-        {selectedSport === 'run' ? (
-          <Scale values={paceValues} unit="" formatValue={formatPaceValue} />
+        {isRun ? (
+          <Scale values={paceValues} unit="" formatValue={formatPaceValue} isPace={true} />
         ) : (
           <Scale values={powerValues} unit="W" formatValue={null} />
         )}
@@ -737,27 +834,33 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         <div ref={containerRef} className="relative flex-1 flex items-stretch justify-between min-w-0">
           {/* Grid lines */}
           <div className="absolute inset-0">
-            {(selectedSport === 'run' ? paceValues : powerValues).map((value, index) => (
-              <div key={`grid-line-${index}`} 
-                   className="border-t border-dashed border-gray-200" 
-                   style={{
-                     top: `${(index * maxGraphHeight) / ((selectedSport === 'run' ? paceValues : powerValues).length - 1) + 15}px`,
-                     position: 'absolute',
-                     width: '100%',
-                     zIndex: 10
-                   }}
-              />
-            ))}
+            {(isRun ? paceValues : powerValues).map((value, index) => {
+              // For pace: fastest (index 0 = minPace) at top, slowest (last index = maxPace) at bottom
+              // For power: normal order (highest at top)
+              const displayIndex = index;
+              return (
+                <div key={`grid-line-${index}`} 
+                     className="border-t border-dashed border-gray-200" 
+                     style={{
+                       top: `${(displayIndex * maxGraphHeight) / ((isRun ? paceValues : powerValues).length - 1) + 15}px`,
+                       position: 'absolute',
+                       width: '100%',
+                       zIndex: 10
+                     }}
+                />
+              );
+            })}
           </div>
 
           {/* Average lines */}
           <svg className="absolute inset-0 z-30 pointer-events-none">
             <path
-              d={(selectedSport === 'run' ? averagePace : averagePower).filter(avg => avg !== null).map((avg, i) => {
-                const x = (i * (100 / Math.max((selectedSport === 'run' ? averagePace : averagePower).filter(avg => avg !== null).length - 1, 1)))+ '%';
+              d={(isRun ? averagePace : averagePower).filter(avg => avg !== null).map((avg, i) => {
+                const x = (i * (100 / Math.max((isRun ? averagePace : averagePower).filter(avg => avg !== null).length - 1, 1)))+ '%';
                 let y;
-                if (selectedSport === 'run') {
-                  // Pro pace: nižší pace = vyšší sloupec (inverzní vztah)
+                if (isRun) {
+                  // Pro pace: rychlejší pace (menší číslo) = nahoře (menší y)
+                  // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
                   y = maxGraphHeight - ((avg - minPace) / (maxPace - minPace)) * maxGraphHeight;
                 } else {
                   y = maxGraphHeight - ((avg - minPower) / (maxPower - minPower)) * maxGraphHeight;
@@ -788,11 +891,14 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                   <div className="flex gap-1 h-full justify-center items-end">
                     {training.results.map((result, resultIndex) => {
                       let height = 0;
-                      if (selectedSport === 'run') {
+                      if (isRun) {
                         // Power u běhu je pace v mm:ss formátu
                         const paceSeconds = parsePaceToSeconds(result.power);
                         if (paceSeconds !== null && paceSeconds > 0) {
-                          // Pro pace: nižší pace = vyšší sloupec (inverzní vztah)
+                          // Pro pace: rychlejší pace (menší číslo) = vyšší sloupec = nahoře
+                          // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
+                          // Výška = (maxPace - paceSeconds) / (maxPace - minPace) * maxGraphHeight
+                          // Rychlejší pace (menší) = větší rozdíl od maxPace = vyšší sloupec
                           height = ((maxPace - paceSeconds) / (maxPace - minPace)) * maxGraphHeight;
                         }
                       } else {
@@ -809,7 +915,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           color={barColors[resultIndex % barColors.length]}
                           power={result.power}
                           pace={selectedSport === 'run' ? result.power : result.pace}
-                          distance={result.distance || (selectedSport === 'run' ? result.duration : null)}
+                          distance={result.distance || (selectedSport === 'run' && result.durationType === 'distance' ? result.duration : null)}
                           lactate={result.lactate}
                           heartRate={result.heartRate}
                           duration={result.duration}

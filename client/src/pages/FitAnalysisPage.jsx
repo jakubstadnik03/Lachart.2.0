@@ -7,12 +7,13 @@ import CalendarView from '../components/Calendar/CalendarView';
 import ReactECharts from 'echarts-for-react';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
-import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById } from '../services/api';
+import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
 import AthleteSelector from '../components/AthleteSelector';
 import { useAuth } from '../context/AuthProvider';
+import TrainingForm from '../components/TrainingForm';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -198,7 +199,7 @@ const INTERVAL_SENSITIVITY_CONFIG = {
 };
 
 // Strava Laps Table Component
-const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities }) => {
+const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -240,6 +241,12 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       setEditingLactate(false);
       setLactateInputs({});
       alert('Lactate values saved successfully!');
+      // Show export dialog after saving lactate (with small delay to ensure data is loaded)
+      if (onExportToTraining) {
+        setTimeout(() => {
+          onExportToTraining();
+        }, 500);
+      }
     } catch (error) {
       console.error('Error saving lactate:', error);
       alert('Error saving lactate values');
@@ -285,13 +292,21 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
         <h3 className="text-base sm:text-lg font-semibold">Intervals</h3>
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex gap-2 w-full sm:w-auto flex-wrap">
         <button
           onClick={() => setEditingLactate(!editingLactate)}
           className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
+        {onExportToTraining && (
+          <button
+            onClick={() => onExportToTraining()}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-greenos text-white rounded-xl hover:opacity-90 text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
+          >
+            Export to Training
+          </button>
+        )}
         </div>
       </div>
       <div className="overflow-x-auto -mx-2 sm:mx-0">
@@ -475,6 +490,11 @@ const FitAnalysisPage = () => {
   const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
   const [showSmoothnessSlider, setShowSmoothnessSlider] = useState(false);
   const [intervalSensitivity, setIntervalSensitivity] = useState('medium');
+  
+  // Export to Training state
+  const [showTrainingForm, setShowTrainingForm] = useState(false);
+  const [trainingFormData, setTrainingFormData] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
   
   // Helper function to get GPS data from training or Strava
   const getGpsData = React.useMemo(() => {
@@ -1406,6 +1426,333 @@ const FitAnalysisPage = () => {
     localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
   };
 
+  // Convert Strava laps to Training format
+  const convertLapsToTrainingFormat = (laps, isRecoveryMap = new Map()) => {
+    // Determine sport type
+    const sportType = selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
+    const isRun = sportType.toLowerCase().includes('run');
+    const isSwim = sportType.toLowerCase().includes('swim');
+    
+    return laps.map((lap, idx) => {
+      const isRecovery = isRecoveryMap.get(idx) || false;
+      const duration = lap.elapsed_time || 0;
+      const power = lap.average_watts || lap.average_power || null;
+      const heartRate = lap.average_heartrate || lap.average_hr || null;
+      const lactate = lap.lactate || null;
+      const distance = lap.distance || null; // distance in meters
+      
+      // For run/swim, convert pace from speed to MM:SS format
+      let powerValue = '';
+      if (isRun || isSwim) {
+        // Convert speed (m/s) to pace (seconds per km for run, seconds per 100m for swim)
+        if (lap.average_speed && lap.average_speed > 0) {
+          let paceSeconds;
+          if (isRun) {
+            paceSeconds = Math.round(1000 / lap.average_speed); // seconds per km
+          } else {
+            paceSeconds = Math.round(100 / lap.average_speed); // seconds per 100m
+          }
+          // Convert to MM:SS format
+          const minutes = Math.floor(paceSeconds / 60);
+          const seconds = paceSeconds % 60;
+          powerValue = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+      } else {
+        // For bike, use power directly
+        powerValue = power ? power.toString() : '';
+      }
+      
+      // Format distance if available (convert meters to km for display, or keep as meters for swim)
+      let distanceValue = '';
+      let useDistance = false;
+      if (distance && distance > 0) {
+        useDistance = true;
+        if (isSwim) {
+          // For swim, show in meters (e.g., "400m", "50m")
+          if (distance >= 1000) {
+            distanceValue = `${(distance / 1000).toFixed(2)} km`;
+          } else {
+            distanceValue = `${Math.round(distance)}m`;
+          }
+        } else {
+          // For bike/run, show in km (e.g., "1 km", "5.2 km")
+          if (distance >= 1000) {
+            distanceValue = `${(distance / 1000).toFixed(2)} km`;
+          } else {
+            // If less than 1km, show in meters
+            distanceValue = `${Math.round(distance)}m`;
+          }
+        }
+      }
+      
+      return {
+        interval: idx + 1,
+        power: powerValue,
+        heartRate: heartRate ? heartRate.toString() : '',
+        lactate: lactate ? lactate.toString() : '',
+        RPE: '',
+        duration: useDistance ? distanceValue : formatDuration(duration), // Use distance if available, otherwise time in MM:SS
+        durationType: useDistance ? 'distance' : 'time', // Use distance if available
+        repeatCount: 1,
+        isRecovery: isRecovery, // Flag to mark recovery intervals
+        isSelected: !isRecovery // Recovery intervals are not selected by default
+      };
+    });
+  };
+
+  // Detect if lap is a recovery/rest interval (should be excluded by default)
+  const isRecoveryInterval = (lap, lapIndex, sportType, allLaps = []) => {
+    const isRun = sportType.toLowerCase().includes('run');
+    const isSwim = sportType.toLowerCase().includes('swim');
+    const isBike = !isRun && !isSwim;
+    
+    // Check duration - very short intervals (< 10s) are likely artifacts
+    const duration = lap.elapsed_time || 0;
+    if (duration < 10) {
+      return true;
+    }
+    
+    // Get current lap power/speed
+    let currentPower = 0;
+    let currentSpeed = 0;
+    if (isBike) {
+      currentPower = lap.average_watts || lap.average_power || 0;
+    } else {
+      currentSpeed = lap.average_speed || 0;
+    }
+    
+    // Compare with neighboring intervals (more accurate than global average)
+    const prevLap = lapIndex > 0 ? allLaps[lapIndex - 1] : null;
+    const nextLap = lapIndex < allLaps.length - 1 ? allLaps[lapIndex + 1] : null;
+    
+    let prevPower = 0, nextPower = 0;
+    let prevSpeed = 0, nextSpeed = 0;
+    
+    if (prevLap) {
+      if (isBike) {
+        prevPower = prevLap.average_watts || prevLap.average_power || 0;
+      } else {
+        prevSpeed = prevLap.average_speed || 0;
+      }
+    }
+    
+    if (nextLap) {
+      if (isBike) {
+        nextPower = nextLap.average_watts || nextLap.average_power || 0;
+      } else {
+        nextSpeed = nextLap.average_speed || 0;
+      }
+    }
+    
+    // Check if current interval is significantly lower than neighbors (recovery between work intervals)
+    if (isBike) {
+      // If both neighbors exist and are significantly higher, this is likely recovery
+      if (prevPower > 0 && nextPower > 0) {
+        const avgNeighborPower = (prevPower + nextPower) / 2;
+        const powerDiff = avgNeighborPower - currentPower;
+        // If current power is less than 80% of average neighbor power AND difference is at least 50W, it's likely recovery
+        // Example: 300W neighbors, 240W current = 60W diff, 240W < 240W (80% of 300W) = true
+        // This catches cases like 3x30min 300W with 2min 240W recovery between them
+        if (currentPower > 0 && currentPower < avgNeighborPower * 0.80 && powerDiff >= 50 && avgNeighborPower > 150) {
+          return true;
+        }
+      }
+      // Also check if one neighbor is significantly higher
+      if (prevPower > 0 && currentPower > 0 && prevPower > currentPower * 1.2 && (prevPower - currentPower) >= 50 && prevPower > 150) {
+        // Previous was work, current is lower
+        if (nextPower === 0 || nextPower > currentPower * 1.2) {
+          // Next is also work or doesn't exist, so current is recovery
+          return true;
+        }
+      }
+      if (nextPower > 0 && currentPower > 0 && nextPower > currentPower * 1.2 && (nextPower - currentPower) >= 50 && nextPower > 150) {
+        // Next is work, current is lower
+        if (prevPower === 0 || prevPower > currentPower * 1.2) {
+          // Previous was also work or doesn't exist, so current is recovery
+          return true;
+        }
+      }
+      
+      // Global average check (fallback)
+      let avgPower = 0;
+      let powerCount = 0;
+      allLaps.forEach(l => {
+        const p = l.average_watts || l.average_power || 0;
+        if (p > 0) {
+          avgPower += p;
+          powerCount++;
+        }
+      });
+      if (powerCount > 0) avgPower = avgPower / powerCount;
+      
+      // If power is very low (< 50W) or significantly below average (< 30% of avg), it's likely recovery
+      if (currentPower < 50 || (avgPower > 0 && currentPower < avgPower * 0.3)) {
+        return true;
+      }
+    }
+    
+    // Check speed for run/swim
+    if (isRun || isSwim) {
+      // Similar logic for speed
+      if (prevSpeed > 0 && nextSpeed > 0) {
+        const avgNeighborSpeed = (prevSpeed + nextSpeed) / 2;
+        if (currentSpeed > 0 && currentSpeed < avgNeighborSpeed * 0.85 && avgNeighborSpeed > 1) {
+          return true;
+        }
+      }
+      
+      // Global average check
+      let avgSpeed = 0;
+      let speedCount = 0;
+      allLaps.forEach(l => {
+        const s = l.average_speed || 0;
+        if (s > 0) {
+          avgSpeed += s;
+          speedCount++;
+        }
+      });
+      if (speedCount > 0) avgSpeed = avgSpeed / speedCount;
+      
+      const absoluteThreshold = isRun ? 2 : 0.5;
+      const relativeThreshold = avgSpeed > 0 ? avgSpeed * 0.4 : absoluteThreshold;
+      const threshold = Math.max(absoluteThreshold, relativeThreshold);
+      
+      if (currentSpeed < threshold) {
+        return true;
+      }
+    }
+    
+    // Check heart rate - if HR is very low compared to average, might be recovery
+    const avgHR = lap.average_heartrate || lap.average_hr || null;
+    if (avgHR && avgHR < 100) {
+      // Very low HR might indicate recovery, but not always
+      // Only mark as recovery if combined with low power/speed
+      if (isBike && currentPower < 30) {
+        return true;
+      }
+      if ((isRun || isSwim) && currentSpeed < 1) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Handle export to training - directly show TrainingForm with smart selection
+  const handleExportToTraining = () => {
+    if (!selectedStrava || !selectedStrava.laps || selectedStrava.laps.length === 0) {
+      alert('No intervals available to export');
+      return;
+    }
+
+    const uniqueLaps = deduplicateStravaLaps(selectedStrava.laps || []);
+    
+    // Determine sport type
+    const sportType = selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
+    let sport = 'bike';
+    if (sportType.toLowerCase().includes('run')) {
+      sport = 'run';
+    } else if (sportType.toLowerCase().includes('swim')) {
+      sport = 'swim';
+    }
+    
+    // Mark recovery intervals (but keep all intervals)
+    const isRecoveryMap = new Map();
+    uniqueLaps.forEach((lap, index) => {
+      isRecoveryMap.set(index, isRecoveryInterval(lap, index, sportType, uniqueLaps));
+    });
+    
+    // Convert all laps to training format (including recovery)
+    const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap);
+    
+    // Check if we have at least some work intervals
+    const workIntervals = results.filter(r => !r.isRecovery);
+    if (workIntervals.length === 0) {
+      alert('No work intervals found. All intervals appear to be recovery periods.');
+      return;
+    }
+    
+    // Format date
+    const activityDate = selectedStrava?.start_date_local || 
+                       selectedStrava?.start_date || 
+                       selectedStrava?.startDate || 
+                       new Date();
+    const dateStr = new Date(activityDate).toISOString().slice(0, 16);
+    
+    // Prepare form data with all intervals (user can edit/remove in form)
+    const formData = {
+      sport: sport,
+      type: 'interval',
+      title: selectedStrava?.titleManual || selectedStrava?.name || 'Untitled Training',
+      customTitle: '',
+      description: selectedStrava?.description || '',
+      date: dateStr,
+      specifics: {
+        specific: '',
+        weather: '',
+        customSpecific: '',
+        customWeather: ''
+      },
+      results: results
+    };
+    
+    setTrainingFormData(formData);
+    setShowTrainingForm(true);
+  };
+
+  // Handle training form submission
+  const handleTrainingFormSubmit = async (formData) => {
+    try {
+      setIsExporting(true);
+      
+      // Filter out unselected intervals (recovery intervals that user didn't select)
+      const selectedResults = formData.results.filter(result => result.isSelected !== false);
+      
+      // Remove internal flags before submitting
+      const cleanedResults = selectedResults.map(result => {
+        const { isRecovery, isSelected, ...cleanedResult } = result;
+        return cleanedResult;
+      });
+      
+      const targetId = user?.role === 'athlete' ? user._id : (selectedAthleteId || user._id);
+      
+      const trainingData = {
+        ...formData,
+        results: cleanedResults,
+        athleteId: targetId,
+        coachId: user?.role === 'coach' ? user._id : undefined
+      };
+      
+      // Check if training already exists (by title and date)
+      const existingTrainings = await api.get(`/user/athlete/${targetId}/trainings`);
+      const existing = existingTrainings.data?.find(t => 
+        t.title === formData.title && 
+        new Date(t.date).toDateString() === new Date(formData.date).toDateString()
+      );
+      
+      if (existing) {
+        // Update existing training
+        await updateTraining(existing._id, trainingData);
+        alert('Training updated successfully!');
+      } else {
+        // Create new training
+        await addTraining(trainingData);
+        alert('Training created successfully!');
+      }
+      
+      // Reload regular trainings to update calendar
+      await loadRegularTrainings();
+      
+      setShowTrainingForm(false);
+      setTrainingFormData(null);
+    } catch (error) {
+      console.error('Error saving training:', error);
+      alert('Error saving training: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
@@ -2258,7 +2605,7 @@ const FitAnalysisPage = () => {
           const maxTime = time.length > 0 ? time[time.length-1] : 0;
 
           // Strava Title and Description Editor Component
-          const StravaTitleEditor = () => {
+          const StravaTitleEditor = ({ onExportToTraining }) => {
             const [isEditingTitle, setIsEditingTitle] = useState(false);
             const [isEditingDescription, setIsEditingDescription] = useState(false);
             const [title, setTitle] = useState(selectedStrava?.titleManual || selectedStrava?.name || '');
@@ -2327,6 +2674,12 @@ const FitAnalysisPage = () => {
                 setIsEditingTitle(false);
                 await loadStravaDetail(selectedStrava.id);
                 await loadExternalActivities(); // Reload to update calendar
+                // Show export dialog after saving title (with small delay to ensure data is loaded)
+                if (onExportToTraining) {
+                  setTimeout(() => {
+                    onExportToTraining();
+                  }, 500);
+                }
                       } catch (error) {
                 console.error('Error saving title:', error);
                 alert('Error saving title');
@@ -2494,7 +2847,7 @@ const FitAnalysisPage = () => {
           return (
             <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 space-y-4 md:space-y-6">
               {/* Title and Description */}
-              <StravaTitleEditor />
+              <StravaTitleEditor onExportToTraining={handleExportToTraining} />
               
               {/* Map Section */}
               {getGpsData.length > 0 && (
@@ -4217,6 +4570,7 @@ const FitAnalysisPage = () => {
                 maxTime={maxTime}
                 loadStravaDetail={loadStravaDetail}
                 loadExternalActivities={loadExternalActivities}
+                onExportToTraining={handleExportToTraining}
               />
             </div>
           );
@@ -4225,6 +4579,24 @@ const FitAnalysisPage = () => {
         )}
 
       </div>
+
+      {/* Training Form Modal - Direct export with smart selection */}
+      {showTrainingForm && trainingFormData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <TrainingForm
+              onClose={() => {
+                setShowTrainingForm(false);
+                setTrainingFormData(null);
+              }}
+              onSubmit={handleTrainingFormSubmit}
+              initialData={trainingFormData}
+              isEditing={false}
+              isLoading={isExporting}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

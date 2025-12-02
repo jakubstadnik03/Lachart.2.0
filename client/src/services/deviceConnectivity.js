@@ -331,11 +331,17 @@ class DeviceConnectivityService {
           // Control Point UUID is different from Measurement UUID
           try {
             const controlPoint = await cscService.getCharacteristic('00002a55-0000-1000-8000-00805f9b34fb');
+            // Check if control point supports write operations
+            const properties = controlPoint.properties;
+            if (properties.write || properties.writeWithoutResponse) {
             connectionInfo.controlPoint = controlPoint;
             connectionInfo.controlPointType = 'csc';
             connectionInfo.targetPower = null; // Track target power for verification
             connectionInfo.lastPowerSetTime = null; // Track when power was last set
-            console.log('Found CSC Control Point for FE-C control');
+              connectionInfo.controlRequested = false; // Track if control was requested
+              connectionInfo.ergoModeSet = false; // Track if ERGO mode was set
+              console.log('[connectWebBluetooth] ✅ Found CSC Control Point for FE-C control');
+              console.log('[connectWebBluetooth] Control Point properties:', properties);
             
             // Try to enable notifications on Control Point to receive responses
             // Note: Not all trainers support notifications on Control Point
@@ -386,19 +392,30 @@ class DeviceConnectivityService {
                 console.log('ℹ️ Control Point does not support notifications - responses will not be available');
               }
             } catch (notifError) {
-              console.warn('⚠️ Could not start notifications on Control Point (responses may not be available):', notifError);
+              console.warn('[connectWebBluetooth] ⚠️ Could not start notifications on Control Point (responses may not be available):', notifError);
+            }
+            } else {
+              console.warn('[connectWebBluetooth] ⚠️ Control Point found but does not support write operations');
             }
           } catch (error) {
-            console.warn('CSC Control Point not found - ERGO mode control may not be available:', error);
+            console.warn('[connectWebBluetooth] ⚠️ CSC Control Point not found - ERGO mode control may not be available:', error.message);
             // Some trainers might use a different UUID, try alternative
             try {
               const controlPoint = await cscService.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');
-              connectionInfo.controlPoint = controlPoint;
-              connectionInfo.controlPointType = 'csc-alt';
-              connectionInfo.targetPower = null;
-              connectionInfo.lastPowerSetTime = null;
-              console.log('Found alternative Control Point for FE-C control');
+              const properties = controlPoint.properties;
+              if (properties.write || properties.writeWithoutResponse) {
+                connectionInfo.controlPoint = controlPoint;
+                connectionInfo.controlPointType = 'csc-alt';
+                connectionInfo.targetPower = null;
+                connectionInfo.lastPowerSetTime = null;
+                connectionInfo.controlRequested = false;
+                connectionInfo.ergoModeSet = false;
+                console.log('[connectWebBluetooth] ✅ Found alternative CSC Control Point for FE-C control');
+              } else {
+                console.warn('[connectWebBluetooth] ⚠️ Alternative Control Point found but does not support write operations');
+              }
             } catch (error2) {
+              console.warn('[connectWebBluetooth] ⚠️ Alternative Control Point also not found:', error2.message);
               console.warn('Alternative Control Point also not found:', error2);
             }
           }
@@ -987,7 +1004,23 @@ class DeviceConnectivityService {
    * Check if device is connected
    */
   isDeviceConnected(deviceType) {
-    return this.connections.has(deviceType);
+    const connection = this.connections.get(deviceType);
+    if (!connection) {
+      return false;
+    }
+    
+    // Check if it's a real Bluetooth connection
+    if (connection.device && connection.device.gatt) {
+      return connection.device.gatt.connected;
+    }
+    
+    // Check if it's a simulated connection
+    if (connection.simulated) {
+      return true;
+    }
+    
+    // Fallback: if connection exists, assume connected
+    return true;
   }
 
   /**
@@ -1031,25 +1064,65 @@ class DeviceConnectivityService {
       }
 
       // Check if we have control point for FE-C
-      if (!connection.controlPoint) {
+      if (!connection.controlPoint && !connection.ftmsControlPoint) {
         // Try to get control point if we have CSC service
         if (connection.cscService) {
           try {
-            // Try standard Control Point UUID first
+            // Try standard Control Point UUID first (FE-C Control Point)
             connection.controlPoint = await connection.cscService.getCharacteristic('00002a55-0000-1000-8000-00805f9b34fb');
-            console.log('Found CSC Control Point for FE-C control');
+            console.log('[setPower] ✅ Found CSC Control Point for FE-C control');
           } catch (error) {
+            console.warn('[setPower] ⚠️ Standard Control Point not found, trying alternatives...', error.message);
             // Try alternative UUID (some trainers use Measurement UUID for control)
             try {
               connection.controlPoint = await connection.cscService.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');
-              console.log('Found alternative Control Point for FE-C control');
+              console.log('[setPower] ✅ Found alternative Control Point for FE-C control');
             } catch (error2) {
-              throw new Error('CSC Control Point not available - cannot set power. Make sure your trainer supports FE-C protocol.');
+              console.error('[setPower] ❌ CSC Control Point not available:', error2.message);
+              // Try FTMS Control Point as last resort
+              if (connection.powerService && connection.powerService.uuid === '00001826-0000-1000-8000-00805f9b34fb') {
+                try {
+                  const ftmsControlPoint = await connection.powerService.getCharacteristic('00002ad9-0000-1000-8000-00805f9b34fb');
+                  const properties = ftmsControlPoint.properties;
+                  if (properties.write || properties.writeWithoutResponse) {
+                    connection.ftmsControlPoint = ftmsControlPoint;
+                    connection.controlPointType = 'ftms';
+                    console.log('[setPower] ✅ Found FTMS Control Point for trainer control');
+                  } else {
+                    throw new Error('FTMS Control Point does not support write operations');
+                  }
+                } catch (ftmsError) {
+                  throw new Error('CSC Control Point not available - cannot set power. Make sure your trainer supports FE-C protocol. Error: ' + error2.message);
+                }
+              } else {
+                throw new Error('CSC Control Point not available - cannot set power. Make sure your trainer supports FE-C protocol. Error: ' + error2.message);
+              }
             }
+          }
+        } else if (connection.powerService && connection.powerService.uuid === '00001826-0000-1000-8000-00805f9b34fb') {
+          // Try FTMS Control Point if we have FTMS service
+          try {
+            const ftmsControlPoint = await connection.powerService.getCharacteristic('00002ad9-0000-1000-8000-00805f9b34fb');
+            const properties = ftmsControlPoint.properties;
+            if (properties.write || properties.writeWithoutResponse) {
+              connection.ftmsControlPoint = ftmsControlPoint;
+              connection.controlPointType = 'ftms';
+              console.log('[setPower] ✅ Found FTMS Control Point for trainer control');
+            } else {
+              throw new Error('FTMS Control Point does not support write operations');
+            }
+          } catch (ftmsError) {
+            throw new Error('No Control Point available - cannot set power. Make sure your trainer supports FE-C or FTMS protocol. Error: ' + ftmsError.message);
           }
         } else {
           throw new Error('CSC Service not available - cannot set power. Make sure your trainer supports FE-C protocol.');
         }
+      }
+      
+      // Use FTMS control point if available and CSC is not
+      const controlPoint = connection.controlPoint || connection.ftmsControlPoint;
+      if (!controlPoint) {
+        throw new Error('No Control Point available after initialization');
       }
 
       try {
@@ -1058,12 +1131,48 @@ class DeviceConnectivityService {
         // 2. Set Training Mode to ERGO (opcode 0x05, value 0x04) - optional but recommended
         // 3. Set Target Power (opcode 0x01)
         
+        // Use the appropriate control point (CSC or FTMS)
+        const controlPoint = connection.controlPoint || connection.ftmsControlPoint;
+        const isFTMS = !!connection.ftmsControlPoint;
+        
+        if (isFTMS) {
+          // FTMS protocol for setting target power
+          // FTMS uses different opcodes than FE-C
+          console.log('[FTMS] Using FTMS protocol to set power...');
+          
+          // FTMS Set Target Power: Opcode 0x33 (Set Target Power)
+          const powerInTenths = Math.round(powerWatts * 10);
+          const powerLow = powerInTenths & 0xFF;
+          const powerHigh = (powerInTenths >> 8) & 0xFF;
+          
+          const ftmsCommand = new Uint8Array([
+            0x33,        // Opcode: Set Target Power
+            0x00,        // Reserved
+            powerLow,    // Power low byte (0.1W units)
+            powerHigh    // Power high byte (0.1W units)
+          ]);
+          
+          connection.targetPower = powerWatts;
+          connection.lastPowerSetTime = Date.now();
+          
+          console.log('[FTMS] Sending Set Target Power command...');
+          console.log('[FTMS] Target power:', powerWatts, 'W =', powerInTenths, 'x 0.1W');
+          console.log('[FTMS] Command bytes:', Array.from(ftmsCommand).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+          
+          await controlPoint.writeValue(ftmsCommand);
+          await new Promise(resolve => setTimeout(resolve, 600));
+          
+          console.log(`✅ Set target power to ${powerWatts}W using FTMS protocol`);
+          return true;
+        }
+        
+        // FE-C protocol (for CSC Control Point)
         // Step 1: Request Control (if not already done)
         if (!connection.controlRequested) {
           try {
             const requestControl = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
             console.log('[FE-C] Sending Request Control command...');
-            await connection.controlPoint.writeValue(requestControl);
+            await controlPoint.writeValue(requestControl);
             await new Promise(resolve => setTimeout(resolve, 300)); // Wait longer for response
             connection.controlRequested = true;
             console.log('✅ Requested control from trainer');
@@ -1089,7 +1198,7 @@ class DeviceConnectivityService {
           ]);
           console.log('[FE-C] Sending Set Training Mode to ERGO command...');
           console.log('[FE-C] Command bytes:', Array.from(setErgoMode).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-          await connection.controlPoint.writeValue(setErgoMode);
+          await controlPoint.writeValue(setErgoMode);
           await new Promise(resolve => setTimeout(resolve, 500)); // Wait longer for response
           connection.ergoModeSet = true;
           console.log('✅ Set training mode to ERGO');
@@ -1125,14 +1234,14 @@ class DeviceConnectivityService {
         console.log('[FE-C] Command bytes:', Array.from(command).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
         console.log('[FE-C] Power bytes: Low=', '0x' + powerLow.toString(16).padStart(2, '0'), 'High=', '0x' + powerHigh.toString(16).padStart(2, '0'));
         
-        await connection.controlPoint.writeValue(command);
+        await controlPoint.writeValue(command);
         await new Promise(resolve => setTimeout(resolve, 600)); // Wait longer for command to process
         
         // Step 4: Re-confirm ERGO mode after setting power (some trainers need this)
         try {
           await new Promise(resolve => setTimeout(resolve, 200));
           const reconfirmErgo = new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]);
-          await connection.controlPoint.writeValue(reconfirmErgo);
+          await controlPoint.writeValue(reconfirmErgo);
           await new Promise(resolve => setTimeout(resolve, 300));
           console.log('[FE-C] ✅ Re-confirmed ERGO mode after setting power');
         } catch (e) {
@@ -1149,15 +1258,27 @@ class DeviceConnectivityService {
         console.error(`Error setting power on trainer:`, error);
         // If it's a "GATT operation already in progress" error, wait and retry once
         if (error.message && error.message.includes('already in progress')) {
-          console.log('GATT operation in progress, waiting and retrying...');
-          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log('[setPower] ⚠️ GATT operation in progress, waiting and retrying...');
+          await new Promise(resolve => setTimeout(resolve, 500));
           try {
+            const controlPoint = connection.controlPoint || connection.ftmsControlPoint;
+            const isFTMS = !!connection.ftmsControlPoint;
+            
+            if (isFTMS) {
+              const powerInTenths = Math.round(powerWatts * 10);
+              const powerLow = powerInTenths & 0xFF;
+              const powerHigh = (powerInTenths >> 8) & 0xFF;
+              const ftmsCommand = new Uint8Array([0x33, 0x00, powerLow, powerHigh]);
+              await controlPoint.writeValue(ftmsCommand);
+              console.log(`[setPower] ✅ Retry: Set target power to ${powerWatts}W using FTMS`);
+            } else {
             const powerInTenths = Math.round(powerWatts * 10);
             const powerLow = powerInTenths & 0xFF;
             const powerHigh = (powerInTenths >> 8) & 0xFF;
             const command = new Uint8Array([0x01, 0x00, 0x00, 0x00, powerLow, powerHigh]);
-            await connection.controlPoint.writeValue(command);
-            console.log(`Retry: Set target power to ${powerWatts}W on trainer`);
+              await controlPoint.writeValue(command);
+              console.log(`[setPower] ✅ Retry: Set target power to ${powerWatts}W using FE-C`);
+            }
             return true;
           } catch (retryError) {
             throw new Error(`Failed to set power after retry: ${retryError.message}`);
@@ -1202,7 +1323,23 @@ class DeviceConnectivityService {
    */
   supportsErgoMode(deviceType) {
     const connection = this.connections.get(deviceType);
-    return !!(connection && connection.controlPoint);
+    if (!connection) {
+      return false;
+    }
+    
+    // Check if we have controlPoint (CSC or FTMS)
+    if (connection.controlPoint || connection.ftmsControlPoint) {
+      return true;
+    }
+    
+    // If we have CSC service but no controlPoint yet, try to get it
+    if (connection.cscService && !connection.controlPoint) {
+      // ControlPoint will be obtained in setPower if needed
+      // But we can check if CSC service exists as a sign of potential support
+      return true;
+    }
+    
+    return false;
   }
 }
 

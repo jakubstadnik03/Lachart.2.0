@@ -39,17 +39,25 @@ const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
     <nav className="flex flex-wrap justify-between items-center py-2.5 px-2">
       <div className="flex items-center gap-4">
         <span className="text-sm text-gray-700">Show</span>
-        <select
-          value={rowsPerPage}
-          onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
-          className="border rounded px-2 py-1"
-        >
-          <option value={5}>5</option>
-          <option value={10}>10</option>
-          <option value={20}>20</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-        </select>
+        <div className="relative">
+          <select
+            value={rowsPerPage}
+            onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
+            className="border border-gray-300 rounded px-2 py-1 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+            style={{ WebkitAppearance: 'none', appearance: 'none' }}
+          >
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
         <span className="text-sm text-gray-700">entries</span>
       </div>
 
@@ -259,7 +267,8 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           placeholder="Find training by title"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full sm:w-1/3 p-2 border border-gray-300 rounded-2xl"
+          className="w-full sm:w-1/3 p-2 border border-gray-300 rounded-2xl bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+          style={{ WebkitAppearance: 'none', appearance: 'none' }}
         />
       </div>
 

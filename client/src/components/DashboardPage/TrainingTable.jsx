@@ -140,11 +140,42 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, displayCount);  // Použijeme nastavený počet tréninků
 
+  // Parse pace from mm:ss format to seconds for comparison
+  const parsePaceToSeconds = (paceValue) => {
+    if (!paceValue) return null;
+    if (typeof paceValue === 'number') return paceValue;
+    if (typeof paceValue === 'string') {
+      const parts = paceValue.split(':');
+      if (parts.length === 2) {
+        const minutes = parseInt(parts[0], 10);
+        const seconds = parseInt(parts[1], 10);
+        if (!isNaN(minutes) && !isNaN(seconds)) {
+          return minutes * 60 + seconds;
+        }
+      }
+      const num = Number(paceValue);
+      if (!isNaN(num)) return num;
+    }
+    return null;
+  };
+
   const formattedTrainings = filteredTrainings.map((item, index, array) => {
-    const averagePower = Math.round(
-      item.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
-      item.results.length
-    );
+    // For run: calculate average pace in seconds
+    // For other sports: calculate average power
+    let averageValue;
+    if (item.sport === 'run') {
+      const paces = item.results
+        .map(r => parsePaceToSeconds(r.power))
+        .filter(p => p !== null && p > 0);
+      averageValue = paces.length > 0 
+        ? Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length)
+        : 0;
+    } else {
+      averageValue = Math.round(
+        item.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
+        item.results.length
+      );
+    }
 
     // Porovnání s předchozím tréninkem stejného typu
     const previousTraining = array
@@ -153,15 +184,37 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
     
     let status = "same";
     if (previousTraining) {
-      const previousPower = Math.round(
-        previousTraining.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
-        previousTraining.results.length
-      );
-      if (averagePower > previousPower) status = "up";
-      else if (averagePower < previousPower) status = "down";
+      let previousValue;
+      if (item.sport === 'run') {
+        const previousPaces = previousTraining.results
+          .map(r => parsePaceToSeconds(r.power))
+          .filter(p => p !== null && p > 0);
+        previousValue = previousPaces.length > 0
+          ? Math.round(previousPaces.reduce((sum, p) => sum + p, 0) / previousPaces.length)
+          : 0;
+      } else {
+        previousValue = Math.round(
+          previousTraining.results.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / 
+          previousTraining.results.length
+        );
+      }
+      
+      if (item.sport === 'run') {
+        // Pro běh: rychlejší tempo (menší číslo) = lepší = "up" (zeleně)
+        // Pomalejší tempo (větší číslo) = horší = "down" (červeně)
+        if (averageValue < previousValue) status = "up"; // Rychlejší = lepší
+        else if (averageValue > previousValue) status = "down"; // Pomalejší = horší
+      } else {
+        // Pro ostatní sporty: vyšší power = lepší
+        if (averageValue > previousValue) status = "up";
+        else if (averageValue < previousValue) status = "down";
+      }
     }
 
-    const pace = convertPowerToPace(averagePower, item.sport);
+    // For run: use averageValue (pace in seconds), for others use averagePower
+    const pace = item.sport === 'run' 
+      ? convertPowerToPace(averageValue, item.sport)
+      : convertPowerToPace(averageValue, item.sport);
 
     return {
       training: item.title,
@@ -208,34 +261,50 @@ export default function TrainingTable({ trainings = [], selectedSport = 'all', o
                     <div className="p-2">
                       <div className="mb-2 sm:mb-3">
                         <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Sport</label>
-                        <select 
-                          className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
-                          value={selectedSport}
-                          onChange={(e) => handleSportChange(e.target.value)}
-                        >
-                          {availableSports.length > 1 && (
-                            <option value="all">All Sports</option>
-                          )}
-                          {availableSports.map((sport) => (
-                            <option key={sport} value={sport}>
-                              {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <select 
+                            className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                            style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                            value={selectedSport}
+                            onChange={(e) => handleSportChange(e.target.value)}
+                          >
+                            {availableSports.length > 1 && (
+                              <option value="all">All Sports</option>
+                            )}
+                            {availableSports.map((sport) => (
+                              <option key={sport} value={sport}>
+                                {sport.charAt(0).toUpperCase() + sport.slice(1)}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
-                        <select 
-                          className="w-full border rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm"
-                          value={displayCount}
-                          onChange={(e) => setDisplayCount(Number(e.target.value))}
-                        >
-                          {[3, 6, 9, 12].map((count) => (
-                            <option key={count} value={count}>
-                              {count} trainings
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <select 
+                            className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                            style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                            value={displayCount}
+                            onChange={(e) => setDisplayCount(Number(e.target.value))}
+                          >
+                            {[3, 6, 9, 12].map((count) => (
+                              <option key={count} value={count}>
+                                {count} trainings
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

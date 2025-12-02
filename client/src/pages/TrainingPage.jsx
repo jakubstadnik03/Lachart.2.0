@@ -16,7 +16,16 @@ const TrainingPage = () => {
   const { user, isAuthenticated } = useAuth();
   const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
   const [trainings, setTrainings] = useState([]);
-  const [selectedSport, setSelectedSport] = useState('bike');
+  // Initialize selectedSport with localStorage or default to 'all'
+  const [selectedSport, setSelectedSport] = useState(() => {
+    const saved = localStorage.getItem('trainingStats_selectedSport');
+    return saved || 'all';
+  });
+  
+  // Save to localStorage when selectedSport changes
+  useEffect(() => {
+    localStorage.setItem('trainingStats_selectedSport', selectedSport);
+  }, [selectedSport]);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +46,9 @@ const TrainingPage = () => {
       
       // Nastavení výchozího vybraného tréninku
       if (response.data.length > 0) {
-        const sportTrainings = response.data.filter(t => t.sport === selectedSport);
+        const sportTrainings = selectedSport === 'all' 
+          ? response.data 
+          : response.data.filter(t => t.sport === selectedSport);
         if (sportTrainings.length > 0) {
           setSelectedTitle(sportTrainings[0].title);
           setSelectedTraining(sportTrainings[0]._id);
@@ -77,7 +88,9 @@ const TrainingPage = () => {
 
       // Nastavení výchozího vybraného tréninku pro nového atleta
       if (trainings.length > 0) {
-        const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+        const sportTrainings = selectedSport === 'all' 
+          ? trainings 
+          : trainings.filter(t => t.sport === selectedSport);
         if (sportTrainings.length > 0) {
           setSelectedTitle(sportTrainings[0].title);
           setSelectedTraining(sportTrainings[0]._id);

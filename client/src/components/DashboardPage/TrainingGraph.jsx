@@ -155,15 +155,26 @@ const TrainingGraph = ({
   // Get available sports from trainings
   const availableSports = [...new Set(trainingList.map(t => t.sport))].filter(Boolean);
   
-  // Initialize selectedSport with first available sport if not provided
+  // Initialize selectedSport with localStorage or default to 'all'
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
     if (selectedSport) return selectedSport;
-    return availableSports.length > 0 ? availableSports[0] : 'bike';
+    const saved = localStorage.getItem('trainingGraph_selectedSport');
+    if (saved && (saved === 'all' || availableSports.includes(saved))) {
+      return saved;
+    }
+    return 'all';
   });
   
   // Use external selectedSport if provided, otherwise use internal
   const currentSelectedSport = selectedSport || internalSelectedSport;
-  const setCurrentSelectedSport = setSelectedSport || setInternalSelectedSport;
+  const setCurrentSelectedSport = (value) => {
+    if (setSelectedSport) {
+      setSelectedSport(value);
+    } else {
+      setInternalSelectedSport(value);
+    }
+    localStorage.setItem('trainingGraph_selectedSport', value);
+  };
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null);
   const [ranges, setRanges] = useState({ power: { min: 0, max: 0 }, heartRate: { min: 0, max: 0 } });
@@ -188,26 +199,19 @@ const TrainingGraph = ({
 
   // Handler pro změnu sportu
   const handleSportChange = (newSport) => {
-    // console.log('handleSportChange called with:', newSport);
-    // console.log('Current selectedSport:', selectedSport);
-    
     // Nejprve aktualizujeme sport
     setCurrentSelectedSport(newSport);
-    // console.log('setSelectedSport called with:', newSport);
     
     // Pak aktualizujeme data pro nový sport
-    const sportTrainings = trainingList.filter(t => t.sport === newSport);
-    // console.log('Filtered sportTrainings:', sportTrainings);
+    const sportTrainings = newSport === 'all' 
+      ? trainingList 
+      : trainingList.filter(t => t.sport === newSport);
     
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
-    // console.log('Unique titles for new sport:', uniqueTitles);
     
     if (sportTrainings.length > 0) {
       const firstTitle = uniqueTitles[0];
       const firstTraining = sportTrainings.find(t => t.title === firstTitle)?._id;
-      
-      // console.log('Setting first title:', firstTitle);
-      // console.log('Setting first training:', firstTraining);
       
       if (firstTitle) {
         setSelectedTitle(firstTitle);
@@ -216,7 +220,6 @@ const TrainingGraph = ({
         }
       }
     } else {
-      console.log('No trainings found for sport:', newSport);
       setSelectedTitle(null);
       setSelectedTraining(null);
     }
@@ -224,7 +227,9 @@ const TrainingGraph = ({
 
   // Handler pro změnu názvu tréninku
   const handleTitleChange = (newTitle) => {
-    const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
+    const sportTrainings = currentSelectedSport === 'all' 
+      ? trainingList 
+      : trainingList.filter(t => t.sport === currentSelectedSport);
     const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
     
     // Seřadíme tréninky podle data od nejnovějšího
@@ -251,7 +256,9 @@ const TrainingGraph = ({
     if (!trainingList || trainingList.length === 0) return;
     
     setLoading(false);
-    const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
+    const sportTrainings = currentSelectedSport === 'all' 
+      ? trainingList 
+      : trainingList.filter(t => t.sport === currentSelectedSport);
     
     if (sportTrainings.length === 0) {
       if (setSelectedTitle) setSelectedTitle(null);
@@ -262,7 +269,7 @@ const TrainingGraph = ({
     // Pokud už máme vybraný trénink a je stále platný, necháme ho
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => t._id === selectedTraining);
-      if (currentTraining && currentTraining.sport === currentSelectedSport) {
+      if (currentTraining && (currentSelectedSport === 'all' || currentTraining.sport === currentSelectedSport)) {
         // Trénink je stále platný, aktualizujeme pouze title pokud se změnil
         if (setSelectedTitle && currentTraining.title !== selectedTitle) {
           setSelectedTitle(currentTraining.title);
@@ -341,7 +348,9 @@ const TrainingGraph = ({
   if (!trainingList.length) return <div>No trainings available</div>;
 
   const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
-  const sportTrainings = trainingList.filter(t => t.sport === currentSelectedSport);
+  const sportTrainings = currentSelectedSport === 'all' 
+    ? trainingList 
+    : trainingList.filter(t => t.sport === currentSelectedSport);
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
@@ -366,17 +375,26 @@ const TrainingGraph = ({
                     {/* Sport selector */}
                     <div className="mb-3">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                      <div className="relative">
                       <select 
-                        className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
                         value={currentSelectedSport}
                         onChange={(e) => handleSportChange(e.target.value)}
                       >
+                          <option value="all">All Sports</option>
                         {availableSports.map((sport) => (
                           <option key={sport} value={sport}>
                             {sport.charAt(0).toUpperCase() + sport.slice(1)}
                           </option>
                         ))}
                       </select>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -387,7 +405,7 @@ const TrainingGraph = ({
 
         <div className="relative" style={{ height: '300px' }}>
           <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-            No training data available for {currentSelectedSport}
+            No training data available for {currentSelectedSport === 'all' ? 'all sports' : currentSelectedSport}
           </div>
         </div>
       </div>
@@ -416,17 +434,26 @@ const TrainingGraph = ({
                     {/* Sport selector */}
                     <div className="mb-3">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                      <div className="relative">
                       <select 
-                        className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
                         value={currentSelectedSport}
                         onChange={(e) => handleSportChange(e.target.value)}
                       >
+                          <option value="all">All Sports</option>
                         {availableSports.map((sport) => (
                           <option key={sport} value={sport}>
                             {sport.charAt(0).toUpperCase() + sport.slice(1)}
                           </option>
                         ))}
                       </select>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -494,7 +521,12 @@ const TrainingGraph = ({
         max: ranges.power.max,
         ticks: {
           stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
-          callback: (value) => formatPowerValue(value, currentSelectedSport),
+          callback: (value) => {
+            const sportForFormat = currentSelectedSport === 'all' && selectedTrainingData 
+              ? selectedTrainingData.sport 
+              : currentSelectedSport;
+            return formatPowerValue(value, sportForFormat);
+          },
           display: true,
           autoSkip: false,
         },
@@ -580,8 +612,10 @@ const TrainingGraph = ({
                   {/* Training title selector */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Training</label>
+                    <div className="relative">
                     <select 
-                      className="w-full border rounded-lg px-3 py-1 text-gray-600 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1 text-gray-600 text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
                       value={selectedTitle}
                       onChange={(e) => handleTitleChange(e.target.value)}
                     >
@@ -591,6 +625,12 @@ const TrainingGraph = ({
                         </option>
                       ))}
                     </select>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -605,7 +645,7 @@ const TrainingGraph = ({
             labels: selectedTrainingData.results.map(r => r.interval.toString()),
             datasets: [
               {
-                label: currentSelectedSport === 'bike' ? "Power" : "Pace",
+                label: (currentSelectedSport === 'bike' || currentSelectedSport === 'all') ? "Power" : "Pace",
                 data: selectedTrainingData.results.map(r => r.power),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",
@@ -636,9 +676,9 @@ const TrainingGraph = ({
             tooltip={tooltip} 
             datasets={selectedTrainingData.results.map(r => ({
               ...r,
-              power: formatPowerValue(r.power, currentSelectedSport)
+              power: formatPowerValue(r.power, currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport)
             }))} 
-            sport={currentSelectedSport}
+            sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
           />
         )}
       </div>

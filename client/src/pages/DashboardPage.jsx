@@ -31,8 +31,16 @@ const DashboardPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Initialize selectedSport with 'all' by default
-  const [selectedSport, setSelectedSport] = useState('all');
+  // Initialize selectedSport with localStorage or default to 'all'
+  const [selectedSport, setSelectedSport] = useState(() => {
+    const saved = localStorage.getItem('trainingStats_selectedSport');
+    return saved || 'all';
+  });
+  
+  // Save to localStorage when selectedSport changes
+  useEffect(() => {
+    localStorage.setItem('trainingStats_selectedSport', selectedSport);
+  }, [selectedSport]);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
@@ -175,20 +183,25 @@ const DashboardPage = () => {
       // Get available sports from trainings
       const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
       
-      // If current selectedSport is not available, switch to first available
-      if (availableSports.length > 0 && !availableSports.includes(selectedSport)) {
+      // If current selectedSport is not available and is not 'all', switch to first available
+      // 'all' is always valid, so we don't reset it
+      if (availableSports.length > 0 && selectedSport !== 'all' && !availableSports.includes(selectedSport)) {
         setSelectedSport(availableSports[0]);
         return;
       }
       
-      const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+      const sportTrainings = selectedSport === 'all' 
+        ? trainings 
+        : trainings.filter(t => t.sport === selectedSport);
       const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
       
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
-        setSelectedTitle(uniqueTitles[0]);
-        const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
-        if (firstTrainingWithTitle) {
-          setSelectedTraining(firstTrainingWithTitle._id);
+        if (uniqueTitles.length > 0) {
+          setSelectedTitle(uniqueTitles[0]);
+          const firstTrainingWithTitle = sportTrainings.find(t => t.title === uniqueTitles[0]);
+          if (firstTrainingWithTitle) {
+            setSelectedTraining(firstTrainingWithTitle._id);
+          }
         }
       }
     }

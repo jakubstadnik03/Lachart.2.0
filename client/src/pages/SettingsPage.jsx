@@ -14,6 +14,7 @@ const SettingsPage = () => {
     google: false
   });
   const [stravaConnected, setStravaConnected] = useState(false);
+  const [garminConnected, setGarminConnected] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -90,6 +91,7 @@ const SettingsPage = () => {
         try {
           const status = await getIntegrationStatus();
           setStravaConnected(Boolean(status.stravaConnected));
+          setGarminConnected(Boolean(status.garminConnected));
         } catch (e) {
           // ignore if not logged
         }
@@ -509,6 +511,7 @@ const SettingsPage = () => {
                 files={files}
                 uploading={uploading}
                 stravaConnected={stravaConnected}
+                garminConnected={garminConnected}
                 onFileSelect={handleFileSelect}
                 onUpload={handleUpload}
                 onSyncComplete={handleSyncComplete}

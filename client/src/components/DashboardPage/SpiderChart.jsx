@@ -21,15 +21,26 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   // Get available sports from trainings
   const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
   
-  // Initialize selectedSport with first available sport if not provided
+  // Initialize selectedSport with localStorage or default to 'all'
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
     if (selectedSport) return selectedSport;
-    return availableSports.length > 0 ? availableSports[0] : 'bike';
+    const saved = localStorage.getItem('spiderChart_selectedSport');
+    if (saved && (saved === 'all' || availableSports.includes(saved))) {
+      return saved;
+    }
+    return 'all';
   });
   
   // Use external selectedSport if provided, otherwise use internal
   const currentSelectedSport = selectedSport || internalSelectedSport;
-  const setCurrentSelectedSport = setSelectedSport || setInternalSelectedSport;
+  const setCurrentSelectedSport = (value) => {
+    if (setSelectedSport) {
+      setSelectedSport(value);
+    } else {
+      setInternalSelectedSport(value);
+    }
+    localStorage.setItem('spiderChart_selectedSport', value);
+  };
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedTrainings, setSelectedTrainings] = useState([]);
   const [selectedMonths, setSelectedMonths] = useState([]);
@@ -100,21 +111,24 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   }
 
   // Připravíme options pro dropdown sportu - pouze sporty, které mají tréninky
-  const sportOptions = availableSports.map(sport => ({
-    value: sport,
-    label: sport.charAt(0).toUpperCase() + sport.slice(1)
-  }));
+  const sportOptions = [
+    { value: 'all', label: 'All Sports' },
+    ...availableSports.map(sport => ({
+      value: sport,
+      label: sport.charAt(0).toUpperCase() + sport.slice(1)
+    }))
+  ];
 
   // Filtrování podle sportu a roku
   const filteredTrainings = trainings.filter(
-    (t) => t.sport === currentSelectedSport && 
+    (t) => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && 
     new Date(t.date).getFullYear() === selectedYear &&
     (selectedTrainings.length === 0 || selectedTrainings.includes(t.title))
   );
 
   // Získání unikátních názvů tréninků pro daný sport a rok
   const trainingOptions = [...new Set(trainings
-    .filter(t => t.sport === currentSelectedSport && new Date(t.date).getFullYear() === selectedYear)
+    .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && new Date(t.date).getFullYear() === selectedYear)
     .map(t => t.title)
   )].map(title => ({
     value: title,
@@ -178,7 +192,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   filteredTrainings.forEach(training => {
     const month = new Date(training.date).toLocaleString('default', { month: 'long' });
     if (transformedData[month]) {
-      const value = calculateTrainingValue(training, currentSelectedSport);
+      // Use training's sport for calculation when 'all' is selected
+      const sportForCalculation = currentSelectedSport === 'all' ? training.sport : currentSelectedSport;
+      const value = calculateTrainingValue(training, sportForCalculation);
       if (value > 0) {
         // Pokud už existuje hodnota pro tento trénink v měsíci, vezmeme průměr
         if (transformedData[month][training.title] !== null) {
@@ -205,7 +221,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
 
   // Calculate minimum value for the scale
   const getMinScaleValue = () => {
-    if (currentSelectedSport !== 'bike') return 0;
+    if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') return 0;
     
     // Get all non-null values from the data
     const allValues = Object.values(transformedData)
@@ -260,7 +276,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         suggestedMin: getMinScaleValue(),
         ticks: {
           font: { size: 14 },
-          callback: (value) => formatValue(value, currentSelectedSport),
+          callback: (value) => {
+            // For 'all' sport, determine format based on available data
+            const sportForFormat = currentSelectedSport === 'all' ? 'bike' : currentSelectedSport;
+            return formatValue(value, sportForFormat);
+          },
         },
         pointLabels: {
           font: {
@@ -307,7 +327,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           label: (context) => {
             const value = context.raw;
             if (value === null || value === 0) return `${context.dataset.label}: No data`;
-            return `${context.dataset.label}: ${formatValue(value, currentSelectedSport)}`;
+            // For 'all' sport, determine format based on available data
+            const sportForFormat = currentSelectedSport === 'all' ? 'bike' : currentSelectedSport;
+            return `${context.dataset.label}: ${formatValue(value, sportForFormat)}`;
           },
           labelPointStyle: (context) => {
             return {
@@ -356,19 +378,27 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                 <div className="p-2 space-y-3">
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-gray-700">Select Year</label>
-                    <select
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring focus:ring-indigo-200 text-xs sm:text-sm"
-                      value={selectedYear}
-                      onChange={(e) => {
-                        setSelectedYear(Number(e.target.value));
-                        setSelectedTrainings([]);
-                        setSelectedMonths([]);
-                      }}
-                    >
-                      {[2022, 2023, 2024, 2025].map((year) => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>
+                    <div className="relative mt-1">
+                      <select
+                        className="w-full border border-gray-300 rounded-md px-3 py-1 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8 shadow-sm"
+                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                        value={selectedYear}
+                        onChange={(e) => {
+                          setSelectedYear(Number(e.target.value));
+                          setSelectedTrainings([]);
+                          setSelectedMonths([]);
+                        }}
+                      >
+                        {[2022, 2023, 2024, 2025].map((year) => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between">
