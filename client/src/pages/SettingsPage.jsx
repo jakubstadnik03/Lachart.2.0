@@ -5,7 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
 import { Mail, User, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities } from '../services/api';
 
 const SettingsPage = () => {
   const { user } = useAuth();
@@ -128,6 +128,27 @@ const SettingsPage = () => {
       await listExternalActivities();
     } catch (e) {
       // ignore
+    }
+  };
+
+  const handleConnectStrava = async () => {
+    try {
+      const url = await getStravaAuthUrl();
+      window.location.href = url;
+    } catch (e) {
+      console.error('Strava connect error:', e);
+      addNotification('Failed to start Strava connection', 'error');
+    }
+  };
+
+  const handleSyncStrava = async () => {
+    try {
+      const res = await syncStravaActivities();
+      addNotification(`Strava sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
+      await handleSyncComplete();
+    } catch (e) {
+      console.error('Strava sync error:', e);
+      addNotification('Failed to sync Strava activities', 'error');
     }
   };
 
@@ -322,7 +343,7 @@ const SettingsPage = () => {
       <div className="max-w-4xl mx-auto">
         <div className="space-y-8">
           {/* Account Settings Section */}
-          <div className="bg-white shadow rounded-lg p-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Account Settings</h2>
             
             <div className="space-y-6">
@@ -505,22 +526,48 @@ const SettingsPage = () => {
 
           {/* Integrations Section - Only for Admin */}
           {user?.admin && (
-            <div className="bg-white shadow rounded-lg p-6">
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Integrations & Sync</h2>
-              <FitUploadSection
-                files={files}
-                uploading={uploading}
-                stravaConnected={stravaConnected}
-                garminConnected={garminConnected}
-                onFileSelect={handleFileSelect}
-                onUpload={handleUpload}
-                onSyncComplete={handleSyncComplete}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold">Strava</h3>
+                    <span className={`text-sm ${stravaConnected ? 'text-green-600' : 'text-gray-500'}`}>
+                      {stravaConnected ? 'Connected' : 'Not connected'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleConnectStrava}
+                      className="px-3 py-2 bg-primary text-white rounded hover:bg-primary-dark"
+                    >
+                      {stravaConnected ? 'Reconnect' : 'Connect'}
+                    </button>
+                    <button
+                      onClick={handleSyncStrava}
+                      className="px-3 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200"
+                    >
+                      Sync
+                    </button>
+                  </div>
+                </div>
+           
+                  <FitUploadSection
+                    files={files}
+                    uploading={uploading}
+                    stravaConnected={stravaConnected}
+                    garminConnected={garminConnected}
+                    onFileSelect={handleFileSelect}
+                    onUpload={handleUpload}
+                    onSyncComplete={handleSyncComplete}
+                  />
+           
+              </div>
             </div>
           )}
 
           {/* Contact Information Section */}
-          <div className="bg-white shadow rounded-lg p-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Contact Information</h2>
             <div className="space-y-4">
               <div className="flex items-center">
@@ -541,7 +588,7 @@ const SettingsPage = () => {
           </div>
 
           {/* App Information Section */}
-          <div className="bg-white shadow rounded-lg p-6">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">About LaChart</h2>
             <div className="space-y-4">
               <div className="flex items-center">

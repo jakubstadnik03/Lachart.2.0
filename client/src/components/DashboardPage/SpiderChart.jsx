@@ -18,8 +18,8 @@ import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
 export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport }) {
-  // Get available sports from trainings
-  const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+  // Get available sports from trainings (normalize to lowercase)
+  const availableSports = [...new Set(trainings.map(t => (t.sport || '').toLowerCase()))].filter(Boolean);
   
   // Initialize selectedSport with localStorage or default to 'all'
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
@@ -113,22 +113,26 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   // Připravíme options pro dropdown sportu - pouze sporty, které mají tréninky
   const sportOptions = [
     { value: 'all', label: 'All Sports' },
-    ...availableSports.map(sport => ({
-      value: sport,
-      label: sport.charAt(0).toUpperCase() + sport.slice(1)
-    }))
+    ...availableSports.map(sport => {
+      const value = (sport || '').toLowerCase();
+      const label = value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
+      return ({
+        value,
+        label
+      });
+    })
   ];
 
   // Filtrování podle sportu a roku
   const filteredTrainings = trainings.filter(
-    (t) => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && 
+    (t) => (currentSelectedSport === 'all' || (t.sport || '').toLowerCase() === currentSelectedSport) && 
     new Date(t.date).getFullYear() === selectedYear &&
     (selectedTrainings.length === 0 || selectedTrainings.includes(t.title))
   );
 
   // Získání unikátních názvů tréninků pro daný sport a rok
   const trainingOptions = [...new Set(trainings
-    .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && new Date(t.date).getFullYear() === selectedYear)
+    .filter(t => (currentSelectedSport === 'all' || (t.sport || '').toLowerCase() === currentSelectedSport) && new Date(t.date).getFullYear() === selectedYear)
     .map(t => t.title)
   )].map(title => ({
     value: title,

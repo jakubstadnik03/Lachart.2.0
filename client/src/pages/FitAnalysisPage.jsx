@@ -551,12 +551,12 @@ const FitAnalysisPage = () => {
     
     const initialize = async () => {
       await loadTrainings();
-      if (trainingId) {
+    if (trainingId) {
         // Wait a bit for trainings to be loaded before loading specific training
         setTimeout(() => {
-          loadTrainingFromTrainingModel(trainingId);
+      loadTrainingFromTrainingModel(trainingId);
         }, 100);
-      }
+    }
     };
     
     initialize();
@@ -1270,7 +1270,7 @@ const FitAnalysisPage = () => {
           // Get duration in seconds - use durationSeconds if available, otherwise parse from duration string
           const durationSec = result.durationSeconds || parseDurationToSeconds(result.duration) || 0;
 
-          return {
+    return {
             lapNumber: index + 1,
             totalElapsedTime: durationSec,
             totalTimerTime: durationSec,
@@ -4578,7 +4578,7 @@ const FitAnalysisPage = () => {
           </div>
         )}
 
-      </div>
+          </div>
 
       {/* Training Form Modal - Direct export with smart selection */}
       {showTrainingForm && trainingFormData && (
@@ -4593,10 +4593,10 @@ const FitAnalysisPage = () => {
               initialData={trainingFormData}
               isEditing={false}
               isLoading={isExporting}
-            />
-          </div>
-        </div>
-      )}
+                  />
+                </div>
+                </div>
+                  )}
     </div>
   );
 };
