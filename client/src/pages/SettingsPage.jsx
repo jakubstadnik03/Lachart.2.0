@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS } from '../config/api.config';
-import { Mail, User, Calendar, Info, UserPlus, UserMinus } from 'lucide-react';
+import { Mail, User, Calendar, Info, UserPlus, UserMinus, Shield } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities } from '../services/api';
 
@@ -583,6 +584,12 @@ const SettingsPage = () => {
               <div className="flex items-center">
                 <Info className="h-5 w-5 text-gray-400 mr-3" />
                 <span className="text-gray-600">Developer & Support</span>
+              </div>
+              <div className="flex items-center">
+                <Shield className="h-5 w-5 text-gray-400 mr-3" />
+                <Link to="/privacy" className="text-primary hover:text-primary-dark underline">
+                  Privacy Policy
+                </Link>
               </div>
             </div>
           </div>
