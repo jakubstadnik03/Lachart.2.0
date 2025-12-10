@@ -3294,6 +3294,19 @@ const FitAnalysisPage = () => {
                 const isSwim = sportType.toLowerCase().includes('swim');
                 const usePace = isRun || isSwim;
                 
+                // Debug logging for running activities
+                if (isRun) {
+                  console.log('=== [FitAnalysisPage] Strava Running Data ===', {
+                    activityName: selectedStrava?.name || selectedStrava?.titleManual || 'Unknown',
+                    sportType: sportType,
+                    speedArrayLength: speedArray.length,
+                    timeArrayLength: timeArray.length,
+                    speedSample: speedArray.slice(0, 5), // First 5 speed values
+                    timeSample: timeArray.slice(0, 5), // First 5 time values
+                    hasSpeedData: speedArray.length > 0 && speedArray.some(s => s > 0)
+                  });
+                }
+                
                 // Calculate pace from speed (in seconds per unit)
                 // For run: pace in seconds per km (1000 / speed)
                 // For swim: pace in seconds per 100m (100 / speed)
@@ -3308,7 +3321,26 @@ const FitAnalysisPage = () => {
                 };
                 
                 // Calculate pace array from speed
-                const pace = usePace ? speed.map(s => calculatePace(s)) : null;
+                const pace = usePace ? speed.map(s => calculatePace(s)).filter(p => p !== null && p > 0 && !isNaN(p)) : null;
+                
+                // Debug logging for pace calculation
+                if (isRun && pace && pace.length > 0) {
+                  const validPaces = pace.filter(p => p && p > 0 && !isNaN(p));
+                  if (validPaces.length > 0) {
+                    const minPace = Math.min(...validPaces);
+                    const maxPace = Math.max(...validPaces);
+                    const avgPace = validPaces.reduce((a, b) => a + b, 0) / validPaces.length;
+                    console.log('=== [FitAnalysisPage] Calculated Running Pace ===', {
+                      validPacesCount: validPaces.length,
+                      minPace: `${Math.floor(minPace/60)}:${Math.round(minPace%60).toString().padStart(2,'0')}/km`,
+                      maxPace: `${Math.floor(maxPace/60)}:${Math.round(maxPace%60).toString().padStart(2,'0')}/km`,
+                      avgPace: `${Math.floor(avgPace/60)}:${Math.round(avgPace%60).toString().padStart(2,'0')}/km`,
+                      minPaceSeconds: minPace,
+                      maxPaceSeconds: maxPace,
+                      avgPaceSeconds: avgPace
+                    });
+                  }
+                }
                 
                 // Calculate pace range for Y-axis
                 // For run: dynamically calculate from data with padding
@@ -3537,6 +3569,16 @@ const FitAnalysisPage = () => {
                   let lapPace = null;
                   if (usePace && lapSpeed > 0) {
                     lapPace = calculatePace(lapSpeed);
+                    // Debug logging for first running lap
+                    if (isRun && idx === 0) {
+                      console.log(`[FitAnalysisPage] Running Lap ${idx + 1}:`, {
+                        lapSpeed: lapSpeed,
+                        lapPaceSeconds: lapPace,
+                        lapPaceFormatted: lapPace ? `${Math.floor(lapPace/60)}:${Math.round(lapPace%60).toString().padStart(2,'0')}/km` : 'N/A',
+                        duration: duration,
+                        distance: lap.distance || 0
+                      });
+                    }
                   }
                   
                   // Skip if no duration

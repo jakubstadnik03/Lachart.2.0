@@ -126,6 +126,27 @@ const userSchema = new mongoose.Schema({
       lt2: Number, // LTP2 in seconds (pace)
       lastUpdated: Date
     }
+  },
+  // Heart rate zones from lactate tests or generated from max HR
+  heartRateZones: {
+    cycling: {
+      zone1: { min: Number, max: Number, description: String },
+      zone2: { min: Number, max: Number, description: String },
+      zone3: { min: Number, max: Number, description: String },
+      zone4: { min: Number, max: Number, description: String },
+      zone5: { min: Number, max: Number, description: String },
+      maxHeartRate: Number, // Max HR for cycling
+      lastUpdated: Date
+    },
+    running: {
+      zone1: { min: Number, max: Number, description: String },
+      zone2: { min: Number, max: Number, description: String },
+      zone3: { min: Number, max: Number, description: String },
+      zone4: { min: Number, max: Number, description: String },
+      zone5: { min: Number, max: Number, description: String },
+      maxHeartRate: Number, // Max HR for running
+      lastUpdated: Date
+    }
   }
 }, {
   timestamps: true

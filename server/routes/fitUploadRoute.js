@@ -127,11 +127,26 @@ router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTraini
  *     tags: [FIT]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: athleteId
+ *         schema:
+ *           type: string
+ *         description: Optional athlete ID (for coaches to view athlete data)
+ *       - in: query
+ *         name: monthKey
+ *         schema:
+ *           type: string
+ *         description: Optional month key (format: YYYY-MM). If not provided, returns metadata for all months
  *     responses:
  *       200:
  *         description: Monthly analysis with power zones and predicted lactate
  *       401:
  *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (coach trying to access athlete not in their team)
+ *       404:
+ *         description: Athlete not found
  */
 router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analyzeTrainingsByMonth);
 

@@ -935,7 +935,6 @@ async function getTrainingsWithLactate(req, res) {
  */
 async function analyzeTrainingsByMonth(req, res) {
   try {
-    console.log('=== ANALYZE TRAININGS BY MONTH START ===');
     const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -1103,8 +1102,20 @@ async function analyzeTrainingsByMonth(req, res) {
     // No FTP estimation - zones must come from lactate test
 
     // Define heart rate zones - use from profile if available, otherwise estimate from max HR
-    const getHeartRateZones = (maxHeartRate) => {
-      // Standard percentage-based HR zones
+    const getHeartRateZones = (maxHeartRate, sportType = 'cycling') => {
+      // Try to get HR zones from profile first
+      const userHrZones = user?.heartRateZones?.[sportType];
+      if (userHrZones && userHrZones.zone1 && userHrZones.zone1.min !== undefined) {
+        return {
+          1: { min: userHrZones.zone1.min || 0, max: userHrZones.zone1.max || Infinity },
+          2: { min: userHrZones.zone2?.min || 0, max: userHrZones.zone2?.max || Infinity },
+          3: { min: userHrZones.zone3?.min || 0, max: userHrZones.zone3?.max || Infinity },
+          4: { min: userHrZones.zone4?.min || 0, max: userHrZones.zone4?.max || Infinity },
+          5: { min: userHrZones.zone5?.min || 0, max: userHrZones.zone5?.max || Infinity }
+        };
+      }
+      
+      // Fallback: Standard percentage-based HR zones
       // These are typical zones: 50-60%, 60-70%, 70-80%, 80-90%, 90-100% of max HR
       const safeMaxHR = Math.max(maxHeartRate, 150);
       return {
@@ -1127,7 +1138,6 @@ async function analyzeTrainingsByMonth(req, res) {
           4: { min: userPowerZones.zone4?.min || 0, max: userPowerZones.zone4?.max || Infinity },
           5: { min: userPowerZones.zone5?.min || 0, max: userPowerZones.zone5?.max || Infinity }
         };
-        console.log('Using zones from lactate test (profile):', zones);
         return zones;
       }
       
@@ -1164,13 +1174,15 @@ async function analyzeTrainingsByMonth(req, res) {
       // Default zones based on average pace if available, otherwise use generic zones
       // Typical running zones: Recovery (slow), Aerobic, Tempo, Threshold, VO2max
       // Default: assume 5:00/km average pace, zones are +/- percentages
+      // For running: lower pace (faster) = lower seconds, so zone 5 is fastest (lowest seconds)
+      // Zone 1 is slowest (highest seconds), Zone 5 is fastest (lowest seconds)
       const defaultAvgPace = avgPace || 300; // 5:00/km default
       return {
-        1: { min: 0, max: defaultAvgPace * 1.2 }, // Recovery: >20% slower than avg
-        2: { min: defaultAvgPace * 1.2, max: defaultAvgPace * 1.05 }, // Aerobic: 5-20% slower
-        3: { min: defaultAvgPace * 1.05, max: defaultAvgPace * 0.95 }, // Tempo: ±5% of avg
-        4: { min: defaultAvgPace * 0.95, max: defaultAvgPace * 0.85 }, // Threshold: 5-15% faster
-        5: { min: defaultAvgPace * 0.85, max: 0 } // VO2max: >15% faster (0 = Infinity)
+        1: { min: defaultAvgPace * 1.2, max: Infinity }, // Recovery: >20% slower than avg (slowest)
+        2: { min: defaultAvgPace * 1.05, max: defaultAvgPace * 1.2 }, // Aerobic: 5-20% slower
+        3: { min: defaultAvgPace * 0.95, max: defaultAvgPace * 1.05 }, // Tempo: ±5% of avg
+        4: { min: defaultAvgPace * 0.85, max: defaultAvgPace * 0.95 }, // Threshold: 5-15% faster
+        5: { min: 0, max: defaultAvgPace * 0.85 } // VO2max: >15% faster (fastest)
       };
     };
 
@@ -1254,6 +1266,21 @@ async function analyzeTrainingsByMonth(req, res) {
             4: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
             5: { time: 0, avgHeartRate: 0, heartRateCount: 0 }
           },
+          // Separate HR zones for bike and run
+          bikeHrZones: {
+            1: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            2: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            3: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            4: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            5: { time: 0, avgHeartRate: 0, heartRateCount: 0 }
+          },
+          runningHrZones: {
+            1: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            2: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            3: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            4: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            5: { time: 0, avgHeartRate: 0, heartRateCount: 0 }
+          },
           runningZoneTimes: {
             1: { time: 0, avgPace: 0, paceCount: 0 },
             2: { time: 0, avgPace: 0, paceCount: 0 },
@@ -1272,11 +1299,22 @@ async function analyzeTrainingsByMonth(req, res) {
           avgPower: 0,
           totalPowerSum: 0,
           powerCount: 0,
+          // Bike statistics (excluding running/swimming)
+          bikeTotalPowerSum: 0,
+          bikePowerCount: 0,
+          bikeAvgPower: 0,
+          bikeMaxPower: 0,
+          bikeTime: 0,
           maxHeartRate: 0,
           avgHeartRate: 0,
           totalHeartRateSum: 0,
           heartRateCount: 0,
           totalTSS: 0,
+          bikeTSS: 0,
+          runningTSS: 0,
+          // Bike statistics
+          bikeTrainings: 0,
+          bikeTime: 0,
           // Running statistics
           runningTrainings: 0,
           runningTime: 0,
@@ -1297,6 +1335,7 @@ async function analyzeTrainingsByMonth(req, res) {
         };
       }
 
+      // Count total trainings (for metadata)
       monthlyAnalysis[monthKey].trainings++;
 
       // Analyze records/laps first to get accurate maxPower and heart rate
@@ -1362,18 +1401,33 @@ async function analyzeTrainingsByMonth(req, res) {
             }
           }
           
-          // Determine HR zone
-          const hrZones = getHeartRateZones(monthlyAnalysis[monthKey].maxHeartRate);
+          // Determine HR zone based on sport type
+          const maxHR = isRunning 
+            ? (monthlyAnalysis[monthKey].runningMaxHeartRate || monthlyAnalysis[monthKey].maxHeartRate)
+            : monthlyAnalysis[monthKey].maxHeartRate;
+          const sportType = isRunning ? 'running' : 'cycling';
+          const hrZones = getHeartRateZones(maxHR, sportType);
           let hrZone = 1;
           if (hr >= hrZones[5].min) hrZone = 5;
           else if (hr >= hrZones[4].min) hrZone = 4;
           else if (hr >= hrZones[3].min) hrZone = 3;
           else if (hr >= hrZones[2].min) hrZone = 2;
           
-          // Add time to HR zone
+          // Add time to HR zone (both general and sport-specific)
           monthlyAnalysis[monthKey].hrZones[hrZone].time += hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].avgHeartRate += hr * hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].heartRateCount += hrTimeIncrement;
+          
+          // Add to sport-specific HR zones
+          if (isRunning) {
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].time += hrTimeIncrement;
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].avgHeartRate += hr * hrTimeIncrement;
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].heartRateCount += hrTimeIncrement;
+          } else if (isCycling) {
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].time += hrTimeIncrement;
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].avgHeartRate += hr * hrTimeIncrement;
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].heartRateCount += hrTimeIncrement;
+          }
         }
         
         // Calculate time increment (1 second default, or actual difference)
@@ -1397,6 +1451,12 @@ async function analyzeTrainingsByMonth(req, res) {
           powerCount++;
           monthlyAnalysis[monthKey].totalPowerSum += power;
           monthlyAnalysis[monthKey].powerCount++;
+          
+          // Track bike-specific statistics (excluding running/swimming)
+          monthlyAnalysis[monthKey].bikeTotalPowerSum += power * timeIncrement;
+          monthlyAnalysis[monthKey].bikePowerCount += timeIncrement;
+          monthlyAnalysis[monthKey].bikeMaxPower = Math.max(monthlyAnalysis[monthKey].bikeMaxPower || 0, power);
+          monthlyAnalysis[monthKey].bikeTime += timeIncrement;
 
           monthlyAnalysis[monthKey].maxPower = Math.max(monthlyAnalysis[monthKey].maxPower, power);
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
@@ -1429,9 +1489,9 @@ async function analyzeTrainingsByMonth(req, res) {
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           runningTimeInTraining += timeIncrement;
           
-          // Track running statistics
-          runningTotalPaceSum += paceSeconds;
-          runningPaceCount++;
+          // Track running statistics (weighted by time)
+          runningTotalPaceSum += paceSeconds * timeIncrement;
+          runningPaceCount += timeIncrement;
           if (paceSeconds < runningMaxPaceInTraining) {
             runningMaxPaceInTraining = paceSeconds;
           }
@@ -1448,18 +1508,27 @@ async function analyzeTrainingsByMonth(req, res) {
           
           // Always calculate zones (will use default if no profile zones)
           if (runningZones) {
-            let zone = 1;
-            // For running, lower pace (faster) = lower seconds, so we check if pace <= zone.max (faster pace)
-            // Zone 5 max might be 0 (Infinity), so check that first
-            if (runningZones[5].max === 0 || runningZones[5].max === Infinity || paceSeconds <= runningZones[5].max) {
-              zone = 5;
-            } else if (paceSeconds <= runningZones[4].max) {
+            let zone = 1; // Default to slowest zone
+            // For running, lower pace (faster) = lower seconds
+            // Zone 5 is fastest (lowest seconds), Zone 1 is slowest (highest seconds)
+            // Check from fastest to slowest using min/max boundaries
+            // Zone 5: pace >= min and <= max (fastest)
+            if (paceSeconds >= runningZones[5].min && paceSeconds <= runningZones[5].max) {
+              zone = 5; // Fastest
+            } 
+            // Zone 4: pace >= min and <= max
+            else if (paceSeconds >= runningZones[4].min && paceSeconds <= runningZones[4].max) {
               zone = 4;
-            } else if (paceSeconds <= runningZones[3].max) {
+            } 
+            // Zone 3: pace >= min and <= max
+            else if (paceSeconds >= runningZones[3].min && paceSeconds <= runningZones[3].max) {
               zone = 3;
-            } else if (paceSeconds <= runningZones[2].max) {
+            } 
+            // Zone 2: pace >= min and <= max
+            else if (paceSeconds >= runningZones[2].min && paceSeconds <= runningZones[2].max) {
               zone = 2;
             }
+            // Zone 1 is default (slowest - pace >= min or pace > max)
             
             // Add time to running zone
             monthlyAnalysis[monthKey].runningZoneTimes[zone].time += timeIncrement;
@@ -1522,12 +1591,12 @@ async function analyzeTrainingsByMonth(req, res) {
       maxPowerInTraining = maxPowerInTraining || training.maxPower || 0;
       maxHeartRateInTraining = maxHeartRateInTraining || training.maxHeartRate || 0;
       
-      // Update running statistics for the month
-      // Count as running training if sport is running, even if we don't have pace data yet
+      // Count trainings by sport type
       if (isRunning) {
         monthlyAnalysis[monthKey].runningTrainings++;
+        // Always add running time (calculated from records/zone times)
+        monthlyAnalysis[monthKey].runningTime += runningTimeInTraining;
         if (runningTimeInTraining > 0) {
-          monthlyAnalysis[monthKey].runningTime += runningTimeInTraining;
           monthlyAnalysis[monthKey].runningDistance += runningDistanceInTraining || training.totalDistance || 0;
           monthlyAnalysis[monthKey].runningTotalPaceSum += runningTotalPaceSum;
           monthlyAnalysis[monthKey].runningPaceCount += runningPaceCount;
@@ -1536,10 +1605,16 @@ async function analyzeTrainingsByMonth(req, res) {
           }
         }
         monthlyAnalysis[monthKey].runningMaxHeartRate = Math.max(monthlyAnalysis[monthKey].runningMaxHeartRate || 0, runningMaxHeartRateInTraining);
-        // Also add total time if we have it from training
+        // Also add total time if we have it from training and no records processed
         if (runningTimeInTraining === 0 && training.totalElapsedTime) {
           monthlyAnalysis[monthKey].runningTime += training.totalElapsedTime || training.totalTimerTime || 0;
         }
+      } else if (isSwimming) {
+        monthlyAnalysis[monthKey].swimmingTrainings++;
+        // Swimming time is already added in the swimming pace processing section
+      } else if (isCycling || !isRunning && !isSwimming) {
+        // Count as bike if it's cycling or if it's not running/swimming (default to bike)
+        monthlyAnalysis[monthKey].bikeTrainings++;
       }
 
       // Store training info for this month (after analysis to get accurate values)
@@ -1563,7 +1638,6 @@ async function analyzeTrainingsByMonth(req, res) {
       };
       monthlyAnalysis[monthKey].trainingList.push(trainingInfo);
     }
-    console.log(`FIT trainings: ${fitTrainingsProcessed} processed, ${fitTrainingsSkipped} skipped\n`);
 
     // Get Strava activities from database (same as in calendar)
     let stravaActivities = [];
@@ -1583,10 +1657,9 @@ async function analyzeTrainingsByMonth(req, res) {
         : { userId: targetAthleteIdStr, sport: { $in: ['Ride', 'VirtualRide', 'EBikeRide', 'Run', 'VirtualRun', 'Walk', 'Hike', 'Swim'] } };
       
       stravaActivities = await StravaActivity.find(query)
-        .select('startDate stravaId averagePower')
+        .select('startDate stravaId averagePower averageHeartRate averageSpeed average_speed movingTime elapsedTime distance sport name raw')
         .lean();
 
-      console.log(`Found ${stravaActivities.length} Strava activities`);
 
       // If no results, try with ObjectId format
       if (stravaActivities.length === 0 && userId && userId.toString && userId.toString() !== targetAthleteIdStr) {
@@ -1608,11 +1681,6 @@ async function analyzeTrainingsByMonth(req, res) {
     }
 
     // Process Strava activities (same logic as FIT files - second by second from streams)
-    if (onlyMetadata) {
-      console.log('\n=== COLLECTING STRAVA MONTH METADATA (no full analysis) ===');
-    } else {
-      console.log(`\n=== PROCESSING STRAVA ACTIVITIES FOR MONTH: ${monthKeyParam} ===`);
-    }
     let stravaProcessed = 0;
     let stravaSkipped = 0;
     
@@ -1684,31 +1752,35 @@ async function analyzeTrainingsByMonth(req, res) {
         });
         streams = streamsResp.data;
       } catch (streamError) {
-        // Silent skip - nechceme logovat každou chybu
-        stravaSkipped++;
-        continue;
+        // If streams fail, use database data as fallback
+        streams = null;
       }
       
       // Get sport type from activity (need to check before using streams)
       const activitySport = activity.sport || activity.sport_type || 'Ride';
       const isStravaRunning = ['Run', 'VirtualRun', 'Walk', 'Hike'].includes(activitySport);
       const isStravaSwimming = ['Swim'].includes(activitySport);
+      const isStravaCycling = !isStravaRunning && !isStravaSwimming;
       
       // Check if we have required streams based on sport type
-      const hasPowerStream = streams.watts && streams.watts.data && streams.watts.data.length > 0;
-      const hasSpeedStream = streams.velocity_smooth && streams.velocity_smooth.data && streams.velocity_smooth.data.length > 0;
+      const hasPowerStream = streams && streams.watts && streams.watts.data && streams.watts.data.length > 0;
+      const hasSpeedStream = streams && streams.velocity_smooth && streams.velocity_smooth.data && streams.velocity_smooth.data.length > 0;
       
-      if ((isStravaRunning || isStravaSwimming) && !hasSpeedStream) {
-        stravaSkipped++;
-        continue;
-      }
-      if (!isStravaRunning && !isStravaSwimming && !hasPowerStream) {
-        stravaSkipped++;
-        continue;
+      // If no streams, use database data (averagePower, averageHeartRate, movingTime)
+      const useDatabaseData = !streams || (!hasPowerStream && !hasSpeedStream);
+      
+      if (!useDatabaseData) {
+        if ((isStravaRunning || isStravaSwimming) && !hasSpeedStream) {
+          stravaSkipped++;
+          continue;
+        }
+        if (!isStravaRunning && !isStravaSwimming && !hasPowerStream) {
+          stravaSkipped++;
+          continue;
+        }
       }
       
       const monthName = activityDate.toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
-      const isStravaCycling = !isStravaRunning && !isStravaSwimming;
 
       if (!monthlyAnalysis[monthKey]) {
         monthlyAnalysis[monthKey] = {
@@ -1724,6 +1796,21 @@ async function analyzeTrainingsByMonth(req, res) {
             5: { time: 0, avgPower: 0, predictedLactate: 0, powerCount: 0 }
           },
           hrZones: {
+            1: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            2: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            3: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            4: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            5: { time: 0, avgHeartRate: 0, heartRateCount: 0 }
+          },
+          // Separate HR zones for bike and run
+          bikeHrZones: {
+            1: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            2: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            3: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            4: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
+            5: { time: 0, avgHeartRate: 0, heartRateCount: 0 }
+          },
+          runningHrZones: {
             1: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
             2: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
             3: { time: 0, avgHeartRate: 0, heartRateCount: 0 },
@@ -1748,16 +1835,163 @@ async function analyzeTrainingsByMonth(req, res) {
           avgPower: 0,
           totalPowerSum: 0,
           powerCount: 0,
+          // Bike statistics (excluding running/swimming)
+          bikeTotalPowerSum: 0,
+          bikePowerCount: 0,
+          bikeAvgPower: 0,
+          bikeMaxPower: 0,
+          bikeTime: 0,
           maxHeartRate: 0,
           avgHeartRate: 0,
           totalHeartRateSum: 0,
           heartRateCount: 0,
           totalTSS: 0,
+          bikeTSS: 0,
+          runningTSS: 0,
+          // Bike statistics (excluding running/swimming)
+          bikeTrainings: 0,
+          bikeTime: 0,
+          bikeTotalPowerSum: 0,
+          bikePowerCount: 0,
+          bikeAvgPower: 0,
+          bikeMaxPower: 0,
+          // Running statistics
+          runningTrainings: 0,
+          runningTime: 0,
+          runningDistance: 0,
+          runningTotalPaceSum: 0,
+          runningPaceCount: 0,
+          runningMaxPace: Infinity, // Lower is faster
+          runningAvgPace: 0,
+          runningMaxHeartRate: 0,
+          runningAvgHeartRate: 0,
+          runningTotalHeartRateSum: 0,
+          runningHeartRateCount: 0,
+          // Swimming statistics
+          swimmingTrainings: 0,
+          swimmingTime: 0,
+          swimmingDistance: 0,
           trainingList: []
         };
       }
 
       monthlyAnalysis[monthKey].trainings++;
+
+      // Use database data if streams are not available
+      if (useDatabaseData) {
+        // Use data from database (averagePower, averageHeartRate, movingTime/elapsedTime)
+        const stravaTotalTime = activity.movingTime || activity.elapsedTime || 0;
+        const stravaAvgPower = activity.averagePower || 0;
+        const stravaAvgHeartRate = activity.averageHeartRate || 0;
+        
+        // Try to get max power from raw data (max_watts or similar)
+        let stravaMaxPower = stravaAvgPower;
+        if (activity.raw) {
+          // Check various possible locations for max power
+          stravaMaxPower = activity.raw.max_watts || 
+                          activity.raw.maxWatts || 
+                          activity.raw.weighted_average_watts || 
+                          (stravaAvgPower * 1.3); // Approximate max as 1.3x average if not available
+        } else {
+          // Approximate max power as 1.3x average if no raw data
+          stravaMaxPower = stravaAvgPower > 0 ? stravaAvgPower * 1.3 : 0;
+        }
+        
+        // Try to get max heart rate from raw data
+        let stravaMaxHeartRate = stravaAvgHeartRate;
+        if (activity.raw) {
+          stravaMaxHeartRate = activity.raw.max_heartrate || 
+                              activity.raw.maxHeartRate || 
+                              (stravaAvgHeartRate * 1.15); // Approximate max as 1.15x average
+        } else {
+          stravaMaxHeartRate = stravaAvgHeartRate > 0 ? stravaAvgHeartRate * 1.15 : 0;
+        }
+        
+        // Update statistics for Strava activities by sport type
+        if (isStravaRunning) {
+          // Ensure runningTrainings is initialized
+          if (monthlyAnalysis[monthKey].runningTrainings === undefined) {
+            monthlyAnalysis[monthKey].runningTrainings = 0;
+          }
+          monthlyAnalysis[monthKey].runningTrainings++;
+          monthlyAnalysis[monthKey].runningTime += stravaTotalTime;
+          if (activity.distance) {
+            monthlyAnalysis[monthKey].runningDistance += activity.distance;
+          }
+          
+          // Calculate average pace from database (averageSpeed in m/s or from distance/time)
+          let stravaAvgSpeed = activity.averageSpeed || activity.average_speed || 0;
+          if (!stravaAvgSpeed && activity.distance && stravaTotalTime > 0) {
+            // Calculate from distance and time: speed = distance / time (m/s)
+            stravaAvgSpeed = activity.distance / stravaTotalTime;
+          }
+          
+          if (stravaAvgSpeed > 0) {
+            // Convert speed (m/s) to pace (seconds per km)
+            const paceSeconds = 1000 / stravaAvgSpeed;
+            monthlyAnalysis[monthKey].runningTotalPaceSum += paceSeconds * stravaTotalTime;
+            monthlyAnalysis[monthKey].runningPaceCount += stravaTotalTime;
+            // Update max pace (lower is faster, so we want the minimum pace value)
+            if (paceSeconds < monthlyAnalysis[monthKey].runningMaxPace) {
+              monthlyAnalysis[monthKey].runningMaxPace = paceSeconds;
+            }
+          }
+          
+          if (stravaMaxHeartRate > 0) {
+            monthlyAnalysis[monthKey].runningMaxHeartRate = Math.max(monthlyAnalysis[monthKey].runningMaxHeartRate || 0, stravaMaxHeartRate);
+            monthlyAnalysis[monthKey].runningTotalHeartRateSum += stravaAvgHeartRate * stravaTotalTime;
+            monthlyAnalysis[monthKey].runningHeartRateCount += stravaTotalTime;
+          }
+        } else if (isStravaSwimming) {
+          monthlyAnalysis[monthKey].swimmingTrainings++;
+          monthlyAnalysis[monthKey].swimmingTime += stravaTotalTime;
+          if (activity.distance) {
+            monthlyAnalysis[monthKey].swimmingDistance += activity.distance;
+          }
+        } else {
+          // Default to bike for cycling or other activities
+          monthlyAnalysis[monthKey].bikeTrainings++;
+          monthlyAnalysis[monthKey].bikeTime += stravaTotalTime;
+          monthlyAnalysis[monthKey].totalTime += stravaTotalTime;
+          
+          // Use averagePower from database for bike statistics
+          if (stravaAvgPower > 0) {
+            monthlyAnalysis[monthKey].bikeTotalPowerSum += stravaAvgPower * stravaTotalTime;
+            monthlyAnalysis[monthKey].bikePowerCount += stravaTotalTime;
+            monthlyAnalysis[monthKey].bikeMaxPower = Math.max(monthlyAnalysis[monthKey].bikeMaxPower || 0, stravaMaxPower);
+            monthlyAnalysis[monthKey].maxPower = Math.max(monthlyAnalysis[monthKey].maxPower || 0, stravaMaxPower);
+            monthlyAnalysis[monthKey].totalPowerSum += stravaAvgPower * stravaTotalTime;
+            monthlyAnalysis[monthKey].powerCount += stravaTotalTime;
+          }
+          
+          // Use averageHeartRate from database
+          if (stravaAvgHeartRate > 0) {
+            monthlyAnalysis[monthKey].maxHeartRate = Math.max(monthlyAnalysis[monthKey].maxHeartRate || 0, stravaMaxHeartRate);
+            monthlyAnalysis[monthKey].totalHeartRateSum += stravaAvgHeartRate * stravaTotalTime;
+            monthlyAnalysis[monthKey].heartRateCount += stravaTotalTime;
+          }
+        }
+        
+        // Store Strava activity info
+        if (!monthlyAnalysis[monthKey].trainingList) {
+          monthlyAnalysis[monthKey].trainingList = [];
+        }
+        const stravaTrainingInfo = {
+          id: activity._id?.toString() || activity.id?.toString(),
+          type: 'strava',
+          timestamp: activity.startDate,
+          date: activityDate.toISOString(),
+          title: activity.name || `Strava Activity ${activityDate.toLocaleDateString('cs-CZ')}`,
+          avgPower: Math.round(stravaAvgPower),
+          maxPower: Math.round(stravaAvgPower), // Use avg as max if no stream data
+          avgHeartRate: Math.round(stravaAvgHeartRate) || 0,
+          maxHeartRate: Math.round(stravaAvgHeartRate) || 0,
+          totalTime: stravaTotalTime
+        };
+        monthlyAnalysis[monthKey].trainingList.push(stravaTrainingInfo);
+        stravaProcessed++;
+        continue; // Skip stream processing
+      }
 
       // Analyze Strava streams (sekundu po sekundě) stejně jako records pro FIT tréninky
       const timeStream = streams.time?.data || [];
@@ -1804,6 +2038,13 @@ async function analyzeTrainingsByMonth(req, res) {
           
           monthlyAnalysis[monthKey].totalPowerSum += power;
           monthlyAnalysis[monthKey].powerCount++;
+          
+          // Track bike-specific statistics (excluding running/swimming)
+          monthlyAnalysis[monthKey].bikeTotalPowerSum += power * timeIncrement;
+          monthlyAnalysis[monthKey].bikePowerCount += timeIncrement;
+          monthlyAnalysis[monthKey].bikeMaxPower = Math.max(monthlyAnalysis[monthKey].bikeMaxPower || 0, power);
+          monthlyAnalysis[monthKey].bikeTime += timeIncrement;
+          
           monthlyAnalysis[monthKey].maxPower = Math.max(monthlyAnalysis[monthKey].maxPower, power);
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
@@ -1834,16 +2075,35 @@ async function analyzeTrainingsByMonth(req, res) {
           
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
+          
+          // Update running pace statistics for monthly analysis
+          monthlyAnalysis[monthKey].runningTotalPaceSum += paceSeconds * timeIncrement;
+          monthlyAnalysis[monthKey].runningPaceCount += timeIncrement;
+          if (paceSeconds < monthlyAnalysis[monthKey].runningMaxPace) {
+            monthlyAnalysis[monthKey].runningMaxPace = paceSeconds;
+          }
 
-          // Get running pace zones from profile
-          const runningZones = getRunningPaceZones();
+          // Always calculate zones, even if not from profile (use default zones)
+          // Use current average pace for default zones if no profile zones
+          const currentAvgPace = monthlyAnalysis[monthKey].runningPaceCount > 0 
+            ? monthlyAnalysis[monthKey].runningTotalPaceSum / monthlyAnalysis[monthKey].runningPaceCount 
+            : paceSeconds;
+          const runningZones = getRunningPaceZones(currentAvgPace);
+          
+          // Always calculate zones (will use default if no profile zones)
           if (runningZones) {
-            let zone = 1;
-            // For running, lower pace (faster) = lower seconds, so we check if pace <= zone.max (faster pace)
-            if (paceSeconds <= runningZones[5].max) zone = 5;
-            else if (paceSeconds <= runningZones[4].max) zone = 4;
-            else if (paceSeconds <= runningZones[3].max) zone = 3;
-            else if (paceSeconds <= runningZones[2].max) zone = 2;
+            let zone = 1; // Default to slowest zone
+            // Check from fastest to slowest (lowest seconds to highest seconds)
+            if (paceSeconds <= runningZones[5].max) { // Fastest zone
+              zone = 5;
+            } else if (paceSeconds <= runningZones[4].max) {
+              zone = 4;
+            } else if (paceSeconds <= runningZones[3].max) {
+              zone = 3;
+            } else if (paceSeconds <= runningZones[2].max) {
+              zone = 2;
+            }
+            // Zone 1 is default (slowest)
             
             // Add time to running zone
             monthlyAnalysis[monthKey].runningZoneTimes[zone].time += timeIncrement;
@@ -1901,24 +2161,68 @@ async function analyzeTrainingsByMonth(req, res) {
             }
           }
           
-          // Determine HR zone
-          const hrZones = getHeartRateZones(monthlyAnalysis[monthKey].maxHeartRate);
+          // Determine HR zone based on sport type
+          const maxHR = isStravaRunning 
+            ? (monthlyAnalysis[monthKey].runningMaxHeartRate || monthlyAnalysis[monthKey].maxHeartRate)
+            : monthlyAnalysis[monthKey].maxHeartRate;
+          const sportType = isStravaRunning ? 'running' : 'cycling';
+          const hrZones = getHeartRateZones(maxHR, sportType);
           let hrZone = 1;
           if (heartRate >= hrZones[5].min) hrZone = 5;
           else if (heartRate >= hrZones[4].min) hrZone = 4;
           else if (heartRate >= hrZones[3].min) hrZone = 3;
           else if (heartRate >= hrZones[2].min) hrZone = 2;
           
-          // Add time to HR zone
+          // Add time to HR zone (both general and sport-specific)
           monthlyAnalysis[monthKey].hrZones[hrZone].time += hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].avgHeartRate += heartRate * hrTimeIncrement;
           monthlyAnalysis[monthKey].hrZones[hrZone].heartRateCount += hrTimeIncrement;
+          
+          // Add to sport-specific HR zones
+          if (isStravaRunning) {
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].time += hrTimeIncrement;
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].avgHeartRate += heartRate * hrTimeIncrement;
+            monthlyAnalysis[monthKey].runningHrZones[hrZone].heartRateCount += hrTimeIncrement;
+          } else if (isStravaCycling) {
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].time += hrTimeIncrement;
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].avgHeartRate += heartRate * hrTimeIncrement;
+            monthlyAnalysis[monthKey].bikeHrZones[hrZone].heartRateCount += hrTimeIncrement;
+          }
         }
       }
       
       // Calculate averages
       stravaAvgPower = powerCount > 0 ? totalPowerSum / powerCount : 0;
       stravaAvgHeartRate = heartRateCount > 0 ? totalHeartRateSum / heartRateCount : 0;
+
+      // Update statistics for Strava activities by sport type
+      if (isStravaRunning) {
+        // Ensure runningTrainings is initialized
+        if (monthlyAnalysis[monthKey].runningTrainings === undefined) {
+          monthlyAnalysis[monthKey].runningTrainings = 0;
+        }
+        monthlyAnalysis[monthKey].runningTrainings++;
+        monthlyAnalysis[monthKey].runningTime += stravaTotalTime;
+        if (activity.distance) {
+          monthlyAnalysis[monthKey].runningDistance += activity.distance;
+        }
+        // runningTotalPaceSum and runningPaceCount are already updated in the loop above
+        monthlyAnalysis[monthKey].runningMaxHeartRate = Math.max(monthlyAnalysis[monthKey].runningMaxHeartRate || 0, stravaMaxHeartRate);
+        if (stravaAvgHeartRate > 0) {
+          monthlyAnalysis[monthKey].runningTotalHeartRateSum += stravaAvgHeartRate * stravaTotalTime;
+          monthlyAnalysis[monthKey].runningHeartRateCount += stravaTotalTime;
+        }
+      } else if (isStravaSwimming) {
+        monthlyAnalysis[monthKey].swimmingTrainings++;
+        monthlyAnalysis[monthKey].swimmingTime += stravaTotalTime;
+        if (activity.distance) {
+          monthlyAnalysis[monthKey].swimmingDistance += activity.distance;
+        }
+      } else {
+        // Default to bike for cycling or other activities
+        monthlyAnalysis[monthKey].bikeTrainings++;
+        monthlyAnalysis[monthKey].bikeTime += stravaTotalTime;
+      }
 
       // Store Strava activity info
       if (!monthlyAnalysis[monthKey].trainingList) {
@@ -1939,66 +2243,109 @@ async function analyzeTrainingsByMonth(req, res) {
       monthlyAnalysis[monthKey].trainingList.push(stravaTrainingInfo);
       stravaProcessed++;
     }
-    console.log(`Strava activities: ${stravaProcessed} processed, ${stravaSkipped} skipped\n`);
 
     // Finalize calculations (only if not onlyMetadata)
     if (!onlyMetadata) {
-      console.log('\n=== FINALIZING MONTHLY ANALYSIS ===');
       Object.keys(monthlyAnalysis).forEach(monthKey => {
         const month = monthlyAnalysis[monthKey];
         month.avgPower = month.powerCount > 0 ? month.totalPowerSum / month.powerCount : 0;
         month.avgHeartRate = month.heartRateCount > 0 ? month.totalHeartRateSum / month.heartRateCount : 0;
 
-      console.log(`\nMonth ${monthKey} (${month.month}):`);
-      console.log(`  Trainings: ${month.trainings}`);
-      console.log(`  Total time: ${month.totalTime}s (${(month.totalTime / 60).toFixed(1)}min)`);
-      console.log(`  Max power: ${month.maxPower}W`);
-      console.log(`  Avg power: ${month.avgPower.toFixed(1)}W`);
-      console.log(`  Power count: ${month.powerCount}`);
-      console.log(`  Max HR: ${month.maxHeartRate}bpm`);
-      console.log(`  Avg HR: ${month.avgHeartRate.toFixed(1)}bpm`);
+        // Ensure all training counts are numbers (not undefined)
+        month.trainings = Number(month.trainings) || 0;
+        month.bikeTrainings = Number(month.bikeTrainings) || 0;
+        month.runningTrainings = Number(month.runningTrainings) || 0;
+        month.swimmingTrainings = Number(month.swimmingTrainings) || 0;
+        month.totalTime = Number(month.totalTime) || 0;
+        month.runningTime = Number(month.runningTime) || 0;
+        month.swimmingTime = Number(month.swimmingTime) || 0;
+        
+        // Calculate bikeTime (total - running - swimming)
+        month.bikeTime = Math.max(0, month.totalTime - month.runningTime - month.swimmingTime);
 
-      // Get zones (from lactate test profile)
-      const zones = getPowerZones(month.maxPower);
-      month.powerZones = zones;
-      month.usesProfileZones = !!userPowerZones;
-      
-      // Get HR zones
-      const hrZones = getHeartRateZones(month.maxHeartRate);
-      month.heartRateZones = hrZones;
-      
-      // Get running pace zones from profile or use default
-      if (month.runningPaceCount > 0) {
-        const avgPace = month.runningTotalPaceSum / month.runningPaceCount;
-        const runningZones = getRunningPaceZones(avgPace);
-        if (runningZones) {
-          month.runningZones = runningZones;
-          // Mark if using profile zones or default
-          const userRunningZones = user?.powerZones?.running;
-          month.usesProfileRunningZones = !!(userRunningZones && userRunningZones.zone1 && userRunningZones.zone1.min !== undefined);
+        // Get zones (from lactate test profile)
+        const zones = getPowerZones(month.maxPower);
+        month.powerZones = zones;
+        month.usesProfileZones = !!userPowerZones;
+        
+        // Get HR zones (general - for backward compatibility)
+        const hrZones = getHeartRateZones(month.maxHeartRate, 'cycling');
+        month.heartRateZones = hrZones;
+        
+        // Get separate HR zones for bike and run
+        const bikeMaxHR = month.maxHeartRate || 0;
+        const runningMaxHR = month.runningMaxHeartRate || month.maxHeartRate || 0;
+        const bikeHrZones = getHeartRateZones(bikeMaxHR, 'cycling');
+        const runningHrZones = getHeartRateZones(runningMaxHR, 'running');
+        month.bikeHeartRateZones = bikeHrZones;
+        month.runningHeartRateZones = runningHrZones;
+        
+        // Get running pace zones from profile or use default
+        // Load zones if we have pace data OR if user has profile zones (even without pace data)
+        const userRunningZones = user?.powerZones?.running;
+        const hasProfileRunningZones = !!(userRunningZones && userRunningZones.zone1 && userRunningZones.zone1.min !== undefined);
+        
+        if (month.runningPaceCount > 0 || hasProfileRunningZones) {
+          const avgPace = month.runningPaceCount > 0 
+            ? month.runningTotalPaceSum / month.runningPaceCount 
+            : null; // Use null if no pace data, getRunningPaceZones will use profile zones or default
+          const runningZones = getRunningPaceZones(avgPace);
+          if (runningZones) {
+            month.runningZones = runningZones;
+            // Mark if using profile zones or default
+            month.usesProfileRunningZones = hasProfileRunningZones;
+          }
         }
-      }
-      
-      // Get swimming pace zones from profile (if available in future)
-      const swimmingZones = getSwimmingPaceZones();
-      if (swimmingZones) {
-        month.swimmingZones = swimmingZones;
-      }
-      
-      // Calculate FTP from zones for display (LTP2 from profile, or from zone 4)
-      const ftpFromZones = userPowerZones?.lt2 || (zones[4].max / 1.05);
-      console.log(`  Using ${userPowerZones ? 'zones from lactate test' : 'fallback zones'} (LTP2/FTP: ${ftpFromZones.toFixed(0)}W)`);
-      
-      // Calculate total TSS for the month
-      if (month.totalTime > 0 && month.avgPower > 0 && ftpFromZones > 0) {
-        // TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
-        // Using avgPower as NP approximation
-        const np = month.avgPower;
-        month.totalTSS = Math.round((month.totalTime * Math.pow(np, 2)) / (Math.pow(ftpFromZones, 2) * 3600) * 100);
-        console.log(`  Total TSS: ${month.totalTSS}`);
-      } else {
-        month.totalTSS = 0;
-      }
+        
+        // Get swimming pace zones from profile (if available in future)
+        const swimmingZones = getSwimmingPaceZones();
+        if (swimmingZones) {
+          month.swimmingZones = swimmingZones;
+        }
+        
+        // Calculate FTP from zones for display (LTP2 from profile, or from zone 4)
+        const ftpFromZones = userPowerZones?.lt2 || (zones[4].max / 1.05);
+        
+        // Finalize bike statistics
+        if (month.bikePowerCount > 0) {
+          month.bikeAvgPower = month.bikeTotalPowerSum / month.bikePowerCount;
+        } else {
+          month.bikeAvgPower = 0;
+        }
+        // Ensure bikeMaxPower is set
+        month.bikeMaxPower = Number(month.bikeMaxPower) || 0;
+        
+        // Calculate total TSS for the month (bike + run)
+        let bikeTSS = 0;
+        let runningTSS = 0;
+        
+        // Calculate bike TSS (using bike power)
+        if (month.bikeTime > 0 && month.bikeAvgPower > 0 && ftpFromZones > 0) {
+          // TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
+          // Using bikeAvgPower as NP approximation
+          const np = month.bikeAvgPower;
+          bikeTSS = Math.round((month.bikeTime * Math.pow(np, 2)) / (Math.pow(ftpFromZones, 2) * 3600) * 100);
+        }
+        
+        // Calculate running TSS (using pace - similar formula but with threshold pace)
+        // For running, we use threshold pace (LTP2) as reference, or fallback to avg pace
+        const thresholdPace = userRunningZones?.lt2; // Threshold pace in seconds per km
+        if (month.runningTime > 0 && month.runningAvgPace > 0) {
+          let referencePace = thresholdPace;
+          // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+          if (!referencePace || referencePace <= 0) {
+            referencePace = month.runningAvgPace;
+          }
+          // Running TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+          // Faster pace (lower seconds) = higher intensity = higher TSS
+          // If avgPace is faster than reference (lower seconds), intensity > 1.0
+          const intensityRatio = referencePace / month.runningAvgPace; // > 1 if faster than reference
+          runningTSS = Math.round((month.runningTime * Math.pow(intensityRatio, 2)) / 3600 * 100);
+        }
+        
+        month.totalTSS = bikeTSS + runningTSS;
+        month.bikeTSS = bikeTSS;
+        month.runningTSS = runningTSS;
 
       // Finalize zone statistics
       [1, 2, 3, 4, 5].forEach(zoneNum => {
@@ -2017,12 +2364,9 @@ async function analyzeTrainingsByMonth(req, res) {
         }
         zone.percentage = month.totalTime > 0 ? (zone.time / month.totalTime) * 100 : 0;
         
-        if (zone.time > 0) {
-          console.log(`  Zone ${zoneNum}: ${zone.time.toFixed(0)}s (${zone.percentage.toFixed(1)}%), avgPower: ${zone.avgPower.toFixed(0)}W, predictedLactate: ${zone.predictedLactate > 0 ? zone.predictedLactate.toFixed(2) : 'N/A'} mmol/L`);
-        }
       });
       
-      // Finalize HR zone statistics
+      // Finalize HR zone statistics (general)
       [1, 2, 3, 4, 5].forEach(zoneNum => {
         const hrZone = month.hrZones[zoneNum];
         hrZone.time = Number(hrZone.time) || 0;
@@ -2033,26 +2377,64 @@ async function analyzeTrainingsByMonth(req, res) {
           hrZone.avgHeartRate = hrZone.avgHeartRate / hrZone.heartRateCount;
         }
         hrZone.percentage = month.totalTime > 0 ? (hrZone.time / month.totalTime) * 100 : 0;
+      });
+      
+      // Finalize bike HR zone statistics
+      [1, 2, 3, 4, 5].forEach(zoneNum => {
+        const bikeHrZone = month.bikeHrZones[zoneNum];
+        bikeHrZone.time = Number(bikeHrZone.time) || 0;
+        bikeHrZone.avgHeartRate = Number(bikeHrZone.avgHeartRate) || 0;
+        bikeHrZone.heartRateCount = Number(bikeHrZone.heartRateCount) || 0;
         
-        if (hrZone.time > 0) {
-          console.log(`  HR Zone ${zoneNum}: ${hrZone.time.toFixed(0)}s (${hrZone.percentage.toFixed(1)}%), avgHR: ${hrZone.avgHeartRate.toFixed(0)}bpm`);
+        if (bikeHrZone.heartRateCount > 0) {
+          bikeHrZone.avgHeartRate = bikeHrZone.avgHeartRate / bikeHrZone.heartRateCount;
         }
+        bikeHrZone.percentage = month.bikeTime > 0 ? (bikeHrZone.time / month.bikeTime) * 100 : 0;
+      });
+      
+      // Finalize running HR zone statistics
+      [1, 2, 3, 4, 5].forEach(zoneNum => {
+        const runningHrZone = month.runningHrZones[zoneNum];
+        runningHrZone.time = Number(runningHrZone.time) || 0;
+        runningHrZone.avgHeartRate = Number(runningHrZone.avgHeartRate) || 0;
+        runningHrZone.heartRateCount = Number(runningHrZone.heartRateCount) || 0;
+        
+        if (runningHrZone.heartRateCount > 0) {
+          runningHrZone.avgHeartRate = runningHrZone.avgHeartRate / runningHrZone.heartRateCount;
+        }
+        runningHrZone.percentage = month.runningTime > 0 ? (runningHrZone.time / month.runningTime) * 100 : 0;
       });
       
       // Finalize running statistics
       if (month.runningPaceCount > 0) {
         month.runningAvgPace = month.runningTotalPaceSum / month.runningPaceCount;
+      } else {
+        month.runningAvgPace = 0;
       }
       if (month.runningHeartRateCount > 0) {
         month.runningAvgHeartRate = month.runningTotalHeartRateSum / month.runningHeartRateCount;
+      } else {
+        month.runningAvgHeartRate = 0;
       }
-      if (month.runningMaxPace === Infinity) {
+      if (month.runningMaxPace === Infinity || month.runningMaxPace === undefined || month.runningMaxPace === null) {
         month.runningMaxPace = 0;
       }
-      
-      console.log(`  Running: ${month.runningTrainings} tréninků, ${(month.runningTime / 60).toFixed(1)}min, avgPace: ${month.runningAvgPace > 0 ? (Math.floor(month.runningAvgPace / 60) + ':' + Math.round(month.runningAvgPace % 60).toString().padStart(2, '0')) : 'N/A'} /km`);
+      // Ensure all running statistics are numbers
+      month.runningAvgPace = Number(month.runningAvgPace) || 0;
+      month.runningMaxPace = Number(month.runningMaxPace) || 0;
+      month.runningAvgHeartRate = Number(month.runningAvgHeartRate) || 0;
+      month.runningMaxHeartRate = Number(month.runningMaxHeartRate) || 0;
+      month.runningDistance = Number(month.runningDistance) || 0;
       
       // Finalize running zone statistics
+      // Calculate total running time from zone times if runningTime is 0
+      const totalRunningZoneTime = [1, 2, 3, 4, 5].reduce((sum, zoneNum) => {
+        return sum + (Number(month.runningZoneTimes[zoneNum]?.time) || 0);
+      }, 0);
+      if (month.runningTime === 0 && totalRunningZoneTime > 0) {
+        month.runningTime = totalRunningZoneTime;
+      }
+      
       [1, 2, 3, 4, 5].forEach(zoneNum => {
         const runningZone = month.runningZoneTimes[zoneNum];
         runningZone.time = Number(runningZone.time) || 0;
@@ -2064,11 +2446,6 @@ async function analyzeTrainingsByMonth(req, res) {
         }
         runningZone.percentage = month.runningTime > 0 ? (runningZone.time / month.runningTime) * 100 : 0;
         
-        if (runningZone.time > 0) {
-          const paceMin = Math.floor(runningZone.avgPace / 60);
-          const paceSec = Math.round(runningZone.avgPace % 60);
-          console.log(`  Running Zone ${zoneNum}: ${runningZone.time.toFixed(0)}s (${runningZone.percentage.toFixed(1)}%), avgPace: ${paceMin}:${paceSec.toString().padStart(2, '0')} /km`);
-        }
       });
       
       // Finalize swimming zone statistics
@@ -2083,11 +2460,6 @@ async function analyzeTrainingsByMonth(req, res) {
         }
         swimmingZone.percentage = month.totalTime > 0 ? (swimmingZone.time / month.totalTime) * 100 : 0;
         
-        if (swimmingZone.time > 0) {
-          const paceMin = Math.floor(swimmingZone.avgPace / 60);
-          const paceSec = Math.round(swimmingZone.avgPace % 60);
-          console.log(`  Swimming Zone ${zoneNum}: ${swimmingZone.time.toFixed(0)}s (${swimmingZone.percentage.toFixed(1)}%), avgPace: ${paceMin}:${paceSec.toString().padStart(2, '0')} /100m`);
-        }
       });
       });
     }
@@ -2133,9 +2505,11 @@ async function analyzeTrainingsByMonth(req, res) {
         return a.monthKey.localeCompare(b.monthKey);
       });
       
-      console.log('\n=== MONTH METADATA RESULT ===');
+      // Remove trainingList from response to reduce payload size (not used on frontend)
       result.forEach(month => {
-        console.log(`  ${month.monthKey}: ${month.trainings} trainings`);
+        if (month.trainingList) {
+          delete month.trainingList;
+        }
       });
       
       return res.json(result);
@@ -2146,12 +2520,12 @@ async function analyzeTrainingsByMonth(req, res) {
       return a.monthKey.localeCompare(b.monthKey);
     });
 
-    console.log(`\n=== FINAL RESULT ===`);
-    console.log(`Total months: ${result.length}`);
+    // Remove trainingList from response to reduce payload size (not used on frontend)
     result.forEach(month => {
-      console.log(`  ${month.monthKey}: ${month.trainings} trainings, ${(month.totalTime / 60).toFixed(1)}min total time`);
+      if (month.trainingList) {
+        delete month.trainingList;
+      }
     });
-    console.log('=== ANALYZE TRAININGS BY MONTH END ===\n');
 
     res.json(result);
   } catch (error) {
