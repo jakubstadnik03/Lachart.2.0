@@ -39,16 +39,59 @@ function sportBadge(sport) {
 }
 
 export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate }) {
-  // Initialize anchorDate from initialAnchorDate prop if provided, otherwise use today
-  const [view, setView] = useState('month'); // 'month' | 'week'
-  const [anchorDate, setAnchorDate] = useState(initialAnchorDate || new Date());
-  const [sportFilter, setSportFilter] = useState('all');
+  // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
+  const getInitialAnchorDate = () => {
+    if (initialAnchorDate) return initialAnchorDate;
+    const saved = localStorage.getItem('calendarView_anchorDate');
+    if (saved) {
+      const parsed = new Date(saved);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  };
+
+  // Initialize view from localStorage or default to 'month'
+  const getInitialView = () => {
+    const saved = localStorage.getItem('calendarView_view');
+    return (saved === 'week' || saved === 'month') ? saved : 'month';
+  };
+
+  const [view, setView] = useState(getInitialView);
+  const [anchorDate, setAnchorDate] = useState(getInitialAnchorDate);
+  
+  // Initialize sportFilter from localStorage or default to 'all'
+  const getInitialSportFilter = () => {
+    const saved = localStorage.getItem('calendarView_sportFilter');
+    return saved || 'all';
+  };
+  
+  const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
   const [expandedDays, setExpandedDays] = useState(new Set()); // Track which days are expanded
+  
+  // Save sportFilter to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('calendarView_sportFilter', sportFilter);
+  }, [sportFilter]);
+  
+  // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
+  useEffect(() => {
+    if (!initialAnchorDate) {
+      // Only save if we're not being controlled by initialAnchorDate prop
+      localStorage.setItem('calendarView_anchorDate', anchorDate.toISOString());
+    }
+  }, [anchorDate, initialAnchorDate]);
+
+  // Save view to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('calendarView_view', view);
+  }, [view]);
   
   // Update anchorDate when initialAnchorDate changes (e.g., when navigating to a specific training)
   useEffect(() => {
     if (initialAnchorDate) {
       setAnchorDate(initialAnchorDate);
+      // Also save to localStorage when navigating to specific training
+      localStorage.setItem('calendarView_anchorDate', initialAnchorDate.toISOString());
     }
   }, [initialAnchorDate]);
   
@@ -107,9 +150,57 @@ export default function CalendarView({ activities = [], onSelectActivity, select
     <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 mb-4 md:mb-6">
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <button onClick={prev} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors">◀</button>
-          <button onClick={today} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors text-sm">Today</button>
-          <button onClick={next} className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors">▶</button>
+          <button 
+            onClick={prev} 
+            className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors"
+            style={{ 
+              WebkitAppearance: 'none', 
+              appearance: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              background: 'rgba(255, 255, 255, 0.7)',
+              fontFamily: 'inherit',
+              fontSize: 'inherit',
+              lineHeight: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            ◀
+          </button>
+          <button 
+            onClick={today} 
+            className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors text-sm"
+            style={{ 
+              WebkitAppearance: 'none', 
+              appearance: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              background: 'rgba(255, 255, 255, 0.7)',
+              fontFamily: 'inherit',
+              fontSize: '0.875rem',
+              lineHeight: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            Today
+          </button>
+          <button 
+            onClick={next} 
+            className="px-3 py-1.5 rounded-xl border border-white/40 bg-white/70 hover:bg-white/90 text-gray-700 shadow-sm transition-colors"
+            style={{ 
+              WebkitAppearance: 'none', 
+              appearance: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              background: 'rgba(255, 255, 255, 0.7)',
+              fontFamily: 'inherit',
+              fontSize: 'inherit',
+              lineHeight: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            ▶
+          </button>
         </div>
         <div className="text-base md:text-lg font-semibold text-gray-900">
           {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
@@ -130,12 +221,32 @@ export default function CalendarView({ activities = [], onSelectActivity, select
           <button 
             onClick={() => setView('week')} 
             className={`px-3 py-1.5 rounded-xl border border-white/40 shadow-sm transition-colors text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':'bg-white/70 hover:bg-white/90 text-gray-700'}`}
+            style={{ 
+              WebkitAppearance: 'none', 
+              appearance: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              fontFamily: 'inherit',
+              fontSize: '0.875rem',
+              lineHeight: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
           >
             Week
           </button>
           <button 
             onClick={() => setView('month')} 
             className={`px-3 py-1.5 rounded-xl border border-white/40 shadow-sm transition-colors text-sm ${view==='month'?'bg-primary text-white hover:bg-primary-dark':'bg-white/70 hover:bg-white/90 text-gray-700'}`}
+            style={{ 
+              WebkitAppearance: 'none', 
+              appearance: 'none',
+              border: '1px solid rgba(255, 255, 255, 0.4)',
+              fontFamily: 'inherit',
+              fontSize: '0.875rem',
+              lineHeight: 'inherit',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
           >
             Month
           </button>

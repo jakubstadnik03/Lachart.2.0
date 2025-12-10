@@ -303,6 +303,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (sport) updateData.sport = sport;
         if (specialization) updateData.specialization = specialization;
         if (bio) updateData.bio = bio;
+        if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
 
         console.log('Updating user profile:', { userId, updateData });
 
@@ -326,7 +327,8 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             sport: updatedUser.sport,
             specialization: updatedUser.specialization,
             bio: updatedUser.bio,
-            athletes: updatedUser.athletes
+            athletes: updatedUser.athletes,
+            powerZones: updatedUser.powerZones // Include power zones
         };
 
         res.status(200).json(userResponse);
@@ -508,7 +510,7 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
     }
 });
 
-// Get user profile
+// Get user profile (including power zones)
 router.get("/profile", verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -534,7 +536,8 @@ router.get("/profile", verifyToken, async (req, res) => {
             sport: user.sport,
             specialization: user.specialization,
             bio: user.bio,
-            coachId: user.coachId
+            coachId: user.coachId,
+            powerZones: user.powerZones // Include power zones
         };
 
         res.status(200).json(userResponse);

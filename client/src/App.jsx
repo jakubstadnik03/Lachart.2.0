@@ -35,6 +35,7 @@ import LactateGuide from './pages/LactateGuide';
 import AdminDashboard from './pages/AdminDashboard';
 import FitAnalysisPage from './pages/FitAnalysisPage';
 import LactateTestingPage from './pages/LactateTestingPage';
+import LactateStatisticsPage from './pages/LactateStatisticsPage';
 import Privacy from './pages/Privacy';
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -92,6 +93,10 @@ function AppRoutes() {
         <Route 
           path="/training-calendar" 
           element={<FitAnalysisPage />}
+        />
+        <Route 
+          path="/lactate-statistics" 
+          element={<LactateStatisticsPage />}
         />
         <Route path="/athletes" element={<Athletes />} />
         <Route path="/settings" element={<Settings />} />

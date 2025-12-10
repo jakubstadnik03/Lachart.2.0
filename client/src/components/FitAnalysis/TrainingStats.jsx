@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ClockIcon, MapPinIcon, HeartIcon, BoltIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, MapPinIcon, HeartIcon, BoltIcon, PencilIcon, CheckIcon, XMarkIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 import ReactECharts from 'echarts-for-react';
 import { formatDuration, formatDistance, prepareTrainingChartData } from '../../utils/fitAnalysisUtils';
 import { updateFitTraining, getAllTitles } from '../../services/api';
+import api from '../../services/api';
 
 const TrainingStats = ({ training, onDelete, onUpdate }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -19,6 +20,27 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
   const [selectedLapIndices, setSelectedLapIndices] = useState([]);
   const [pendingPayload, setPendingPayload] = useState(null);
   const [modalError, setModalError] = useState('');
+  const [userFTP, setUserFTP] = useState(null);
+
+  // Load user FTP from profile
+  useEffect(() => {
+    const loadUserFTP = async () => {
+      try {
+        const response = await api.get('/user/profile');
+        const profileData = response.data;
+        // Get FTP from power zones (LTP2) or zone5 min (which is typically FTP)
+        const ftp = profileData.powerZones?.cycling?.lt2 || 
+                   profileData.powerZones?.cycling?.zone5?.min || 
+                   null;
+        setUserFTP(ftp);
+      } catch (error) {
+        console.error('Error loading user FTP:', error);
+      }
+    };
+    if (training) {
+      loadUserFTP();
+    }
+  }, [training]);
 
   // Update state when training changes
   useEffect(() => {
@@ -320,6 +342,43 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
       ]
     };
   }, [training, lapDetails, selectedLapIndices]);
+
+  // Calculate metrics (must be before early return)
+  const calculateTSS = useMemo(() => {
+    if (!training?.avgPower) return null;
+    const seconds = training.totalElapsedTime || training.totalTimerTime || 0;
+    if (seconds === 0) return null;
+    
+    // If FTP is available, calculate proper TSS
+    if (userFTP && userFTP > 0) {
+      // Simplified TSS calculation: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
+      // Using avgPower as NP approximation
+      const np = training.avgPower;
+      const tss = (seconds * Math.pow(np, 2)) / (Math.pow(userFTP, 2) * 3600) * 100;
+      return Math.round(tss);
+    }
+    
+    // Fallback: estimate TSS using a default FTP estimate (e.g., 250W)
+    // This allows TSS to be displayed even without user FTP
+    const estimatedFTP = 250; // Default estimate
+    const np = training.avgPower;
+    const tss = (seconds * Math.pow(np, 2)) / (Math.pow(estimatedFTP, 2) * 3600) * 100;
+    return { value: Math.round(tss), estimated: true };
+  }, [userFTP, training?.avgPower, training?.totalElapsedTime, training?.totalTimerTime]);
+
+  const calculateIF = useMemo(() => {
+    if (!training?.avgPower) return null;
+    const ftp = userFTP || 250; // Use estimated FTP if not available
+    // Intensity Factor = NP / FTP
+    const np = training.avgPower;
+    const ifValue = np / ftp;
+    return ifValue.toFixed(2);
+  }, [userFTP, training?.avgPower]);
+
+  const totalTime = training?.totalElapsedTime || training?.totalTimerTime || 0;
+  const avgCadence = training?.avgCadence || null;
+  const maxPower = training?.maxPower || null;
+  const maxHeartRate = training?.maxHeartRate || null;
 
   const initiateSave = (payload) => {
     if (!training) return;
@@ -725,47 +784,108 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
           )}
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-          <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-            <ClockIcon className="w-4 h-4" />
-            Duration
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+              <ClockIcon className="w-4 h-4" />
+              Duration
+            </div>
+            <div className="text-lg md:text-xl font-bold text-primary">
+              {formatDuration(totalTime)}
+            </div>
           </div>
-          <div className="text-lg md:text-xl font-bold text-primary">
-            {formatDuration(training.totalElapsedTime)}
+          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+              <MapPinIcon className="w-4 h-4" />
+              Distance
+            </div>
+            <div className="text-lg md:text-xl font-bold text-primary">
+              {formatDistance(training.totalDistance)}
+            </div>
           </div>
+          <div className="bg-red/10 backdrop-blur-sm p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
+            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+              <HeartIcon className="w-4 h-4" />
+              Avg Heart Rate
+            </div>
+            <div className="text-lg md:text-xl font-bold text-red">
+              {training.avgHeartRate ? `${Math.round(training.avgHeartRate)} bpm` : '-'}
+            </div>
+            {maxHeartRate && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                Max: {Math.round(maxHeartRate)} bpm
+              </div>
+            )}
+          </div>
+          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
+            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+              <BoltIcon className="w-4 h-4" />
+              Avg Power
+            </div>
+            <div className="text-lg md:text-xl font-bold text-primary-dark">
+              {training.avgPower ? `${Math.round(training.avgPower)} W` : '-'}
+            </div>
+            {maxPower && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                Max: {Math.round(maxPower)} W
+              </div>
+            )}
+          </div>
+          {avgCadence && (
+            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-blue-300 bg-blue-50 shadow-sm">
+              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+                <CpuChipIcon className="w-4 h-4" />
+                Avg Cadence
+              </div>
+              <div className="text-lg md:text-xl font-bold text-blue-700">
+                {Math.round(avgCadence)} rpm
+              </div>
+            </div>
+          )}
+          {calculateTSS !== null && (
+            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-purple-300 bg-purple-50 shadow-sm">
+              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+                <BoltIcon className="w-4 h-4" />
+                TSS
+                {typeof calculateTSS === 'object' && calculateTSS.estimated && (
+                  <span className="text-xs text-gray-400 ml-1" title="Estimated TSS (FTP not set in profile)">
+                    *
+                  </span>
+                )}
+              </div>
+              <div className="text-lg md:text-xl font-bold text-purple-700">
+                {typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
+              </div>
+              {calculateIF !== null && (
+                <div className="text-xs text-gray-500 mt-0.5">
+                  IF: {calculateIF}
+                </div>
+              )}
+            </div>
+          )}
+          {training.avgSpeed && (
+            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-green-300 bg-green-50 shadow-sm">
+              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+                Avg Speed
+              </div>
+              <div className="text-lg md:text-xl font-bold text-green-700">
+                {(training.avgSpeed * 3.6).toFixed(1)} km/h
+              </div>
+            </div>
+          )}
+          {training.totalAscent && training.totalAscent > 0 && (
+            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-orange-300 bg-orange-50 shadow-sm">
+              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+                Elevation
+              </div>
+              <div className="text-lg md:text-xl font-bold text-orange-700">
+                +{Math.round(training.totalAscent)} m
+              </div>
+            </div>
+          )}
         </div>
-        <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-          <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-            <MapPinIcon className="w-4 h-4" />
-            Distance
-          </div>
-          <div className="text-lg md:text-xl font-bold text-primary">
-            {formatDistance(training.totalDistance)}
-          </div>
-        </div>
-        <div className="bg-red/10 backdrop-blur-sm p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
-          <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-            <HeartIcon className="w-4 h-4" />
-            Avg Heart Rate
-          </div>
-          <div className="text-lg md:text-xl font-bold text-red">
-            {training.avgHeartRate ? `${Math.round(training.avgHeartRate)} bpm` : '-'}
-          </div>
-        </div>
-        <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-          <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-            <BoltIcon className="w-4 h-4" />
-            Avg Power
-          </div>
-          <div className="text-lg md:text-xl font-bold text-primary-dark">
-            {training.avgPower ? `${Math.round(training.avgPower)} W` : '-'}
-          </div>
-        </div>
-      </div>
     </>
   );
 };
 
 export default TrainingStats;
-

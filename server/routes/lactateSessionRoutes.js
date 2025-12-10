@@ -250,4 +250,45 @@ router.get('/:id/download-fit', verifyToken, lactateSessionController.downloadFi
  */
 router.delete('/:id', verifyToken, lactateSessionController.deleteSession);
 
+/**
+ * @swagger
+ * /api/lactate-session/zones/latest:
+ *   get:
+ *     summary: Get latest power zones from completed lactate test or profile
+ *     tags: [LactateSession]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Power zones data
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/zones/latest', verifyToken, lactateSessionController.getLatestZones);
+
+/**
+ * @swagger
+ * /api/lactate-session/zones/save:
+ *   post:
+ *     summary: Save power zones to user profile
+ *     tags: [LactateSession]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               zones:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Zones saved successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/zones/save', verifyToken, lactateSessionController.saveZonesToProfile);
+
 module.exports = router;

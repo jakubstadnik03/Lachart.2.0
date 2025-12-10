@@ -274,6 +274,50 @@ export const getFitTrainings = async (athleteId = null) => {
   }
 };
 
+export const getTrainingsWithLactate = async (athleteId = null) => {
+  try {
+    const params = athleteId ? { athleteId: String(athleteId) } : {};
+    const response = await api.get('/api/fit/trainings/with-lactate', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching trainings with lactate:', error);
+    throw error;
+  }
+};
+
+export const getMonthlyPowerAnalysis = async (athleteId = null, monthKey = null) => {
+  try {
+    const params = {};
+    if (athleteId) params.athleteId = String(athleteId);
+    if (monthKey) params.monthKey = monthKey;
+    const response = await api.get('/api/fit/trainings/monthly-analysis', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching monthly power analysis:', error);
+    throw error;
+  }
+};
+
+export const getLatestPowerZones = async () => {
+  try {
+    const response = await api.get('/api/lactate-session/zones/latest');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching latest power zones:', error);
+    throw error;
+  }
+};
+
+export const savePowerZonesToProfile = async (zones) => {
+  try {
+    const response = await api.post('/api/lactate-session/zones/save', { zones });
+    return response.data;
+  } catch (error) {
+    console.error('Error saving power zones to profile:', error);
+    throw error;
+  }
+};
+
 export const getFitTraining = async (id) => {
   try {
     const response = await api.get(`/api/fit/trainings/${id}`);

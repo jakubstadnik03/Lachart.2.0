@@ -36,6 +36,7 @@ const ProfilePage = () => {
   const [error, setError] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [selectedZoneSport, setSelectedZoneSport] = useState('cycling'); // cycling or running
 
   // const getUserProfile = async () => {
   //   try {
@@ -82,6 +83,8 @@ const ProfilePage = () => {
   // Formátování data
   const formatDate = (dateString) => {
     if (!dateString) return 'Not set';
+    try {
+      // Pokud je to ISO string, parsujeme ho
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return 'Not set';
     
@@ -89,6 +92,17 @@ const ProfilePage = () => {
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear().toString().slice(-2);
     return `${day}.${month}.${year}`;
+    } catch (error) {
+      return 'Not set';
+    }
+  };
+
+  // Format pace for display (seconds to mm:ss)
+  const formatPace = (seconds) => {
+    if (!seconds || seconds === 0 || isNaN(seconds)) return '0:00';
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
   const loadProfileData = useCallback(async () => {
@@ -113,13 +127,15 @@ const ProfilePage = () => {
         height: profileData.height || 'Not set',
         bio: profileData.bio || 'Not set',
         dateOfBirth: profileData.dateOfBirth ? formatDate(profileData.dateOfBirth) : 'Not set',
+        dateOfBirthRaw: profileData.dateOfBirth, // Keep raw for display
         address: profileData.address || 'Not set',
         sport: profileData.sport || 'Not set',
         specialization: profileData.specialization || 'Not set',
         title: profileData.role === 'coach' ? 'Coach' : profileData.specialization || 'Not set',
         avatar: profileData.avatar || defaultAvatar,  // Použití defaultního avataru podle role
         _id: profileData._id,
-        role: profileData.role
+        role: profileData.role,
+        powerZones: profileData.powerZones // Include power zones
       });
 
       // Pokud je to trenér, nemusíme načítat tréninky a testy
@@ -188,12 +204,14 @@ const ProfilePage = () => {
         weight: updatedUser.weight || '',
         height: updatedUser.height || '',
         bio: updatedUser.bio || '',
-        dateOfBirth: updatedUser.dateOfBirth || '',
+        dateOfBirth: updatedUser.dateOfBirth ? formatDate(updatedUser.dateOfBirth) : '',
+        dateOfBirthRaw: updatedUser.dateOfBirth,
         address: updatedUser.address || '',
         sport: updatedUser.sport || '',
         specialization: updatedUser.specialization || '',
         title: updatedUser.specialization || '',
-        avatar: updatedUser.avatar || '/images/triathlete-avatar.jpg'
+        avatar: updatedUser.avatar || '/images/triathlete-avatar.jpg',
+        powerZones: updatedUser.powerZones || userInfo.powerZones // Keep power zones
       });
 
       setIsEditModalOpen(false);
@@ -397,7 +415,9 @@ const ProfilePage = () => {
                   <CalendarIcon className="w-5 h-5" />
                   <p className="text-sm">Date of Birth</p>
                 </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.dateOfBirth || 'Not set'}</p>
+                <p className="font-medium text-sm w-2/3">
+                  {userInfo.dateOfBirthRaw ? formatDate(userInfo.dateOfBirthRaw) : (userInfo.dateOfBirth || 'Not set')}
+                </p>
               </motion.div>
 
               {/* Address - Full width on mobile, half width on PC */}
@@ -431,6 +451,217 @@ const ProfilePage = () => {
           </motion.div>
         </div>
       </motion.div>
+
+      {/* Power Zones Section */}
+      {(userInfo.powerZones?.cycling || userInfo.powerZones?.running) && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.1 }}
+          className="bg-white rounded-3xl shadow-sm overflow-hidden"
+        >
+          <div className="px-4 md:px-6 py-4 md:py-6">
+            {/* Sport Selector */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Training Zones</h2>
+              <div className="flex gap-2">
+                {userInfo.powerZones?.cycling && (
+                  <button
+                    onClick={() => setSelectedZoneSport('cycling')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'cycling'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Cycling
+                  </button>
+                )}
+                {userInfo.powerZones?.running && (
+                  <button
+                    onClick={() => setSelectedZoneSport('running')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'running'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Running
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cycling Zones */}
+            {userInfo.powerZones?.cycling && selectedZoneSport === 'cycling' && (
+              <>
+                {userInfo.powerZones?.cycling?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.powerZones.cycling.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+            {/* LTP1 and LTP2 */}
+            {(userInfo.powerZones.cycling.lt1 || userInfo.powerZones.cycling.lt2) && (
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {userInfo.powerZones.cycling.lt1 && (
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">LTP1</p>
+                    <p className="text-2xl font-bold text-blue-700">{userInfo.powerZones.cycling.lt1}W</p>
+                  </div>
+                )}
+                {userInfo.powerZones.cycling.lt2 && (
+                  <div className="p-4 bg-purple-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">LTP2 (FTP)</p>
+                    <p className="text-2xl font-bold text-purple-700">{userInfo.powerZones.cycling.lt2}W</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Zones Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Power Range (W)</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5].map(zoneNum => {
+                    const zone = userInfo.powerZones.cycling[`zone${zoneNum}`];
+                    if (!zone || (!zone.min && !zone.max)) return null;
+                    
+                    const zoneColors = {
+                      1: 'bg-blue-50 text-blue-700',
+                      2: 'bg-green-50 text-green-700',
+                      3: 'bg-yellow-50 text-yellow-700',
+                      4: 'bg-orange-50 text-orange-700',
+                      5: 'bg-red-50 text-red-700'
+                    };
+                    
+                    return (
+                      <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                            {zoneNum}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono text-sm">
+                            {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`}W
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                          {zone.description || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+                {(!userInfo.powerZones.cycling.zone1 || !userInfo.powerZones.cycling.zone1.min) && (
+                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      No cycling zones configured. Edit your profile to set power zones from your lactate test.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Running Zones */}
+            {userInfo.powerZones?.running && selectedZoneSport === 'running' && (
+              <>
+                {userInfo.powerZones?.running?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.powerZones.running.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+                {/* LTP1 and LTP2 for Running */}
+                {(userInfo.powerZones.running.lt1 || userInfo.powerZones.running.lt2) && (
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {userInfo.powerZones.running.lt1 && (
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <p className="text-sm text-gray-600 mb-1">LTP1</p>
+                        <p className="text-2xl font-bold text-blue-700">
+                          {formatPace(userInfo.powerZones.running.lt1)} /km
+                        </p>
+                      </div>
+                    )}
+                    {userInfo.powerZones.running.lt2 && (
+                      <div className="p-4 bg-purple-50 rounded-lg">
+                        <p className="text-sm text-gray-600 mb-1">LTP2</p>
+                        <p className="text-2xl font-bold text-purple-700">
+                          {formatPace(userInfo.powerZones.running.lt2)} /km
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Running Zones Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Pace Range (/km)</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4, 5].map(zoneNum => {
+                        const zone = userInfo.powerZones.running[`zone${zoneNum}`];
+                        if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const zoneColors = {
+                          1: 'bg-blue-50 text-blue-700',
+                          2: 'bg-green-50 text-green-700',
+                          3: 'bg-yellow-50 text-yellow-700',
+                          4: 'bg-orange-50 text-orange-700',
+                          5: 'bg-red-50 text-red-700'
+                        };
+                        
+                        return (
+                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                                {zoneNum}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-sm">
+                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /km
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                              {zone.description || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {(!userInfo.powerZones.running.zone1 || !userInfo.powerZones.running.zone1.min) && (
+                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      No running zones configured. Edit your profile to set pace zones from your lactate test.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       {userInfo.role !== 'coach' && (
         <>

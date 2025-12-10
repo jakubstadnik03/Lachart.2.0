@@ -97,6 +97,50 @@ const lactateSessionController = {
         return res.status(404).json({ error: 'Session not found' });
       }
       
+      // Automatically save power zones to user profile if this is a cycling test with zones
+      if (session.sport === 'bike' && session.trainingZones && session.trainingZones.length > 0) {
+        try {
+          const User = require('../models/UserModel');
+          const user = await User.findById(session.athleteId);
+          if (user) {
+            // Extract power zones from session
+            const powerZones = {};
+            session.trainingZones.forEach(zone => {
+              if (zone.powerMin !== undefined && zone.powerMax !== undefined) {
+                powerZones[`zone${zone.zone}`] = {
+                  min: zone.powerMin,
+                  max: zone.powerMax,
+                  description: zone.description || `Zone ${zone.zone}`
+                };
+              }
+            });
+            
+            // Extract thresholds
+            const lt1 = session.thresholds?.lt1?.power || null;
+            const lt2 = session.thresholds?.lt2?.power || null;
+            
+            if (Object.keys(powerZones).length > 0) {
+              // Update power zones in user profile
+              if (!user.powerZones) {
+                user.powerZones = {};
+              }
+              user.powerZones.cycling = {
+                ...powerZones,
+                lt1,
+                lt2,
+                lastUpdated: new Date()
+              };
+              
+              await user.save();
+              console.log(`[updateSession] Automatically saved power zones to profile for user ${user._id}`);
+            }
+          }
+        } catch (zoneSaveError) {
+          console.error('[updateSession] Error auto-saving zones to profile:', zoneSaveError);
+          // Don't fail the request if zone saving fails
+        }
+      }
+      
       res.json({ success: true, session });
     } catch (error) {
       console.error('Error updating lactate session:', error);
@@ -155,6 +199,50 @@ const lactateSessionController = {
       }
       
       await session.save();
+      
+      // Automatically save power zones to user profile if this is a cycling test with zones
+      if (session.sport === 'bike' && session.trainingZones && session.trainingZones.length > 0) {
+        try {
+          const User = require('../models/UserModel');
+          const user = await User.findById(session.athleteId);
+          if (user) {
+            // Extract power zones from session
+            const powerZones = {};
+            session.trainingZones.forEach(zone => {
+              if (zone.powerMin !== undefined && zone.powerMax !== undefined) {
+                powerZones[`zone${zone.zone}`] = {
+                  min: zone.powerMin,
+                  max: zone.powerMax,
+                  description: zone.description || `Zone ${zone.zone}`
+                };
+              }
+            });
+            
+            // Extract thresholds
+            const lt1 = session.thresholds?.lt1?.power || null;
+            const lt2 = session.thresholds?.lt2?.power || null;
+            
+            if (Object.keys(powerZones).length > 0) {
+              // Update power zones in user profile
+              if (!user.powerZones) {
+                user.powerZones = {};
+              }
+              user.powerZones.cycling = {
+                ...powerZones,
+                lt1,
+                lt2,
+                lastUpdated: new Date()
+              };
+              
+              await user.save();
+              console.log(`[completeSession] Automatically saved power zones to profile for user ${user._id}`);
+            }
+          }
+        } catch (zoneSaveError) {
+          console.error('[completeSession] Error auto-saving zones to profile:', zoneSaveError);
+          // Don't fail the request if zone saving fails
+        }
+      }
       
       res.json({
         success: true,
@@ -305,6 +393,141 @@ const lactateSessionController = {
       console.error('Error downloading FIT file:', error);
       res.status(500).json({
         error: 'Error downloading FIT file',
+        message: error.message
+      });
+    }
+  },
+
+  // Get latest completed session and calculate zones
+  getLatestZones: async (req, res) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const User = require('../models/UserModel');
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Check if user has zones in profile
+      if (user.powerZones?.cycling && user.powerZones.cycling.lastUpdated) {
+        return res.json({
+          zones: user.powerZones.cycling,
+          source: 'profile'
+        });
+      }
+
+      // Find latest completed session
+      const latestSession = await LactateSession.findOne({
+        athleteId: String(userId),
+        status: 'completed',
+        sport: 'bike'
+      })
+        .sort({ completedAt: -1, date: -1 })
+        .lean();
+
+      if (!latestSession || !latestSession.trainingZones || latestSession.trainingZones.length === 0) {
+        return res.json({
+          zones: null,
+          message: 'No completed lactate test with zones found'
+        });
+      }
+
+      // Extract power zones from session
+      const powerZones = {};
+      let lt1 = null;
+      let lt2 = null;
+
+      latestSession.trainingZones.forEach(zone => {
+        if (zone.powerMin !== undefined && zone.powerMax !== undefined) {
+          powerZones[`zone${zone.zone}`] = {
+            min: zone.powerMin,
+            max: zone.powerMax,
+            description: zone.description || `Zone ${zone.zone}`
+          };
+        }
+      });
+
+      // Extract thresholds
+      if (latestSession.thresholds) {
+        if (latestSession.thresholds.lt1?.power) {
+          lt1 = latestSession.thresholds.lt1.power;
+        }
+        if (latestSession.thresholds.lt2?.power) {
+          lt2 = latestSession.thresholds.lt2.power;
+        }
+      }
+
+      if (Object.keys(powerZones).length === 0) {
+        return res.json({
+          zones: null,
+          message: 'No power zones found in latest test'
+        });
+      }
+
+      const zonesData = {
+        ...powerZones,
+        lt1,
+        lt2,
+        lastUpdated: latestSession.completedAt || latestSession.date || new Date()
+      };
+
+      res.json({
+        zones: zonesData,
+        source: 'latest_test',
+        sessionId: latestSession._id
+      });
+    } catch (error) {
+      console.error('Error getting latest zones:', error);
+      res.status(500).json({
+        error: 'Error getting zones',
+        message: error.message
+      });
+    }
+  },
+
+  // Save zones to user profile
+  saveZonesToProfile: async (req, res) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      const { zones } = req.body;
+      if (!zones) {
+        return res.status(400).json({ error: 'Zones data required' });
+      }
+
+      const User = require('../models/UserModel');
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Update power zones
+      if (!user.powerZones) {
+        user.powerZones = {};
+      }
+      user.powerZones.cycling = {
+        ...zones,
+        lastUpdated: new Date()
+      };
+
+      await user.save();
+
+      res.json({
+        success: true,
+        message: 'Power zones saved to profile',
+        zones: user.powerZones.cycling
+      });
+    } catch (error) {
+      console.error('Error saving zones to profile:', error);
+      res.status(500).json({
+        error: 'Error saving zones',
         message: error.message
       });
     }

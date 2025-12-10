@@ -105,6 +105,38 @@ router.get('/trainings/titles', verifyToken, fitUploadController.getAllTitles);
 
 /**
  * @swagger
+ * /api/fit/trainings/with-lactate:
+ *   get:
+ *     summary: Get all trainings with lactate values
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of trainings with lactate values
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTrainingsWithLactate);
+
+/**
+ * @swagger
+ * /api/fit/trainings/monthly-analysis:
+ *   get:
+ *     summary: Analyze FIT trainings by month with power zones and lactate prediction
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Monthly analysis with power zones and predicted lactate
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analyzeTrainingsByMonth);
+
+/**
+ * @swagger
  * /api/fit/trainings/{id}:
  *   get:
  *     summary: Get single FIT training with all records

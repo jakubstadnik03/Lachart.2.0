@@ -1136,3 +1136,4 @@ router.delete('/strava/activities/:id/laps/:lapIndex', verifyToken, async (req, 
 });
 
 module.exports = router;
+module.exports.getValidStravaToken = getValidStravaToken;

@@ -171,29 +171,29 @@ const deduplicateFitTrainingLaps = (laps = []) => {
 const INTERVAL_SENSITIVITY_CONFIG = {
   high: {
     label: 'High',
-    changeThreshold: 0.06,
-    stabilityWindow: 2,
-    minIntervalDuration: 6,
-    mergeThreshold: 8,
-    smoothingMultiplier: 0.4,
+    changeThreshold: 0.035, // More sensitive: 3.5% (between 3% and 4.5%) - detects smaller changes
+    stabilityWindow: 1.2, // More sensitive: 1.2 seconds (between 1s and 1.5s) - faster detection
+    minIntervalDuration: 4, // More sensitive: 4 seconds (catches shorter intervals)
+    mergeThreshold: 5, // More sensitive: 5 seconds (smaller gaps)
+    smoothingMultiplier: 0.32, // More sensitive: 0.32 (less smoothing, more sensitivity)
     smoothingMin: 1
   },
   medium: {
     label: 'Medium',
-    changeThreshold: 0.1,
-    stabilityWindow: 3,
-    minIntervalDuration: 8,
-    mergeThreshold: 15,
-    smoothingMultiplier: 0.6,
+    changeThreshold: 0.06, // Reduced from 0.1 to 0.06
+    stabilityWindow: 2, // Reduced from 3 to 2 seconds
+    minIntervalDuration: 6, // Reduced from 8 to 6 seconds
+    mergeThreshold: 10, // Reduced from 15 to 10 seconds
+    smoothingMultiplier: 0.5, // Reduced from 0.6
     smoothingMin: 2
   },
   low: {
     label: 'Low',
-    changeThreshold: 0.18,
-    stabilityWindow: 4,
-    minIntervalDuration: 12,
-    mergeThreshold: 25,
-    smoothingMultiplier: 0.8,
+    changeThreshold: 0.12, // Reduced from 0.18 to 0.12
+    stabilityWindow: 3, // Reduced from 4 to 3 seconds
+    minIntervalDuration: 10, // Reduced from 12 to 10 seconds
+    mergeThreshold: 20, // Reduced from 25 to 20 seconds
+    smoothingMultiplier: 0.7, // Reduced from 0.8
     smoothingMin: 3
   }
 };
@@ -203,6 +203,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   const [saving, setSaving] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [editingMode, setEditingMode] = useState(false); // Mode for selecting intervals to merge
+  const [selectedLapIndices, setSelectedLapIndices] = useState(new Set()); // Selected lap indices for merging
 
   // Use laps passed from selectedStrava (already deduplicated during load)
   const uniqueLaps = selectedStrava?.laps || [];
@@ -263,10 +266,75 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     try {
       setSaving(true);
       const uniqueLap = uniqueLaps[lapIndex];
-      const originalIndex = uniqueLap?.__sourceIndex;
-      const indexToDelete = (originalIndex !== undefined && originalIndex !== null)
-        ? originalIndex
-        : lapIndex;
+      
+      // Find the correct index in the original laps array
+      // Use the same matching logic as deduplication
+      const originalLaps = selectedStrava?.laps || [];
+      let indexToDelete = -1;
+      
+      // Try to find by __sourceIndex first (if available and valid)
+      if (uniqueLap?.__sourceIndex !== undefined && uniqueLap?.__sourceIndex !== null) {
+        const sourceIdx = uniqueLap.__sourceIndex;
+        if (sourceIdx >= 0 && sourceIdx < originalLaps.length) {
+          // Verify it's the same lap by comparing key properties
+          const sourceLap = originalLaps[sourceIdx];
+          const matches = (
+            (uniqueLap.startTime && sourceLap.startTime && uniqueLap.startTime === sourceLap.startTime) ||
+            (uniqueLap.start_date && sourceLap.start_date && uniqueLap.start_date === sourceLap.start_date) ||
+            (Math.abs((uniqueLap.elapsed_time || 0) - (sourceLap.elapsed_time || 0)) < 0.1 &&
+             Math.abs((uniqueLap.distance || 0) - (sourceLap.distance || 0)) < 0.1 &&
+             Math.abs((uniqueLap.average_watts || 0) - (sourceLap.average_watts || 0)) < 0.1)
+          );
+          if (matches) {
+            indexToDelete = sourceIdx;
+          }
+        }
+      }
+      
+      // If __sourceIndex didn't work, find by matching properties
+      if (indexToDelete === -1) {
+        for (let i = 0; i < originalLaps.length; i++) {
+          const originalLap = originalLaps[i];
+          
+          // Match by startTime or start_date (most reliable)
+          if (uniqueLap.startTime && originalLap.startTime && uniqueLap.startTime === originalLap.startTime) {
+            indexToDelete = i;
+            break;
+          }
+          if (uniqueLap.start_date && originalLap.start_date && uniqueLap.start_date === originalLap.start_date) {
+            indexToDelete = i;
+            break;
+          }
+          
+          // Match by elapsed_time, distance, and power (fallback)
+          const timeMatch = Math.abs((uniqueLap.elapsed_time || 0) - (originalLap.elapsed_time || 0)) < 0.1;
+          const distanceMatch = Math.abs((uniqueLap.distance || 0) - (originalLap.distance || 0)) < 0.1;
+          const powerMatch = Math.abs((uniqueLap.average_watts || 0) - (originalLap.average_watts || 0)) < 0.1;
+          
+          if (timeMatch && distanceMatch && powerMatch) {
+            indexToDelete = i;
+            break;
+          }
+        }
+      }
+      
+      // Final fallback: use lapIndex if we couldn't find a match
+      if (indexToDelete === -1) {
+        console.warn('Could not find matching lap in original array, using index:', lapIndex);
+        indexToDelete = lapIndex;
+      }
+      
+      console.log('Deleting lap:', {
+        uniqueIndex: lapIndex,
+        originalIndex: indexToDelete,
+        uniqueLap: {
+          startTime: uniqueLap.startTime,
+          elapsed_time: uniqueLap.elapsed_time,
+          distance: uniqueLap.distance,
+          average_watts: uniqueLap.average_watts
+        }
+      });
+      
       await deleteStravaLap(selectedStrava.id, indexToDelete);
       await loadStravaDetail(selectedStrava.id);
       await loadExternalActivities(); // Reload to update calendar
@@ -274,6 +342,186 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     } catch (error) {
       console.error('Error deleting lap:', error);
       alert('Error deleting interval: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAllLaps = async () => {
+    if (!window.confirm(`Are you sure you want to delete ALL ${uniqueLaps.length} intervals? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingAll(true);
+      // Collect all indices to delete, using originalIndex if available
+      const indicesToDelete = uniqueLaps.map((lap, idx) => {
+        const originalIndex = lap?.__sourceIndex;
+        return (originalIndex !== undefined && originalIndex !== null) ? originalIndex : idx;
+      });
+      
+      // Sort in descending order to avoid index shifting issues
+      indicesToDelete.sort((a, b) => b - a);
+      
+      let deletedCount = 0;
+      let errorCount = 0;
+
+      // Delete from highest index to lowest to avoid index shifting
+      for (const indexToDelete of indicesToDelete) {
+        try {
+          await deleteStravaLap(selectedStrava.id, indexToDelete);
+          deletedCount++;
+        } catch (error) {
+          console.error('Error deleting lap at index', indexToDelete, ':', error);
+          errorCount++;
+        }
+      }
+
+      await loadStravaDetail(selectedStrava.id);
+      await loadExternalActivities(); // Reload to update calendar
+      
+      if (errorCount > 0) {
+        alert(`Deleted ${deletedCount} intervals. ${errorCount} intervals could not be deleted.`);
+      } else {
+        alert(`Successfully deleted all ${deletedCount} intervals!`);
+      }
+    } catch (error) {
+      console.error('Error deleting all laps:', error);
+      alert('Error deleting intervals: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
+  const handleToggleLapSelection = (lapIndex) => {
+    setSelectedLapIndices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(lapIndex)) {
+        newSet.delete(lapIndex);
+      } else {
+        newSet.add(lapIndex);
+      }
+      return newSet;
+    });
+  };
+
+  const handleMergeSelectedLaps = async () => {
+    if (selectedLapIndices.size < 2) {
+      alert('Please select at least 2 intervals to merge.');
+      return;
+    }
+
+    const mergeCount = selectedLapIndices.size; // Save count before resetting
+    if (!window.confirm(`Are you sure you want to merge ${mergeCount} intervals into one? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Get activity start time (same logic as in graph rendering)
+      const activityStartDateStr = selectedStrava?.start_date_local || 
+                                   selectedStrava?.start_date || 
+                                   selectedStrava?.raw?.start_date || 
+                                   selectedStrava?.startDate;
+      const activityStartDate = activityStartDateStr ? new Date(activityStartDateStr) : new Date();
+      const activityStartTimeMs = activityStartDate.getTime();
+
+      // Calculate start and end times for selected laps
+      const selectedLaps = [];
+
+      uniqueLaps.forEach((lap, idx) => {
+        if (selectedLapIndices.has(idx)) {
+          let startTimeSeconds = 0;
+          
+          // Use same logic as graph rendering to calculate startTime
+          if (lap.startTime && typeof lap.startTime === 'string') {
+            const lapStartTimeMs = new Date(lap.startTime).getTime();
+            startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+          } else if (lap.start_date) {
+            const lapStartTimeMs = new Date(lap.start_date).getTime();
+            startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
+          } else {
+            // Fallback: calculate cumulative time
+            let cumulativeTime = 0;
+            for (let i = 0; i < idx; i++) {
+              cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
+            }
+            startTimeSeconds = cumulativeTime;
+          }
+          
+          // Ensure startTime is not negative
+          if (startTimeSeconds < 0) {
+            startTimeSeconds = 0;
+          }
+          
+          const duration = lap.elapsed_time || 0;
+          const endTimeSeconds = startTimeSeconds + duration;
+          
+          selectedLaps.push({
+            index: idx,
+            startTime: startTimeSeconds,
+            endTime: endTimeSeconds,
+            originalIndex: lap?.__sourceIndex ?? idx
+          });
+        }
+      });
+
+      // Find min start and max end time
+      if (selectedLaps.length === 0) {
+        alert('No valid intervals found to merge.');
+        return;
+      }
+
+      const minStartTime = Math.min(...selectedLaps.map(l => l.startTime));
+      const maxEndTime = Math.max(...selectedLaps.map(l => l.endTime));
+
+      // Validate time range
+      if (minStartTime < 0 || maxEndTime <= minStartTime) {
+        alert('Invalid time range for merged interval. Please try again.');
+        return;
+      }
+
+      console.log('Merging intervals:', {
+        selectedLaps: selectedLaps.length,
+        minStartTime,
+        maxEndTime,
+        duration: maxEndTime - minStartTime
+      });
+
+      // Delete selected laps in reverse order (from highest index to lowest)
+      const indicesToDelete = selectedLaps.map(l => l.originalIndex).sort((a, b) => b - a);
+      
+      for (const indexToDelete of indicesToDelete) {
+        try {
+          await deleteStravaLap(selectedStrava.id, indexToDelete);
+        } catch (error) {
+          console.error('Error deleting lap at index', indexToDelete, ':', error);
+          throw error;
+        }
+      }
+
+      // Small delay to ensure backend has processed deletions
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Create merged interval
+      const createResult = await createStravaLap(selectedStrava.id, {
+        startTime: minStartTime,
+        endTime: maxEndTime
+      });
+
+      console.log('Created merged interval:', createResult);
+
+      // Reload data to get updated intervals
+      await loadStravaDetail(selectedStrava.id);
+      await loadExternalActivities(); // Reload to update calendar
+      
+      setEditingMode(false);
+      setSelectedLapIndices(new Set());
+      alert(`Successfully merged ${mergeCount} intervals into one!`);
+    } catch (error) {
+      console.error('Error merging laps:', error);
+      alert('Error merging intervals: ' + (error.response?.data?.error || error.message));
     } finally {
       setSaving(false);
     }
@@ -294,15 +542,56 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         <h3 className="text-base sm:text-lg font-semibold">Intervals</h3>
         <div className="flex gap-2 w-full sm:w-auto flex-wrap">
         <button
-          onClick={() => setEditingLactate(!editingLactate)}
+          onClick={() => {
+            setEditingLactate(!editingLactate);
+            if (editingLactate) {
+              setEditingMode(false);
+              setSelectedLapIndices(new Set());
+            }
+          }}
           className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
+        <button
+          onClick={() => {
+            setEditingMode(!editingMode);
+            if (editingMode) {
+              setSelectedLapIndices(new Set());
+            }
+            if (!editingMode) {
+              setEditingLactate(false);
+            }
+          }}
+          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto ${
+            editingMode 
+              ? 'bg-blue-600 text-white hover:bg-blue-700' 
+              : 'bg-gray-600 text-white hover:bg-gray-700'
+          }`}
+        >
+          {editingMode ? 'Cancel Selection' : 'Edit Intervals'}
+        </button>
+        {editingMode && selectedLapIndices.size >= 2 && (
+          <button
+            onClick={handleMergeSelectedLaps}
+            disabled={saving}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
+          >
+            {saving ? 'Merging...' : `Merge ${selectedLapIndices.size} Selected`}
+          </button>
+        )}
+        <button
+          onClick={handleDeleteAllLaps}
+          disabled={deletingAll || saving || uniqueLaps.length === 0 || editingMode}
+          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
+        >
+          {deletingAll ? 'Deleting...' : 'Delete All Intervals'}
+        </button>
         {onExportToTraining && (
           <button
             onClick={() => onExportToTraining()}
-            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-greenos text-white rounded-xl hover:opacity-90 text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
+            disabled={editingMode}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
           >
             Export to Training
           </button>
@@ -313,6 +602,23 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              {editingMode && (
+                <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase w-12">
+                  <input
+                    type="checkbox"
+                    checked={selectedLapIndices.size === uniqueLaps.length && uniqueLaps.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedLapIndices(new Set(uniqueLaps.map((_, idx) => idx)));
+                      } else {
+                        setSelectedLapIndices(new Set());
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-pointer"
+                  />
+                </th>
+              )}
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Distance</th>
@@ -337,9 +643,11 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                 <tr 
                   key={index}
                   onClick={(e) => {
-                    // Don't zoom if clicking on lactate input
+                    // Don't zoom if clicking on checkbox, lactate input, or delete button
+                    if (editingMode && e.target.type === 'checkbox') return;
                     if (editingLactate && e.target.tagName === 'INPUT') return;
-                    if (!stravaChartRef.current) return;
+                    if (e.target.closest('button')) return;
+                    if (!stravaChartRef.current || editingMode) return;
                     
                     const chart = stravaChartRef.current.getEchartsInstance();
                     const startTimeMin = startTime / 60;
@@ -361,8 +669,19 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                       end: zoomEnd
                     });
                   }}
-                  className={`${lap.lactate ? 'bg-purple-50' : ''} ${!editingLactate ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}
+                  className={`${lap.lactate ? 'bg-purple-50' : ''} ${selectedLapIndices.has(index) ? 'bg-blue-100' : ''} ${!editingLactate && !editingMode ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}
                 >
+                  {editingMode && (
+                    <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedLapIndices.has(index)}
+                        onChange={() => handleToggleLapSelection(index)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="cursor-pointer"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm hidden sm:table-cell">{formatDistance(lap.distance)}</td>
@@ -470,12 +789,54 @@ const FitAnalysisPage = () => {
   const stravaActivityDate = selectedStrava?.start_date_local || selectedStrava?.start_date || selectedStrava?.startDate;
   const stravaActivityTitle = selectedStrava?.name || selectedStrava?.titleManual || 'Strava Activity';
   const stravaActivitySport = selectedStrava?.sport_type || selectedStrava?.type || selectedStrava?.sport;
-  const stravaActivityDistance = selectedStrava?.distance ?? null;
   const stravaActivityDuration = selectedStrava?.moving_time || selectedStrava?.elapsed_time || null;
   const stravaElevationGain = selectedStrava?.total_elevation_gain;
-  const hasStravaDistance = stravaActivityDistance !== null && stravaActivityDistance !== undefined;
-  const hasStravaDuration = stravaActivityDuration !== null && stravaActivityDuration !== undefined;
-  const hasStravaElevation = stravaElevationGain !== null && stravaElevationGain !== undefined;
+  const hasStravaElevation = stravaElevationGain !== null && stravaElevationGain !== undefined && stravaElevationGain > 0;
+  
+  // Strava metrics
+  const stravaAvgPower = selectedStrava?.average_watts || selectedStrava?.avg_power || null;
+  const stravaAvgCadence = selectedStrava?.average_cadence || selectedStrava?.avg_cadence || null;
+  const stravaNormalizedPower = selectedStrava?.weighted_average_watts || selectedStrava?.normalized_power || null;
+  const stravaMaxPower = selectedStrava?.max_watts || selectedStrava?.max_power || null;
+  
+  // Calculate TSS for Strava activity
+  const [userFTP, setUserFTP] = React.useState(null);
+  React.useEffect(() => {
+    const loadUserFTP = async () => {
+      try {
+        const response = await api.get('/user/profile');
+        const profileData = response.data;
+        const ftp = profileData.powerZones?.cycling?.lt2 || 
+                   profileData.powerZones?.cycling?.zone5?.min || 
+                   null;
+        setUserFTP(ftp);
+      } catch (error) {
+        console.error('Error loading user FTP:', error);
+      }
+    };
+    if (selectedStrava) {
+      loadUserFTP();
+    }
+  }, [selectedStrava]);
+  
+  const calculateStravaTSS = React.useMemo(() => {
+    if (!stravaAvgPower || !stravaActivityDuration) return null;
+    const seconds = stravaActivityDuration;
+    if (seconds === 0) return null;
+    
+    const ftp = userFTP || 250; // Use estimated FTP if not available
+    const np = stravaNormalizedPower || stravaAvgPower; // Use NP if available, otherwise avg power
+    const tss = (seconds * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100;
+    return { value: Math.round(tss), estimated: !userFTP };
+  }, [userFTP, stravaAvgPower, stravaNormalizedPower, stravaActivityDuration]);
+  
+  const calculateStravaIF = React.useMemo(() => {
+    if (!stravaAvgPower) return null;
+    const ftp = userFTP || 250;
+    const np = stravaNormalizedPower || stravaAvgPower;
+    const ifValue = np / ftp;
+    return ifValue.toFixed(2);
+  }, [userFTP, stravaAvgPower, stravaNormalizedPower]);
   
   // Strava interval creation state
   const [stravaIsDragging, setStravaIsDragging] = useState(false);
@@ -4072,10 +4433,7 @@ const FitAnalysisPage = () => {
                     {selectedStrava && (
                       <div className="w-full overflow-x-auto">
                         <div className="flex flex-wrap gap-2 sm:gap-3">
-                          <div className="flex-1 min-w-[180px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Activity</div>
-                            <div className="text-base font-semibold text-gray-900 truncate">{stravaActivityTitle}</div>
-                        </div>
+                          
                           <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
                             <div className="text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
@@ -4084,18 +4442,47 @@ const FitAnalysisPage = () => {
                             <div className="text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
                             <div className="text-base font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
                           </div>
+                          {stravaAvgPower && (
                           <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Distance</div>
-                            <div className="text-base font-semibold text-gray-900">{hasStravaDistance ? formatDistance(stravaActivityDistance) : '-'}</div>
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                              <div className="text-base font-semibold text-gray-900">{Math.round(stravaAvgPower)} W</div>
+                              {stravaMaxPower && (
+                                <div className="text-xs text-gray-500 mt-0.5">Max: {Math.round(stravaMaxPower)} W</div>
+                              )}
                           </div>
-                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Duration</div>
-                            <div className="text-base font-semibold text-gray-900">{hasStravaDuration ? formatDuration(stravaActivityDuration) : '-'}</div>
+                          )}
+                          {stravaAvgCadence && (
+                            <div className="flex-1 min-w-[140px] bg-white/90 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 shadow-sm">
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
+                              <div className="text-base font-semibold text-blue-700">{Math.round(stravaAvgCadence)} rpm</div>
                           </div>
+                          )}
+                          {stravaNormalizedPower && (
+                            <div className="flex-1 min-w-[140px] bg-white/90 border border-green-200 bg-green-50 rounded-xl px-4 py-3 shadow-sm">
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
+                              <div className="text-base font-semibold text-green-700">{Math.round(stravaNormalizedPower)} W</div>
+                            </div>
+                          )}
+                          {calculateStravaTSS && (
+                            <div className="flex-1 min-w-[140px] bg-white/90 border border-purple-200 bg-purple-50 rounded-xl px-4 py-3 shadow-sm">
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
+                                TSS
+                                {calculateStravaTSS.estimated && (
+                                  <span className="text-xs text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
+                                )}
+                              </div>
+                              <div className="text-base font-semibold text-purple-700">{calculateStravaTSS.value}</div>
+                              {calculateStravaIF && (
+                                <div className="text-xs text-gray-500 mt-0.5">IF: {calculateStravaIF}</div>
+                              )}
+                            </div>
+                          )}
+                          {hasStravaElevation && (
                           <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
                             <div className="text-[11px] uppercase tracking-wide text-gray-500">Elevation</div>
-                            <div className="text-base font-semibold text-gray-900">{hasStravaElevation ? `${Math.round(stravaElevationGain)} m` : '-'}</div>
+                              <div className="text-base font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
                           </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -4168,9 +4555,12 @@ const FitAnalysisPage = () => {
                             const intervals = [];
                             let segmentStartIdx = 0;
                             let changeCandidate = null;
-                            let segmentSum = smoothed[0] || 0;
-                            let segmentCount = 1;
-
+                            
+                            // Use rolling window for comparison instead of entire segment average
+                            // This makes detection more sensitive to recent changes
+                            const rollingWindowSize = Math.max(5, Math.floor(detectionSmoothingWindow * 2)); // Look back at recent values
+                            const rollingWindow = []; // Store recent values for rolling average
+                            
                             const addInterval = (startIdx, endTime) => {
                               const startTime = timeArray[startIdx];
                               if (endTime - startTime >= minIntervalDuration) {
@@ -4178,12 +4568,38 @@ const FitAnalysisPage = () => {
                               }
                             };
 
-                            for (let i = 1; i < smoothed.length; i++) {
+                            for (let i = 0; i < smoothed.length; i++) {
                               const value = smoothed[i] || 0;
                               const currentTime = timeArray[i];
-                              const segmentAvg = segmentCount > 0 ? segmentSum / segmentCount : value;
-                              const reference = Math.max(segmentAvg, value, 50); // avoid division by tiny numbers
-                              const diffRatio = reference > 0 ? Math.abs(value - segmentAvg) / reference : 0;
+                              
+                              // Maintain rolling window
+                              rollingWindow.push(value);
+                              if (rollingWindow.length > rollingWindowSize) {
+                                rollingWindow.shift();
+                              }
+                              
+                              // Calculate rolling average from recent values
+                              const rollingAvg = rollingWindow.length > 0 
+                                ? rollingWindow.reduce((a, b) => a + b, 0) / rollingWindow.length 
+                                : value;
+                              
+                              // Also calculate average of current segment for comparison
+                              let segmentAvg = value;
+                              if (i > segmentStartIdx) {
+                                let segmentSum = 0;
+                                let segmentCount = 0;
+                                for (let j = segmentStartIdx; j < i; j++) {
+                                  segmentSum += smoothed[j] || 0;
+                                  segmentCount++;
+                                }
+                                segmentAvg = segmentCount > 0 ? segmentSum / segmentCount : value;
+                              }
+                              
+                              // Use the more sensitive of the two comparisons (rolling vs segment)
+                              // For high sensitivity, prefer rolling window
+                              const comparisonValue = intervalSensitivity === 'high' ? rollingAvg : segmentAvg;
+                              const reference = Math.max(comparisonValue, value, 50); // avoid division by tiny numbers
+                              const diffRatio = reference > 0 ? Math.abs(value - comparisonValue) / reference : 0;
 
                               if (diffRatio > changeThreshold) {
                                 if (!changeCandidate) {
@@ -4192,12 +4608,12 @@ const FitAnalysisPage = () => {
                                   addInterval(segmentStartIdx, changeCandidate.time);
                                   // start new segment at change point
                                   segmentStartIdx = changeCandidate.idx;
-                                  segmentSum = 0;
-                                  segmentCount = 0;
-                                  for (let j = segmentStartIdx; j <= i; j++) {
-                                    const val = smoothed[j] || 0;
-                                    segmentSum += val;
-                                    segmentCount += 1;
+                                  // Reset rolling window for new segment
+                                  rollingWindow.length = 0;
+                                  for (let j = Math.max(0, segmentStartIdx - rollingWindowSize); j <= segmentStartIdx; j++) {
+                                    if (j < smoothed.length) {
+                                      rollingWindow.push(smoothed[j] || 0);
+                                    }
                                   }
                                   changeCandidate = null;
                                   continue;
@@ -4205,9 +4621,6 @@ const FitAnalysisPage = () => {
                               } else if (changeCandidate) {
                                 changeCandidate = null;
                               }
-
-                              segmentSum += value;
-                              segmentCount += 1;
                             }
 
                             // Close final segment

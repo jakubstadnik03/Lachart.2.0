@@ -184,6 +184,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
     },
     {
+      name: "Lactate Statistics",
+      path: "/lactate-statistics",
+      icon: "/icon/testing.svg",
+      iconWhite: "/icon/testing-white.svg",
+      showFor: ["coach", "athlete"]
+    },
+    {
       name: "Testing",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
       icon: "/icon/testing.svg",

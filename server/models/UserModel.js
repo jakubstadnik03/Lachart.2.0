@@ -103,6 +103,29 @@ const userSchema = new mongoose.Schema({
     accessToken: { type: String, default: null },
     refreshToken: { type: String, default: null },
     expiresAt: { type: Number, default: null }
+  },
+  // Power zones from lactate tests
+  powerZones: {
+    cycling: {
+      zone1: { min: Number, max: Number, description: String },
+      zone2: { min: Number, max: Number, description: String },
+      zone3: { min: Number, max: Number, description: String },
+      zone4: { min: Number, max: Number, description: String },
+      zone5: { min: Number, max: Number, description: String },
+      lt1: Number, // LTP1 in watts
+      lt2: Number, // LTP2 in watts
+      lastUpdated: Date
+    },
+    running: {
+      zone1: { min: Number, max: Number, description: String }, // pace in seconds
+      zone2: { min: Number, max: Number, description: String },
+      zone3: { min: Number, max: Number, description: String },
+      zone4: { min: Number, max: Number, description: String },
+      zone5: { min: Number, max: Number, description: String },
+      lt1: Number, // LTP1 in seconds (pace)
+      lt2: Number, // LTP2 in seconds (pace)
+      lastUpdated: Date
+    }
   }
 }, {
   timestamps: true
