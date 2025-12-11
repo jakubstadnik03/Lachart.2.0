@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import api from '../../services/api';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -67,6 +68,22 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   
   const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
   const [expandedDays, setExpandedDays] = useState(new Set()); // Track which days are expanded
+  
+  // User profile data for TSS calculation
+  const [userProfile, setUserProfile] = useState(null);
+  
+  // Load user profile for FTP and threshold pace
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const response = await api.get('/user/profile');
+        setUserProfile(response.data);
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+      }
+    };
+    loadUserProfile();
+  }, []);
   
   // Save sportFilter to localStorage when it changes
   useEffect(() => {
@@ -145,6 +162,171 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   const prev = () => setAnchorDate(d => view==='week' ? addDays(d, -7) : new Date(d.getFullYear(), d.getMonth()-1, 1));
   const next = () => setAnchorDate(d => view==='week' ? addDays(d, 7) : new Date(d.getFullYear(), d.getMonth()+1, 1));
   const today = () => setAnchorDate(new Date());
+
+  // Weekly summary (last 4 weeks)
+  // Weekly summary only for weeks currently visible in the calendar grid
+  const weeklySummary = useMemo(() => {
+    if (!days || days.length === 0) return [];
+
+    // Which week starts are visible in the current grid
+    const visibleWeekKeys = new Set(
+      days.map(d => startOfWeek(d).toISOString().slice(0,10))
+    );
+
+    // Get FTP and threshold pace from user profile
+    const ftp = userProfile?.powerZones?.cycling?.lt2 || 
+                userProfile?.powerZones?.cycling?.zone5?.min || 
+                250; // Default estimate
+    const thresholdPace = userProfile?.runningZones?.lt2 || 
+                          userProfile?.powerZones?.running?.lt2 || 
+                          null;
+    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null; // Threshold pace in seconds per 100m
+
+    const summary = filteredActivities.reduce((acc, act) => {
+      const actDate = act.date ? new Date(act.date) : null;
+      if (!actDate || isNaN(actDate.getTime())) return acc;
+      const weekStart = startOfWeek(actDate);
+      const key = weekStart.toISOString().slice(0,10);
+      if (!visibleWeekKeys.has(key)) return acc; // skip weeks not visible now
+
+      if (!acc[key]) {
+        acc[key] = {
+          weekStart,
+          totalSeconds: 0,
+          runSeconds: 0,
+          bikeSeconds: 0,
+          swimSeconds: 0,
+          distanceRun: 0,
+          distanceBike: 0,
+          distanceSwim: 0,
+          tssRun: 0,
+          tssBike: 0,
+          tssSwim: 0,
+          totalTSS: 0,
+          hasTss: false
+        };
+      }
+
+      const entry = acc[key];
+      const sport = (act.sport || '').toLowerCase();
+      const duration = Number(act.totalElapsedTime || act.elapsedTime || act.movingTime || act.duration || 0);
+      const distance = Number(act.distance || 0);
+      
+      // Calculate TSS for this activity
+      let tssVal = Number(act.tss || act.TSS || act.totalTSS || 0);
+      
+      // If TSS is not available, calculate it based on sport type
+      if ((!tssVal || tssVal === 0) && duration > 0) {
+        if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
+          // Bike TSS: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
+          const avgPower = Number(act.avgPower || 0);
+          if (avgPower > 0 && ftp > 0) {
+            const np = avgPower; // Using avgPower as NP approximation
+            tssVal = Math.round((duration * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100);
+          }
+        } else if (sport.includes('run')) {
+          // Running TSS: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+          const avgSpeed = Number(act.avgSpeed || 0); // m/s
+          if (avgSpeed > 0) {
+            const avgPaceSeconds = Math.round(1000 / avgSpeed); // seconds per km
+            let referencePace = thresholdPace;
+            // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+            if (!referencePace || referencePace <= 0) {
+              referencePace = avgPaceSeconds;
+            }
+            // Faster pace (lower seconds) = higher intensity = higher TSS
+            const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
+            tssVal = Math.round((duration * Math.pow(intensityRatio, 2)) / 3600 * 100);
+          }
+        } else if (sport.includes('swim')) {
+          // Swimming TSS: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+          // Swimming pace is per 100m (not per km)
+          const avgSpeed = Number(act.avgSpeed || 0); // m/s
+          if (avgSpeed > 0) {
+            const avgPaceSeconds = Math.round(100 / avgSpeed); // seconds per 100m
+            let referencePace = thresholdSwimPace;
+            // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+            if (!referencePace || referencePace <= 0) {
+              referencePace = avgPaceSeconds;
+            }
+            // Faster pace (lower seconds) = higher intensity = higher TSS
+            const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
+            tssVal = Math.round((duration * Math.pow(intensityRatio, 2)) / 3600 * 100);
+          }
+        }
+      }
+
+      entry.totalSeconds += duration;
+      if (sport.includes('run')) {
+        entry.runSeconds += duration;
+        entry.distanceRun += distance;
+        if (!isNaN(tssVal) && tssVal > 0) {
+          entry.tssRun += tssVal;
+          entry.totalTSS += tssVal;
+        }
+      } else if (sport.includes('swim')) {
+        entry.swimSeconds += duration;
+        entry.distanceSwim += distance;
+        if (!isNaN(tssVal) && tssVal > 0) {
+          entry.tssSwim += tssVal;
+          entry.totalTSS += tssVal;
+        }
+      } else if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike')) {
+        entry.bikeSeconds += duration;
+        entry.distanceBike += distance;
+        if (!isNaN(tssVal) && tssVal > 0) {
+          entry.tssBike += tssVal;
+          entry.totalTSS += tssVal;
+        }
+      }
+      if (!isNaN(tssVal) && tssVal > 0) {
+        entry.hasTss = true;
+      }
+      return acc;
+    }, {});
+
+    const sorted = Object.values(summary)
+      .sort((a, b) => b.weekStart - a.weekStart);
+    
+    // Add comparison with previous week
+    return sorted.map((week, index) => {
+      const prevWeek = index < sorted.length - 1 ? sorted[index + 1] : null;
+      let volumeChange = null; // 'up', 'down', 'same', or null
+      
+      if (prevWeek) {
+        if (week.totalSeconds > prevWeek.totalSeconds) {
+          volumeChange = 'up';
+        } else if (week.totalSeconds < prevWeek.totalSeconds) {
+          volumeChange = 'down';
+        } else {
+          volumeChange = 'same';
+        }
+      }
+      
+      return {
+        ...week,
+        volumeChange,
+        prevWeekTotalSeconds: prevWeek?.totalSeconds || null
+      };
+    });
+  }, [filteredActivities, days, userProfile]);
+
+  const formatWeekRange = (weekStart) => {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    const options = { month: 'short', day: '2-digit' };
+    return `${weekStart.toLocaleDateString(undefined, options)} – ${end.toLocaleDateString(undefined, options)}`;
+  };
+
+  const formatHours = (seconds) => {
+    if (!seconds || isNaN(seconds)) return '0h';
+    return `${(seconds / 3600).toFixed(1)}h`;
+  };
+
+  const formatKm = (meters) => {
+    if (!meters || isNaN(meters)) return '0 km';
+    return `${(meters / 1000).toFixed(1)} km`;
+  };
 
   return (
     <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4 md:p-6 mb-4 md:mb-6">
@@ -253,68 +435,164 @@ export default function CalendarView({ activities = [], onSelectActivity, select
         </div>
       </div>
 
-      <div className={`grid ${view==='week' ? 'grid-cols-7' : 'grid-cols-7'} gap-px bg-gray-200/50 rounded-xl overflow-hidden`}> 
-        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
+      <div className={`grid gap-px bg-gray-200/50 rounded-xl overflow-hidden`} style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}> 
+        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
           <div key={d} className="bg-white/80 backdrop-blur-sm text-xs md:text-sm font-medium p-2 md:p-3 text-center text-gray-700">{d}</div>
         ))}
-        {days.map((dayDate, idx) => {
-          const key = getLocalDateString(dayDate);
-          const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-          const acts = activitiesByDay.get(key) || [];
-          const isToday = isSameDay(dayDate, new Date());
-          const isExpanded = expandedDays.has(key);
-          const visibleActs = isExpanded ? acts : acts.slice(0, 3);
-          const remainingCount = acts.length - 3;
+        {(() => {
+          // Group days into weeks
+          const weeks = [];
+          for (let i = 0; i < days.length; i += 7) {
+            weeks.push(days.slice(i, i + 7));
+          }
           
-          const toggleExpand = (e) => {
-            e.stopPropagation();
-            setExpandedDays(prev => {
-              const newSet = new Set(prev);
-              if (newSet.has(key)) {
-                newSet.delete(key);
-              } else {
-                newSet.add(key);
-              }
-              return newSet;
-            });
-          };
-          
-          return (
-            <div key={idx} className={`bg-white/60 backdrop-blur-sm p-2 min-h-[80px] md:min-h-[90px] transition-colors ${isCurrentMonth ? '' : 'opacity-40'}`}>
-              <div className={`text-xs md:text-sm font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
-                {dayDate.getDate()}
-              </div>
-              <div className="space-y-1">
-                {visibleActs.map((a, i) => {
-                  const activityId = a.id || a._id;
-                  const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
-                  return (
-                    <button 
-                      key={i} 
-                      onClick={() => onSelectActivity && onSelectActivity(a)} 
-                      className={`w-full text-left text-[10px] md:text-[11px] truncate px-1.5 md:px-2 py-1 rounded-lg border shadow-sm transition-colors ${
-                        isSelected 
-                          ? 'bg-primary text-white border-primary hover:bg-primary-dark' 
-                          : 'bg-primary/10 hover:bg-primary/20 text-primary-dark border-primary/30'
-                      }`}
-                    >
-                      <span className="mr-1">{sportBadge(a.sport)}</span>
-                      {a.title || a.name || a.originalFileName || 'Activity'}
-                    </button>
-                  );
-                })}
-                {remainingCount > 0 && (
-                  <button
-                    onClick={toggleExpand}
-                    className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium"
-                  >
-                    {isExpanded ? `▼ Show less (${remainingCount})` : `+ ${remainingCount} more`}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+          return weeks.flatMap((weekDays, weekIdx) => {
+            const weekStart = startOfWeek(weekDays[0]);
+            const weekKey = weekStart.toISOString().slice(0, 10);
+            const weekSummary = weeklySummary.find(w => w.weekStart.toISOString().slice(0, 10) === weekKey);
+            
+            return [
+              // Week days
+              ...weekDays.map((dayDate, dayIdx) => {
+                const key = getLocalDateString(dayDate);
+                const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
+                const acts = activitiesByDay.get(key) || [];
+                const isToday = isSameDay(dayDate, new Date());
+                const isExpanded = expandedDays.has(key);
+                const visibleActs = isExpanded ? acts : acts.slice(0, 3);
+                const remainingCount = acts.length - 3;
+                
+                const toggleExpand = (e) => {
+                  e.stopPropagation();
+                  setExpandedDays(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(key)) {
+                      newSet.delete(key);
+                    } else {
+                      newSet.add(key);
+                    }
+                    return newSet;
+                  });
+                };
+                
+                return (
+                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white/60 backdrop-blur-sm p-2 min-h-[80px] md:min-h-[90px] transition-colors ${isCurrentMonth ? '' : 'opacity-40'}`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                    <div className={`text-xs md:text-sm font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
+                      {dayDate.getDate()}
+                    </div>
+                    <div className="space-y-1 w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                      {visibleActs.map((a, i) => {
+                        const activityId = a.id || a._id;
+                        const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                        const activityTitle = a.title || a.name || a.originalFileName || 'Activity';
+                        return (
+                          <button 
+                            key={i} 
+                            onClick={() => onSelectActivity && onSelectActivity(a)} 
+                            className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg border shadow-sm transition-colors flex items-center gap-1 ${
+                              isSelected 
+                                ? 'bg-primary text-white border-primary hover:bg-primary-dark' 
+                                : 'bg-primary/10 hover:bg-primary/20 text-primary-dark border-primary/30'
+                            }`}
+                            style={{ minWidth: 0, overflow: 'hidden' }}
+                            title={activityTitle}
+                          >
+                            <span className="flex-shrink-0">{sportBadge(a.sport)}</span>
+                            <span className="truncate min-w-0 flex-1" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
+                          </button>
+                        );
+                      })}
+                      {remainingCount > 0 && (
+                        <button
+                          onClick={toggleExpand}
+                          className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium"
+                        >
+                          {isExpanded ? `▼ Show less (${remainingCount})` : `+ ${remainingCount} more`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }),
+              // Week summary column
+              weekSummary ? (
+                <div key={`summary-${weekIdx}`} className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 backdrop-blur-sm p-3 md:p-2 border-l-2 border-primary/30 min-h-[80px] md:min-h-[90px] min-w-[220px]">
+                  <div className="mb-1 pb-1 border-b border-gray-300/40">
+                    <div className="text-sm font-bold text-gray-900 mb-0.5">
+                      {formatWeekRange(weekSummary.weekStart)}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs md:text-sm font-semibold text-primary">
+                        Total: {formatHours(weekSummary.totalSeconds)}
+                      </span>
+                      {weekSummary.totalTSS > 0 && (
+                        <span className="text-xs md:text-sm font-bold text-purple-600">
+                          TSS: {Math.round(weekSummary.totalTSS)}
+                        </span>
+                      )}
+                      {weekSummary.volumeChange && (
+                        <span className="flex items-center">
+                          {weekSummary.volumeChange === 'up' && (
+                            <img src="/icon/arrow-up.svg" alt="up" className="w-5 h-5" />
+                          )}
+                          {weekSummary.volumeChange === 'down' && (
+                            <img src="/icon/arrow-down.svg" alt="down" className="w-5 h-5" />
+                          )}
+                          {weekSummary.volumeChange === 'same' && (
+                            <img src="/icon/arrow-same.svg" alt="same" className="w-5 h-5 opacity-50" />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1 md:text-[11px] ">
+                    {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
+                      <div className="bg-white/70 rounded-lg px-2.5 py-1.5 border border-gray-200/50">
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <span className="text-base">🏃</span>
+                          <span className="font-bold">Run</span>
+                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
+                          <span className="text-gray-600">{formatHours(weekSummary.runSeconds)}</span>
+                          {weekSummary.tssRun > 0 && (
+                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssRun)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
+                      <div className="bg-white/70 rounded-lg px-2.5 py-1.5 border border-gray-200/50">
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <span className="text-base">🚴</span>
+                          <span className="font-bold">Bike</span>
+                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
+                          <span className="text-gray-600">{formatHours(weekSummary.bikeSeconds)}</span>
+                          {weekSummary.tssBike > 0 && (
+                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssBike)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
+                      <div className="bg-white/70 rounded-lg px-2.5 py-1.5 border border-gray-200/50">
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <span className="text-base">🏊</span>
+                          <span className="font-bold">Swim</span>
+                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
+                          <span className="text-gray-600">{formatHours(weekSummary.swimSeconds)}</span>
+                          {weekSummary.tssSwim > 0 && (
+                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssSwim)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div key={`summary-empty-${weekIdx}`} className="bg-white/40 backdrop-blur-sm p-2 min-h-[80px] md:min-h-[90px] min-w-[200px]"></div>
+              )
+            ].filter(Boolean);
+          });
+        })()}
       </div>
     </div>
   );

@@ -61,6 +61,10 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         console.log('Initial userData:', userData);
         const cyclingZones = userData.powerZones?.cycling || {};
         const runningZones = userData.powerZones?.running || {};
+        const swimmingZones = userData.powerZones?.swimming || {};
+        const cyclingHrZones = userData.heartRateZones?.cycling || {};
+        const runningHrZones = userData.heartRateZones?.running || {};
+        const swimmingHrZones = userData.heartRateZones?.swimming || {};
         const initialFormData = {
           name: userData.name || '',
           dateOfBirth: formatDateForInput(userData.dateOfBirth),
@@ -89,6 +93,41 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               zone5: { min: runningZones.zone5?.min || '', max: runningZones.zone5?.max || '', description: runningZones.zone5?.description || '' },
               lt1: runningZones.lt1 || '',
               lt2: runningZones.lt2 || ''
+            },
+            swimming: {
+              zone1: { min: swimmingZones.zone1?.min || '', max: swimmingZones.zone1?.max || '', description: swimmingZones.zone1?.description || '' },
+              zone2: { min: swimmingZones.zone2?.min || '', max: swimmingZones.zone2?.max || '', description: swimmingZones.zone2?.description || '' },
+              zone3: { min: swimmingZones.zone3?.min || '', max: swimmingZones.zone3?.max || '', description: swimmingZones.zone3?.description || '' },
+              zone4: { min: swimmingZones.zone4?.min || '', max: swimmingZones.zone4?.max || '', description: swimmingZones.zone4?.description || '' },
+              zone5: { min: swimmingZones.zone5?.min || '', max: swimmingZones.zone5?.max || '', description: swimmingZones.zone5?.description || '' },
+              lt1: swimmingZones.lt1 || '',
+              lt2: swimmingZones.lt2 || ''
+            }
+          },
+          heartRateZones: {
+            cycling: {
+              zone1: { min: cyclingHrZones.zone1?.min || '', max: cyclingHrZones.zone1?.max || '', description: cyclingHrZones.zone1?.description || '' },
+              zone2: { min: cyclingHrZones.zone2?.min || '', max: cyclingHrZones.zone2?.max || '', description: cyclingHrZones.zone2?.description || '' },
+              zone3: { min: cyclingHrZones.zone3?.min || '', max: cyclingHrZones.zone3?.max || '', description: cyclingHrZones.zone3?.description || '' },
+              zone4: { min: cyclingHrZones.zone4?.min || '', max: cyclingHrZones.zone4?.max || '', description: cyclingHrZones.zone4?.description || '' },
+              zone5: { min: cyclingHrZones.zone5?.min || '', max: cyclingHrZones.zone5?.max || '', description: cyclingHrZones.zone5?.description || '' },
+              maxHeartRate: cyclingHrZones.maxHeartRate || ''
+            },
+            running: {
+              zone1: { min: runningHrZones.zone1?.min || '', max: runningHrZones.zone1?.max || '', description: runningHrZones.zone1?.description || '' },
+              zone2: { min: runningHrZones.zone2?.min || '', max: runningHrZones.zone2?.max || '', description: runningHrZones.zone2?.description || '' },
+              zone3: { min: runningHrZones.zone3?.min || '', max: runningHrZones.zone3?.max || '', description: runningHrZones.zone3?.description || '' },
+              zone4: { min: runningHrZones.zone4?.min || '', max: runningHrZones.zone4?.max || '', description: runningHrZones.zone4?.description || '' },
+              zone5: { min: runningHrZones.zone5?.min || '', max: runningHrZones.zone5?.max || '', description: runningHrZones.zone5?.description || '' },
+              maxHeartRate: runningHrZones.maxHeartRate || ''
+            },
+            swimming: {
+              zone1: { min: swimmingHrZones.zone1?.min || '', max: swimmingHrZones.zone1?.max || '', description: swimmingHrZones.zone1?.description || '' },
+              zone2: { min: swimmingHrZones.zone2?.min || '', max: swimmingHrZones.zone2?.max || '', description: swimmingHrZones.zone2?.description || '' },
+              zone3: { min: swimmingHrZones.zone3?.min || '', max: swimmingHrZones.zone3?.max || '', description: swimmingHrZones.zone3?.description || '' },
+              zone4: { min: swimmingHrZones.zone4?.min || '', max: swimmingHrZones.zone4?.max || '', description: swimmingHrZones.zone4?.description || '' },
+              zone5: { min: swimmingHrZones.zone5?.min || '', max: swimmingHrZones.zone5?.max || '', description: swimmingHrZones.zone5?.description || '' },
+              maxHeartRate: swimmingHrZones.maxHeartRate || ''
             }
           }
         };
@@ -206,6 +245,125 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           lt1: formData.powerZones.running.lt1 ? Number(formData.powerZones.running.lt1) : undefined,
           lt2: formData.powerZones.running.lt2 ? Number(formData.powerZones.running.lt2) : undefined,
           lastUpdated: new Date()
+        } : undefined,
+        swimming: formData.powerZones.swimming ? {
+          zone1: {
+            min: formData.powerZones.swimming.zone1.min ? Number(formData.powerZones.swimming.zone1.min) : undefined,
+            max: formData.powerZones.swimming.zone1.max ? Number(formData.powerZones.swimming.zone1.max) : undefined,
+            description: formData.powerZones.swimming.zone1.description || undefined
+          },
+          zone2: {
+            min: formData.powerZones.swimming.zone2.min ? Number(formData.powerZones.swimming.zone2.min) : undefined,
+            max: formData.powerZones.swimming.zone2.max ? Number(formData.powerZones.swimming.zone2.max) : undefined,
+            description: formData.powerZones.swimming.zone2.description || undefined
+          },
+          zone3: {
+            min: formData.powerZones.swimming.zone3.min ? Number(formData.powerZones.swimming.zone3.min) : undefined,
+            max: formData.powerZones.swimming.zone3.max ? Number(formData.powerZones.swimming.zone3.max) : undefined,
+            description: formData.powerZones.swimming.zone3.description || undefined
+          },
+          zone4: {
+            min: formData.powerZones.swimming.zone4.min ? Number(formData.powerZones.swimming.zone4.min) : undefined,
+            max: formData.powerZones.swimming.zone4.max ? Number(formData.powerZones.swimming.zone4.max) : undefined,
+            description: formData.powerZones.swimming.zone4.description || undefined
+          },
+          zone5: {
+            min: formData.powerZones.swimming.zone5.min ? Number(formData.powerZones.swimming.zone5.min) : undefined,
+            max: formData.powerZones.swimming.zone5.max ? Number(formData.powerZones.swimming.zone5.max) : undefined,
+            description: formData.powerZones.swimming.zone5.description || undefined
+          },
+          lt1: formData.powerZones.swimming.lt1 ? Number(formData.powerZones.swimming.lt1) : undefined,
+          lt2: formData.powerZones.swimming.lt2 ? Number(formData.powerZones.swimming.lt2) : undefined,
+          lastUpdated: new Date()
+        } : undefined
+      } : undefined,
+      heartRateZones: formData.heartRateZones ? {
+        cycling: formData.heartRateZones.cycling ? {
+          zone1: {
+            min: formData.heartRateZones.cycling.zone1.min ? Number(formData.heartRateZones.cycling.zone1.min) : undefined,
+            max: formData.heartRateZones.cycling.zone1.max ? Number(formData.heartRateZones.cycling.zone1.max) : undefined,
+            description: formData.heartRateZones.cycling.zone1.description || undefined
+          },
+          zone2: {
+            min: formData.heartRateZones.cycling.zone2.min ? Number(formData.heartRateZones.cycling.zone2.min) : undefined,
+            max: formData.heartRateZones.cycling.zone2.max ? Number(formData.heartRateZones.cycling.zone2.max) : undefined,
+            description: formData.heartRateZones.cycling.zone2.description || undefined
+          },
+          zone3: {
+            min: formData.heartRateZones.cycling.zone3.min ? Number(formData.heartRateZones.cycling.zone3.min) : undefined,
+            max: formData.heartRateZones.cycling.zone3.max ? Number(formData.heartRateZones.cycling.zone3.max) : undefined,
+            description: formData.heartRateZones.cycling.zone3.description || undefined
+          },
+          zone4: {
+            min: formData.heartRateZones.cycling.zone4.min ? Number(formData.heartRateZones.cycling.zone4.min) : undefined,
+            max: formData.heartRateZones.cycling.zone4.max ? Number(formData.heartRateZones.cycling.zone4.max) : undefined,
+            description: formData.heartRateZones.cycling.zone4.description || undefined
+          },
+          zone5: {
+            min: formData.heartRateZones.cycling.zone5.min ? Number(formData.heartRateZones.cycling.zone5.min) : undefined,
+            max: formData.heartRateZones.cycling.zone5.max ? Number(formData.heartRateZones.cycling.zone5.max) : undefined,
+            description: formData.heartRateZones.cycling.zone5.description || undefined
+          },
+          maxHeartRate: formData.heartRateZones.cycling.maxHeartRate ? Number(formData.heartRateZones.cycling.maxHeartRate) : undefined,
+          lastUpdated: formData.heartRateZones.cycling.lastUpdated || new Date()
+        } : undefined,
+        running: formData.heartRateZones.running ? {
+          zone1: {
+            min: formData.heartRateZones.running.zone1.min ? Number(formData.heartRateZones.running.zone1.min) : undefined,
+            max: formData.heartRateZones.running.zone1.max ? Number(formData.heartRateZones.running.zone1.max) : undefined,
+            description: formData.heartRateZones.running.zone1.description || undefined
+          },
+          zone2: {
+            min: formData.heartRateZones.running.zone2.min ? Number(formData.heartRateZones.running.zone2.min) : undefined,
+            max: formData.heartRateZones.running.zone2.max ? Number(formData.heartRateZones.running.zone2.max) : undefined,
+            description: formData.heartRateZones.running.zone2.description || undefined
+          },
+          zone3: {
+            min: formData.heartRateZones.running.zone3.min ? Number(formData.heartRateZones.running.zone3.min) : undefined,
+            max: formData.heartRateZones.running.zone3.max ? Number(formData.heartRateZones.running.zone3.max) : undefined,
+            description: formData.heartRateZones.running.zone3.description || undefined
+          },
+          zone4: {
+            min: formData.heartRateZones.running.zone4.min ? Number(formData.heartRateZones.running.zone4.min) : undefined,
+            max: formData.heartRateZones.running.zone4.max ? Number(formData.heartRateZones.running.zone4.max) : undefined,
+            description: formData.heartRateZones.running.zone4.description || undefined
+          },
+          zone5: {
+            min: formData.heartRateZones.running.zone5.min ? Number(formData.heartRateZones.running.zone5.min) : undefined,
+            max: formData.heartRateZones.running.zone5.max ? Number(formData.heartRateZones.running.zone5.max) : undefined,
+            description: formData.heartRateZones.running.zone5.description || undefined
+          },
+          maxHeartRate: formData.heartRateZones.running.maxHeartRate ? Number(formData.heartRateZones.running.maxHeartRate) : undefined,
+          lastUpdated: formData.heartRateZones.running.lastUpdated || new Date()
+        } : undefined,
+        swimming: formData.heartRateZones.swimming ? {
+          zone1: {
+            min: formData.heartRateZones.swimming.zone1.min ? Number(formData.heartRateZones.swimming.zone1.min) : undefined,
+            max: formData.heartRateZones.swimming.zone1.max ? Number(formData.heartRateZones.swimming.zone1.max) : undefined,
+            description: formData.heartRateZones.swimming.zone1.description || undefined
+          },
+          zone2: {
+            min: formData.heartRateZones.swimming.zone2.min ? Number(formData.heartRateZones.swimming.zone2.min) : undefined,
+            max: formData.heartRateZones.swimming.zone2.max ? Number(formData.heartRateZones.swimming.zone2.max) : undefined,
+            description: formData.heartRateZones.swimming.zone2.description || undefined
+          },
+          zone3: {
+            min: formData.heartRateZones.swimming.zone3.min ? Number(formData.heartRateZones.swimming.zone3.min) : undefined,
+            max: formData.heartRateZones.swimming.zone3.max ? Number(formData.heartRateZones.swimming.zone3.max) : undefined,
+            description: formData.heartRateZones.swimming.zone3.description || undefined
+          },
+          zone4: {
+            min: formData.heartRateZones.swimming.zone4.min ? Number(formData.heartRateZones.swimming.zone4.min) : undefined,
+            max: formData.heartRateZones.swimming.zone4.max ? Number(formData.heartRateZones.swimming.zone4.max) : undefined,
+            description: formData.heartRateZones.swimming.zone4.description || undefined
+          },
+          zone5: {
+            min: formData.heartRateZones.swimming.zone5.min ? Number(formData.heartRateZones.swimming.zone5.min) : undefined,
+            max: formData.heartRateZones.swimming.zone5.max ? Number(formData.heartRateZones.swimming.zone5.max) : undefined,
+            description: formData.heartRateZones.swimming.zone5.description || undefined
+          },
+          maxHeartRate: formData.heartRateZones.swimming.maxHeartRate ? Number(formData.heartRateZones.swimming.maxHeartRate) : undefined,
+          lastUpdated: formData.heartRateZones.swimming.lastUpdated || new Date()
         } : undefined
       } : undefined
     };
@@ -226,7 +384,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
     const lt2 = parseFloat(formData.powerZones?.[sport]?.lt2);
 
     if (!lt1 || !lt2 || isNaN(lt1) || isNaN(lt2)) {
-      setError(`Please enter both LTP1 and LTP2 for ${sport === 'cycling' ? 'cycling' : 'running'}`);
+      const sportName = sport === 'cycling' ? 'cycling' : sport === 'running' ? 'running' : 'swimming';
+      setError(`Please enter both LTP1 and LTP2 for ${sportName}`);
       return;
     }
 
@@ -277,10 +436,12 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           }
         }
       }));
-    } else {
-      // For running: LTP2 < LTP1 (pace in seconds - faster pace = lower seconds)
+    } else if (sport === 'running' || sport === 'swimming') {
+      // For running and swimming: LTP2 < LTP1 (pace in seconds - faster pace = lower seconds)
+      // Swimming pace is typically per 100m
       if (lt2 >= lt1) {
-        setError('LTP2 must be less than LTP1 for running (faster pace = lower seconds)');
+        const sportName = sport === 'running' ? 'running' : 'swimming';
+        setError(`LTP2 must be less than LTP1 for ${sportName} (faster pace = lower seconds)`);
         return;
       }
 
@@ -316,8 +477,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         ...prev,
         powerZones: {
           ...prev.powerZones,
-          running: {
-            ...prev.powerZones?.running,
+          [sport]: {
+            ...prev.powerZones?.[sport],
             ...zones,
             lt1: lt1,
             lt2: lt2
@@ -325,6 +486,61 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         }
       }));
     }
+
+    setError('');
+  };
+
+  // Generate heart rate zones from max HR
+  const generateHeartRateZones = (sport) => {
+    const maxHR = parseFloat(formData.heartRateZones?.[sport]?.maxHeartRate);
+    
+    if (!maxHR || isNaN(maxHR) || maxHR <= 0) {
+      const sportName = sport === 'cycling' ? 'cycling' : sport === 'running' ? 'running' : 'swimming';
+      setError(`Please enter a valid max heart rate for ${sportName}`);
+      return;
+    }
+
+    // Standard percentage-based HR zones
+    const zones = {
+      zone1: {
+        min: Math.round(maxHR * 0.50),
+        max: Math.round(maxHR * 0.60),
+        description: '50–60% Max HR (Recovery)'
+      },
+      zone2: {
+        min: Math.round(maxHR * 0.60),
+        max: Math.round(maxHR * 0.70),
+        description: '60–70% Max HR (Aerobic)'
+      },
+      zone3: {
+        min: Math.round(maxHR * 0.70),
+        max: Math.round(maxHR * 0.80),
+        description: '70–80% Max HR (Tempo)'
+      },
+      zone4: {
+        min: Math.round(maxHR * 0.80),
+        max: Math.round(maxHR * 0.90),
+        description: '80–90% Max HR (Threshold)'
+      },
+      zone5: {
+        min: Math.round(maxHR * 0.90),
+        max: Math.round(maxHR * 1.00),
+        description: '90–100% Max HR (VO2max)'
+      }
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      heartRateZones: {
+        ...prev.heartRateZones,
+        [sport]: {
+          ...prev.heartRateZones?.[sport],
+          ...zones,
+          maxHeartRate: maxHR,
+          lastUpdated: new Date()
+        }
+      }
+    }));
 
     setError('');
   };
@@ -457,7 +673,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         <div className="mt-8 pt-6 border-t border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <h3 className="text-xl font-bold text-gray-900">Training Zones</h3>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setSelectedSport('cycling')}
@@ -480,13 +696,26 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               >
                 Running
               </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSport('swimming')}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  selectedSport === 'swimming'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Swimming
+              </button>
             </div>
           </div>
           
           <p className="text-sm text-gray-600 mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
             {selectedSport === 'cycling' 
               ? 'Set LTP1 and LTP2 (in watts) to automatically generate power zones, or set zones manually.'
-              : 'Set LTP1 and LTP2 (in seconds, e.g., 240 for 4:00/km) to automatically generate pace zones, or set zones manually.'}
+              : selectedSport === 'running'
+              ? 'Set LTP1 and LTP2 (in seconds, e.g., 240 for 4:00/km) to automatically generate pace zones, or set zones manually.'
+              : 'Set LTP1 and LTP2 (in seconds per 100m, e.g., 90 for 1:30/100m) to automatically generate pace zones, or set zones manually.'}
           </p>
           
           <div className="space-y-6">
@@ -494,7 +723,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
-                  LTP1 {selectedSport === 'cycling' ? '(W)' : '(seconds, e.g., 240 for 4:00/km)'}
+                  LTP1 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 240 for 4:00/km)' : '(seconds per 100m, e.g., 90 for 1:30/100m)'}
                 </label>
                 <input
                   type="number"
@@ -510,17 +739,22 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                     }
                   }))}
                   className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                  placeholder={selectedSport === 'cycling' ? 'e.g. 200' : 'e.g. 240'}
+                  placeholder={selectedSport === 'cycling' ? 'e.g. 200' : selectedSport === 'running' ? 'e.g. 240' : 'e.g. 90'}
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt1 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
                     {formatPace(Number(formData.powerZones.running.lt1))} /km
                   </p>
                 )}
+                {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt1 && (
+                  <p className="text-xs text-gray-500 mt-1 font-medium">
+                    {formatPace(Number(formData.powerZones.swimming.lt1))} /100m
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
-                  LTP2 {selectedSport === 'cycling' ? '(W)' : '(seconds, e.g., 200 for 3:20/km)'}
+                  LTP2 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 200 for 3:20/km)' : '(seconds per 100m, e.g., 75 for 1:15/100m)'}
                 </label>
                 <input
                   type="number"
@@ -536,11 +770,16 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                     }
                   }))}
                   className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                  placeholder={selectedSport === 'cycling' ? 'e.g. 280' : 'e.g. 200'}
+                  placeholder={selectedSport === 'cycling' ? 'e.g. 280' : selectedSport === 'running' ? 'e.g. 200' : 'e.g. 75'}
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt2 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
                     {formatPace(Number(formData.powerZones.running.lt2))} /km
+                  </p>
+                )}
+                {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt2 && (
+                  <p className="text-xs text-gray-500 mt-1 font-medium">
+                    {formatPace(Number(formData.powerZones.swimming.lt2))} /100m
                   </p>
                 )}
               </div>
@@ -598,6 +837,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                             {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].min))}
                           </p>
                         )}
+                        {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.min && (
+                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                            {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].min))} /100m
+                          </p>
+                        )}
                       </div>
                       <div className="min-w-0">
                         <label className="block text-xs font-medium text-gray-600 mb-0.5">
@@ -627,6 +871,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                             {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].max))}
                           </p>
                         )}
+                        {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.max && (
+                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                            {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].max))} /100m
+                          </p>
+                        )}
                       </div>
                       <div className="col-span-3 min-w-0">
                         <label className="block text-xs font-medium text-gray-600 mb-0.5">Description</label>
@@ -641,6 +890,173 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                                 ...prev.powerZones?.[selectedSport],
                                 [`zone${zoneNum}`]: {
                                   ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                  description: e.target.value
+                                }
+                              }
+                            }
+                          }))}
+                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder="e.g. Recovery, Aerobic..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Heart Rate Zones Section */}
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <h3 className="text-xl font-bold text-gray-900">Heart Rate Zones</h3>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSelectedSport('cycling')}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  selectedSport === 'cycling'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Cycling
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSport('running')}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  selectedSport === 'running'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Running
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSport('swimming')}
+                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  selectedSport === 'swimming'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Swimming
+              </button>
+            </div>
+          </div>
+          
+          <p className="text-sm text-gray-600 mb-6 bg-green-50 p-4 rounded-xl border border-green-100">
+            Enter your max heart rate to automatically generate heart rate zones, or set zones manually.
+          </p>
+          
+          <div className="space-y-6">
+            {/* Max Heart Rate */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Max Heart Rate (BPM)
+              </label>
+              <input
+                type="number"
+                value={formData.heartRateZones?.[selectedSport]?.maxHeartRate || ''}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  heartRateZones: {
+                    ...prev.heartRateZones,
+                    [selectedSport]: {
+                      ...prev.heartRateZones?.[selectedSport],
+                      maxHeartRate: e.target.value
+                    }
+                  }
+                }))}
+                className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                placeholder="e.g. 190"
+              />
+            </div>
+
+            {/* Generate HR Zones Button */}
+            <button
+              type="button"
+              onClick={() => generateHeartRateZones(selectedSport)}
+              className="w-full px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold shadow-md hover:shadow-lg transition-all"
+            >
+              Generate Heart Rate Zones from Max HR
+            </button>
+
+            {/* HR Zone inputs */}
+            <div className="space-y-1">
+              {[1, 2, 3, 4, 5].map(zoneNum => (
+                <div key={zoneNum} className="p-1.5 bg-gray-50 rounded-md border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full font-bold text-xs flex-shrink-0 ${
+                      zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
+                      zoneNum === 2 ? 'bg-green-100 text-green-700' :
+                      zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
+                      zoneNum === 4 ? 'bg-orange-100 text-orange-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {zoneNum}
+                    </span>
+                    <div className="flex-1 grid grid-cols-5 gap-1.5 items-center">
+                      <div className="min-w-0">
+                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Min (BPM)</label>
+                        <input
+                          type="number"
+                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            heartRateZones: {
+                              ...prev.heartRateZones,
+                              [selectedSport]: {
+                                ...prev.heartRateZones?.[selectedSport],
+                                [`zone${zoneNum}`]: {
+                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                  min: e.target.value
+                                }
+                              }
+                            }
+                          }))}
+                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder="Min"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Max (BPM)</label>
+                        <input
+                          type="number"
+                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            heartRateZones: {
+                              ...prev.heartRateZones,
+                              [selectedSport]: {
+                                ...prev.heartRateZones?.[selectedSport],
+                                [`zone${zoneNum}`]: {
+                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                  max: e.target.value
+                                }
+                              }
+                            }
+                          }))}
+                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder={zoneNum === 5 ? "∞" : "Max"}
+                        />
+                      </div>
+                      <div className="col-span-3 min-w-0">
+                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Description</label>
+                        <input
+                          type="text"
+                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.description || ''}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            heartRateZones: {
+                              ...prev.heartRateZones,
+                              [selectedSport]: {
+                                ...prev.heartRateZones?.[selectedSport],
+                                [`zone${zoneNum}`]: {
+                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
                                   description: e.target.value
                                 }
                               }

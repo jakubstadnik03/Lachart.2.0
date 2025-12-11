@@ -4,7 +4,7 @@ import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap } from '../services/api';
 import { motion } from 'framer-motion';
 import CalendarView from '../components/Calendar/CalendarView';
-import ReactECharts from 'echarts-for-react';
+import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
 import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
@@ -14,6 +14,7 @@ import LapsTable from '../components/FitAnalysis/LapsTable';
 import AthleteSelector from '../components/AthleteSelector';
 import { useAuth } from '../context/AuthProvider';
 import TrainingForm from '../components/TrainingForm';
+import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -553,24 +554,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
-        <button
-          onClick={() => {
-            setEditingMode(!editingMode);
-            if (editingMode) {
-              setSelectedLapIndices(new Set());
-            }
-            if (!editingMode) {
-              setEditingLactate(false);
-            }
-          }}
-          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto ${
-            editingMode 
-              ? 'bg-blue-600 text-white hover:bg-blue-700' 
-              : 'bg-gray-600 text-white hover:bg-gray-700'
-          }`}
-        >
-          {editingMode ? 'Cancel Selection' : 'Edit Intervals'}
-        </button>
+     
         {editingMode && selectedLapIndices.size >= 2 && (
           <button
             onClick={handleMergeSelectedLaps}
@@ -801,23 +785,23 @@ const FitAnalysisPage = () => {
   
   // Calculate TSS for Strava activity
   const [userFTP, setUserFTP] = React.useState(null);
+  const [userProfile, setUserProfile] = React.useState(null);
   React.useEffect(() => {
-    const loadUserFTP = async () => {
+    const loadUserProfile = async () => {
       try {
         const response = await api.get('/user/profile');
         const profileData = response.data;
+        setUserProfile(profileData);
         const ftp = profileData.powerZones?.cycling?.lt2 || 
                    profileData.powerZones?.cycling?.zone5?.min || 
                    null;
         setUserFTP(ftp);
       } catch (error) {
-        console.error('Error loading user FTP:', error);
+        console.error('Error loading user profile:', error);
       }
     };
-    if (selectedStrava) {
-      loadUserFTP();
-    }
-  }, [selectedStrava]);
+    loadUserProfile();
+  }, []);
   
   const calculateStravaTSS = React.useMemo(() => {
     if (!stravaAvgPower || !stravaActivityDuration) return null;
@@ -994,16 +978,7 @@ const FitAnalysisPage = () => {
       
       const rawLaps = Array.isArray(data.laps) ? data.laps : [];
 
-      console.log('Backend returned laps count:', rawLaps.length);
-      console.log('Backend laps:', rawLaps.map((lap, idx) => ({
-        index: idx,
-        elapsed_time: lap.elapsed_time,
-        distance: lap.distance,
-        average_watts: lap.average_watts,
-        startTime: lap.startTime,
-        start_date: lap.start_date,
-        lapNumber: lap.lapNumber
-      })));
+    
       
       // Deduplicate laps before setting state using the same function as elsewhere
       let uniqueLaps = deduplicateStravaLaps(rawLaps);
@@ -2116,7 +2091,7 @@ const FitAnalysisPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-8xl mx-auto">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">Training calendar</h1>
 
         {/* Athlete Selector for Coach */}
@@ -2136,21 +2111,36 @@ const FitAnalysisPage = () => {
               date: t.timestamp, 
               title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
               sport: t.sport,
-              type: 'fit'
+              type: 'fit',
+              distance: t.totalDistance || t.distance,
+              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+              tss: t.tss || t.totalTSS,
+              avgPower: t.avgPower || t.averagePower || null,
+              avgSpeed: t.avgSpeed || t.averageSpeed || null
             })),
             ...regularTrainings.map(t => ({ 
               id: `regular-${t._id}`, 
               date: t.date || t.timestamp, 
               title: t.title || 'Untitled Training', 
               sport: t.sport,
-              type: 'regular'
+              type: 'regular',
+              distance: t.totalDistance || t.distance,
+              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+              tss: t.tss || t.totalTSS,
+              avgPower: t.avgPower || t.averagePower || null,
+              avgSpeed: t.avgSpeed || t.averageSpeed || null
             })),
             ...externalActivities.map(a => ({ 
               id: `strava-${a.stravaId}`, 
               date: a.startDate, 
               title: a.titleManual || a.name || 'Untitled Activity', 
               sport: a.sport,
-              type: 'strava'
+              type: 'strava',
+              distance: a.distance,
+              totalElapsedTime: a.movingTime || a.elapsedTime,
+              tss: a.tss || a.totalTSS,
+              avgPower: a.averagePower || a.average_watts || null,
+              avgSpeed: a.averageSpeed || a.average_speed || null
             }))
           ]}
           selectedActivityId={
@@ -2192,8 +2182,113 @@ const FitAnalysisPage = () => {
               />
 
 
-                  {/* Training Chart - Full Time SVG Version */}
+                  {/* Training Chart - Modern SVG Version */}
                   {selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (() => {
+                    // Calculate statistics from training data
+                    const records = selectedTraining.records;
+                    const powers = records.map(r => r.power).filter(p => p && p > 0);
+                    const cadences = records.map(r => r.cadence).filter(c => c && c > 0);
+                    
+                    const avgPower = powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b, 0) / powers.length) : null;
+                    const maxPower = powers.length > 0 ? Math.max(...powers) : null;
+                    const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : null;
+                    
+                    // Calculate Normalized Power (30-second rolling average, then 4th power, then 4th root)
+                    let normalizedPower = null;
+                    if (powers.length > 0 && records.length > 30) {
+                      // Assuming 1 second intervals, calculate 30-second rolling averages
+                      const rollingAverages = [];
+                      for (let i = 0; i < powers.length; i++) {
+                        const start = Math.max(0, i - 15);
+                        const end = Math.min(powers.length, i + 15);
+                        const window = powers.slice(start, end);
+                        const avg = window.reduce((sum, p) => sum + p, 0) / window.length;
+                        rollingAverages.push(avg);
+                      }
+                      // Raise to 4th power, average, then 4th root
+                      const fourthPowers = rollingAverages.map(avg => Math.pow(avg, 4));
+                      const avgFourthPower = fourthPowers.reduce((a, b) => a + b, 0) / fourthPowers.length;
+                      normalizedPower = Math.round(Math.pow(avgFourthPower, 1/4));
+                    }
+                    
+                    // Calculate TSS and IF
+                    const ftp = userProfile?.powerZones?.cycling?.lt2 || userProfile?.powerZones?.running?.lt2 || null;
+                    const duration = selectedTraining.totalElapsedTime || selectedTraining.totalTimerTime || 0;
+                    const np = normalizedPower || avgPower;
+                    const tss = ftp && np ? Math.round((duration * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100) : null;
+                    const intensityFactor = ftp && np ? (np / ftp).toFixed(2) : null;
+                    
+                    const trainingDate = selectedTraining.timestamp ? new Date(selectedTraining.timestamp) : new Date();
+                    const sport = selectedTraining.sport || 'cycling';
+                    
+                    return (
+                      <div className="mb-4 md:mb-6">
+                        {/* Statistics */}
+                        <div className="w-full overflow-x-auto mb-4">
+                          <div className="flex flex-wrap gap-2 sm:gap-3">
+                            <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
+                              <div className="text-base font-semibold text-gray-900">{formatDateTime(trainingDate.toISOString())}</div>
+                            </div>
+                            <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
+                              <div className="text-base font-semibold text-gray-900">{sport}</div>
+                            </div>
+                            {avgPower && (
+                              <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                                <div className="text-base font-semibold text-gray-900">{avgPower} W</div>
+                                {maxPower && (
+                                  <div className="text-xs text-gray-500 mt-0.5">Max: {Math.round(maxPower)} W</div>
+                                )}
+                              </div>
+                            )}
+                            {avgCadence && (
+                              <div className="flex-1 min-w-[140px] bg-white/90 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 shadow-sm">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
+                                <div className="text-base font-semibold text-blue-700">{avgCadence} rpm</div>
+                              </div>
+                            )}
+                            {normalizedPower && (
+                              <div className="flex-1 min-w-[140px] bg-white/90 border border-green-200 bg-green-50 rounded-xl px-4 py-3 shadow-sm">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
+                                <div className="text-base font-semibold text-green-700">{normalizedPower} W</div>
+                              </div>
+                            )}
+                            {tss !== null && (
+                              <div className="flex-1 min-w-[140px] bg-white/90 border border-purple-200 bg-purple-50 rounded-xl px-4 py-3 shadow-sm">
+                                <div className="text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
+                                  TSS
+                                  {!ftp && (
+                                    <span className="text-xs text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
+                                  )}
+                                </div>
+                                <div className="text-base font-semibold text-purple-700">{tss}</div>
+                                {intensityFactor && (
+                                  <div className="text-xs text-gray-500 mt-0.5">IF: {intensityFactor}</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-4">Training Chart</h3>
+                        <TrainingChart
+                          training={selectedTraining}
+                          userProfile={userProfile}
+                          onHover={(point) => {
+                            // Optional: handle hover events
+                          }}
+                          onLeave={() => {
+                            // Optional: handle leave events
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
+                  
+                  {/* Legacy Training Chart - Full Time SVG Version (commented out, can be removed) */}
+                  {false && selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (() => {
                     const chartData = prepareTrainingChartData(selectedTraining);
                     if (!chartData) return null;
 
@@ -2964,6 +3059,9 @@ const FitAnalysisPage = () => {
             ) : (() => {
           const time = selectedStravaStreams?.time?.data || [];
           const maxTime = time.length > 0 ? time[time.length-1] : 0;
+          
+          // Get unique laps (deduplicated)
+          const uniqueLaps = deduplicateStravaLaps(selectedStrava?.laps || []);
 
           // Strava Title and Description Editor Component
           const StravaTitleEditor = ({ onExportToTraining }) => {
@@ -3270,6 +3368,130 @@ const FitAnalysisPage = () => {
                 </div>
               </div>
 
+              {/* Detailed Statistics */}
+              {selectedStrava && (
+                <div className="w-full overflow-x-auto mt-4">
+                  <div className="flex flex-wrap gap-2 sm:gap-3">
+                    <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
+                      <div className="text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
+                    </div>
+                    <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
+                      <div className="text-base font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
+                    </div>
+                    {stravaAvgPower && (
+                      <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                        <div className="text-base font-semibold text-gray-900">{Math.round(stravaAvgPower)} W</div>
+                        {stravaMaxPower && (
+                          <div className="text-xs text-gray-500 mt-0.5">Max: {Math.round(stravaMaxPower)} W</div>
+                        )}
+                      </div>
+                    )}
+                    {stravaAvgCadence && (
+                      <div className="flex-1 min-w-[140px] bg-white/90 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
+                        <div className="text-base font-semibold text-blue-700">{Math.round(stravaAvgCadence)} rpm</div>
+                      </div>
+                    )}
+                    {stravaNormalizedPower && (
+                      <div className="flex-1 min-w-[140px] bg-white/90 border border-green-200 bg-green-50 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
+                        <div className="text-base font-semibold text-green-700">{Math.round(stravaNormalizedPower)} W</div>
+                      </div>
+                    )}
+                    {calculateStravaTSS && (
+                      <div className="flex-1 min-w-[140px] bg-white/90 border border-purple-200 bg-purple-50 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
+                          TSS
+                          {calculateStravaTSS.estimated && (
+                            <span className="text-xs text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
+                          )}
+                        </div>
+                        <div className="text-base font-semibold text-purple-700">{calculateStravaTSS.value}</div>
+                        {calculateStravaIF && (
+                          <div className="text-xs text-gray-500 mt-0.5">IF: {calculateStravaIF}</div>
+                        )}
+                      </div>
+                    )}
+                    {hasStravaElevation && (
+                      <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500">Elevation</div>
+                        <div className="text-base font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Training Chart - Modern SVG Version for Strava */}
+              {(() => {
+                // Convert Strava streams to records format
+                if (!selectedStrava || !selectedStravaStreams) return null;
+                
+                const timeArray = selectedStravaStreams?.time?.data || selectedStravaStreams?.time || [];
+                if (timeArray.length === 0) return null;
+                
+                const speedArray = selectedStravaStreams?.velocity_smooth?.data || selectedStravaStreams?.velocity_smooth || [];
+                const hrArray = selectedStravaStreams?.heartrate?.data || selectedStravaStreams?.heartrate || [];
+                const powerArray = selectedStravaStreams?.watts?.data || selectedStravaStreams?.watts || [];
+                const distanceArray = selectedStravaStreams?.distance?.data || selectedStravaStreams?.distance || [];
+                const cadenceArray = selectedStravaStreams?.cadence?.data || selectedStravaStreams?.cadence || [];
+                
+                // Get activity start time
+                const activityStartDate = selectedStrava?.start_date_local || 
+                  selectedStrava?.start_date || 
+                  selectedStrava?.raw?.start_date || 
+                  selectedStrava?.startDate;
+                const activityStartTime = activityStartDate ? new Date(activityStartDate).getTime() : Date.now();
+                
+                // Convert streams to records
+                const records = timeArray.map((time, index) => {
+                  const timestamp = new Date(activityStartTime + (time * 1000));
+                  const distance = distanceArray[index] || (index > 0 ? distanceArray[index - 1] : 0);
+                  
+                  return {
+                    timestamp: timestamp.toISOString(),
+                    timeFromStart: time,
+                    distance: distance,
+                    speed: speedArray[index] || null,
+                    heartRate: hrArray[index] || null,
+                    power: powerArray[index] || null,
+                    cadence: cadenceArray[index] || null
+                  };
+                });
+                
+                const trainingData = {
+                  _id: selectedStrava.id || selectedStrava.stravaId,
+                  titleManual: selectedStrava.titleManual || selectedStrava.name,
+                  sport: selectedStrava.sport || selectedStrava.sport_type || 'cycling',
+                  timestamp: new Date(activityStartTime),
+                  totalElapsedTime: timeArray[timeArray.length - 1] || 0,
+                  totalDistance: distanceArray[distanceArray.length - 1] || selectedStrava.distance || 0,
+                  records: records,
+                  laps: selectedStrava.laps || []
+                };
+                
+                if (trainingData.records && trainingData.records.length > 0) {
+                  return (
+                    <div className="mb-4 md:mb-6">
+                      <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-4">Training Chart</h3>
+                      <TrainingChart
+                        training={trainingData}
+                        userProfile={userProfile}
+                        onHover={(point) => {
+                          // Optional: handle hover events
+                        }}
+                        onLeave={() => {
+                          // Optional: handle leave events
+                        }}
+                      />
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Streams Chart (ECharts) */}
               {(() => {
@@ -3388,1518 +3610,19 @@ const FitAnalysisPage = () => {
                   }
                 }
                 
-                // Prepare interval bars data from laps
-                // Use the same deduplication function as elsewhere to ensure consistency
+                // Get unique laps (deduplicated) for interval chart
                 const originalLaps = selectedStrava?.laps || [];
-                console.log('Graph: Processing laps from selectedStrava:', originalLaps.length);
-                
-                // Use deduplicateStravaLaps which handles all edge cases including lactate values
-                let laps = deduplicateStravaLaps(originalLaps);
-                console.log('Graph: After deduplication:', laps.length);
-                
-                // Additional safety check using the same key building logic as deduplicateStravaLaps
-                // Reuse the same normalizeTime and buildKey logic from deduplicateStravaLaps
-                const normalizeTimeForGraph = (timeStr) => {
-                  if (!timeStr) return null;
-                  try {
-                    const date = new Date(timeStr);
-                    if (isNaN(date.getTime())) return null;
-                    return Math.floor(date.getTime() / 1000);
-                  } catch {
-                    return null;
-                  }
-                };
-                
-                const buildLapKeyForGraph = (lap) => {
-                  // Priority 1: startTime or start_date (normalized)
-                  const startTime = lap.startTime || lap.start_date;
-                  const normalizedTime = normalizeTimeForGraph(startTime);
-                  if (normalizedTime !== null) {
-                    return `time_${normalizedTime}`;
-                  }
-                  
-                  // Priority 2: lapNumber fallback
-                  if (lap.lapNumber !== undefined && lap.lapNumber !== null) {
-                    return `lap_${lap.lapNumber}`;
-                  }
-                  
-                  // Priority 3: Combination of elapsed_time, distance, power (match backend format)
-                  const elapsedTime = Math.round(lap.elapsed_time || 0);
-                  const distance = Math.round((lap.distance || 0) * 10) / 10;
-                  const power = Math.round((lap.average_watts || 0) * 10) / 10;
-                  return `fallback_t${elapsedTime}_d${distance}_p${power}`;
-                };
-                
-                const seenLapKeys = new Set();
-                const finalLaps = [];
-                laps.forEach((lap, idx) => {
-                  const key = buildLapKeyForGraph(lap);
-                  
-                  if (seenLapKeys.has(key)) {
-                    return;
-                  }
-                  seenLapKeys.add(key);
-                  finalLaps.push(lap);
-                });
-                
-                
-                laps = finalLaps;
-                
-                // Sort laps by startTime or start_date to ensure correct order
-                laps = [...laps].sort((a, b) => {
-                  const getLapStartTime = (lap) => {
-                    if (lap.startTime && typeof lap.startTime === 'string') {
-                      return new Date(lap.startTime).getTime();
-                    } else if (lap.start_date) {
-                      return new Date(lap.start_date).getTime();
-                    }
-                    return null;
-                  };
-                  
-                  const aTime = getLapStartTime(a);
-                  const bTime = getLapStartTime(b);
-                  
-                  if (aTime && bTime) return aTime - bTime;
-                  if (aTime) return -1;
-                  if (bTime) return 1;
-                  return 0; // Keep original order if neither has startTime
-                });
-                
-                const intervalBars = [];
-                
-                // Track all processed interval keys to prevent duplicates across multiple renders
-                const globalProcessedKeys = new Set();
-                
-                // Calculate total activity time from streams (in seconds)
-                const streamMaxTime = time && time.length > 0 ? time[time.length - 1] : 0;
-                
-                // Get activity start time as Date object
-                // Backend uses start_date_local for creating intervals, so we should use the same
-                // This ensures that manually created intervals align correctly
-                let activityStartDateStr = selectedStrava?.start_date_local || 
-                                         selectedStrava?.start_date || 
-                                         selectedStrava?.raw?.start_date || 
-                                         selectedStrava?.startDate;
-                
-                // Don't adjust activityStartDate based on laps - use the same as backend
-                // This ensures that manually created intervals use the correct startTime
-                
-                const activityStartDate = activityStartDateStr 
-                  ? new Date(activityStartDateStr)
-                  : new Date();
-                const activityStartTimeMs = activityStartDate.getTime();
-                
-                console.log('Activity start time:', {
-                  activityStartDateStr: activityStartDateStr,
-                  activityStartTimeMs: activityStartTimeMs,
-                  activityStartDate: activityStartDate.toISOString()
-                });
-                
-                // Filter out laps that are the entire activity BEFORE processing
-                // This prevents them from interfering with manually created intervals
-                // Use streamMaxTime for filtering to correctly identify entire activity laps
-                const filteredLaps = laps.filter((lap) => {
-                  const duration = lap.elapsed_time || 0;
-                  // Skip if this lap is the entire activity (likely the default Strava lap)
-                  // If duration is within 95% of stream time, it's probably the whole activity
-                  if (streamMaxTime > 0 && duration >= streamMaxTime * 0.95) {
-                    return false;
-                  }
-                  return true;
-                });
-                
-                // Calculate maxTime from intervals as well (to include manually created intervals that may extend beyond streams)
-                // Calculate from filteredLaps (after removing entire activity lap) to get accurate maxTime
-                let maxTime = streamMaxTime;
-                if (filteredLaps.length > 0) {
-                  const intervalEndTimes = filteredLaps
-                    .map(lap => {
-                      if (lap.startTime && typeof lap.startTime === 'string') {
-                        const lapStartTimeMs = new Date(lap.startTime).getTime();
-                        const startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
-                        const duration = lap.elapsed_time || 0;
-                        return startTimeSeconds + duration;
-                      } else if (lap.start_date) {
-                        const lapStartTimeMs = new Date(lap.start_date).getTime();
-                        const startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
-                        const duration = lap.elapsed_time || 0;
-                        return startTimeSeconds + duration;
-                      }
-                      // For laps without startTime/start_date, estimate from cumulative time
-                      // We'll calculate this during processing, so skip for now
-                      return null;
-                    })
-                    .filter(time => time !== null && !isNaN(time) && time > 0);
-                  
-                  if (intervalEndTimes.length > 0) {
-                    const maxIntervalTime = Math.max(...intervalEndTimes);
-                    maxTime = Math.max(maxTime, maxIntervalTime);
-                  }
-                }
-                
-                // Track cumulative time for sequential intervals
-                let cumulativeTimeSeconds = 0;
-                
-                // Track processed laps to prevent duplicates
-                const processedLapKeys = new Set();
-                
-                filteredLaps.forEach((lap, idx) => {
-                  // Create unique key for this lap to prevent duplicates
-                  // Use elapsed_time, distance, and power for more reliable identification
-                  const elapsedTime = Math.round(lap.elapsed_time || 0);
-                  const distance = Math.round((lap.distance || 0) * 10) / 10;
-                  const lapPower = Math.round((lap.average_watts || 0) * 10) / 10;
-                  
-                  const lapKey = lap.startTime ? `time_${new Date(lap.startTime).getTime()}` :
-                                 lap.start_date ? `date_${new Date(lap.start_date).getTime()}` :
-                                 `t${elapsedTime}_d${distance}_p${lapPower}`;
-                  
-                  // Check both local and global processed keys
-                  if (processedLapKeys.has(lapKey) || globalProcessedKeys.has(lapKey)) {
-                    return;
-                  }
-                  processedLapKeys.add(lapKey);
-                  globalProcessedKeys.add(lapKey);
-                  
-                  const power = lap.average_watts || lap.average_power || 0;
-                  const duration = lap.elapsed_time || 0;
-                  const lapSpeed = lap.average_speed || 0; // m/s
-                  
-                  // Calculate pace for run/swim
-                  let lapPace = null;
-                  if (usePace && lapSpeed > 0) {
-                    lapPace = calculatePace(lapSpeed);
-                    // Debug logging for first running lap
-                    if (isRun && idx === 0) {
-                      console.log(`[FitAnalysisPage] Running Lap ${idx + 1}:`, {
-                        lapSpeed: lapSpeed,
-                        lapPaceSeconds: lapPace,
-                        lapPaceFormatted: lapPace ? `${Math.floor(lapPace/60)}:${Math.round(lapPace%60).toString().padStart(2,'0')}/km` : 'N/A',
-                        duration: duration,
-                        distance: lap.distance || 0
-                      });
-                    }
-                  }
-                  
-                  // Skip if no duration
-                  if (duration <= 0) {
-                    return;
-                  }
-                  
-                  // For original Strava laps (from API), require power > 0 for cycling, pace > 0 for run/swim
-                  // Manually created laps have startTime as ISO timestamp, allow power = 0 for them
-                  // Original Strava laps have start_date or no startTime at all
-                  const isManuallyCreated = lap.startTime && typeof lap.startTime === 'string' && !lap.start_date;
-                  if (!isManuallyCreated) {
-                    if (usePace) {
-                      // For run/swim, require pace (speed > 0)
-                      if (!lapPace || lapSpeed <= 0) {
-                        return;
-                      }
-                    } else {
-                      // For cycling, require power > 0
-                      if (power <= 0) {
-                        return;
-                      }
-                    }
-                  }
-                  
-                  // Use actual startTime from lap if available (for manually created laps)
-                  // startTime is stored as ISO timestamp string from backend
-                  let startTimeSeconds = 0;
-                  if (lap.startTime) {
-                    // startTime is an ISO timestamp string, convert to seconds relative to activity start
-                    const lapStartDate = new Date(lap.startTime);
-                    const lapStartTimeMs = lapStartDate.getTime();
-                    startTimeSeconds = (lapStartTimeMs - activityStartTimeMs) / 1000;
-                    
-                    // Ensure startTime is not negative (shouldn't happen, but safety check)
-                    if (startTimeSeconds < 0) {
-                      console.log('Warning: startTimeSeconds < 0, setting to 0');
-                      startTimeSeconds = 0;
-                    }
-                  } else if (lap.start_date) {
-                    // For laps with start_date, calculate relative time from activity start
-                    // start_date is in UTC, so activityStartDate should also be in UTC
-                    const lapStartDate = new Date(lap.start_date);
-                    const lapStartTimeMs = lapStartDate.getTime();
-                    const calculatedStartTime = (lapStartTimeMs - activityStartTimeMs) / 1000;
-                    
-                    // If calculated time is negative, it means the activity start time is wrong (probably using local instead of UTC)
-                    // In this case, use cumulative time to ensure intervals are sequential
-                    if (calculatedStartTime < -300) {
-                      // More than 5 minutes negative - definitely wrong, use cumulative
-                      if (idx === 0) {
-                        startTimeSeconds = 0;
-                      } else {
-                        startTimeSeconds = cumulativeTimeSeconds;
-                      }
-                    } else if (calculatedStartTime < 0) {
-                      // Small negative (within 5 minutes) - might be timezone offset, use cumulative
-                      if (idx === 0) {
-                        startTimeSeconds = 0;
-                      } else {
-                        startTimeSeconds = cumulativeTimeSeconds;
-                      }
-                    } else if (idx === 0 && calculatedStartTime > 60) {
-                      // First lap should start near 0, if it's more than 60s, use 0
-                      startTimeSeconds = 0;
-                    } else {
-                      // Use calculated time, but ensure it's not before previous lap
-                      if (idx > 0 && calculatedStartTime < cumulativeTimeSeconds) {
-                        startTimeSeconds = cumulativeTimeSeconds;
-                      } else {
-                        startTimeSeconds = calculatedStartTime;
-                      }
-                    }
-                  } else {
-                    // For laps without startTime or start_date, use cumulative time
-                    // First lap starts at 0, subsequent laps continue from previous end
-                    if (idx === 0) {
-                      startTimeSeconds = 0;
-                    } else {
-                      startTimeSeconds = cumulativeTimeSeconds;
-                    }
-                  }
-                  
-                  // Ensure startTime is within valid range
-                  if (startTimeSeconds < 0) {
-                    startTimeSeconds = 0;
-                  }
-                  
-                  let endTimeSeconds = startTimeSeconds + duration;
-                  
-                  // Ensure endTime is within valid range (allow some overflow for manually created intervals)
-                  // Only skip if endTime is way beyond maxTime (more than 20% over)
-                  if (maxTime > 0 && endTimeSeconds > maxTime * 1.2) {
-                    return;
-                  }
-                  
-                  // Update maxTime if this interval extends beyond current maxTime
-                  if (endTimeSeconds > maxTime) {
-                    maxTime = endTimeSeconds;
-                  }
-                  
-                  // Update cumulative time for next lap
-                  cumulativeTimeSeconds = endTimeSeconds;
-                  
-                  // For rendering: use actual power/pace
-                  // For run/swim: use pace directly (Y-axis is already set: dole pomalejší, nahoře rychlejší)
-                  // For cycling: use power
-                  let displayValue;
-                  let isVerySlowPace = false; // Flag for very slow pace (standing/walking)
-                  if (usePace) {
-                    // Use pace directly in seconds (Y-axis handles the display direction)
-                    // If pace is slower than max (larger value), it's very slow (standing/walking)
-                    // Show it as small bar at top (fast pace position)
-                    if (lapPace && lapPace > 0) {
-                      if (lapPace > paceYAxisMax) {
-                        // Very slow pace (standing) - show as small bar at top
-                        displayValue = paceYAxisMin; // Fast pace position (top)
-                        isVerySlowPace = true;
-                      } else {
-                        displayValue = lapPace;
-                      }
-                    } else {
-                      // Default to middle of range if no pace
-                      displayValue = isRun ? 240 : 90; // 4:00/km or 1:30/100m
-                    }
-                  } else {
-                    // For cycling, use power
-                    displayValue = power > 0 ? power : (lap.startTime ? 50 : 0);
-                  }
-                  
-                  intervalBars.push({
-                    value: [(startTimeSeconds + endTimeSeconds) / 2 / 60, displayValue], // [center time, power/pace] in minutes
-                    interval: idx + 1,
-                    startTime: startTimeSeconds / 60,
-                    endTime: endTimeSeconds / 60,
-                    duration: duration,
-                    width: duration / 60, // Width in minutes
-                    power: power, // Store original power
-                    pace: lapPace, // Store pace for run/swim
-                    displayValue: displayValue, // Store display value for rendering
-                    isVerySlowPace: isVerySlowPace, // Flag for very slow pace (standing)
-                    heartRate: lap.average_heartrate || lap.average_hr || null,
-                    distance: lap.distance || 0,
-                    speed: lapSpeed,
-                    lapIndex: idx
-                  });
-                });
-                
-                // Recalculate paceYAxisMin/Max for swim to include interval bars pace values
-                if (usePace && isSwim && intervalBars.length > 0) {
-                  // Collect all pace values from interval bars
-                  const intervalPaces = intervalBars
-                    .map(bar => bar.pace)
-                    .filter(p => p && p > 0 && !isNaN(p));
-                  
-                  // Also include pace values from stream (recalculate validPaces)
-                  const streamPaces = pace ? pace.filter(p => p && p > 0 && !isNaN(p)) : [];
-                  const allPaces = [...streamPaces, ...intervalPaces];
-                  
-                  if (allPaces.length > 0) {
-                    const minPace = Math.min(...allPaces);
-                    const maxPace = Math.max(...allPaces);
-                    
-                    const padding = Math.max(5, (maxPace - minPace) * 0.1); // 10% nebo minimálně 5 sekund
-                    paceYAxisMin = Math.max(30, Math.floor(minPace - padding)); // Minimálně 0:30/100m
-                    paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
-                  }
-                }
-                
-                // Cluster similar intervals (similar duration and power/pace)
-                // Similar = duration within ±5% and power/pace within ±10%
-                const clusterIntervals = (bars) => {
-                  const clusters = [];
-                  const barClusters = new Map(); // Map bar index to cluster ID
-                  
-                  bars.forEach((bar, idx) => {
-                    let assigned = false;
-                    
-                    // Try to find existing cluster
-                    for (let cluster of clusters) {
-                      const clusterBar = bars[cluster[0]];
-                      const durationDiff = Math.abs(bar.duration - clusterBar.duration) / clusterBar.duration;
-                      
-                      let valueDiff;
-                      if (usePace) {
-                        // For pace, compare pace values
-                        const barPace = bar.pace || 0;
-                        const clusterPace = clusterBar.pace || 0;
-                        valueDiff = Math.abs(barPace - clusterPace) / Math.max(clusterPace, 1);
-                      } else {
-                        // For power, compare power values
-                        const barPower = bar.power || 0;
-                        const clusterPower = clusterBar.power || 0;
-                        valueDiff = Math.abs(barPower - clusterPower) / Math.max(clusterPower, 1);
-                      }
-                      
-                      // Similar if duration within 5% and power/pace within 10%
-                      if (durationDiff <= 0.05 && valueDiff <= 0.10) {
-                        cluster.push(idx);
-                        barClusters.set(idx, clusters.indexOf(cluster));
-                        assigned = true;
-                        break;
-                      }
-                    }
-                    
-                    // Create new cluster if not assigned
-                    if (!assigned) {
-                      clusters.push([idx]);
-                      barClusters.set(idx, clusters.length - 1);
-                    }
-                  });
-                  
-                  return { clusters, barClusters };
-                };
-                
-                const { barClusters } = clusterIntervals(intervalBars);
-                
-                // Assign cluster colors - different hue for each cluster, saturation based on power
-                const clusterColors = [
-                  { h: 260, s: 60 }, // Purple
-                  { h: 200, s: 60 }, // Blue
-                  { h: 140, s: 60 }, // Green
-                  { h: 30, s: 60 },  // Orange
-                  { h: 320, s: 60 }, // Pink
-                  { h: 180, s: 60 }, // Cyan
-                  { h: 0, s: 60 },   // Red
-                  { h: 280, s: 60 }  // Magenta
-                ];
-                
-                // Calculate max and min power/pace for saturation scaling
-                let maxValue, minValue;
-                if (usePace) {
-                  const allPaces = intervalBars.map(b => b.pace).filter(p => p && p > 0);
-                  // For pace: minValue is faster (lower seconds), maxValue is slower (higher seconds)
-                  minValue = allPaces.length > 0 ? Math.min(...allPaces) : (isRun ? 180 : 30);
-                  maxValue = allPaces.length > 0 ? Math.max(...allPaces) : (isRun ? 300 : 120);
-                } else {
-                  const allPowers = intervalBars.map(b => b.power || 0).filter(p => p > 0);
-                  maxValue = allPowers.length > 0 ? Math.max(...allPowers, 100) : 100;
-                  minValue = allPowers.length > 0 ? Math.min(...allPowers, 50) : 50;
-                }
-                
-                // Assign cluster and color to each bar
-                intervalBars.forEach((bar, idx) => {
-                  const clusterId = barClusters.get(idx) || 0;
-                  const colorConfig = clusterColors[clusterId % clusterColors.length];
-                  
-                  // Calculate saturation based on power/pace
-                  // For pace: faster pace (lower seconds) = more saturated
-                  // For power: higher power = more saturated
-                  let valueRatio;
-                  if (usePace) {
-                    const barPace = bar.pace || maxValue;
-                    // Invert: faster pace (lower seconds) should be more saturated
-                    valueRatio = maxValue > minValue 
-                      ? 1 - (barPace - minValue) / (maxValue - minValue)
-                      : 0.5;
-                  } else {
-                    const barPower = bar.power || minValue;
-                    valueRatio = maxValue > minValue 
-                      ? (barPower - minValue) / (maxValue - minValue)
-                      : 0.5;
-                  }
-                  const saturation = Math.max(40, Math.min(80, 40 + valueRatio * 40)); // 40-80% saturation
-                  
-                  bar.clusterId = clusterId;
-                  bar.colorHue = colorConfig.h;
-                  bar.colorSaturation = saturation;
-                });
-                
-                
-
-                const option = {
-                  backgroundColor: 'transparent',
-                  tooltip: { 
-                    trigger: 'axis',
-                    show: true,
-                    enterable: true,
-                    confine: true,
-                    axisPointer: {
-                      type: 'cross',
-                      label: {
-                        backgroundColor: '#6a7985'
-                      },
-                      lineStyle: {
-                        color: '#8B45D6',
-                        width: 1,
-                        type: 'dashed'
-                      }
-                    },
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    borderColor: 'rgba(139, 69, 190, 0.3)',
-                    borderWidth: 1,
-                    textStyle: { color: '#333', fontSize: 13 },
-                    padding: [12, 16],
-                    formatter: (params) => {
-                      // If single params object (hovering over interval bar)
-                      if (!Array.isArray(params) && params.seriesName === 'Intervals' && params.data?._barData) {
-                        const barData = params.data._barData;
-                        const lap = laps[barData.lapIndex] || {};
-                        const avgSpeed = lap.average_speed ? (lap.average_speed * 3.6).toFixed(1) : '-';
-                        
-                        return `
-                          <div style="font-weight: 600; color: #8B45D6; margin-bottom: 8px; font-size: 14px;">
-                            Interval ${barData.interval || ''}
-                          </div>
-                          <div style="font-size: 12px; line-height: 1.8; color: #555;">
-                            <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(barData.power || 0)} W</span></div>
-                            ${barData.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(barData.heartRate)} bpm</span></div>` : ''}
-                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
-                            <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(barData.distance || 0)}</span></div>
-                            <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(barData.duration || 0)}</span></div>
-                            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #eee; font-size: 11px; color: #999;">
-                              ${Math.round(barData.startTime || 0)} - ${Math.round(barData.endTime || 0)} min
-                            </div>
-                          </div>
-                        `;
-                      }
-                      
-                      // For axis tooltip (line series) - params is an array
-                      if (Array.isArray(params) && params.length > 0) {
-                      let result = '';
-                        
-                        // Get time value from first param
-                      const timeValue = params[0]?.axisValue || params[0]?.value?.[0] || 0;
-                        
-                        // Format time display
-                        const hours = Math.floor(timeValue);
-                        const minutes = Math.round((timeValue - hours) * 60);
-                        const timeStr = hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}` : `${minutes} min`;
-                        result += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 14px; color: #333;">Time: ${timeStr}</div>`;
-                      
-                      // Check if hovering over an interval
-                      const hoveredInterval = intervalBars.find(bar => {
-                        const start = bar.startTime;
-                        const end = bar.endTime;
-                        return timeValue >= start && timeValue <= end;
-                      });
-                      
-                      if (hoveredInterval) {
-                          const lap = laps[hoveredInterval.lapIndex] || {};
-                        const avgSpeed = lap.average_speed ? (lap.average_speed * 3.6).toFixed(1) : '-';
-                        result += `
-                            <div style="font-weight: 600; color: #8B45D6; margin-bottom: 8px; font-size: 14px; padding-top: 8px; border-top: 1px solid #eee;">
-                            Interval ${hoveredInterval.interval || ''}
-                          </div>
-                          <div style="font-size: 12px; line-height: 1.8; color: #555;">
-                            <div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(hoveredInterval.power || 0)} W</span></div>
-                            ${hoveredInterval.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(hoveredInterval.heartRate)} bpm</span></div>` : ''}
-                            <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
-                            <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(hoveredInterval.distance || 0)}</span></div>
-                            <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(hoveredInterval.duration || 0)}</span></div>
-                          </div>
-                        `;
-                      }
-                      
-                      // Add line series values
-                      params.forEach(param => {
-                          if (param.seriesName && param.seriesName !== 'Intervals' && param.seriesName !== 'Elevation') {
-                          const value = Array.isArray(param.value) ? param.value[1] : param.value;
-                            if (value !== null && value !== undefined && value !== '' && !isNaN(value)) {
-                          let displayValue, unit;
-                          if (param.seriesName === 'Pace') {
-                            // Value is already in seconds, just format it
-                            const paceSeconds = parseFloat(value);
-                            const minutes = Math.floor(paceSeconds / 60);
-                            const seconds = Math.floor(paceSeconds % 60);
-                            unit = isRun ? '/km' : '/100m';
-                            displayValue = `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
-                          } else {
-                            unit = param.seriesName === 'Speed' ? ' km/h' : 
-                                     param.seriesName === 'Heart Rate' ? ' bpm' : 
-                                     param.seriesName === 'Power' ? ' W' : '';
-                            displayValue = `${Math.round(parseFloat(value) || 0)}${unit}`;
-                          }
-                              result += `<div style="margin-top: 4px;"><span style="color: ${param.color || '#666'}; font-size: 14px;">●</span> <span style="font-weight: 500;">${param.seriesName}:</span> <span style="font-weight: 600;">${displayValue}</span></div>`;
-                            }
-                          }
-                        });
-                        
-                        return result || '<div>Hover over the chart to see values</div>';
-                      }
-                      
-                      // Default fallback
-                      return 'Hover over the chart to see values';
-                    }
-                  },
-                  legend: {
-                    data: (usePace 
-                      ? ['Pace','Heart Rate','Elevation']
-                      : ['Speed','Heart Rate','Power','Elevation']
-                    ).concat(intervalBars.length > 0 ? ['Intervals'] : []),
-                    textStyle: { fontSize: 12, fontWeight: 500 },
-                    itemGap: 20,
-                    top: 10,
-                    left: '20%'
-                  },
-                  dataZoom: [
-                    { 
-                      type: 'inside',
-                      filterMode: 'none'
-                    },
-                    { 
-                      type: 'slider',
-                      height: 20,
-                      bottom: 10,
-                      handleStyle: {
-                        color: '#8B45D6',
-                        borderColor: '#8B45D6'
-                      },
-                      dataBackground: {
-                        areaStyle: { color: 'rgba(139, 69, 190, 0.1)' }
-                      },
-                      selectedDataBackground: {
-                        areaStyle: { color: 'rgba(139, 69, 190, 0.2)' }
-                      }
-                    }
-                  ],
-                  grid: { 
-                    left: 60, 
-                    right: usePace ? 120 : 50, // More space for multiple right axes
-                    top: 60, 
-                    bottom: 80,
-                    containLabel: false
-                  },
-                  xAxis: {
-                    type: 'value',
-                    name: 'Time',
-                    nameLocation: 'middle',
-                    nameGap: 30,
-                    nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#666' },
-                    min: 0,
-                    max: maxTime / 60,
-                    axisLine: { lineStyle: { color: '#E0E0E0' } },
-                    axisTick: { show: false },
-                    splitLine: { 
-                      show: true, 
-                      lineStyle: { type: 'dashed', color: '#F0F0F0' }
-                    },
-                    axisLabel: { 
-                      color: '#999', 
-                      fontSize: 11,
-                      formatter: (value) => {
-                        // value je v minutách, převést na hodiny a minuty
-                        const totalMinutes = Math.floor(value);
-                        const hours = Math.floor(totalMinutes / 60);
-                        const minutes = totalMinutes % 60;
-                        // Formát h:m
-                        return hours > 0 ? `${hours}:${minutes}` : `${minutes}`;
-                      }
-                    }
-                  },
-                  yAxis: [
-                    { 
-                      type: 'value', 
-                      name: usePace ? (isRun ? 'Pace (min/km)' : 'Pace (min/100m)') : '',
-                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#666' },
-                      min: usePace ? paceYAxisMin : undefined, // Rychlejší pace (menší hodnota)
-                      max: usePace ? paceYAxisMax : undefined, // Pomalejší pace (větší hodnota)
-                      inverse: usePace ? true : false, // Invertovat: dole pomalejší (větší hodnota), nahoře rychlejší (menší hodnota)
-                      axisLine: { lineStyle: { color: '#E0E0E0' } },
-                      axisTick: { show: false },
-                      splitLine: { 
-                        show: true, 
-                        lineStyle: { type: 'dashed', color: '#F0F0F0' }
-                      },
-                      axisLabel: { 
-                        color: '#999', 
-                        fontSize: 11,
-                        formatter: usePace ? (value) => {
-                          // value is in seconds, convert to min:sec format
-                          const minutes = Math.floor(value / 60);
-                          const seconds = Math.floor(value % 60);
-                          const unit = isRun ? '/km' : '/100m';
-                          return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
-                        } : undefined
-                      }
-                    },
-                    { 
-                      type: 'value', 
-                      name: 'Heart Rate (bpm)', 
-                      position: 'right',
-                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#FF6B6B' },
-                      axisLine: { show: true, lineStyle: { color: '#FF6B6B' } },
-                      axisTick: { show: false },
-                      splitLine: { show: false },
-                      axisLabel: { color: '#FF6B6B', fontSize: 11 }
-                    },
-                    { 
-                      type: 'value', 
-                      name: 'Elevation (m)', 
-                      position: 'right',
-                      nameTextStyle: { fontSize: 12, fontWeight: 600, color: '#A07850' },
-                      axisLine: { show: true, lineStyle: { color: '#A07850' } },
-                      axisTick: { show: false },
-                      splitLine: { show: false },
-                      axisLabel: { color: '#A07850', fontSize: 11 },
-                      offset: 60 // Offset to avoid overlap with Heart Rate axis
-                    }
-                  ],
-                  series: [
-                    // Pace series for run/swim (main curve)
-                    ...(usePace && pace ? [{
-                      name: 'Pace',
-                      type: 'line',
-                      smooth: true,
-                      data: time.map((t, i) => {
-                        const paceValue = pace[i];
-                        if (!paceValue || paceValue <= 0) return null;
-                        // Use pace directly in seconds (Y-axis is inverted: dole pomalejší, nahoře rychlejší)
-                        // Pace value is already in seconds per km or per 100m
-                        return [t / 60, paceValue];
-                      }).filter(d => d !== null && d[1] !== null),
-                      lineStyle: {
-                        color: '#4A90E2',
-                        width: 3,
-                        shadowBlur: 4,
-                        shadowColor: 'rgba(74, 144, 226, 0.3)'
-                      },
-                      symbol: 'none',
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
-                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
-                          ]
-                        }
-                      },
-                      z: 3
-                    }] : []),
-                    // Speed series for cycling
-                    ...(!usePace ? [{
-                      name: 'Speed',
-                      type: 'line',
-                      smooth: true,
-                      data: time.map((t, i) => [t / 60, speed[i] ? (speed[i] * 3.6) : null]).filter(d => d !== null && d[1] !== null),
-                      lineStyle: {
-                        color: '#4A90E2',
-                        width: 2.5,
-                        shadowBlur: 4,
-                        shadowColor: 'rgba(74, 144, 226, 0.3)'
-                      },
-                      symbol: 'none',
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
-                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
-                          ]
-                        }
-                      },
-                      z: 2
-                    }] : []),
-                    // Interval Bars - using custom renderer
-                    ...(intervalBars.length > 0 ? [{
-                      name: 'Intervals',
-                      type: 'custom',
-                      coordinateSystem: 'cartesian2d',
-                      data: intervalBars.map((bar) => ({
-                        value: bar.value,
-                        _barData: bar
-                      })),
-                      tooltip: {
-                        show: true,
-                        trigger: 'item',
-                        formatter: (params) => {
-                          const barData = params.data?._barData;
-                          if (!barData) return '';
-                          
-                          const lap = laps[barData.lapIndex] || {};
-                          const avgSpeed = lap.average_speed ? (lap.average_speed * 3.6).toFixed(1) : '-';
-                          
-                          // Format pace for display
-                          const formatPaceDisplay = (paceSeconds) => {
-                            if (!paceSeconds || paceSeconds <= 0) return '-';
-                            const minutes = Math.floor(paceSeconds / 60);
-                            const seconds = Math.floor(paceSeconds % 60);
-                            const unit = isRun ? '/km' : '/100m';
-                            return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
-                          };
-                          
-                          return `
-                            <div style="font-weight: 600; color: #8B45D6; margin-bottom: 8px; font-size: 14px;">
-                              Interval ${barData.interval || ''}
-                            </div>
-                            <div style="font-size: 12px; line-height: 1.8; color: #555;">
-                              ${usePace 
-                                ? `<div><span style="font-weight: 600;">Pace:</span> <span style="color: #8B45D6;">${formatPaceDisplay(barData.pace)}</span></div>`
-                                : `<div><span style="font-weight: 600;">Power:</span> <span style="color: #8B45D6;">${Math.round(barData.power || 0)} W</span></div>`
-                              }
-                              ${barData.heartRate ? `<div><span style="font-weight: 600;">Heart Rate:</span> <span style="color: #FF6B6B;">${Math.round(barData.heartRate)} bpm</span></div>` : ''}
-                              <div><span style="font-weight: 600;">Speed:</span> <span style="color: #4A90E2;">${avgSpeed !== '-' ? Math.round(parseFloat(avgSpeed)) : '-'} km/h</span></div>
-                              <div><span style="font-weight: 600;">Distance:</span> <span style="color: #50C878;">${formatDistance(barData.distance || 0)}</span></div>
-                              <div><span style="font-weight: 600;">Duration:</span> <span style="color: #666;">${formatDuration(barData.duration || 0)}</span></div>
-                              <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #eee; font-size: 11px; color: #999;">
-                                ${Math.round(barData.startTime || 0)} - ${Math.round(barData.endTime || 0)} min
-                              </div>
-                            </div>
-                          `;
-                        },
-                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                        borderColor: 'rgba(139, 69, 190, 0.3)',
-                        borderWidth: 1,
-                        textStyle: { color: '#333', fontSize: 13 },
-                        padding: [12, 16]
-                      },
-                      emphasis: {
-                        focus: 'none',
-                        blurScope: 'none'
-                      },
-                      renderItem: (params, api) => {
-                        try {
-                          if (!params || params.dataIndex === undefined || !api) return null;
-                          
-                          const dataIndex = params.dataIndex;
-                          const dataItem = params.data;
-                          
-                          // Get barData from data item
-                          const barData = dataItem?._barData || intervalBars[dataIndex];
-                          
-                          if (!barData || !barData.value) return null;
-                          
-                          // Use barData.value directly - it's already [centerTime, power/pace]
-                          const dataValue = Array.isArray(barData.value) ? barData.value : [0, 0];
-                        const [centerTime, value] = dataValue;
-                          const startTime = barData.startTime;
-                          const endTime = barData.endTime;
-                          
-                          // Allow intervals with 0 power/pace (they might still be valid intervals)
-                          if (!startTime || !endTime || isNaN(startTime) || isNaN(endTime)) return null;
-                          
-                          // Use displayValue (for power or pace)
-                          const displayValue = barData.displayValue || value || (usePace ? 10 : 50);
-                          
-                          // Check if api.coord exists and is a function
-                          if (!api.coord || typeof api.coord !== 'function') return null;
-                          
-                          // Get grid dimensions for clipping (use values from grid config)
-                          // Grid config: left: 60, right: usePace ? 120 : 50, top: 60, bottom: 80
-                          const gridLeft = 60;
-                          const gridTop = 60;
-                          const chartWidth = (api.getWidth && api.getWidth()) || 800;
-                          const chartHeight = (api.getHeight && api.getHeight()) || 320;
-                          const gridRight = usePace ? (chartWidth - 120) : (chartWidth - 50);
-                          const gridBottom = chartHeight - 80;
-                          const gridWidth = gridRight - gridLeft;
-                          const gridHeight = gridBottom - gridTop;
-                          
-                          // Get coordinates - ensure we're using the correct axis values
-                          // startTime and endTime are in minutes, displayValue is in watts or pace units
-                          // For X axis, we use time values; for Y axis, we use power/pace values
-                          // For pace (inverted axis), base should be at max pace (bottom of chart)
-                          const baseValue = usePace ? (paceYAxisMax || 300) : 0;
-                          
-                          // For very slow pace (standing), show as small bar at bottom (on X-axis)
-                          let finalDisplayValue = displayValue;
-                          if (usePace && barData.isVerySlowPace) {
-                            // Very slow pace - show as small bar at bottom (on X-axis, at baseValue)
-                            finalDisplayValue = baseValue; // Bottom position (base of pace axis)
-                          }
-                          
-                          const startXCoord = api.coord([startTime, baseValue]);
-                          const endXCoord = api.coord([endTime, baseValue]);
-                          const valueYCoord = api.coord([centerTime, finalDisplayValue]);
-                          const baseYCoord = api.coord([centerTime, baseValue]);
-                          
-                          if (!startXCoord || !endXCoord || !valueYCoord || !baseYCoord) return null;
-                          
-                          // Extract X and Y coordinates
-                          // api.coord returns [x, y] array
-                          const startX = Array.isArray(startXCoord) ? startXCoord[0] : startXCoord;
-                          const endX = Array.isArray(endXCoord) ? endXCoord[0] : endXCoord;
-                          const valueY = Array.isArray(valueYCoord) ? valueYCoord[1] : valueYCoord;
-                          const baseY = Array.isArray(baseYCoord) ? baseYCoord[1] : baseYCoord;
-                          
-                          if (startX === undefined || endX === undefined || valueY === undefined || baseY === undefined) return null;
-                          
-                          // Ensure valid coordinates
-                          if (isNaN(startX) || isNaN(endX) || isNaN(valueY) || isNaN(baseY)) return null;
-                          
-                          // Check if interval is completely outside visible area
-                          const minX = Math.min(startX, endX);
-                          const maxX = Math.max(startX, endX);
-                          if (maxX < gridLeft || minX > gridRight) {
-                            // Completely outside horizontal bounds
-                            return null;
-                          }
-                          
-                          // Clip coordinates to grid bounds
-                          const x = Math.max(gridLeft, Math.min(startX, endX));
-                          const maxEndX = Math.max(startX, endX);
-                          const clippedEndX = Math.min(gridRight, maxEndX);
-                          const width = Math.max(2, clippedEndX - x);
-                          
-                          // Clip Y coordinates to grid bounds
-                          // For pace (inverted axis), bars extend from base (bottom) to value (top)
-                          // For power, bars extend from base (bottom) to value (top)
-                          let clippedY, clippedHeight;
-                          
-                          if (usePace && barData.isVerySlowPace) {
-                            // Very slow pace - small bar at bottom
-                            clippedY = Math.max(gridTop, gridBottom - 8);
-                            clippedHeight = Math.min(8, gridBottom - clippedY);
-                          } else {
-                            // Normal bars - clip to grid bounds
-                            const barTop = Math.min(valueY, baseY);
-                            const barBottom = Math.max(valueY, baseY);
-                            
-                            // Clip top and bottom to grid
-                            const clippedTop = Math.max(gridTop, Math.min(gridBottom, barTop));
-                            const clippedBottom = Math.max(gridTop, Math.min(gridBottom, barBottom));
-                            
-                            clippedY = clippedTop;
-                            clippedHeight = Math.max(2, clippedBottom - clippedTop);
-                          }
-                          
-                          if (width < 2 || clippedHeight < 2 || isNaN(x) || isNaN(clippedY) || isNaN(width) || isNaN(clippedHeight)) return null;
-                          
-                          // Use cluster-based colors with saturation based on power
-                          const hue = barData.colorHue || 260; // Default purple
-                          const saturation = barData.colorSaturation || 60; // Default saturation
-                          const lightness = 75; // Base lightness for fill
-                          
-                          // Helper function to convert HSL to RGB
-                          const hslToRgb = (h, s, l) => {
-                            h = h / 360;
-                            const c = (1 - Math.abs(2 * l - 1)) * s;
-                            const x = c * (1 - Math.abs((h * 6) % 2 - 1));
-                            const m = l - c / 2;
-                            
-                            let r, g, b;
-                            if (h < 1/6) {
-                              r = c; g = x; b = 0;
-                            } else if (h < 2/6) {
-                              r = x; g = c; b = 0;
-                            } else if (h < 3/6) {
-                              r = 0; g = c; b = x;
-                            } else if (h < 4/6) {
-                              r = 0; g = x; b = c;
-                            } else if (h < 5/6) {
-                              r = x; g = 0; b = c;
-                            } else {
-                              r = c; g = 0; b = x;
-                            }
-                            
-                            return [
-                              Math.round((r + m) * 255),
-                              Math.round((g + m) * 255),
-                              Math.round((b + m) * 255)
-                            ];
-                          };
-                          
-                          // Fill color
-                          const [r, g, b] = hslToRgb(hue, saturation / 100, lightness / 100);
-                          
-                          // Border color (darker)
-                          const [rBorder, gBorder, bBorder] = hslToRgb(hue, saturation / 100, (lightness - 15) / 100);
-                        
-                        return {
-                          type: 'rect',
-                            shape: { x, y: clippedY, width, height: clippedHeight, r: [2, 2, 0, 0] },
-                          style: {
-                              fill: `rgba(${r}, ${g}, ${b}, 0.3)`, // Fill with cluster color
-                              stroke: `rgba(${rBorder}, ${gBorder}, ${bBorder}, 0.6)`, // Border with darker cluster color
-                            lineWidth: 1.5
-                          },
-                            z2: 1,
-                            // Add clipPath to ensure bar doesn't render outside grid
-                            clipPath: {
-                              type: 'rect',
-                              shape: {
-                                x: gridLeft,
-                                y: gridTop,
-                                width: gridWidth,
-                                height: gridHeight
-                              }
-                            }
-                          };
-                        } catch (error) {
-                          console.error(`Error rendering interval ${params?.dataIndex}:`, error);
-                          return null;
-                        }
-                      },
-                      z: 1,
-                      silent: false
-                    }] : []),
-                    {
-                      name: 'Speed', 
-                      type: 'line', 
-                      smooth: true,
-                      data: time.map((t, i) => [t / 60, (speed[i] * 3.6).toFixed(1)]),
-                      lineStyle: { 
-                        color: '#4A90E2',
-                        width: 2.5,
-                        shadowBlur: 4,
-                        shadowColor: 'rgba(74, 144, 226, 0.3)'
-                      },
-                      symbol: 'none',
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(74, 144, 226, 0.15)' },
-                            { offset: 1, color: 'rgba(74, 144, 226, 0.01)' }
-                          ]
-                        }
-                      },
-                      z: 2
-                    },
-                    {
-                      name: 'Heart Rate', 
-                      type: 'line', 
-                      yAxisIndex: 1, // Use right Y-axis (Heart Rate axis)
-                      smooth: true,
-                      data: time.map((t, i) => [t / 60, hr[i] || null]).filter(d => d !== null && d[1] !== null),
-                      lineStyle: { 
-                        color: '#FF6B6B',
-                        width: 2.5,
-                        shadowBlur: 4,
-                        shadowColor: 'rgba(255, 107, 107, 0.3)'
-                      },
-                      symbol: 'none',
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(255, 107, 107, 0.15)' },
-                            { offset: 1, color: 'rgba(255, 107, 107, 0.01)' }
-                          ]
-                        }
-                      },
-                      z: 2
-                    },
-                    // Power series only for cycling
-                    ...(!usePace ? [{
-                      name: 'Power', 
-                      type: 'line', 
-                      smooth: true,
-                      data: time.map((t, i) => [t / 60, power[i] || null]).filter(d => d !== null && d[1] !== null),
-                      lineStyle: { 
-                        color: '#8B45D6',
-                        width: 2.5,
-                        shadowBlur: 4,
-                        shadowColor: 'rgba(139, 69, 190, 0.3)'
-                      },
-                      symbol: 'none',
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(139, 69, 190, 0.15)' },
-                            { offset: 1, color: 'rgba(139, 69, 190, 0.01)' }
-                          ]
-                        }
-                      },
-                      z: 2
-                    }] : []),
-                    {
-                      name: 'Elevation', 
-                      type: 'line', 
-                      yAxisIndex: 2, // Use third Y-axis (Elevation axis)
-                      areaStyle: {
-                        color: {
-                          type: 'linear',
-                          x: 0, y: 0, x2: 0, y2: 1,
-                          colorStops: [
-                            { offset: 0, color: 'rgba(160, 120, 80, 0.4)' },
-                            { offset: 1, color: 'rgba(160, 120, 80, 0.05)' }
-                          ]
-                        }
-                      },
-                      data: time.map((t, i) => [t / 60, altitude[i] || null]).filter(d => d !== null && d[1] !== null),
-                      lineStyle: { 
-                        color: '#A07850',
-                        width: 2,
-                        shadowBlur: 3,
-                        shadowColor: 'rgba(160, 120, 80, 0.2)'
-                      },
-                      symbol: 'none',
-                      z: 2
-                    }
-                  ]
-                };
+                const uniqueLaps = deduplicateStravaLaps(originalLaps);
 
                 return (
                   <div className="space-y-3">
-                    {selectedStrava && (
-                      <div className="w-full overflow-x-auto">
-                        <div className="flex flex-wrap gap-2 sm:gap-3">
-                          
-                          <div className="flex-1 min-w-[160px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Date</div>
-                            <div className="text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
-                          </div>
-                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
-                            <div className="text-base font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
-                          </div>
-                          {stravaAvgPower && (
-                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
-                              <div className="text-base font-semibold text-gray-900">{Math.round(stravaAvgPower)} W</div>
-                              {stravaMaxPower && (
-                                <div className="text-xs text-gray-500 mt-0.5">Max: {Math.round(stravaMaxPower)} W</div>
-                              )}
-                          </div>
-                          )}
-                          {stravaAvgCadence && (
-                            <div className="flex-1 min-w-[140px] bg-white/90 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 shadow-sm">
-                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
-                              <div className="text-base font-semibold text-blue-700">{Math.round(stravaAvgCadence)} rpm</div>
-                          </div>
-                          )}
-                          {stravaNormalizedPower && (
-                            <div className="flex-1 min-w-[140px] bg-white/90 border border-green-200 bg-green-50 rounded-xl px-4 py-3 shadow-sm">
-                              <div className="text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
-                              <div className="text-base font-semibold text-green-700">{Math.round(stravaNormalizedPower)} W</div>
-                            </div>
-                          )}
-                          {calculateStravaTSS && (
-                            <div className="flex-1 min-w-[140px] bg-white/90 border border-purple-200 bg-purple-50 rounded-xl px-4 py-3 shadow-sm">
-                              <div className="text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
-                                TSS
-                                {calculateStravaTSS.estimated && (
-                                  <span className="text-xs text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
-                                )}
-                              </div>
-                              <div className="text-base font-semibold text-purple-700">{calculateStravaTSS.value}</div>
-                              {calculateStravaIF && (
-                                <div className="text-xs text-gray-500 mt-0.5">IF: {calculateStravaIF}</div>
-                              )}
-                            </div>
-                          )}
-                          {hasStravaElevation && (
-                          <div className="flex-1 min-w-[140px] bg-white/90 border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                            <div className="text-[11px] uppercase tracking-wide text-gray-500">Elevation</div>
-                              <div className="text-base font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
-                          </div>
-                          )}
-                        </div>
-                      </div>
+                    {/* Interval Chart */}
+                    {uniqueLaps && uniqueLaps.length > 0 && (
+                      <IntervalChart 
+                        laps={uniqueLaps}
+                        sport={selectedStrava?.sport || 'cycling'}
+                      />
                     )}
-                    
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                       <button
-                         onClick={() => {
-                           if (stravaChartRef.current) {
-                             const chart = stravaChartRef.current.getEchartsInstance();
-                             chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
-                           }
-                         }}
-                         className="px-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-medium text-gray-700 transition-colors flex items-center justify-center"
-                         style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
-                       >
-                         Reset Zoom
-                       </button>
-                       <button
-                         onClick={() => setShowSmoothnessSlider(!showSmoothnessSlider)}
-                         className="px-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-medium text-gray-700 transition-colors flex items-center justify-center"
-                         style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
-                       >
-                         Smoothness
-                       </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            // Detect intervals automatically
-                            const timeArray = selectedStravaStreams?.time?.data || selectedStravaStreams?.time || [];
-                            const powerArray = selectedStravaStreams?.watts?.data || selectedStravaStreams?.watts || [];
-                            
-                            if (timeArray.length === 0) {
-                              alert('No time data available');
-                              return;
-                            }
-                            
-                            const dataArray = powerArray;
-                            
-                            if (dataArray.length === 0 || dataArray.length !== timeArray.length || !dataArray.some((v) => v > 0)) {
-                              alert('No power data available. Interval detection requires power stream.');
-                              return;
-                            }
-                            
-                            // Sensitivity configuration (controls how aggressive detection is)
-                            const sensitivity = INTERVAL_SENSITIVITY_CONFIG[intervalSensitivity] || INTERVAL_SENSITIVITY_CONFIG.medium;
-                            const changeThreshold = sensitivity.changeThreshold;
-                            const stabilityWindow = sensitivity.stabilityWindow;
-                            const minIntervalDuration = sensitivity.minIntervalDuration;
-                            const mergeThreshold = sensitivity.mergeThreshold;
-                            const detectionSmoothingWindow = Math.max(
-                              sensitivity.smoothingMin,
-                              Math.round((smoothingWindow || 1) * sensitivity.smoothingMultiplier)
-                            );
-
-                            // Detect intervals by segmenting stable sections of the power/speed trace
-                            const smoothed = [];
-                            for (let i = 0; i < dataArray.length; i++) {
-                              let sum = 0;
-                              let count = 0;
-                              for (let j = Math.max(0, i - detectionSmoothingWindow); j <= Math.min(dataArray.length - 1, i + detectionSmoothingWindow); j++) {
-                                const val = dataArray[j];
-                                if (val && val >= 0) {
-                                  sum += val;
-                                  count++;
-                                }
-                              }
-                              smoothed.push(count > 0 ? sum / count : 0);
-                            }
-
-                            const intervals = [];
-                            let segmentStartIdx = 0;
-                            let changeCandidate = null;
-                            
-                            // Use rolling window for comparison instead of entire segment average
-                            // This makes detection more sensitive to recent changes
-                            const rollingWindowSize = Math.max(5, Math.floor(detectionSmoothingWindow * 2)); // Look back at recent values
-                            const rollingWindow = []; // Store recent values for rolling average
-                            
-                            const addInterval = (startIdx, endTime) => {
-                              const startTime = timeArray[startIdx];
-                              if (endTime - startTime >= minIntervalDuration) {
-                                intervals.push({ start: startTime, end: endTime });
-                              }
-                            };
-
-                            for (let i = 0; i < smoothed.length; i++) {
-                              const value = smoothed[i] || 0;
-                              const currentTime = timeArray[i];
-                              
-                              // Maintain rolling window
-                              rollingWindow.push(value);
-                              if (rollingWindow.length > rollingWindowSize) {
-                                rollingWindow.shift();
-                              }
-                              
-                              // Calculate rolling average from recent values
-                              const rollingAvg = rollingWindow.length > 0 
-                                ? rollingWindow.reduce((a, b) => a + b, 0) / rollingWindow.length 
-                                : value;
-                              
-                              // Also calculate average of current segment for comparison
-                              let segmentAvg = value;
-                              if (i > segmentStartIdx) {
-                                let segmentSum = 0;
-                                let segmentCount = 0;
-                                for (let j = segmentStartIdx; j < i; j++) {
-                                  segmentSum += smoothed[j] || 0;
-                                  segmentCount++;
-                                }
-                                segmentAvg = segmentCount > 0 ? segmentSum / segmentCount : value;
-                              }
-                              
-                              // Use the more sensitive of the two comparisons (rolling vs segment)
-                              // For high sensitivity, prefer rolling window
-                              const comparisonValue = intervalSensitivity === 'high' ? rollingAvg : segmentAvg;
-                              const reference = Math.max(comparisonValue, value, 50); // avoid division by tiny numbers
-                              const diffRatio = reference > 0 ? Math.abs(value - comparisonValue) / reference : 0;
-
-                              if (diffRatio > changeThreshold) {
-                                if (!changeCandidate) {
-                                  changeCandidate = { idx: i, time: currentTime };
-                                } else if (currentTime - changeCandidate.time >= stabilityWindow) {
-                                  addInterval(segmentStartIdx, changeCandidate.time);
-                                  // start new segment at change point
-                                  segmentStartIdx = changeCandidate.idx;
-                                  // Reset rolling window for new segment
-                                  rollingWindow.length = 0;
-                                  for (let j = Math.max(0, segmentStartIdx - rollingWindowSize); j <= segmentStartIdx; j++) {
-                                    if (j < smoothed.length) {
-                                      rollingWindow.push(smoothed[j] || 0);
-                                    }
-                                  }
-                                  changeCandidate = null;
-                                  continue;
-                                }
-                              } else if (changeCandidate) {
-                                changeCandidate = null;
-                              }
-                            }
-
-                            // Close final segment
-                            const finalEndTime = timeArray[timeArray.length - 1];
-                            addInterval(segmentStartIdx, finalEndTime);
-
-                            // Merge short gaps between intervals
-                            const filteredIntervals = [];
-                            intervals.forEach((interval) => {
-                              if (filteredIntervals.length === 0) {
-                                filteredIntervals.push(interval);
-                                return;
-                              }
-                              const last = filteredIntervals[filteredIntervals.length - 1];
-                              if (interval.start - last.end <= mergeThreshold) {
-                                last.end = Math.max(last.end, interval.end);
-                              } else {
-                                filteredIntervals.push(interval);
-                              }
-                            });
-
-                            const finalIntervals = filteredIntervals.filter(
-                              (interval) => interval.end - interval.start >= minIntervalDuration
-                            );
-                            
-                            if (finalIntervals.length === 0) {
-                              alert('No intervals detected. Try adjusting the detection parameters.');
-                              return;
-                            }
-                            
-                            // Build existing interval key map to prevent duplicates
-                            const buildActivityStart = () => {
-                              const startDateStr = selectedStrava?.start_date_local ||
-                                selectedStrava?.start_date ||
-                                selectedStrava?.raw?.start_date ||
-                                selectedStrava?.startDate;
-                              const parsed = startDateStr ? new Date(startDateStr) : new Date();
-                              return isNaN(parsed.getTime()) ? new Date() : parsed;
-                            };
-
-                            const activityStartDate = buildActivityStart();
-                            const activityStartTimeMs = activityStartDate.getTime();
-
-                            const normalizeIntervalKey = (startSeconds, endSeconds) => {
-                              const normalizedStart = Math.round(startSeconds);
-                              const normalizedDuration = Math.round(endSeconds - startSeconds);
-                              return `${normalizedStart}_${normalizedDuration}`;
-                            };
-
-                            const existingIntervalKeys = (() => {
-                              const keys = new Set();
-                              const laps = deduplicateStravaLaps(selectedStrava?.laps || []);
-                              let cumulativeTimeSeconds = 0;
-
-                              laps.forEach((lap, idx) => {
-                                let startSeconds = 0;
-                                if (lap.startTime) {
-                                  startSeconds = (new Date(lap.startTime).getTime() - activityStartTimeMs) / 1000;
-                                } else if (lap.start_date) {
-                                  startSeconds = (new Date(lap.start_date).getTime() - activityStartTimeMs) / 1000;
-                                } else {
-                                  startSeconds = idx === 0 ? 0 : cumulativeTimeSeconds;
-                                }
-
-                                if (startSeconds < 0) {
-                                  startSeconds = 0;
-                                }
-
-                                const duration = lap.elapsed_time || 0;
-                                const endSeconds = startSeconds + duration;
-                                const key = normalizeIntervalKey(startSeconds, endSeconds);
-                                keys.add(key);
-                                cumulativeTimeSeconds = Math.max(cumulativeTimeSeconds, startSeconds) + duration;
-                              });
-
-                              return keys;
-                            })();
-
-                            const intervalsToCreate = [];
-                            let duplicatesSkipped = 0;
-
-                            finalIntervals.forEach((interval) => {
-                              const startSeconds = Math.max(0, Math.round(interval.start * 10) / 10);
-                              const endSeconds = Math.max(startSeconds + minIntervalDuration, Math.round(interval.end * 10) / 10);
-                              const key = normalizeIntervalKey(startSeconds, endSeconds);
-
-                              if (existingIntervalKeys.has(key)) {
-                                duplicatesSkipped += 1;
-                                return;
-                              }
-
-                              existingIntervalKeys.add(key);
-                              intervalsToCreate.push({
-                                startTime: startSeconds,
-                                endTime: endSeconds
-                              });
-                            });
-
-                            if (intervalsToCreate.length === 0) {
-                              alert('All detected intervals already exist. Try adjusting detection parameters for different sections.');
-                              return;
-                            }
-
-                            let createdCount = 0;
-                            let skippedResponse = {};
-                            try {
-                              const response = await createStravaLapsBulk(selectedStrava.id, intervalsToCreate);
-                              createdCount = response?.created || 0;
-                              skippedResponse = response?.skipped || {};
-                            } catch (bulkError) {
-                              console.error('Error creating intervals in bulk:', bulkError);
-                              alert('Failed to create detected intervals: ' + (bulkError.response?.data?.error || bulkError.message));
-                              return;
-                            }
-                            
-                            // Reload data
-                            await loadStravaDetail(selectedStrava.id);
-                            await loadExternalActivities();
-                            
-                            const totalSkipped = duplicatesSkipped + (skippedResponse?.duplicates || 0);
-                            const skippedInvalid = (skippedResponse?.invalid || 0) + (skippedResponse?.empty || 0);
-                            
-                            alert(`Created ${createdCount} intervals. Skipped duplicates: ${totalSkipped}. Skipped invalid/empty: ${skippedInvalid}.`);
-                          } catch (error) {
-                            console.error('Error detecting intervals:', error);
-                            alert('Error detecting intervals: ' + (error.response?.data?.error || error.message));
-                          }
-                        }}
-                        className="px-3 bg-primary text-white hover:bg-primary-dark border border-primary rounded text-xs font-medium transition-colors flex items-center justify-center"
-                        style={{ fontSize: '12px', fontWeight: 500, height: '24px' }}
-                      >
-                        Detect Intervals
-                       </button>
-                       <div className="flex items-center gap-1 text-[11px] text-gray-600">
-                         <span>Sensitivity</span>
-                         <select
-                           value={intervalSensitivity}
-                           onChange={(e) => setIntervalSensitivity(e.target.value)}
-                           className="text-xs border border-gray-300 rounded px-1.5 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary text-gray-700"
-                         >
-                           <option value="high">High</option>
-                           <option value="medium">Medium</option>
-                           <option value="low">Low</option>
-                         </select>
-                       </div>
-                     </div>
-                     {/* Smoothness Slider Popup */}
-                     {showSmoothnessSlider && (
-                       <div className="absolute top-10 z-30 bg-white/95 backdrop-blur-sm rounded-lg border border-primary/30 shadow-lg p-3" style={{ width: '200px', left: '65%' }}>
-                         <div className="flex items-center justify-between mb-2">
-                           <span className="text-sm font-semibold text-primary">Smoothness</span>
-                           <button
-                             onClick={() => setShowSmoothnessSlider(false)}
-                             className="text-gray-500 hover:text-gray-700 text-xs"
-                           >
-                             ✕
-                           </button>
-                         </div>
-                         <div className="flex items-center justify-between mb-1">
-                           <span className="text-xs text-gray-600">0s</span>
-                           <span className="text-xs font-medium text-primary">{smoothingWindow}s</span>
-                           <span className="text-xs text-gray-600">30s</span>
-                         </div>
-                         <input
-                           type="range"
-                           min="0"
-                           max="30"
-                           value={smoothingWindow}
-                           onChange={(e) => setSmoothingWindow(Number(e.target.value))}
-                           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
-                           style={{
-                             background: `linear-gradient(to right, #767EB5 0%, #767EB5 ${(smoothingWindow / 30) * 100}%, #E0E0E0 ${(smoothingWindow / 30) * 100}%, #E0E0E0 100%)`
-                           }}
-                         />
-                       </div>
-                     )}
-                    
-                    <div className="relative mt-2" id="strava-chart-container">
-                      {/* Drag selection overlay for Strava chart - only visible when dragging */}
-                      {stravaIsDragging && (
-                        <div
-                          className="absolute"
-                          style={{
-                            left: '60px',
-                            top: '60px',
-                            right: '50px',
-                            bottom: '80px',
-                            cursor: 'crosshair',
-                            zIndex: 10,
-                            pointerEvents: 'auto'
-                          }}
-                        />
-                      )}
-                      
-                      {/* Drag selection rectangle */}
-                      {stravaIsDragging && stravaDragStart.x !== stravaDragEnd.x && (
-                        <>
-                          <div
-                            className="absolute border-2 border-primary bg-primary/20 pointer-events-none z-50"
-                            style={{
-                              left: `${60 + Math.min(stravaDragStart.x - 60, stravaDragEnd.x - 60)}px`,
-                              top: '60px',
-                              width: `${Math.abs(stravaDragEnd.x - stravaDragStart.x)}px`,
-                              height: '240px'
-                            }}
-                          />
-                          {/* Show hint text */}
-                          <div
-                            className="absolute pointer-events-none z-50 text-xs text-primary-dark bg-primary/30 px-2 py-1 rounded"
-                            style={{
-                              left: `${(stravaDragStart.x + stravaDragEnd.x) / 2}px`,
-                              top: '65px',
-                              transform: 'translateX(-50%)'
-                            }}
-                          >
-                            {(() => {
-                              const startTime = Math.min(stravaDragStart.time || 0, stravaDragEnd.time || 0);
-                              const endTime = Math.max(stravaDragStart.time || 0, stravaDragEnd.time || 0);
-                              const duration = Math.max(0, endTime - startTime);
-                              if (duration > 0) {
-                                return `${formatDuration(duration)} - Release to create interval`;
-                              }
-                              return 'Drag to select interval';
-                            })()}
-                          </div>
-                        </>
-                      )}
-                      
-                  <ReactECharts 
-                    ref={stravaChartRef}
-                    option={option} 
-                    style={{ height: '320px' }}
-                    className="min-h-[240px] sm:min-h-[320px]"
-                    notMerge={true} 
-                    lazyUpdate={true} 
-                  />
-                   </div>
                   </div>
                 );
               })()}
@@ -5012,16 +3735,11 @@ const FitAnalysisPage = () => {
                 </div>
               )}
               
-              {!showStravaCreateLapButton && (
-                <div className="mt-2 text-xs sm:text-sm text-gray-500 italic rounded-lg p-2 border border-primary/30 bg-primary/10">
-                  💡 Tip: Click and drag on the chart to select an interval, or hold <kbd className="px-1 sm:px-1.5 py-0.5 bg-white/80 rounded text-xs font-mono border border-gray-300">Shift</kbd> while dragging to zoom
-                </div>
-              )}
 
               {/* Laps/Intervals (Strava) */}
               <StravaLapsTable 
                 selectedStrava={selectedStrava}
-                stravaChartRef={stravaChartRef}
+                stravaChartRef={null}
                 maxTime={maxTime}
                 loadStravaDetail={loadStravaDetail}
                 loadExternalActivities={loadExternalActivities}

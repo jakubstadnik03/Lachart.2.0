@@ -304,6 +304,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (specialization) updateData.specialization = specialization;
         if (bio) updateData.bio = bio;
         if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
+        if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
 
         console.log('Updating user profile:', { userId, updateData });
 
@@ -328,7 +329,8 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             specialization: updatedUser.specialization,
             bio: updatedUser.bio,
             athletes: updatedUser.athletes,
-            powerZones: updatedUser.powerZones // Include power zones
+            powerZones: updatedUser.powerZones, // Include power zones
+            heartRateZones: updatedUser.heartRateZones // Include heart rate zones
         };
 
         res.status(200).json(userResponse);

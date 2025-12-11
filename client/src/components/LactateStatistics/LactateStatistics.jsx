@@ -344,13 +344,13 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Měsíční analýza podle wattů</h2>
-            <p className="text-gray-600">Analýza tréninků podle power zón s predikcí laktátu</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Monthly Power Analysis</h2>
+            <p className="text-gray-600">Training analysis by power zones with lactate prediction</p>
           </div>
           <button
             onClick={clearCache}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium"
-            title="Obnovit data (vymazat cache)"
+            title="Refresh data (clear cache)"
           >
             🔄 Obnovit
           </button>
@@ -365,15 +365,15 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
             <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4">
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
-                  Vyberte měsíc:
+                  Select month:
                 </label>
                 {selectedMonth && (
                   <button
                     onClick={() => loadMonthData(selectedMonth, true)}
                     className="text-xs text-primary hover:text-primary-dark font-medium"
-                    title="Znovu načíst data pro tento měsíc"
+                    title="Reload data for this month"
                   >
-                    🔄 Obnovit měsíc
+                    🔄 Refresh month
                   </button>
                 )}
               </div>
@@ -384,7 +384,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
               >
                 {availableMonths.map((month) => (
                   <option key={month.monthKey} value={month.monthKey}>
-                    {month.month} ({month.trainings} tréninků)
+                    {month.month} ({month.trainings} trainings)
                   </option>
                 ))}
               </select>
@@ -393,19 +393,19 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
 
           {loadingMonthly ? (
             <div className="flex items-center justify-center p-8">
-              <div className="text-gray-500">Načítání měsíční analýzy...</div>
+              <div className="text-gray-500">Loading monthly analysis...</div>
             </div>
           ) : availableMonths.length === 0 ? (
             <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Měsíční analýza podle wattů</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Monthly Power Analysis</h2>
               <div className="text-center py-8 text-gray-500">
-                <p>Žádné FIT soubory s wattovými daty nenalezeny.</p>
-                <p className="text-sm mt-2">Nahrajte cyklistické FIT soubory s wattovými daty pro zobrazení analýzy.</p>
+                <p>No FIT files with power data found.</p>
+                <p className="text-sm mt-2">Upload cycling FIT files with power data to display the analysis.</p>
               </div>
             </div>
           ) : loadingMonthData ? (
             <div className="flex items-center justify-center p-8">
-              <div className="text-gray-500">Načítání dat pro vybraný měsíc...</div>
+              <div className="text-gray-500">Loading data for the selected month...</div>
             </div>
           ) : selectedMonth && loadedMonths.has(selectedMonth) ? (
             (() => {
@@ -477,22 +477,22 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       <h4 className="text-lg font-semibold text-gray-900 mb-3">🚴 Cyklistika - Statistiky</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-                          <div className="text-sm text-blue-600 font-medium mb-1">Tréninky</div>
+                          <div className="text-sm text-blue-600 font-medium mb-1">Trainings</div>
                           <div className="text-3xl font-bold text-blue-900">{bikeTrainings}</div>
                         </div>
                         <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-                          <div className="text-sm text-purple-600 font-medium mb-1">Čas</div>
+                          <div className="text-sm text-purple-600 font-medium mb-1">Time</div>
                           <div className="text-3xl font-bold text-purple-900">{formatDuration(bikeTime)}</div>
                         </div>
                         {(month.bikeAvgPower !== undefined && month.bikeAvgPower !== null && month.bikeAvgPower > 0) && (
                           <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
-                            <div className="text-sm text-green-600 font-medium mb-1">Průměrný výkon</div>
+                            <div className="text-sm text-green-600 font-medium mb-1">Avg Power</div>
                             <div className="text-3xl font-bold text-green-900">{Math.round(month.bikeAvgPower)}W</div>
                           </div>
                         )}
                         {(month.bikeMaxPower !== undefined && month.bikeMaxPower !== null && month.bikeMaxPower > 0) && (
                           <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
-                            <div className="text-sm text-orange-600 font-medium mb-1">Max. výkon</div>
+                            <div className="text-sm text-orange-600 font-medium mb-1">Max Power</div>
                             <div className="text-3xl font-bold text-orange-900">{Math.round(month.bikeMaxPower)}W</div>
                           </div>
                         )}
@@ -516,7 +516,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                         {/* Bike heart rate - show if available */}
                         {hasBikeData && month.avgHeartRate > 0 && (
                           <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-xl p-4 border border-pink-200">
-                            <div className="text-sm text-pink-600 font-medium mb-1">Průměrný tep</div>
+                            <div className="text-sm text-pink-600 font-medium mb-1">Avg HR</div>
                             <div className="text-3xl font-bold text-pink-900">{Math.round(month.avgHeartRate)} bpm</div>
                             {month.maxHeartRate > 0 && (
                               <div className="text-xs text-pink-700 mt-1">Max: {Math.round(month.maxHeartRate)} bpm</div>
@@ -530,38 +530,38 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                   {/* Running Summary Cards */}
                   {hasRunData && (runningTime > 0 || hasRunningZoneData) && (
                     <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">🏃 Běh - Statistiky</h4>
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">🏃 Run - Stats</h4>
                       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         {runningTrainings > 0 && (
                         <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-xl p-4 border border-cyan-200">
-                          <div className="text-sm text-cyan-600 font-medium mb-1">Tréninky</div>
+                          <div className="text-sm text-cyan-600 font-medium mb-1">Trainings</div>
                             <div className="text-3xl font-bold text-cyan-900">{runningTrainings}</div>
                         </div>
                         )}
                         {runningTime > 0 && (
                         <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-xl p-4 border border-teal-200">
-                          <div className="text-sm text-teal-600 font-medium mb-1">Čas</div>
+                          <div className="text-sm text-teal-600 font-medium mb-1">Time</div>
                             <div className="text-3xl font-bold text-teal-900">{formatDuration(runningTime)}</div>
                         </div>
                         )}
                         {month.runningDistance > 0 && (
                           <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
-                            <div className="text-sm text-emerald-600 font-medium mb-1">Vzdálenost</div>
+                            <div className="text-sm text-emerald-600 font-medium mb-1">Distance</div>
                             <div className="text-3xl font-bold text-emerald-900">{(month.runningDistance / 1000).toFixed(1)} km</div>
                           </div>
                         )}
                         {month.runningAvgPace > 0 && month.runningAvgPace !== Infinity && !isNaN(month.runningAvgPace) && (
                           <div className="bg-gradient-to-br from-lime-50 to-lime-100 rounded-xl p-4 border border-lime-200">
-                            <div className="text-sm text-lime-600 font-medium mb-1">Průměrné tempo</div>
+                            <div className="text-sm text-lime-600 font-medium mb-1">Avg pace</div>
                             <div className="text-3xl font-bold text-lime-900">{formatPace(month.runningAvgPace)} /km</div>
                             {month.runningMaxPace > 0 && month.runningMaxPace < Infinity && !isNaN(month.runningMaxPace) && (
-                              <div className="text-xs text-lime-700 mt-1">Nejrychlejší: {formatPace(month.runningMaxPace)} /km</div>
+                              <div className="text-xs text-lime-700 mt-1">Best: {formatPace(month.runningMaxPace)} /km</div>
                             )}
                           </div>
                         )}
                         {month.runningAvgHeartRate > 0 && (
                           <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-4 border border-rose-200">
-                            <div className="text-sm text-rose-600 font-medium mb-1">Průměrný tep</div>
+                            <div className="text-sm text-rose-600 font-medium mb-1">Avg HR</div>
                             <div className="text-3xl font-bold text-rose-900">{Math.round(month.runningAvgHeartRate)} bpm</div>
                             {month.runningMaxHeartRate > 0 && (
                               <div className="text-xs text-rose-700 mt-1">Max: {Math.round(month.runningMaxHeartRate)} bpm</div>
@@ -610,7 +610,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            Běh Zóny
+                            Run Zones
                           </button>
                         )}
                         {(month.swimmingZones || month.swimmingZoneTimes) && (
@@ -622,7 +622,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            Plavání Zóny
+                            Swim Zones
                           </button>
                         )}
                       </div>
@@ -634,7 +634,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     <div className="mb-6 p-4 bg-gray-50 rounded-xl">
                       <h4 className="text-lg font-semibold text-gray-900 mb-3">
                         Power Zóny
-                        {month.usesProfileZones ? ' (z vašeho profilu)' : bikeMaxPower > 0 ? ` (odhadovaný FTP: ${Math.round(estimatedFTP)}W)` : ' (výchozí zóny)'}
+                        {month.usesProfileZones ? ' (from your profile)' : bikeMaxPower > 0 ? ` (estimated FTP: ${Math.round(estimatedFTP)}W)` : ' (default zones)'}
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
                         {POWER_ZONES.map(powerZone => {
@@ -703,7 +703,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 </div>
                                 {zone.predictedLactate > 0 && (
                                   <div className="text-xs text-gray-600">
-                                    Pred. laktát: {zone.predictedLactate.toFixed(1)} mmol/L
+                                    Pred. lactate: {zone.predictedLactate.toFixed(1)} mmol/L
                                   </div>
                                 )}
                               </div>
@@ -845,8 +845,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                   {selectedZoneType === 'running' && (month.runningZones || month.runningZoneTimes) && (
                     <div className="mb-6 p-4 bg-gray-50 rounded-xl">
                       <h4 className="text-lg font-semibold text-gray-900 mb-3">
-                        Běh Zóny (Pace)
-                        {month.usesProfileRunningZones ? ' (z vašeho profilu)' : month.runningZones ? ' (výchozí zóny)' : ' (z dat tréninků)'}
+                        Run Zones (Pace)
+                        {month.usesProfileRunningZones ? ' (from your profile)' : month.runningZones ? ' (default zones)' : ' (from training data)'}
                       </h4>
                       {month.runningZones && Object.keys(month.runningZones).length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
@@ -954,15 +954,15 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       })()}
                       {(!month.runningZoneTimes || !Object.values(month.runningZoneTimes).some(z => z && z.time > 0)) && !month.runningZones && (
                         <div className="text-center py-4 text-gray-500 text-sm">
-                          {month.runningTrainings > 0 
-                            ? `Běh tréninky nalezeny (${month.runningTrainings}), ale bez pace dat v records. Zkontrolujte, zda FIT soubory obsahují speed data.`
-                            : 'Žádné běh tréninky s pace daty v tomto měsíci.'}
+                    {month.runningTrainings > 0 
+                      ? `Run trainings found (${month.runningTrainings}), but no pace data in records. Please check that FIT files contain speed data.`
+                      : 'No run trainings with pace data in this month.'}
                         </div>
                       )}
                       {month.runningZones && (!month.runningZoneTimes || !Object.values(month.runningZoneTimes).some(z => z && z.time > 0)) && (
                         <div className="text-center py-4 text-gray-500 text-sm">
-                          <p>Definice zón jsou k dispozici, ale zatím nejsou žádná data o čase stráveném v jednotlivých zónách.</p>
-                          <p className="text-xs mt-1">Data se zobrazí po nahrání běžeckých tréninků s pace daty.</p>
+                    <p>Zone definitions are available, but there is no time spent in zones yet.</p>
+                    <p className="text-xs mt-1">Data will appear after uploading run trainings with pace data.</p>
                         </div>
                       )}
                     </div>
@@ -972,8 +972,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                   {selectedZoneType === 'swimming' && (month.swimmingZones || month.swimmingZoneTimes) && (
                     <div className="mb-6 p-4 bg-gray-50 rounded-xl">
                       <h4 className="text-lg font-semibold text-gray-900 mb-3">
-                        Plavání Zóny (Pace)
-                        {month.usesProfileZones && month.swimmingZones ? ' (z vašeho profilu)' : ' (z dat tréninků)'}
+                        Swim Zones (Pace)
+                        {month.usesProfileZones && month.swimmingZones ? ' (from your profile)' : ' (from training data)'}
                       </h4>
                       {month.swimmingZones && (
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
@@ -1049,7 +1049,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       )}
                       {month.swimmingZoneTimes && Object.values(month.swimmingZoneTimes).every(z => !z || z.time === 0) && (
                         <div className="text-center py-4 text-gray-500 text-sm">
-                          Žádné plavání tréninky s pace daty v tomto měsíci.
+                          No swim trainings with pace data in this month.
                         </div>
                       )}
                     </div>
@@ -1060,13 +1060,13 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
                       <div className="flex items-center justify-between mb-4">
                         <h4 className="text-lg font-semibold text-gray-900">
-                          Porovnání tréninků ({selectedTrainings.length})
+                          Training comparison ({selectedTrainings.length})
                         </h4>
                         <button
                           onClick={() => setSelectedTrainings([])}
                           className="text-sm text-red-600 hover:text-red-800"
                         >
-                          Zrušit výběr
+                          Clear selection
                         </button>
                       </div>
                       
@@ -1074,13 +1074,13 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-gray-300">
-                              <th className="text-left py-2 px-3">Trénink</th>
-                              <th className="text-right py-2 px-3">Průměrný výkon</th>
-                              <th className="text-right py-2 px-3">Max. výkon</th>
-                              <th className="text-right py-2 px-3">Prům. HR</th>
+                              <th className="text-left py-2 px-3">Training</th>
+                              <th className="text-right py-2 px-3">Avg power</th>
+                              <th className="text-right py-2 px-3">Max power</th>
+                              <th className="text-right py-2 px-3">Avg HR</th>
                               <th className="text-right py-2 px-3">Max HR</th>
-                              <th className="text-right py-2 px-3">Čas</th>
-                              <th className="text-right py-2 px-3">Vzdálenost</th>
+                              <th className="text-right py-2 px-3">Time</th>
+                              <th className="text-right py-2 px-3">Distance</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1089,11 +1089,11 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 <td className="py-2 px-3">
                                   <div className="font-medium">{training.title}</div>
                                   <div className="text-xs text-gray-500">
-                                    {new Date(training.date).toLocaleDateString('cs-CZ')} • {training.type === 'fit' ? 'FIT' : training.type === 'strava' ? 'Strava' : 'Manual'}
+                                    {new Date(training.date).toLocaleDateString('en-US')} • {training.type === 'fit' ? 'FIT' : training.type === 'strava' ? 'Strava' : 'Manual'}
                                   </div>
                                   {training.similarTrainings && training.similarTrainings.length > 0 && (
                                     <div className="text-xs text-blue-600 mt-1">
-                                      {training.similarTrainings.length} podobný{training.similarTrainings.length > 1 ? 'ch' : ''} trénink{training.similarTrainings.length > 1 ? 'ů' : ''}
+                                      {training.similarTrainings.length} similar training{training.similarTrainings.length !== 1 ? 's' : ''}
                                     </div>
                                   )}
                                 </td>
@@ -1113,7 +1113,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                             ))}
                             {selectedTrainings.length > 1 && (
                               <tr className="bg-gray-100 font-semibold">
-                                <td className="py-2 px-3">Průměr</td>
+                                <td className="py-2 px-3">Average</td>
                                 <td className="text-right py-2 px-3">
                                   {Math.round(selectedTrainings.reduce((sum, t) => sum + t.avgPower, 0) / selectedTrainings.length)}W
                                 </td>
@@ -1151,7 +1151,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
           ) : (
             <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
               <div className="text-center py-8 text-gray-500">
-                <p>Vyberte měsíc pro zobrazení analýzy.</p>
+                <p>Select a month to display the analysis.</p>
               </div>
             </div>
           )}

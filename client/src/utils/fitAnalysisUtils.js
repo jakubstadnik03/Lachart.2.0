@@ -63,16 +63,18 @@ export const prepareTrainingChartData = (training) => {
 
   // Find max values for scaling
   const maxTime = recordsWithTime[recordsWithTime.length - 1]?.timeFromStart || 0;
-  const maxSpeed = Math.max(...recordsWithTime.map(r => r.speed || 0).filter(v => v > 0));
-  const maxHeartRate = Math.max(...recordsWithTime.map(r => r.heartRate || 0).filter(v => v > 0));
-  const maxPower = Math.max(...recordsWithTime.map(r => r.power || 0).filter(v => v > 0));
+  const maxSpeed = Math.max(...recordsWithTime.map(r => r.speed || 0).filter(v => v > 0), 1);
+  const maxHeartRate = Math.max(...recordsWithTime.map(r => r.heartRate || 0).filter(v => v > 0), 1);
+  const maxPower = Math.max(...recordsWithTime.map(r => r.power || 0).filter(v => v > 0), 1);
+  const maxCadence = Math.max(...recordsWithTime.map(r => r.cadence || 0).filter(v => v > 0), 1);
 
   return {
     records: recordsWithTime,
     maxTime,
     maxSpeed,
     maxHeartRate,
-    maxPower
+    maxPower,
+    maxCadence
   };
 };
 

@@ -135,7 +135,8 @@ const ProfilePage = () => {
         avatar: profileData.avatar || defaultAvatar,  // Použití defaultního avataru podle role
         _id: profileData._id,
         role: profileData.role,
-        powerZones: profileData.powerZones // Include power zones
+        powerZones: profileData.powerZones, // Include power zones
+        heartRateZones: profileData.heartRateZones // Include heart rate zones
       });
 
       // Pokud je to trenér, nemusíme načítat tréninky a testy
@@ -453,7 +454,7 @@ const ProfilePage = () => {
       </motion.div>
 
       {/* Power Zones Section */}
-      {(userInfo.powerZones?.cycling || userInfo.powerZones?.running) && (
+      {(userInfo.powerZones?.cycling || userInfo.powerZones?.running || userInfo.powerZones?.swimming) && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -487,6 +488,18 @@ const ProfilePage = () => {
                     }`}
                   >
                     Running
+                  </button>
+                )}
+                {userInfo.powerZones?.swimming && (
+                  <button
+                    onClick={() => setSelectedZoneSport('swimming')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'swimming'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Swimming
                   </button>
                 )}
               </div>
@@ -657,6 +670,339 @@ const ProfilePage = () => {
                     </p>
                   </div>
                 )}
+              </>
+            )}
+
+            {/* Swimming Zones */}
+            {userInfo.powerZones?.swimming && selectedZoneSport === 'swimming' && (
+              <>
+                {userInfo.powerZones?.swimming?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.powerZones.swimming.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+                {/* LTP1 and LTP2 for Swimming */}
+                {(userInfo.powerZones.swimming.lt1 || userInfo.powerZones.swimming.lt2) && (
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {userInfo.powerZones.swimming.lt1 && (
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <p className="text-sm text-gray-600 mb-1">LTP1</p>
+                        <p className="text-2xl font-bold text-blue-700">
+                          {formatPace(userInfo.powerZones.swimming.lt1)} /100m
+                        </p>
+                      </div>
+                    )}
+                    {userInfo.powerZones.swimming.lt2 && (
+                      <div className="p-4 bg-purple-50 rounded-lg">
+                        <p className="text-sm text-gray-600 mb-1">LTP2</p>
+                        <p className="text-2xl font-bold text-purple-700">
+                          {formatPace(userInfo.powerZones.swimming.lt2)} /100m
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Swimming Zones Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Pace Range (/100m)</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4, 5].map(zoneNum => {
+                        const zone = userInfo.powerZones.swimming[`zone${zoneNum}`];
+                        if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const zoneColors = {
+                          1: 'bg-blue-50 text-blue-700',
+                          2: 'bg-green-50 text-green-700',
+                          3: 'bg-yellow-50 text-yellow-700',
+                          4: 'bg-orange-50 text-orange-700',
+                          5: 'bg-red-50 text-red-700'
+                        };
+                        
+                        return (
+                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                                {zoneNum}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-sm">
+                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /100m
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                              {zone.description || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {(!userInfo.powerZones.swimming.zone1 || !userInfo.powerZones.swimming.zone1.min) && (
+                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      No swimming zones configured. Edit your profile to set pace zones from your lactate test.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Heart Rate Zones Section */}
+      {(userInfo.heartRateZones?.cycling || userInfo.heartRateZones?.running || userInfo.heartRateZones?.swimming) && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.2 }}
+          className="bg-white rounded-3xl shadow-sm overflow-hidden"
+        >
+          <div className="px-4 md:px-6 py-4 md:py-6">
+            {/* Sport Selector */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Heart Rate Zones</h2>
+              <div className="flex gap-2 flex-wrap">
+                {userInfo.heartRateZones?.cycling && (
+                  <button
+                    onClick={() => setSelectedZoneSport('cycling')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'cycling'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Cycling
+                  </button>
+                )}
+                {userInfo.heartRateZones?.running && (
+                  <button
+                    onClick={() => setSelectedZoneSport('running')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'running'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Running
+                  </button>
+                )}
+                {userInfo.heartRateZones?.swimming && (
+                  <button
+                    onClick={() => setSelectedZoneSport('swimming')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                      selectedZoneSport === 'swimming'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Swimming
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cycling HR Zones */}
+            {userInfo.heartRateZones?.cycling && selectedZoneSport === 'cycling' && (
+              <>
+                {userInfo.heartRateZones?.cycling?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.heartRateZones.cycling.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+                {userInfo.heartRateZones.cycling.maxHeartRate && (
+                  <div className="mb-6">
+                    <div className="p-4 bg-red-50 rounded-lg">
+                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
+                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.cycling.maxHeartRate} BPM</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4, 5].map(zoneNum => {
+                        const zone = userInfo.heartRateZones.cycling[`zone${zoneNum}`];
+                        if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const zoneColors = {
+                          1: 'bg-blue-50 text-blue-700',
+                          2: 'bg-green-50 text-green-700',
+                          3: 'bg-yellow-50 text-yellow-700',
+                          4: 'bg-orange-50 text-orange-700',
+                          5: 'bg-red-50 text-red-700'
+                        };
+                        
+                        return (
+                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                                {zoneNum}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-sm">
+                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                              {zone.description || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Running HR Zones */}
+            {userInfo.heartRateZones?.running && selectedZoneSport === 'running' && (
+              <>
+                {userInfo.heartRateZones?.running?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.heartRateZones.running.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+                {userInfo.heartRateZones.running.maxHeartRate && (
+                  <div className="mb-6">
+                    <div className="p-4 bg-red-50 rounded-lg">
+                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
+                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.running.maxHeartRate} BPM</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4, 5].map(zoneNum => {
+                        const zone = userInfo.heartRateZones.running[`zone${zoneNum}`];
+                        if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const zoneColors = {
+                          1: 'bg-blue-50 text-blue-700',
+                          2: 'bg-green-50 text-green-700',
+                          3: 'bg-yellow-50 text-yellow-700',
+                          4: 'bg-orange-50 text-orange-700',
+                          5: 'bg-red-50 text-red-700'
+                        };
+                        
+                        return (
+                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                                {zoneNum}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-sm">
+                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                              {zone.description || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Swimming HR Zones */}
+            {userInfo.heartRateZones?.swimming && selectedZoneSport === 'swimming' && (
+              <>
+                {userInfo.heartRateZones?.swimming?.lastUpdated && (
+                  <p className="text-xs text-gray-500 mb-4">
+                    Updated: {new Date(userInfo.heartRateZones.swimming.lastUpdated).toLocaleDateString()}
+                  </p>
+                )}
+
+                {userInfo.heartRateZones.swimming.maxHeartRate && (
+                  <div className="mb-6">
+                    <div className="p-4 bg-red-50 rounded-lg">
+                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
+                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.swimming.maxHeartRate} BPM</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4, 5].map(zoneNum => {
+                        const zone = userInfo.heartRateZones.swimming[`zone${zoneNum}`];
+                        if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const zoneColors = {
+                          1: 'bg-blue-50 text-blue-700',
+                          2: 'bg-green-50 text-green-700',
+                          3: 'bg-yellow-50 text-yellow-700',
+                          4: 'bg-orange-50 text-orange-700',
+                          5: 'bg-red-50 text-red-700'
+                        };
+                        
+                        return (
+                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                                {zoneNum}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-sm">
+                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                              {zone.description || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </>
             )}
           </div>
