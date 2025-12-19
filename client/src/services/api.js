@@ -114,7 +114,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error);
+    // Silently handle 429 (Too Many Requests) errors - don't log them
+    if (error.response?.status !== 429) {
+      console.error('API Error:', error);
+    }
     if (error.response?.status === 401) {
       localStorage.removeItem('authToken');
     }
@@ -350,11 +353,12 @@ export const updateLactateValues = async (trainingId, lactateValues) => {
   }
 };
 
-export const updateFitTraining = async (trainingId, { title, description, selectedLapIndices }) => {
+export const updateFitTraining = async (trainingId, { title, description, category, selectedLapIndices }) => {
   try {
     const response = await api.put(`/api/fit/trainings/${trainingId}`, {
       title,
       description,
+      category,
       selectedLapIndices
     });
     return response.data;
@@ -405,6 +409,19 @@ export const syncStravaActivities = async (since=null) => {
   return data; // { imported, updated }
 };
 
+export const autoSyncStravaActivities = async () => {
+  try {
+    const { data } = await api.post('/api/integrations/strava/auto-sync', {}, {
+      timeout: 120000 // 2 minutes timeout for auto-sync
+    });
+    return data; // { imported, updated }
+  } catch (error) {
+    // Silently fail for auto-sync - don't show errors to user
+    console.log('Auto-sync failed:', error);
+    return { imported: 0, updated: 0 };
+  }
+};
+
 export const syncGarminActivities = async (since=null) => {
   const { data } = await api.post('/api/integrations/garmin/sync', { since });
   return data;
@@ -420,16 +437,22 @@ export const getIntegrationStatus = async () => {
   return data; // { stravaConnected, garminConnected }
 };
 
+export const updateAvatarFromStrava = async () => {
+  const { data } = await api.post('/api/integrations/strava/update-avatar');
+  return data; // { success, avatar, message }
+};
+
 export const getStravaActivityDetail = async (stravaId) => {
   const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`);
   return data; // { detail, streams, laps, titleManual, description }
 };
 
-export const updateStravaActivity = async (stravaId, { title, description }) => {
+export const updateStravaActivity = async (stravaId, { title, description, category }) => {
   try {
     const response = await api.put(`/api/integrations/strava/activities/${stravaId}`, {
       title,
-      description
+      description,
+      category
     });
     return response.data;
   } catch (error) {

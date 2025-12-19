@@ -52,6 +52,17 @@ router.get('/strava/callback', async (req, res) => {
       refreshToken: refresh_token,
       expiresAt: expires_at
     };
+    // Save Strava profile picture if available
+    if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
+      // Use profile_large if available, otherwise profile_medium, otherwise profile
+      const profilePath = athlete.profile_large || athlete.profile_medium || athlete.profile;
+      // Convert relative path to full URL
+      if (profilePath && !profilePath.startsWith('http')) {
+        user.avatar = `https://www.strava.com/${profilePath}`;
+      } else if (profilePath) {
+        user.avatar = profilePath;
+      }
+    }
     await user.save();
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
     // Redirect back to app with a flag
@@ -223,6 +234,14 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     }
     
     console.log(`Strava sync completed: imported ${imported}, updated ${updated}, total ${total}`);
+    
+    // Update last sync date in user profile
+    if (imported > 0 || updated > 0) {
+      await User.findByIdAndUpdate(user._id, {
+        'strava.lastSyncDate': new Date()
+      });
+    }
+    
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
     console.error('Strava sync error:', err);
@@ -260,6 +279,163 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
       message: err.response?.data?.message || err.message || 'Unknown error',
       details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
+  }
+});
+
+// POST /api/integrations/strava/auto-sync (automatic sync for new activities only)
+router.post('/strava/auto-sync', verifyToken, async (req, res) => {
+  let imported = 0;
+  let updated = 0;
+  
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.strava?.accessToken) {
+      return res.status(400).json({ error: 'Strava not connected' });
+    }
+
+    // Check if auto-sync is enabled
+    if (!user.strava?.autoSync) {
+      return res.json({ imported: 0, updated: 0, message: 'Auto-sync is disabled' });
+    }
+    
+    const token = await getValidStravaToken(user);
+    if (!token) {
+      return res.status(401).json({ error: 'Invalid Strava token' });
+    }
+    
+    // Use lastSyncDate if available, otherwise sync last 7 days
+    let since = null;
+    if (user.strava?.lastSyncDate) {
+      since = user.strava.lastSyncDate;
+    } else {
+      // First time sync - only get last 7 days to avoid long sync
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      since = sevenDaysAgo;
+    }
+    
+    const per_page = 100;
+    let page = 1;
+    const maxPages = 10; // Limit to 10 pages for auto-sync (1000 activities max)
+    
+    const params = { per_page };
+    if (since) {
+      params.after = new Date(since).getTime() / 1000;
+    }
+    
+    const delayBetweenRequests = 2000;
+    
+    console.log(`Starting Strava auto-sync for user ${user._id}, since: ${since}`);
+    
+    while (page <= maxPages) {
+      try {
+        const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { ...params, page },
+          timeout: 30000
+        });
+        
+        const arr = resp.data || [];
+        
+        if (arr.length === 0) {
+          break;
+        }
+        
+        for (const a of arr) {
+          try {
+            const doc = {
+              userId: user._id.toString(),
+              stravaId: a.id,
+              name: a.name || 'Untitled Activity',
+              sport: a.sport_type || a.type || 'Ride',
+              startDate: new Date(a.start_date_local || a.start_date),
+              elapsedTime: a.elapsed_time || 0,
+              movingTime: a.moving_time || 0,
+              distance: a.distance || 0,
+              averageSpeed: a.average_speed || null,
+              averageHeartRate: a.average_heartrate || null,
+              averagePower: a.average_watts || null,
+              raw: a
+            };
+            
+            const resUp = await StravaActivity.updateOne(
+              { userId: user._id, stravaId: a.id },
+              { $set: doc },
+              { upsert: true }
+            );
+            
+            if (resUp.upsertedCount > 0) imported += 1;
+            else if (resUp.modifiedCount > 0) updated += 1;
+          } catch (dbErr) {
+            console.error(`Error saving activity ${a.id}:`, dbErr.message);
+          }
+        }
+        
+        if (arr.length < per_page) {
+          break;
+        }
+        
+        page += 1;
+        if (page <= maxPages) {
+          await delay(delayBetweenRequests);
+        }
+      } catch (pageErr) {
+        if (pageErr.response?.status === 429) {
+          console.log('Rate limit hit during auto-sync, stopping');
+          break;
+        }
+        throw pageErr;
+      }
+    }
+    
+    // Update last sync date
+    if (imported > 0 || updated > 0) {
+      await User.findByIdAndUpdate(user._id, {
+        'strava.lastSyncDate': new Date()
+      });
+    }
+    
+    console.log(`Auto-sync completed: ${imported} imported, ${updated} updated`);
+    res.json({ imported, updated });
+  } catch (error) {
+    console.error('Strava auto-sync error:', error);
+    // Don't return error for auto-sync - just log it
+    res.json({ imported: 0, updated: 0, error: error.message });
+  }
+});
+
+// PUT /api/integrations/strava/auto-sync (update auto-sync setting)
+router.put('/strava/auto-sync', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { autoSync } = req.body;
+    
+    if (typeof autoSync !== 'boolean') {
+      return res.status(400).json({ error: 'autoSync must be a boolean' });
+    }
+
+    // Ensure strava object exists
+    if (!user.strava) {
+      user.strava = {};
+    }
+
+    // Update user's auto-sync setting
+    user.strava.autoSync = autoSync;
+    user.markModified('strava');
+    await user.save();
+
+    res.json({ 
+      success: true, 
+      autoSync,
+      message: `Auto-sync ${autoSync ? 'enabled' : 'disabled'}` 
+    });
+  } catch (error) {
+    console.error('Error updating auto-sync setting:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -313,10 +489,11 @@ router.get('/activities', verifyToken, async (req, res) => {
       targetUserId = userId;
     }
 
-    // Remove limit to show all activities, but add reasonable safety limit
+    // Limit to most recent 100 activities to avoid performance issues and reduce API load
+    // This is enough for calendar view (last ~3 months with daily activities)
     const acts = await StravaActivity.find({ userId: targetUserId.toString() })
       .sort({ startDate: -1 })
-      .limit(50000); // Safety limit: max 50,000 activities
+      .limit(100); // Limit to most recent 100 activities
     res.json(acts);
   } catch (error) {
     console.error('Error fetching external activities:', error);
@@ -594,7 +771,8 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       streams: streamsResp.data, 
       laps: mergedLaps,
       titleManual: savedActivity?.titleManual || null,
-      description: savedActivity?.description || null
+      description: savedActivity?.description || null,
+      category: savedActivity?.category || null
     });
   } catch (e) {
     console.error('Strava activity detail error', e.response?.data || e.message);
@@ -607,7 +785,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     const stravaId = parseInt(req.params.id);
-    const { title, description } = req.body;
+    const { title, description, category } = req.body;
 
     const activity = await StravaActivity.findOne({
       userId: user._id,
@@ -628,6 +806,11 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     // Update description if provided
     if (description !== undefined) {
       activity.description = description || null;
+    }
+
+    // Update category if provided
+    if (category !== undefined) {
+      activity.category = category || null;
     }
 
     await activity.save();
@@ -1131,6 +1314,53 @@ router.delete('/strava/activities/:id/laps/:lapIndex', verifyToken, async (req, 
     });
   } catch (error) {
     console.error('Error deleting Strava lap:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update user avatar from Strava
+router.post('/strava/update-avatar', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const token = await getValidStravaToken(user);
+    if (!token) {
+      return res.status(401).json({ error: 'Strava not connected' });
+    }
+
+    // Get athlete profile from Strava
+    const athleteResp = await axios.get('https://www.strava.com/api/v3/athlete', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const athlete = athleteResp.data;
+    if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
+      // Use profile_large if available, otherwise profile_medium, otherwise profile
+      const profilePath = athlete.profile_large || athlete.profile_medium || athlete.profile;
+      // Convert relative path to full URL
+      if (profilePath && !profilePath.startsWith('http')) {
+        user.avatar = `https://www.strava.com/${profilePath}`;
+      } else if (profilePath) {
+        user.avatar = profilePath;
+      }
+      await user.save();
+      
+      return res.json({ 
+        success: true, 
+        avatar: user.avatar,
+        message: 'Avatar updated from Strava'
+      });
+    } else {
+      return res.status(404).json({ error: 'No Strava profile picture available' });
+    }
+  } catch (error) {
+    console.error('Error updating avatar from Strava:', error.response?.data || error.message);
+    if (error.response?.status === 429) {
+      return res.status(429).json({ error: 'Strava API rate limit exceeded' });
+    }
     res.status(500).json({ error: error.message });
   }
 });

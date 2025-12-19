@@ -12,16 +12,17 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       console.log('Formatting date for input:', dateString);
       
       // Pokud je datum ve formátu DD.MM.YY
-      if (dateString.includes('.')) {
+      if (typeof dateString === 'string' && dateString.includes('.')) {
         const [day, month, year] = dateString.split('.');
         // Přidáme 20 před rok, pokud je rok ve formátu YY
-        const fullYear = year.length === 2 ? `20${year}` : year;
+        const fullYear = year && year.length === 2 ? `20${year}` : year;
+        if (!fullYear || !month || !day) return '';
         const date = new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
         if (isNaN(date.getTime())) return ''; // Invalid date
         return date.toISOString().split('T')[0];
       }
       
-      // Pro ostatní formáty
+      // Pro ostatní formáty (ISO string, Date object, etc.)
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return ''; // Invalid date
       
@@ -59,6 +60,10 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
     if (userData) {
       try {
         console.log('Initial userData:', userData);
+        // Auto-select sport if provided from TrainingZonesGenerator
+        if (userData._selectedSport) {
+          setSelectedSport(userData._selectedSport);
+        }
         const cyclingZones = userData.powerZones?.cycling || {};
         const runningZones = userData.powerZones?.running || {};
         const swimmingZones = userData.powerZones?.swimming || {};
@@ -86,20 +91,60 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               lt2: cyclingZones.lt2 || ''
             },
             running: {
-              zone1: { min: runningZones.zone1?.min || '', max: runningZones.zone1?.max || '', description: runningZones.zone1?.description || '' },
-              zone2: { min: runningZones.zone2?.min || '', max: runningZones.zone2?.max || '', description: runningZones.zone2?.description || '' },
-              zone3: { min: runningZones.zone3?.min || '', max: runningZones.zone3?.max || '', description: runningZones.zone3?.description || '' },
-              zone4: { min: runningZones.zone4?.min || '', max: runningZones.zone4?.max || '', description: runningZones.zone4?.description || '' },
-              zone5: { min: runningZones.zone5?.min || '', max: runningZones.zone5?.max || '', description: runningZones.zone5?.description || '' },
+              zone1: { 
+                min: runningZones.zone1?.min !== undefined && runningZones.zone1?.min !== null ? String(runningZones.zone1.min) : '', 
+                max: runningZones.zone1?.max !== undefined && runningZones.zone1?.max !== null ? String(runningZones.zone1.max) : '', 
+                description: runningZones.zone1?.description || '' 
+              },
+              zone2: { 
+                min: runningZones.zone2?.min !== undefined && runningZones.zone2?.min !== null ? String(runningZones.zone2.min) : '', 
+                max: runningZones.zone2?.max !== undefined && runningZones.zone2?.max !== null ? String(runningZones.zone2.max) : '', 
+                description: runningZones.zone2?.description || '' 
+              },
+              zone3: { 
+                min: runningZones.zone3?.min !== undefined && runningZones.zone3?.min !== null ? String(runningZones.zone3.min) : '', 
+                max: runningZones.zone3?.max !== undefined && runningZones.zone3?.max !== null ? String(runningZones.zone3.max) : '', 
+                description: runningZones.zone3?.description || '' 
+              },
+              zone4: { 
+                min: runningZones.zone4?.min !== undefined && runningZones.zone4?.min !== null ? String(runningZones.zone4.min) : '', 
+                max: runningZones.zone4?.max !== undefined && runningZones.zone4?.max !== null ? String(runningZones.zone4.max) : '', 
+                description: runningZones.zone4?.description || '' 
+              },
+              zone5: { 
+                min: runningZones.zone5?.min !== undefined && runningZones.zone5?.min !== null ? String(runningZones.zone5.min) : '', 
+                max: runningZones.zone5?.max !== undefined && runningZones.zone5?.max !== null ? String(runningZones.zone5.max) : '', 
+                description: runningZones.zone5?.description || '' 
+              },
               lt1: runningZones.lt1 || '',
               lt2: runningZones.lt2 || ''
             },
             swimming: {
-              zone1: { min: swimmingZones.zone1?.min || '', max: swimmingZones.zone1?.max || '', description: swimmingZones.zone1?.description || '' },
-              zone2: { min: swimmingZones.zone2?.min || '', max: swimmingZones.zone2?.max || '', description: swimmingZones.zone2?.description || '' },
-              zone3: { min: swimmingZones.zone3?.min || '', max: swimmingZones.zone3?.max || '', description: swimmingZones.zone3?.description || '' },
-              zone4: { min: swimmingZones.zone4?.min || '', max: swimmingZones.zone4?.max || '', description: swimmingZones.zone4?.description || '' },
-              zone5: { min: swimmingZones.zone5?.min || '', max: swimmingZones.zone5?.max || '', description: swimmingZones.zone5?.description || '' },
+              zone1: { 
+                min: swimmingZones.zone1?.min !== undefined && swimmingZones.zone1?.min !== null ? String(swimmingZones.zone1.min) : '', 
+                max: swimmingZones.zone1?.max !== undefined && swimmingZones.zone1?.max !== null ? String(swimmingZones.zone1.max) : '', 
+                description: swimmingZones.zone1?.description || '' 
+              },
+              zone2: { 
+                min: swimmingZones.zone2?.min !== undefined && swimmingZones.zone2?.min !== null ? String(swimmingZones.zone2.min) : '', 
+                max: swimmingZones.zone2?.max !== undefined && swimmingZones.zone2?.max !== null ? String(swimmingZones.zone2.max) : '', 
+                description: swimmingZones.zone2?.description || '' 
+              },
+              zone3: { 
+                min: swimmingZones.zone3?.min !== undefined && swimmingZones.zone3?.min !== null ? String(swimmingZones.zone3.min) : '', 
+                max: swimmingZones.zone3?.max !== undefined && swimmingZones.zone3?.max !== null ? String(swimmingZones.zone3.max) : '', 
+                description: swimmingZones.zone3?.description || '' 
+              },
+              zone4: { 
+                min: swimmingZones.zone4?.min !== undefined && swimmingZones.zone4?.min !== null ? String(swimmingZones.zone4.min) : '', 
+                max: swimmingZones.zone4?.max !== undefined && swimmingZones.zone4?.max !== null ? String(swimmingZones.zone4.max) : '', 
+                description: swimmingZones.zone4?.description || '' 
+              },
+              zone5: { 
+                min: swimmingZones.zone5?.min !== undefined && swimmingZones.zone5?.min !== null ? String(swimmingZones.zone5.min) : '', 
+                max: swimmingZones.zone5?.max !== undefined && swimmingZones.zone5?.max !== null ? String(swimmingZones.zone5.max) : '', 
+                description: swimmingZones.zone5?.description || '' 
+              },
               lt1: swimmingZones.lt1 || '',
               lt2: swimmingZones.lt2 || ''
             }
@@ -500,7 +545,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       return;
     }
 
-    // Standard percentage-based HR zones
+    // Standard percentage-based HR zones - min should be lower, max should be higher
     const zones = {
       zone1: {
         min: Math.round(maxHR * 0.50),
@@ -528,6 +573,15 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         description: '90–100% Max HR (VO2max)'
       }
     };
+    
+    // Ensure min < max for all zones
+    Object.keys(zones).forEach(zoneKey => {
+      if (zones[zoneKey].min > zones[zoneKey].max) {
+        const temp = zones[zoneKey].min;
+        zones[zoneKey].min = zones[zoneKey].max;
+        zones[zoneKey].max = temp;
+      }
+    });
 
     setFormData(prev => ({
       ...prev,
@@ -553,17 +607,6 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Parse pace from mm:ss to seconds
-  const parsePace = (paceString) => {
-    if (!paceString) return '';
-    const parts = paceString.split(':');
-    if (parts.length === 2) {
-      const minutes = parseInt(parts[0]) || 0;
-      const seconds = parseInt(parts[1]) || 0;
-      return minutes * 60 + seconds;
-    }
-    return paceString;
-  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit Profile">
@@ -714,13 +757,13 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
             {selectedSport === 'cycling' 
               ? 'Set LTP1 and LTP2 (in watts) to automatically generate power zones, or set zones manually.'
               : selectedSport === 'running'
-              ? 'Set LTP1 and LTP2 (in seconds, e.g., 240 for 4:00/km) to automatically generate pace zones, or set zones manually.'
-              : 'Set LTP1 and LTP2 (in seconds per 100m, e.g., 90 for 1:30/100m) to automatically generate pace zones, or set zones manually.'}
+              ? 'Set LTP1 and LTP2 (LTP2 is threshold pace, in seconds, e.g., 240 for 4:00/km) to automatically generate pace zones, or set zones manually. You can also enter Max Heart Rate to generate heart rate zones.'
+              : 'Set LTP1 and LTP2 (LTP2 is threshold pace, in seconds per 100m, e.g., 90 for 1:30/100m) to automatically generate pace zones, or set zones manually. You can also enter Max Heart Rate to generate heart rate zones.'}
           </p>
           
           <div className="space-y-6">
-            {/* LTP1 and LTP2 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* LTP1, LTP2 and Max Heart Rate */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
                   LTP1 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 240 for 4:00/km)' : '(seconds per 100m, e.g., 90 for 1:30/100m)'}
@@ -754,7 +797,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               </div>
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
-                  LTP2 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 200 for 3:20/km)' : '(seconds per 100m, e.g., 75 for 1:15/100m)'}
+                  LTP2 (Threshold) {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 200 for 3:20/km)' : '(seconds per 100m, e.g., 75 for 1:15/100m)'}
                 </label>
                 <input
                   type="number"
@@ -783,214 +826,53 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                   </p>
                 )}
               </div>
-            </div>
-
-            {/* Generate Zones Button */}
-            <button
-              type="button"
-              onClick={() => generateZones(selectedSport)}
-              className="w-full px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary-dark font-semibold shadow-md hover:shadow-lg transition-all"
-            >
-              Generate Zones from LTP1 & LTP2
-            </button>
-
-            {/* Zone inputs */}
-            <div className="space-y-1">
-              {[1, 2, 3, 4, 5].map(zoneNum => (
-                <div key={zoneNum} className="p-1.5 bg-gray-50 rounded-md border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full font-bold text-xs flex-shrink-0 ${
-                      zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
-                      zoneNum === 2 ? 'bg-green-100 text-green-700' :
-                      zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
-                      zoneNum === 4 ? 'bg-orange-100 text-orange-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {zoneNum}
-                    </span>
-                    <div className="flex-1 grid grid-cols-5 gap-1.5 items-center">
-                      <div className="min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                          Min {selectedSport === 'cycling' ? '(W)' : '(s)'}
-                        </label>
-                        <input
-                          type="number"
-                          value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            powerZones: {
-                              ...prev.powerZones,
-                              [selectedSport]: {
-                                ...prev.powerZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  min: e.target.value
-                                }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder="Min"
-                        />
-                        {selectedSport === 'running' && formData.powerZones?.running?.[`zone${zoneNum}`]?.min && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
-                            {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].min))}
-                          </p>
-                        )}
-                        {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.min && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
-                            {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].min))} /100m
-                          </p>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                          Max {selectedSport === 'cycling' ? '(W)' : '(s)'}
-                        </label>
-                        <input
-                          type="number"
-                          value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            powerZones: {
-                              ...prev.powerZones,
-                              [selectedSport]: {
-                                ...prev.powerZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  max: e.target.value
-                                }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder={zoneNum === 5 ? "∞" : "Max"}
-                        />
-                        {selectedSport === 'running' && formData.powerZones?.running?.[`zone${zoneNum}`]?.max && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
-                            {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].max))}
-                          </p>
-                        )}
-                        {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.max && (
-                          <p className="text-xs text-gray-400 mt-0.5 leading-tight">
-                            {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].max))} /100m
-                          </p>
-                        )}
-                      </div>
-                      <div className="col-span-3 min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Description</label>
-                        <input
-                          type="text"
-                          value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.description || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            powerZones: {
-                              ...prev.powerZones,
-                              [selectedSport]: {
-                                ...prev.powerZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  description: e.target.value
-                                }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder="e.g. Recovery, Aerobic..."
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Heart Rate Zones Section */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <h3 className="text-xl font-bold text-gray-900">Heart Rate Zones</h3>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setSelectedSport('cycling')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                  selectedSport === 'cycling'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Cycling
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSport('running')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                  selectedSport === 'running'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Running
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSport('swimming')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                  selectedSport === 'swimming'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Swimming
-              </button>
-            </div>
-          </div>
-          
-          <p className="text-sm text-gray-600 mb-6 bg-green-50 p-4 rounded-xl border border-green-100">
-            Enter your max heart rate to automatically generate heart rate zones, or set zones manually.
-          </p>
-          
-          <div className="space-y-6">
-            {/* Max Heart Rate */}
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Max Heart Rate (BPM)
-              </label>
-              <input
-                type="number"
-                value={formData.heartRateZones?.[selectedSport]?.maxHeartRate || ''}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  heartRateZones: {
-                    ...prev.heartRateZones,
-                    [selectedSport]: {
-                      ...prev.heartRateZones?.[selectedSport],
-                      maxHeartRate: e.target.value
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Max Heart Rate (BPM)
+                </label>
+                <input
+                  type="number"
+                  value={formData.heartRateZones?.[selectedSport]?.maxHeartRate || ''}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    heartRateZones: {
+                      ...prev.heartRateZones,
+                      [selectedSport]: {
+                        ...prev.heartRateZones?.[selectedSport],
+                        maxHeartRate: e.target.value
+                      }
                     }
-                  }
-                }))}
-                className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                placeholder="e.g. 190"
-              />
+                  }))}
+                  className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  placeholder="e.g. 190"
+                />
+              </div>
             </div>
 
-            {/* Generate HR Zones Button */}
-            <button
-              type="button"
-              onClick={() => generateHeartRateZones(selectedSport)}
-              className="w-full px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold shadow-md hover:shadow-lg transition-all"
-            >
-              Generate Heart Rate Zones from Max HR
-            </button>
+            {/* Generate Zones Buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => generateZones(selectedSport)}
+                className="w-full px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary-dark font-semibold shadow-md hover:shadow-lg transition-all"
+              >
+                Generate Zones from LTP1 & LTP2
+              </button>
+              <button
+                type="button"
+                onClick={() => generateHeartRateZones(selectedSport)}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold shadow-md hover:shadow-lg transition-all"
+              >
+                Generate HR Zones from Max HR
+              </button>
+            </div>
 
-            {/* HR Zone inputs */}
+            {/* Combined Zone inputs - Power/Pace and Heart Rate together */}
             <div className="space-y-1">
               {[1, 2, 3, 4, 5].map(zoneNum => (
-                <div key={zoneNum} className="p-1.5 bg-gray-50 rounded-md border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full font-bold text-xs flex-shrink-0 ${
+                <div key={zoneNum} className="p-2 bg-gray-50 rounded-md border border-gray-200">
+                  <div className="flex items-start gap-3">
+                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-bold text-xs flex-shrink-0 mt-1 ${
                       zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
                       zoneNum === 2 ? 'bg-green-100 text-green-700' :
                       zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
@@ -999,72 +881,128 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
                     }`}>
                       {zoneNum}
                     </span>
-                    <div className="flex-1 grid grid-cols-5 gap-1.5 items-center">
-                      <div className="min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Min (BPM)</label>
-                        <input
-                          type="number"
-                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            heartRateZones: {
-                              ...prev.heartRateZones,
-                              [selectedSport]: {
-                                ...prev.heartRateZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  min: e.target.value
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Power/Pace Zones */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-gray-700 mb-1">
+                          {selectedSport === 'cycling' ? 'Power (W)' : selectedSport === 'running' ? 'Pace (s)' : 'Pace (s/100m)'}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Min</label>
+                            <input
+                              type="number"
+                              value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                powerZones: {
+                                  ...prev.powerZones,
+                                  [selectedSport]: {
+                                    ...prev.powerZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      min: e.target.value
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder="Min"
-                        />
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder="Min"
+                            />
+                            {selectedSport === 'running' && formData.powerZones?.running?.[`zone${zoneNum}`]?.min && (
+                              <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                                {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].min))}
+                              </p>
+                            )}
+                            {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.min && (
+                              <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                                {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].min))} /100m
+                              </p>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Max</label>
+                            <input
+                              type="number"
+                              value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                powerZones: {
+                                  ...prev.powerZones,
+                                  [selectedSport]: {
+                                    ...prev.powerZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      max: e.target.value
+                                    }
+                                  }
+                                }
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder={zoneNum === 5 ? "∞" : "Max"}
+                            />
+                            {selectedSport === 'running' && formData.powerZones?.running?.[`zone${zoneNum}`]?.max && (
+                              <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                                {formatPace(Number(formData.powerZones.running[`zone${zoneNum}`].max))}
+                              </p>
+                            )}
+                            {selectedSport === 'swimming' && formData.powerZones?.swimming?.[`zone${zoneNum}`]?.max && (
+                              <p className="text-xs text-gray-400 mt-0.5 leading-tight">
+                                {formatPace(Number(formData.powerZones.swimming[`zone${zoneNum}`].max))} /100m
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Max (BPM)</label>
-                        <input
-                          type="number"
-                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            heartRateZones: {
-                              ...prev.heartRateZones,
-                              [selectedSport]: {
-                                ...prev.heartRateZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  max: e.target.value
+                      {/* Heart Rate Zones */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-gray-700 mb-1">Heart Rate (BPM)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Min</label>
+                            <input
+                              type="number"
+                              value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                heartRateZones: {
+                                  ...prev.heartRateZones,
+                                  [selectedSport]: {
+                                    ...prev.heartRateZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      min: e.target.value
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder={zoneNum === 5 ? "∞" : "Max"}
-                        />
-                      </div>
-                      <div className="col-span-3 min-w-0">
-                        <label className="block text-xs font-medium text-gray-600 mb-0.5">Description</label>
-                        <input
-                          type="text"
-                          value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.description || ''}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            heartRateZones: {
-                              ...prev.heartRateZones,
-                              [selectedSport]: {
-                                ...prev.heartRateZones?.[selectedSport],
-                                [`zone${zoneNum}`]: {
-                                  ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
-                                  description: e.target.value
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder="Min"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Max</label>
+                            <input
+                              type="number"
+                              value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                heartRateZones: {
+                                  ...prev.heartRateZones,
+                                  [selectedSport]: {
+                                    ...prev.heartRateZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      max: e.target.value
+                                    }
+                                  }
                                 }
-                              }
-                            }
-                          }))}
-                          className="w-full px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
-                          placeholder="e.g. Recovery, Aerobic..."
-                        />
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder={zoneNum === 5 ? "∞" : "Max"}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1073,6 +1011,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
             </div>
           </div>
         </div>
+
 
         <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
           <button

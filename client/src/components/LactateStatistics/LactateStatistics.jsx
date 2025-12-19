@@ -3,13 +3,13 @@ import { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones }
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 
-// Power zones definition (based on FTP)
+// Power zones definition (based on FTP) - using app colors with different shades
 const POWER_ZONES = [
-  { zone: 1, label: 'Zone 1', description: 'Recovery', color: '#4A90E2' },
-  { zone: 2, label: 'Zone 2', description: 'Aerobic', color: '#50C878' },
-  { zone: 3, label: 'Zone 3', description: 'Tempo', color: '#FFD700' },
-  { zone: 4, label: 'Zone 4', description: 'Threshold', color: '#FF8C00' },
-  { zone: 5, label: 'Zone 5', description: 'VO2max', color: '#FF4500' }
+  { zone: 1, label: 'Zone 1', description: 'Recovery', color: '#2596be' }, // Main app color - lighter
+  { zone: 2, label: 'Zone 2', description: 'Aerobic', color: '#1e7a9a' }, // Darker shade
+  { zone: 3, label: 'Zone 3', description: 'Tempo', color: '#185e7a' }, // Even darker
+  { zone: 4, label: 'Zone 4', description: 'Threshold', color: '#0f425a' }, // Darkest
+  { zone: 5, label: 'Zone 5', description: 'VO2max', color: '#08263a' } // Darkest shade
 ];
 
 const LactateStatistics = ({ selectedAthleteId = null }) => {
@@ -23,10 +23,19 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const [activeTab] = useState('monthly'); // Only monthly analysis
   const [selectedMonth, setSelectedMonth] = useState(null); // null = show all months, string = specific month key
   const [selectedTrainings, setSelectedTrainings] = useState([]); // Selected trainings for comparison
-  const [selectedZoneType, setSelectedZoneType] = useState('power'); // 'power', 'heartrate', 'running', 'swimming'
-  const [selectedHrZoneSport, setSelectedHrZoneSport] = useState('bike'); // 'bike' or 'run' for HR zones
-  const [forceRefresh, setForceRefresh] = useState(0); // Force refresh counter
+  const [selectedZoneType, setSelectedZoneType] = useState('power'); // 'power', 'heartrate', 'heartrate-run', 'running', 'swimming'
   const zoneTypeInitialized = useRef(new Map()); // Track which months have had zone type auto-selected
+  const [tooltipData, setTooltipData] = useState(null); // { x, y, content }
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Format pace for display (seconds to mm:ss)
   const formatPace = (seconds) => {
@@ -56,27 +65,25 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
       const cacheKey = `monthlyAnalysis_metadata_${athleteId || 'default'}`;
       
-      // Check localStorage first (skip if force refresh)
-      if (forceRefresh === 0) {
-        try {
-          const cached = localStorage.getItem(cacheKey);
-          if (cached) {
-            const { data, timestamp } = JSON.parse(cached);
-            const cacheAge = Date.now() - timestamp;
-            const cacheMaxAge = 60 * 60 * 1000; // 1 hour
-            
-            if (cacheAge < cacheMaxAge && data && data.length > 0) {
-              console.log('Using cached metadata');
-              setAvailableMonths(data);
-              const lastMonth = data[data.length - 1];
-              setSelectedMonth(lastMonth.monthKey);
-              setLoadingMonthly(false);
-              return;
-            }
+      // Check localStorage first
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          const cacheAge = Date.now() - timestamp;
+          const cacheMaxAge = 60 * 60 * 1000; // 1 hour
+          
+          if (cacheAge < cacheMaxAge && data && data.length > 0) {
+            console.log('Using cached metadata');
+            setAvailableMonths(data);
+            const lastMonth = data[data.length - 1];
+            setSelectedMonth(lastMonth.monthKey);
+            setLoadingMonthly(false);
+            return;
           }
-        } catch (e) {
-          console.log('Error reading cache:', e);
         }
+      } catch (e) {
+        console.log('Error reading cache:', e);
       }
       
       // Call without monthKey to get only metadata
@@ -107,38 +114,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     } finally {
       setLoadingMonthly(false);
     }
-  }, [user, selectedAthleteId, forceRefresh]);
-
-  // Clear cache function
-  const clearCache = useCallback(() => {
-    const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
-    const cachePrefix = `monthlyAnalysis_${athleteId || 'default'}_`;
-    
-    try {
-      // Clear all cached months
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith(cachePrefix) || key === `monthlyAnalysis_metadata_${athleteId || 'default'}`)) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-      
-      // Clear loaded months from state
-      setLoadedMonths(new Map());
-      setAvailableMonths([]);
-      setSelectedMonth(null);
-      
-      // Force refresh
-      setForceRefresh(prev => prev + 1);
-      
-      // Reload data
-      loadAvailableMonths();
-    } catch (e) {
-      console.error('Error clearing cache:', e);
-    }
-  }, [user, selectedAthleteId, loadAvailableMonths]);
+  }, [user, selectedAthleteId]);
 
   // Load data for a specific month (full analysis with zones)
   const loadMonthData = useCallback(async (monthKey, forceReload = false) => {
@@ -215,45 +191,43 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     loadAvailableMonths();
     loadUserZones();
     
-    // Load cached month data from localStorage on mount (skip if force refresh)
-    if (forceRefresh === 0) {
-      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
-      const cachePrefix = `monthlyAnalysis_${athleteId || 'default'}_`;
-      
-      try {
-        const cachedMonths = new Map();
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith(cachePrefix) && key !== `monthlyAnalysis_metadata_${athleteId || 'default'}`) {
-            try {
-              const cached = localStorage.getItem(key);
-              if (cached) {
-                const { data, timestamp } = JSON.parse(cached);
-                const cacheAge = Date.now() - timestamp;
-                const cacheMaxAge = 60 * 60 * 1000; // 1 hour
-                
-                if (cacheAge < cacheMaxAge && data && data.monthKey) {
-                  cachedMonths.set(data.monthKey, data);
-                } else {
-                  // Remove expired cache
-                  localStorage.removeItem(key);
-                }
+    // Load cached month data from localStorage on mount
+    const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+    const cachePrefix = `monthlyAnalysis_${athleteId || 'default'}_`;
+    
+    try {
+      const cachedMonths = new Map();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(cachePrefix) && key !== `monthlyAnalysis_metadata_${athleteId || 'default'}`) {
+          try {
+            const cached = localStorage.getItem(key);
+            if (cached) {
+              const { data, timestamp } = JSON.parse(cached);
+              const cacheAge = Date.now() - timestamp;
+              const cacheMaxAge = 60 * 60 * 1000; // 1 hour
+              
+              if (cacheAge < cacheMaxAge && data && data.monthKey) {
+                cachedMonths.set(data.monthKey, data);
+              } else {
+                // Remove expired cache
+                localStorage.removeItem(key);
               }
-            } catch (e) {
-              console.log('Error reading cached month:', e);
             }
+          } catch (e) {
+            console.log('Error reading cached month:', e);
           }
         }
-        
-        if (cachedMonths.size > 0) {
-          console.log(`Loaded ${cachedMonths.size} cached months from localStorage`);
-          setLoadedMonths(cachedMonths);
-        }
-      } catch (e) {
-        console.log('Error loading cached months:', e);
       }
+      
+      if (cachedMonths.size > 0) {
+        console.log(`Loaded ${cachedMonths.size} cached months from localStorage`);
+        setLoadedMonths(cachedMonths);
+      }
+    } catch (e) {
+      console.log('Error loading cached months:', e);
     }
-  }, [loadTrainings, loadAvailableMonths, loadUserZones, user, selectedAthleteId, forceRefresh]);
+  }, [loadTrainings, loadAvailableMonths, loadUserZones, user, selectedAthleteId]);
 
   // Load month data when selected month changes
   useEffect(() => {
@@ -327,8 +301,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
 
   if (trainings.length === 0) {
     return (
-      <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Lactate Statistics</h2>
+      <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-md p-4">
+        <h2 className="text-lg font-bold text-gray-900 mb-2">Lactate Statistics</h2>
         <div className="text-center py-8 text-gray-500">
           <p>No trainings with lactate values found.</p>
           <p className="text-sm mt-2">Add lactate values to your training intervals to see statistics here.</p>
@@ -339,118 +313,70 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
 
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Monthly Power Analysis</h2>
-            <p className="text-gray-600">Training analysis by power zones with lactate prediction</p>
-          </div>
-          <button
-            onClick={clearCache}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium"
-            title="Refresh data (clear cache)"
-          >
-            🔄 Obnovit
-          </button>
-        </div>
-      </div>
-
+    <div className="space-y-2">
       {/* Monthly Analysis */}
       {activeTab === 'monthly' && (
-        <div className="space-y-6">
-          {/* Month Selector */}
-          {availableMonths.length > 0 && (
-            <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Select month:
-                </label>
-                {selectedMonth && (
-                  <button
-                    onClick={() => loadMonthData(selectedMonth, true)}
-                    className="text-xs text-primary hover:text-primary-dark font-medium"
-                    title="Reload data for this month"
-                  >
-                    🔄 Refresh month
-                  </button>
-                )}
-              </div>
-              <select
-                value={selectedMonth || ''}
-                onChange={(e) => setSelectedMonth(e.target.value || null)}
-                className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-              >
-                {availableMonths.map((month) => (
-                  <option key={month.monthKey} value={month.monthKey}>
-                    {month.month} ({month.trainings} trainings)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+        <div className="space-y-2">
 
           {loadingMonthly ? (
-            <div className="flex items-center justify-center p-8">
-              <div className="text-gray-500">Loading monthly analysis...</div>
+            <div className="flex items-center justify-center p-4">
+              <div className="text-lighterText text-sm">Loading...</div>
             </div>
           ) : availableMonths.length === 0 ? (
-            <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Monthly Power Analysis</h2>
-              <div className="text-center py-8 text-gray-500">
+            <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-3">
+              <div className="text-center py-6 text-lighterText text-sm">
                 <p>No FIT files with power data found.</p>
-                <p className="text-sm mt-2">Upload cycling FIT files with power data to display the analysis.</p>
+                <p className="text-xs mt-1">Upload cycling FIT files with power data to display the analysis.</p>
               </div>
             </div>
           ) : loadingMonthData ? (
-            <div className="flex items-center justify-center p-8">
-              <div className="text-gray-500">Loading data for the selected month...</div>
+            <div className="flex items-center justify-center p-4">
+              <div className="text-lighterText text-sm">Loading...</div>
             </div>
           ) : selectedMonth && loadedMonths.has(selectedMonth) ? (
             (() => {
               const month = loadedMonths.get(selectedMonth);
               
               // Debug logging for month data
-              console.log('=== MONTH DATA DEBUG ===', {
-                monthKey: month.monthKey,
-                month: month.month,
-                bikeTrainings: month.bikeTrainings,
-                bikeTime: month.bikeTime,
-                bikeTSS: month.bikeTSS,
-                runningTSS: month.runningTSS,
-                totalTSS: month.totalTSS,
-                bikeHrZones: month.bikeHrZones,
-                runningHrZones: month.runningHrZones,
-                bikeHeartRateZones: month.bikeHeartRateZones,
-                runningHeartRateZones: month.runningHeartRateZones,
-                bikeAvgPower: month.bikeAvgPower,
-                bikeMaxPower: month.bikeMaxPower,
-                runningTrainings: month.runningTrainings,
-                runningTime: month.runningTime,
-                runningAvgPace: month.runningAvgPace,
-                runningMaxPace: month.runningMaxPace,
-                runningZones: month.runningZones ? Object.keys(month.runningZones).map(k => ({
-                  zone: k,
-                  min: month.runningZones[k]?.min,
-                  max: month.runningZones[k]?.max,
-                  minFormatted: month.runningZones[k]?.min ? formatPace(month.runningZones[k].min) : null,
-                  maxFormatted: month.runningZones[k]?.max && month.runningZones[k].max !== Infinity ? formatPace(month.runningZones[k].max) : '∞'
-                })) : null,
-                runningZoneTimes: month.runningZoneTimes ? Object.keys(month.runningZoneTimes).map(k => ({
-                  zone: k,
-                  time: month.runningZoneTimes[k]?.time,
-                  avgPace: month.runningZoneTimes[k]?.avgPace,
-                  avgPaceFormatted: month.runningZoneTimes[k]?.avgPace ? formatPace(month.runningZoneTimes[k].avgPace) : null,
-                  paceCount: month.runningZoneTimes[k]?.paceCount,
-                  zoneMin: month.runningZones?.[k]?.min,
-                  zoneMax: month.runningZones?.[k]?.max,
-                  inZone: month.runningZones?.[k] ? 
-                    (month.runningZoneTimes[k]?.avgPace >= month.runningZones[k].min && 
-                     (month.runningZones[k].max === Infinity || month.runningZoneTimes[k]?.avgPace <= month.runningZones[k].max)) : 
-                    null
-                })) : null
-              });
+              // console.log('=== MONTH DATA DEBUG ===', {
+              //   monthKey: month.monthKey,
+              //   month: month.month,
+              //   bikeTrainings: month.bikeTrainings,
+              //   bikeTime: month.bikeTime,
+              //   bikeTSS: month.bikeTSS,
+              //   runningTSS: month.runningTSS,
+              //   totalTSS: month.totalTSS,
+              //   bikeHrZones: month.bikeHrZones,
+              //   runningHrZones: month.runningHrZones,
+              //   bikeHeartRateZones: month.bikeHeartRateZones,
+              //   runningHeartRateZones: month.runningHeartRateZones,
+              //   bikeAvgPower: month.bikeAvgPower,
+              //   bikeMaxPower: month.bikeMaxPower,
+              //   runningTrainings: month.runningTrainings,
+              //   runningTime: month.runningTime,
+              //   runningAvgPace: month.runningAvgPace,
+              //   runningMaxPace: month.runningMaxPace,
+              //   runningZones: month.runningZones ? Object.keys(month.runningZones).map(k => ({
+              //     zone: k,
+              //     min: month.runningZones[k]?.min,
+              //     max: month.runningZones[k]?.max,
+              //     minFormatted: month.runningZones[k]?.min ? formatPace(month.runningZones[k].min) : null,
+              //     maxFormatted: month.runningZones[k]?.max && month.runningZones[k].max !== Infinity ? formatPace(month.runningZones[k].max) : '∞'
+              //   })) : null,
+              //   runningZoneTimes: month.runningZoneTimes ? Object.keys(month.runningZoneTimes).map(k => ({
+              //     zone: k,
+              //     time: month.runningZoneTimes[k]?.time,
+              //     avgPace: month.runningZoneTimes[k]?.avgPace,
+              //     avgPaceFormatted: month.runningZoneTimes[k]?.avgPace ? formatPace(month.runningZoneTimes[k].avgPace) : null,
+              //     paceCount: month.runningZoneTimes[k]?.paceCount,
+              //     zoneMin: month.runningZones?.[k]?.min,
+              //     zoneMax: month.runningZones?.[k]?.max,
+              //     inZone: month.runningZones?.[k] ? 
+              //       (month.runningZoneTimes[k]?.avgPace >= month.runningZones[k].min && 
+              //        (month.runningZones[k].max === Infinity || month.runningZoneTimes[k]?.avgPace <= month.runningZones[k].max)) : 
+              //       null
+              //   })) : null
+              // });
               
               // Use bikeMaxPower for FTP estimation (bike-specific)
               const bikeMaxPower = Number(month.bikeMaxPower) || Number(month.maxPower) || 0;
@@ -459,253 +385,348 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
               // Use bikeTrainings and bikeTime from backend (already calculated)
               const bikeTrainings = Number(month.bikeTrainings) || 0;
               const bikeTime = Number(month.bikeTime) || 0;
-              const hasBikeData = bikeTrainings > 0 || bikeTime > 0;
+              const hasBikeData = bikeTrainings > 0 || bikeTime > 0 || (month.bikeTSS !== undefined && month.bikeTSS !== null);
               
               // Check for running data - either trainings, time, or zone data
               const runningTrainings = Number(month.runningTrainings) || 0;
               const runningTime = Number(month.runningTime) || 0;
               const hasRunningZoneData = month.runningZoneTimes && Object.values(month.runningZoneTimes).some(z => z && z.time > 0);
-              const hasRunData = runningTrainings > 0 || runningTime > 0 || month.runningZones || hasRunningZoneData;
+              const hasRunData = runningTrainings > 0 || runningTime > 0 || month.runningZones || hasRunningZoneData || (month.runningTSS !== undefined && month.runningTSS !== null);
+
+              const swimmingTrainings = Number(month.swimmingTrainings) || 0;
+              const swimmingTime = Number(month.swimmingTime) || 0;
+              const hasSwimmingZoneData = month.swimmingZoneTimes && Object.values(month.swimmingZoneTimes).some(z => z && z.time > 0);
+              const hasSwimData = swimmingTrainings > 0 || swimmingTime > 0 || month.swimmingZones || hasSwimmingZoneData || (month.swimmingTSS !== undefined && month.swimmingTSS !== null);
+
+              // Determine which sport to show based on selectedZoneType
+              const showBike = selectedZoneType === 'power' || selectedZoneType === 'heartrate';
+              const showRun = selectedZoneType === 'running' || selectedZoneType === 'heartrate-run';
+              const showSwim = selectedZoneType === 'swimming';
 
               return (
-                <div key={month.monthKey} className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4 capitalize">{month.month}</h3>
-                  
-                  {/* Bike Summary Cards */}
-                  {hasBikeData && (
-                    <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">🚴 Cyklistika - Statistiky</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-                          <div className="text-sm text-blue-600 font-medium mb-1">Trainings</div>
-                          <div className="text-3xl font-bold text-blue-900">{bikeTrainings}</div>
+                <div key={month.monthKey} className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2.5">
+                  {/* Header with Month Selector */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10">
+                    <h2 className="text-sm font-semibold text-text">Monthly Analysis</h2>
+                    {availableMonths.length > 0 && (
+                      <select
+                        value={selectedMonth || ''}
+                        onChange={(e) => setSelectedMonth(e.target.value || null)}
+                        className="px-2 py-0.5 text-xs border border-white/20 rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text"
+                      >
+                        {availableMonths.map((m) => (
+                          <option key={m.monthKey} value={m.monthKey}>
+                            {m.month} ({m.trainings})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Bike Summary Cards - Compact - Only show if selected */}
+                  {showBike && hasBikeData && (
+                    <div className="mb-2">
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-lighterText mb-0.5 uppercase tracking-wide`}>Bike</div>
+                      <div className={`grid ${isMobile ? 'grid-cols-5 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'} ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
+                        <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Tr' : 'Trainings'}</div>
+                          <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{bikeTrainings}</div>
                         </div>
-                        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-                          <div className="text-sm text-purple-600 font-medium mb-1">Time</div>
-                          <div className="text-3xl font-bold text-purple-900">{formatDuration(bikeTime)}</div>
+                        <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>Time</div>
+                          <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-bold text-text`}>{formatDuration(bikeTime)}</div>
                         </div>
                         {(month.bikeAvgPower !== undefined && month.bikeAvgPower !== null && month.bikeAvgPower > 0) && (
-                          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
-                            <div className="text-sm text-green-600 font-medium mb-1">Avg Power</div>
-                            <div className="text-3xl font-bold text-green-900">{Math.round(month.bikeAvgPower)}W</div>
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'P' : 'Avg Power'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text ${isMobile ? 'flex-col' : 'flex items-center justify-between'}`}>
+                              <span>{Math.round(month.bikeAvgPower)}W</span>
+                              {month.bikeMaxPower > 0 && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Max: {Math.round(month.bikeMaxPower)}W</span>
+                              )}
+                            </div>
                           </div>
                         )}
-                        {(month.bikeMaxPower !== undefined && month.bikeMaxPower !== null && month.bikeMaxPower > 0) && (
-                          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
-                            <div className="text-sm text-orange-600 font-medium mb-1">Max Power</div>
-                            <div className="text-3xl font-bold text-orange-900">{Math.round(month.bikeMaxPower)}W</div>
+                        {(month.avgHeartRate > 0 || month.maxHeartRate > 0) && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'HR' : 'Avg HR'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text ${isMobile ? 'flex-col' : 'flex items-center justify-between'}`}>
+                              <span>{month.avgHeartRate > 0 ? Math.round(month.avgHeartRate) : '-'}</span>
+                              {month.maxHeartRate > 0 && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Max: {Math.round(month.maxHeartRate)}</span>
+                              )}
+                            </div>
                           </div>
                         )}
-                        {(month.bikeTSS > 0 || month.runningTSS > 0 || month.totalTSS > 0) && (
-                          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-4 border border-red-200">
-                            <div className="text-sm text-red-600 font-medium mb-1">TSS</div>
-                            {month.bikeTSS > 0 && (
-                              <div className="text-2xl font-bold text-red-900">Bike: {month.bikeTSS || 0}</div>
-                            )}
-                            {month.runningTSS > 0 && (
-                              <div className="text-2xl font-bold text-red-900 mt-1">Run: {month.runningTSS || 0}</div>
-                            )}
-                            {month.totalTSS > 0 && (month.bikeTSS > 0 || month.runningTSS > 0) && (
-                              <div className="text-xs text-red-700 mt-2">Celkem: {month.totalTSS}</div>
-                            )}
-                            {month.totalTSS > 0 && month.bikeTSS === 0 && month.runningTSS === 0 && (
-                            <div className="text-3xl font-bold text-red-900">{month.totalTSS}</div>
-                            )}
-                          </div>
-                        )}
-                        {/* Bike heart rate - show if available */}
-                        {hasBikeData && month.avgHeartRate > 0 && (
-                          <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-xl p-4 border border-pink-200">
-                            <div className="text-sm text-pink-600 font-medium mb-1">Avg HR</div>
-                            <div className="text-3xl font-bold text-pink-900">{Math.round(month.avgHeartRate)} bpm</div>
-                            {month.maxHeartRate > 0 && (
-                              <div className="text-xs text-pink-700 mt-1">Max: {Math.round(month.maxHeartRate)} bpm</div>
-                            )}
+                        {(month.bikeTSS !== undefined && month.bikeTSS !== null) && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>TSS</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{Math.round(month.bikeTSS || 0)}</div>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* Running Summary Cards */}
-                  {hasRunData && (runningTime > 0 || hasRunningZoneData) && (
-                    <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">🏃 Run - Stats</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {/* Running Summary Cards - Compact - Only show if selected */}
+                  {showRun && hasRunData && (runningTime > 0 || hasRunningZoneData || (month.runningTSS !== undefined && month.runningTSS !== null)) && (
+                    <div className="mb-2">
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-lighterText mb-0.5 uppercase tracking-wide`}>Run</div>
+                      <div className={`grid ${isMobile ? 'grid-cols-5 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'} ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
                         {runningTrainings > 0 && (
-                        <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-xl p-4 border border-cyan-200">
-                          <div className="text-sm text-cyan-600 font-medium mb-1">Trainings</div>
-                            <div className="text-3xl font-bold text-cyan-900">{runningTrainings}</div>
+                        <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Tr' : 'Trainings'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{runningTrainings}</div>
                         </div>
                         )}
                         {runningTime > 0 && (
-                        <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-xl p-4 border border-teal-200">
-                          <div className="text-sm text-teal-600 font-medium mb-1">Time</div>
-                            <div className="text-3xl font-bold text-teal-900">{formatDuration(runningTime)}</div>
+                        <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>Time</div>
+                            <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-bold text-text`}>{formatDuration(runningTime)}</div>
                         </div>
                         )}
-                        {month.runningDistance > 0 && (
-                          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
-                            <div className="text-sm text-emerald-600 font-medium mb-1">Distance</div>
-                            <div className="text-3xl font-bold text-emerald-900">{(month.runningDistance / 1000).toFixed(1)} km</div>
-                          </div>
-                        )}
                         {month.runningAvgPace > 0 && month.runningAvgPace !== Infinity && !isNaN(month.runningAvgPace) && (
-                          <div className="bg-gradient-to-br from-lime-50 to-lime-100 rounded-xl p-4 border border-lime-200">
-                            <div className="text-sm text-lime-600 font-medium mb-1">Avg pace</div>
-                            <div className="text-3xl font-bold text-lime-900">{formatPace(month.runningAvgPace)} /km</div>
-                            {month.runningMaxPace > 0 && month.runningMaxPace < Infinity && !isNaN(month.runningMaxPace) && (
-                              <div className="text-xs text-lime-700 mt-1">Best: {formatPace(month.runningMaxPace)} /km</div>
-                            )}
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Pace' : 'Avg Pace'}</div>
+                            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'text-xs' : 'text-base'} font-bold text-text leading-tight`}>
+                              <span>{formatPace(month.runningAvgPace)}</span>
+                              {month.runningMaxPace > 0 && month.runningMaxPace < Infinity && !isNaN(month.runningMaxPace) && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatPace(month.runningMaxPace)}</span>
+                              )}
+                            </div>
                           </div>
                         )}
                         {month.runningAvgHeartRate > 0 && (
-                          <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-4 border border-rose-200">
-                            <div className="text-sm text-rose-600 font-medium mb-1">Avg HR</div>
-                            <div className="text-3xl font-bold text-rose-900">{Math.round(month.runningAvgHeartRate)} bpm</div>
-                            {month.runningMaxHeartRate > 0 && (
-                              <div className="text-xs text-rose-700 mt-1">Max: {Math.round(month.runningMaxHeartRate)} bpm</div>
-                            )}
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'HR' : 'Avg HR'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text ${isMobile ? 'flex-col' : 'flex items-center justify-between'}`}>
+                              <span>{Math.round(month.runningAvgHeartRate)}</span>
+                              {month.runningMaxHeartRate > 0 && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Max: {Math.round(month.runningMaxHeartRate)}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {(month.runningTSS !== undefined && month.runningTSS !== null && month.runningTSS > 0) && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>TSS</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{Math.round(month.runningTSS)}</div>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* Zone Type Toggle */}
-                  {(month.powerZones || (month.hrZones && month.heartRateZones) || month.runningZones || month.runningZoneTimes || month.swimmingZones || month.swimmingZoneTimes) && (
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-700">Zobrazit zóny:</span>
-                      <div className="flex gap-2 flex-wrap">
+                  {/* Swim Summary Cards - Compact - Only show if selected */}
+                  {showSwim && hasSwimData && (
+                    <div className="mb-2">
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-lighterText mb-0.5 uppercase tracking-wide`}>Swim</div>
+                      <div className={`grid ${isMobile ? 'grid-cols-5 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'} ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
+                        {swimmingTrainings > 0 && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Tr' : 'Trainings'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{swimmingTrainings}</div>
+                          </div>
+                        )}
+                        {swimmingTime > 0 && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>Time</div>
+                            <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-bold text-text`}>{formatDuration(swimmingTime)}</div>
+                          </div>
+                        )}
+                        {month.swimmingAvgPace > 0 && month.swimmingAvgPace !== Infinity && !isNaN(month.swimmingAvgPace) && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Pace' : 'Avg Pace'}</div>
+                            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'text-xs' : 'text-base'} font-bold text-text leading-tight`}>
+                              <span>{formatPace(month.swimmingAvgPace)}</span>
+                              {month.swimmingMaxPace > 0 && month.swimmingMaxPace < Infinity && !isNaN(month.swimmingMaxPace) && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatPace(month.swimmingMaxPace)}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {month.swimmingAvgHeartRate > 0 && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'HR' : 'Avg HR'}</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text ${isMobile ? 'flex-col' : 'flex items-center justify-between'}`}>
+                              <span>{Math.round(month.swimmingAvgHeartRate)}</span>
+                              {month.swimmingMaxHeartRate > 0 && !isMobile && (
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Max: {Math.round(month.swimmingMaxHeartRate)}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {(month.swimmingTSS !== undefined && month.swimmingTSS !== null) && (
+                          <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
+                            <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>TSS</div>
+                            <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold text-text`}>{Math.round(month.swimmingTSS || 0)}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Zone Type Toggle - Compact with Bike/Run separation */}
+                  {(month.powerZones || (month.hrZones && month.heartRateZones) || month.runningZones || month.runningZoneTimes || month.bikeHrZones || month.runningHrZones || month.swimmingZones || month.swimmingZoneTimes) && (
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-lighterText uppercase tracking-wide">Zones:</span>
+                      <div className="flex gap-1 flex-wrap">
                         {month.powerZones && (
                           <button
                             onClick={() => setSelectedZoneType('power')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
                               selectedZoneType === 'power'
-                                ? 'bg-primary text-white shadow-md'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-md border border-white/30'
+                                : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
                             }`}
                           >
-                            Power Zóny
-                          </button>
-                        )}
-                        {month.hrZones && month.heartRateZones && (
-                          <button
-                            onClick={() => setSelectedZoneType('heartrate')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                              selectedZoneType === 'heartrate'
-                                ? 'bg-primary text-white shadow-md'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            Heart Rate Zóny
+                            Power (Bike)
                           </button>
                         )}
                         {(month.runningZones || month.runningZoneTimes) && (
                           <button
                             onClick={() => setSelectedZoneType('running')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
                               selectedZoneType === 'running'
-                                ? 'bg-primary text-white shadow-md'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-md border border-white/30'
+                                : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
                             }`}
                           >
-                            Run Zones
+                            Power (Run)
+                          </button>
+                        )}
+                        {(month.bikeHrZones || (month.hrZones && month.heartRateZones)) && (
+                          <button
+                            onClick={() => setSelectedZoneType('heartrate')}
+                            className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                              selectedZoneType === 'heartrate'
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-md border border-white/30'
+                                : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
+                            }`}
+                          >
+                            HR (Bike)
+                          </button>
+                        )}
+                        {month.runningHrZones && (
+                          <button
+                            onClick={() => setSelectedZoneType('heartrate-run')}
+                            className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                              selectedZoneType === 'heartrate-run'
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-md border border-white/30'
+                                : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
+                            }`}
+                          >
+                            HR (Run)
                           </button>
                         )}
                         {(month.swimmingZones || month.swimmingZoneTimes) && (
                           <button
                             onClick={() => setSelectedZoneType('swimming')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
                               selectedZoneType === 'swimming'
-                                ? 'bg-primary text-white shadow-md'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-md border border-white/30'
+                                : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
                             }`}
                           >
-                            Swim Zones
+                            Swim
                           </button>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* Power Zones */}
+                  {/* Power Zones - Bike */}
                   {selectedZoneType === 'power' && month.powerZones && (
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
-                        Power Zóny
-                        {month.usesProfileZones ? ' (from your profile)' : bikeMaxPower > 0 ? ` (estimated FTP: ${Math.round(estimatedFTP)}W)` : ' (default zones)'}
+                    <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <h4 className="text-xs font-semibold text-text mb-2">
+                        Time in Power Zone
+                        {month.usesProfileZones ? ' (profile)' : bikeMaxPower > 0 ? ` (FTP: ${Math.round(estimatedFTP)}W)` : ' (default)'}
                       </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
-                        {POWER_ZONES.map(powerZone => {
-                          const zone = month.powerZones[powerZone.zone];
-                          if (!zone) return null;
-                          const maxDisplay = zone.max === Infinity || zone.max === null || zone.max === undefined 
-                            ? '∞' 
-                            : Math.round(zone.max);
-                          return (
-                            <div key={powerZone.zone} className="text-center p-2 bg-white rounded-lg">
-                              <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                              <div className="text-xs text-gray-600">{powerZone.description}</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {Math.round(zone.min)}-{maxDisplay}W
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {POWER_ZONES.map(powerZone => {
                           const zone = month.zones[powerZone.zone];
-                          if (!zone) return null;
+                          const zoneDef = month.powerZones[powerZone.zone];
+                          if (!zone || !zoneDef) return null;
+                          
                           // Use bikeTime from backend (already calculated)
                           const bikeTimeForZones = Number(month.bikeTime) || 0;
-                          const maxZoneTime = Math.max(...Object.values(month.zones).map(z => z.time || 0));
                           const percentage = bikeTimeForZones > 0 
                             ? (zone.time / bikeTimeForZones) * 100 
                             : 0;
-                          const barWidth = maxZoneTime > 0 ? (zone.time / maxZoneTime) * 100 : 0;
+                          
+                          const maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined 
+                            ? '∞' 
+                            : Math.round(zoneDef.max);
+                          
+                          // Zone labels based on description
+                          const zoneLabels = {
+                            'Recovery': 'Active Recovery',
+                            'Aerobic': 'Endurance',
+                            'Tempo': 'Tempo',
+                            'Threshold': 'Lactate Threshold',
+                            'VO2max': 'VO2 Max'
+                          };
+                          const zoneLabel = zoneLabels[powerZone.description] || powerZone.description;
+
+                          const tooltipContent = (
+                            <div className="space-y-1">
+                              <div className="font-semibold text-gray-900">{zoneLabel}</div>
+                              <div className="text-gray-600">Time: {formatDuration(zone.time)}</div>
+                              {zone.avgPower > 0 && (
+                                <div className="text-purple-600 font-medium">Avg Power: {Math.round(zone.avgPower)} W</div>
+                              )}
+                              <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                              {zone.predictedLactate > 0 && (
+                                <div className="text-blue-600 font-medium">Lactate: {zone.predictedLactate.toFixed(1)} mmol/L</div>
+                              )}
+                            </div>
+                          );
 
                           return (
-                            <div key={powerZone.zone} className="flex items-center gap-4">
-                              <div className="w-24 flex-shrink-0">
-                                <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                <div className="text-xs text-gray-500">{powerZone.description}</div>
+                            <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
+                              {/* Zone name and range on the left */}
+                              <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                                  {isMobile ? `Z${powerZone.zone}: ${Math.round(zoneDef.min)}-${maxDisplay}W` : `${zoneLabel}: ${Math.round(zoneDef.min)} – ${maxDisplay} W`}
                               </div>
-                              <div className="flex-1 relative">
-                                <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
+                              </div>
+                              
+                              {/* Horizontal bar with tooltip */}
+                              <div 
+                                className={`flex-1 relative ${isMobile ? 'h-10' : 'h-6'}`}
+                                onMouseEnter={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseMove={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseLeave={() => setTooltipData(null)}
+                              >
+                                <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
                                   <div
-                                    className="h-full rounded-lg transition-all duration-500 flex items-center justify-between px-2"
+                                    className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
                                     style={{
-                                      width: `${barWidth}%`,
+                                      width: `${percentage}%`,
                                       backgroundColor: powerZone.color,
                                       opacity: 0.8
                                     }}
-                                  >
-                                    {zone.time > 0 && (
-                                      <>
-                                        <span className="text-xs font-semibold text-white">
-                                          {formatDuration(zone.time)}
-                                        </span>
-                                        {zone.avgPower > 0 && (
-                                          <span className="text-xs font-semibold text-white">
-                                            {Math.round(zone.avgPower)}W
-                                          </span>
-                                        )}
-                                      </>
-                                    )}
+                                  />
                                   </div>
                                 </div>
+                              
+                              {/* Percentage on the right */}
+                              <div className={`${isMobile ? 'w-8' : 'w-12'} text-right flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-text`}>
+                                  {percentage.toFixed(0)}%
                               </div>
-                              <div className="w-32 text-right flex-shrink-0">
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {percentage.toFixed(1)}%
-                                </div>
-                                {zone.predictedLactate > 0 && (
-                                  <div className="text-xs text-gray-600">
-                                    Pred. lactate: {zone.predictedLactate.toFixed(1)} mmol/L
-                                  </div>
-                                )}
                               </div>
                             </div>
                           );
@@ -714,124 +735,98 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     </div>
                   )}
 
-                  {/* Heart Rate Zones */}
-                  {selectedZoneType === 'heartrate' && ((month.hrZones && month.heartRateZones) || month.bikeHrZones || month.runningHrZones) && (
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-lg font-semibold text-gray-900">
-                        Heart Rate Zóny
-                          {selectedHrZoneSport === 'bike' && month.maxHeartRate > 0 && (
-                          <span className="text-sm font-normal text-gray-600 ml-2">
+                  {/* Heart Rate Zones - Bike */}
+                  {selectedZoneType === 'heartrate' && ((month.hrZones && month.heartRateZones) || month.bikeHrZones) && (
+                    <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <h4 className="text-xs font-semibold text-text mb-2">
+                        Time in Heart Rate Zone
+                        {month.maxHeartRate > 0 && (
+                          <span className="text-xs font-normal text-lighterText ml-1">
                             (Max HR: {Math.round(month.maxHeartRate)} bpm)
                           </span>
                         )}
-                          {selectedHrZoneSport === 'run' && month.runningMaxHeartRate > 0 && (
-                            <span className="text-sm font-normal text-gray-600 ml-2">
-                              (Max HR: {Math.round(month.runningMaxHeartRate)} bpm)
-                            </span>
-                          )}
                       </h4>
-                        {((month.bikeHrZones && Object.values(month.bikeHrZones).some(z => z && z.time > 0)) || 
-                          (month.runningHrZones && Object.values(month.runningHrZones).some(z => z && z.time > 0))) && (
-                          <div className="flex gap-2">
-                            {month.bikeHrZones && Object.values(month.bikeHrZones).some(z => z && z.time > 0) && (
-                              <button
-                                onClick={() => setSelectedHrZoneSport('bike')}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                                  selectedHrZoneSport === 'bike'
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                              >
-                                🚴 Bike
-                              </button>
-                            )}
-                            {month.runningHrZones && Object.values(month.runningHrZones).some(z => z && z.time > 0) && (
-                              <button
-                                onClick={() => setSelectedHrZoneSport('run')}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                                  selectedHrZoneSport === 'run'
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                              >
-                                🏃 Run
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div className="mb-4 p-3 bg-gray-50 rounded-xl">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                          {POWER_ZONES.map(powerZone => {
-                            const hrZones = selectedHrZoneSport === 'bike' 
-                              ? (month.bikeHeartRateZones || month.heartRateZones)
-                              : (month.runningHeartRateZones || month.heartRateZones);
-                            const hrZone = hrZones?.[powerZone.zone];
-                            if (!hrZone) return null;
-                            const maxDisplay = hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined 
-                              ? '∞' 
-                              : Math.round(hrZone.max);
-                            return (
-                              <div key={powerZone.zone} className="text-center p-2 bg-white rounded-lg">
-                                <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                <div className="text-xs text-gray-600">{powerZone.description}</div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {Math.round(hrZone.min)}-{maxDisplay} bpm
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {POWER_ZONES.map(powerZone => {
-                          const hrZones = selectedHrZoneSport === 'bike' 
-                            ? (month.bikeHrZones || month.hrZones || {})
-                            : (month.runningHrZones || month.hrZones || {});
+                          const hrZones = month.bikeHrZones || month.hrZones || {};
                           const hrZone = hrZones?.[powerZone.zone];
-                          if (!hrZone) return null;
-                          const totalTime = selectedHrZoneSport === 'bike' ? month.bikeTime : month.runningTime;
-                          const maxHrZoneTime = Math.max(...Object.values(hrZones).map(z => z?.time || 0));
+                          const hrZoneDef = (month.bikeHeartRateZones || month.heartRateZones)?.[powerZone.zone];
+                          if (!hrZone || !hrZoneDef) return null;
+                          
+                          const totalTime = Number(month.bikeTime) || 0;
                           const percentage = totalTime > 0 
                             ? (hrZone.time / totalTime) * 100 
                             : 0;
-                          const barWidth = maxHrZoneTime > 0 ? (hrZone.time / maxHrZoneTime) * 100 : 0;
+                          
+                          const maxDisplay = hrZoneDef.max === Infinity || hrZoneDef.max === null || hrZoneDef.max === undefined 
+                            ? '∞' 
+                            : Math.round(hrZoneDef.max);
+                          
+                          // Zone labels based on description - shorter on mobile
+                          const zoneLabels = {
+                            'Recovery': isMobile ? 'Recovery' : 'Active Recovery',
+                            'Aerobic': isMobile ? 'Endurance' : 'Endurance',
+                            'Tempo': 'Tempo',
+                            'Threshold': isMobile ? 'Threshold' : 'Lactate Threshold',
+                            'VO2max': isMobile ? 'VO2 Max' : 'VO2 Max'
+                          };
+                          const zoneLabel = zoneLabels[powerZone.description] || powerZone.description;
+                          
+                          const tooltipContent = (
+                            <div className="space-y-1">
+                              <div className="font-semibold text-gray-900">{zoneLabel}</div>
+                              <div className="text-gray-600">Time: {formatDuration(hrZone.time)}</div>
+                              {hrZone.avgHeartRate > 0 && (
+                                <div className="text-red-500 font-medium">Avg HR: {Math.round(hrZone.avgHeartRate)} bpm</div>
+                              )}
+                              <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                            </div>
+                          );
 
                           return (
-                            <div key={powerZone.zone} className="flex items-center gap-4">
-                              <div className="w-24 flex-shrink-0">
-                                <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                <div className="text-xs text-gray-500">{powerZone.description}</div>
+                            <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
+                              {/* Zone name and range on the left */}
+                              <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                                  {isMobile ? `Z${powerZone.zone}: ${Math.round(hrZoneDef.min)}-${maxDisplay}` : `${zoneLabel}: ${Math.round(hrZoneDef.min)} – ${maxDisplay} bpm`}
                               </div>
-                              <div className="flex-1 relative">
-                                <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
+                              </div>
+                              
+                              {/* Horizontal bar with tooltip */}
+                              <div 
+                                className={`flex-1 relative ${isMobile ? 'h-10' : 'h-6'}`}
+                                onMouseEnter={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseMove={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseLeave={() => setTooltipData(null)}
+                              >
+                                <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
                                   <div
-                                    className="h-full rounded-lg transition-all duration-500 flex items-center justify-between px-2"
+                                    className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
                                     style={{
-                                      width: `${barWidth}%`,
+                                      width: `${percentage}%`,
                                       backgroundColor: powerZone.color,
                                       opacity: 0.8
                                     }}
-                                  >
-                                    {hrZone.time > 0 && (
-                                      <>
-                                        <span className="text-xs font-semibold text-white">
-                                          {formatDuration(hrZone.time)}
-                                        </span>
-                                        {hrZone.avgHeartRate > 0 && (
-                                          <span className="text-xs font-semibold text-white">
-                                            {Math.round(hrZone.avgHeartRate)} bpm
-                                          </span>
-                                        )}
-                                      </>
-                                    )}
+                                  />
                                   </div>
                                 </div>
-                              </div>
-                              <div className="w-32 text-right flex-shrink-0">
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {percentage.toFixed(1)}%
+                              
+                              {/* Percentage on the right */}
+                              <div className={`${isMobile ? 'w-8' : 'w-12'} text-right flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-text`}>
+                                  {percentage.toFixed(0)}%
                                 </div>
                               </div>
                             </div>
@@ -841,109 +836,207 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     </div>
                   )}
 
-                  {/* Running Zones */}
-                  {selectedZoneType === 'running' && (month.runningZones || month.runningZoneTimes) && (
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
-                        Run Zones (Pace)
-                        {month.usesProfileRunningZones ? ' (from your profile)' : month.runningZones ? ' (default zones)' : ' (from training data)'}
+                  {/* Heart Rate Zones - Run */}
+                  {selectedZoneType === 'heartrate-run' && month.runningHrZones && (
+                    <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <h4 className="text-xs font-semibold text-text mb-2">
+                        Time in Heart Rate Zone
+                        {month.runningMaxHeartRate > 0 && (
+                          <span className="text-xs font-normal text-lighterText ml-1">
+                            (Max HR: {Math.round(month.runningMaxHeartRate)} bpm)
+                          </span>
+                        )}
                       </h4>
-                      {month.runningZones && Object.keys(month.runningZones).length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
-                          {POWER_ZONES.map(powerZone => {
-                            const zone = month.runningZones[powerZone.zone];
-                            if (!zone) return null;
-                            const maxDisplay = zone.max === Infinity || zone.max === null || zone.max === undefined || isNaN(zone.max)
-                              ? '∞' 
-                              : formatPace(zone.max);
-                            const minDisplay = zone.min === null || zone.min === undefined || isNaN(zone.min)
-                              ? '0:00'
-                              : formatPace(zone.min);
-                            return (
-                              <div key={powerZone.zone} className="text-center p-2 bg-white rounded-lg">
-                                <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                <div className="text-xs text-gray-600">{powerZone.description}</div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {minDisplay}-{maxDisplay} /km
+                      <div className="space-y-2">
+                        {POWER_ZONES.map(powerZone => {
+                          const hrZones = month.runningHrZones || {};
+                          const hrZone = hrZones?.[powerZone.zone];
+                          const hrZoneDef = (month.runningHeartRateZones || month.runningHrZones)?.[powerZone.zone];
+                          if (!hrZone || !hrZoneDef) return null;
+                          
+                          const totalTime = Number(month.runningTime) || 0;
+                          const percentage = totalTime > 0 
+                            ? (hrZone.time / totalTime) * 100 
+                            : 0;
+                          
+                          const maxDisplay = hrZoneDef.max === Infinity || hrZoneDef.max === null || hrZoneDef.max === undefined 
+                            ? '∞' 
+                            : Math.round(hrZoneDef.max);
+                          
+                          // Zone labels based on description - shorter on mobile
+                          const zoneLabels = {
+                            'Recovery': isMobile ? 'Recovery' : 'Active Recovery',
+                            'Aerobic': isMobile ? 'Endurance' : 'Endurance',
+                            'Tempo': 'Tempo',
+                            'Threshold': isMobile ? 'Threshold' : 'Lactate Threshold',
+                            'VO2max': isMobile ? 'VO2 Max' : 'VO2 Max'
+                          };
+                          const zoneLabel = zoneLabels[powerZone.description] || powerZone.description;
+                          
+                          const tooltipContent = (
+                            <div className="space-y-1">
+                              <div className="font-semibold text-gray-900">{zoneLabel}</div>
+                              <div className="text-gray-600">Time: {formatDuration(hrZone.time)}</div>
+                              {hrZone.avgHeartRate > 0 && (
+                                <div className="text-red-500 font-medium">Avg HR: {Math.round(hrZone.avgHeartRate)} bpm</div>
+                              )}
+                              <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                            </div>
+                          );
+
+                          return (
+                            <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
+                              {/* Zone name and range on the left */}
+                              <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                                  {isMobile ? `Z${powerZone.zone}: ${Math.round(hrZoneDef.min)}-${maxDisplay}` : `${zoneLabel}: ${Math.round(hrZoneDef.min)} – ${maxDisplay} bpm`}
+                              </div>
+                              </div>
+                              
+                              {/* Horizontal bar with tooltip */}
+                              <div 
+                                className={`flex-1 relative ${isMobile ? 'h-10' : 'h-6'}`}
+                                onMouseEnter={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseMove={(e) => {
+                                  setTooltipData({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    content: tooltipContent
+                                  });
+                                }}
+                                onMouseLeave={() => setTooltipData(null)}
+                              >
+                                <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
+                                  <div
+                                    className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
+                                    style={{
+                                      width: `${percentage}%`,
+                                      backgroundColor: powerZone.color,
+                                      opacity: 0.8
+                                    }}
+                                  />
+                                  </div>
+                                </div>
+                              
+                              {/* Percentage on the right */}
+                              <div className={`${isMobile ? 'w-8' : 'w-12'} text-right flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-text`}>
+                                  {percentage.toFixed(0)}%
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Running Zones - Power Zones for Run */}
+                  {selectedZoneType === 'running' && (month.runningZones || month.runningZoneTimes) && (
+                    <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <h4 className="text-xs font-semibold text-text mb-2">
+                        Time in Power Zone
+                        {month.usesProfileRunningZones ? ' (profile)' : month.runningZones ? ' (default)' : ' (from training data)'}
+                      </h4>
                       {month.runningZoneTimes && (() => {
                         // Check if there are any zones with time > 0
                         const hasZoneData = Object.values(month.runningZoneTimes).some(z => z && z.time > 0);
                         
-                        // Debug logging for running zones
-                        console.log('=== RUNNING ZONES DEBUG ===', {
-                          hasZoneData,
-                          runningZoneTimes: month.runningZoneTimes,
-                          runningTime: month.runningTime,
-                          zonesWithData: Object.entries(month.runningZoneTimes).filter(([_, z]) => z && z.time > 0).map(([zone, data]) => ({
-                            zone,
-                            time: data.time,
-                            avgPace: data.avgPace,
-                            paceCount: data.paceCount
-                          }))
-                        });
-                        
                         if (!hasZoneData) return null;
                         
                         return (
-                        <div className="space-y-3">
+                          <div className="space-y-2">
                           {POWER_ZONES.map(powerZone => {
                             const zone = month.runningZoneTimes[powerZone.zone];
+                              const zoneDef = month.runningZones?.[powerZone.zone];
                             if (!zone || zone.time === 0) return null;
                               
-                              // Debug logging for each zone
-                              console.log(`Zone ${powerZone.zone}:`, {
-                                time: zone.time,
-                                avgPace: zone.avgPace,
-                                paceCount: zone.paceCount,
-                                formattedPace: zone.avgPace > 0 ? formatPace(zone.avgPace) : 'N/A'
-                              });
-                              
-                              const maxZoneTime = Math.max(...Object.values(month.runningZoneTimes).map(z => z && z.time ? z.time : 0));
                             const percentage = month.runningTime > 0 
                               ? (zone.time / month.runningTime) * 100 
                               : 0;
-                            const barWidth = maxZoneTime > 0 ? (zone.time / maxZoneTime) * 100 : 0;
+                              
+                              let minDisplay = '0:00';
+                              let maxDisplay = '∞';
+                              if (zoneDef) {
+                                minDisplay = zoneDef.min === null || zoneDef.min === undefined || isNaN(zoneDef.min)
+                                  ? '0:00'
+                                  : formatPace(zoneDef.min);
+                                maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined || isNaN(zoneDef.max)
+                                  ? '∞' 
+                                  : formatPace(zoneDef.max);
+                              }
+                              
+                              // Zone labels based on description - shorter on mobile
+                              const zoneLabels = {
+                                'Recovery': isMobile ? 'Recovery' : 'Active Recovery',
+                                'Aerobic': isMobile ? 'Endurance' : 'Endurance',
+                                'Tempo': 'Tempo',
+                                'Threshold': isMobile ? 'Threshold' : 'Lactate Threshold',
+                                'VO2max': isMobile ? 'VO2 Max' : 'VO2 Max'
+                              };
+                              const zoneLabel = zoneLabels[powerZone.description] || powerZone.description;
+                              
+                              const tooltipContent = (
+                                <div className="space-y-1">
+                                  <div className="font-semibold text-gray-900">{zoneLabel}</div>
+                                  <div className="text-gray-600">Time: {formatDuration(zone.time)}</div>
+                                  {zone.avgPace && zone.avgPace > 0 && zone.avgPace !== Infinity && !isNaN(zone.avgPace) && (
+                                    <div className="text-teal-600 font-medium">Avg Pace: {formatPace(zone.avgPace)} /km</div>
+                                  )}
+                                  <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                                </div>
+                              );
 
                             return (
-                              <div key={powerZone.zone} className="flex items-center gap-4">
-                                <div className="w-24 flex-shrink-0">
-                                  <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                  <div className="text-xs text-gray-500">{powerZone.description}</div>
+                                <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
+                                  {/* Zone name and range on the left */}
+                                  <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
+                                    <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                                      {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} /km`}
                                 </div>
-                                <div className="flex-1 relative">
-                                  <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
-                                    <div
-                                      className="h-full rounded-lg transition-all duration-500 flex items-center justify-between px-2"
+                                  </div>
+                                  
+                                  {/* Horizontal bar with tooltip */}
+                                  <div 
+                                    className={`flex-1 relative ${isMobile ? 'h-10' : 'h-6'}`}
+                                    onMouseEnter={(e) => {
+                                      setTooltipData({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        content: tooltipContent
+                                      });
+                                    }}
+                                    onMouseMove={(e) => {
+                                      setTooltipData({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        content: tooltipContent
+                                      });
+                                    }}
+                                    onMouseLeave={() => setTooltipData(null)}
+                                  >
+                                    <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
+                                      <div
+                                        className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
                                       style={{
-                                        width: `${barWidth}%`,
+                                          width: `${percentage}%`,
                                         backgroundColor: powerZone.color,
-                                        opacity: 0.8
-                                      }}
-                                    >
-                                      {zone.time > 0 && (
-                                        <>
-                                          <span className="text-xs font-semibold text-white">
-                                            {formatDuration(zone.time)}
-                                          </span>
-                                            {zone.avgPace && zone.avgPace > 0 && zone.avgPace !== Infinity && !isNaN(zone.avgPace) && (
-                                              <span className="text-xs font-semibold text-white ml-2">
-                                              {formatPace(zone.avgPace)} /km
-                                            </span>
-                                          )}
-                                        </>
-                                      )}
+                                          opacity: 0.8
+                                        }}
+                                      />
                                     </div>
                                   </div>
-                                </div>
-                                <div className="w-32 text-right flex-shrink-0">
-                                  <div className="text-sm font-semibold text-gray-900">
-                                    {percentage.toFixed(1)}%
+                                  
+                                  {/* Percentage on the right */}
+                                  <div className={`${isMobile ? 'w-8' : 'w-12'} text-right flex-shrink-0`}>
+                                    <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-text`}>
+                                      {percentage.toFixed(0)}%
                                   </div>
                                 </div>
                               </div>
@@ -953,93 +1046,113 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                         );
                       })()}
                       {(!month.runningZoneTimes || !Object.values(month.runningZoneTimes).some(z => z && z.time > 0)) && !month.runningZones && (
-                        <div className="text-center py-4 text-gray-500 text-sm">
+                        <div className="text-center py-2 text-lighterText text-[10px]">
                     {month.runningTrainings > 0 
                       ? `Run trainings found (${month.runningTrainings}), but no pace data in records. Please check that FIT files contain speed data.`
                       : 'No run trainings with pace data in this month.'}
                         </div>
                       )}
                       {month.runningZones && (!month.runningZoneTimes || !Object.values(month.runningZoneTimes).some(z => z && z.time > 0)) && (
-                        <div className="text-center py-4 text-gray-500 text-sm">
+                        <div className="text-center py-2 text-lighterText text-[10px]">
                     <p>Zone definitions are available, but there is no time spent in zones yet.</p>
-                    <p className="text-xs mt-1">Data will appear after uploading run trainings with pace data.</p>
+                    <p className="text-[9px] mt-0.5">Data will appear after uploading run trainings with pace data.</p>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Swimming Zones */}
+                  {/* Swimming Zones - Compact */}
                   {selectedZoneType === 'swimming' && (month.swimmingZones || month.swimmingZoneTimes) && (
-                    <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">
-                        Swim Zones (Pace)
+                    <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <h4 className="text-xs font-semibold text-text mb-2">
+                        Time in Pace Zone
                         {month.usesProfileZones && month.swimmingZones ? ' (from your profile)' : ' (from training data)'}
                       </h4>
-                      {month.swimmingZones && (
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
-                          {POWER_ZONES.map(powerZone => {
-                            const zone = month.swimmingZones[powerZone.zone];
-                            if (!zone) return null;
-                            const maxDisplay = zone.max === Infinity || zone.max === null || zone.max === undefined 
-                              ? '∞' 
-                              : formatPace(zone.max);
-                            return (
-                              <div key={powerZone.zone} className="text-center p-2 bg-white rounded-lg">
-                                <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                <div className="text-xs text-gray-600">{powerZone.description}</div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {formatPace(zone.min)}-{maxDisplay} /100m
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                       {month.swimmingZoneTimes && (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {POWER_ZONES.map(powerZone => {
                             const zone = month.swimmingZoneTimes[powerZone.zone];
+                            const zoneDef = month.swimmingZones?.[powerZone.zone];
                             if (!zone || zone.time === 0) return null;
-                            const maxZoneTime = Math.max(...Object.values(month.swimmingZoneTimes).map(z => z.time || 0));
+                            
                             const percentage = month.totalTime > 0 
                               ? (zone.time / month.totalTime) * 100 
                               : 0;
-                            const barWidth = maxZoneTime > 0 ? (zone.time / maxZoneTime) * 100 : 0;
+                            
+                            let minDisplay = '0:00';
+                            let maxDisplay = '∞';
+                            if (zoneDef) {
+                              minDisplay = formatPace(zoneDef.min);
+                              maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined 
+                                ? '∞' 
+                                : formatPace(zoneDef.max);
+                            }
+                            
+                            // Zone labels based on description - shorter on mobile
+                            const zoneLabels = {
+                              'Recovery': isMobile ? 'Recovery' : 'Active Recovery',
+                              'Aerobic': isMobile ? 'Endurance' : 'Endurance',
+                              'Tempo': 'Tempo',
+                              'Threshold': isMobile ? 'Threshold' : 'Lactate Threshold',
+                              'VO2max': isMobile ? 'VO2 Max' : 'VO2 Max'
+                            };
+                            const zoneLabel = zoneLabels[powerZone.description] || powerZone.description;
+                            
+                            const tooltipContent = (
+                              <div className="space-y-1">
+                                <div className="font-semibold text-gray-900">{zoneLabel}</div>
+                                <div className="text-gray-600">Time: {formatDuration(zone.time)}</div>
+                                {zone.avgPace && zone.avgPace > 0 && (
+                                  <div className="text-teal-600 font-medium">Avg Pace: {formatPace(zone.avgPace)} /100m</div>
+                                )}
+                                <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                              </div>
+                            );
 
                             return (
-                              <div key={powerZone.zone} className="flex items-center gap-4">
-                                <div className="w-24 flex-shrink-0">
-                                  <div className="font-semibold text-sm text-gray-900">{powerZone.label}</div>
-                                  <div className="text-xs text-gray-500">{powerZone.description}</div>
+                              <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
+                                {/* Zone name and range on the left */}
+                                <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
+                                  <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                                    {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} /100m`}
                                 </div>
-                                <div className="flex-1 relative">
-                                  <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
+                                </div>
+                                
+                                {/* Horizontal bar with tooltip */}
+                                <div 
+                                  className={`flex-1 relative ${isMobile ? 'h-10' : 'h-6'}`}
+                                  onMouseEnter={(e) => {
+                                    setTooltipData({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      content: tooltipContent
+                                    });
+                                  }}
+                                  onMouseMove={(e) => {
+                                    setTooltipData({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      content: tooltipContent
+                                    });
+                                  }}
+                                  onMouseLeave={() => setTooltipData(null)}
+                                >
+                                  <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
                                     <div
-                                      className="h-full rounded-lg transition-all duration-500 flex items-center justify-between px-2"
+                                      className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
                                       style={{
-                                        width: `${barWidth}%`,
+                                        width: `${percentage}%`,
                                         backgroundColor: powerZone.color,
                                         opacity: 0.8
                                       }}
-                                    >
-                                      {zone.time > 0 && (
-                                        <>
-                                          <span className="text-xs font-semibold text-white">
-                                            {formatDuration(zone.time)}
-                                          </span>
-                                          {zone.avgPace && zone.avgPace > 0 && (
-                                            <span className="text-xs font-semibold text-white">
-                                              {formatPace(zone.avgPace)} /100m
-                                            </span>
-                                          )}
-                                        </>
-                                      )}
+                                    />
                                     </div>
                                   </div>
-                                </div>
-                                <div className="w-32 text-right flex-shrink-0">
-                                  <div className="text-sm font-semibold text-gray-900">
-                                    {percentage.toFixed(1)}%
+                                
+                                {/* Percentage on the right */}
+                                <div className={`${isMobile ? 'w-8' : 'w-12'} text-right flex-shrink-0`}>
+                                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-semibold text-text`}>
+                                    {percentage.toFixed(0)}%
                                   </div>
                                 </div>
                               </div>
@@ -1048,92 +1161,92 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                         </div>
                       )}
                       {month.swimmingZoneTimes && Object.values(month.swimmingZoneTimes).every(z => !z || z.time === 0) && (
-                        <div className="text-center py-4 text-gray-500 text-sm">
+                        <div className="text-center py-2 text-lighterText text-[10px]">
                           No swim trainings with pace data in this month.
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Training Comparison */}
+                  {/* Training Comparison - Compact */}
                   {selectedTrainings.length > 0 && (
-                    <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-lg font-semibold text-gray-900">
+                    <div className="mb-2 p-1.5 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-[10px] font-semibold text-text">
                           Training comparison ({selectedTrainings.length})
                         </h4>
                         <button
                           onClick={() => setSelectedTrainings([])}
-                          className="text-sm text-red-600 hover:text-red-800"
+                          className="text-[9px] text-red hover:text-red-dark"
                         >
-                          Clear selection
+                          Clear
                         </button>
                       </div>
                       
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-xs">
                           <thead>
-                            <tr className="border-b border-gray-300">
-                              <th className="text-left py-2 px-3">Training</th>
-                              <th className="text-right py-2 px-3">Avg power</th>
-                              <th className="text-right py-2 px-3">Max power</th>
-                              <th className="text-right py-2 px-3">Avg HR</th>
-                              <th className="text-right py-2 px-3">Max HR</th>
-                              <th className="text-right py-2 px-3">Time</th>
-                              <th className="text-right py-2 px-3">Distance</th>
+                            <tr className="border-b border-primary/20">
+                              <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-text">Training</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Avg power</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Max power</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Avg HR</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Max HR</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Time</th>
+                              <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-text">Distance</th>
                             </tr>
                           </thead>
                           <tbody>
                             {selectedTrainings.map((training, idx) => (
-                              <tr key={`compare-${training.type}-${training.id}-${idx}`} className="border-b border-gray-200">
-                                <td className="py-2 px-3">
-                                  <div className="font-medium">{training.title}</div>
-                                  <div className="text-xs text-gray-500">
+                              <tr key={`compare-${training.type}-${training.id}-${idx}`} className="border-b border-primary/10">
+                                <td className="py-1.5 px-2">
+                                  <div className="font-medium text-text text-[10px]">{training.title}</div>
+                                  <div className="text-[10px] text-lighterText">
                                     {new Date(training.date).toLocaleDateString('en-US')} • {training.type === 'fit' ? 'FIT' : training.type === 'strava' ? 'Strava' : 'Manual'}
                                   </div>
                                   {training.similarTrainings && training.similarTrainings.length > 0 && (
-                                    <div className="text-xs text-blue-600 mt-1">
+                                    <div className="text-[10px] text-primary mt-0.5">
                                       {training.similarTrainings.length} similar training{training.similarTrainings.length !== 1 ? 's' : ''}
                                     </div>
                                   )}
                                 </td>
-                                <td className="text-right py-2 px-3 font-semibold">{Math.round(training.avgPower)}W</td>
-                                <td className="text-right py-2 px-3 font-semibold">{Math.round(training.maxPower)}W</td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 font-semibold text-text text-[10px]">{Math.round(training.avgPower)}W</td>
+                                <td className="text-right py-1.5 px-2 font-semibold text-text text-[10px]">{Math.round(training.maxPower)}W</td>
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {training.avgHeartRate > 0 ? `${Math.round(training.avgHeartRate)}` : '-'}
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {training.maxHeartRate > 0 ? `${Math.round(training.maxHeartRate)}` : '-'}
                                 </td>
-                                <td className="text-right py-2 px-3">{formatDuration(training.totalTime)}</td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">{formatDuration(training.totalTime)}</td>
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {training.totalDistance > 0 ? `${(training.totalDistance / 1000).toFixed(1)} km` : '-'}
                                 </td>
                               </tr>
                             ))}
                             {selectedTrainings.length > 1 && (
-                              <tr className="bg-gray-100 font-semibold">
-                                <td className="py-2 px-3">Average</td>
-                                <td className="text-right py-2 px-3">
+                              <tr className="bg-white/40 backdrop-blur-sm font-semibold">
+                                <td className="py-1.5 px-2 text-text text-[10px]">Average</td>
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {Math.round(selectedTrainings.reduce((sum, t) => sum + t.avgPower, 0) / selectedTrainings.length)}W
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {Math.round(selectedTrainings.reduce((sum, t) => sum + t.maxPower, 0) / selectedTrainings.length)}W
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {selectedTrainings.some(t => t.avgHeartRate > 0)
                                     ? `${Math.round(selectedTrainings.filter(t => t.avgHeartRate > 0).reduce((sum, t) => sum + t.avgHeartRate, 0) / selectedTrainings.filter(t => t.avgHeartRate > 0).length)}`
                                     : '-'}
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {selectedTrainings.some(t => t.maxHeartRate > 0)
                                     ? `${Math.round(selectedTrainings.filter(t => t.maxHeartRate > 0).reduce((sum, t) => sum + t.maxHeartRate, 0) / selectedTrainings.filter(t => t.maxHeartRate > 0).length)}`
                                     : '-'}
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {formatDuration(selectedTrainings.reduce((sum, t) => sum + t.totalTime, 0) / selectedTrainings.length)}
                                 </td>
-                                <td className="text-right py-2 px-3">
+                                <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {selectedTrainings.some(t => t.totalDistance > 0)
                                     ? `${(selectedTrainings.reduce((sum, t) => sum + (t.totalDistance || 0), 0) / 1000 / selectedTrainings.length).toFixed(1)} km`
                                     : '-'}
@@ -1149,12 +1262,27 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
               );
             })()
           ) : (
-            <div className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 md:p-8">
-              <div className="text-center py-8 text-gray-500">
+            <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-4">
+              <div className="text-center py-6 text-gray-500 text-sm">
                 <p>Select a month to display the analysis.</p>
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* Global Tooltip */}
+      {tooltipData && (
+        <div
+          className="fixed bg-white/95 backdrop-blur-sm rounded-lg shadow-xl border border-gray-200 p-3 z-50 pointer-events-none text-xs"
+          style={{
+            left: `${tooltipData.x + 15}px`,
+            top: `${tooltipData.y - 10}px`,
+            transform: 'translateY(-100%)',
+            minWidth: '180px'
+          }}
+        >
+          {tooltipData.content}
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -101,20 +101,31 @@ const convertSecondsToSpeed = (seconds, unitSystem) => {
 
 
 const LactateCurve = ({ mockData, demoMode = false }) => {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
   // Get unit system and input mode from mockData or default to metric/pace
   const unitSystem = mockData?.unitSystem || 'metric';
   const inputMode = mockData?.inputMode || 'pace';
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (
-      <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
-        <div className="flex flex-col items-center justify-center h-64">
-          <HelpCircle size={48} className="text-gray-300 mb-4" />
-          <p className="text-gray-500 text-center">
+      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+        <div className="flex flex-col items-center justify-center flex-1">
+          <HelpCircle size={isMobile ? 32 : 48} className="text-gray-300 mb-4" />
+          <p className={`text-gray-500 text-center ${isMobile ? 'text-sm' : ''}`}>
             Add test results to see the lactate curve
           </p>
           {demoMode && (
-            <p className="text-gray-400 text-sm text-center mt-2">
+            <p className={`text-gray-400 ${isMobile ? 'text-xs' : 'text-sm'} text-center mt-2`}>
               Fill in the test form above with your interval data
             </p>
           )}
@@ -181,20 +192,20 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   if (validResults.length < 2) {
     console.log('Not enough valid results:', validResults.length);
     return (
-      <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
-        <div className="flex flex-col items-center justify-center h-64">
-          <Info size={48} className="text-yellow-400 mb-4" />
-          <p className="text-gray-600 text-center">
+      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+        <div className="flex flex-col items-center justify-center flex-1">
+          <Info size={isMobile ? 32 : 48} className="text-yellow-400 mb-4" />
+          <p className={`text-gray-600 text-center ${isMobile ? 'text-sm' : ''}`}>
             Need at least 2 valid data points to create the curve
           </p>
-          <p className="text-gray-400 text-sm text-center mt-2">
+          <p className={`text-gray-400 ${isMobile ? 'text-xs' : 'text-sm'} text-center mt-2`}>
             Make sure to enter both {mockData.sport === 'bike' ? 'power' : 'pace'} and lactate values
             {mockData.sport !== 'bike' && ' in MM:SS format'}
           </p>
-          <p className="text-gray-400 text-xs text-center mt-2">
+          <p className={`text-gray-400 ${isMobile ? 'text-[10px]' : 'text-xs'} text-center mt-2`}>
             Current sport: {mockData.sport}
           </p>
-          <p className="text-gray-400 text-xs text-center mt-2">
+          <p className={`text-gray-400 ${isMobile ? 'text-[10px]' : 'text-xs'} text-center mt-2`}>
             Number of results: {mockData.results?.length || 0}
           </p>
         </div>
@@ -404,8 +415,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     };
 
     return (
-      <div className="relative w-full p-2 md:p-4 bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div style={{ width: '100%', minWidth: 0, maxWidth: '100%', height: '360px' }}>
+      <div className={`relative w-full ${isMobile ? 'h-[300px]' : 'h-full'} ${isMobile ? 'p-1.5' : 'p-2 md:p-4'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg overflow-hidden flex flex-col`}>
+        <div className="flex-1 min-h-0" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
           <Line data={data} options={options} />
         </div>
       </div>
@@ -413,12 +424,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   } catch (error) {
     console.error('Error calculating lactate curve:', error);
     return (
-      <div className="flex-1 bg-white rounded-2xl shadow-lg p-6">
-        <div className="flex flex-col items-center justify-center h-64">
-          <div className="text-red-500 mb-4">⚠️</div>
-        <p className="text-red-500 text-center">Error calculating lactate curve</p>
+      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+        <div className="flex flex-col items-center justify-center flex-1">
+          <div className={`text-red-500 mb-4 ${isMobile ? 'text-2xl' : 'text-4xl'}`}>⚠️</div>
+        <p className={`text-red-500 text-center ${isMobile ? 'text-sm' : ''}`}>Error calculating lactate curve</p>
           {demoMode && (
-            <p className="text-gray-400 text-sm text-center mt-2">
+            <p className={`text-gray-400 ${isMobile ? 'text-xs' : 'text-sm'} text-center mt-2`}>
               Please check your input data and try again
             </p>
           )}

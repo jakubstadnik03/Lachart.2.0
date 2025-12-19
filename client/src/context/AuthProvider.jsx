@@ -41,6 +41,8 @@ export const AuthProvider = ({ children }) => {
           setToken(storedToken);
           setUser(response.data);
           setIsAuthenticated(true);
+          // Update localStorage with fresh user data
+          localStorage.setItem("user", JSON.stringify(response.data));
         } catch (error) {
           console.error("Token verification failed:", error);
           removeToken();
@@ -55,6 +57,20 @@ export const AuthProvider = ({ children }) => {
 
     checkAuth();
   }, [removeToken]);
+
+  // Listen for user updates (e.g., from SettingsPage after auto-sync change)
+  useEffect(() => {
+    const handleUserUpdate = (event) => {
+      const updatedUser = event.detail;
+      if (updatedUser) {
+        setUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+      }
+    };
+
+    window.addEventListener('userUpdated', handleUserUpdate);
+    return () => window.removeEventListener('userUpdated', handleUserUpdate);
+  }, []);
 
   const saveToken = useCallback((token) => {
     localStorage.setItem("token", token);

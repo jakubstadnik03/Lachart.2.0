@@ -1,7 +1,8 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Radar } from "react-chartjs-2";
 import { DropdownMenu } from "../DropDownMenu";
+import api from "../../services/api";
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -11,505 +12,684 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { Menu, Transition } from "@headlessui/react";
-import { Fragment } from "react";
-import { EllipsisVerticalIcon } from "@heroicons/react/24/solid";
-// Registrace modulů pro Chart.js
+
+// Register Chart.js plugins once
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport }) {
-  // Get available sports from trainings (normalize to lowercase)
-  const availableSports = [...new Set(trainings.map(t => (t.sport || '').toLowerCase()))].filter(Boolean);
+export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [] }) {
+  const [loading, setLoading] = useState(false);
   
-  // Initialize selectedSport with localStorage or default to 'all'
-  const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
-    if (selectedSport) return selectedSport;
-    const saved = localStorage.getItem('spiderChart_selectedSport');
-    if (saved && (saved === 'all' || availableSports.includes(saved))) {
-      return saved;
+  // Load comparePeriod from localStorage or default to '90days'
+  const [comparePeriod, setComparePeriod] = useState(() => {
+    try {
+      const saved = localStorage.getItem('powerRadar_comparePeriod');
+      return saved || '90days';
+    } catch (e) {
+      return '90days';
     }
-    return 'all';
   });
   
-  // Use external selectedSport if provided, otherwise use internal
-  const currentSelectedSport = selectedSport || internalSelectedSport;
-  const setCurrentSelectedSport = (value) => {
-    if (setSelectedSport) {
-      setSelectedSport(value);
-    } else {
-      setInternalSelectedSport(value);
+  // Save comparePeriod to localStorage when it changes
+  useEffect(() => {
+        try {
+      localStorage.setItem('powerRadar_comparePeriod', comparePeriod);
+        } catch (e) {
+      console.warn('[SpiderChart] Error saving comparePeriod to localStorage:', e);
     }
-    localStorage.setItem('spiderChart_selectedSport', value);
-  };
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedTrainings, setSelectedTrainings] = useState([]);
-  const [selectedMonths, setSelectedMonths] = useState([]);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isMonthsExpanded, setIsMonthsExpanded] = useState(false);
-
-  // Funkce pro formátování času do formátu mm:ss
-  const formatPace = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
-  };
-
-  // Funkce pro formátování hodnoty podle sportu
-  const formatValue = (value, sport) => {
-    const roundedValue = Math.round(value);
-    if (sport === 'bike') {
-      return `${roundedValue}W`;
-    } else if (sport === 'swim') {
-      return formatPace(roundedValue);
-    } else {
-      return formatPace(roundedValue);
+  }, [comparePeriod]);
+  
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
+  
+  // Load selectedMonths from localStorage
+  const [selectedMonths, setSelectedMonths] = useState(() => {
+    try {
+      const saved = localStorage.getItem('powerRadar_selectedMonths');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
     }
-  };
+  });
+  
+  // Save selectedMonths to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('powerRadar_selectedMonths', JSON.stringify(selectedMonths));
+    } catch (e) {
+      console.warn('[SpiderChart] Error saving selectedMonths to localStorage:', e);
+    }
+  }, [selectedMonths]);
+  
+  // Get current selected sport
+  const currentSelectedSport = selectedSport || 'bike';
 
-  // Parse pace from mm:ss format to seconds
-  const parsePaceToSeconds = (paceValue) => {
-    if (!paceValue) return null;
-    if (typeof paceValue === 'number') return paceValue;
-    if (typeof paceValue === 'string') {
-      const parts = paceValue.split(':');
-      if (parts.length === 2) {
-        const minutes = parseInt(parts[0], 10);
-        const seconds = parseInt(parts[1], 10);
-        if (!isNaN(minutes) && !isNaN(seconds)) {
-          return minutes * 60 + seconds;
-        }
+  // Power metrics state
+  const [powerMetrics, setPowerMetrics] = useState({
+    allTime: { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 },
+    compare: { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 },
+    personalRecords: {
+      sprint5s: { value: 0, date: null },
+      attack1min: { value: 0, date: null },
+      vo2max5min: { value: 0, date: null },
+      threshold20min: { value: 0, date: null },
+      endurance60min: { value: 0, date: null }
+    },
+    improvements: {
+      sprint5s: null,
+      attack1min: null,
+      vo2max5min: null,
+      threshold20min: null,
+      endurance60min: null
+    },
+    monthlyMetrics: {}
+  });
+
+  // Load power metrics from backend or cache
+  useEffect(() => {
+    const loadPowerMetrics = async () => {
+      if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') {
+        return;
       }
-      const num = Number(paceValue);
-      if (!isNaN(num)) return num;
-    }
-    return null;
-  };
-
-  // Funkce pro výpočet průměrné hodnoty tréninku
-  const calculateTrainingValue = (training, sport) => {
-    if (!training.results || training.results.length === 0) return 0;
-    
-    // Pro kolo bereme průměrný výkon
-    if (sport === 'bike' || sport === 'Bike') {
-      const powers = training.results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
-      if (powers.length === 0) return 0;
-      const value = powers.reduce((sum, p) => sum + p, 0) / powers.length;
-      return value;
+      
+      // Define cache keys outside try block so they're accessible in catch
+      const cacheKey = `powerRadar_metrics_${comparePeriod}_${selectedMonths.join(',')}`;
+      const cacheTimestampKey = `powerRadar_metrics_timestamp_${comparePeriod}_${selectedMonths.join(',')}`;
+      const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours - long cache to reduce API calls
+      
+      try {
+        // Check localStorage cache first
+        const cachedData = localStorage.getItem(cacheKey);
+        const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
+        const now = Date.now();
+        
+        // Use cache if it exists and is less than 24 hours old
+        if (cachedData && cacheTimestamp) {
+          const cacheAge = now - parseInt(cacheTimestamp);
+          if (cacheAge < CACHE_DURATION) {
+            try {
+              const parsed = JSON.parse(cachedData);
+              // Validate that parsed data has the expected structure
+              if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
+                setPowerMetrics(parsed);
+                setLoading(false);
+                console.log('[SpiderChart] Using cached power metrics (valid)');
+                return;
+              } else {
+                console.warn('[SpiderChart] Cached data has invalid structure, loading from API');
+              }
+            } catch (e) {
+              console.error('[SpiderChart] Error parsing cached power metrics:', e);
+            }
     } else {
-      // Pro běh a plavání: power obsahuje pace v mm:ss formátu
-      const paces = training.results
-        .map(r => parsePaceToSeconds(r.power))
-        .filter(p => p !== null && p > 0);
-      if (paces.length === 0) return 0;
-      const value = paces.reduce((sum, p) => sum + p, 0) / paces.length;
-      return value;
-    }
-  };
+            // Cache exists but is expired - use it as fallback while loading
+            try {
+              const parsed = JSON.parse(cachedData);
+              if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
+                setPowerMetrics(parsed);
+                console.log('[SpiderChart] Using expired cache as fallback');
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+        
+        // Set loading state before API call
+        setLoading(true);
+        
+        // Load from API
+        const params = new URLSearchParams();
+        if (comparePeriod) params.append('comparePeriod', comparePeriod);
+        if (selectedMonths.length > 0) {
+          selectedMonths.forEach(month => params.append('selectedMonths', month));
+        }
+        
+        const response = await api.get(`/api/fit/power-metrics?${params.toString()}`);
+        const metrics = response.data;
+        
+        // Validate API response
+        if (!metrics || !metrics.allTime || typeof metrics.allTime !== 'object') {
+          console.error('[SpiderChart] Invalid API response structure:', metrics);
+          setLoading(false);
+          return;
+        }
+        
+        // Cache the result
+        try {
+          const metricsCacheData = JSON.stringify(metrics);
+          if (metricsCacheData.length < 50000) { // Only cache if < 50KB
+            localStorage.setItem(cacheKey, metricsCacheData);
+            localStorage.setItem(cacheTimestampKey, now.toString());
+            console.log('[SpiderChart] Cached power metrics');
+          }
+        } catch (e) {
+          // Ignore cache errors
+          console.warn('[SpiderChart] Error caching power metrics:', e);
+        }
+        
+        setPowerMetrics(metrics);
+      } catch (error) {
+        // If network error or empty response, try to use cached data even if expired
+        if (error.code === 'ERR_NETWORK' || error.code === 'ERR_EMPTY_RESPONSE' || error.message?.includes('Network Error')) {
+          try {
+            const cachedData = localStorage.getItem(cacheKey);
+            if (cachedData) {
+              const cachedMetrics = JSON.parse(cachedData);
+              if (cachedMetrics && cachedMetrics.allTime && typeof cachedMetrics.allTime === 'object') {
+                console.log('[SpiderChart] Using cached power metrics due to network error');
+                setPowerMetrics(cachedMetrics);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch (e) {
+            // Ignore cache parse errors
+          }
+          // If no cached data available, keep existing data
+          setLoading(false);
+          return;
+        }
+        
+        // Only log non-network errors
+        console.error('[SpiderChart] Error loading power metrics:', error);
+        
+        // If we get here, keep existing data (from previous load or default)
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadPowerMetrics();
+  }, [comparePeriod, selectedMonths, currentSelectedSport]);
 
-  if (!Array.isArray(trainings) || trainings.length === 0) {
-    return <div className="text-gray-500 text-center">No data available</div>;
-  }
-
-  // Připravíme options pro dropdown sportu - pouze sporty, které mají tréninky
-  const sportOptions = [
-    { value: 'all', label: 'All Sports' },
-    ...availableSports.map(sport => {
-      const value = (sport || '').toLowerCase();
-      const label = value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
-      return ({
-        value,
-        label
-      });
-    })
-  ];
-
-  // Filtrování podle sportu a roku
-  const filteredTrainings = trainings.filter(
-    (t) => (currentSelectedSport === 'all' || (t.sport || '').toLowerCase() === currentSelectedSport) && 
-    new Date(t.date).getFullYear() === selectedYear &&
-    (selectedTrainings.length === 0 || selectedTrainings.includes(t.title))
-  );
-
-  // Získání unikátních názvů tréninků pro daný sport a rok
-  const trainingOptions = [...new Set(trainings
-    .filter(t => (currentSelectedSport === 'all' || (t.sport || '').toLowerCase() === currentSelectedSport) && new Date(t.date).getFullYear() === selectedYear)
-    .map(t => t.title)
-  )].map(title => ({
-    value: title,
-    label: title
-  }));
-
-  // Získání unikátních měsíců ze vstupních dat seřazených chronologicky
-  const monthData = filteredTrainings.map(t => ({
-    month: new Date(t.date).toLocaleString('default', { month: 'long' }),
-    date: new Date(t.date),
-    year: new Date(t.date).getFullYear()
-  }));
-  
-  // Seřadit měsíce chronologicky (nejnovější první)
-  const sortedMonths = [...new Map(
-    monthData
-      .sort((a, b) => b.date - a.date) // Seřadit podle data (nejnovější první)
-      .map(item => [item.month + '-' + item.year, item])
-  ).values()].map(item => item.month);
-  
-  // Odstranit duplicity a zachovat pořadí
-  const uniqueMonths = [...new Set(sortedMonths)];
-  const months = uniqueMonths; // Zobrazit všechny měsíce s daty
-  
-  // Rozšířená paleta barev pro více měsíců
-  const monthColors = [
-    "#00AC07", // Zelená
-    "#7755FF", // Fialová
-    "#AC0000", // Červená
-    "#3F8CFE", // Modrá
-    "#FF9500", // Oranžová
-    "#00D4AA", // Tyrkysová
-    "#FF6B9D", // Růžová
-    "#8B5A2B", // Hnědá
-    "#9B59B6", // Fialová 2
-    "#E74C3C", // Červená 2
-    "#3498DB", // Modrá 2
-    "#1ABC9C", // Zelená 2
-    "#F39C12", // Oranžová 2
-    "#E67E22", // Oranžová 3
-    "#16A085", // Zelená 3
-    "#27AE60", // Zelená 4
-  ];
-
-  // Strukturování dat podle měsíců a tréninků
-  const transformedData = {};
-  
-  // Inicializace struktury pro každý měsíc
-  months.forEach(month => {
-    transformedData[month] = {};
-    // Inicializace hodnot pro každý trénink v měsíci
-    trainingOptions.forEach(training => {
-      transformedData[month][training.value] = null;
+  // Get available months from powerMetrics.monthlyMetrics
+  const availableMonths = useMemo(() => {
+    const months = [];
+    Object.keys(powerMetrics.monthlyMetrics || {}).forEach(monthKey => {
+      const date = new Date(monthKey + '-01');
+      if (!isNaN(date.getTime())) {
+        months.push({
+          key: monthKey,
+          label: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          date
+        });
+      }
     });
-  });
+    return months.sort((a, b) => b.date - a.date);
+  }, [powerMetrics.monthlyMetrics]);
 
-  // console.log('Filtered trainings:', filteredTrainings);
-  // console.log('Training options:', trainingOptions);
+  // Monthly metrics
+  const monthlyMetrics = useMemo(() => {
+    return powerMetrics.monthlyMetrics || {};
+  }, [powerMetrics.monthlyMetrics]);
 
-  // Naplnění dat
-  filteredTrainings.forEach(training => {
-    const month = new Date(training.date).toLocaleString('default', { month: 'long' });
-    if (transformedData[month]) {
-      // Use training's sport for calculation when 'all' is selected
-      const sportForCalculation = currentSelectedSport === 'all' ? training.sport : currentSelectedSport;
-      const value = calculateTrainingValue(training, sportForCalculation);
-      if (value > 0) {
-        // Pokud už existuje hodnota pro tento trénink v měsíci, vezmeme průměr
-        if (transformedData[month][training.title] !== null) {
-          transformedData[month][training.title] = 
-            (transformedData[month][training.title] + value) / 2;
-        } else {
-          transformedData[month][training.title] = value;
-        }
-      }
+  // Prepare chart data
+  const chartData = useMemo(() => {
+    if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
+      return null;
     }
-  });
-
-  // Filter out months with no data (all values are null or 0) a seřadit podle původního pořadí
-  const allMonthsWithData = months.filter(month => 
-    transformedData[month] && 
-    Object.values(transformedData[month]).some(value => value !== null && value > 0)
-  );
-  
-  // Pokud nejsou vybrané žádné měsíce, zobrazit všechny
-  // Pokud jsou vybrané měsíce, zobrazit pouze vybrané
-  const monthsWithData = selectedMonths.length > 0 
-    ? allMonthsWithData.filter(month => selectedMonths.includes(month))
-    : allMonthsWithData;
-
-  // Calculate minimum value for the scale
-  const getMinScaleValue = () => {
-    if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') return 0;
     
-    // Get all non-null values from the data
-    const allValues = Object.values(transformedData)
-      .flatMap(month => Object.values(month))
-      .filter(value => value !== null && value > 0);
+    const labels = ['5s', '1min', '5min', '20min', '60min'];
     
-    if (allValues.length === 0) return 0;
+    // For monthly view
+    if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
+      const intervalMaxes = {
+        sprint5s: Math.max(...Object.values(monthlyMetrics).map(m => m.sprint5s), powerMetrics.allTime.sprint5s, 1),
+        attack1min: Math.max(...Object.values(monthlyMetrics).map(m => m.attack1min), powerMetrics.allTime.attack1min, 1),
+        vo2max5min: Math.max(...Object.values(monthlyMetrics).map(m => m.vo2max5min), powerMetrics.allTime.vo2max5min, 1),
+        threshold20min: Math.max(...Object.values(monthlyMetrics).map(m => m.threshold20min), powerMetrics.allTime.threshold20min, 1),
+        endurance60min: Math.max(...Object.values(monthlyMetrics).map(m => m.endurance60min), powerMetrics.allTime.endurance60min, 1)
+      };
+      
+      const normalize = (value, intervalKey) => {
+        const max = intervalMaxes[intervalKey];
+        return max > 0 ? (value / max) * 100 : 0;
+      };
+      
+  const monthColors = [
+        '#2596be', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+        '#14b8a6', '#a855f7'
+      ];
+      
+      const datasets = [
+        {
+          label: 'All Time',
+          data: [
+            normalize(powerMetrics.allTime.sprint5s, 'sprint5s'),
+            normalize(powerMetrics.allTime.attack1min, 'attack1min'),
+            normalize(powerMetrics.allTime.vo2max5min, 'vo2max5min'),
+            normalize(powerMetrics.allTime.threshold20min, 'threshold20min'),
+            normalize(powerMetrics.allTime.endurance60min, 'endurance60min')
+          ],
+          borderColor: '#2596be',
+          backgroundColor: 'rgba(37, 150, 190, 0.2)',
+          borderWidth: 2,
+          pointBackgroundColor: '#2596be',
+          pointRadius: 4,
+          fill: true
+        },
+        ...selectedMonths.map((monthKey, index) => {
+          const monthData = monthlyMetrics[monthKey];
+          const monthLabel = availableMonths.find(m => m.key === monthKey)?.label || monthKey;
+          if (!monthData) return null;
+          
+          return {
+            label: monthLabel,
+            data: [
+              normalize(monthData.sprint5s, 'sprint5s'),
+              normalize(monthData.attack1min, 'attack1min'),
+              normalize(monthData.vo2max5min, 'vo2max5min'),
+              normalize(monthData.threshold20min, 'threshold20min'),
+              normalize(monthData.endurance60min, 'endurance60min')
+            ],
+            borderColor: monthColors[index % monthColors.length],
+            backgroundColor: `${monthColors[index % monthColors.length]}33`,
+            borderWidth: 2,
+            pointBackgroundColor: monthColors[index % monthColors.length],
+            pointRadius: 3,
+            fill: true
+          };
+        }).filter(Boolean)
+      ];
+      
+      return { labels, datasets };
+    }
     
-    const minValue = Math.min(...allValues);
-    // Subtract 100W and round down to nearest hundred
-    return Math.floor((minValue - 100) / 100) * 100;
-  };
-
-  const data = {
-    labels: trainingOptions.map(t => t.label),
-    datasets: monthsWithData.map((month, index) => ({
-      label: month,
-      data: trainingOptions.map(training => transformedData[month][training.value] || null),
-      borderColor: monthColors[index % monthColors.length],
-      backgroundColor: monthColors[index % monthColors.length] + '20',
+    // For other periods
+    const intervalMaxes = {
+      sprint5s: Math.max(powerMetrics.allTime.sprint5s, powerMetrics.compare.sprint5s, 1),
+      attack1min: Math.max(powerMetrics.allTime.attack1min, powerMetrics.compare.attack1min, 1),
+      vo2max5min: Math.max(powerMetrics.allTime.vo2max5min, powerMetrics.compare.vo2max5min, 1),
+      threshold20min: Math.max(powerMetrics.allTime.threshold20min, powerMetrics.compare.threshold20min, 1),
+      endurance60min: Math.max(powerMetrics.allTime.endurance60min, powerMetrics.compare.endurance60min, 1)
+    };
+    
+    const normalize = (value, intervalKey) => {
+      const max = intervalMaxes[intervalKey];
+      return max > 0 ? (value / max) * 100 : 0;
+    };
+    
+    return {
+      labels,
+    datasets: [
+        {
+          label: 'All Time',
+          data: [
+            normalize(powerMetrics.allTime.sprint5s, 'sprint5s'),
+            normalize(powerMetrics.allTime.attack1min, 'attack1min'),
+            normalize(powerMetrics.allTime.vo2max5min, 'vo2max5min'),
+            normalize(powerMetrics.allTime.threshold20min, 'threshold20min'),
+            normalize(powerMetrics.allTime.endurance60min, 'endurance60min')
+          ],
+          borderColor: '#2596be',
+          backgroundColor: 'rgba(37, 150, 190, 0.2)',
       borderWidth: 2,
-      pointBackgroundColor: monthColors[index % monthColors.length],
-      fill: true,
-      tension: 0,
-      spanGaps: true,
-      showLine: true,
+          pointBackgroundColor: '#2596be',
       pointRadius: 4,
-      pointHoverRadius: 8,
-      pointHitRadius: 8,
-      pointBorderWidth: 2,
-      pointStyle: 'circle',
-      borderJoinStyle: 'miter',
-      borderDash: [],
-    })),
-  };
+          fill: true
+        },
+        ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
+          label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
+          data: [
+            normalize(powerMetrics.compare.sprint5s, 'sprint5s'),
+            normalize(powerMetrics.compare.attack1min, 'attack1min'),
+            normalize(powerMetrics.compare.vo2max5min, 'vo2max5min'),
+            normalize(powerMetrics.compare.threshold20min, 'threshold20min'),
+            normalize(powerMetrics.compare.endurance60min, 'endurance60min')
+          ],
+          borderColor: 'rgba(239, 68, 68, 0.8)',
+          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(239, 68, 68, 1)',
+          pointRadius: 4,
+          fill: true
+        }] : [])
+      ]
+    };
+  }, [powerMetrics, comparePeriod, monthlyMetrics, selectedMonths, availableMonths]);
 
-  // console.log('Chart data:', data);
-
-  const options = {
+  // Chart options
+  const chartOptions = useMemo(() => {
+    if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
+      return null;
+    }
+    
+    return {
     responsive: true,
     maintainAspectRatio: false,
-    elements: {
-      line: {
-        borderWidth: 2,
-        tension: 0,
-        borderJoinStyle: 'miter',
+      animation: {
+        duration: 0
+      },
+      layout: {
+        padding: {
+          top: -20,
+          bottom: -10,
+          left: 0,
+          right: 0
       }
     },
     scales: {
       r: {
-        beginAtZero: false,
-        suggestedMin: getMinScaleValue(),
+          beginAtZero: true,
+          max: 100,
         ticks: {
-          font: { size: 14 },
-          callback: (value) => {
-            // For 'all' sport, determine format based on available data
-            const sportForFormat = currentSelectedSport === 'all' ? 'bike' : currentSelectedSport;
-            return formatValue(value, sportForFormat);
-          },
+            stepSize: 20,
+            font: { size: 10 },
+            callback: function(value) {
+              return value + '%';
+            },
+            backdropPadding: 0
         },
         pointLabels: {
-          font: {
-            size: 11,
+            font: { size: 11, weight: 'bold' },
+            padding: 0
           },
-          padding: 6,
-          maxWidth: 100,
-          callback: function(value) {
-            if (value.length > 15) {
-              return value.substring(0, 15) + '...';
-            }
-            return value;
+          grid: {
+            lineWidth: 1
           }
-        },
-      },
+        }
     },
     plugins: {
       legend: {
         position: 'bottom',
         labels: {
-          font: { size: 11 },
+            font: { size: 10 },
           usePointStyle: true,
           padding: 2,
-          boxWidth: 10,
-        },
-        padding: 2,
-        margin: 0,
+            boxWidth: 6
+          }
       },
       tooltip: {
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         titleColor: '#111827',
-        titleFont: { weight: 'bold', size: 14 },
+          titleFont: { weight: 'bold', size: 13 },
         bodyColor: '#111827',
-        bodyFont: { size: 13 },
-        borderColor: '#F3F4F6',
+          bodyFont: { size: 12 },
+          borderColor: '#E5E7EB',
         borderWidth: 1,
-        padding: 12,
-        cornerRadius: 12,
+          padding: 10,
+          cornerRadius: 8,
         displayColors: true,
-        boxWidth: 8,
-        boxHeight: 8,
-        usePointStyle: true,
         callbacks: {
+            title: (context) => {
+              if (!context || !context[0]) return '';
+              const fullLabels = ['Sprint - 5s', 'Attack - 1min', 'VO2 Max - 5min', 'Threshold - 20min', 'Endurance - 60min'];
+              return fullLabels[context[0].dataIndex] || '';
+            },
           label: (context) => {
-            const value = context.raw;
-            if (value === null || value === 0) return `${context.dataset.label}: No data`;
-            // For 'all' sport, determine format based on available data
-            const sportForFormat = currentSelectedSport === 'all' ? 'bike' : currentSelectedSport;
-            return `${context.dataset.label}: ${formatValue(value, sportForFormat)}`;
-          },
-          labelPointStyle: (context) => {
-            return {
-              pointStyle: 'circle',
-              rotation: 0
-            };
+              if (!context || !context.dataset) return '';
+              const label = context.dataset.label || '';
+              const index = context.dataIndex;
+              const metrics = label === 'All Time' ? powerMetrics.allTime : powerMetrics.compare;
+              if (!metrics) return '';
+              const values = [metrics.sprint5s, metrics.attack1min, metrics.vo2max5min, metrics.threshold20min, metrics.endurance60min];
+              const allTimeValue = powerMetrics.allTime[['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'][index]];
+              const compareValue = values[index];
+              const percentageOfAllTime = allTimeValue > 0 ? Math.round((compareValue / allTimeValue) * 100) : 0;
+              
+              if (label === 'All Time') {
+                return `${label}: ${values[index]}W (100%)`;
+              } else {
+                return `${label}: ${values[index]}W (${percentageOfAllTime}% of All Time)`;
+              }
+            }
           }
         }
       }
+    };
+  }, [powerMetrics]);
+
+  // Table data
+  const tableData = [
+    {
+      label: '5s',
+      name: 'Sprint',
+      compareValue: powerMetrics.compare.sprint5s,
+      allTimeValue: powerMetrics.allTime.sprint5s,
+      percentage: powerMetrics.allTime.sprint5s > 0 
+        ? Math.round((powerMetrics.compare.sprint5s / powerMetrics.allTime.sprint5s) * 100)
+        : 0
     },
+    {
+      label: '1min',
+      name: 'Attack',
+      compareValue: powerMetrics.compare.attack1min,
+      allTimeValue: powerMetrics.allTime.attack1min,
+      percentage: powerMetrics.allTime.attack1min > 0
+        ? Math.round((powerMetrics.compare.attack1min / powerMetrics.allTime.attack1min) * 100)
+        : 0
+    },
+    {
+      label: '5min',
+      name: 'VO2 Max',
+      compareValue: powerMetrics.compare.vo2max5min,
+      allTimeValue: powerMetrics.allTime.vo2max5min,
+      percentage: powerMetrics.allTime.vo2max5min > 0
+        ? Math.round((powerMetrics.compare.vo2max5min / powerMetrics.allTime.vo2max5min) * 100)
+        : 0
+    },
+    {
+      label: '20min',
+      name: 'Threshold',
+      compareValue: powerMetrics.compare.threshold20min,
+      allTimeValue: powerMetrics.allTime.threshold20min,
+      percentage: powerMetrics.allTime.threshold20min > 0
+        ? Math.round((powerMetrics.compare.threshold20min / powerMetrics.allTime.threshold20min) * 100)
+        : 0
+    },
+    {
+      label: '60min',
+      name: 'Endurance',
+      compareValue: powerMetrics.compare.endurance60min,
+      allTimeValue: powerMetrics.allTime.endurance60min,
+      percentage: powerMetrics.allTime.endurance60min > 0
+        ? Math.round((powerMetrics.compare.endurance60min / powerMetrics.allTime.endurance60min) * 100)
+        : 0
+    }
+  ];
+
+  // Auto-select all months when switching to monthly view
+  useEffect(() => {
+    if (comparePeriod === 'monthly' && availableMonths.length > 0 && selectedMonths.length === 0) {
+      setSelectedMonths(availableMonths.map(m => m.key));
+    }
+  }, [comparePeriod, availableMonths, selectedMonths.length]);
+
+  // Format date
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  // Early returns
+  if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-6">
+        <p className="text-gray-500 text-center">Power Radar is only available for cycling</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-6">
+        <p className="text-gray-500 text-center">Loading power data...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full flex flex-col items-center bg-white p-1 sm:p-2 rounded-3xl shadow-md relative">
-      <div className="flex flex-col sm:flex-row items-center w-full justify-between gap-1 sm:gap-0 mb-2">
-        <h2 className="text-base sm:text-lg font-semibold">Training Power Chart</h2>
+    <div className="w-full h-full flex flex-col bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 mb-1.5">
+        <h2 className="text-lg md:text-xl font-semibold text-gray-900">Power Radar</h2>
         <div className="flex items-center gap-2">
-          {/* Dropdown pro výběr sportu */}
+          <span className="text-xs text-gray-600">COMPARE TO</span>
           <DropdownMenu
-            selectedValue={currentSelectedSport}
-            options={sportOptions}
+            selectedValue={comparePeriod}
+            options={[
+              { value: '90days', label: 'Past 90 days' },
+              { value: '30days', label: 'Past 30 days' },
+              { value: 'monthly', label: 'Monthly' },
+              { value: 'alltime', label: 'All Time' }
+            ]}
             onChange={(value) => {
-              setCurrentSelectedSport(value);
-              setSelectedTrainings([]);
+              setComparePeriod(value);
+              if (value !== 'monthly') {
               setSelectedMonths([]);
+              }
             }}
             displayKey="label"
             valueKey="value"
           />
-          
-          {/* Menu pro výběr roku a tréninků */}
-          <Menu as="div" className="relative inline-block text-left">
-            <Menu.Button className="p-2 rounded-full hover:bg-gray-200">
-              <EllipsisVerticalIcon className="h-5 w-5 sm:h-6 sm:w-6 text-gray-600" />
-            </Menu.Button>
-            <Transition
-              as={Fragment}
-              enter="transition ease-out duration-100"
-              enterFrom="transform opacity-0 scale-95"
-              enterTo="transform opacity-100 scale-100"
-              leave="transition ease-in duration-75"
-              leaveFrom="transform opacity-100 scale-100"
-              leaveTo="transform opacity-0 scale-95"
-            >
-              <Menu.Items className="absolute right-0 mt-2 w-56 sm:w-64 bg-white border border-gray-300 rounded-md shadow-lg focus:outline-none">
-                <div className="p-2 space-y-3">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700">Select Year</label>
-                    <div className="relative mt-1">
-                      <select
-                        className="w-full border border-gray-300 rounded-md px-3 py-1 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8 shadow-sm"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        value={selectedYear}
-                        onChange={(e) => {
-                          setSelectedYear(Number(e.target.value));
-                          setSelectedTrainings([]);
-                          setSelectedMonths([]);
-                        }}
-                      >
-                        {[2022, 2023, 2024, 2025].map((year) => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700">Select Months</label>
-                      <div className="flex gap-2">
+
+      <div className="flex flex-col gap-1 flex-1 min-h-0">
+        {/* Month Selection for Monthly View */}
+        {comparePeriod === 'monthly' && (
+          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-lg p-2 mb-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-gray-900">Select Months</span>
                         <button
                           onClick={() => {
-                            if (selectedMonths.length === allMonthsWithData.length) {
+                  if (selectedMonths.length === availableMonths.length) {
                               setSelectedMonths([]);
                             } else {
-                              setSelectedMonths([...allMonthsWithData]);
-                            }
-                          }}
-                          className="text-xs text-gray-500 hover:text-gray-700"
-                        >
-                          {selectedMonths.length === allMonthsWithData.length ? 'Deselect All' : 'Select All'}
-                        </button>
-                        <button
-                          onClick={() => setIsMonthsExpanded(!isMonthsExpanded)}
-                          className="text-xs text-gray-500 hover:text-gray-700"
-                        >
-                          {isMonthsExpanded ? 'Collapse' : 'Expand'}
+                    setSelectedMonths(availableMonths.map(m => m.key));
+                  }
+                }}
+                className="text-xs text-gray-600 hover:text-gray-900"
+              >
+                {selectedMonths.length === availableMonths.length ? 'Deselect All' : 'Select All'}
                         </button>
                       </div>
-                    </div>
-                    <div className={`mt-1 space-y-1 ${isMonthsExpanded ? 'max-h-60 overflow-y-auto' : 'max-h-0 overflow-hidden'} transition-all duration-200 shadow-sm focus:ring focus:ring-indigo-200 text-xs sm:text-sm`}>
-                      {allMonthsWithData.map((month) => (
-                        <div key={month} className="flex items-center">
+            <div className="flex flex-wrap gap-2">
+              {availableMonths.map(month => (
+                <label key={month.key} className="flex items-center gap-1.5 cursor-pointer">
                           <input
                             type="checkbox"
-                            id={`month-${month}`}
-                            checked={selectedMonths.includes(month)}
+                    checked={selectedMonths.includes(month.key)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedMonths([...selectedMonths, month]);
+                        setSelectedMonths([...selectedMonths, month.key]);
                               } else {
-                                setSelectedMonths(selectedMonths.filter(m => m !== month));
-                              }
-                            }}
-                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                          />
-                          <label
-                            htmlFor={`month-${month}`}
-                            className="ml-2 text-xs sm:text-sm text-gray-700 flex items-center"
-                          >
-                            <span 
-                              className="w-1.5 h-1.5 rounded-full mr-2"
-                              style={{ 
-                                backgroundColor: monthColors[allMonthsWithData.indexOf(month) % monthColors.length] 
-                              }}
-                            ></span>
-                            {month}
+                        setSelectedMonths(selectedMonths.filter(m => m !== month.key));
+                      }
+                    }}
+                    className="w-3 h-3 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                  <span className="text-xs text-gray-700">{month.label}</span>
                           </label>
-                        </div>
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700">Select Trainings</label>
+        )}
+
+        {/* Radar Chart */}
+        <div className="w-full relative" style={{ height: '350px' }}>
+          {chartData && chartOptions ? (
+            <Radar 
+              data={chartData} 
+              options={chartOptions}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-500">
+              {comparePeriod === 'monthly' && selectedMonths.length === 0 
+                ? 'Select months to display' 
+                : 'No data available'}
+            </div>
+          )}
+        </div>
+
+
+        {/* Power Table - Collapsible */}
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg overflow-hidden">
                       <button
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        {isExpanded ? 'Collapse' : 'Expand'}
+            onClick={() => setIsTableExpanded(!isTableExpanded)}
+            className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
+          >
+            <h3 className="text-sm font-semibold text-gray-900">Power</h3>
+            <svg
+              className={`w-5 h-5 text-gray-600 transition-transform ${isTableExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
                       </button>
+          <div className={`overflow-hidden transition-all duration-300 ${isTableExpanded ? 'max-h-[800px]' : 'max-h-0'}`}>
+            <div className="p-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-white/20">
+                      <th className="text-left py-2 px-2 text-gray-600 font-medium"></th>
+                      {comparePeriod !== 'alltime' && (
+                        <>
+                          <th className="text-right py-2 px-2 text-gray-600 font-medium">
+                            {comparePeriod === '90days' ? '90 days' : '30 days'}
+                          </th>
+                          <th className="text-right py-2 px-2 text-gray-600 font-medium">All Time</th>
+                          <th className="text-right py-2 px-2 text-gray-600 font-medium">%</th>
+                        </>
+                      )}
+                      {comparePeriod === 'alltime' && (
+                        <th className="text-right py-2 px-2 text-gray-600 font-medium">All Time</th>
+                      )}
+                      <th className="text-left py-2 px-2 text-gray-600 font-medium">Info</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableData.map((row, index) => {
+                      const periodText = comparePeriod === '90days' ? 'past 90 days' : comparePeriod === '30days' ? 'past 30 days' : '';
+                      const improvement = row.improvement;
+                      const pr = row.pr;
+                      
+                      return (
+                        <tr key={index} className="border-b border-white/10">
+                          <td className="py-2 px-2 text-gray-700 font-medium">{row.label} ({row.name})</td>
+                          {comparePeriod !== 'alltime' && (
+                            <>
+                              <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.compareValue} W</td>
+                              <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.allTimeValue} W</td>
+                              <td className="text-right py-2 px-2 text-gray-600">{row.percentage}%</td>
+                            </>
+                          )}
+                          {comparePeriod === 'alltime' && (
+                            <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.allTimeValue} W</td>
+                          )}
+                          <td className="py-2 px-2 text-gray-600">
+                            <div className="space-y-1">
+                              {pr && pr.date && pr.value > 0 && (
+                                <div className="text-xs">
+                                  <span className="font-semibold">PR:</span> {pr.value}W ({formatDate(pr.date)})
+                                </div>
+                              )}
+                              {comparePeriod !== 'alltime' && improvement && improvement.improvement !== 0 && (
+                                <div className={`text-xs ${improvement.improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  In the {periodText}, your {row.label} power {improvement.improvement > 0 ? 'increased' : 'decreased'} by{' '}
+                                  <span className="font-semibold">{Math.abs(improvement.improvement)}W</span>
+                                  {improvement.percentage !== 0 && (
+                                    <span> ({improvement.percentage > 0 ? '+' : ''}{improvement.percentage}%)</span>
+                                  )}
                     </div>
-                    <div className={`mt-1 space-y-1 ${isExpanded ? 'max-h-60 overflow-y-auto' : 'max-h-0 overflow-hidden'} transition-all duration-200 shadow-sm focus:ring focus:ring-indigo-200 text-xs sm:text-sm`}>
-                      {trainingOptions.map((training) => (
-                        <div key={training.value} className="flex items-center">
-                          <input
-                            type="checkbox"
-                            id={training.value}
-                            checked={selectedTrainings.includes(training.value)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedTrainings([...selectedTrainings, training.value]);
-                              } else {
-                                setSelectedTrainings(selectedTrainings.filter(t => t !== training.value));
-                              }
-                            }}
-                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                          />
-                          <label
-                            htmlFor={training.value}
-                            className="ml-2 text-xs sm:text-sm text-gray-700 flex items-center"
-                          >
-                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></span>
-                            {training.label}
-                          </label>
+                              )}
+                              {comparePeriod !== 'alltime' && improvement && improvement.improvement === 0 && (
+                                <div className="text-xs text-gray-500">No change in the {periodText}</div>
+                              )}
                         </div>
-                      ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
                     </div>
                   </div>
                 </div>
-              </Menu.Items>
-            </Transition>
-          </Menu>
         </div>
       </div>
-      {filteredTrainings.length > 0 ? (
-        <div className="w-full h-[280px] sm:h-[320px] lg:h-[380px]">
-          <Radar data={data} options={options} />
-        </div>
-      ) : (
-        <div className="text-gray-500 mt-10 text-sm sm:text-lg">No data available for {currentSelectedSport}</div>
-      )}
     </div>
   );
 }

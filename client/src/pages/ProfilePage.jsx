@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import WeeklyCalendar from '../components/DashboardPage/WeeklyCalendar';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
@@ -21,13 +21,14 @@ import {
   AcademicCapIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
-import api from '../services/api';
+import api, { getFitTrainings, listExternalActivities } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ProfilePage = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
+  const [calendarData, setCalendarData] = useState([]); // FIT trainings and Strava activities
   const [selectedSport] = useState('bike');
   const [selectedTestingSport, setSelectedTestingSport] = useState('all');
   const [selectedTitle, setSelectedTitle] = useState(null);
@@ -37,6 +38,16 @@ const ProfilePage = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [selectedZoneSport, setSelectedZoneSport] = useState('cycling'); // cycling or running
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // const getUserProfile = async () => {
   //   try {
@@ -105,6 +116,102 @@ const ProfilePage = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Load training calendar data (FIT files and Strava activities) with localStorage caching
+  const loadCalendarData = useCallback(async (targetId) => {
+    try {
+      // Check localStorage cache first
+      const cacheKey = `calendarData_${targetId}`;
+      const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
+      const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+      
+      const cachedData = localStorage.getItem(cacheKey);
+      const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
+      const now = Date.now();
+      
+      // Use cache if it exists and is less than 24 hours old
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          const isCacheValid = cacheTimestamp && (now - parseInt(cacheTimestamp)) < CACHE_DURATION;
+          
+          if (isCacheValid) {
+            setCalendarData(parsed);
+            console.log('[ProfilePage] Using valid cached calendar data:', parsed.length, 'activities');
+          } else if (parsed.length > 0) {
+            // Cache is expired but has data, use it as fallback while loading
+            setCalendarData(parsed);
+            console.log('[ProfilePage] Using expired cache as fallback:', parsed.length, 'activities');
+          }
+        } catch (e) {
+          console.error('Error parsing cached calendar data:', e);
+        }
+      }
+      
+      const [fitData, stravaData] = await Promise.all([
+        getFitTrainings(targetId).catch(err => {
+          console.error('Error loading FIT trainings:', err);
+          return [];
+        }),
+        listExternalActivities({ athleteId: targetId }).catch(err => {
+          // Silently handle 429 (Too Many Requests) and network errors
+          if (err.response?.status !== 429 && err.code !== 'ERR_NETWORK' && err.code !== 'ERR_EMPTY_RESPONSE') {
+            console.error('Error loading Strava activities:', err);
+          }
+          return [];
+        })
+      ]);
+
+      // Combine and format data for calendar
+      const combined = [
+        ...(fitData || []).map(t => ({
+          ...t,
+          type: 'fit',
+          date: t.timestamp,
+          title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training',
+          sport: t.sport,
+          avgPower: t.avgPower,
+          maxPower: t.maxPower,
+          avgHeartRate: t.avgHeartRate,
+          maxHeartRate: t.maxHeartRate,
+          totalTime: t.totalElapsedTime || t.totalTimerTime,
+          distance: t.totalDistance
+        })),
+        ...(stravaData || []).map(a => ({
+          ...a,
+          type: 'strava',
+          date: a.startDate,
+          title: a.titleManual || a.name || 'Untitled Activity',
+          sport: a.sport,
+          stravaId: a.stravaId || a.id,
+          id: a.stravaId || a.id,
+          avgPower: a.averagePower || a.average_watts,
+          maxPower: a.maxPower || a.max_watts,
+          avgHeartRate: a.averageHeartRate || a.average_heartrate,
+          maxHeartRate: a.maxHeartRate || a.max_heartrate,
+          totalTime: a.movingTime || a.elapsedTime,
+          distance: a.distance
+        }))
+      ];
+
+      // Cache the combined data
+      try {
+        const limitedCombined = combined.slice(0, 100); // Only cache first 100 activities
+        const dataToCache = JSON.stringify(limitedCombined);
+        localStorage.setItem(cacheKey, dataToCache);
+        localStorage.setItem(cacheTimestampKey, now.toString());
+      } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+          console.warn('localStorage quota exceeded, skipping cache');
+        }
+      }
+
+      setCalendarData(combined);
+      console.log('[ProfilePage] Loaded calendar data:', combined.length, 'activities');
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+    }
+  }, []);
+
   const loadProfileData = useCallback(async () => {
     try {
       setLoading(true);
@@ -148,9 +255,13 @@ const ProfilePage = () => {
 
         setTrainings(trainingsResponse.data || []);
         setTests(testsResponse.data || []);
+        
+        // Load calendar data (FIT trainings and Strava activities)
+        await loadCalendarData(profileData._id);
       } else {
         setTrainings([]);
         setTests([]);
+        setCalendarData([]);
       }
 
     } catch (error) {
@@ -159,7 +270,7 @@ const ProfilePage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadCalendarData]);
 
   useEffect(() => {
     loadProfileData();
@@ -180,6 +291,31 @@ const ProfilePage = () => {
       }
     }
   }, [selectedSport, trainings, selectedTitle]);
+
+  // Convert trainings to calendar activities format and combine with FIT/Strava activities
+  const calendarActivities = useMemo(() => {
+    const manualTrainings = trainings.map(t => ({
+      ...t,
+      type: 'training', // Mark as manual training (not FIT or Strava)
+      _id: t._id,
+      date: t.date || t.createdAt,
+      title: t.title || 'Untitled Training',
+      sport: t.sport,
+      category: t.intensity || null
+    }));
+    
+    // Combine manual trainings with FIT trainings and Strava activities
+    // Remove duplicates (FIT trainings that are also in manual trainings)
+    const fitAndStrava = (calendarData || []).filter(act => {
+      if (act.type === 'fit') {
+        // Skip if this FIT training is already in manual trainings
+        return !trainings.some(t => t.sourceFitTrainingId === act._id);
+      }
+      return true;
+    });
+    
+    return [...manualTrainings, ...fitAndStrava];
+  }, [trainings, calendarData]);
 
   const handleProfileUpdate = async (updatedData) => {
     try {
@@ -212,7 +348,8 @@ const ProfilePage = () => {
         specialization: updatedUser.specialization || '',
         title: updatedUser.specialization || '',
         avatar: updatedUser.avatar || '/images/triathlete-avatar.jpg',
-        powerZones: updatedUser.powerZones || userInfo.powerZones // Keep power zones
+        powerZones: updatedUser.powerZones || userInfo.powerZones, // Keep power zones
+        heartRateZones: updatedUser.heartRateZones || userInfo.heartRateZones // Keep heart rate zones
       });
 
       setIsEditModalOpen(false);
@@ -461,15 +598,16 @@ const ProfilePage = () => {
           transition={{ delay: 1.1 }}
           className="bg-white rounded-3xl shadow-sm overflow-hidden"
         >
-          <div className="px-4 md:px-6 py-4 md:py-6">
+          <div className={`${isMobile ? 'px-2 py-3' : 'px-4 md:px-6 py-4 md:py-6'}`}>
             {/* Sport Selector */}
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Training Zones</h2>
-              <div className="flex gap-2">
+            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2 mb-3' : 'mb-6'}`}>
+              <h2 className={`${isMobile ? 'text-lg' : 'text-xl md:text-2xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : ''}`}>Training Zones</h2>
+              <div className={`flex ${isMobile ? 'flex-col' : 'items-center'} ${isMobile ? 'gap-2' : 'gap-3'}`}>
+              <div className={`flex ${isMobile ? 'gap-1.5' : 'gap-2'} ${isMobile ? 'w-full' : ''}`}>
                 {userInfo.powerZones?.cycling && (
                   <button
                     onClick={() => setSelectedZoneSport('cycling')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
                       selectedZoneSport === 'cycling'
                         ? 'bg-primary text-white shadow-md'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -481,7 +619,7 @@ const ProfilePage = () => {
                 {userInfo.powerZones?.running && (
                   <button
                     onClick={() => setSelectedZoneSport('running')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
                       selectedZoneSport === 'running'
                         ? 'bg-primary text-white shadow-md'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -493,7 +631,7 @@ const ProfilePage = () => {
                 {userInfo.powerZones?.swimming && (
                   <button
                     onClick={() => setSelectedZoneSport('swimming')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
+                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
                       selectedZoneSport === 'swimming'
                         ? 'bg-primary text-white shadow-md'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -502,6 +640,16 @@ const ProfilePage = () => {
                     Swimming
                   </button>
                 )}
+                </div>
+                <button
+                  onClick={() => {
+                    setIsEditModalOpen(true);
+                  }}
+                  className={`flex items-center justify-center gap-2 ${isMobile ? 'px-3 py-1.5 text-xs w-full' : 'px-4 py-2 text-sm'} font-semibold text-white bg-primary ${isMobile ? 'rounded-lg' : 'rounded-xl'} hover:bg-primary-dark shadow-md hover:shadow-lg transition-all`}
+                >
+                  <PencilIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                  Edit Zones
+                </button>
               </div>
             </div>
 
@@ -516,36 +664,40 @@ const ProfilePage = () => {
 
             {/* LTP1 and LTP2 */}
             {(userInfo.powerZones.cycling.lt1 || userInfo.powerZones.cycling.lt2) && (
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
                 {userInfo.powerZones.cycling.lt1 && (
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">LTP1</p>
-                    <p className="text-2xl font-bold text-blue-700">{userInfo.powerZones.cycling.lt1}W</p>
+                  <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                    <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
+                    <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>{userInfo.powerZones.cycling.lt1}W</p>
                   </div>
                 )}
                 {userInfo.powerZones.cycling.lt2 && (
-                  <div className="p-4 bg-purple-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">LTP2 (FTP)</p>
-                    <p className="text-2xl font-bold text-purple-700">{userInfo.powerZones.cycling.lt2}W</p>
+                  <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                    <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2 (FTP)</p>
+                    <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>{userInfo.powerZones.cycling.lt2}W</p>
                   </div>
                 )}
               </div>
             )}
 
             {/* Zones Table */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Power Range (W)</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
+                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Power Range (W)</th>
+                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[1, 2, 3, 4, 5].map(zoneNum => {
                     const zone = userInfo.powerZones.cycling[`zone${zoneNum}`];
                     if (!zone || (!zone.min && !zone.max)) return null;
+                    
+                    const hrZone = userInfo.heartRateZones?.cycling?.[`zone${zoneNum}`];
+                    const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
                     
                     const zoneColors = {
                       1: 'bg-blue-50 text-blue-700',
@@ -557,17 +709,26 @@ const ProfilePage = () => {
                     
                     return (
                       <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                        <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                          <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
                             {zoneNum}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono text-sm">
+                        <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                          <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
                             {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`}W
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                        <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
+                          {hasHrZone ? (
+                            <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                              {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
+                            </span>
+                          ) : (
+                            <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
+                          )}
+                        </td>
+                        <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                           {zone.description || '-'}
                         </td>
                       </tr>
@@ -598,19 +759,19 @@ const ProfilePage = () => {
 
                 {/* LTP1 and LTP2 for Running */}
                 {(userInfo.powerZones.running.lt1 || userInfo.powerZones.running.lt2) && (
-                  <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
                     {userInfo.powerZones.running.lt1 && (
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">LTP1</p>
-                        <p className="text-2xl font-bold text-blue-700">
+                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
+                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>
                           {formatPace(userInfo.powerZones.running.lt1)} /km
                         </p>
                       </div>
                     )}
                     {userInfo.powerZones.running.lt2 && (
-                      <div className="p-4 bg-purple-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">LTP2</p>
-                        <p className="text-2xl font-bold text-purple-700">
+                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2</p>
+                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>
                           {formatPace(userInfo.powerZones.running.lt2)} /km
                         </p>
                       </div>
@@ -619,19 +780,23 @@ const ProfilePage = () => {
                 )}
 
                 {/* Running Zones Table */}
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Pace Range (/km)</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/km)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[1, 2, 3, 4, 5].map(zoneNum => {
                         const zone = userInfo.powerZones.running[`zone${zoneNum}`];
                         if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const hrZone = userInfo.heartRateZones?.running?.[`zone${zoneNum}`];
+                        const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
                         
                         const zoneColors = {
                           1: 'bg-blue-50 text-blue-700',
@@ -643,17 +808,26 @@ const ProfilePage = () => {
                         
                         return (
                           <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                              <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
                                 {zoneNum}
                               </span>
                             </td>
-                            <td className="py-3 px-4">
-                              <span className="font-mono text-sm">
+                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
                                 {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /km
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                            <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
+                              {hasHrZone ? (
+                                <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                                  {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
+                                </span>
+                              ) : (
+                                <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
+                              )}
+                            </td>
+                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                               {zone.description || '-'}
                             </td>
                           </tr>
@@ -684,19 +858,19 @@ const ProfilePage = () => {
 
                 {/* LTP1 and LTP2 for Swimming */}
                 {(userInfo.powerZones.swimming.lt1 || userInfo.powerZones.swimming.lt2) && (
-                  <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
                     {userInfo.powerZones.swimming.lt1 && (
-                      <div className="p-4 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">LTP1</p>
-                        <p className="text-2xl font-bold text-blue-700">
+                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
+                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>
                           {formatPace(userInfo.powerZones.swimming.lt1)} /100m
                         </p>
                       </div>
                     )}
                     {userInfo.powerZones.swimming.lt2 && (
-                      <div className="p-4 bg-purple-50 rounded-lg">
-                        <p className="text-sm text-gray-600 mb-1">LTP2</p>
-                        <p className="text-2xl font-bold text-purple-700">
+                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2</p>
+                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>
                           {formatPace(userInfo.powerZones.swimming.lt2)} /100m
                         </p>
                       </div>
@@ -705,19 +879,23 @@ const ProfilePage = () => {
                 )}
 
                 {/* Swimming Zones Table */}
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Pace Range (/100m)</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/100m)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[1, 2, 3, 4, 5].map(zoneNum => {
                         const zone = userInfo.powerZones.swimming[`zone${zoneNum}`];
                         if (!zone || (!zone.min && !zone.max)) return null;
+                        
+                        const hrZone = userInfo.heartRateZones?.swimming?.[`zone${zoneNum}`];
+                        const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
                         
                         const zoneColors = {
                           1: 'bg-blue-50 text-blue-700',
@@ -729,17 +907,26 @@ const ProfilePage = () => {
                         
                         return (
                           <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
+                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                              <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
                                 {zoneNum}
                               </span>
                             </td>
-                            <td className="py-3 px-4">
-                              <span className="font-mono text-sm">
+                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
+                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
                                 {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /100m
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
+                            <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
+                              {hasHrZone ? (
+                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                                  {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
+                              </span>
+                              ) : (
+                                <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
+                              )}
+                            </td>
+                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                               {zone.description || '-'}
                             </td>
                           </tr>
@@ -756,253 +943,6 @@ const ProfilePage = () => {
                     </p>
                   </div>
                 )}
-              </>
-            )}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Heart Rate Zones Section */}
-      {(userInfo.heartRateZones?.cycling || userInfo.heartRateZones?.running || userInfo.heartRateZones?.swimming) && (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.2 }}
-          className="bg-white rounded-3xl shadow-sm overflow-hidden"
-        >
-          <div className="px-4 md:px-6 py-4 md:py-6">
-            {/* Sport Selector */}
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Heart Rate Zones</h2>
-              <div className="flex gap-2 flex-wrap">
-                {userInfo.heartRateZones?.cycling && (
-                  <button
-                    onClick={() => setSelectedZoneSport('cycling')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
-                      selectedZoneSport === 'cycling'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Cycling
-                  </button>
-                )}
-                {userInfo.heartRateZones?.running && (
-                  <button
-                    onClick={() => setSelectedZoneSport('running')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
-                      selectedZoneSport === 'running'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Running
-                  </button>
-                )}
-                {userInfo.heartRateZones?.swimming && (
-                  <button
-                    onClick={() => setSelectedZoneSport('swimming')}
-                    className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
-                      selectedZoneSport === 'swimming'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Swimming
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Cycling HR Zones */}
-            {userInfo.heartRateZones?.cycling && selectedZoneSport === 'cycling' && (
-              <>
-                {userInfo.heartRateZones?.cycling?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.heartRateZones.cycling.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
-
-                {userInfo.heartRateZones.cycling.maxHeartRate && (
-                  <div className="mb-6">
-                    <div className="p-4 bg-red-50 rounded-lg">
-                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
-                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.cycling.maxHeartRate} BPM</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[1, 2, 3, 4, 5].map(zoneNum => {
-                        const zone = userInfo.heartRateZones.cycling[`zone${zoneNum}`];
-                        if (!zone || (!zone.min && !zone.max)) return null;
-                        
-                        const zoneColors = {
-                          1: 'bg-blue-50 text-blue-700',
-                          2: 'bg-green-50 text-green-700',
-                          3: 'bg-yellow-50 text-yellow-700',
-                          4: 'bg-orange-50 text-orange-700',
-                          5: 'bg-red-50 text-red-700'
-                        };
-                        
-                        return (
-                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
-                                {zoneNum}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-mono text-sm">
-                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
-                              {zone.description || '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-
-            {/* Running HR Zones */}
-            {userInfo.heartRateZones?.running && selectedZoneSport === 'running' && (
-              <>
-                {userInfo.heartRateZones?.running?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.heartRateZones.running.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
-
-                {userInfo.heartRateZones.running.maxHeartRate && (
-                  <div className="mb-6">
-                    <div className="p-4 bg-red-50 rounded-lg">
-                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
-                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.running.maxHeartRate} BPM</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[1, 2, 3, 4, 5].map(zoneNum => {
-                        const zone = userInfo.heartRateZones.running[`zone${zoneNum}`];
-                        if (!zone || (!zone.min && !zone.max)) return null;
-                        
-                        const zoneColors = {
-                          1: 'bg-blue-50 text-blue-700',
-                          2: 'bg-green-50 text-green-700',
-                          3: 'bg-yellow-50 text-yellow-700',
-                          4: 'bg-orange-50 text-orange-700',
-                          5: 'bg-red-50 text-red-700'
-                        };
-                        
-                        return (
-                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
-                                {zoneNum}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-mono text-sm">
-                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
-                              {zone.description || '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-
-            {/* Swimming HR Zones */}
-            {userInfo.heartRateZones?.swimming && selectedZoneSport === 'swimming' && (
-              <>
-                {userInfo.heartRateZones?.swimming?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.heartRateZones.swimming.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
-
-                {userInfo.heartRateZones.swimming.maxHeartRate && (
-                  <div className="mb-6">
-                    <div className="p-4 bg-red-50 rounded-lg">
-                      <p className="text-sm text-gray-600 mb-1">Max Heart Rate</p>
-                      <p className="text-2xl font-bold text-red-700">{userInfo.heartRateZones.swimming.maxHeartRate} BPM</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Zone</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Heart Rate Range (BPM)</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700 hidden md:table-cell">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[1, 2, 3, 4, 5].map(zoneNum => {
-                        const zone = userInfo.heartRateZones.swimming[`zone${zoneNum}`];
-                        if (!zone || (!zone.min && !zone.max)) return null;
-                        
-                        const zoneColors = {
-                          1: 'bg-blue-50 text-blue-700',
-                          2: 'bg-green-50 text-green-700',
-                          3: 'bg-yellow-50 text-yellow-700',
-                          4: 'bg-orange-50 text-orange-700',
-                          5: 'bg-red-50 text-red-700'
-                        };
-                        
-                        return (
-                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${zoneColors[zoneNum]}`}>
-                                {zoneNum}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-mono text-sm">
-                                {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`} BPM
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 hidden md:table-cell">
-                              {zone.description || '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               </>
             )}
           </div>
@@ -1049,7 +989,12 @@ const ProfilePage = () => {
               transition={{ delay: 0.8 }}
               className='lg:col-span-2'
             >
-              <UserTrainingsTable trainings={trainings} />
+              <WeeklyCalendar 
+                activities={calendarActivities}
+                onSelectActivity={(activity) => {
+                  console.log('Selected activity:', activity);
+                }}
+              />
             </motion.div>
           </motion.div>
 
@@ -1078,7 +1023,10 @@ const ProfilePage = () => {
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         onSubmit={handleProfileUpdate}
-        userData={userInfo}
+        userData={{
+          ...userInfo,
+          _selectedSport: selectedZoneSport // Pass selected sport to open modal on correct tab
+        }}
       />
         )}
 

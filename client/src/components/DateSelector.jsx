@@ -202,7 +202,7 @@ function DateSelector({ dates, onSelectDate }) {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: isMobile && direction !== 0 ? (direction > 0 ? -90 : 90) : 0, opacity: 0 }}
               transition={{ type: 'tween', duration: 0.29 }}
-              className="flex gap-1 sm:gap-1.5 items-center w-full justify-center"
+              className="flex gap-1 sm:gap-1.5 items-center w-full"
               style={{ minHeight: '32px' }}
             >
               {visibleDates.map((date) => (

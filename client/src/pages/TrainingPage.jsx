@@ -33,6 +33,7 @@ const TrainingPage = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('all');
 
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
@@ -42,7 +43,20 @@ const TrainingPage = () => {
       setLoading(true);
       setError(null);
       const response = await api.get(`/user/athlete/${targetId}/trainings`);
-      setTrainings(response.data);
+      // Also load FIT trainings and Strava activities for category filtering
+      const [fitResponse, stravaResponse] = await Promise.all([
+        api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
+        api.get(`/api/integrations/activities`, { params: { athleteId: targetId } }).catch(() => ({ data: [] }))
+      ]);
+      
+      // Combine all trainings with category info
+      const allTrainings = [
+        ...response.data,
+        ...(fitResponse.data || []).map(t => ({ ...t, category: t.category || null })),
+        ...(stravaResponse.data || []).map(a => ({ ...a, category: a.category || null }))
+      ];
+      
+      setTrainings(allTrainings);
       
       // Nastavení výchozího vybraného tréninku
       if (response.data.length > 0) {
@@ -88,9 +102,20 @@ const TrainingPage = () => {
 
       // Nastavení výchozího vybraného tréninku pro nového atleta
       if (trainings.length > 0) {
-        const sportTrainings = selectedSport === 'all' 
-          ? trainings 
-          : trainings.filter(t => t.sport === selectedSport);
+      // Filter by sport and category
+      let filteredTrainings = trainings;
+      if (selectedSport !== 'all') {
+        filteredTrainings = filteredTrainings.filter(t => t.sport === selectedSport);
+      }
+      if (selectedCategory !== 'all') {
+        if (selectedCategory === 'uncategorized') {
+          filteredTrainings = filteredTrainings.filter(t => !t.category);
+        } else {
+          filteredTrainings = filteredTrainings.filter(t => t.category === selectedCategory);
+        }
+      }
+      
+      const sportTrainings = filteredTrainings;
         if (sportTrainings.length > 0) {
           setSelectedTitle(sportTrainings[0].title);
           setSelectedTraining(sportTrainings[0]._id);
@@ -213,7 +238,7 @@ const TrainingPage = () => {
           />
         </motion.div>
       )}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <motion.h1 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -221,6 +246,22 @@ const TrainingPage = () => {
         >
           Training Log
         </motion.h1>
+        <div className="flex items-center gap-3">
+          {/* Category Filter */}
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="all">Všechny kategorie</option>
+            <option value="endurance">Endurance</option>
+            <option value="tempo">Tempo</option>
+            <option value="threshold">Threshold</option>
+            <option value="vo2max">VO2max</option>
+            <option value="anaerobic">Anaerobic</option>
+            <option value="recovery">Recovery</option>
+            <option value="uncategorized">Bez kategorie</option>
+          </select>
         <motion.button
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -249,6 +290,7 @@ const TrainingPage = () => {
           )}
           {isSubmitting ? 'Adding...' : 'Add Training'}
         </motion.button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -300,6 +342,7 @@ const TrainingPage = () => {
           selectedSport={selectedSport}
           onSportChange={setSelectedSport}
           isFullWidth={true}
+          user={user}
         />
       </motion.div>
 

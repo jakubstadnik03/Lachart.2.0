@@ -137,7 +137,7 @@ router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTraini
  *         name: monthKey
  *         schema:
  *           type: string
- *         description: Optional month key (format: YYYY-MM). If not provided, returns metadata for all months
+ *         description: "Optional month key (format: YYYY-MM). If not provided, returns metadata for all months"
  *     responses:
  *       200:
  *         description: Monthly analysis with power zones and predicted lactate
@@ -149,6 +149,41 @@ router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTraini
  *         description: Athlete not found
  */
 router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analyzeTrainingsByMonth);
+
+/**
+ * @swagger
+ * /api/fit/power-metrics:
+ *   get:
+ *     summary: Get power metrics for Power Radar chart
+ *     tags: [FIT]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: athleteId
+ *         schema:
+ *           type: string
+ *         description: Optional athlete ID (for coaches to view athlete data)
+ *       - in: query
+ *         name: comparePeriod
+ *         schema:
+ *           type: string
+ *           enum: [30days, 90days, alltime, monthly]
+ *         description: Comparison period
+ *       - in: query
+ *         name: selectedMonths
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         description: Selected months for monthly view (format: YYYY-MM)
+ *     responses:
+ *       200:
+ *         description: Power metrics for Power Radar
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/power-metrics', verifyToken, fitUploadController.getPowerMetrics);
 
 /**
  * @swagger

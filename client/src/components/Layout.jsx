@@ -28,17 +28,17 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="h-screen bg-gray-100 flex overflow-hidden">
       {/* Menu na levé straně */}
       <Menu isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
 
       {/* Hlavní obsah včetně header, main content a footer */}
-      <div className="flex-1 flex flex-col min-h-screen ml-0 ">
+      <div className="flex-1 flex flex-col h-full ml-0 overflow-hidden">
         {/* Header */}
         <Header isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
 
         {/* Hlavní obsah */}
-        <main className="flex-1 px-3 sm:px-3 md:px-4">
+        <main className="flex-1 px-3 sm:px-3 md:px-4 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
           </div>

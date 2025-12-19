@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { formatDuration, formatDistance, formatSpeed } from '../../utils/fitAnalysisUtils';
 import { updateLactateValues } from '../../services/api';
 
-const LapsTable = ({ training, onUpdate }) => {
+const LapsTable = ({ training, onUpdate, user }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   
@@ -131,8 +131,8 @@ const LapsTable = ({ training, onUpdate }) => {
               <tr key={index} className={`transition-colors hover:bg-white/60 ${lap.lactate ? 'bg-primary/10' : ''}`}>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">{formatSpeed(lap.avgSpeed)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance, user)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">{formatSpeed(lap.avgSpeed, user)}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">

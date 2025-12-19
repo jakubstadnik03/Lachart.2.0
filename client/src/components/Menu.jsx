@@ -146,6 +146,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       return '/images/triathlete-avatar.jpg';
     }
 
+    // If user has an avatar (e.g., from Strava), use it
+    if (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
+      return user.avatar;
+    }
+
     if (user.role === 'coach') {
       return '/images/coach-avatar.webp';
     }
@@ -182,14 +187,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
       showFor: ["coach", "athlete"]
-    },
-    {
-      name: "Lactate Statistics",
-      path: "/lactate-statistics",
-      icon: "/icon/testing.svg",
-      iconWhite: "/icon/testing-white.svg",
-      showFor: ["coach", "athlete"]
-    },
+     },
+    // {
+    //   name: "Lactate Statistics",
+    //   path: "/lactate-statistics",
+    //   icon: "/icon/testing.svg",
+    //   iconWhite: "/icon/testing-white.svg",
+    //   showFor: ["coach", "athlete"]
+    // },
     {
       name: "Testing",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",

@@ -859,7 +859,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   };
 
   return (
-    <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative">
+    <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative h-full">
       {/* keyframes moved to global CSS (index.css) */}
 
       {/* Single Tutorial Message Portal */}
@@ -882,7 +882,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               </button>
             )}
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2 flex-shrink-0">
         {/* Title and Edit Button Row */}
         <div className="flex items-center gap-2 justify-between">
           <div className="flex-1">
@@ -1000,7 +1000,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       <textarea 
         value={formData.description} 
         onChange={(e) => handleFormDataChange('description', e.target.value)} 
-          className="w-full p-1.5 border rounded-lg text-sm"
+          className="w-full p-1.5 border rounded-lg text-sm flex-shrink-0"
           disabled={!isNewTest && !isEditMode}
         placeholder="Description of this testing..." 
           rows={2}
@@ -1075,7 +1075,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
         {/* Unit System Controls */}
         {(formData.sport === 'run' || formData.sport === 'swim') && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 flex-shrink-0">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Input Mode</label>
               <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
@@ -1153,9 +1153,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
       </div>
       </div>
+      </div>
 
         {/* Data Table */}
-        <div className="mt-3 overflow-x-auto">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {(() => {
             const gridCols = (isNewTest || isEditMode) 
               ? (showGlucose 
@@ -1166,8 +1167,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]');
             
             return (
-              <>
-                <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0`}>
+              <div className="flex flex-col flex-1 min-h-0">
+                <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0 overflow-x-auto`}>
                   <div className="text-center min-w-0 overflow-hidden">Int.</div>
                   <div className="text-center min-w-0 overflow-hidden">
   {formData.sport === 'bike' ? 'Power' :
@@ -1180,7 +1181,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <div className="text-center min-w-0 overflow-hidden">RPE</div>
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
-                <div className={`${disableInnerScroll ? '' : 'max-h-[400px] overflow-y-auto'}`}>
+                <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 max-h-full">
                   {rows.map((row, index) => (
                     <div
                       key={index}
@@ -1212,14 +1213,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                     </div>
                   ))}
                 </div>
-              </>
+              </div>
             );
           })()}
         </div>
 
         {/* Action Buttons */}
         {(isNewTest || isEditMode) && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
             <button 
               onClick={() => {
                 logClick('Add Interval Button');
@@ -1255,11 +1256,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </div>
           </div>
         )}
-      </div>
 
       {/* Field Validation Messages */}
       {highlightedField && (
-        <div className="mt-2 text-red-500 text-sm">
+        <div className="mt-2 text-red-500 text-sm flex-shrink-0">
           Please fill in the {highlightedField} field
         </div>
       )}

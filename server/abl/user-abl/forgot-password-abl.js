@@ -55,7 +55,8 @@ class ForgotPasswordAbl {
             });
 
             // Odeslání emailu
-            const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+            const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+            const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
             const mailOptions = {
                 from: {
                     name: 'LaChart Support',

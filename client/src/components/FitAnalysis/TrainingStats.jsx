@@ -5,11 +5,23 @@ import { formatDuration, formatDistance, prepareTrainingChartData } from '../../
 import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
 
-const TrainingStats = ({ training, onDelete, onUpdate }) => {
+const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [title, setTitle] = useState(training?.titleManual || training?.titleAuto || training?.originalFileName || '');
   const [description, setDescription] = useState(training?.description || '');
+  const [category, setCategory] = useState(training?.category || '');
   const [saving, setSaving] = useState(false);
   const [allTitles, setAllTitles] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -47,6 +59,7 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
     if (training) {
       setTitle(training.titleManual || training.titleAuto || training.originalFileName || '');
       setDescription(training.description || '');
+      setCategory(training.category || '');
     }
   }, [training]);
 
@@ -418,6 +431,9 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
       if (payload.description !== undefined) {
         setIsEditingDescription(false);
       }
+      if (payload.category !== undefined) {
+        setIsEditingCategory(false);
+      }
       setIntervalModalOpen(false);
       setPendingPayload(null);
       setSelectedLapIndices([]);
@@ -447,6 +463,10 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
   const handleSaveDescription = async () => {
     const trimmedDescription = description.trim();
     initiateSave({ description: trimmedDescription || null });
+  };
+
+  const handleSaveCategory = async () => {
+    initiateSave({ category: category || null });
   };
 
   const displayTitle = training?.titleManual || training?.titleAuto || training?.originalFileName || 'Untitled Training';
@@ -636,251 +656,161 @@ const TrainingStats = ({ training, onDelete, onUpdate }) => {
             </div>
           </div>
         </div>
-      )}
-      {/* Title - Large and prominent */}
-      <div className="mb-4 md:mb-6 pb-4 border-b border-gray-200/50">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-start gap-3 sm:gap-4">
-          <div className="flex-1 w-full">
-            {isEditingTitle ? (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                <div className="relative flex-1 w-full">
-                  <input
-                    ref={titleInputRef}
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onFocus={() => {
-                      if (allTitles.length > 0) {
-                        setShowSuggestions(true);
-                      }
-                    }}
-                    className="w-full px-4 py-3 border-2 border-primary/50 rounded-xl text-xl md:text-3xl font-bold focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white/90 shadow-sm"
-                    placeholder="Enter title..."
-                    autoFocus
-                  />
-                  {showSuggestions && filteredTitles.length > 0 && (
-                    <div
-                      ref={suggestionsRef}
-                      className="absolute top-full left-0 right-0 mt-1 bg-white/95 backdrop-blur-sm border border-gray-300 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto"
-                    >
-                      {filteredTitles.map((suggestion, index) => (
-                        <div
-                          key={index}
-                          onClick={() => {
-                            setTitle(suggestion);
-                            setShowSuggestions(false);
-                          }}
-                          className="px-4 py-2 bg-primary/10 hover:bg-primary/20 cursor-pointer text-sm transition-colors"
-                        >
-                          {suggestion}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
+      )}     
+      
+      {/* Description - Only show if there's content or when editing */}
+      {(description || isEditingDescription) && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-start gap-2">
+            {isEditingDescription ? (
+              <>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg min-h-[80px] bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
+                  placeholder="Enter description..."
+                  autoFocus
+                />
+                <div className="flex flex-col gap-1.5 flex-shrink-0">
                   <button
-                    onClick={handleSaveTitle}
+                    onClick={handleSaveDescription}
                     disabled={saving}
-                    className="p-2 bg-greenos text-white rounded-xl disabled:opacity-50 shadow-md transition-colors hover:opacity-90"
-                    title="Save title"
+                    className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                    title="Save description"
                   >
-                    <CheckIcon className="w-5 h-5" />
+                    <CheckIcon className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => {
-                      setIsEditingTitle(false);
-                      setTitle(displayTitle);
+                      setIsEditingDescription(false);
+                      setDescription(training?.description || '');
                     }}
-                    className="p-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors"
+                    className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-all shadow-sm hover:shadow-md"
                     title="Cancel"
                   >
-                    <XMarkIcon className="w-5 h-5" />
+                    <XMarkIcon className="w-4 h-4" />
                   </button>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="flex items-center gap-3 group">
-                <h1 className="text-xl md:text-3xl font-bold text-gray-900">{displayTitle}</h1>
+              <div className="flex items-start gap-2 w-full group">
+                <div className="flex-1">
+                  {description && (
+                    <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-sm">{description}</p>
+                  )}
+                </div>
                 <button
-                  onClick={() => setIsEditingTitle(true)}
-                  className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
-                  title="Edit title"
+                  onClick={() => setIsEditingDescription(true)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-all flex-shrink-0"
+                  title="Edit description"
                 >
-                  <PencilIcon className="w-5 h-5" />
+                  <PencilIcon className="w-4 h-4" />
                 </button>
               </div>
             )}
           </div>
-          {onDelete && (
-            <button
-              onClick={() => onDelete(training._id)}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 text-sm flex-shrink-0 shadow-md transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Delete
-            </button>
-          )}
         </div>
-      </div>
-      
-      {/* Description - Prominent box */}
-      <div className="mb-4 md:mb-6 p-4 md:p-5 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm rounded-2xl border-2 border-primary/30 shadow-lg">
-        <div className="flex items-start gap-2">
-          {isEditingDescription ? (
-            <>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="flex-1 px-4 py-3 border-2 border-primary/50 rounded-xl min-h-[100px] bg-white/90 text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y shadow-sm"
-                placeholder="Enter description..."
-                autoFocus
-              />
-              <div className="flex flex-col gap-2 flex-shrink-0">
-                <button
-                  onClick={handleSaveDescription}
-                  disabled={saving}
-                    className="p-2 bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors"
-                  title="Save description"
-                >
-                  <CheckIcon className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setIsEditingDescription(false);
-                    setDescription(training?.description || '');
-                  }}
-                  className="p-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors"
-                  title="Cancel"
-                >
-                  <XMarkIcon className="w-5 h-5" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-start gap-3 w-full group">
-              <div className="flex-1">
-                {description ? (
-                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-sm md:text-base">{description}</p>
-                ) : (
-                  <button
-                    onClick={() => setIsEditingDescription(true)}
-                    className="text-gray-500 italic hover:text-gray-700 w-full text-left py-2 transition-colors"
-                  >
-                    📝 Click to add description...
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={() => setIsEditingDescription(true)}
-                className="opacity-0 group-hover:opacity-100 p-2 text-gray-500 hover:text-gray-700 hover:bg-white rounded-lg transition-all flex-shrink-0"
-                title="Edit description"
-              >
-                <PencilIcon className="w-5 h-5" />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-              <ClockIcon className="w-4 h-4" />
+      )}
+
+      <div className={`flex flex-wrap items-stretch ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
+          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
+            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+              <ClockIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
               Duration
             </div>
-            <div className="text-lg md:text-xl font-bold text-primary">
+            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary`}>
               {formatDuration(totalTime)}
             </div>
+            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
           </div>
-          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-              <MapPinIcon className="w-4 h-4" />
+          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
+            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+              <MapPinIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
               Distance
             </div>
-            <div className="text-lg md:text-xl font-bold text-primary">
-              {formatDistance(training.totalDistance)}
+            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary`}>
+              {formatDistance(training.totalDistance, user)}
+            </div>
+            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+          </div>
+          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-red/30 bg-red/10 flex flex-col justify-between`}>
+            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+              <HeartIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+              Avg HR
+            </div>
+            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-red`}>
+              {training.avgHeartRate ? `${Math.round(training.avgHeartRate)}` : '-'}
+            </div>
+            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
+              {maxHeartRate ? `Max: ${Math.round(maxHeartRate)}` : ''}
             </div>
           </div>
-          <div className="bg-red/10 backdrop-blur-sm p-3 md:p-4 rounded-xl border border-red/30 shadow-sm">
-            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-              <HeartIcon className="w-4 h-4" />
-              Avg Heart Rate
-            </div>
-            <div className="text-lg md:text-xl font-bold text-red">
-              {training.avgHeartRate ? `${Math.round(training.avgHeartRate)} bpm` : '-'}
-            </div>
-            {maxHeartRate && (
-              <div className="text-xs text-gray-500 mt-0.5">
-                Max: {Math.round(maxHeartRate)} bpm
+          {/* Only show Avg Power if power data is available */}
+          {training.avgPower && training.avgPower > 0 && (
+            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+                <BoltIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+                Avg Power
               </div>
-            )}
-          </div>
-          <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-primary/30 bg-primary/10 shadow-sm">
-            <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-              <BoltIcon className="w-4 h-4" />
-              Avg Power
-            </div>
-            <div className="text-lg md:text-xl font-bold text-primary-dark">
-              {training.avgPower ? `${Math.round(training.avgPower)} W` : '-'}
-            </div>
-            {maxPower && (
-              <div className="text-xs text-gray-500 mt-0.5">
-                Max: {Math.round(maxPower)} W
+              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary-dark`}>
+                {Math.round(training.avgPower)}
               </div>
-            )}
-          </div>
+              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
+                {maxPower ? `Max: ${Math.round(maxPower)}` : ''}
+              </div>
+            </div>
+          )}
           {avgCadence && (
-            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-blue-300 bg-blue-50 shadow-sm">
-              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-                <CpuChipIcon className="w-4 h-4" />
-                Avg Cadence
+            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-blue-300 bg-blue-50 flex flex-col justify-between`}>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+                <CpuChipIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+                Cadence
               </div>
-              <div className="text-lg md:text-xl font-bold text-blue-700">
-                {Math.round(avgCadence)} rpm
+              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-blue-700`}>
+                {Math.round(avgCadence)}
               </div>
+              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
             </div>
           )}
           {calculateTSS !== null && (
-            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-purple-300 bg-purple-50 shadow-sm">
-              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-                <BoltIcon className="w-4 h-4" />
+            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-purple-300 bg-purple-50 flex flex-col justify-between`}>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+                <BoltIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
                 TSS
                 {typeof calculateTSS === 'object' && calculateTSS.estimated && (
-                  <span className="text-xs text-gray-400 ml-1" title="Estimated TSS (FTP not set in profile)">
+                  <span className={`${isMobile ? 'text-[7px]' : 'text-[8px]'} text-gray-400 ml-0.5`} title="Estimated TSS (FTP not set in profile)">
                     *
                   </span>
                 )}
               </div>
-              <div className="text-lg md:text-xl font-bold text-purple-700">
+              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-purple-700`}>
                 {typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
               </div>
-              {calculateIF !== null && (
-                <div className="text-xs text-gray-500 mt-0.5">
-                  IF: {calculateIF}
-                </div>
-              )}
+              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
+                {calculateIF !== null ? `IF: ${calculateIF}` : ''}
+              </div>
             </div>
           )}
           {training.avgSpeed && (
-            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-green-300 bg-green-50 shadow-sm">
-              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
-                Avg Speed
+            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-green-300 bg-green-50 flex flex-col justify-between`}>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
+                Speed
               </div>
-              <div className="text-lg md:text-xl font-bold text-green-700">
-                {(training.avgSpeed * 3.6).toFixed(1)} km/h
+              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-green-700`}>
+                {(training.avgSpeed * 3.6).toFixed(1)}
               </div>
+              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
             </div>
           )}
           {training.totalAscent && training.totalAscent > 0 && (
-            <div className="backdrop-blur-sm p-3 md:p-4 rounded-xl border border-orange-300 bg-orange-50 shadow-sm">
-              <div className="text-xs md:text-sm text-gray-600 flex items-center gap-1 mb-1">
+            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-orange-300 bg-orange-50 flex flex-col justify-between`}>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
                 Elevation
               </div>
-              <div className="text-lg md:text-xl font-bold text-orange-700">
-                +{Math.round(training.totalAscent)} m
+              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-orange-700`}>
+                +{Math.round(training.totalAscent)}
               </div>
+              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
             </div>
           )}
         </div>

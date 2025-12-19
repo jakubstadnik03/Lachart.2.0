@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
+import { formatDistanceForUser } from "../../utils/unitsConverter";
 
 const maxGraphHeight = 200;
 
@@ -25,7 +26,7 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport }) {
+function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null }) {
   const getWidth = () => {
     // Najdeme všechny tréninky stejného typu
     const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
@@ -190,6 +191,14 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     const kmValue = parseDistanceToKm(value);
     if (kmValue === null) return null;
     
+    // Use user's units preference if available
+    if (user) {
+      // Convert km to meters for formatDistanceForUser
+      const meters = kmValue * 1000;
+      return formatDistanceForUser(meters, user);
+    }
+    
+    // Fallback to metric
     // If it's already a string with units, return it as is (but normalized)
     if (typeof value === 'string' && (value.includes('km') || value.includes('m'))) {
       // Normalize: if less than 1km, show in meters, otherwise in km
@@ -391,7 +400,7 @@ function TrainingComparison({ training, previousTraining, sport }) {
   );
 }
 
-export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false }) {
+export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false, user = null }) {
   // Get available sports from trainings
   const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
   
@@ -933,6 +942,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           displayCount={displayCount}
                           isFullWidth={isFullWidth}
                           sport={selectedSport}
+                          user={user}
                         />
                       );
                     })}

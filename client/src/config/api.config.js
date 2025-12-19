@@ -1,5 +1,5 @@
 // Point to local backend during development; switch to production URL when deploying
-export const API_BASE_URL = "http://localhost:8000" //process.env.REACT_APP_API_URL 
+export const API_BASE_URL = process.env.REACT_APP_API_URL 
 
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/user/login`,

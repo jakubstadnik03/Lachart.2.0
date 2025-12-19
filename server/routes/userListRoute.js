@@ -16,6 +16,10 @@ const { OAuth2Client } = require('google-auth-library');
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
 const Test = require("../models/test");
+const FitTraining = require("../models/fitTraining");
+const StravaActivity = require("../models/StravaActivity");
+const LactateSession = require("../models/lactateSession");
+const Event = require("../models/Event");
 
 // Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -138,7 +142,8 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             }
         });
 
-        const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${athlete.registrationToken}`;
+        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+        const registrationLink = `${clientUrl}/complete-registration/${athlete.registrationToken}`;
         
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -214,6 +219,7 @@ router.post("/complete-registration/:token", async (req, res) => {
         });
 
         // Send confirmation email
+        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -231,7 +237,7 @@ router.post("/complete-registration/:token", async (req, res) => {
                 <p>Dear ${athlete.name} ${athlete.surname},</p>
                 <p>Your registration in LaChart has been successfully completed.</p>
                 <p>You can now log in to the system using your email and password.</p>
-                <p>To log in, visit: <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+                <p>To log in, visit: <a href="${clientUrl}/login">${clientUrl}/login</a></p>
                 <p>If you did not request this email, please contact support.</p>
             `
         });
@@ -305,10 +311,14 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (bio) updateData.bio = bio;
         if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
         if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
+        if (req.body.units) updateData.units = req.body.units;
 
         console.log('Updating user profile:', { userId, updateData });
+        console.log('Heart Rate Zones being saved:', JSON.stringify(req.body.heartRateZones, null, 2));
 
         const updatedUser = await userDao.updateUser(userId, updateData);
+        
+        console.log('Updated user heartRateZones:', JSON.stringify(updatedUser?.heartRateZones, null, 2));
         if (!updatedUser) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -330,7 +340,8 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             bio: updatedUser.bio,
             athletes: updatedUser.athletes,
             powerZones: updatedUser.powerZones, // Include power zones
-            heartRateZones: updatedUser.heartRateZones // Include heart rate zones
+            heartRateZones: updatedUser.heartRateZones, // Include heart rate zones
+            units: updatedUser.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Include units
         };
 
         res.status(200).json(userResponse);
@@ -502,6 +513,7 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
             sport: athlete.sport,
             specialization: athlete.specialization,
             bio: athlete.bio,
+            avatar: athlete.avatar, // Include avatar
             coachId: athlete.coachId
         };
 
@@ -512,7 +524,7 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
     }
 });
 
-// Get user profile (including power zones)
+// Get user profile (including power zones and units)
 router.get("/profile", verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -521,6 +533,8 @@ router.get("/profile", verifyToken, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
+
+        console.log('Loading user profile - heartRateZones:', JSON.stringify(user.heartRateZones, null, 2));
 
         // Return data without sensitive information
         const userResponse = {
@@ -538,8 +552,17 @@ router.get("/profile", verifyToken, async (req, res) => {
             sport: user.sport,
             specialization: user.specialization,
             bio: user.bio,
+            avatar: user.avatar, // Include avatar
             coachId: user.coachId,
-            powerZones: user.powerZones // Include power zones
+            powerZones: user.powerZones, // Include power zones
+            heartRateZones: user.heartRateZones, // Include heart rate zones
+            units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
+            strava: user.strava ? {
+              athleteId: user.strava.athleteId,
+              autoSync: user.strava.autoSync || false,
+              lastSyncDate: user.strava.lastSyncDate
+              // Don't include accessToken, refreshToken, expiresAt for security
+            } : null
         };
 
         res.status(200).json(userResponse);
@@ -642,7 +665,8 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
       }
     });
 
-    const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${registrationToken}`;
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+    const registrationLink = `${clientUrl}/complete-registration/${registrationToken}`;
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
@@ -752,6 +776,7 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         });
 
         // Send invitation email
+        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -760,7 +785,7 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             }
         });
 
-        const invitationLink = `${process.env.CLIENT_URL}/accept-invitation/${invitationToken}`;
+        const invitationLink = `${clientUrl}/accept-invitation/${invitationToken}`;
 
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -1127,6 +1152,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         });
 
         // Send invitation email
+        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -1135,7 +1161,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
             }
         });
 
-        const invitationLink = `${process.env.CLIENT_URL}/accept-coach-invitation/${invitationToken}`;
+        const invitationLink = `${clientUrl}/accept-coach-invitation/${invitationToken}`;
         
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -1655,6 +1681,78 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error updating user:", error);
         res.status(500).json({ error: "Failed to update user" });
+    }
+});
+
+// Delete user account and all associated data
+router.delete("/delete-account", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const userIdString = userId.toString();
+
+        // Find user to get coachId before deletion
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Delete all FIT trainings
+        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: userIdString });
+        console.log(`Deleted ${fitTrainingsDeleted.deletedCount} FIT trainings`);
+
+        // Delete all trainings
+        const Training = require("../models/training");
+        const trainingsDeleted = await Training.deleteMany({ athleteId: userIdString });
+        console.log(`Deleted ${trainingsDeleted.deletedCount} trainings`);
+
+        // Delete all tests
+        const testsDeleted = await Test.deleteMany({ athleteId: userIdString });
+        console.log(`Deleted ${testsDeleted.deletedCount} tests`);
+
+        // Delete all lactate sessions
+        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: userIdString });
+        console.log(`Deleted ${lactateSessionsDeleted.deletedCount} lactate sessions`);
+
+        // Delete all Strava activities
+        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: userId });
+        console.log(`Deleted ${stravaActivitiesDeleted.deletedCount} Strava activities`);
+
+        // Delete all events
+        const eventsDeleted = await Event.deleteMany({ userId: userId });
+        console.log(`Deleted ${eventsDeleted.deletedCount} events`);
+
+        // Remove user from coach's athletes list if user has a coach
+        if (user.coachId) {
+            await userDao.removeAthleteFromCoach(user.coachId, userId);
+            console.log(`Removed user from coach's athletes list`);
+        }
+
+        // Remove all athletes from user if user is a coach
+        if (user.athletes && user.athletes.length > 0) {
+            for (const athleteId of user.athletes) {
+                await userDao.updateUser(athleteId, { coachId: null });
+            }
+            console.log(`Removed coach from ${user.athletes.length} athletes`);
+        }
+
+        // Finally, delete the user account
+        await userDao.deleteById(userId);
+        console.log(`Deleted user account ${userId}`);
+
+        res.status(200).json({ 
+            message: "Account and all associated data deleted successfully",
+            deletedData: {
+                fitTrainings: fitTrainingsDeleted.deletedCount,
+                trainings: trainingsDeleted.deletedCount,
+                tests: testsDeleted.deletedCount,
+                lactateSessions: lactateSessionsDeleted.deletedCount,
+                stravaActivities: stravaActivitiesDeleted.deletedCount,
+                events: eventsDeleted.deletedCount
+            }
+        });
+    } catch (error) {
+        console.error("Error deleting account:", error);
+        res.status(500).json({ error: "Failed to delete account: " + error.message });
     }
 });
 

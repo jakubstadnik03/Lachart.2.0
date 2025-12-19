@@ -57,6 +57,10 @@ const userSchema = new mongoose.Schema({
   sport: String,
   specialization: String,
   bio: String,
+  avatar: {
+    type: String,
+    default: null
+  },
   coachId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -96,7 +100,9 @@ const userSchema = new mongoose.Schema({
     athleteId: { type: String, default: null },
     accessToken: { type: String, default: null },
     refreshToken: { type: String, default: null },
-    expiresAt: { type: Number, default: null }
+    expiresAt: { type: Number, default: null },
+    autoSync: { type: Boolean, default: false }, // Enable automatic sync
+    lastSyncDate: { type: Date, default: null } // Last successful sync date
   },
   garmin: {
     // Placeholder for potential OAuth tokens
@@ -165,6 +171,24 @@ const userSchema = new mongoose.Schema({
       zone5: { min: Number, max: Number, description: String },
       maxHeartRate: Number, // Max HR for swimming
       lastUpdated: Date
+    }
+  },
+  // User preferences for units
+  units: {
+    distance: {
+      type: String,
+      enum: ['metric', 'imperial'],
+      default: 'metric'
+    },
+    weight: {
+      type: String,
+      enum: ['kg', 'lbs'],
+      default: 'kg'
+    },
+    temperature: {
+      type: String,
+      enum: ['celsius', 'fahrenheit'],
+      default: 'celsius'
     }
   }
 }, {

@@ -145,7 +145,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests }) => {
             <LactateCurve mockData={currentTest} />
             </motion.div>
             <motion.div 
-              className={`${glucoseColumnHidden ? 'lg:flex-1' : 'lg:flex-1'} w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2`}
+              className={`${glucoseColumnHidden ? 'lg:flex-1' : 'lg:flex-1'} w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2 h-[600px] flex flex-col`}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >

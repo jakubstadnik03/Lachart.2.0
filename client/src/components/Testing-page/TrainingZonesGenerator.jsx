@@ -1,13 +1,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { calculateThresholds } from './DataTable';
+import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
+import EditProfileModal from '../Profile/EditProfileModal';
+import api from '../../services/api';
+import { updateUserProfile } from '../../services/api';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const [zones, setZones] = useState(null);
   const [selectedSport, setSelectedSport] = useState('bike');
-  const [isEditingZones, setIsEditingZones] = useState(false);
-  const [editableZones, setEditableZones] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
   
   // Get unit system and input mode from mockData or default to metric/pace
   const unitSystem = mockData?.unitSystem || 'metric';
@@ -20,34 +23,172 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Zone editing functions
-  const handleEditZones = () => {
-    setEditableZones(JSON.parse(JSON.stringify(zones)));
-    setIsEditingZones(true);
-  };
-
-  const handleCancelEdit = () => {
-    setEditableZones(null);
-    setIsEditingZones(false);
-  };
-
-  const handleSaveZones = () => {
-    setZones(editableZones);
-    setIsEditingZones(false);
-    setEditableZones(null);
-  };
-
-  const handleZoneChange = (zoneType, zoneKey, field, value) => {
-    setEditableZones(prev => ({
-      ...prev,
-      [zoneType]: {
-        ...prev[zoneType],
-        [zoneKey]: {
-          ...prev[zoneType][zoneKey],
-          [field]: value
+  // Helper function to interpolate lactate value for a given power/pace using polynomial regression
+  const getLactateForPower = (powerValue, results, sport) => {
+    if (!results || results.length === 0) return null;
+    
+    try {
+      // Use polynomial regression for more accurate lactate values
+      const polyPoints = calculatePolynomialRegression(results);
+      
+      // Find the closest point or interpolate between two points
+      let closestPoint = polyPoints[0];
+      let minDist = Math.abs(closestPoint.x - powerValue);
+      
+      for (let i = 1; i < polyPoints.length; i++) {
+        const dist = Math.abs(polyPoints[i].x - powerValue);
+        if (dist < minDist) {
+          minDist = dist;
+          closestPoint = polyPoints[i];
         }
       }
-    }));
+      
+      // If we have points on both sides, interpolate
+      const index = polyPoints.findIndex(p => p.x >= powerValue);
+      if (index > 0 && index < polyPoints.length) {
+        const prev = polyPoints[index - 1];
+        const next = polyPoints[index];
+        const ratio = (powerValue - prev.x) / (next.x - prev.x);
+        const interpolatedLactate = prev.y + (next.y - prev.y) * ratio;
+        return Math.max(0, interpolatedLactate);
+      }
+      
+      return Math.max(0, closestPoint.y);
+    } catch (e) {
+      console.warn('Could not calculate lactate for power using polynomial regression:', powerValue, e);
+      
+      // Fallback to linear interpolation from actual results
+      const sortedResults = [...results].sort((a, b) => {
+        if (sport === 'bike') {
+          return a.power - b.power;
+        } else {
+          return b.power - a.power;
+        }
+      });
+      
+      // Check boundaries
+      if (sport === 'bike') {
+        if (powerValue <= sortedResults[0].power) {
+          return sortedResults[0].lactate;
+        }
+        if (powerValue >= sortedResults[sortedResults.length - 1].power) {
+          return sortedResults[sortedResults.length - 1].lactate;
+        }
+      } else {
+        if (powerValue >= sortedResults[0].power) {
+          return sortedResults[0].lactate;
+        }
+        if (powerValue <= sortedResults[sortedResults.length - 1].power) {
+          return sortedResults[sortedResults.length - 1].lactate;
+        }
+      }
+      
+      // Linear interpolation
+      for (let i = 0; i < sortedResults.length - 1; i++) {
+        const prev = sortedResults[i];
+        const next = sortedResults[i + 1];
+        
+        const isBetween = sport === 'bike'
+          ? (prev.power <= powerValue && next.power >= powerValue)
+          : (prev.power >= powerValue && next.power <= powerValue);
+        
+        if (isBetween) {
+          const ratio = (powerValue - prev.power) / (next.power - prev.power);
+          const lactate = prev.lactate + (next.lactate - prev.lactate) * ratio;
+          return Math.max(0, lactate);
+        }
+      }
+      
+      return null;
+    }
+  };
+
+  // Convert zones to profile format and merge with existing user profile
+  const getProfileDataWithZones = () => {
+    if (!zones || !userProfile) return userProfile;
+    
+    // Map sport names: bike -> cycling, run -> running, swim -> swimming
+    const sport = selectedSport === 'bike' ? 'cycling' : 
+                  selectedSport === 'run' ? 'running' : 
+                  selectedSport === 'swim' ? 'swimming' : selectedSport;
+    const mergedData = { ...userProfile };
+    // Add sport info to help EditProfileModal auto-select the right sport
+    mergedData._selectedSport = sport;
+    
+    // Merge power zones
+    if (!mergedData.powerZones) mergedData.powerZones = {};
+    if (!mergedData.powerZones[sport]) mergedData.powerZones[sport] = {};
+    
+    if (zones.power) {
+      // Bike zones - power is already in watts
+      mergedData.powerZones.cycling = {
+        ...mergedData.powerZones.cycling,
+        zone1: { min: zones.power.zone1?.min || 0, max: zones.power.zone1?.max || 0 },
+        zone2: { min: zones.power.zone2?.min || 0, max: zones.power.zone2?.max || 0 },
+        zone3: { min: zones.power.zone3?.min || 0, max: zones.power.zone3?.max || 0 },
+        zone4: { min: zones.power.zone4?.min || 0, max: zones.power.zone4?.max || 0 },
+        zone5: { min: zones.power.zone5?.min || 0, max: zones.power.zone5?.max === Infinity ? Infinity : (zones.power.zone5?.max || 0) }
+      };
+    } else if (zones.pace) {
+      // Run/Swim zones - convert pace from mm:ss format to seconds
+      const parsePaceToSeconds = (paceStr) => {
+        if (!paceStr) return 0;
+        if (typeof paceStr === 'number') return paceStr;
+        // Handle mm:ss format
+        if (typeof paceStr === 'string' && paceStr.includes(':')) {
+          const parts = paceStr.split(':');
+          if (parts.length === 2) {
+            const minutes = parseInt(parts[0]) || 0;
+            const seconds = parseInt(parts[1]) || 0;
+            return minutes * 60 + seconds;
+          }
+        }
+        // Try to parse as number
+        const num = parseFloat(paceStr);
+        return isNaN(num) ? 0 : num;
+      };
+      
+      mergedData.powerZones[sport] = {
+        ...mergedData.powerZones[sport],
+        zone1: { 
+          min: parsePaceToSeconds(zones.pace.zone1?.min) || 0, 
+          max: parsePaceToSeconds(zones.pace.zone1?.max) || 0 
+        },
+        zone2: { 
+          min: parsePaceToSeconds(zones.pace.zone2?.min) || 0, 
+          max: parsePaceToSeconds(zones.pace.zone2?.max) || 0 
+        },
+        zone3: { 
+          min: parsePaceToSeconds(zones.pace.zone3?.min) || 0, 
+          max: parsePaceToSeconds(zones.pace.zone3?.max) || 0 
+        },
+        zone4: { 
+          min: parsePaceToSeconds(zones.pace.zone4?.min) || 0, 
+          max: parsePaceToSeconds(zones.pace.zone4?.max) || 0 
+        },
+        zone5: { 
+          min: parsePaceToSeconds(zones.pace.zone5?.min) || 0, 
+          max: parsePaceToSeconds(zones.pace.zone5?.max) || 0 
+        }
+      };
+    }
+    
+    // Merge heart rate zones
+    if (!mergedData.heartRateZones) mergedData.heartRateZones = {};
+    if (!mergedData.heartRateZones[sport]) mergedData.heartRateZones[sport] = {};
+    
+    if (zones.heartRate) {
+      mergedData.heartRateZones[sport] = {
+        ...mergedData.heartRateZones[sport],
+        zone1: { min: zones.heartRate.zone1?.min || 0, max: zones.heartRate.zone1?.max || 0 },
+        zone2: { min: zones.heartRate.zone2?.min || 0, max: zones.heartRate.zone2?.max || 0 },
+        zone3: { min: zones.heartRate.zone3?.min || 0, max: zones.heartRate.zone3?.max || 0 },
+        zone4: { min: zones.heartRate.zone4?.min || 0, max: zones.heartRate.zone4?.max || 0 },
+        zone5: { min: zones.heartRate.zone5?.min || 0, max: zones.heartRate.zone5?.max || 0 }
+      };
+    }
+    
+    return mergedData;
   };
 
 
@@ -83,6 +224,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     const lt2_value = thresholds['LTP2'];
     const hr1 = thresholds.heartRates['LTP1'];
     const hr2 = thresholds.heartRates['LTP2'];
+    const lt1_lactate = thresholds.lactates?.['LTP1'];
+    const lt2_lactate = thresholds.lactates?.['LTP2'];
+    const baseLactate = mockData.baseLactate || 1.0;
     
     if (!lt1_value || !lt2_value || !hr1 || !hr2) {
       console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { 
@@ -121,42 +265,108 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
       console.log(`[Zones Bike] LTP1: ${lt1_watts}W LTP2: ${lt2_watts}W`);
       
+      // Calculate lactate values for each zone based on actual test data
+      const zone1_min_power = Math.round(lt1_watts * 0.70);
+      const zone1_max_power = Math.round(lt1_watts * 0.90);
+      const zone2_min_power = Math.round(lt1_watts * 0.90);
+      const zone2_max_power = Math.round(lt1_watts * 1.00);
+      const zone3_min_power = Math.round(lt1_watts * 1.00);
+      const zone3_max_power = Math.round(lt2_watts * 0.95);
+      const zone4_min_power = Math.round(lt2_watts * 0.96);
+      const zone4_max_power = Math.round(lt2_watts * 1.04);
+      const zone5_min_power = Math.round(lt2_watts * 1.05);
+      const zone5_max_power = Math.round(lt2_watts * 1.20);
+      
+      // Calculate lactate values based on LTP1 and LTP2 lactate values
+      // If we have lactate values from thresholds, use them; otherwise interpolate from test data
+      const lt1_lactate_value = lt1_lactate || getLactateForPower(lt1_watts, mockData.results, sport) || 2.0;
+      const lt2_lactate_value = lt2_lactate || getLactateForPower(lt2_watts, mockData.results, sport) || 3.5;
+      
+      // Calculate lactate ranges based on percentage of LTP1/LTP2
+      // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
+      const zone1_min_lactate = baseLactate;
+      const zone1_max_lactate = lt1_lactate_value * 0.9;
+      
+      // Zone 2: 90-100% LT1 -> 90-100% of LT1 lactate
+      const zone2_min_lactate = lt1_lactate_value * 0.9;
+      const zone2_max_lactate = lt1_lactate_value;
+      
+      // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
+      // This should end around 3.0-3.2 mmol/L if LT2 is 3.5
+      const zone3_min_lactate = lt1_lactate_value;
+      const zone3_max_lactate = lt2_lactate_value * 0.95; // 95% of LT2
+      
+      // Zone 4: 96-104% LT2 -> 96-104% of LT2 lactate (threshold zone)
+      const zone4_min_lactate = lt2_lactate_value * 0.96;
+      const zone4_max_lactate = lt2_lactate_value * 1.04;
+      
+      // Zone 5: 105-120% LT2 -> 105-120% of LT2 lactate
+      const zone5_min_lactate = lt2_lactate_value * 1.05;
+      const zone5_max_lactate = lt2_lactate_value * 1.20;
+      
+      // Ensure proper ordering and reasonable ranges
+      const finalZone1 = {
+        min: Math.max(0.5, Math.min(zone1_min_lactate, zone1_max_lactate)),
+        max: Math.max(zone1_min_lactate, zone1_max_lactate, 1.0)
+      };
+      const finalZone2 = {
+        min: Math.max(finalZone1.max, Math.min(zone2_min_lactate, zone2_max_lactate)),
+        max: Math.max(zone2_min_lactate, zone2_max_lactate)
+      };
+      const finalZone3 = {
+        min: Math.max(finalZone2.max, Math.min(zone3_min_lactate, zone3_max_lactate)),
+        max: Math.min(lt2_lactate_value * 0.95, Math.max(zone3_min_lactate, zone3_max_lactate)) // Cap at 95% of LT2
+      };
+      const finalZone4 = {
+        min: Math.max(finalZone3.max, Math.min(zone4_min_lactate, zone4_max_lactate)),
+        max: Math.max(zone4_min_lactate, zone4_max_lactate)
+      };
+      const finalZone5 = {
+        min: Math.max(finalZone4.max, Math.min(zone5_min_lactate, zone5_max_lactate)),
+        max: Math.max(zone5_min_lactate, zone5_max_lactate, 8.0)
+      };
+      
       setZones({
         power: {
           zone1: {
-            min: Math.round(lt1_watts * 0.70),
-            max: Math.round(lt1_watts * 0.90),
+            min: zone1_min_power,
+            max: zone1_max_power,
             description: '70–90% LT1 (recovery, reference wide zone)',
             hr: `${Math.round(hr1*0.70)}–${Math.round(hr1*0.90)} BPM`,
             percent: '70–90% LT1',
+            lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
           },
           zone2: {
-            min: Math.round(lt1_watts * 0.90),
-            max: Math.round(lt1_watts * 1.00),
+            min: zone2_min_power,
+            max: zone2_max_power,
             description: '90%–100% LT1',
             hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
             percent: '90–100% LT1',
+            lactate: `${finalZone2.min.toFixed(1)}–${finalZone2.max.toFixed(1)}`,
           },
           zone3: {
-            min: Math.round(lt1_watts * 1.00),
-            max: Math.round(lt2_watts * 0.95),
+            min: zone3_min_power,
+            max: zone3_max_power,
             description: '100% LT1 – 95% LT2',
             hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
             percent: '100% LT1 – 95% LT2',
+            lactate: `${finalZone3.min.toFixed(1)}–${finalZone3.max.toFixed(1)}`,
           },
           zone4: {
-            min: Math.round(lt2_watts * 0.96),
-            max: Math.round(lt2_watts * 1.04),
+            min: zone4_min_power,
+            max: zone4_max_power,
             description: '96%–104% LT2 (threshold)',
             hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
             percent: '96–104% LT2',
+            lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
           },
           zone5: {
-            min: Math.round(lt2_watts * 1.05),
-            max: Math.round(lt2_watts * 1.20),
+            min: zone5_min_power,
+            max: zone5_max_power,
             description: '105–120% LT2 (sprint/VO2max+ reference)',
             hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
             percent: '105–120% LT2',
+            lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
           },
         },
         heartRate: {
@@ -177,46 +387,111 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
     // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
       // Pro pace: min = pomalejší (více sekund), max = rychlejší (méně sekund)
+      const zone1_min_pace_sec = lt1_sec / 0.70; // pomalejší (více sekund)
+      const zone1_max_pace_sec = lt1_sec / 0.90; // rychlejší (méně sekund)
+      const zone2_min_pace_sec = lt1_sec / 0.90;
+      const zone2_max_pace_sec = lt1_sec / 1.00;
+      const zone3_min_pace_sec = lt1_sec / 1.00;
+      const zone3_max_pace_sec = lt2_sec / 0.95;
+      const zone4_min_pace_sec = lt2_sec / 0.96;
+      const zone4_max_pace_sec = lt2_sec / 1.04;
+      const zone5_min_pace_sec = lt2_sec / 1.05;
+      const zone5_max_pace_sec = lt2_sec / 1.20;
+      
+      // Calculate lactate values based on LTP1 and LTP2 lactate values (for pace)
+      // If we have lactate values from thresholds, use them; otherwise interpolate from test data
+      const lt1_lactate_value_pace = lt1_lactate || getLactateForPower(lt1_sec, mockData.results, sport) || 2.0;
+      const lt2_lactate_value_pace = lt2_lactate || getLactateForPower(lt2_sec, mockData.results, sport) || 3.5;
+      
+      // Calculate lactate ranges based on percentage of LTP1/LTP2
+      // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
+      const zone1_min_lactate_pace = baseLactate;
+      const zone1_max_lactate_pace = lt1_lactate_value_pace * 0.9;
+      
+      // Zone 2: 90-100% LT1 -> 90-100% of LT1 lactate
+      const zone2_min_lactate_pace = lt1_lactate_value_pace * 0.9;
+      const zone2_max_lactate_pace = lt1_lactate_value_pace;
+      
+      // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
+      // This should end around 3.0-3.2 mmol/L if LT2 is 3.5
+      const zone3_min_lactate_pace = lt1_lactate_value_pace;
+      const zone3_max_lactate_pace = lt2_lactate_value_pace * 0.95; // 95% of LT2
+      
+      // Zone 4: 96-104% LT2 -> 96-104% of LT2 lactate (threshold zone)
+      const zone4_min_lactate_pace = lt2_lactate_value_pace * 0.96;
+      const zone4_max_lactate_pace = lt2_lactate_value_pace * 1.04;
+      
+      // Zone 5: 105-120% LT2 -> 105-120% of LT2 lactate
+      const zone5_min_lactate_pace = lt2_lactate_value_pace * 1.05;
+      const zone5_max_lactate_pace = lt2_lactate_value_pace * 1.20;
+      
+      // Ensure proper ordering and reasonable ranges
+      const finalZone1Pace = {
+        min: Math.max(0.5, Math.min(zone1_min_lactate_pace, zone1_max_lactate_pace)),
+        max: Math.max(zone1_min_lactate_pace, zone1_max_lactate_pace, 1.0)
+      };
+      const finalZone2Pace = {
+        min: Math.max(finalZone1Pace.max, Math.min(zone2_min_lactate_pace, zone2_max_lactate_pace)),
+        max: Math.max(zone2_min_lactate_pace, zone2_max_lactate_pace)
+      };
+      const finalZone3Pace = {
+        min: Math.max(finalZone2Pace.max, Math.min(zone3_min_lactate_pace, zone3_max_lactate_pace)),
+        max: Math.min(lt2_lactate_value_pace * 0.95, Math.max(zone3_min_lactate_pace, zone3_max_lactate_pace)) // Cap at 95% of LT2
+      };
+      const finalZone4Pace = {
+        min: Math.max(finalZone3Pace.max, Math.min(zone4_min_lactate_pace, zone4_max_lactate_pace)),
+        max: Math.max(zone4_min_lactate_pace, zone4_max_lactate_pace)
+      };
+      const finalZone5Pace = {
+        min: Math.max(finalZone4Pace.max, Math.min(zone5_min_lactate_pace, zone5_max_lactate_pace)),
+        max: Math.max(zone5_min_lactate_pace, zone5_max_lactate_pace, 8.0)
+      };
+      
     setZones({
       pace: {
         zone1: {
-            min: fmt(lt1_sec / 0.70), // pomalejší (více sekund)
-            max: fmt(lt1_sec / 0.90), // rychlejší (méně sekund)
+            min: fmt(zone1_min_pace_sec), // pomalejší (více sekund)
+            max: fmt(zone1_max_pace_sec), // rychlejší (méně sekund)
           description: '70–90% LT1 (recovery, reference wide zone)',
           hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
           percent: '70–90% LT1',
+          lactate: `${finalZone1Pace.min.toFixed(1)}–${finalZone1Pace.max.toFixed(1)}`,
         },
         zone2: {
-            min: fmt(lt1_sec / 0.90), // pomalejší
-            max: fmt(lt1_sec / 1.00), // rychlejší
+            min: fmt(zone2_min_pace_sec), // pomalejší
+            max: fmt(zone2_max_pace_sec), // rychlejší
           description: '90%–100% LT1',
           hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
           percent: '90–100% LT1',
+          lactate: `${finalZone2Pace.min.toFixed(1)}–${finalZone2Pace.max.toFixed(1)}`,
         },
         zone3: {
-            min: fmt(lt1_sec / 1.00), // pomalejší
-            max: fmt(lt2_sec / 0.95), // rychlejší
+            min: fmt(zone3_min_pace_sec), // pomalejší
+            max: fmt(zone3_max_pace_sec), // rychlejší
           description: '100% LT1 – 95% LT2',
           hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
           percent: '100% LT1 – 95% LT2',
+          lactate: `${finalZone3Pace.min.toFixed(1)}–${finalZone3Pace.max.toFixed(1)}`,
         },
         zone4: {
-            min: fmt(lt2_sec / 0.96), // pomalejší
-            max: fmt(lt2_sec / 1.04), // rychlejší
+            min: fmt(zone4_min_pace_sec), // pomalejší
+            max: fmt(zone4_max_pace_sec), // rychlejší
           description: '96%–104% LT2 (threshold)',
           hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
           percent: '96–104% LT2',
+          lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
         },
         zone5: {
-            min: fmt(lt2_sec / 1.05), // pomalejší
-            max: fmt(lt2_sec / 1.20), // rychlejší
+            min: fmt(zone5_min_pace_sec), // pomalejší
+            max: fmt(zone5_max_pace_sec), // rychlejší
           description: '105–120% LT2 (sprint/VO2max+ reference)',
           hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
           percent: '105–120% LT2',
+          lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
       heartRate: {
-        zone1: { min: Math.round(hr1*0.90), max: Math.round(hr1*0.70) },
+        zone1: { min: Math.round(hr1*0.70), max: Math.round(hr1*0.90) },
         zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
         zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
         zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
@@ -231,6 +506,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       calculateTrainingZones();
     }
   }, [mockData, calculateTrainingZones]);
+
+  // Load user profile for EditProfileModal
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const response = await api.get('/user/profile');
+        setUserProfile(response.data);
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+      }
+    };
+    loadUserProfile();
+  }, []);
 
 
 
@@ -251,10 +539,22 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       {/* Combined Training Zones Table */}
       <div className="relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl mt-3 sm:mt-5 overflow-hidden">
         <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/20 bg-white/20 rounded-t-2xl sm:rounded-t-3xl backdrop-blur">
+          <div className="flex items-center justify-between mb-2">
+            <div>
           <h4 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 drop-shadow-[0_1px_8px_rgba(0,0,30,0.10)]">
             Training Zones Table
           </h4>
-          <p className="text-xs sm:text-sm text-gray-700 mt-1">Complete training zones with power, heart rate, and lactate ranges</p>
+              <p className="text-xs sm:text-sm text-gray-700 mt-1">
+                Training zones from selected test
+              </p>
+            </div>
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
+            >
+              Set Zones
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
           <div className="inline-block min-w-full align-middle">
@@ -279,24 +579,17 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 )}
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden md:table-cell">Lactate</th>
-                  <th className="px-0.5 sm:px-2 md:px-6 py-2 sm:py-3 md:py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">Edit</th>
               </tr>
             </thead>
             <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
-              {Object.entries((isEditingZones ? editableZones : zones).power || (isEditingZones ? editableZones : zones).pace || (isEditingZones ? editableZones : zones).speed || (isEditingZones ? editableZones : zones).heartRate).map(([zoneKey, zone], index) => {
+              {Object.entries(zones.power || zones.pace || zones.speed || zones.heartRate).map(([zoneKey, zone], index) => {
                 const zoneNumber = parseInt(zoneKey.replace('zone', ''));
-                const currentZones = isEditingZones ? editableZones : zones;
+                const currentZones = zones;
                 const powerZone = currentZones.power || currentZones.pace || currentZones.speed;
                 const hrZone = currentZones.heartRate;
 
-                const lactateRanges = {
-                  1: { min: 0.5, max: 1.5 },
-                  2: { min: 1.5, max: 2.5 },
-                  3: { min: 2.5, max: 3.5 },
-                  4: { min: 3.5, max: 5.0 },
-                  5: { min: 5.0, max: 8.0 }
-                };
-                const lactateRange = lactateRanges[zoneNumber] || { min: 0, max: 0 };
+                // Use actual lactate values from zone calculation if available
+                const lactateValue = zone.lactate || null;
 
                 return (
                   <motion.tr
@@ -334,54 +627,13 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                     {/* POWER/PASTE/SPEED column */}
                     {selectedSport === 'bike' && powerZone && (
                       <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
-                        {isEditingZones ? (
-                          <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
-                            <input
-                              type="number"
-                              value={powerZone[zoneKey]?.min || ''}
-                              onChange={(e) => handleZoneChange('power', zoneKey, 'min', parseInt(e.target.value) || 0)}
-                              className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                            />
-                            <span className="text-xs font-light text-gray-400">-</span>
-                            <input
-                              type="number"
-                              value={powerZone[zoneKey]?.max || ''}
-                              onChange={(e) => handleZoneChange('power', zoneKey, 'max', parseInt(e.target.value) || 0)}
-                              className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                            />
-                            <span className="text-xs font-light text-gray-400 hidden sm:inline">W</span>
-                          </div>
-                        ) : (
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                             {powerZone[zoneKey] ? `${powerZone[zoneKey].min}-${powerZone[zoneKey].max}W` : '-'}
                           </span>
-                        )}
                       </td>
                     )}
                     {(selectedSport === 'run' || selectedSport === 'swim') && powerZone && (
                       <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
-                        {isEditingZones ? (
-                          <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
-                            <input
-                              type="text"
-                              value={powerZone[zoneKey]?.min || ''}
-                              onChange={(e) => handleZoneChange(inputMode === 'speed' ? 'speed' : 'pace', zoneKey, 'min', e.target.value)}
-                              className="w-10 sm:w-14 md:w-16 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                              placeholder={inputMode === 'speed' ? '12.0' : '4:30'}
-                            />
-                            <span className="text-xs font-light text-gray-400">-</span>
-                            <input
-                              type="text"
-                              value={powerZone[zoneKey]?.max || ''}
-                              onChange={(e) => handleZoneChange(inputMode === 'speed' ? 'speed' : 'pace', zoneKey, 'max', e.target.value)}
-                              className="w-10 sm:w-14 md:w-16 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                              placeholder={inputMode === 'speed' ? '15.0' : '4:00'}
-                            />
-                            {inputMode === 'speed' && (
-                              <span className="text-xs font-light text-gray-400 hidden sm:inline">{unitSystem === 'imperial' ? 'mph' : 'km/h'}</span>
-                            )}
-                          </div>
-                        ) : (
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight break-words">
                             {powerZone[zoneKey] ? 
                               (inputMode === 'speed' ? 
@@ -396,77 +648,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                               ) : '-'
                             }
                           </span>
-                        )}
                       </td>
                     )}
                     {/* HR COLUMN */}
                     <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
-                      {isEditingZones ? (
-                        <div className="flex flex-wrap gap-0.5 sm:gap-1 items-center">
-                          <input
-                            type="number"
-                            value={hrZone?.[zoneKey]?.min || ''}
-                            onChange={(e) => handleZoneChange('heartRate', zoneKey, 'min', parseInt(e.target.value) || 0)}
-                            className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                          />
-                          <span className="text-xs font-light text-gray-400">-</span>
-                          <input
-                            type="number"
-                            value={hrZone?.[zoneKey]?.max || ''}
-                            onChange={(e) => handleZoneChange('heartRate', zoneKey, 'max', parseInt(e.target.value) || 0)}
-                            className="w-8 sm:w-12 md:w-14 px-0.5 sm:px-1.5 md:px-2 py-1 sm:py-1.5 md:py-1 text-xs border border-blue-200 bg-white/70 rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-                          />
-                          <span className="text-xs font-light text-gray-400 hidden sm:inline">BPM</span>
-                        </div>
-                      ) : (
                         <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                           {hrZone && hrZone[zoneKey] ? `${hrZone[zoneKey].min}-${hrZone[zoneKey].max}` : '-'}
                         </span>
-                      )}
                     </td>
                     {/* LACTATE */}
                     <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 hidden md:table-cell">
                       <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
-                        {lactateRange.min}-{lactateRange.max}
+                        {lactateValue ? `${lactateValue} mmol/L` : '-'}
                       </span>
-                    </td>
-                    {/* ACTION BUTTONS */}
-                    <td className="px-1 sm:px-2 md:px-4 py-1.5 sm:py-2.5 text-center">
-                      {!isEditingZones ? (
-                        <button
-                          onClick={handleEditZones}
-                          className="px-2 sm:px-3 py-1.5 sm:py-2 flex items-center justify-center transition border border-blue-100 bg-white/80 hover:bg-blue-50 rounded-lg shadow-sm text-blue-600 text-xs sm:text-sm gap-1"
-                          title="Edit zones"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z" />
-                          </svg>
-                          <span className="font-medium hidden sm:inline">Edit</span>
-                        </button>
-                      ) : (
-                        <div className="flex space-x-1 justify-center">
-                          <button
-                            onClick={handleSaveZones}
-                            className="px-2 py-1.5 sm:px-3 sm:py-2 flex items-center justify-center border border-green-100 bg-white/90 text-green-600 rounded-lg shadow-sm hover:bg-green-50 text-xs sm:text-sm gap-1"
-                            title="Save Changes"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span className="font-medium hidden sm:inline">Save</span>
-                          </button>
-                          <button
-                            onClick={handleCancelEdit}
-                            className="px-2 py-1.5 sm:px-3 sm:py-2 flex items-center justify-center border border-red-100 bg-white/90 text-red-500 rounded-lg shadow-sm hover:bg-red-50 text-xs sm:text-sm gap-1"
-                            title="Cancel"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" className="sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                            <span className="font-medium hidden sm:inline">Cancel</span>
-                          </button>
-                        </div>
-                      )}
                     </td>
                   </motion.tr>
                 );
@@ -494,6 +688,25 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       </div>
 
      
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSubmit={async (formData) => {
+          // Handle profile update with zones
+          try {
+            await updateUserProfile(formData);
+            setIsEditModalOpen(false);
+            // Reload user profile
+            const profileResponse = await api.get('/user/profile');
+            setUserProfile(profileResponse.data);
+          } catch (error) {
+            console.error('Error updating profile:', error);
+            alert('Error updating profile');
+          }
+        }}
+        userData={getProfileDataWithZones()}
+      />
     </div>
   );
 };

@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { Line } from 'react-chartjs-2';
 import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
 import { convertPowerToPace } from '../../utils/paceConverter';
+import { calculateZonesFromTest } from './zoneCalculator';
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
@@ -19,13 +20,18 @@ const TestComparison = ({ tests = [] }) => {
     );
   }
 
-  // Ensure all tests have required data
-  const validTests = tests.filter(test => 
+  // Ensure all tests have required data and sort by date (oldest first)
+  const validTests = tests
+    .filter(test => 
     test && 
     test.results && 
     Array.isArray(test.results) && 
     test.results.length > 0
-  );
+    )
+    .sort((a, b) => {
+      // Sort by date: oldest first (ascending)
+      return new Date(a.date) - new Date(b.date);
+    });
 
   if (validTests.length === 0) {
     return (
@@ -76,8 +82,10 @@ const TestComparison = ({ tests = [] }) => {
   });
 
   // Vytvoříme datasety pro křivky
+  // Starší testy (nižší index) budou světlejší (nižší opacity)
   const datasets = testsWithThresholds.map((test, testIndex) => {
-    const opacity = validTests.length === 1 ? 1 : 0.3 + ((0.7 * testIndex) / (validTests.length - 1));
+    // Reverse opacity: oldest (index 0) = lightest (0.3), newest = darkest (1.0)
+    const opacity = validTests.length === 1 ? 1 : 0.3 + ((0.7 * (validTests.length - 1 - testIndex)) / (validTests.length - 1));
 
     // Dataset pro měřené body
     const measuredDataset = {
@@ -305,147 +313,178 @@ const TestComparison = ({ tests = [] }) => {
         />
       </div>
       
-      {/* Tabulka s porovnáním zón a legendou */}
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-xs sm:text-sm">
+      {/* Zones Comparison Table */}
+      {validTests.length > 0 && (() => {
+        const zonesForTests = validTests.map(test => calculateZonesFromTest(test));
+        const hasValidZones = zonesForTests.some(z => z !== null);
+        
+        if (!hasValidZones) return null;
+        
+        return (
+          <div className="mt-6 overflow-x-auto">
+            <h3 className="text-lg font-semibold mb-4">Training Zones Comparison</h3>
+            <table className="min-w-full text-xs sm:text-sm border-collapse">
           <thead>
-            <tr className="bg-gray-50">
-              <th className="px-2 sm:px-4 py-2 text-left">Zone</th>
-              {testsWithThresholds.map((test, i) => (
-                <th key={i} className="px-2 sm:px-4 py-2 text-left" colSpan={2}>
+                <tr className="bg-gray-50 border-b-2 border-gray-200">
+                  <th className="px-3 py-2 text-left font-semibold">Zone</th>
+                  {validTests.map((test, i) => (
+                    <React.Fragment key={i}>
+                      <th className="px-3 py-2 text-left font-semibold" colSpan={2}>
                   {new Date(test.date).toLocaleDateString('cs-CZ', {
                     day: '2-digit',
                     month: '2-digit',
                     year: '2-digit'
                   })}
                 </th>
-              ))}
-              <th className="px-2 sm:px-4 py-2 text-left">
-                <button
-                  onClick={toggleAllPoints}
-                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-                >
-                  <span>{allPointsHidden ? 'Show All Points' : 'Hide All Points'}</span>
-                  <svg 
-                    className={`w-4 h-4 transform transition-transform ${allPointsHidden ? 'rotate-180' : ''}`}
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M19 9l-7 7-7-7" 
-                    />
-                  </svg>
-                </button>
-              </th>
+                    </React.Fragment>
+                  ))}
+                  {validTests.length > 1 && (
+                    <th className="px-3 py-2 text-left font-semibold">Change</th>
+                  )}
             </tr>
-            <tr className="bg-gray-50 border-t">
-              <th className="px-2 sm:px-4 py-2 text-left"></th>
-              {testsWithThresholds.map((_, i) => (
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-3 py-2 text-left"></th>
+                  {validTests.map((_, i) => (
                 <React.Fragment key={i}>
-                  <th className="px-2 sm:px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-600">
-                    {sport === 'bike' ? 'Power' : 'Pace'}
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">
+                        {sport === 'bike' ? 'Power (W)' : 'Pace'}
                   </th>
-                  <th className="px-2 sm:px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-600">HR</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">HR (BPM)</th>
                 </React.Fragment>
               ))}
-              <th className="px-2 sm:px-4 py-2 text-left"></th>
+                  {validTests.length > 1 && (
+                    <th className="px-3 py-2 text-left"></th>
+                  )}
             </tr>
           </thead>
           <tbody>
-            {[
-              'Data points',
-              'Log-log',
-              'OBLA 2.0',
-              'OBLA 2.5',
-              'OBLA 3.0',
-              'OBLA 3.5',
-              'Bsln + 0.5',
-              'Bsln + 1.0',
-              'Bsln + 1.5',
-              'LTP1',
-              'LTP2',
-              'LTRatio'
-            ].map(zone => (
-              <tr key={zone} className="border-t">
-                <td className="px-2 sm:px-4 py-2 font-medium text-xs sm:text-sm">{zone}</td>
-                {testsWithThresholds.map((test, i) => (
-                  <React.Fragment key={i}>
-                    <td className="px-2 sm:px-4 py-2 text-xs sm:text-sm">
-                      {zone === 'LTRatio' 
-                        ? test.thresholds[zone] || 'N/A'
-                        : test.thresholds[zone] 
-                          ? sport === 'bike'
-                            ? `${Math.round(test.thresholds[zone])}W`
-                            : convertPowerToPace(test.thresholds[zone], sport)
-                          : 'N/A'
-                      }
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 text-xs sm:text-sm">
-                      {zone !== 'LTRatio' && test.thresholds.heartRates && test.thresholds.heartRates[zone]
-                        ? `${Math.round(test.thresholds.heartRates[zone])}bpm`
-                        : 'N/A'
-                      }
-                    </td>
-                  </React.Fragment>
-                ))}
-                <td className="px-2 sm:px-4 py-2">
-                  <button
-                    className="w-5 h-5 sm:w-6 sm:h-6 rounded-full relative"
-                    style={{
-                      backgroundColor: zone === 'Data points' ? 'transparent' : zoneColors[zone],
-                      border: '2px solid',
-                      borderColor: zone === 'Data points' ? '#000' : zoneColors[zone],
-                      opacity: hiddenPoints.has(zone) ? 0.5 : 1,
-                    }}
-                    onClick={() => {
-                      const chart = chartRef.current;
-                      if (chart) {
-                        const datasetIndexes = datasets
-                          .map((ds, i) => ds.label.includes(zone) ? i : -1)
-                          .filter(i => i !== -1);
-                        
-                        const isCurrentlyHidden = !hiddenPoints.has(zone);
-                        const newHiddenPoints = new Set(hiddenPoints);
-                        
-                        if (isCurrentlyHidden) {
-                          newHiddenPoints.add(zone);
-                        } else {
-                          newHiddenPoints.delete(zone);
+                {[1, 2, 3, 4, 5].map(zoneNum => {
+                  const zoneKey = `zone${zoneNum}`;
+                  const firstZones = zonesForTests[0];
+                  if (!firstZones) return null;
+                  
+                  const powerOrPace = firstZones.power || firstZones.pace;
+                  if (!powerOrPace || !powerOrPace[zoneKey]) return null;
+                  
+                  return (
+                    <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium">
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                          zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
+                          zoneNum === 2 ? 'bg-green-100 text-green-700' :
+                          zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
+                          zoneNum === 4 ? 'bg-orange-100 text-orange-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {zoneNum}
+                        </span>
+                      </td>
+                      {zonesForTests.map((zones, testIndex) => {
+                        if (!zones) {
+                          return (
+                            <React.Fragment key={testIndex}>
+                              <td className="px-3 py-2 text-gray-400">-</td>
+                              <td className="px-3 py-2 text-gray-400">-</td>
+                            </React.Fragment>
+                          );
                         }
                         
-                        setHiddenPoints(newHiddenPoints);
-                        setAllPointsHidden(false);
+                        const powerOrPaceZone = zones.power || zones.pace;
+                        const hrZone = zones.heartRate;
+                        const zone = powerOrPaceZone[zoneKey];
+                        const hr = hrZone[zoneKey];
                         
-                        datasetIndexes.forEach(index => {
-                          const meta = chart.getDatasetMeta(index);
-                          meta.hidden = isCurrentlyHidden;
-                        });
-                        chart.update();
-                      }
-                    }}
-                  >
-                    {hiddenPoints.has(zone) && (
-                      <div 
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{
-                          fontSize: '1em',
-                          color: zone === 'Data points' ? '#000' : '#fff'
-                        }}
-                      >
-                        /
+                        return (
+                          <React.Fragment key={testIndex}>
+                            <td className="px-3 py-2">
+                              {zone ? (
+                                sport === 'bike' 
+                                  ? `${zone.min}-${zone.max}W`
+                                  : `${zone.min}–${zone.max}`
+                              ) : '-'}
+                    </td>
+                            <td className="px-3 py-2">
+                              {hr ? `${hr.min}-${hr.max}` : '-'}
+                    </td>
+                  </React.Fragment>
+                        );
+                      })}
+                      {validTests.length > 1 && zonesForTests[0] && zonesForTests[1] && (() => {
+                        const firstZone = (zonesForTests[0].power || zonesForTests[0].pace)?.[zoneKey];
+                        const lastZone = (zonesForTests[zonesForTests.length - 1].power || zonesForTests[zonesForTests.length - 1].pace)?.[zoneKey];
+                        const firstHR = zonesForTests[0].heartRate?.[zoneKey];
+                        const lastHR = zonesForTests[zonesForTests.length - 1].heartRate?.[zoneKey];
+                        
+                        if (!firstZone || !lastZone) return <td className="px-3 py-2">-</td>;
+                        
+                        // Calculate change
+                        const parsePaceToSeconds = (val) => {
+                          if (typeof val === 'string' && val.includes(':')) {
+                            const [min, sec] = val.split(':').map(Number);
+                            return min * 60 + sec;
+                          }
+                          return typeof val === 'number' ? val : parseFloat(val) || 0;
+                        };
+                        
+                        const firstMin = sport === 'bike' ? firstZone.min : parsePaceToSeconds(firstZone.min);
+                        const firstMax = sport === 'bike' ? firstZone.max : parsePaceToSeconds(firstZone.max);
+                        const lastMin = sport === 'bike' ? lastZone.min : parsePaceToSeconds(lastZone.min);
+                        const lastMax = sport === 'bike' ? lastZone.max : parsePaceToSeconds(lastZone.max);
+                        
+                        // For bike: higher is better (more watts)
+                        // For pace: lower is better (faster pace = less seconds)
+                        const changeMin = sport === 'bike' 
+                          ? lastMin - firstMin  // Positive = improvement
+                          : firstMin - lastMin; // For pace: positive = improvement (faster = less seconds)
+                        const changeMax = sport === 'bike'
+                          ? lastMax - firstMax
+                          : firstMax - lastMax;
+                        
+                        const hrChangeMin = lastHR?.min - firstHR?.min;
+                        const hrChangeMax = lastHR?.max - firstHR?.max;
+                        
+                        const formatChange = (change, isPace = false) => {
+                          if (Math.abs(change) < 0.1) return '0';
+                          const sign = change > 0 ? '+' : '';
+                          if (isPace && sport !== 'bike') {
+                            const secs = Math.abs(change);
+                            const mins = Math.floor(secs / 60);
+                            const sec = Math.round(secs % 60);
+                            return `${sign}${mins}:${sec.toString().padStart(2, '0')}`;
+                          }
+                          return `${sign}${Math.round(change)}`;
+                        };
+                        
+                        // Determine if change is improvement
+                        // For bike: positive change = improvement
+                        // For pace: positive change = improvement (faster = less seconds)
+                        const isImprovementMin = changeMin > 0;
+                        const isImprovementMax = changeMax > 0;
+                        const isHRImprovement = hrChangeMin > 0; // Higher HR zones = better fitness
+                        
+                        return (
+                          <td className="px-3 py-2">
+                            <div className="text-xs space-y-1">
+                              <div className={changeMin !== 0 ? (isImprovementMin ? 'text-green-600 font-medium' : 'text-red-600') : 'text-gray-500'}>
+                                {sport === 'bike' ? 'Power' : 'Pace'}: {formatChange(changeMin, true)} / {formatChange(changeMax, true)}
+                              </div>
+                              {hrChangeMin !== undefined && hrChangeMin !== 0 && (
+                                <div className={isHRImprovement ? 'text-green-600 font-medium' : 'text-red-600'}>
+                                  HR: {formatChange(hrChangeMin)} / {formatChange(hrChangeMax)}
                       </div>
                     )}
-                  </button>
+                            </div>
                 </td>
+                        );
+                      })()}
               </tr>
-            ))}
+                  );
+                })}
           </tbody>
         </table>
       </div>
+        );
+      })()}
     </div>
   );
 };

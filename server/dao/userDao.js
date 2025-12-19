@@ -103,7 +103,37 @@ class UserDao {
 
   async updateUser(id, updateData) {
     try {
-      return await UserModel.findByIdAndUpdate(id, updateData, { new: true });
+      const user = await UserModel.findById(id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      console.log('updateUser - Before update, heartRateZones:', JSON.stringify(user.heartRateZones, null, 2));
+      console.log('updateUser - Update data heartRateZones:', JSON.stringify(updateData.heartRateZones, null, 2));
+
+      // Update all fields from updateData
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] !== undefined) {
+          user[key] = updateData[key];
+          
+          // Mark nested objects as modified so Mongoose saves them properly
+          if (key === 'powerZones' || key === 'heartRateZones' || key === 'units') {
+            user.markModified(key);
+            console.log(`Marked ${key} as modified`);
+          }
+        }
+      });
+
+      // Save the document to persist nested object changes
+      const savedUser = await user.save();
+      
+      console.log('updateUser - After save, heartRateZones:', JSON.stringify(savedUser.heartRateZones, null, 2));
+      
+      // Verify the data was saved by fetching again
+      const verifiedUser = await UserModel.findById(id);
+      console.log('updateUser - Verified heartRateZones from DB:', JSON.stringify(verifiedUser?.heartRateZones, null, 2));
+      
+      return savedUser;
     } catch (error) {
       console.error("Error updating user:", error);
       throw error;

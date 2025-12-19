@@ -2,6 +2,8 @@
  * Utility functions for FIT analysis page
  */
 
+import { formatDistance as formatDistanceWithUnits, formatSpeed as formatSpeedWithUnits, getUserUnits } from './unitsConverter';
+
 export const formatDuration = (seconds) => {
   if (!seconds) return '0:00';
   const hours = Math.floor(seconds / 3600);
@@ -13,16 +15,26 @@ export const formatDuration = (seconds) => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 
-export const formatDistance = (meters) => {
+export const formatDistance = (meters, user = null) => {
   if (!meters) return '0 m';
+  if (user) {
+    const units = getUserUnits(user);
+    return formatDistanceWithUnits(meters, units.distance).formatted;
+  }
+  // Fallback to metric
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(2)} km`;
   }
   return `${Math.round(meters)} m`;
 };
 
-export const formatSpeed = (mps) => {
+export const formatSpeed = (mps, user = null) => {
   if (!mps) return '-';
+  if (user) {
+    const units = getUserUnits(user);
+    return formatSpeedWithUnits(mps, units.distance).formatted;
+  }
+  // Fallback to metric
   const kmh = mps * 3.6;
   return `${kmh.toFixed(1)} km/h`;
 };
@@ -52,12 +64,25 @@ export const prepareTrainingChartData = (training) => {
   const recordsWithTime = records.map((r, i) => {
     const recordTime = r.timestamp ? new Date(r.timestamp).getTime() : startTime + (i * 1000);
     const timeFromStart = (recordTime - startTime) / 1000; // Convert to seconds
+    
+    // Debug first few records to see what data we have
+    if (i < 3) {
+      console.log(`Record ${i}:`, {
+        cadence: r.cadence,
+        altitude: r.altitude,
+        hasCadence: r.cadence !== null && r.cadence !== undefined,
+        hasAltitude: r.altitude !== null && r.altitude !== undefined
+      });
+    }
+    
     return {
       ...r,
       timeFromStart,
       speed: r.speed ? r.speed * 3.6 : null, // Convert to km/h
-      heartRate: r.heartRate || null,
-      power: r.power || null
+      heartRate: r.heartRate !== null && r.heartRate !== undefined ? r.heartRate : null,
+      power: r.power !== null && r.power !== undefined ? r.power : null,
+      cadence: r.cadence !== null && r.cadence !== undefined ? r.cadence : null,
+      altitude: r.altitude !== null && r.altitude !== undefined ? r.altitude : null
     };
   });
 
@@ -66,7 +91,23 @@ export const prepareTrainingChartData = (training) => {
   const maxSpeed = Math.max(...recordsWithTime.map(r => r.speed || 0).filter(v => v > 0), 1);
   const maxHeartRate = Math.max(...recordsWithTime.map(r => r.heartRate || 0).filter(v => v > 0), 1);
   const maxPower = Math.max(...recordsWithTime.map(r => r.power || 0).filter(v => v > 0), 1);
-  const maxCadence = Math.max(...recordsWithTime.map(r => r.cadence || 0).filter(v => v > 0), 1);
+  
+  // Debug cadence and altitude data
+  const cadenceValues = recordsWithTime.map(r => r.cadence).filter(v => v !== null && v !== undefined && v > 0);
+  const altitudeValues = recordsWithTime.map(r => r.altitude).filter(v => v !== null && v !== undefined);
+  console.log('prepareTrainingChartData - Cadence values sample:', cadenceValues.slice(0, 10), 'Total:', cadenceValues.length);
+  console.log('prepareTrainingChartData - Altitude values sample:', altitudeValues.slice(0, 10), 'Total:', altitudeValues.length);
+  
+  // Calculate maxCadence - only if there are valid cadence values > 0
+  const validCadenceValues = recordsWithTime.map(r => r.cadence).filter(v => v !== null && v !== undefined && v > 0);
+  const maxCadence = validCadenceValues.length > 0 ? Math.max(...validCadenceValues) : null;
+  
+  // Calculate maxAltitude and minAltitude - include all altitude values (can be 0 or negative)
+  const validAltitudeValues = recordsWithTime.map(r => r.altitude).filter(v => v !== null && v !== undefined);
+  const maxAltitude = validAltitudeValues.length > 0 ? Math.max(...validAltitudeValues) : null;
+  const minAltitude = validAltitudeValues.length > 0 ? Math.min(...validAltitudeValues) : null;
+  
+  console.log('prepareTrainingChartData - Max values:', { maxCadence, maxAltitude, minAltitude });
 
   return {
     records: recordsWithTime,
@@ -74,7 +115,9 @@ export const prepareTrainingChartData = (training) => {
     maxSpeed,
     maxHeartRate,
     maxPower,
-    maxCadence
+    maxCadence,
+    maxAltitude,
+    minAltitude
   };
 };
 

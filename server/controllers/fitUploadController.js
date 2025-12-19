@@ -542,7 +542,7 @@ async function updateFitTraining(req, res) {
   try {
     const userId = req.user?.userId;
     const trainingId = req.params.id;
-  const { title, description, selectedLapIndices } = req.body;
+  const { title, description, category, selectedLapIndices } = req.body;
 
     const training = await FitTraining.findOne({
       _id: trainingId,
@@ -563,6 +563,11 @@ async function updateFitTraining(req, res) {
     // Update description if provided
     if (description !== undefined) {
       training.description = description || null;
+    }
+
+    // Update category if provided
+    if (category !== undefined) {
+      training.category = category || null;
     }
 
     await training.save();
@@ -2315,37 +2320,15 @@ async function analyzeTrainingsByMonth(req, res) {
         // Ensure bikeMaxPower is set
         month.bikeMaxPower = Number(month.bikeMaxPower) || 0;
         
-        // Calculate total TSS for the month (bike + run)
-        let bikeTSS = 0;
-        let runningTSS = 0;
-        
         // Calculate bike TSS (using bike power)
+        let bikeTSS = 0;
         if (month.bikeTime > 0 && month.bikeAvgPower > 0 && ftpFromZones > 0) {
           // TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
           // Using bikeAvgPower as NP approximation
           const np = month.bikeAvgPower;
           bikeTSS = Math.round((month.bikeTime * Math.pow(np, 2)) / (Math.pow(ftpFromZones, 2) * 3600) * 100);
         }
-        
-        // Calculate running TSS (using pace - similar formula but with threshold pace)
-        // For running, we use threshold pace (LTP2) as reference, or fallback to avg pace
-        const thresholdPace = userRunningZones?.lt2; // Threshold pace in seconds per km
-        if (month.runningTime > 0 && month.runningAvgPace > 0) {
-          let referencePace = thresholdPace;
-          // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-          if (!referencePace || referencePace <= 0) {
-            referencePace = month.runningAvgPace;
-          }
-          // Running TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-          // Faster pace (lower seconds) = higher intensity = higher TSS
-          // If avgPace is faster than reference (lower seconds), intensity > 1.0
-          const intensityRatio = referencePace / month.runningAvgPace; // > 1 if faster than reference
-          runningTSS = Math.round((month.runningTime * Math.pow(intensityRatio, 2)) / 3600 * 100);
-        }
-        
-        month.totalTSS = bikeTSS + runningTSS;
         month.bikeTSS = bikeTSS;
-        month.runningTSS = runningTSS;
 
       // Finalize zone statistics
       [1, 2, 3, 4, 5].forEach(zoneNum => {
@@ -2408,6 +2391,10 @@ async function analyzeTrainingsByMonth(req, res) {
       // Finalize running statistics
       if (month.runningPaceCount > 0) {
         month.runningAvgPace = month.runningTotalPaceSum / month.runningPaceCount;
+      } else if (month.runningTime > 0 && month.runningDistance > 0) {
+        // Fallback: calculate pace from total distance and time
+        // Pace in seconds per km = (time in seconds * 1000) / (distance in meters)
+        month.runningAvgPace = (month.runningTime * 1000) / month.runningDistance;
       } else {
         month.runningAvgPace = 0;
       }
@@ -2425,6 +2412,28 @@ async function analyzeTrainingsByMonth(req, res) {
       month.runningAvgHeartRate = Number(month.runningAvgHeartRate) || 0;
       month.runningMaxHeartRate = Number(month.runningMaxHeartRate) || 0;
       month.runningDistance = Number(month.runningDistance) || 0;
+      
+      // Calculate running TSS (using pace - similar formula but with threshold pace)
+      // This must be done AFTER runningAvgPace is set
+      let runningTSS = 0;
+      if (month.runningTime > 0 && month.runningAvgPace > 0) {
+        // For running, we use threshold pace (LTP2) as reference, or fallback to avg pace
+        const thresholdPace = userRunningZones?.lt2; // Threshold pace in seconds per km
+        let referencePace = thresholdPace;
+        // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+        if (!referencePace || referencePace <= 0) {
+          referencePace = month.runningAvgPace;
+        }
+        // Running TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+        // Faster pace (lower seconds) = higher intensity = higher TSS
+        // If avgPace is faster than reference (lower seconds), intensity > 1.0
+        const intensityRatio = referencePace / month.runningAvgPace; // > 1 if faster than reference
+        runningTSS = Math.round((month.runningTime * Math.pow(intensityRatio, 2)) / 3600 * 100);
+      }
+      month.runningTSS = runningTSS;
+      
+      // Calculate total TSS
+      month.totalTSS = (month.bikeTSS || 0) + runningTSS;
       
       // Finalize running zone statistics
       // Calculate total running time from zone times if runningTime is 0
@@ -2545,6 +2554,452 @@ async function analyzeTrainingsByMonth(req, res) {
   }
 }
 
+/**
+ * Calculate maximum average power for a given duration from records
+ */
+function calculateMaxPowerForDuration(records, durationSeconds) {
+  if (!records || records.length === 0) return 0;
+  
+  // Filter and sort records by timestamp
+  const sortedRecords = [...records]
+    .filter(r => r.power && r.power > 0)
+    .sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeA - timeB;
+    });
+  
+  if (sortedRecords.length === 0) return 0;
+  
+  // Calculate time from start for each record
+  const startTime = sortedRecords[0].timestamp ? new Date(sortedRecords[0].timestamp).getTime() : Date.now();
+  const recordsWithTime = sortedRecords.map((r, i) => {
+    const recordTime = r.timestamp ? new Date(r.timestamp).getTime() : startTime + (i * 1000);
+    return {
+      power: r.power,
+      timeFromStart: (recordTime - startTime) / 1000 // seconds
+    };
+  });
+  
+  let maxAvgPower = 0;
+  let windowSum = 0;
+  let windowCount = 0;
+  
+  // Use sliding window with two pointers for O(n) complexity
+  // The window should contain records within the duration (e.g., 5 seconds, 60 seconds, etc.)
+  for (let end = 0, start = 0; end < recordsWithTime.length; end++) {
+    const endTime = recordsWithTime[end].timeFromStart;
+    
+    // Remove records that are outside the window (older than durationSeconds before endTime)
+    while (start < end && recordsWithTime[start].timeFromStart <= endTime - durationSeconds) {
+      windowSum -= recordsWithTime[start].power;
+      windowCount--;
+      start++;
+    }
+    
+    // Add current record to window
+    windowSum += recordsWithTime[end].power;
+    windowCount++;
+    
+    // Calculate average for current window only if window spans at least the duration
+    // For very short durations (5s), we need at least 2-3 records
+    // For longer durations, we need records that span the full duration
+    if (windowCount > 0 && start < recordsWithTime.length) {
+      const windowStartTime = recordsWithTime[start].timeFromStart;
+      const windowDuration = endTime - windowStartTime;
+      
+      // Only calculate average if window spans at least 80% of the target duration
+      // This ensures we're getting meaningful averages, not just partial windows
+      if (windowDuration >= durationSeconds * 0.8) {
+        const avgPower = windowSum / windowCount;
+        maxAvgPower = Math.max(maxAvgPower, avgPower);
+      }
+    }
+  }
+  
+  return Math.round(maxAvgPower);
+}
+
+/**
+ * Get power metrics for Power Radar chart
+ */
+async function getPowerMetrics(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const athleteId = req.query.athleteId || userId;
+    const comparePeriod = req.query.comparePeriod || '90days';
+    const selectedMonths = req.query.selectedMonths ? (Array.isArray(req.query.selectedMonths) ? req.query.selectedMonths : [req.query.selectedMonths]) : [];
+    
+    // Get user for coach/athlete check
+    const User = require('../models/UserModel');
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Check if coach is accessing athlete data
+    if (user.role === 'coach' && athleteId !== userId) {
+      const athlete = await User.findById(athleteId);
+      if (!athlete) {
+        return res.status(404).json({ error: 'Athlete not found' });
+      }
+      if (!athlete.coachId || athlete.coachId.toString() !== userId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+    
+    // Load FIT trainings with records
+    const fitTrainings = await FitTraining.find({
+      athleteId: athleteId,
+      sport: 'cycling'
+    })
+      .select('_id timestamp records sport')
+      .lean();
+    
+    // Load Strava activities with power data
+    const StravaActivity = require('../models/StravaActivity');
+    const stravaActivities = await StravaActivity.find({
+      userId: athleteId,
+      sport: { $in: ['Ride', 'VirtualRide'] }
+    })
+      .select('_id startDate stravaId sport averagePower')
+      .sort({ startDate: -1 }) // Most recent first
+      .lean();
+    
+    // Process FIT trainings
+    const fitTrainingsProcessed = fitTrainings
+      .filter(t => t.records && t.records.length > 0 && t.records.some(r => r.power && r.power > 0))
+      .map(t => ({
+        ...t,
+        timestamp: t.timestamp ? new Date(t.timestamp).getTime() : null,
+        records: t.records
+      }));
+    
+    console.log(`[Power Metrics] Processed ${fitTrainingsProcessed.length} FIT trainings with power data`);
+    
+    // Log date ranges for FIT trainings
+    if (fitTrainingsProcessed.length > 0) {
+      const fitDates = fitTrainingsProcessed
+        .filter(t => t.timestamp)
+        .map(t => new Date(t.timestamp))
+        .sort((a, b) => a - b);
+      if (fitDates.length > 0) {
+        console.log(`[Power Metrics] FIT trainings date range: ${fitDates[0].toISOString()} to ${fitDates[fitDates.length - 1].toISOString()}`);
+      }
+    }
+    
+    // Process Strava activities - load streams and convert to records format
+    const stravaTrainingsProcessed = [];
+    const integrationsRoutes = require('../routes/integrationsRoutes');
+    const getValidStravaToken = integrationsRoutes.getValidStravaToken;
+    const axios = require('axios');
+    
+    // Filter only activities with power data
+    const stravaActivitiesWithPower = stravaActivities.filter(a => a.averagePower && a.averagePower > 0);
+    
+    console.log(`[Power Metrics] Found ${fitTrainings.length} FIT trainings, ${stravaActivities.length} Strava activities (${stravaActivitiesWithPower.length} with power)`);
+    
+    // Process Strava activities - process in batches to avoid rate limiting
+    // Strava allows 100 requests per 15 minutes, so we need to be very careful
+    // For "All Time" calculation, we want to process more activities if possible
+    // Limit to 50 most recent activities for All Time, 30 for compare periods
+    const isAllTime = comparePeriod === 'alltime';
+    const MAX_STRAVA_ACTIVITIES = isAllTime ? 50 : 30; // More for All Time
+    const MIN_FIT_TRAININGS_FOR_SKIP_STRAVA = 10; // If we have 10+ FIT trainings, skip Strava
+    
+    let stravaActivitiesToProcess = [];
+    if (fitTrainingsProcessed.length >= MIN_FIT_TRAININGS_FOR_SKIP_STRAVA) {
+      console.log(`[Power Metrics] Skipping Strava activities (${fitTrainingsProcessed.length} FIT trainings available, threshold: ${MIN_FIT_TRAININGS_FOR_SKIP_STRAVA})`);
+    } else {
+      stravaActivitiesToProcess = stravaActivitiesWithPower.slice(0, MAX_STRAVA_ACTIVITIES);
+      console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length} Strava activities (max ${MAX_STRAVA_ACTIVITIES} to avoid rate limiting)...`);
+    }
+    
+    let rateLimitHit = false;
+    // Only process Strava activities if we have any to process
+    if (stravaActivitiesToProcess.length > 0) {
+      for (let i = 0; i < stravaActivitiesToProcess.length; i++) {
+        const activity = stravaActivitiesToProcess[i];
+      
+      // Skip if we hit rate limit
+      if (rateLimitHit) {
+        console.log(`[Power Metrics] Skipping remaining ${stravaActivitiesToProcess.length - i} activities due to rate limit`);
+        break;
+      }
+      
+      try {
+        const stravaToken = await getValidStravaToken(user);
+        if (!stravaToken) {
+          console.log(`[Power Metrics] No valid Strava token, skipping remaining activities`);
+          break;
+        }
+        
+        // Load streams from Strava API
+        const streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${activity.stravaId}/streams`, {
+          headers: { Authorization: `Bearer ${stravaToken}` },
+          params: { keys: 'time,watts', key_by_type: true },
+          timeout: 10000 // 10 second timeout
+        });
+        
+        const streams = streamsResp.data;
+        const timeStream = streams.time?.data || [];
+        const powerStream = streams.watts?.data || [];
+        
+        if (timeStream.length === 0 || powerStream.length === 0) continue;
+        
+        // Convert streams to records format (timestamp in milliseconds)
+        const activityStartTime = activity.startDate ? new Date(activity.startDate).getTime() : Date.now();
+        const records = timeStream.map((timeSeconds, index) => ({
+          timestamp: activityStartTime + (timeSeconds * 1000),
+          power: powerStream[index] || null
+        })).filter(r => r.power && r.power > 0);
+        
+        if (records.length === 0) continue;
+        
+        stravaTrainingsProcessed.push({
+          records: records,
+          timestamp: activityStartTime,
+          sport: activity.sport || 'Ride'
+        });
+        
+        // Longer delay to avoid rate limiting (1 second between requests)
+        // Strava allows 100 requests per 15 minutes = ~9 seconds per request on average
+        // We use 1 second to be safe but not too slow
+        if (i < stravaActivitiesToProcess.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error) {
+        // Skip activities that fail (rate limit, no access, etc.)
+        if (error.response?.status === 429) {
+          // Rate limited, stop processing
+          rateLimitHit = true;
+          console.log(`[Power Metrics] Rate limited after processing ${stravaTrainingsProcessed.length} Strava activities`);
+          break;
+        }
+        // Log other errors but continue
+        if (error.code !== 'ECONNABORTED') { // Don't log timeout errors
+          console.warn(`[Power Metrics] Error loading Strava activity ${activity.stravaId}:`, error.message);
+        }
+        continue;
+      }
+      }
+    }
+    
+    console.log(`[Power Metrics] Processed ${stravaTrainingsProcessed.length} Strava activities with power data`);
+    
+    // Log date ranges for Strava activities
+    if (stravaTrainingsProcessed.length > 0) {
+      const stravaDates = stravaTrainingsProcessed
+        .filter(t => t.timestamp)
+        .map(t => new Date(t.timestamp))
+        .sort((a, b) => a - b);
+      if (stravaDates.length > 0) {
+        console.log(`[Power Metrics] Strava activities date range: ${stravaDates[0].toISOString()} to ${stravaDates[stravaDates.length - 1].toISOString()}`);
+      }
+    }
+    
+    // Combine FIT and Strava trainings
+    const allTrainings = [...fitTrainingsProcessed, ...stravaTrainingsProcessed];
+    
+    console.log(`[Power Metrics] Total trainings to process: ${allTrainings.length} (${fitTrainingsProcessed.length} FIT + ${stravaTrainingsProcessed.length} Strava)`);
+    
+    // Calculate metrics for each training
+    const allMetrics = allTrainings
+      .filter(t => t.timestamp && t.timestamp > 0)
+      .map(training => {
+        const metrics = {
+          sprint5s: calculateMaxPowerForDuration(training.records, 5),
+          attack1min: calculateMaxPowerForDuration(training.records, 60),
+          vo2max5min: calculateMaxPowerForDuration(training.records, 300),
+          threshold20min: calculateMaxPowerForDuration(training.records, 1200),
+          endurance60min: calculateMaxPowerForDuration(training.records, 3600)
+        };
+        return {
+          ...metrics,
+          timestamp: training.timestamp,
+          date: new Date(training.timestamp)
+        };
+      });
+    
+    // Calculate All Time maximums
+    console.log(`[Power Metrics] Calculating All Time from ${allMetrics.length} training metrics`);
+    
+    // Debug: Log sample metrics
+    if (allMetrics.length > 0) {
+      console.log(`[Power Metrics] Sample metrics (first 3):`, allMetrics.slice(0, 3).map(m => ({
+        date: m.date.toISOString(),
+        sprint5s: m.sprint5s,
+        attack1min: m.attack1min,
+        vo2max5min: m.vo2max5min,
+        threshold20min: m.threshold20min,
+        endurance60min: m.endurance60min
+      })));
+    }
+    
+    // Calculate max values more safely (handle empty arrays)
+    const getMaxValue = (key) => {
+      const values = allMetrics.map(m => m[key] || 0).filter(v => v > 0);
+      return values.length > 0 ? Math.max(...values) : 0;
+    };
+    
+    const allTime = {
+      sprint5s: getMaxValue('sprint5s'),
+      attack1min: getMaxValue('attack1min'),
+      vo2max5min: getMaxValue('vo2max5min'),
+      threshold20min: getMaxValue('threshold20min'),
+      endurance60min: getMaxValue('endurance60min')
+    };
+    
+    console.log(`[Power Metrics] All Time values:`, allTime);
+    
+    // Calculate compare period maximums
+    const now = Date.now();
+    let compareDate;
+    if (comparePeriod === '90days') {
+      compareDate = now - (90 * 24 * 60 * 60 * 1000);
+    } else if (comparePeriod === '30days') {
+      compareDate = now - (30 * 24 * 60 * 60 * 1000);
+    } else {
+      compareDate = 0;
+    }
+    
+    let compareMetrics;
+    if (comparePeriod === 'alltime' || comparePeriod === 'monthly') {
+      compareMetrics = allMetrics;
+    } else {
+      compareMetrics = allMetrics.filter(m => m.timestamp >= compareDate);
+    }
+    
+    // Calculate compare period max values more safely
+    const getCompareMaxValue = (key) => {
+      const values = compareMetrics.map(m => m[key] || 0).filter(v => v > 0);
+      return values.length > 0 ? Math.max(...values) : 0;
+    };
+    
+    const compare = compareMetrics.length > 0 ? {
+      sprint5s: getCompareMaxValue('sprint5s'),
+      attack1min: getCompareMaxValue('attack1min'),
+      vo2max5min: getCompareMaxValue('vo2max5min'),
+      threshold20min: getCompareMaxValue('threshold20min'),
+      endurance60min: getCompareMaxValue('endurance60min')
+    } : { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 };
+    
+    console.log(`[Power Metrics] Compare period (${comparePeriod}):`, compare);
+    console.log(`[Power Metrics] Compare metrics count: ${compareMetrics.length}, date range: ${compareDate > 0 ? new Date(compareDate).toISOString() : 'all time'} to ${new Date(now).toISOString()}`);
+    
+    // Find personal records
+    const findMaxWithDate = (key) => {
+      let maxValue = 0;
+      let maxDate = null;
+      allMetrics.forEach(m => {
+        const value = m[key] || 0;
+        if (value > maxValue) {
+          maxValue = value;
+          maxDate = m.date;
+        }
+      });
+      return { value: maxValue, date: maxDate };
+    };
+    
+    const personalRecords = {
+      sprint5s: findMaxWithDate('sprint5s'),
+      attack1min: findMaxWithDate('attack1min'),
+      vo2max5min: findMaxWithDate('vo2max5min'),
+      threshold20min: findMaxWithDate('threshold20min'),
+      endurance60min: findMaxWithDate('endurance60min')
+    };
+    
+    // Calculate improvements
+    const calculateImprovement = (key) => {
+      if (comparePeriod === 'alltime' || comparePeriod === 'monthly') return null;
+      
+      let previousDate;
+      if (comparePeriod === '90days') {
+        previousDate = now - (180 * 24 * 60 * 60 * 1000);
+      } else if (comparePeriod === '30days') {
+        previousDate = now - (60 * 24 * 60 * 60 * 1000);
+      } else {
+        return null;
+      }
+      
+      const previousMetrics = allMetrics.filter(m => 
+        m.timestamp >= previousDate && m.timestamp < compareDate
+      );
+      
+      if (previousMetrics.length === 0) return null;
+      
+      const previousMax = Math.max(...previousMetrics.map(m => m[key]), 0);
+      const currentMax = compare[key];
+      const improvement = currentMax - previousMax;
+      
+      return {
+        improvement,
+        previousMax,
+        currentMax,
+        percentage: previousMax > 0 ? Math.round((improvement / previousMax) * 100) : 0
+      };
+    };
+    
+    const improvements = {
+      sprint5s: calculateImprovement('sprint5s'),
+      attack1min: calculateImprovement('attack1min'),
+      vo2max5min: calculateImprovement('vo2max5min'),
+      threshold20min: calculateImprovement('threshold20min'),
+      endurance60min: calculateImprovement('endurance60min')
+    };
+    
+    // Calculate monthly metrics if needed
+    const monthlyMetrics = {};
+    if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
+      selectedMonths.forEach(monthKey => {
+        const [year, month] = monthKey.split('-').map(Number);
+        const startDate = new Date(year, month - 1, 1).getTime();
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999).getTime();
+        
+        const monthTrainings = allTrainings.filter(t => {
+          if (!t.timestamp) return false;
+          return t.timestamp >= startDate && t.timestamp <= endDate;
+        });
+        
+        if (monthTrainings.length > 0) {
+          const monthAllMetrics = monthTrainings.map(training => ({
+            sprint5s: calculateMaxPowerForDuration(training.records, 5),
+            attack1min: calculateMaxPowerForDuration(training.records, 60),
+            vo2max5min: calculateMaxPowerForDuration(training.records, 300),
+            threshold20min: calculateMaxPowerForDuration(training.records, 1200),
+            endurance60min: calculateMaxPowerForDuration(training.records, 3600)
+          }));
+          
+          monthlyMetrics[monthKey] = {
+            sprint5s: Math.max(...monthAllMetrics.map(m => m.sprint5s || 0), 0),
+            attack1min: Math.max(...monthAllMetrics.map(m => m.attack1min || 0), 0),
+            vo2max5min: Math.max(...monthAllMetrics.map(m => m.vo2max5min || 0), 0),
+            threshold20min: Math.max(...monthAllMetrics.map(m => m.threshold20min || 0), 0),
+            endurance60min: Math.max(...monthAllMetrics.map(m => m.endurance60min || 0), 0)
+          };
+        }
+      });
+    }
+    
+    const result = {
+      allTime,
+      compare,
+      personalRecords,
+      improvements,
+      monthlyMetrics: Object.keys(monthlyMetrics).length > 0 ? monthlyMetrics : undefined,
+      trainingsCount: allTrainings.length
+    };
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting power metrics:', error);
+    res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+}
+
 module.exports = {
   uploadFitFile,
   getFitTrainings,
@@ -2555,6 +3010,7 @@ module.exports = {
   getAllTitles,
   createLap,
   getTrainingsWithLactate,
-  analyzeTrainingsByMonth
+  analyzeTrainingsByMonth,
+  getPowerMetrics
 };
 
