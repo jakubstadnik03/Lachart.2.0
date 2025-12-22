@@ -243,7 +243,8 @@ const ProfilePage = () => {
         _id: profileData._id,
         role: profileData.role,
         powerZones: profileData.powerZones, // Include power zones
-        heartRateZones: profileData.heartRateZones // Include heart rate zones
+        heartRateZones: profileData.heartRateZones, // Include heart rate zones
+        units: profileData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Include units
       });
 
       // Pokud je to trenér, nemusíme načítat tréninky a testy
@@ -349,7 +350,8 @@ const ProfilePage = () => {
         title: updatedUser.specialization || '',
         avatar: updatedUser.avatar || '/images/triathlete-avatar.jpg',
         powerZones: updatedUser.powerZones || userInfo.powerZones, // Keep power zones
-        heartRateZones: updatedUser.heartRateZones || userInfo.heartRateZones // Keep heart rate zones
+        heartRateZones: updatedUser.heartRateZones || userInfo.heartRateZones, // Keep heart rate zones
+        units: updatedUser.units || userInfo.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Keep units
       });
 
       setIsEditModalOpen(false);
@@ -587,6 +589,104 @@ const ProfilePage = () => {
               </motion.div>
             </div>
           </motion.div>
+        </div>
+      </motion.div>
+
+      {/* Units Preferences Section */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="bg-white rounded-3xl shadow-sm overflow-hidden"
+      >
+        <div className="px-4 md:px-6 py-4 md:py-6">
+          <h2 className="text-lg md:text-xl font-bold text-gray-900 mb-4 md:mb-6">Units Preferences</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Distance</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="distance"
+                    value="metric"
+                    checked={userInfo.units?.distance === 'metric'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Metric (km, m)</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="distance"
+                    value="imperial"
+                    checked={userInfo.units?.distance === 'imperial'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Imperial (miles, feet)</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Weight</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="weight"
+                    value="kg"
+                    checked={userInfo.units?.weight === 'kg'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Kilograms (kg)</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="weight"
+                    value="lbs"
+                    checked={userInfo.units?.weight === 'lbs'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Pounds (lbs)</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Temperature</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="temperature"
+                    value="celsius"
+                    checked={userInfo.units?.temperature === 'celsius'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Celsius (°C)</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="temperature"
+                    value="fahrenheit"
+                    checked={userInfo.units?.temperature === 'fahrenheit'}
+                    disabled
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Fahrenheit (°F)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-4">Edit units preferences in the profile edit modal</p>
         </div>
       </motion.div>
 

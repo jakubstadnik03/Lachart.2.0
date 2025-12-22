@@ -576,7 +576,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
             strava: user.strava ? {
               athleteId: user.strava.athleteId,
-              autoSync: user.strava.autoSync || false,
+              autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
               lastSyncDate: user.strava.lastSyncDate
               // Don't include accessToken, refreshToken, expiresAt for security
             } : null

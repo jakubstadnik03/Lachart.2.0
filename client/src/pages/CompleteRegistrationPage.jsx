@@ -50,9 +50,9 @@ const CompleteRegistrationPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#EEF2FF]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
@@ -61,10 +61,10 @@ const CompleteRegistrationPage = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#EEF2FF]">
         <div className="text-center">
-          <div className="text-red-500 text-xl mb-4">{error}</div>
-          <a href="/login" className="text-violet-600 hover:text-violet-500">
+          <div className="text-red text-xl mb-4">{error}</div>
+          <a href="/login" className="text-primary hover:text-primary-dark">
             Go to login
           </a>
         </div>
@@ -73,7 +73,7 @@ const CompleteRegistrationPage = () => {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-[#EEF2FF]">
       {/* Left side - Background */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent">
         {/* You can add an image or graphics here */}
@@ -83,11 +83,14 @@ const CompleteRegistrationPage = () => {
       <div className="w-full lg:w-1/2 flex items-center justify-center px-8">
         <div className="max-w-md w-full space-y-8">
           <div>
-            <img
-              className="mx-auto h-12 w-auto"
-              src="/images/LaChart.png"
-              alt="LaChart Logo"
-            />
+            <div className='mx-auto flex items-center gap-2 justify-center'>
+              <img
+                className="h-12 w-auto"
+                src="/images/LaChart.png"
+                alt="LaChart Logo"
+              />
+              <h1 className='text-2xl font-bold text-primary'>LaChart</h1>
+            </div>
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
               Complete Registration
             </h2>
@@ -104,7 +107,7 @@ const CompleteRegistrationPage = () => {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   required
-                  className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
+                  className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary"
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -138,7 +141,7 @@ const CompleteRegistrationPage = () => {
                   name="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   required
-                  className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-violet-500 focus:border-violet-500"
+                  className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary"
                   placeholder="Confirm password"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
@@ -172,7 +175,7 @@ const CompleteRegistrationPage = () => {
             </p>
 
             {error && (
-              <div className="text-red-500 text-sm text-center">
+              <div className="text-red text-sm text-center">
                 {error}
               </div>
             )}
@@ -180,7 +183,7 @@ const CompleteRegistrationPage = () => {
             <div>
               <button
                 type="submit"
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-violet-600 hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500"
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
               >
                 Complete Registration
               </button>

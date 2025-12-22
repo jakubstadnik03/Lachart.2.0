@@ -1,5 +1,13 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { 
+  ChevronLeftIcon, 
+  ChevronRightIcon, 
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  MinusIcon
+} from '@heroicons/react/24/outline';
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 
@@ -417,9 +425,10 @@ export default function CalendarView({ activities = [], onSelectActivity, select
         <div className="flex items-center gap-1.5 md:gap-2">
           <button 
             onClick={prev} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors text-sm md:text-base`}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors flex items-center justify-center`}
+            aria-label="Previous"
           >
-            ◀
+            <ChevronLeftIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
           <button 
             onClick={today} 
@@ -429,9 +438,10 @@ export default function CalendarView({ activities = [], onSelectActivity, select
           </button>
           <button 
             onClick={next} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors text-sm md:text-base`}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors flex items-center justify-center`}
+            aria-label="Next"
           >
-            ▶
+            <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
         </div>
         <div className="text-sm md:text-base lg:text-lg font-semibold text-gray-900">
@@ -451,7 +461,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
               ))}
             </select>
-            <span className="pointer-events-none absolute inset-y-0 right-1 md:right-2 flex items-center text-gray-400 text-xs">⌄</span>
+            <ChevronDownIcon className="pointer-events-none absolute inset-y-0 right-1 md:right-2 flex items-center text-gray-400 w-4 h-4 md:w-5 md:h-5" />
           </div>
           {!isMobile && (
             <>
@@ -480,9 +490,10 @@ export default function CalendarView({ activities = [], onSelectActivity, select
             <>
               <button
                 onClick={() => setView('month')}
-                className="mb-2 px-3 py-1.5 text-xs bg-primary/20 text-primary-dark rounded-lg border border-primary/30 hover:bg-primary/30 transition-colors w-full"
+                className="mb-2 px-3 py-1.5 text-xs bg-primary/20 text-primary-dark rounded-lg border border-primary/30 hover:bg-primary/30 transition-colors w-full flex items-center justify-center gap-2"
               >
-                ← Back to Month
+                <ChevronLeftIcon className="w-4 h-4" />
+                <span>Back to Month</span>
               </button>
               <div className="relative">
                 {/* Left scroll indicator */}
@@ -570,25 +581,47 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                               const activityId = a.id || a._id;
                               const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
                               const activityTitle = a.title || a.name || a.originalFileName || 'Activity';
+                              const handleActivityClick = (e) => {
+                                e.stopPropagation();
+                                if (onSelectActivity) {
+                                  onSelectActivity(a);
+                                }
+                              };
+                              const handleTouchStart = (e) => {
+                                e.stopPropagation();
+                                if (onSelectActivity) {
+                                  onSelectActivity(a);
+                                }
+                              };
                               return (
                                 <button 
                                   key={i} 
-                                  onClick={() => onSelectActivity && onSelectActivity(a)} 
+                                  onClick={handleActivityClick}
+                                  onTouchStart={handleTouchStart}
                                   onMouseEnter={(e) => {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setHoveredActivity({ activity: a, title: activityTitle });
-                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    if (!isMobile) {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setHoveredActivity({ activity: a, title: activityTitle });
+                                      setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    }
                                   }}
-                                  onMouseLeave={() => setHoveredActivity(null)}
+                                  onMouseLeave={() => {
+                                    if (!isMobile) {
+                                      setHoveredActivity(null);
+                                    }
+                                  }}
                                   onMouseMove={(e) => {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    if (!isMobile) {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    }
                                   }}
-                                  className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded border shadow-sm transition-colors flex items-center gap-0.5 ${
+                                  className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded border shadow-sm transition-colors flex items-center gap-0.5 touch-manipulation ${
                                     isSelected 
-                                      ? 'bg-primary text-white border-primary hover:bg-primary-dark' 
-                                      : 'bg-primary/10 hover:bg-primary/20 text-primary-dark border-primary/30'
+                                      ? 'bg-primary text-white border-primary hover:bg-primary-dark active:bg-primary-dark' 
+                                      : 'bg-primary/10 hover:bg-primary/20 active:bg-primary/30 text-primary-dark border-primary/30'
                                   }`}
+                                  style={{ WebkitTapHighlightColor: 'transparent' }}
                                 >
                                   <span className={`flex-shrink-0 ${isMobile ? 'text-[8px]' : 'text-xs'}`}>{sportBadge(a.sport)}</span>
                                   <span className={`truncate ${isMobile ? 'text-[8px]' : 'text-[10px]'}`}>{activityTitle}</span>
@@ -596,11 +629,26 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                               );
                             })}
                             {remainingCount > 0 && (
-                              <button
-                                onClick={toggleExpand}
-                                className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium`}
-                              >
-                                {isExpanded ? `▼ -${remainingCount}` : `+ ${remainingCount}`}
+                            <button
+                              onClick={toggleExpand}
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                toggleExpand(e);
+                              }}
+                              className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded bg-primary/10 hover:bg-primary/20 active:bg-primary/30 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium touch-manipulation flex items-center gap-1`}
+                              style={{ WebkitTapHighlightColor: 'transparent' }}
+                            >
+                                {isExpanded ? (
+                                  <>
+                                    <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
+                                    <span>-{remainingCount}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>+</span>
+                                    <span>{remainingCount}</span>
+                                  </>
+                                )}
                               </button>
                             )}
                           </div>
@@ -612,8 +660,8 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 </div>
               </div>
               
-              {/* Custom Tooltip */}
-              {hoveredActivity && (
+              {/* Custom Tooltip - Only show on desktop */}
+              {hoveredActivity && !isMobile && (
                 <div
                   className="fixed z-[99999] bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-xl pointer-events-none"
                   style={{
@@ -671,27 +719,49 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       {acts.slice(0, 1).map((a, i) => {
                         const activityId = a.id || a._id;
                         const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                        const handleActivityClick = (e) => {
+                          e.stopPropagation();
+                          if (onSelectActivity) {
+                            onSelectActivity(a);
+                          }
+                        };
+                        const handleTouchStart = (e) => {
+                          e.stopPropagation();
+                          if (onSelectActivity) {
+                            onSelectActivity(a);
+                          }
+                        };
                         return (
-                          <div
+                          <button
                             key={i}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectActivity && onSelectActivity(a);
-                            }}
-                            className={`text-[7px] px-0.5 py-0.5 rounded border flex items-center ${
+                            onClick={handleActivityClick}
+                            onTouchStart={handleTouchStart}
+                            className={`text-[7px] px-0.5 py-0.5 rounded border flex items-center touch-manipulation ${
                               isSelected 
-                                ? 'bg-primary text-white border-primary' 
-                                : 'bg-primary/10 text-primary-dark border-primary/30'
+                                ? 'bg-primary text-white border-primary active:bg-primary-dark' 
+                                : 'bg-primary/10 text-primary-dark border-primary/30 active:bg-primary/30'
                             }`}
+                            style={{ WebkitTapHighlightColor: 'transparent' }}
                           >
                             <span className="text-[7px]">{sportBadge(a.sport)}</span>
-                          </div>
+                          </button>
                         );
                       })}
                       {acts.length > 1 && (
-                        <div className="text-[7px] px-0.5 py-0.5 rounded bg-gray-200 text-gray-600 font-semibold">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDayClick(dayDate);
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            handleDayClick(dayDate);
+                          }}
+                          className="text-[7px] px-0.5 py-0.5 rounded bg-gray-200 text-gray-600 font-semibold touch-manipulation active:bg-gray-300"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
+                        >
                           {acts.length}
-                        </div>
+                        </button>
                       )}
                     </div>
                   </button>
@@ -710,20 +780,33 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 
                 return (
                   <div key={idx} className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-md'} rounded-lg ${isMobile ? 'border border-gray-200' : 'border border-white/20'} p-3`}>
-                    <button
-                      onClick={() => {
-                        setExpandedSummary(prev => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(weekKey)) {
-                            newSet.delete(weekKey);
-                          } else {
-                            newSet.add(weekKey);
-                          }
-                          return newSet;
-                        });
-                      }}
-                      className="w-full flex items-center justify-between"
-                    >
+                  <button
+                    onClick={() => {
+                      setExpandedSummary(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(weekKey)) {
+                          newSet.delete(weekKey);
+                        } else {
+                          newSet.add(weekKey);
+                        }
+                        return newSet;
+                      });
+                    }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      setExpandedSummary(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(weekKey)) {
+                          newSet.delete(weekKey);
+                        } else {
+                          newSet.add(weekKey);
+                        }
+                        return newSet;
+                      });
+                    }}
+                    className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
                       <div className="text-left">
                         <div className="text-sm font-bold text-gray-900">
                           {formatWeekRange(weekSummary.weekStart)}
@@ -739,7 +822,13 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                           )}
                         </div>
                       </div>
-                      <span className="text-gray-600 text-lg">{isExpanded ? '▼' : '▶'}</span>
+                      <span className="text-gray-600 flex items-center">
+                        {isExpanded ? (
+                          <ChevronDownIcon className="w-5 h-5" />
+                        ) : (
+                          <ChevronRightIcon className="w-5 h-5" />
+                        )}
+                      </span>
                     </button>
                     
                     {isExpanded && (
@@ -869,9 +958,19 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       {remainingCount > 0 && (
                         <button
                           onClick={toggleExpand}
-                          className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium"
+                          className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium flex items-center gap-1"
                         >
-                          {isExpanded ? `▼ Show less (${remainingCount})` : `+ ${remainingCount} more`}
+                          {isExpanded ? (
+                            <>
+                              <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
+                              <span>Show less ({remainingCount})</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>+</span>
+                              <span>{remainingCount} more</span>
+                            </>
+                          )}
                         </button>
                       )}
                     </div>
@@ -897,13 +996,13 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       {weekSummary.volumeChange && (
                         <span className="flex items-center">
                           {weekSummary.volumeChange === 'up' && (
-                            <img src="/icon/arrow-up.svg" alt="up" className="w-5 h-5" />
+                            <ArrowUpIcon className="w-5 h-5 text-green-600" />
                           )}
                           {weekSummary.volumeChange === 'down' && (
-                            <img src="/icon/arrow-down.svg" alt="down" className="w-5 h-5" />
+                            <ArrowDownIcon className="w-5 h-5 text-red-600" />
                           )}
                           {weekSummary.volumeChange === 'same' && (
-                            <img src="/icon/arrow-same.svg" alt="same" className="w-5 h-5 opacity-50" />
+                            <MinusIcon className="w-5 h-5 text-gray-400 opacity-50" />
                           )}
                         </span>
                       )}

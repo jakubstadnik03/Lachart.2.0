@@ -134,10 +134,16 @@ const SettingsPage = () => {
 
   // Load Strava auto-sync setting from user profile
   useEffect(() => {
-    if (user?.strava?.autoSync !== undefined) {
+    // Load from user profile if available
+    if (user?.strava && user.strava.autoSync !== undefined) {
+      console.log('Loading autoSync from user profile:', user.strava.autoSync);
       setStravaAutoSync(user.strava.autoSync);
+    } else if (!user?.strava) {
+      // If strava is not connected, default to false
+      setStravaAutoSync(false);
     }
-  }, [user?.strava?.autoSync]);
+    // If user.strava exists but autoSync is undefined, keep current state (don't change)
+  }, [user?.strava?.autoSync, user?.strava]);
 
   // Load settings from user profile or localStorage (fallback)
   useEffect(() => {
@@ -284,6 +290,7 @@ const SettingsPage = () => {
       });
 
       if (response.ok) {
+        const result = await response.json();
         setStravaAutoSync(enabled);
         addNotification(`Auto-sync ${enabled ? 'enabled' : 'disabled'}`, 'success');
         
@@ -296,9 +303,12 @@ const SettingsPage = () => {
           });
           if (profileResponse.ok) {
             const updatedUser = await profileResponse.json();
+            console.log('Updated user profile with autoSync:', updatedUser.strava?.autoSync);
             localStorage.setItem('user', JSON.stringify(updatedUser));
             // Trigger a custom event to update AuthProvider
             window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+          } else {
+            console.error('Failed to reload user profile:', profileResponse.status);
           }
         } catch (e) {
           console.error('Error reloading user profile:', e);
@@ -318,7 +328,9 @@ const SettingsPage = () => {
           }
         }
       } else {
-        addNotification('Failed to update auto-sync setting', 'error');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Failed to update auto-sync:', errorData);
+        addNotification(errorData.error || 'Failed to update auto-sync setting', 'error');
       }
     } catch (error) {
       console.error('Error updating auto-sync:', error);

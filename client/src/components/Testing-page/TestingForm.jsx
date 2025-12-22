@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
 
 // Tutorial steps configuration
@@ -134,11 +135,18 @@ const logDataChange = (type, data) => {
 
 function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false, disableInnerScroll = false }) {
   const { addNotification } = useNotification();
+  const { user } = useAuth();
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [highlightedField, setHighlightedField] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [inputMode, setInputMode] = useState('pace');
-  const [unitSystem, setUnitSystem] = useState('metric'); // 'metric' (km, pace/km) nebo 'imperial' (mile, mph)
+  // Get unitSystem from user profile, fallback to testData or 'metric'
+  const getUserUnitSystem = () => {
+    if (user?.units?.distance === 'imperial') return 'imperial';
+    if (testData?.unitSystem) return testData.unitSystem;
+    return 'metric';
+  };
+  const [unitSystem, setUnitSystem] = useState(getUserUnitSystem());
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -222,15 +230,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   });
 
   useEffect(() => {
-    if (testData) {
-      if (testData.unitSystem) {
-        setUnitSystem(testData.unitSystem);
-      }
-      if (testData.inputMode) {
-        setInputMode(testData.inputMode);
-      }
+    // Priority: user profile units > testData unitSystem > default 'metric'
+    if (user?.units?.distance === 'imperial') {
+      setUnitSystem('imperial');
+    } else if (testData?.unitSystem) {
+      setUnitSystem(testData.unitSystem);
+    } else {
+      setUnitSystem('metric');
     }
-  }, [testData]);
+    
+    if (testData?.inputMode) {
+      setInputMode(testData.inputMode);
+    }
+  }, [testData, user?.units?.distance]);
 
   // Convert display format when switching inputMode/unitSystem (for existing values only)
   useEffect(() => {
