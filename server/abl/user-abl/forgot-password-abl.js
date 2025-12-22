@@ -3,6 +3,7 @@ const nodemailer = require("nodemailer");
 const bcrypt = require("bcryptjs");
 const { JWT_SECRET } = require("../../config/jwt.config");
 const jwt = require("jsonwebtoken");
+const { generateEmailTemplate, getClientUrl } = require("../../utils/emailTemplate");
 
 class ForgotPasswordAbl {
     constructor() {
@@ -55,32 +56,28 @@ class ForgotPasswordAbl {
             });
 
             // Odeslání emailu
-            const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+            const clientUrl = getClientUrl();
             const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
+            
+            const emailContent = `
+                <p>We received a request to reset the password for your account.</p>
+                <p>To reset your password, please click the button below.</p>
+            `;
+            
             const mailOptions = {
                 from: {
-                    name: 'LaChart Support',
+                    name: 'LaChart',
                     address: process.env.EMAIL_USER
                 },
                 to: user.email,
-                subject: 'Reset hesla - LaChart',
-                html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <h2 style="color: #333;">Reset hesla</h2>
-                        <p>Obdrželi jsme žádost o reset hesla pro váš účet.</p>
-                        <p>Pro reset hesla klikněte na následující tlačítko:</p>
-                        <div style="text-align: center; margin: 30px 0;">
-                            <a href="${resetUrl}" 
-                               style="background-color: #4F46E5; color: white; padding: 12px 24px; 
-                                      text-decoration: none; border-radius: 5px; display: inline-block;">
-                                Reset hesla
-                            </a>
-                        </div>
-                        <p style="color: #666; font-size: 14px;">
-                            Tento odkaz je platný 1 hodinu.
-                        </p>
-                    </div>
-                `
+                subject: 'Reset Your Password - LaChart',
+                html: generateEmailTemplate({
+                    title: 'Reset Your Password',
+                    content: emailContent,
+                    buttonText: 'Reset Password',
+                    buttonUrl: resetUrl,
+                    footerText: 'This link is valid for 1 hour.'
+                })
             };
 
             try {

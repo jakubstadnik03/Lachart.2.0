@@ -142,21 +142,29 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             }
         });
 
-        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
         const registrationLink = `${clientUrl}/complete-registration/${athlete.registrationToken}`;
         
+        const emailContent = `
+            <p>Your coach <strong>${coach.name} ${coach.surname}</strong> has registered you in the LaChart system.</p>
+            <p>To complete your registration and set your password, please click the button below.</p>
+        `;
+        
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-                    to: email.toLowerCase(),
+            from: {
+                name: 'LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: email.toLowerCase(),
             subject: 'Complete Your Registration in LaChart',
-            html: `
-                <h2>Welcome to LaChart!</h2>
-                <p>Your coach ${coach.name} ${coach.surname} has registered you in the LaChart system.</p>
-                <p>To complete your registration and set your password, click on the following link:</p>
-                <a href="${registrationLink}">Complete Registration</a>
-                <p>The link is valid for 7 days.</p>
-                <p>If you did not request this email, you can ignore it.</p>
-            `
+            html: generateEmailTemplate({
+                title: 'Welcome to LaChart!',
+                content: emailContent,
+                buttonText: 'Complete Registration',
+                buttonUrl: registrationLink,
+                footerText: 'This link is valid for 7 days.'
+            })
         });
                 console.log("Successfully sent registration email");
             } catch (emailError) {
@@ -219,7 +227,6 @@ router.post("/complete-registration/:token", async (req, res) => {
         });
 
         // Send confirmation email
-        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -228,18 +235,28 @@ router.post("/complete-registration/:token", async (req, res) => {
             }
         });
 
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        
+        const emailContent = `
+            <p>Dear <strong>${athlete.name} ${athlete.surname}</strong>,</p>
+            <p>Your registration in LaChart has been successfully completed.</p>
+            <p>You can now log in to the system using your email and password.</p>
+        `;
+        
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: {
+                name: 'LaChart',
+                address: process.env.EMAIL_USER
+            },
             to: athlete.email,
             subject: 'LaChart Registration Completed',
-            html: `
-                <h2>Welcome to LaChart!</h2>
-                <p>Dear ${athlete.name} ${athlete.surname},</p>
-                <p>Your registration in LaChart has been successfully completed.</p>
-                <p>You can now log in to the system using your email and password.</p>
-                <p>To log in, visit: <a href="${clientUrl}/login">${clientUrl}/login</a></p>
-                <p>If you did not request this email, please contact support.</p>
-            `
+            html: generateEmailTemplate({
+                title: 'Welcome to LaChart!',
+                content: emailContent,
+                buttonText: 'Log In',
+                buttonUrl: `${clientUrl}/login`
+            })
         });
 
         res.status(200).json({ message: "Registration successfully completed" });
@@ -665,21 +682,29 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
       }
     });
 
-    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
+    const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+    const clientUrl = getClientUrl();
     const registrationLink = `${clientUrl}/complete-registration/${registrationToken}`;
 
+    const emailContent = `
+      <p>Your coach has invited you again to the LaChart system.</p>
+      <p>To complete your registration and set your password, please click the button below.</p>
+    `;
+
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: {
+        name: 'LaChart',
+        address: process.env.EMAIL_USER
+      },
       to: athlete.email,
       subject: 'Complete Your Registration in LaChart',
-      html: `
-        <h2>Welcome to LaChart!</h2>
-        <p>Your coach has invited you again to the LaChart system.</p>
-        <p>To complete your registration and set your password, click on the following link:</p>
-        <a href="${registrationLink}">Complete Registration</a>
-        <p>The link is valid for 24 hours.</p>
-        <p>If you did not request this email, you can ignore it.</p>
-      `
+      html: generateEmailTemplate({
+        title: 'Welcome to LaChart!',
+        content: emailContent,
+        buttonText: 'Complete Registration',
+        buttonUrl: registrationLink,
+        footerText: 'This link is valid for 24 hours.'
+      })
     });
 
     res.status(200).json({ 
@@ -776,7 +801,6 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -785,20 +809,29 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             }
         });
 
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
         const invitationLink = `${clientUrl}/accept-invitation/${invitationToken}`;
 
+        const emailContent = `
+            <p>Your coach <strong>${coach.name} ${coach.surname}</strong> has invited you to their team in LaChart.</p>
+            <p>To confirm the invitation, please click the button below.</p>
+        `;
+
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: {
+                name: 'LaChart',
+                address: process.env.EMAIL_USER
+            },
             to: email,
             subject: 'Team Invitation in LaChart',
-            html: `
-                <h2>Team Invitation</h2>
-                <p>Your coach ${coach.name} ${coach.surname} has invited you to their team in LaChart.</p>
-                <p>To confirm the invitation, click on the following link:</p>
-                <a href="${invitationLink}">Confirm Invitation</a>
-                <p>The link is valid for 7 days.</p>
-                <p>If you did not request this email, you can ignore it.</p>
-            `
+            html: generateEmailTemplate({
+                title: 'Team Invitation',
+                content: emailContent,
+                buttonText: 'Confirm Invitation',
+                buttonUrl: invitationLink,
+                footerText: 'This link is valid for 7 days.'
+            })
         });
 
         res.status(200).json({ 
@@ -1152,7 +1185,6 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -1161,20 +1193,29 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
             }
         });
 
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
         const invitationLink = `${clientUrl}/accept-coach-invitation/${invitationToken}`;
         
+        const emailContent = `
+            <p>Athlete <strong>${athlete.name} ${athlete.surname}</strong> has invited you to be their coach in LaChart.</p>
+            <p>To accept the invitation, please click the button below.</p>
+        `;
+        
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: {
+                name: 'LaChart',
+                address: process.env.EMAIL_USER
+            },
             to: coach.email,
             subject: 'Coach Invitation in LaChart',
-            html: `
-                <h2>Coach Invitation</h2>
-                <p>Athlete ${athlete.name} ${athlete.surname} has invited you to be their coach in LaChart.</p>
-                <p>To accept the invitation, click on the following link:</p>
-                <a href="${invitationLink}">Accept Invitation</a>
-                <p>The link is valid for 7 days.</p>
-                <p>If you did not request this email, you can ignore it.</p>
-            `
+            html: generateEmailTemplate({
+                title: 'Coach Invitation',
+                content: emailContent,
+                buttonText: 'Accept Invitation',
+                buttonUrl: invitationLink,
+                footerText: 'This link is valid for 7 days.'
+            })
         });
 
         console.log('Coach invitation sent successfully');
