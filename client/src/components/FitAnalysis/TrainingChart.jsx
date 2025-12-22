@@ -641,15 +641,15 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
         <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-4'} ${isMobile ? 'text-xs' : 'text-sm'} flex-wrap`}>
           {/* Only show power toggle if power data exists and it's not running or swimming */}
           {processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && (
-            <button
-              onClick={() => setShowPower(!showPower)}
+          <button
+            onClick={() => setShowPower(!showPower)}
               className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
-                showPower ? 'bg-purple-100' : 'bg-gray-100 opacity-50'
-              }`}
-            >
+              showPower ? 'bg-purple-100' : 'bg-gray-100 opacity-50'
+            }`}
+          >
               <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showPower ? 'bg-purple-600' : 'bg-gray-400'}`}></div>
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showPower ? 'text-gray-700' : 'text-gray-400'}`}>Power</span>
-            </button>
+          </button>
           )}
           <button
             onClick={() => setShowHeartRate(!showHeartRate)}
@@ -671,15 +671,15 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
           </button>
           {/* Only show cadence toggle if cadence data is available (even if maxCadence is 0) */}
           {processedData && processedData.maxCadence !== null && processedData.maxCadence !== undefined && (
-            <button
-              onClick={() => setShowCadence(!showCadence)}
+          <button
+            onClick={() => setShowCadence(!showCadence)}
               className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'px-1.5 py-0.5' : 'px-2 py-1'} rounded transition-colors ${
-                showCadence ? 'bg-gray-200' : 'bg-gray-100 opacity-50'
-              }`}
-            >
+              showCadence ? 'bg-gray-200' : 'bg-gray-100 opacity-50'
+            }`}
+          >
               <div className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} rounded-full ${showCadence ? 'bg-gray-500' : 'bg-gray-400'}`}></div>
               <span className={`${isMobile ? 'text-[10px]' : 'text-xs'} ${showCadence ? 'text-gray-700' : 'text-gray-400'}`}>Cadence</span>
-            </button>
+          </button>
           )}
           {/* Only show elevation toggle if elevation data is available and it's not swimming */}
           {processedData && processedData.maxAltitude !== null && processedData.minAltitude !== null && !isSwimming && (
@@ -919,7 +919,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
                     y={svgHeight - padding.bottom + (isMobile ? 15 : 20)}
                   textAnchor="middle"
                     className={`${isMobile ? 'text-[9px]' : containerWidth < 800 ? 'text-[10px]' : 'text-xs'} fill-gray-600`}
-                  >
+                >
                     {distance.toFixed(1)}km
                     {isMobile && i === labelCount - 1 && timeAtDistance > 0 && (
                       <tspan x={x} dy="10" className="text-[8px] fill-gray-500">

@@ -1022,13 +1022,13 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                     onMouseLeave={() => setTooltipData(null)}
                                   >
                                     <div className="h-full bg-white/10 backdrop-blur-md rounded overflow-hidden border border-white/15">
-                                      <div
+                                    <div
                                         className="h-full transition-all duration-500 cursor-pointer hover:opacity-100"
                                       style={{
                                           width: `${percentage}%`,
                                         backgroundColor: powerZone.color,
                                           opacity: 0.8
-                                        }}
+                                      }}
                                       />
                                     </div>
                                   </div>

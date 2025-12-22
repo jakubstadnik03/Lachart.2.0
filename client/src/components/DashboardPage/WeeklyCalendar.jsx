@@ -600,7 +600,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
             })}
           </div>
           )}
-          
+
           {/* Training Details - Right Side - Much Wider */}
           <AnimatePresence>
             <motion.div

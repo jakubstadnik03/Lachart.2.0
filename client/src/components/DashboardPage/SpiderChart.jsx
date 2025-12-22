@@ -18,7 +18,7 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 
 export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [] }) {
   const [loading, setLoading] = useState(false);
-  
+
   // Load comparePeriod from localStorage or default to '90days'
   const [comparePeriod, setComparePeriod] = useState(() => {
     try {
@@ -28,7 +28,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       return '90days';
     }
   });
-  
+
   // Save comparePeriod to localStorage when it changes
   useEffect(() => {
         try {
@@ -58,7 +58,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       console.warn('[SpiderChart] Error saving selectedMonths to localStorage:', e);
     }
   }, [selectedMonths]);
-  
+
   // Get current selected sport
   const currentSelectedSport = selectedSport || 'bike';
 
@@ -82,7 +82,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     },
     monthlyMetrics: {}
   });
-
+  
   // Load power metrics from backend or cache
   useEffect(() => {
     const loadPowerMetrics = async () => {
@@ -151,7 +151,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           console.error('[SpiderChart] Invalid API response structure:', metrics);
           setLoading(false);
           return;
-        }
+      }
         
         // Cache the result
         try {
@@ -164,7 +164,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         } catch (e) {
           // Ignore cache errors
           console.warn('[SpiderChart] Error caching power metrics:', e);
-        }
+      }
         
         setPowerMetrics(metrics);
       } catch (error) {
@@ -191,7 +191,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         
         // Only log non-network errors
         console.error('[SpiderChart] Error loading power metrics:', error);
-        
+
         // If we get here, keep existing data (from previous load or default)
       } finally {
         setLoading(false);
@@ -212,7 +212,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           label: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
           date
         });
-      }
+    }
     });
     return months.sort((a, b) => b.date - a.date);
   }, [powerMetrics.monthlyMetrics]);
@@ -308,7 +308,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       const max = intervalMaxes[intervalKey];
       return max > 0 ? (value / max) * 100 : 0;
     };
-    
+
     return {
       labels,
     datasets: [
@@ -377,7 +377,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             font: { size: 10 },
             callback: function(value) {
               return value + '%';
-            },
+          },
             backdropPadding: 0
         },
         pointLabels: {
@@ -508,7 +508,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         <p className="text-gray-500 text-center">Power Radar is only available for cycling</p>
       </div>
     );
-  }
+          }
 
   if (loading) {
     return (
@@ -556,10 +556,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                               setSelectedMonths([]);
                             } else {
                     setSelectedMonths(availableMonths.map(m => m.key));
-                  }
-                }}
+                            }
+                          }}
                 className="text-xs text-gray-600 hover:text-gray-900"
-              >
+                        >
                 {selectedMonths.length === availableMonths.length ? 'Deselect All' : 'Select All'}
                         </button>
                       </div>
@@ -574,10 +574,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                         setSelectedMonths([...selectedMonths, month.key]);
                               } else {
                         setSelectedMonths(selectedMonths.filter(m => m !== month.key));
-                      }
-                    }}
+                              }
+                            }}
                     className="w-3 h-3 text-primary focus:ring-primary border-gray-300 rounded"
-                  />
+                          />
                   <span className="text-xs text-gray-700">{month.label}</span>
                           </label>
                       ))}

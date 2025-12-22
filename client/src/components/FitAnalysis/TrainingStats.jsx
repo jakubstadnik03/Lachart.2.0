@@ -660,56 +660,56 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
       
       {/* Description - Only show if there's content or when editing */}
       {(description || isEditingDescription) && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="flex items-start gap-2">
-            {isEditingDescription ? (
-              <>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg min-h-[80px] bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
-                  placeholder="Enter description..."
-                  autoFocus
-                />
-                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={handleSaveDescription}
-                    disabled={saving}
-                    className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
-                    title="Save description"
-                  >
-                    <CheckIcon className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditingDescription(false);
-                      setDescription(training?.description || '');
-                    }}
-                    className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-all shadow-sm hover:shadow-md"
-                    title="Cancel"
-                  >
-                    <XMarkIcon className="w-4 h-4" />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-start gap-2 w-full group">
-                <div className="flex-1">
-                  {description && (
-                    <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-sm">{description}</p>
-                  )}
-                </div>
+      <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-start gap-2">
+          {isEditingDescription ? (
+            <>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg min-h-[80px] bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
+                placeholder="Enter description..."
+                autoFocus
+              />
+              <div className="flex flex-col gap-1.5 flex-shrink-0">
                 <button
-                  onClick={() => setIsEditingDescription(true)}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-all flex-shrink-0"
-                  title="Edit description"
+                  onClick={handleSaveDescription}
+                  disabled={saving}
+                  className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+                  title="Save description"
                 >
-                  <PencilIcon className="w-4 h-4" />
+                  <CheckIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingDescription(false);
+                    setDescription(training?.description || '');
+                  }}
+                  className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-all shadow-sm hover:shadow-md"
+                  title="Cancel"
+                >
+                  <XMarkIcon className="w-4 h-4" />
                 </button>
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="flex items-start gap-2 w-full group">
+              <div className="flex-1">
+                  {description && (
+                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-sm">{description}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setIsEditingDescription(true)}
+                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-all flex-shrink-0"
+                title="Edit description"
+              >
+                <PencilIcon className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
+      </div>
       )}
 
       <div className={`flex flex-wrap items-stretch ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
@@ -743,23 +743,23 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
             </div>
             <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
               {maxHeartRate ? `Max: ${Math.round(maxHeartRate)}` : ''}
-            </div>
+              </div>
           </div>
           {/* Only show Avg Power if power data is available */}
           {training.avgPower && training.avgPower > 0 && (
             <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
               <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
                 <BoltIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-                Avg Power
-              </div>
+              Avg Power
+            </div>
               <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary-dark`}>
                 {Math.round(training.avgPower)}
-              </div>
+            </div>
               <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
                 {maxPower ? `Max: ${Math.round(maxPower)}` : ''}
               </div>
-            </div>
-          )}
+              </div>
+            )}
           {avgCadence && (
             <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-blue-300 bg-blue-50 flex flex-col justify-between`}>
               <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
@@ -788,7 +788,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
               </div>
               <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
                 {calculateIF !== null ? `IF: ${calculateIF}` : ''}
-              </div>
+                </div>
             </div>
           )}
           {training.avgSpeed && (
