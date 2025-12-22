@@ -3,8 +3,11 @@
  * Provides consistent email design with logo and branding
  */
 
-const CLIENT_URL = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net';
-const LOGO_URL = `${CLIENT_URL}/images/LaChart.png`;
+// Always use production URL for emails to avoid localhost issues
+const CLIENT_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://lachart.net'
+  : (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://lachart.net');
+const LOGO_URL = `${CLIENT_URL}/logo192.png`;
 
 /**
  * Generate email HTML with unified design
@@ -32,9 +35,11 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerTe
                 <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-collapse: collapse;">
                     <!-- Header with Logo -->
                     <tr>
-                        <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); border-radius: 8px 8px 0 0;">
-                            <img src="${LOGO_URL}" alt="LaChart Logo" style="height: 50px; width: auto; margin-bottom: 10px;" />
-                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">LaChart</h1>
+                        <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #767EB5 0%, #5E6590 100%); border-radius: 8px 8px 0 0;">
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 10px;">
+                                <img src="${LOGO_URL}" alt="LaChart Logo" style="height: 50px; width: auto;" />
+                                <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 700; letter-spacing: -0.5px;">LaChart</h1>
+                            </div>
                         </td>
                     </tr>
                     
@@ -51,7 +56,7 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerTe
                             <table role="presentation" style="width: 100%; margin: 30px 0;">
                                 <tr>
                                     <td style="text-align: center;">
-                                        <a href="${buttonUrl}" style="display: inline-block; padding: 14px 32px; background-color: #7c3aed; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(124, 58, 237, 0.3);">${buttonText}</a>
+                                        <a href="${buttonUrl}" style="display: inline-block; padding: 14px 32px; background-color: #767EB5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(118, 126, 181, 0.3);">${buttonText}</a>
                                     </td>
                                 </tr>
                             </table>
@@ -75,9 +80,9 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerTe
                                 If you did not request this email, you can safely ignore it.
                             </p>
                             <p style="margin: 10px 0 0; color: #9ca3af; font-size: 12px; text-align: center;">
-                                <a href="${CLIENT_URL}" style="color: #7c3aed; text-decoration: none;">Visit LaChart</a> | 
-                                <a href="${CLIENT_URL}/about" style="color: #7c3aed; text-decoration: none;">About</a> | 
-                                <a href="mailto:jakub.stadnik01@gmail.com" style="color: #7c3aed; text-decoration: none;">Support</a>
+                                <a href="${CLIENT_URL}" style="color: #767EB5; text-decoration: none;">Visit LaChart</a> | 
+                                <a href="${CLIENT_URL}/about" style="color: #767EB5; text-decoration: none;">About</a> | 
+                                <a href="mailto:jakub.stadnik01@gmail.com" style="color: #767EB5; text-decoration: none;">Support</a>
                             </p>
                         </td>
                     </tr>
@@ -91,10 +96,18 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerTe
 }
 
 /**
- * Get the client URL (always https://lachart.net in production)
+ * Get the client URL (always https://lachart.net for emails)
+ * This ensures emails never contain localhost URLs
  */
 function getClientUrl() {
-  return CLIENT_URL;
+  // Always use production URL for emails to prevent localhost issues
+  // Only use env variable if it's explicitly set to production URL
+  const envUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
+  if (envUrl && (envUrl.includes('lachart.net') || envUrl.includes('https://'))) {
+    return envUrl;
+  }
+  // Default to production URL
+  return 'https://lachart.net';
 }
 
 module.exports = {
