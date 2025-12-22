@@ -35,6 +35,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
   const [showElevation, setShowElevation] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [cursorX, setCursorX] = useState(null);
+  const [clickedPoint, setClickedPoint] = useState(null); // For mobile click-to-show tooltip
+  const [clickedCursorX, setClickedCursorX] = useState(null); // For mobile click-to-show tooltip
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState(null);
   const [dragEnd, setDragEnd] = useState(null);
@@ -506,12 +508,49 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
     
     if (relativeX < 0 || relativeX > graphWidth) return;
     
+    // On mobile, handle click to show/hide tooltip
+    if (isMobile) {
+      // Find closest point
+      const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
+      let closestPoint = null;
+      let minDist = Infinity;
+      
+      for (const point of processedData.points) {
+        const pointX = xScale(point.distance);
+        if (pointX === null || isNaN(pointX)) continue;
+        
+        const pointRelativeX = pointX - padding.left;
+        const dist = Math.abs(pointRelativeX - clampedRelativeX);
+        
+        if (dist < minDist) {
+          minDist = dist;
+          closestPoint = point;
+        }
+      }
+      
+      // Toggle tooltip on click
+      if (closestPoint && clickedPoint === closestPoint) {
+        // If clicking the same point, hide tooltip
+        setClickedPoint(null);
+        setClickedCursorX(null);
+      } else if (closestPoint) {
+        // Show tooltip for clicked point
+        setClickedPoint(closestPoint);
+        setClickedCursorX(x);
+      }
+      
+      // Don't start dragging on mobile
+      return;
+    }
+    
     setIsDragging(true);
     setDragStart({ x, relativeX });
     setDragEnd({ x, relativeX });
     setCursorX(null);
     setHoveredPoint(null);
-  }, [processedData, graphWidth, padding.left]);
+    setClickedPoint(null);
+    setClickedCursorX(null);
+  }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((e) => {
@@ -623,10 +662,13 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
   }, [isDragging, dragStart, dragEnd, processedData, graphWidth, zoomRange]);
 
   const handleMouseLeave = useCallback(() => {
-    setCursorX(null);
-    setHoveredPoint(null);
-    if (onLeave) onLeave();
-  }, [onLeave]);
+    // On mobile, don't clear clicked point on mouse leave
+    if (!isMobile) {
+      setCursorX(null);
+      setHoveredPoint(null);
+      if (onLeave) onLeave();
+    }
+  }, [onLeave, isMobile]);
 
   if (!chartData || !processedData) {
     console.log('TrainingChart: Missing data', { chartData: !!chartData, processedData: !!processedData, training: !!training });
@@ -737,6 +779,43 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
           handleMouseLeave();
           if (isDragging) {
             handleMouseUp(e);
+          }
+        }}
+        onTouchStart={(e) => {
+          if (!isMobile || !containerRef.current || !processedData) return;
+          e.preventDefault();
+          const touch = e.touches[0];
+          const rect = containerRef.current.getBoundingClientRect();
+          const x = touch.clientX - rect.left;
+          const relativeX = x - padding.left;
+          
+          if (relativeX < 0 || relativeX > graphWidth) return;
+          
+          // Find closest point
+          const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
+          let closestPoint = null;
+          let minDist = Infinity;
+          
+          for (const point of processedData.points) {
+            const pointX = xScale(point.distance);
+            if (pointX === null || isNaN(pointX)) continue;
+            
+            const pointRelativeX = pointX - padding.left;
+            const dist = Math.abs(pointRelativeX - clampedRelativeX);
+            
+            if (dist < minDist) {
+              minDist = dist;
+              closestPoint = point;
+            }
+          }
+          
+          // Toggle tooltip on touch
+          if (closestPoint && clickedPoint === closestPoint) {
+            setClickedPoint(null);
+            setClickedCursorX(null);
+          } else if (closestPoint) {
+            setClickedPoint(closestPoint);
+            setClickedCursorX(x);
           }
         }}
       >
@@ -1016,25 +1095,30 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
           })()}
         </svg>
 
-        {/* Tooltip - only show when not dragging */}
-        {hoveredPoint && cursorX !== null && !isDragging && (() => {
+        {/* Tooltip - show on hover (desktop) or click (mobile) */}
+        {((hoveredPoint && cursorX !== null && !isDragging) || (isMobile && clickedPoint && clickedCursorX !== null)) && (() => {
+          // Use clicked point on mobile, hovered point on desktop
+          const activePoint = isMobile ? clickedPoint : hoveredPoint;
+          const activeCursorX = isMobile ? clickedCursorX : cursorX;
+          
+          if (!activePoint || activeCursorX === null) return null;
           // Calculate tooltip position - align with cursor line
           const containerWidth = containerRef.current?.offsetWidth || svgWidth;
-          const tooltipWidth = 200;
+          const tooltipWidth = isMobile ? 180 : 200;
           const offset = 15;
-          let tooltipLeft = cursorX + offset; // Offset from cursor line
+          let tooltipLeft = activeCursorX + offset; // Offset from cursor line
           
           // Keep tooltip within container bounds
           if (tooltipLeft + tooltipWidth > containerWidth - 10) {
-            tooltipLeft = cursorX - tooltipWidth - offset; // Show on left side of cursor
+            tooltipLeft = activeCursorX - tooltipWidth - offset; // Show on left side of cursor
           }
           if (tooltipLeft < 10) {
             tooltipLeft = 10; // Minimum left margin
           }
           
           // Calculate actual point X position for better alignment
-          const pointX = xScale(hoveredPoint.distance);
-          const actualPointX = pointX !== null ? pointX : cursorX;
+          const pointX = xScale(activePoint.distance);
+          const actualPointX = pointX !== null ? pointX : activeCursorX;
           
           // Use actual data point position for tooltip alignment
           // This ensures tooltip is aligned with the data point, not just the cursor
@@ -1046,8 +1130,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
             tooltipLeft = 10;
           }
           
-          const hrZone = hrZones && hoveredPoint.heartRate > 0 
-            ? getHeartRateZone(hoveredPoint.heartRate, hrZones) 
+          const hrZone = hrZones && activePoint.heartRate > 0 
+            ? getHeartRateZone(activePoint.heartRate, hrZones) 
             : null;
           
           return (
@@ -1061,45 +1145,45 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
             >
               <div className={`space-y-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
                 <div className="font-semibold text-gray-900">
-                  Distance: {hoveredPoint.distance.toFixed(1)} km
+                  Distance: {activePoint.distance.toFixed(1)} km
                 </div>
                 <div className="text-gray-600">
-                  Time: {formatDuration(hoveredPoint.time)}
+                  Time: {formatDuration(activePoint.time)}
                 </div>
-                {processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && hoveredPoint.power > 0 && (
+                {processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && activePoint.power > 0 && (
                   <div className="text-purple-600 font-medium">
-                    Power: {Math.round(hoveredPoint.power)} W
+                    Power: {Math.round(activePoint.power)} W
                   </div>
                 )}
-                {hoveredPoint.heartRate > 0 && (
+                {activePoint.heartRate > 0 && (
                   <div className="text-red-500 font-medium">
-                    Heart Rate: {Math.round(hoveredPoint.heartRate)} bpm
+                    Heart Rate: {Math.round(activePoint.heartRate)} bpm
                     {hrZone && ` (Zone ${hrZone})`}
                   </div>
                 )}
-                {hoveredPoint.speed > 0 && (
+                {activePoint.speed > 0 && (
                   <div className="text-teal-600 font-medium">
-                    Speed: {hoveredPoint.speed.toFixed(1)} km/h
+                    Speed: {activePoint.speed.toFixed(1)} km/h
                   </div>
                 )}
-                {hoveredPoint.cadence > 0 && (
+                {activePoint.cadence > 0 && (
                   <div className="text-gray-600">
-                    Cadence: {Math.round(hoveredPoint.cadence)} rpm
+                    Cadence: {Math.round(activePoint.cadence)} rpm
                   </div>
                 )}
-                {hoveredPoint.altitude > 0 && (
+                {activePoint.altitude > 0 && (
                   <div className="text-orange-600 font-medium">
-                    Elevation: {Math.round(hoveredPoint.altitude)} m
+                    Elevation: {Math.round(activePoint.altitude)} m
                   </div>
                 )}
                 {/* Zone indicators */}
                 <div className="mt-2 pt-2 border-t border-gray-200 space-y-2">
-                  {powerZones && hoveredPoint.power > 0 && (
+                  {powerZones && activePoint.power > 0 && (
                     <div>
                       <div className="text-xs font-semibold text-gray-700 mb-1">Power zone</div>
                       <div className="flex items-center gap-1">
                         {Array.from({ length: 5 }).map((_, i) => {
-                          const zone = getPowerZone(hoveredPoint.power, powerZones);
+                          const zone = getPowerZone(activePoint.power, powerZones);
                           return (
                             <div
                               key={i}
@@ -1113,12 +1197,12 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
                       </div>
                     </div>
                   )}
-                  {hrZones && hoveredPoint.heartRate > 0 && (
+                  {hrZones && activePoint.heartRate > 0 && (
                     <div>
                       <div className="text-xs font-semibold text-gray-700 mb-1">Heart rate</div>
                       <div className="flex items-center gap-1">
                         {Array.from({ length: 5 }).map((_, i) => {
-                          const zone = getHeartRateZone(hoveredPoint.heartRate, hrZones);
+                          const zone = getHeartRateZone(activePoint.heartRate, hrZones);
                           return (
                             <div
                               key={`hr-zone-${i + 1}`}

@@ -418,25 +418,42 @@ router.put('/strava/auto-sync', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'autoSync must be a boolean' });
     }
 
-    // Ensure strava object exists
+    console.log('Updating auto-sync for user:', req.user.userId, 'to:', autoSync);
+    console.log('Current user.strava before update:', JSON.stringify(user.strava, null, 2));
+
+    // Use findByIdAndUpdate to ensure the update is saved properly
+    const updateData = {
+      'strava.autoSync': autoSync
+    };
+
+    // If strava object doesn't exist, we need to create it
     if (!user.strava) {
-      user.strava = {};
+      updateData.strava = {
+        autoSync: autoSync
+      };
     }
 
-    // Update user's auto-sync setting
-    user.strava.autoSync = autoSync;
-    user.markModified('strava');
-    const savedUser = await user.save();
-    
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found after update' });
+    }
+
+    // Verify the update was saved
+    const verifyUser = await User.findById(req.user.userId);
     console.log('Auto-sync saved to database:', {
-      userId: savedUser._id,
-      autoSync: savedUser.strava?.autoSync,
-      stravaObject: savedUser.strava
+      userId: verifyUser._id,
+      autoSync: verifyUser.strava?.autoSync,
+      stravaObject: JSON.stringify(verifyUser.strava, null, 2)
     });
 
     res.json({ 
       success: true, 
-      autoSync: savedUser.strava.autoSync,
+      autoSync: verifyUser.strava?.autoSync || false,
       message: `Auto-sync ${autoSync ? 'enabled' : 'disabled'}` 
     });
   } catch (error) {
@@ -1343,27 +1360,51 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
     });
 
     const athlete = athleteResp.data;
+    console.log('Strava athlete data:', {
+      profile: athlete?.profile,
+      profile_large: athlete?.profile_large,
+      profile_medium: athlete?.profile_medium
+    });
+    
     if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
       // Use profile_large if available, otherwise profile_medium, otherwise profile
       const profilePath = athlete.profile_large || athlete.profile_medium || athlete.profile;
       // Convert relative path to full URL
+      let avatarUrl = null;
       if (profilePath && !profilePath.startsWith('http')) {
-        user.avatar = `https://www.strava.com/${profilePath}`;
+        avatarUrl = `https://www.strava.com/${profilePath}`;
       } else if (profilePath) {
-        user.avatar = profilePath;
+        avatarUrl = profilePath;
       }
-      const savedUser = await user.save();
       
-      console.log('Avatar saved to database:', {
-        userId: savedUser._id,
-        avatar: savedUser.avatar
-      });
-      
-      return res.json({ 
-        success: true, 
-        avatar: savedUser.avatar,
-        message: 'Avatar updated from Strava'
-      });
+      if (avatarUrl) {
+        // Use findByIdAndUpdate to ensure the update is saved properly
+        const updatedUser = await User.findByIdAndUpdate(
+          req.user.userId,
+          { $set: { avatar: avatarUrl } },
+          { new: true, runValidators: true }
+        );
+        
+        if (!updatedUser) {
+          return res.status(404).json({ error: 'User not found after update' });
+        }
+        
+        // Verify the update was saved
+        const verifyUser = await User.findById(req.user.userId);
+        console.log('Avatar saved to database:', {
+          userId: verifyUser._id,
+          avatar: verifyUser.avatar,
+          avatarType: typeof verifyUser.avatar
+        });
+        
+        return res.json({ 
+          success: true, 
+          avatar: verifyUser.avatar,
+          message: 'Avatar updated from Strava'
+        });
+      } else {
+        return res.status(404).json({ error: 'No valid Strava profile picture URL found' });
+      }
     } else {
       return res.status(404).json({ error: 'No Strava profile picture available' });
     }

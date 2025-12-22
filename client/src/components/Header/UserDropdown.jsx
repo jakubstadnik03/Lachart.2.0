@@ -42,6 +42,11 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
       return '/images/triathlete-avatar.jpg';
     }
 
+    // If user has an avatar (e.g., from Strava), use it first
+    if (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
+      return user.avatar;
+    }
+
     if (user.role === 'coach') {
       return '/images/coach-avatar.webp';
     }
