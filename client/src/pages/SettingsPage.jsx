@@ -69,7 +69,7 @@ const SettingsPage = () => {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
     { id: 'account', name: 'Account', icon: User },
-    ...(user?.admin ? [{ id: 'integrations', name: 'Integrations', icon: LinkIcon }] : [])
+    { id: 'integrations', name: 'Integrations', icon: LinkIcon }
   ];
 
   const togglePasswordVisibility = (field) => {
@@ -353,10 +353,13 @@ const SettingsPage = () => {
           });
           if (profileResponse.ok) {
             const updatedUser = await profileResponse.json();
+            console.log('Updated user profile with avatar:', updatedUser.avatar);
             // Update localStorage
             localStorage.setItem('user', JSON.stringify(updatedUser));
-            // Trigger page reload to update avatar in Menu
-            window.location.reload();
+            // Trigger a custom event to update AuthProvider (instead of page reload)
+            window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+          } else {
+            console.error('Failed to reload user profile:', profileResponse.status);
           }
         } catch (e) {
           console.error('Error reloading user profile:', e);

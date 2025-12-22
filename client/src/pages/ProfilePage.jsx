@@ -686,7 +686,15 @@ const ProfilePage = () => {
               </div>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-4">Edit units preferences in the profile edit modal</p>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className={`flex items-center justify-center gap-2 ${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'} font-semibold text-white bg-primary ${isMobile ? 'rounded-lg' : 'rounded-xl'} hover:bg-primary-dark shadow-md hover:shadow-lg transition-all`}
+            >
+              <PencilIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+              Edit Profile
+            </button>
+          </div>
         </div>
       </motion.div>
 

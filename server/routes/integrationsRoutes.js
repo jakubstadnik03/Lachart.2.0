@@ -426,11 +426,17 @@ router.put('/strava/auto-sync', verifyToken, async (req, res) => {
     // Update user's auto-sync setting
     user.strava.autoSync = autoSync;
     user.markModified('strava');
-    await user.save();
+    const savedUser = await user.save();
+    
+    console.log('Auto-sync saved to database:', {
+      userId: savedUser._id,
+      autoSync: savedUser.strava?.autoSync,
+      stravaObject: savedUser.strava
+    });
 
     res.json({ 
       success: true, 
-      autoSync,
+      autoSync: savedUser.strava.autoSync,
       message: `Auto-sync ${autoSync ? 'enabled' : 'disabled'}` 
     });
   } catch (error) {
@@ -1346,11 +1352,16 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
       } else if (profilePath) {
         user.avatar = profilePath;
       }
-      await user.save();
+      const savedUser = await user.save();
+      
+      console.log('Avatar saved to database:', {
+        userId: savedUser._id,
+        avatar: savedUser.avatar
+      });
       
       return res.json({ 
         success: true, 
-        avatar: user.avatar,
+        avatar: savedUser.avatar,
         message: 'Avatar updated from Strava'
       });
     } else {

@@ -552,6 +552,8 @@ router.get("/profile", verifyToken, async (req, res) => {
         }
 
         console.log('Loading user profile - heartRateZones:', JSON.stringify(user.heartRateZones, null, 2));
+        console.log('Loading user profile - avatar from DB:', user.avatar);
+        console.log('Loading user profile - strava.autoSync from DB:', user.strava?.autoSync);
 
         // Return data without sensitive information
         const userResponse = {
@@ -581,6 +583,9 @@ router.get("/profile", verifyToken, async (req, res) => {
               // Don't include accessToken, refreshToken, expiresAt for security
             } : null
         };
+        
+        console.log('Returning user profile - avatar:', userResponse.avatar);
+        console.log('Returning user profile - strava.autoSync:', userResponse.strava?.autoSync);
 
         res.status(200).json(userResponse);
     } catch (error) {

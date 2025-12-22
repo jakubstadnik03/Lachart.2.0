@@ -4,6 +4,7 @@ import TrainingForm from '../components/TrainingForm';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
+import TrainingComparison from '../components/Training-log/TrainingComparison';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { addTraining } from '../services/api';
@@ -125,7 +126,7 @@ const TrainingPage = () => {
 
     window.addEventListener('athleteChanged', handleAthleteChange);
     return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, [navigate, selectedSport]);
+  }, [navigate, selectedSport, selectedCategory]);
 
   const handleAthleteChange = (newAthleteId) => {
     setSelectedAthleteId(newAthleteId);
@@ -344,6 +345,15 @@ const TrainingPage = () => {
           isFullWidth={true}
           user={user}
         />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+        className="mt-6"
+      >
+        <TrainingComparison trainings={trainings} />
       </motion.div>
 
       <AnimatePresence>
