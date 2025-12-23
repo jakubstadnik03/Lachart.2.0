@@ -10,11 +10,29 @@ const router = express.Router();
 // GET /api/integrations/strava/auth-url
 router.get('/strava/auth-url', (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID || 'STRAVA_CLIENT_ID';
-  const redirectUri = process.env.STRAVA_REDIRECT_URI || 'http://localhost:8000/api/integrations/strava/callback';
+  
+  // Determine redirect URI - use env var if set, otherwise construct from request
+  let redirectUri = process.env.STRAVA_REDIRECT_URI;
+  
+  if (!redirectUri) {
+    // Construct redirect URI from request
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || process.env.BACKEND_URL || 'localhost:8000';
+    redirectUri = `${protocol}://${host}/api/integrations/strava/callback`;
+  }
+  
   const scope = 'activity:read_all,profile:read_all,read_all';
   // Try to forward current JWT in state so callback can identify user without Authorization header
   const authHeader = req.headers.authorization || '';
   const state = encodeURIComponent(authHeader.replace('Bearer ', ''));
+  
+  console.log('Strava auth URL generation:', {
+    clientId,
+    redirectUri,
+    host: req.get('host'),
+    protocol: req.protocol
+  });
+  
   const url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&approval_prompt=auto&state=${state}`;
   res.json({ url });
 });
@@ -512,11 +530,11 @@ router.get('/activities', verifyToken, async (req, res) => {
       targetUserId = userId;
     }
 
-    // Limit to most recent 100 activities to avoid performance issues and reduce API load
-    // This is enough for calendar view (last ~3 months with daily activities)
+    // Increased limit to 5000 activities to support longer history in calendar view
+    // This should cover several years of activities for most users
     const acts = await StravaActivity.find({ userId: targetUserId.toString() })
       .sort({ startDate: -1 })
-      .limit(100); // Limit to most recent 100 activities
+      .limit(5000); // Limit to most recent 5000 activities (covers ~13+ years with daily activities)
     res.json(acts);
   } catch (error) {
     console.error('Error fetching external activities:', error);

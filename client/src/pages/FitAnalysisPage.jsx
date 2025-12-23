@@ -982,22 +982,11 @@ const FitAnalysisPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const lastLoadedExternalAthleteIdRef = useRef(null);
-  const lastLoadedRegularAthleteIdRef = useRef(null);
-
   const loadExternalActivities = useCallback(async () => {
     try {
       // For athlete, don't send athleteId (backend will use their own userId)
       // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
       const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
-      
-      // Skip if we already loaded for this athlete
-      const cacheKey = athleteId || user?._id || 'default';
-      if (lastLoadedExternalAthleteIdRef.current === cacheKey) {
-        return;
-      }
-      
-      lastLoadedExternalAthleteIdRef.current = cacheKey;
       
       const params = athleteId ? { athleteId } : {};
       const acts = await listExternalActivities(params);
@@ -1019,8 +1008,13 @@ const FitAnalysisPage = () => {
         }
       }
     } catch (e) {
-      // ignore
-      lastLoadedExternalAthleteIdRef.current = null; // Reset on error
+      // Handle rate limit errors gracefully
+      if (e.response?.status === 429) {
+        console.warn('Rate limit exceeded when loading external activities. Please wait a moment.');
+        // Don't show error to user, just log it
+        return;
+      }
+      console.error('Error loading external activities:', e);
     }
   }, [selectedAthleteId, user?.role, user?._id, selectedStrava]);
 
@@ -1478,6 +1472,12 @@ const FitAnalysisPage = () => {
         loadTrainingFromTrainingModel(savedTrainingModelId);
       }
     } catch (error) {
+      // Handle rate limit errors gracefully
+      if (error.response?.status === 429) {
+        console.warn('Rate limit exceeded when loading trainings. Please wait a moment.');
+        // Don't show error to user, just log it
+        return;
+      }
       console.error('Error loading trainings:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1494,20 +1494,18 @@ const FitAnalysisPage = () => {
         return; // Skip if no athleteId
       }
       
-      // Skip if we already loaded for this athlete
-      if (lastLoadedRegularAthleteIdRef.current === athleteId) {
-        return;
-      }
-      
-      lastLoadedRegularAthleteIdRef.current = athleteId;
-      
       const response = await api.get(`/user/athlete/${athleteId}/trainings`);
       if (response && response.data) {
         setRegularTrainings(response.data);
       }
     } catch (error) {
+      // Handle rate limit errors gracefully
+      if (error.response?.status === 429) {
+        console.warn('Rate limit exceeded when loading regular trainings. Please wait a moment.');
+        // Don't show error to user, just log it
+        return;
+      }
       console.error('Error loading regular trainings:', error);
-      lastLoadedRegularAthleteIdRef.current = null; // Reset on error
     }
   }, [selectedAthleteId, user?.role, user?._id]);
 
@@ -1828,6 +1826,7 @@ const FitAnalysisPage = () => {
       return () => clearTimeout(timeoutId);
     }
   }, [selectedAthleteId, user, loadTrainings, loadExternalActivities, loadRegularTrainings]);
+
 
   const handleAthleteChange = (athleteId) => {
     setSelectedAthleteId(athleteId);
@@ -2246,44 +2245,59 @@ const FitAnalysisPage = () => {
 
         {/* Calendar Section */}
         <CalendarView
-          activities={[
-            ...trainings.map(t => ({ 
-              id: t._id, 
-              date: t.timestamp, 
-              title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
-              sport: t.sport,
-              type: 'fit',
-              distance: t.totalDistance || t.distance,
-              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-              tss: t.tss || t.totalTSS,
-              avgPower: t.avgPower || t.averagePower || null,
-              avgSpeed: t.avgSpeed || t.averageSpeed || null
-            })),
-            ...regularTrainings.map(t => ({ 
-              id: `regular-${t._id}`, 
-              date: t.date || t.timestamp, 
-              title: t.title || 'Untitled Training', 
-              sport: t.sport,
-              type: 'regular',
-              distance: t.totalDistance || t.distance,
-              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-              tss: t.tss || t.totalTSS,
-              avgPower: t.avgPower || t.averagePower || null,
-              avgSpeed: t.avgSpeed || t.averageSpeed || null
-            })),
-            ...externalActivities.map(a => ({ 
-              id: `strava-${a.stravaId}`, 
-              date: a.startDate, 
-              title: a.titleManual || a.name || 'Untitled Activity', 
-              sport: a.sport,
-              type: 'strava',
-              distance: a.distance,
-              totalElapsedTime: a.movingTime || a.elapsedTime,
-              tss: a.tss || a.totalTSS,
-              avgPower: a.averagePower || a.average_watts || null,
-              avgSpeed: a.averageSpeed || a.average_speed || null
-            }))
-          ]}
+          activities={(() => {
+            const allActivities = [
+              ...trainings.map(t => ({ 
+                id: t._id, 
+                date: t.timestamp, 
+                title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
+                sport: t.sport,
+                type: 'fit',
+                distance: t.totalDistance || t.distance,
+                totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+                tss: t.tss || t.totalTSS,
+                avgPower: t.avgPower || t.averagePower || null,
+                avgSpeed: t.avgSpeed || t.averageSpeed || null
+              })),
+              ...regularTrainings.map(t => ({ 
+                id: `regular-${t._id}`, 
+                date: t.date || t.timestamp, 
+                title: t.title || 'Untitled Training', 
+                sport: t.sport,
+                type: 'regular',
+                distance: t.totalDistance || t.distance,
+                totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+                tss: t.tss || t.totalTSS,
+                avgPower: t.avgPower || t.averagePower || null,
+                avgSpeed: t.avgSpeed || t.averageSpeed || null
+              })),
+              ...externalActivities.map(a => ({ 
+                id: `strava-${a.stravaId}`, 
+                date: a.startDate, 
+                title: a.titleManual || a.name || 'Untitled Activity', 
+                sport: a.sport,
+                type: 'strava',
+                distance: a.distance,
+                totalElapsedTime: a.movingTime || a.elapsedTime,
+                tss: a.tss || a.totalTSS,
+                avgPower: a.averagePower || a.average_watts || null,
+                avgSpeed: a.averageSpeed || a.average_speed || null
+              }))
+            ];
+            console.log('CalendarView activities:', {
+              total: allActivities.length,
+              fit: trainings.length,
+              regular: regularTrainings.length,
+              external: externalActivities.length,
+              sampleDates: allActivities.slice(0, 5).map(a => ({ 
+                id: a.id, 
+                date: a.date, 
+                dateType: typeof a.date,
+                parsed: a.date ? new Date(a.date).toISOString() : 'no date'
+              }))
+            });
+            return allActivities;
+          })()}
           selectedActivityId={
             selectedTraining?._id || 
             (selectedTraining?.isFromTrainingModel ? localStorage.getItem('fitAnalysis_selectedTrainingModelId') : null) ||
@@ -2302,6 +2316,11 @@ const FitAnalysisPage = () => {
               loadTrainingDetail(a.id);
             }
           }}
+          onMonthChange={useCallback(({ year, month }) => {
+            // Note: API loads all trainings at once, so no need to reload when month changes
+            // Data is already loaded and calendar will filter by date client-side
+            console.log('Month changed to:', { year, month }, '- data already loaded, no API call needed');
+          }, [])}
           user={user}
         />
 

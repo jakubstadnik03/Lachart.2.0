@@ -280,7 +280,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Calculate lactate values based on LTP1 and LTP2 lactate values
       // If we have lactate values from thresholds, use them; otherwise interpolate from test data
       const lt1_lactate_value = lt1_lactate || getLactateForPower(lt1_watts, mockData.results, sport) || 2.0;
-      const lt2_lactate_value = lt2_lactate || getLactateForPower(lt2_watts, mockData.results, sport) || 3.5;
+      const lt2_lactate_value = lt2_lactate || getLactateForPower(lt2_watts, mockData.results, sport) || 4.0;
       
       // Calculate lactate ranges based on percentage of LTP1/LTP2
       // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
@@ -292,7 +292,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const zone2_max_lactate = lt1_lactate_value;
       
       // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
-      // This should end around 3.0-3.2 mmol/L if LT2 is 3.5
+      // This should end around 3.8 mmol/L if LT2 is 4.0
       const zone3_min_lactate = lt1_lactate_value;
       const zone3_max_lactate = lt2_lactate_value * 0.95; // 95% of LT2
       
@@ -358,7 +358,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '96%–104% LT2 (threshold)',
             hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
             percent: '96–104% LT2',
-            lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
+            lactate: `${lt2_lactate_value.toFixed(1)}–4.0`,
           },
           zone5: {
             min: zone5_min_power,
@@ -366,7 +366,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '105–120% LT2 (sprint/VO2max+ reference)',
             hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
             percent: '105–120% LT2',
-            lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
+            lactate: `4.0–${finalZone5.max.toFixed(1)}`,
           },
         },
         heartRate: {
@@ -401,7 +401,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       // Calculate lactate values based on LTP1 and LTP2 lactate values (for pace)
       // If we have lactate values from thresholds, use them; otherwise interpolate from test data
       const lt1_lactate_value_pace = lt1_lactate || getLactateForPower(lt1_sec, mockData.results, sport) || 2.0;
-      const lt2_lactate_value_pace = lt2_lactate || getLactateForPower(lt2_sec, mockData.results, sport) || 3.5;
+      const lt2_lactate_value_pace = lt2_lactate || getLactateForPower(lt2_sec, mockData.results, sport) || 4.0;
       
       // Calculate lactate ranges based on percentage of LTP1/LTP2
       // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
@@ -413,7 +413,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const zone2_max_lactate_pace = lt1_lactate_value_pace;
       
       // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
-      // This should end around 3.0-3.2 mmol/L if LT2 is 3.5
+      // This should end around 3.8 mmol/L if LT2 is 4.0
       const zone3_min_lactate_pace = lt1_lactate_value_pace;
       const zone3_max_lactate_pace = lt2_lactate_value_pace * 0.95; // 95% of LT2
       
@@ -479,7 +479,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '96%–104% LT2 (threshold)',
           hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
           percent: '96–104% LT2',
-          lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
+          lactate: `${lt2_lactate_value_pace.toFixed(1)}–4.0`,
         },
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
@@ -487,7 +487,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '105–120% LT2 (sprint/VO2max+ reference)',
           hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
           percent: '105–120% LT2',
-          lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
+          lactate: `4.0–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
       heartRate: {

@@ -49,7 +49,7 @@ function sportBadge(sport) {
   return '🏋️';
 }
 
-export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate, user = null }) {
+export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate, user = null, onMonthChange = null }) {
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
   const getInitialAnchorDate = () => {
     if (initialAnchorDate) return initialAnchorDate;
@@ -69,6 +69,8 @@ export default function CalendarView({ activities = [], onSelectActivity, select
 
   const [view, setView] = useState(getInitialView);
   const [anchorDate, setAnchorDate] = useState(getInitialAnchorDate);
+  const initialDate = getInitialAnchorDate();
+  const lastMonthRef = useRef(`${initialDate.getFullYear()}-${initialDate.getMonth()}`);
   
   // Initialize sportFilter from localStorage or default to 'all'
   const getInitialSportFilter = () => {
@@ -143,12 +145,21 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   }, [sportFilter]);
   
   // Save anchorDate to localStorage when it changes (but not when initialAnchorDate prop changes)
+  // Also detect month change and notify parent
   useEffect(() => {
     if (!initialAnchorDate) {
       // Only save if we're not being controlled by initialAnchorDate prop
       localStorage.setItem('calendarView_anchorDate', anchorDate.toISOString());
     }
-  }, [anchorDate, initialAnchorDate]);
+    
+    // Check if month changed and notify parent
+    const currentMonth = `${anchorDate.getFullYear()}-${anchorDate.getMonth()}`;
+    if (lastMonthRef.current !== null && lastMonthRef.current !== currentMonth && onMonthChange) {
+      console.log('Month changed, calling onMonthChange:', { year: anchorDate.getFullYear(), month: anchorDate.getMonth() });
+      onMonthChange({ year: anchorDate.getFullYear(), month: anchorDate.getMonth() });
+    }
+    lastMonthRef.current = currentMonth;
+  }, [anchorDate, initialAnchorDate, onMonthChange]);
 
   // Save view to localStorage when it changes
   useEffect(() => {
@@ -193,12 +204,22 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   const activitiesByDay = useMemo(() => {
     const map = new Map();
     filteredActivities.forEach(act => {
-      const d = new Date(act.date || act.timestamp || act.startDate || act.start_time || Date.now());
+      const dateValue = act.date || act.timestamp || act.startDate || act.start_time;
+      if (!dateValue) {
+        console.warn('Activity missing date:', act);
+        return;
+      }
+      const d = new Date(dateValue);
+      if (isNaN(d.getTime())) {
+        console.warn('Invalid date for activity:', { act, dateValue, parsed: d });
+        return;
+      }
       // Use local date string instead of ISO to avoid timezone offset issues
       const key = getLocalDateString(d);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(act);
     });
+    console.log('activitiesByDay map size:', map.size, 'keys:', Array.from(map.keys()).slice(0, 10));
     return map;
   }, [filteredActivities]);
 

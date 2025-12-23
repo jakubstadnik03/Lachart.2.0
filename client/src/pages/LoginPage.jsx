@@ -81,7 +81,8 @@ const LoginPage = () => {
         
         // Uložení tokenu a uživatelských dat do localStorage
         localStorage.setItem("token", result.data.token);
-        localStorage.setItem("user", JSON.stringify(result.data.user));
+        const { saveUserToStorage: saveUserToStorage2 } = await import('../utils/userStorage');
+        saveUserToStorage2(result.data.user);
         
         // Nastavení autorizační hlavičky pro API
         api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;
@@ -159,7 +160,8 @@ const LoginPage = () => {
         
         // Uložení tokenu a uživatelských dat do localStorage
         localStorage.setItem("token", result.data.token);
-        localStorage.setItem("user", JSON.stringify(result.data.user));
+        const { saveUserToStorage: saveUserToStorageGoogle } = await import('../utils/userStorage');
+        saveUserToStorageGoogle(result.data.user);
         
         // Nastavení autorizační hlavičky pro API
         api.defaults.headers.common["Authorization"] = `Bearer ${result.data.token}`;

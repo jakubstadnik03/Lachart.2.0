@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
+import { saveUserToStorage } from '../utils/userStorage';
 
 const AuthContext = createContext(null);
 
@@ -41,8 +42,8 @@ export const AuthProvider = ({ children }) => {
           setToken(storedToken);
           setUser(response.data);
           setIsAuthenticated(true);
-          // Update localStorage with fresh user data
-          localStorage.setItem("user", JSON.stringify(response.data));
+          // Update localStorage with fresh user data (using optimized storage)
+          saveUserToStorage(response.data);
         } catch (error) {
           console.error("Token verification failed:", error);
           removeToken();
@@ -64,7 +65,7 @@ export const AuthProvider = ({ children }) => {
       const updatedUser = event.detail;
       if (updatedUser) {
         setUser(updatedUser);
-        localStorage.setItem("user", JSON.stringify(updatedUser));
+        saveUserToStorage(updatedUser);
       }
     };
 
@@ -85,7 +86,7 @@ export const AuthProvider = ({ children }) => {
         setToken(token);
         setUser(user);
         saveToken(token);
-        localStorage.setItem("user", JSON.stringify(user));
+        saveUserToStorage(user);
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
           setTimeout(() => {
@@ -101,7 +102,7 @@ export const AuthProvider = ({ children }) => {
         setToken(loginToken);
         setUser(loginUser);
         saveToken(loginToken);
-        localStorage.setItem("user", JSON.stringify(loginUser));
+        saveUserToStorage(loginUser);
         setIsAuthenticated(true);
         if (!sessionStorage.getItem('welcomed')) {
           setTimeout(() => {

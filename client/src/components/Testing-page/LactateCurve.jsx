@@ -118,7 +118,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
     return (
-      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
         <div className="flex flex-col items-center justify-center flex-1">
           <HelpCircle size={isMobile ? 32 : 48} className="text-gray-300 mb-4" />
           <p className={`text-gray-500 text-center ${isMobile ? 'text-sm' : ''}`}>
@@ -192,7 +192,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   if (validResults.length < 2) {
     console.log('Not enough valid results:', validResults.length);
     return (
-      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
         <div className="flex flex-col items-center justify-center flex-1">
           <Info size={isMobile ? 32 : 48} className="text-yellow-400 mb-4" />
           <p className={`text-gray-600 text-center ${isMobile ? 'text-sm' : ''}`}>
@@ -415,7 +415,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     };
 
     return (
-      <div className={`relative w-full ${isMobile ? 'h-[300px]' : 'h-full'} ${isMobile ? 'p-1.5' : 'p-2 md:p-4'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg overflow-hidden flex flex-col`}>
+      <div className={`relative w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} ${isMobile ? 'p-1.5' : 'p-2 md:p-4'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg overflow-hidden flex flex-col`}>
         <div className="flex-1 min-h-0" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
           <Line data={data} options={options} />
         </div>
@@ -424,7 +424,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   } catch (error) {
     console.error('Error calculating lactate curve:', error);
     return (
-      <div className={`w-full ${isMobile ? 'h-[300px]' : 'h-full'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
+      <div className={`w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg ${isMobile ? 'p-3' : 'p-6'} flex flex-col`}>
         <div className="flex flex-col items-center justify-center flex-1">
           <div className={`text-red-500 mb-4 ${isMobile ? 'text-2xl' : 'text-4xl'}`}>⚠️</div>
         <p className={`text-red-500 text-center ${isMobile ? 'text-sm' : ''}`}>Error calculating lactate curve</p>

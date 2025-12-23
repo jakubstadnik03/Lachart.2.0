@@ -7,6 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { Mail, User, Calendar, Info, UserPlus, UserMinus, Shield, Trash2, Settings, Bell, CreditCard, Link as LinkIcon } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava } from '../services/api';
+import { saveUserToStorage } from '../utils/userStorage';
 
 const SettingsPage = () => {
   const { user, logout } = useAuth();
@@ -192,8 +193,8 @@ const SettingsPage = () => {
 
       if (response.ok) {
         const updatedUser = await response.json();
-        // Update user in localStorage
-        localStorage.setItem('user', JSON.stringify(updatedUser));
+        // Update user in localStorage (using optimized storage)
+        saveUserToStorage(updatedUser);
         // Trigger event to update AuthProvider
         window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
       } else {
@@ -304,7 +305,7 @@ const SettingsPage = () => {
           if (profileResponse.ok) {
             const updatedUser = await profileResponse.json();
             console.log('Updated user profile with autoSync:', updatedUser.strava?.autoSync);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
+            saveUserToStorage(updatedUser);
             // Trigger a custom event to update AuthProvider
             window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
           } else {
@@ -355,7 +356,7 @@ const SettingsPage = () => {
             const updatedUser = await profileResponse.json();
             console.log('Updated user profile with avatar:', updatedUser.avatar);
             // Update localStorage
-            localStorage.setItem('user', JSON.stringify(updatedUser));
+            saveUserToStorage(updatedUser);
             // Trigger a custom event to update AuthProvider (instead of page reload)
             window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
           } else {
@@ -480,7 +481,7 @@ const SettingsPage = () => {
       if (linkResult.ok) {
         const currentUser = JSON.parse(localStorage.getItem('user'));
         const updatedUser = { ...currentUser, googleId: response.credential };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
+        saveUserToStorage(updatedUser);
         
         setLinkedAccounts(prev => ({ ...prev, google: true }));
         addNotification('Google account linked successfully', 'success');
