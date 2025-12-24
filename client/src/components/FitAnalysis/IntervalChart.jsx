@@ -426,7 +426,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const { labels: yAxisLabels, adjustedMinValue, adjustedMaxValue, reversed } = getYAxisLabels();
 
   return (
-    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow-visible`}>
+    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow-hidden`}>
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-2 mb-2 sm:mb-4`}>
         <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold text-gray-900`}>Activity Intervals</h3>
         <div className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'flex-wrap' : ''}`}>
@@ -488,7 +488,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="relative w-full overflow-visible" style={{ height: isMobile ? '250px' : '400px' }}>
+      <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px' }}>
         {/* Y-axis labels - for pace: fastest (min) at top, slowest (max) at bottom; for cadence: min at bottom, max at top */}
         <div className={`absolute left-0 top-0 bottom-12 ${isMobile ? 'w-8' : 'w-12'} flex flex-col justify-between ${isMobile ? 'pr-1' : 'pr-2'} z-10`}>
           {yAxisLabels.map((label, i) => {
@@ -519,7 +519,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         </div>
 
         {/* Chart area */}
-        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-visible`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
+        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
           {/* Grid lines */}
           <div className="absolute inset-0">
             {yAxisLabels.map((_, i) => (
@@ -534,7 +534,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           </div>
 
           {/* Bars */}
-          <div className="relative h-full flex items-end gap-0.5 overflow-visible" style={{ minWidth: isMobile ? '100%' : 'auto' }}>
+          <div className="relative h-full flex items-end gap-0.5 overflow-hidden" style={{ minWidth: isMobile ? '100%' : 'auto' }}>
             {bars.map((bar, index) => {
               // For pace, reverse the height calculation (smaller pace = faster = higher bar)
               const height = adjustedMaxValue > adjustedMinValue 

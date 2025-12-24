@@ -9,6 +9,8 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api.config';
 import { trackEvent, trackConversionFunnel } from '../utils/analytics';
 import { logUserLogin } from '../utils/eventLogger';
+import EditProfileModal from '../components/Profile/EditProfileModal';
+import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -18,6 +20,9 @@ const LoginPage = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showStravaModal, setShowStravaModal] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState(null);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -45,7 +50,8 @@ const LoginPage = () => {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    // Don't navigate if modals are showing (profile incomplete)
+    if (isAuthenticated && !showEditProfileModal && !showStravaModal) {
       const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
       console.log("Checking for pending invitation token:", pendingInvitationToken);
       
@@ -57,7 +63,7 @@ const LoginPage = () => {
         navigate(from, { replace: true });
       }
     }
-  }, [isAuthenticated, navigate, from]);
+  }, [isAuthenticated, navigate, from, showEditProfileModal, showStravaModal]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -97,16 +103,27 @@ const LoginPage = () => {
           // Log login event
           await logUserLogin('email', result.data.user?._id);
 
-          // Then check for pending invitation
-          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-          console.log("Checking for pending invitation after login:", pendingInvitationToken);
+          // Check if user profile is incomplete
+          const user = result.data.user;
+          const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
           
-          if (pendingInvitationToken) {
-            console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
-            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          if (isProfileIncomplete) {
+            // Store user for modal
+            setLoggedInUser(user);
+            // Show edit profile modal
+            setShowEditProfileModal(true);
           } else {
-            navigate("/dashboard", { replace: true });
+            // Profile is complete, proceed with normal navigation
+            const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+            console.log("Checking for pending invitation after login:", pendingInvitationToken);
+            
+            if (pendingInvitationToken) {
+              console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+              // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+              navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+            } else {
+              navigate("/dashboard", { replace: true });
+            }
           }
         } catch (loginError) {
           console.error("Error updating auth state:", loginError);
@@ -171,16 +188,27 @@ const LoginPage = () => {
           await login(null, null, result.data.token, result.data.user);
           addNotification("Successfully logged in with Google", "success");
 
-          // Then check for pending invitation
-          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-          console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
+          // Check if user profile is incomplete
+          const user = result.data.user;
+          const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
           
-          if (pendingInvitationToken) {
-            console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
-            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          if (isProfileIncomplete) {
+            // Store user for modal
+            setLoggedInUser(user);
+            // Show edit profile modal
+            setShowEditProfileModal(true);
           } else {
-            navigate("/dashboard", { replace: true });
+            // Profile is complete, proceed with normal navigation
+            const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+            console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
+            
+            if (pendingInvitationToken) {
+              console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+              // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+              navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+            } else {
+              navigate("/dashboard", { replace: true });
+            }
           }
         } catch (loginError) {
           console.error("Error updating auth state:", loginError);
@@ -460,6 +488,61 @@ const LoginPage = () => {
           </motion.div>
         </motion.div>
       </motion.div>
+
+      {/* Edit Profile Modal for users with incomplete profile */}
+      {loggedInUser && (
+        <EditProfileModal
+          isOpen={showEditProfileModal}
+          onClose={() => {
+            setShowEditProfileModal(false);
+            // After closing edit profile, show Strava connect modal
+            setShowStravaModal(true);
+          }}
+          onSubmit={async (formData) => {
+            try {
+              const response = await api.put('/user/edit-profile', formData);
+              if (response.data) {
+                // Update user in state
+                setLoggedInUser(response.data);
+                // Dispatch user update event to update global state
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                // Close edit profile modal and show Strava modal
+                setShowEditProfileModal(false);
+                setShowStravaModal(true);
+              }
+            } catch (error) {
+              console.error('Error updating profile:', error);
+              addNotification('Error updating profile', 'error');
+            }
+          }}
+          userData={loggedInUser}
+        />
+      )}
+
+      {/* Strava Connect Modal for users with incomplete profile */}
+      <StravaConnectModal
+        isOpen={showStravaModal}
+        onClose={() => {
+          setShowStravaModal(false);
+          // Navigate to dashboard after onboarding
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          if (pendingInvitationToken) {
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
+          }
+        }}
+        onSkip={() => {
+          setShowStravaModal(false);
+          // Navigate to dashboard after skipping
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          if (pendingInvitationToken) {
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
+          }
+        }}
+      />
     </motion.div>
   );
 };

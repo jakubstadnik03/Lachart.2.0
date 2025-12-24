@@ -18,10 +18,36 @@ import {
 } from '@heroicons/react/24/outline';
 
 const TrainingComparison = ({ trainings }) => {
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedTitle, setSelectedTitle] = useState('all');
-  const [selectedMetric, setSelectedMetric] = useState('power'); // power, heartRate, lactate, RPE
-  const [activeSeries, setActiveSeries] = useState({});
+  // Load saved selections from localStorage
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    const saved = localStorage.getItem('trainingComparison_category');
+    return saved || 'all';
+  });
+  const [selectedTitle, setSelectedTitle] = useState(() => {
+    const saved = localStorage.getItem('trainingComparison_title');
+    return saved || 'all';
+  });
+  const [selectedMetric, setSelectedMetric] = useState(() => {
+    const saved = localStorage.getItem('trainingComparison_metric');
+    return saved || 'power';
+  });
+  const [activeSeries, setActiveSeries] = useState(() => {
+    // Load saved active series from localStorage
+    const saved = localStorage.getItem('trainingComparison_activeSeries');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
+  });
+  const [showBars, setShowBars] = useState(() => {
+    // Load saved showBars from localStorage
+    const saved = localStorage.getItem('trainingComparison_showBars');
+    return saved !== null ? saved === 'true' : true; // Default to true
+  });
   const [trainingMeta, setTrainingMeta] = useState({});
 
   // Get unique categories from trainings
@@ -108,7 +134,13 @@ const TrainingComparison = ({ trainings }) => {
             value = min * 60 + sec; // Convert to seconds for comparison
           }
           
-          intervalData[trainingLabel] = value;
+          // Store original value (NOT offset) - recharts will handle the scaling
+          // We'll use domain to shift the Y-axis instead
+          if (value !== null && value !== undefined && typeof value === 'number') {
+            intervalData[trainingLabel] = value;
+          } else {
+            intervalData[trainingLabel] = value;
+          }
           
           // Store duration for width calculation (using same logic as getDurationInSeconds)
           let durationSeconds = 0;
@@ -134,26 +166,60 @@ const TrainingComparison = ({ trainings }) => {
     return data;
   }, [filteredTrainings, selectedMetric]);
 
+  // Set default title if none is selected and there are titles available
+  useEffect(() => {
+    if (selectedTitle === 'all' && titles.length > 1) {
+      // Use first non-'all' title as default
+      const defaultTitle = titles[1];
+      if (defaultTitle) {
+        setSelectedTitle(defaultTitle);
+        localStorage.setItem('trainingComparison_title', defaultTitle);
+      }
+    }
+  }, [titles, selectedTitle]);
+
   // Initialize visible series when filters change
   useEffect(() => {
-    const next = {};
     const meta = {};
+    const next = {};
+    const savedActiveSeries = activeSeries; // Use current activeSeries state
+    
     filteredTrainings.forEach((training, index) => {
       const date = new Date(training.date || training.timestamp || training.createdAt);
       const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
       const trainingLabel = `${dateLabel} (${index + 1})`;
-      // Show only the latest 3 series by default to keep the chart readable
-      const isVisible = index >= filteredTrainings.length - 3;
-      next[trainingLabel] = isVisible;
+      
       meta[trainingLabel] = {
         training,
         index,
         results: training.results || []
       };
+      
+      // If we have saved state, use it; otherwise default to showing latest 3
+      if (savedActiveSeries[trainingLabel] !== undefined) {
+        next[trainingLabel] = savedActiveSeries[trainingLabel];
+      } else {
+        // Show only the latest 3 series by default to keep the chart readable
+        next[trainingLabel] = index >= filteredTrainings.length - 3;
+      }
     });
+    
     setActiveSeries(next);
     setTrainingMeta(meta);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredTrainings]);
+  
+  // Save activeSeries to localStorage whenever it changes
+  useEffect(() => {
+    if (Object.keys(activeSeries).length > 0) {
+      localStorage.setItem('trainingComparison_activeSeries', JSON.stringify(activeSeries));
+    }
+  }, [activeSeries]);
+  
+  // Save showBars to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('trainingComparison_showBars', showBars.toString());
+  }, [showBars]);
 
   // Calculate progress statistics
   const progressStats = useMemo(() => {
@@ -334,54 +400,125 @@ const TrainingComparison = ({ trainings }) => {
     return paceCount > values.length * 0.5;
   };
 
-  // Compute dynamic Y domain starting from 0 with large gap and more space between values
+  // Compute dynamic Y domain: use original values, but start from minValue - 100W
   const getYDomain = () => {
     if (!chartData.length) return [0, 'auto'];
-    const values = [];
-    chartData.forEach(row => {
-      Object.entries(row).forEach(([key, val]) => {
-        if (key === 'interval' || val === null || val === undefined) return;
-        if (!activeSeries[key]) return;
-        if (typeof val === 'number' && !Number.isNaN(val)) values.push(val);
+    
+    // Collect all original values (not offset)
+    const allOriginalValues = [];
+    filteredTrainings.forEach(training => {
+      training.results?.forEach(result => {
+        let value = null;
+        if (selectedMetric === 'power') {
+          value = result.power;
+        } else if (selectedMetric === 'heartRate') {
+          value = result.heartRate;
+        } else if (selectedMetric === 'lactate') {
+          value = result.lactate;
+        } else if (selectedMetric === 'RPE') {
+          value = result.RPE;
+        }
+        if (selectedMetric === 'power' && typeof value === 'string' && value.includes(':')) {
+          const [min, sec] = value.split(':').map(Number);
+          value = min * 60 + sec;
+        }
+        if (value !== null && value !== undefined && typeof value === 'number') {
+          allOriginalValues.push(value);
+        }
       });
     });
-    if (!values.length) return [0, 'auto'];
     
-    // Always start from 0
-    const max = Math.max(...values);
-    const minValue = Math.min(...values);
+    if (allOriginalValues.length === 0) return [0, 'auto'];
     
-    if (max === 0) return [0, 10];
+    const minValue = Math.min(...allOriginalValues);
+    const maxValue = Math.max(...allOriginalValues);
+    
+    if (maxValue === 0) return [0, 10];
     
     // Calculate range of actual values
-    const range = max - minValue;
+    const range = maxValue - minValue;
     
-    // Always start from 0
-    // Create asymmetric spacing: large gap from 0, then more space around values
-    let topPadding;
-    if (range < max * 0.1) {
-      // Very small range (e.g., 370-380W) - use 60% padding to create much more space
-      topPadding = max * 0.6;
-    } else if (range < max * 0.3) {
-      // Small range - use 55% padding
-      topPadding = max * 0.55;
+    // Use 10% padding both above and below
+    const topPadding = range * 0.1;
+    const bottomPadding = range * 0.1;
+    
+    // Domain starts from minValue - 10% padding
+    const bottomValue = Math.max(0, minValue - bottomPadding);
+    
+    // Round domainMax to a nice number for better alignment with ticks
+    const domainMax = Math.ceil(maxValue + topPadding);
+    const roundedDomainMax = Math.ceil(domainMax / 10) * 10;
+    
+    // Return domain starting from offset (original values, not offset)
+    return [bottomValue, roundedDomainMax];
+  };
+  
+  // Generate custom Y-axis ticks: use original values directly (domain already accounts for offset)
+  const getCustomYTicks = () => {
+    if (!chartData.length) return [0, 100, 200, 300, 400, 500];
+    
+    // Get domain (already calculated with offset)
+    const yDomain = getYDomain();
+    const domainMin = yDomain[0]; // This is offset (e.g., minValue - 100W)
+    const domainMax = yDomain[1];
+    
+    // Calculate nice step size for symmetric ticks
+    const range = domainMax - domainMin;
+    if (range === 0) return [domainMin];
+    
+    const targetTicks = 10;
+    let step = range / targetTicks;
+    
+    // Round step to a nice number (10, 20, 50, 100, etc.)
+    const magnitude = Math.pow(10, Math.floor(Math.log10(step)));
+    const normalized = step / magnitude;
+    let niceStep;
+    if (normalized <= 1) {
+      niceStep = magnitude;
+    } else if (normalized <= 2) {
+      niceStep = 2 * magnitude;
+    } else if (normalized <= 5) {
+      niceStep = 5 * magnitude;
     } else {
-      // Normal range - use 50% padding
-      topPadding = max * 0.5;
+      niceStep = 10 * magnitude;
     }
     
-    // If minValue is close to 0, add a small gap to create visual separation
-    // If minValue is far from 0, there's naturally a large gap (asymmetric)
-    let bottomValue = 0;
-    if (minValue > 0 && minValue < max * 0.2) {
-      // If minValue is close to 0, start slightly below 0 to create gap
-      bottomValue = Math.min(0, minValue - (max * 0.05));
+    // Round niceStep to nearest 10 for cleaner display
+    niceStep = Math.ceil(niceStep / 10) * 10;
+    if (niceStep === 0) niceStep = 10; // Ensure minimum step
+    
+    // Generate symmetric ticks from domainMin to domainMax
+    const ticks = [];
+    // Start from a rounded value at or below domainMin
+    const startTick = Math.floor(domainMin / niceStep) * niceStep;
+    
+    // Generate ticks covering the entire range
+    for (let tick = startTick; tick <= domainMax + niceStep; tick += niceStep) {
+      if (tick >= domainMin && tick <= domainMax) {
+        if (!ticks.includes(tick)) {
+          ticks.push(tick);
+        }
+      }
     }
     
-    return [bottomValue, Math.ceil(max + topPadding)];
+    // Always include domainMax as the last tick
+    if (ticks.length === 0 || ticks[ticks.length - 1] < domainMax) {
+      const roundedDomainMax = Math.ceil(domainMax / niceStep) * niceStep;
+      if (!ticks.includes(roundedDomainMax) && roundedDomainMax <= domainMax + niceStep) {
+        ticks.push(roundedDomainMax);
+      } else if (!ticks.includes(domainMax)) {
+        ticks.push(domainMax);
+      }
+    }
+    
+    return ticks.sort((a, b) => a - b);
   };
 
-  const formatYAxisTick = (value) => formatMetricValue(value, selectedMetric);
+  const formatYAxisTick = (value) => {
+    // Value passed to formatter is already the display value (with offset added back)
+    // from getCustomYTicks, so we can format it directly
+    return formatMetricValue(value, selectedMetric);
+  };
 
   const toggleSeries = (label) => {
     setActiveSeries(prev => ({
@@ -439,14 +576,31 @@ const TrainingComparison = ({ trainings }) => {
     
     // Show all selected trainings in tooltip
     return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-md p-2 text-xs min-w-[240px] max-w-[400px]">
-        <div className="font-semibold text-gray-900 mb-1.5 text-sm">Interval {intervalNumber}</div>
-        <div className="space-y-1.5 max-h-[350px] overflow-y-auto">
+      <div className="bg-white border border-gray-200 rounded-lg shadow-md p-3 text-xs min-w-[240px] max-w-[500px]">
+        <div className="font-semibold text-gray-900 mb-2 text-sm">Interval {intervalNumber}</div>
+        <div className="space-y-2">
           {payload.map((point, idx) => {
             const trainingLabel = point.dataKey;
             const meta = trainingMeta[trainingLabel];
             const result = meta?.results?.[intervalNumber - 1];
-            const value = point.value;
+            // Use original value from result, not transformed display value
+            let originalValue = null;
+            if (result) {
+              if (selectedMetric === 'power') {
+                originalValue = result.power;
+                // Handle pace format (MM:SS) for running/swimming
+                if (typeof originalValue === 'string' && originalValue.includes(':')) {
+                  const [min, sec] = originalValue.split(':').map(Number);
+                  originalValue = min * 60 + sec; // Convert to seconds for comparison
+                }
+              } else if (selectedMetric === 'heartRate') {
+                originalValue = result.heartRate;
+              } else if (selectedMetric === 'lactate') {
+                originalValue = result.lactate;
+              } else if (selectedMetric === 'RPE') {
+                originalValue = result.RPE;
+              }
+            }
             const sport = (meta?.training?.sport || '').toLowerCase();
             const isBike = sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
             
@@ -483,7 +637,7 @@ const TrainingComparison = ({ trainings }) => {
             if (distanceText) {
               infoParts.push(`Dist: ${distanceText}`);
             }
-            infoParts.push(`${metricLabel}: ${formatMetricForTooltip(value, selectedMetric)}`);
+            infoParts.push(`${metricLabel}: ${formatMetricForTooltip(originalValue, selectedMetric)}`);
             
             // Add other metrics if available
             if (result) {
@@ -547,8 +701,11 @@ const TrainingComparison = ({ trainings }) => {
             <select
               value={selectedCategory}
               onChange={(e) => {
-                setSelectedCategory(e.target.value);
+                const newCategory = e.target.value;
+                setSelectedCategory(newCategory);
+                localStorage.setItem('trainingComparison_category', newCategory);
                 setSelectedTitle('all');
+                localStorage.setItem('trainingComparison_title', 'all');
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
             >
@@ -564,7 +721,11 @@ const TrainingComparison = ({ trainings }) => {
             <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
             <select
               value={selectedTitle}
-              onChange={(e) => setSelectedTitle(e.target.value)}
+              onChange={(e) => {
+                const newTitle = e.target.value;
+                setSelectedTitle(newTitle);
+                localStorage.setItem('trainingComparison_title', newTitle);
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
             >
               {titles.map(title => (
@@ -579,7 +740,11 @@ const TrainingComparison = ({ trainings }) => {
             <label className="block text-sm font-semibold text-gray-700 mb-2">Metric</label>
             <select
               value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
+              onChange={(e) => {
+                const newMetric = e.target.value;
+                setSelectedMetric(newMetric);
+                localStorage.setItem('trainingComparison_metric', newMetric);
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="power">Power/Pace</option>
@@ -731,26 +896,28 @@ const TrainingComparison = ({ trainings }) => {
                 return selectedMetric === 'heartRate' ? 'Heart Rate' : selectedMetric.charAt(0).toUpperCase() + selectedMetric.slice(1);
               })()}
             </h3>
-            <div className="w-full h-72 md:h-96 bg-gray-50 border border-gray-200 rounded-xl p-3 md:p-4">
+            <div className="w-full h-[400px] md:h-96 bg-gray-50 border border-gray-200 rounded-xl p-1 md:p-4">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart 
                   data={chartData}
-                  margin={{ top: 40, right: 40, left: 40, bottom: 40 }}
+                  margin={{ top: 20, right: 5, left: 5, bottom: 30 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                   <XAxis 
                     dataKey="interval" 
-                    tick={{ fontSize: 12, fill: '#4B5563' }}
-                    label={{ value: 'Interval', position: 'insideBottom', offset: -5, fill: '#4B5563', fontSize: 12 }}
-                    padding={{ left: 30, right: 30 }}
+                    tick={{ fontSize: 10, fill: '#4B5563' }}
+                    label={{ value: 'Interval', position: 'insideBottom', offset: -5, fill: '#4B5563', fontSize: 10 }}
+                    padding={{ left: 5, right: 5 }}
                   />
                   <YAxis 
                     domain={getYDomain()}
+                    ticks={getCustomYTicks()}
                     tickFormatter={formatYAxisTick}
-                    tick={{ fontSize: 12, fill: '#4B5563' }}
-                    allowDecimals={true}
+                    tick={{ fontSize: 10, fill: '#4B5563' }}
+                    allowDecimals={false}
                     reversed={isPaceMetric()}
-                    interval={0} // Invert Y-axis for pace (faster pace = lower seconds = top)
+                    interval={0}
+                    width={40}
                     label={{
                       value: (() => {
                         if (selectedMetric === 'power') {
@@ -770,8 +937,8 @@ const TrainingComparison = ({ trainings }) => {
                       angle: -90,
                       position: 'insideLeft',
                       fill: '#4B5563',
-                      fontSize: 12,
-                      dy: 40
+                      fontSize: 9,
+                      dy: 15
                     }}
                   />
                   <Tooltip 
@@ -784,11 +951,39 @@ const TrainingComparison = ({ trainings }) => {
                   />
                   <Legend
                     verticalAlign="top"
-                    height={36}
-                    formatter={(value) => <span className="text-sm text-gray-700">{value}</span>}
+                    height={50}
+                    formatter={(value) => <span className="text-xs md:text-sm text-gray-700">{value}</span>}
                     onClick={(e) => toggleSeries(e.value)}
+                    content={({ payload }) => (
+                      <div className="flex items-center justify-center gap-2 md:gap-4 flex-wrap px-2">
+                        {payload?.map((entry, index) => (
+                          <span
+                            key={index}
+                            onClick={() => toggleSeries(entry.value)}
+                            className="inline-flex items-center gap-1 cursor-pointer text-xs md:text-sm"
+                            style={{ color: entry.color }}
+                          >
+                            <span
+                              className="inline-block w-2 h-2 md:w-3 md:h-3 rounded-full"
+                              style={{ backgroundColor: entry.color }}
+                            />
+                            {entry.value}
+                          </span>
+                        ))}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowBars(!showBars);
+                          }}
+                          className="ml-2 md:ml-4 px-2 py-1 md:px-3 md:py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 transition-colors"
+                        >
+                          {showBars ? 'Hide Bars' : 'Show Bars'}
+                        </button>
+                      </div>
+                    )}
                   />
                   {/* Custom bars with width based on duration and color based on power */}
+                  {showBars && (
                   <Customized
                     component={(props) => {
                       const { xAxisMap, yAxisMap, height } = props;
@@ -803,6 +998,27 @@ const TrainingComparison = ({ trainings }) => {
                       const chartTop = yAxis.y || 0;
                       const chartHeight = yAxis.height || height;
                       const chartBottom = chartTop + chartHeight;
+                      
+                      // Get the X-axis position (where domainMin is displayed)
+                      // For normal axis: domainMin is at bottom (chartBottom)
+                      // For reversed axis: domainMin is at top (chartTop), but X-axis is still at bottom!
+                      // In recharts, X-axis is ALWAYS at the bottom of the chart, regardless of Y-axis reversal
+                      const yDomain = getYDomain();
+                      const domainMin = yDomain[0];
+                      const isReversed = isPaceMetric();
+                      let xAxisY = chartBottom; // X-axis is always at bottom
+                      if (yAxis.scale && typeof yAxis.scale === 'function') {
+                        // For normal axis: domainMin is at bottom, so X-axis is at domainMin position
+                        // For reversed axis: domainMin is at top, but X-axis is still at bottom (where domainMax would be)
+                        // Actually, for reversed axis, we need to find where the "zero" or "base" value is
+                        // Since X-axis is always at bottom, we use chartBottom
+                        if (!isReversed) {
+                          xAxisY = yAxis.scale(domainMin);
+                        } else {
+                          // For reversed axis, X-axis is at bottom, which corresponds to domainMax position
+                          xAxisY = chartBottom;
+                        }
+                      }
                       
                       // Helper function to get duration in seconds
                       const getDurationInSeconds = (result) => {
@@ -868,7 +1084,7 @@ const TrainingComparison = ({ trainings }) => {
                             const durationSeconds = getDurationInSeconds(result);
                             if (durationSeconds === 0) return null;
                             
-                            // Get metric value
+                            // Get metric value (same logic as in chartData)
                             let value = null;
                             if (selectedMetric === 'power') {
                               value = result.power;
@@ -886,6 +1102,8 @@ const TrainingComparison = ({ trainings }) => {
                             
                             if (value === null || value === undefined) return null;
                             
+                            // Use original value (NOT offset) - domain already accounts for offset
+                            // This ensures bars align with the Line chart points
                             return { training, trainingIndex, result, value, durationSeconds, trainingLabel };
                           })
                           .filter(item => item !== null);
@@ -911,26 +1129,23 @@ const TrainingComparison = ({ trainings }) => {
                           // All bars centered on same X position (overlapping)
                           const barX = xPos - barWidth / 2;
                           
-                          // Calculate Y position using the same scale as recharts (yAxis.scale)
-                          // This ensures bars align with the dots/points on the line
-                          const yDomain = getYDomain();
-                          const [yMin, yMax] = yDomain;
-                          
+                          // Calculate Y position using normal linear scale
+                          // Value is original (NOT offset) - domain already accounts for offset
                           // Use yAxis.scale if available (this is what recharts uses internally)
-                          let yValuePos, yZeroPos;
+                          let yValuePos;
                           if (yAxis.scale && typeof yAxis.scale === 'function') {
                             // Use the scale function directly (this matches recharts' calculation)
+                            // Value is original, domain starts from offset
                             yValuePos = yAxis.scale(value);
-                            yZeroPos = yAxis.scale(0);
                           } else {
                             // Fallback: manual calculation using chart area dimensions
+                            const yDomain = getYDomain();
+                            const [yMin, yMax] = yDomain;
                             const yRange = yMax - yMin;
                             if (yRange === 0) {
-                              yValuePos = chartBottom;
-                              yZeroPos = chartBottom;
+                              yValuePos = xAxisY;
                             } else {
                               const normalizedValue = (value - yMin) / yRange;
-                              const normalizedZero = (0 - yMin) / yRange;
                               
                               // In recharts, Y=0 is at top, Y=height is at bottom
                               // So: y = chartTop + (1 - normalized) * chartHeight for normal axis
@@ -938,21 +1153,28 @@ const TrainingComparison = ({ trainings }) => {
                               const isReversed = isPaceMetric();
                               if (isReversed) {
                                 yValuePos = chartTop + normalizedValue * chartHeight;
-                                yZeroPos = chartTop + normalizedZero * chartHeight;
                               } else {
                                 yValuePos = chartTop + (1 - normalizedValue) * chartHeight;
-                                yZeroPos = chartTop + (1 - normalizedZero) * chartHeight;
                               }
                             }
                           }
                           
-                          // Bar should start from bottom (X axis) and go up to the value
-                          // Bottom is where 0 is (or chartBottom if 0 is not in domain)
-                          const yBottom = yZeroPos;
-                          // Top is where the value is
-                          const yTop = yValuePos;
-                          // Bar height from 0 (bottom) to value (top)
-                          const barHeight = Math.max(4, Math.abs(yBottom - yTop));
+                          // Bar should start from X-axis (which is ALWAYS at bottom) and go up to the value
+                          // In SVG, Y=0 is at top, so larger Y values are at bottom
+                          // X-axis is ALWAYS at the bottom of the chart, regardless of Y-axis reversal
+                          // Get X-axis position for bars (always at bottom = chartBottom)
+                          const barXAxisY = chartBottom; // X-axis is always at bottom
+                          
+                          // Calculate bar position and height
+                          // Bar should ALWAYS start at X-axis (barXAxisY at bottom) and extend to value (yValuePos)
+                          // In SVG, rect y is the top-left corner, so we need to use the smaller Y value
+                          // For normal axis: barXAxisY is at bottom (larger Y in SVG), yValuePos is above it (smaller Y in SVG)
+                          //   -> barY = yValuePos (smaller), barHeight = barXAxisY - yValuePos
+                          // For reversed axis: barXAxisY is at bottom (larger Y in SVG), yValuePos is above it (smaller Y in SVG)
+                          //   -> barY = yValuePos (smaller), barHeight = barXAxisY - yValuePos
+                          // In both cases, bar starts at the smaller Y (top = value position) and extends to the larger Y (bottom = X-axis)
+                          const barY = Math.min(barXAxisY, yValuePos); // Top of bar (smaller Y in SVG = value position)
+                          const barHeight = Math.max(4, Math.abs(barXAxisY - yValuePos)); // Height from value to X-axis
                           
                           // Get power value for color
                           let powerValue = result.power;
@@ -976,7 +1198,7 @@ const TrainingComparison = ({ trainings }) => {
                             <rect
                               key={`bar-${training._id || trainingIndex}-${intervalIndex}`}
                               x={barX}
-                              y={yTop}
+                              y={barY}
                               width={barWidth}
                               height={barHeight}
                               fill={barColor}
@@ -994,6 +1216,7 @@ const TrainingComparison = ({ trainings }) => {
                       return <g>{bars}</g>;
                     }}
                   />
+                  )}
                   {/* Render lines for metric values */}
                   {filteredTrainings.map((training, index) => {
                     const date = new Date(training.date || training.timestamp || training.createdAt);
@@ -1008,8 +1231,8 @@ const TrainingComparison = ({ trainings }) => {
                         type="monotone"
                         dataKey={trainingLabel}
                         stroke={color}
-                        strokeWidth={2}
-                        dot={{ r: 5, fill: color, strokeWidth: 2, stroke: '#fff' }}
+                        strokeWidth={1.5}
+                        dot={{ r: 3, fill: color, strokeWidth: 1.5, stroke: '#fff' }}
                         connectNulls={false}
                       />
                     );
@@ -1019,10 +1242,199 @@ const TrainingComparison = ({ trainings }) => {
             </div>
           </div>
         )}
+
+        {/* Values Table - Compare same intervals across trainings */}
+        {filteredTrainings.length > 0 && (() => {
+          // Get visible trainings sorted by date (newest first - left to right)
+          const visibleTrainings = filteredTrainings
+            .map((training, trainingIndex) => {
+              const date = new Date(training.date || training.timestamp || training.createdAt);
+              const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+              const trainingLabel = `${dateLabel} (${trainingIndex + 1})`;
+              const isVisible = activeSeries[trainingLabel] !== false;
+              return { training, trainingIndex, date, dateLabel, trainingLabel, isVisible, color: colors[trainingIndex % colors.length] };
+            })
+            .filter(item => item.isVisible)
+            .sort((a, b) => b.date - a.date); // Sort from newest to oldest (newest on left)
+          
+          if (visibleTrainings.length === 0) return null;
+          
+          // Get max number of intervals across all visible trainings
+          const maxIntervals = Math.max(...visibleTrainings.map(item => item.training.results?.length || 0));
+          
+          
+          return (
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Interval Comparison - Progress Tracking</h3>
+              <div className="overflow-x-auto bg-white rounded-xl border border-gray-200 shadow-sm">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-3 text-center font-semibold text-gray-900 sticky left-0 bg-gray-50 z-10">Interval</th>
+                      {visibleTrainings.map((item, idx) => (
+                        <th key={item.training._id || idx} className="px-4 py-3 text-center font-semibold text-gray-900 min-w-[120px]">
+                          <div className="flex flex-col items-center gap-1">
+                            <span
+                              className="inline-block w-3 h-3 rounded-full"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <span className="text-xs">{item.dateLabel}</span>
+                            <span className="text-xs text-gray-500">{item.training.title || `Training ${idx + 1}`}</span>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: maxIntervals }, (_, intervalIndex) => {
+                      const intervalNumber = intervalIndex + 1;
+                      const intervalValues = visibleTrainings.map(item => {
+                        const result = item.training.results?.[intervalIndex];
+                        if (!result) return null;
+                        
+                        // Get metric value (original, not transformed)
+                        let metricValue = null;
+                        if (selectedMetric === 'power') {
+                          metricValue = result.power;
+                          // Handle null/undefined/0
+                          if (metricValue === null || metricValue === undefined) {
+                            metricValue = null;
+                          } else if (typeof metricValue === 'string' && metricValue.includes(':')) {
+                            const [min, sec] = metricValue.split(':').map(Number);
+                            metricValue = min * 60 + sec;
+                          } else if (typeof metricValue === 'number' && metricValue === 0) {
+                            // 0 is a valid value, keep it
+                            metricValue = 0;
+                          }
+                        } else if (selectedMetric === 'heartRate') {
+                          metricValue = result.heartRate;
+                          if (metricValue === null || metricValue === undefined) {
+                            metricValue = null;
+                          }
+                        } else if (selectedMetric === 'lactate') {
+                          metricValue = result.lactate;
+                          if (metricValue === null || metricValue === undefined || metricValue === 0) {
+                            metricValue = null;
+                          }
+                        } else if (selectedMetric === 'RPE') {
+                          metricValue = result.RPE;
+                          if (metricValue === null || metricValue === undefined) {
+                            metricValue = null;
+                          }
+                        }
+                        
+                        const sport = (item.training.sport || '').toLowerCase();
+                        const isBike = sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
+                        
+                        // Format metric value for display
+                        const formatMetricForTable = (val) => {
+                          if (val === null || val === undefined) return 'N/A';
+                          if (selectedMetric === 'power' && isBike) {
+                            return `${Math.round(val)} W`;
+                          }
+                          return formatMetricValue(val, selectedMetric);
+                        };
+                        
+                        return {
+                          result,
+                          metricValue,
+                          isBike,
+                          formatMetricForTable,
+                          trainingLabel: item.trainingLabel,
+                          color: item.color
+                        };
+                      });
+                      
+                      // Check if at least one training has this interval
+                      const hasData = intervalValues.some(v => v !== null);
+                      if (!hasData) return null;
+                      
+                      // Calculate progress (difference from oldest to newest)
+                      // visibleTrainings is sorted newest first (left to right), so first is newest, last is oldest
+                      const newestValue = intervalValues.find(v => v && v.metricValue !== null && v.metricValue !== undefined)?.metricValue; // First (newest on left)
+                      const oldestValue = intervalValues.filter(v => v && v.metricValue !== null && v.metricValue !== undefined).pop()?.metricValue; // Last (oldest on right)
+                      let progress = null;
+                      if (oldestValue !== null && oldestValue !== undefined && newestValue !== null && newestValue !== undefined && typeof oldestValue === 'number' && typeof newestValue === 'number') {
+                        const sport = visibleTrainings[0]?.training?.sport || '';
+                        const isBike = sport.toLowerCase().includes('bike') || sport.toLowerCase().includes('cycle') || sport.toLowerCase().includes('ride') || sport.toLowerCase().includes('cycling');
+                        if (selectedMetric === 'power' && !isBike) {
+                          // For pace: lower is better
+                          progress = ((oldestValue - newestValue) / oldestValue) * 100;
+                        } else {
+                          // For power/HR/lactate/RPE: higher is better
+                          progress = ((newestValue - oldestValue) / oldestValue) * 100;
+                        }
+                      }
+                      
+                      return (
+                        <tr 
+                          key={`interval-${intervalNumber}`}
+                          className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-4 py-3 text-center font-semibold text-gray-900 sticky left-0 bg-white z-10">
+                            <div className="flex flex-col items-center">
+                              <span>Interval {intervalNumber}</span>
+                              {progress !== null && (
+                                <span className={`text-xs mt-1 ${progress > 0 ? 'text-green-600' : progress < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                  {progress > 0 ? '+' : ''}{progress.toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          {visibleTrainings.map((item, idx) => {
+                            const intervalData = intervalValues[idx];
+                            if (!intervalData) {
+                              return (
+                                <td key={item.training._id || idx} className="px-4 py-3 text-center text-gray-400">
+                                  -
+                                </td>
+                              );
+                            }
+                            
+                            const { result, metricValue, formatMetricForTable } = intervalData;
+                            
+                            return (
+                              <td key={item.training._id || idx} className="px-4 py-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="font-semibold text-gray-900">
+                                    {formatMetricForTable(metricValue)}
+                                  </span>
+                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <span>{formatIntervalDuration(result)}</span>
+                                    {result.heartRate && result.heartRate !== 0 && (
+                                      <span className="text-blue-600 font-medium">
+                                        HR: {Math.round(result.heartRate)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {formatIntervalDistance(result) && (
+                                    <span className="text-xs text-gray-500">
+                                      {formatIntervalDistance(result)}
+                                    </span>
+                                  )}
+                                  {result.lactate !== null && result.lactate !== undefined && result.lactate !== 0 && (
+                                    <span className="text-xs text-purple-600 font-medium">
+                                      Lac: {result.lactate.toFixed(1)} mmol/L
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    }).filter(Boolean)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </motion.div>
   );
 };
 
 export default TrainingComparison;
+
 

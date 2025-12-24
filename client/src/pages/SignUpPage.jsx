@@ -3,11 +3,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { register } from '../services/api';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthProvider';
 import { API_ENDPOINTS } from '../config/api.config';
 import { motion } from 'framer-motion';
 import { trackEvent, trackUserRegistration, trackConversionFunnel } from '../utils/analytics';
 import { logUserRegistration } from '../utils/eventLogger';
 import { AnimatePresence, motion as m } from 'framer-motion';
+import EditProfileModal from '../components/Profile/EditProfileModal';
+import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
+import api from '../services/api';
+import { saveUserToStorage } from '../utils/userStorage';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -23,7 +28,11 @@ const SignUpPage = () => {
   const [error, setError] = useState(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showStravaModal, setShowStravaModal] = useState(false);
+  const [newUser, setNewUser] = useState(null);
   const { addNotification } = useNotification();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -44,7 +53,25 @@ const SignUpPage = () => {
       // Log registration event
       await logUserRegistration('email', response?.data?.user?._id);
       
-      navigate('/login');
+      // Automatically log in the user after registration
+      if (response?.data?.token && response?.data?.user) {
+        // Save token and user
+        localStorage.setItem('token', response.data.token);
+        saveUserToStorage(response.data.user);
+        api.defaults.headers.common["Authorization"] = `Bearer ${response.data.token}`;
+        
+        // Update auth state
+        await login(formData.email, formData.password, response.data.token, response.data.user);
+        
+        // Store new user for onboarding modals
+        setNewUser(response.data.user);
+        
+        // Show edit profile modal first
+        setShowEditProfileModal(true);
+      } else {
+        // Fallback to login page if auto-login fails
+        navigate('/login');
+      }
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');
       trackEvent('register_error', { 
@@ -77,8 +104,19 @@ const SignUpPage = () => {
         // Log registration event
         await logUserRegistration('google', data.user?._id);
         
+        // Save token and user
         localStorage.setItem('token', data.token);
-        navigate('/dashboard');
+        saveUserToStorage(data.user);
+        api.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
+        
+        // Update auth state
+        await login(null, null, data.token, data.user);
+        
+        // Store new user for onboarding modals
+        setNewUser(data.user);
+        
+        // Show edit profile modal first
+        setShowEditProfileModal(true);
       } else {
         addNotification('Google authentication failed', 'error');
         trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
@@ -500,6 +538,51 @@ const SignUpPage = () => {
           </m.div>
         )}
       </AnimatePresence>
+
+      {/* Edit Profile Modal for new users */}
+      {newUser && (
+        <EditProfileModal
+          isOpen={showEditProfileModal}
+          onClose={() => {
+            setShowEditProfileModal(false);
+            // After closing edit profile, show Strava connect modal
+            setShowStravaModal(true);
+          }}
+          onSubmit={async (formData) => {
+            try {
+              const response = await api.put('/user/edit-profile', formData);
+              if (response.data) {
+                // Update user in state
+                setNewUser(response.data);
+                // Dispatch user update event to update global state
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                // Close edit profile modal and show Strava modal
+                setShowEditProfileModal(false);
+                setShowStravaModal(true);
+              }
+            } catch (error) {
+              console.error('Error updating profile:', error);
+              addNotification('Error updating profile', 'error');
+            }
+          }}
+          userData={newUser}
+        />
+      )}
+
+      {/* Strava Connect Modal for new users */}
+      <StravaConnectModal
+        isOpen={showStravaModal}
+        onClose={() => {
+          setShowStravaModal(false);
+          // Navigate to dashboard after onboarding
+          navigate('/dashboard', { replace: true });
+        }}
+        onSkip={() => {
+          setShowStravaModal(false);
+          // Navigate to dashboard after skipping
+          navigate('/dashboard', { replace: true });
+        }}
+      />
     </motion.div>
   );
 };

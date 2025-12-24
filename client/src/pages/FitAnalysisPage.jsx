@@ -13,6 +13,7 @@ import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
 import AthleteSelector from '../components/AthleteSelector';
 import { useAuth } from '../context/AuthProvider';
+import { useNotification } from '../context/NotificationContext';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
@@ -744,6 +745,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
 const FitAnalysisPage = () => {
   const { user } = useAuth();
+  const { addNotification } = useNotification();
   const location = useLocation();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [trainings, setTrainings] = useState([]);
@@ -1061,7 +1063,15 @@ const FitAnalysisPage = () => {
         return;
       }
       
-      // Only log non-429 errors
+      // Handle 401 (Unauthorized) - token expired or invalid
+      if (e.response?.status === 401) {
+        console.error('Strava token expired or invalid. Please reconnect your Strava account.');
+        addNotification('Strava token expired. Please reconnect your Strava account in Settings.', 'error');
+        // Don't clear state - user might want to see cached data
+        return;
+      }
+      
+      // Only log non-429/401 errors
       console.error('Error loading Strava detail:', e);
       
       // Remove invalid ID from localStorage
