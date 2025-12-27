@@ -272,11 +272,13 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       
       let fatigueSum = 0;
       let totalDaysFatigue = 0;
+      let trainingDaysFatigue = 0;
       for (let fd = new Date(fatigueStartDate); fd <= d; fd.setDate(fd.getDate() + 1)) {
         const fdStr = fd.toISOString().split('T')[0];
         const tss = dailyTSS[fdStr] || 0; // Days without training = 0 TSS
         fatigueSum += tss;
         totalDaysFatigue++;
+        if (tss > 0) trainingDaysFatigue++;
       }
       // Average daily TSS over the window period (all days count, rest days = 0 TSS)
       // This gives the average daily training load over the period
