@@ -12,6 +12,8 @@ import {
 } from 'chart.js';
 import * as math from 'mathjs'; // Import mathjs for matrix operations
 import DataTable, { calculateThresholds } from './DataTable';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 ChartJS.register(
     CategoryScale,
@@ -189,6 +191,7 @@ const convertSpeedToPace = (speed, unitSystem = 'metric') => {
 
 const LactateCurveCalculator = ({ mockData }) => {
   const chartRef = useRef(null);
+  const [showGlossary, setShowGlossary] = useState(false);
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
@@ -475,15 +478,24 @@ const LactateCurveCalculator = ({ mockData }) => {
       }
     },
   };
-  
 
   return (
-    <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5">
+    <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5 relative">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h2 className="text-lg sm:text-xl font-bold">
-            Lactate Curve <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg sm:text-xl font-bold">
+              Lactate Curve <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
+            </h2>
+            <button
+              onClick={() => setShowGlossary(true)}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              aria-label="Show glossary"
+              title="Training Glossary"
+            >
+              <InformationCircleIcon className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
           <p className="text-sm sm:text-base text-gray-500">
             Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
           </p>
@@ -503,6 +515,12 @@ const LactateCurveCalculator = ({ mockData }) => {
           </div>
         </div>
       </div>
+      <TrainingGlossary 
+        isOpen={showGlossary} 
+        onClose={() => setShowGlossary(false)} 
+        initialTerm="Lactate Curve"
+        initialCategory="Lactate"
+      />
     </div>
   );
 };

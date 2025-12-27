@@ -8,6 +8,8 @@ import NotificationBadge from "../components/Testing-page/NotificationBadge";
 import AthleteSelector from "../components/AthleteSelector";
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -18,6 +20,7 @@ const TestingPage = () => {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showGlossary, setShowGlossary] = useState(false);
   const navigate = useNavigate();
 
   const sports = [
@@ -161,8 +164,16 @@ const TestingPage = () => {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4 }}
-          className="w-full sm:w-auto min-w-0"
+          className="w-full sm:w-auto min-w-0 flex items-center gap-2"
         >
+          <button
+            onClick={() => setShowGlossary(true)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="Show glossary"
+            title="Training Glossary"
+          >
+            <InformationCircleIcon className="w-5 h-5 text-gray-500" />
+          </button>
           <NotificationBadge
             isActive={showNewTesting}
             onToggle={() => setShowNewTesting((prev) => !prev)}
@@ -199,6 +210,14 @@ const TestingPage = () => {
           setTests={setTests}
         />
       </motion.div>
+
+      {/* Glossary Modal */}
+      <TrainingGlossary 
+        isOpen={showGlossary} 
+        onClose={() => setShowGlossary(false)} 
+        initialTerm="Lactate Testing"
+        initialCategory="Lactate"
+      />
     </motion.div>
   );
 };

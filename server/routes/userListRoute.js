@@ -20,6 +20,7 @@ const FitTraining = require("../models/fitTraining");
 const StravaActivity = require("../models/StravaActivity");
 const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
+const User = require("../models/UserModel");
 
 // Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -1799,6 +1800,144 @@ router.delete("/delete-account", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error deleting account:", error);
         res.status(500).json({ error: "Failed to delete account: " + error.message });
+    }
+});
+
+// Fitness metrics endpoints
+const fitnessMetricsController = require('../controllers/fitnessMetricsController');
+
+// Get Form & Fitness chart data
+router.get("/athlete/:athleteId/form-fitness", verifyToken, async (req, res) => {
+    try {
+        const { athleteId } = req.params;
+        const days = parseInt(req.query.days) || 60;
+        const sportFilter = req.query.sport || 'all'; // 'all', 'bike', 'run', 'swim'
+        
+        // Check if user has access to this athlete
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+
+        if (user.role === 'coach') {
+            // Coach can access their athletes
+            const hasAccess = user.athletes && user.athletes.some(a => 
+                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
+            );
+            if (!hasAccess && String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        } else {
+            // Regular user can only access their own data
+            if (String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const data = await fitnessMetricsController.calculateFormFitnessData(athleteId, days, sportFilter);
+        res.json(data);
+    } catch (error) {
+        console.error("Error getting form fitness data:", error);
+        console.error("Error stack:", error.stack);
+        res.status(500).json({ error: "Failed to get form fitness data: " + error.message });
+    }
+});
+
+// Get today's metrics (Fitness, Fatigue, Form)
+router.get("/athlete/:athleteId/today-metrics", verifyToken, async (req, res) => {
+    try {
+        const { athleteId } = req.params;
+        
+        // Check if user has access to this athlete
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+
+        if (user.role === 'coach') {
+            const hasAccess = user.athletes && user.athletes.some(a => 
+                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
+            );
+            if (!hasAccess && String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        } else {
+            if (String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const metrics = await fitnessMetricsController.calculateTodayMetrics(athleteId);
+        res.json(metrics);
+    } catch (error) {
+        console.error("Error getting today metrics:", error);
+        res.status(500).json({ error: "Failed to get today metrics: " + error.message });
+    }
+});
+
+// Get training status
+router.get("/athlete/:athleteId/training-status", verifyToken, async (req, res) => {
+    try {
+        const { athleteId } = req.params;
+        
+        // Check if user has access to this athlete
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+
+        if (user.role === 'coach') {
+            const hasAccess = user.athletes && user.athletes.some(a => 
+                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
+            );
+            if (!hasAccess && String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        } else {
+            if (String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const status = await fitnessMetricsController.calculateTrainingStatus(athleteId);
+        res.json(status);
+    } catch (error) {
+        console.error("Error getting training status:", error);
+        res.status(500).json({ error: "Failed to get training status: " + error.message });
+    }
+});
+
+// Get weekly training load
+router.get("/athlete/:athleteId/weekly-training-load", verifyToken, async (req, res) => {
+    try {
+        const { athleteId } = req.params;
+        const months = parseInt(req.query.months) || 3;
+        const sportFilter = req.query.sport || 'all'; // 'all', 'bike', 'run', 'swim'
+        
+        // Check if user has access to this athlete
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(401).json({ error: "User not found" });
+        }
+
+        if (user.role === 'coach') {
+            const hasAccess = user.athletes && user.athletes.some(a => 
+                String(a.athleteId) === String(athleteId) || String(a._id) === String(athleteId)
+            );
+            if (!hasAccess && String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        } else {
+            if (String(user._id) !== String(athleteId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const result = await fitnessMetricsController.calculateWeeklyTrainingLoad(athleteId, months, sportFilter);
+        res.json(result);
+    } catch (error) {
+        console.error("Error getting weekly training load:", error);
+        res.status(500).json({ error: "Failed to get weekly training load: " + error.message });
     }
 });
 

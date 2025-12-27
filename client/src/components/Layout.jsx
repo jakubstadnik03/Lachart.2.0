@@ -41,7 +41,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         <main className="flex-1 px-3 sm:px-3 md:px-4 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto flex flex-col min-h-full">
             <div className="flex-1">
-              <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
+            <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
             </div>
             {/* Footer na mobilu - na konci obsahu */}
             <div className="md:hidden">
@@ -52,7 +52,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
         {/* Footer na desktopu - sticky */}
         <div className="hidden md:block">
-          <Footer />
+        <Footer />
         </div>
       </div>
       {isMenuOpen && (

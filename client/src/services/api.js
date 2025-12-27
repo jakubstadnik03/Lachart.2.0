@@ -241,6 +241,19 @@ export const downloadLactateSessionFit = async (sessionId) => {
 // Legacy compatibility
 export const saveLactateSession = createLactateSession;
 
+// Fitness metrics endpoints
+export const getFormFitnessData = (athleteId, days = 60, sport = 'all') => 
+  api.get(`/user/athlete/${athleteId}/form-fitness?days=${days}&sport=${sport}`);
+
+export const getTodayMetrics = (athleteId) => 
+  api.get(`/user/athlete/${athleteId}/today-metrics`);
+
+export const getTrainingStatus = (athleteId) => 
+  api.get(`/user/athlete/${athleteId}/training-status`);
+
+export const getWeeklyTrainingLoad = (athleteId, months = 3, sport = 'all') => 
+  api.get(`/user/athlete/${athleteId}/weekly-training-load?months=${months}&sport=${sport}`);
+
 export default api;
 
 // FIT file upload endpoints

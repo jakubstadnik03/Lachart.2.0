@@ -6,8 +6,18 @@ import {
   ChevronUpIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  MinusIcon
+  MinusIcon,
+  BoltIcon,
+  FireIcon,
+  ArrowPathIcon,
+  CogIcon,
+  BeakerIcon
 } from '@heroicons/react/24/outline';
+import {
+  UserIcon,
+  HeartIcon,
+  SparklesIcon
+} from '@heroicons/react/24/solid';
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 
@@ -38,16 +48,65 @@ function getLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
-function sportBadge(sport) {
-  if (!sport) return '';
+// Sport icon component with SVG icons
+const SportIcon = ({ sport, className = "w-4 h-4" }) => {
+  if (!sport) return null;
   const s = String(sport).toLowerCase();
-  if (s.includes('run')) return '🏃‍♂️';
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '🚴‍♂️';
-  if (s.includes('swim')) return '🏊‍♂️';
-  if (s.includes('ski')) return '🎿';
-  if (s.includes('hike')) return '🥾';
-  return '🏋️';
-}
+  
+  if (s.includes('run')) {
+    return (
+      <div className={`${className} rounded-full bg-orange-100 p-0.5 flex items-center justify-center`}>
+        <img src="/icon/run.svg" alt="Run" className="w-3 h-3" />
+      </div>
+    );
+  }
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) {
+    return (
+      <div className={`${className} rounded-full bg-blue-100 p-0.5 flex items-center justify-center`}>
+        <img src="/icon/bike.svg" alt="Bike" className="w-3 h-3" />
+      </div>
+    );
+  }
+  if (s.includes('swim')) {
+    return (
+      <div className={`${className} rounded-full bg-cyan-100 p-0.5 flex items-center justify-center`}>
+        <img src="/icon/swim.svg" alt="Swim" className="w-3 h-3" />
+      </div>
+    );
+  }
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
+    return (
+      <div className={`${className} rounded-full bg-purple-100 p-0.5 flex items-center justify-center`}>
+        <BoltIcon className="w-3 h-3 text-purple-600" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${className} rounded-full bg-gray-100 p-0.5 flex items-center justify-center`}>
+      <BoltIcon className="w-3 h-3 text-gray-600" />
+    </div>
+  );
+};
+
+// Sport badge for summary sections - SVG icons
+const SportBadgeSummary = ({ sport }) => {
+  if (!sport) return null;
+  const s = String(sport).toLowerCase();
+  
+  if (s.includes('run')) {
+    return <img src="/icon/run.svg" alt="Run" className="w-5 h-5" />;
+  }
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) {
+    return <img src="/icon/bike.svg" alt="Bike" className="w-5 h-5" />;
+  }
+  if (s.includes('swim')) {
+    return <img src="/icon/swim.svg" alt="Swim" className="w-5 h-5" />;
+  }
+  if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
+    return <BoltIcon className="w-5 h-5 text-purple-500" />;
+  }
+  return <BoltIcon className="w-5 h-5 text-gray-500" />;
+};
 
 export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate, user = null, onMonthChange = null }) {
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
@@ -441,7 +500,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   };
 
   return (
-    <div className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-xl'} ${isMobile ? 'rounded-lg' : 'rounded-2xl md:rounded-3xl'} ${isMobile ? 'border border-gray-200' : 'border border-white/20'} shadow-md ${isMobile ? 'p-2' : 'p-3 md:p-4 lg:p-6'} ${isMobile ? 'mb-2' : 'mb-4 md:mb-6'} overflow-hidden`}>
+    <div className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-xl'} ${isMobile ? 'rounded-lg' : 'rounded-2xl md:rounded-3xl'} ${isMobile ? 'border border-gray-200' : 'border border-white/20'} shadow-md ${isMobile ? 'p-2' : 'p-3 md:p-4 lg:p-4'} ${isMobile ? 'mb-2' : 'mb-4 md:mb-6'} overflow-hidden`}>
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex items-center gap-1.5 md:gap-2">
           <button 
@@ -589,12 +648,12 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       return (
                         <div 
                           key={dayIdx} 
-                          className={`bg-white rounded-lg border border-gray-200 ${isMobile ? 'p-1.5' : 'p-1.5'} ${isMobile ? 'w-[90px] flex-shrink-0' : 'min-w-[140px]'} transition-colors shadow-sm`}
+                          className={`bg-white rounded-xl border ${isToday ? 'border-primary/30 ring-2 ring-primary/20' : 'border-gray-200'} ${isMobile ? 'p-2' : 'p-2'} ${isMobile ? 'w-[90px] flex-shrink-0' : 'min-w-[140px]'} transition-all shadow-sm hover:shadow-md hover:border-gray-300`}
                         >
-                          <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-semibold mb-0.5 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
+                          <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-600'}`}>
                             {dayNames[dayDate.getDay() === 0 ? 6 : dayDate.getDay() - 1]}
                           </div>
-                          <div className={`${isMobile ? 'text-xs' : 'text-base'} font-bold mb-1 ${isToday ? 'text-primary' : 'text-gray-900'}`}>
+                          <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold mb-1.5 ${isToday ? 'text-primary' : 'text-gray-900'}`}>
                             {dayDate.getDate()}
                           </div>
                           <div className="space-y-0.5">
@@ -621,9 +680,9 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   onTouchStart={handleTouchStart}
                                   onMouseEnter={(e) => {
                                     if (!isMobile) {
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setHoveredActivity({ activity: a, title: activityTitle });
-                                      setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setHoveredActivity({ activity: a, title: activityTitle });
+                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
                                     }
                                   }}
                                   onMouseLeave={() => {
@@ -633,41 +692,41 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   }}
                                   onMouseMove={(e) => {
                                     if (!isMobile) {
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
                                     }
                                   }}
-                                  className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded border shadow-sm transition-colors flex items-center gap-0.5 touch-manipulation ${
+                                  className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-0.5' : 'text-[10px] px-2 py-1.5'} rounded-lg border transition-all flex items-center gap-1.5 touch-manipulation ${
                                     isSelected 
-                                      ? 'bg-primary text-white border-primary hover:bg-primary-dark active:bg-primary-dark' 
-                                      : 'bg-primary/10 hover:bg-primary/20 active:bg-primary/30 text-primary-dark border-primary/30'
+                                      ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-md hover:shadow-lg active:shadow-md' 
+                                      : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-800 border-gray-200 shadow-sm hover:shadow-md hover:border-primary/30'
                                   }`}
                                   style={{ WebkitTapHighlightColor: 'transparent' }}
                                 >
-                                  <span className={`flex-shrink-0 ${isMobile ? 'text-[8px]' : 'text-xs'}`}>{sportBadge(a.sport)}</span>
-                                  <span className={`truncate ${isMobile ? 'text-[8px]' : 'text-[10px]'}`}>{activityTitle}</span>
+                                  <SportIcon sport={a.sport} className={isMobile ? "w-3 h-3" : "w-4 h-4"} />
+                                  <span className={`truncate font-medium ${isMobile ? 'text-[8px]' : 'text-[10px]'}`}>{activityTitle}</span>
                                 </button>
                               );
                             })}
                             {remainingCount > 0 && (
-                            <button
-                              onClick={toggleExpand}
+                              <button
+                                onClick={toggleExpand}
                               onTouchStart={(e) => {
                                 e.stopPropagation();
                                 toggleExpand(e);
                               }}
-                              className={`w-full text-left ${isMobile ? 'text-[8px] px-0.5 py-0.5' : 'text-[10px] px-1.5 py-1'} rounded bg-primary/10 hover:bg-primary/20 active:bg-primary/30 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium touch-manipulation flex items-center gap-1`}
+                              className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-1' : 'text-[10px] px-2 py-1.5'} rounded-lg bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium touch-manipulation flex items-center gap-1.5`}
                               style={{ WebkitTapHighlightColor: 'transparent' }}
-                            >
+                              >
                                 {isExpanded ? (
                                   <>
-                                    <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
-                                    <span>-{remainingCount}</span>
+                                    <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
+                                    <span className="text-gray-600">Show less ({remainingCount})</span>
                                   </>
                                 ) : (
                                   <>
-                                    <span>+</span>
-                                    <span>{remainingCount}</span>
+                                    <span className="text-primary font-bold">+</span>
+                                    <span className="text-gray-600">{remainingCount} more</span>
                                   </>
                                 )}
                               </button>
@@ -729,9 +788,9 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                   <button
                     key={dayIdx}
                     onClick={() => handleDayClick(dayDate)}
-                    className={`bg-white rounded border border-gray-200 p-1 min-h-[50px] flex flex-col items-start transition-colors ${
-                      isCurrentMonth ? '' : 'opacity-30'
-                    } ${isToday ? 'ring-1 ring-primary bg-primary/10' : ''} active:bg-gray-50`}
+                    className={`bg-white rounded-lg border transition-all ${
+                      isCurrentMonth ? 'border-gray-200' : 'border-gray-100 opacity-40'
+                    } ${isToday ? 'ring-2 ring-primary ring-offset-1 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/30 shadow-sm' : 'hover:border-gray-300 hover:shadow-sm'} p-1.5 min-h-[50px] flex flex-col items-start active:bg-gray-50`}
                   >
                     <div className={`text-[10px] font-semibold mb-0.5 w-full text-left ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                       {dayDate.getDate()}
@@ -757,31 +816,31 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                             key={i}
                             onClick={handleActivityClick}
                             onTouchStart={handleTouchStart}
-                            className={`text-[7px] px-0.5 py-0.5 rounded border flex items-center touch-manipulation ${
+                            className={`text-[7px] px-1 py-0.5 rounded-md border flex items-center justify-center touch-manipulation transition-all ${
                               isSelected 
-                                ? 'bg-primary text-white border-primary active:bg-primary-dark' 
-                                : 'bg-primary/10 text-primary-dark border-primary/30 active:bg-primary/30'
+                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-sm active:shadow-md' 
+                                : 'bg-white text-gray-700 border-gray-200 shadow-sm hover:shadow-md active:bg-gray-50'
                             }`}
                             style={{ WebkitTapHighlightColor: 'transparent' }}
                           >
-                            <span className="text-[7px]">{sportBadge(a.sport)}</span>
+                            <SportIcon sport={a.sport} className="w-2.5 h-2.5" />
                           </button>
                         );
                       })}
                       {acts.length > 1 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDayClick(dayDate);
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            handleDayClick(dayDate);
-                          }}
-                          className="text-[7px] px-0.5 py-0.5 rounded bg-gray-200 text-gray-600 font-semibold touch-manipulation active:bg-gray-300"
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDayClick(dayDate);
+                            }}
+                            onTouchStart={(e) => {
+                              e.stopPropagation();
+                              handleDayClick(dayDate);
+                            }}
+                          className="text-[7px] px-1 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold touch-manipulation active:bg-gray-300 border border-gray-200 shadow-sm transition-all"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
                         >
-                          {acts.length}
+                          +{acts.length - 1}
                         </button>
                       )}
                     </div>
@@ -800,19 +859,19 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 const isExpanded = expandedSummary.has(weekKey);
                 
                 return (
-                  <div key={idx} className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-md'} rounded-lg ${isMobile ? 'border border-gray-200' : 'border border-white/20'} p-3`}>
-                  <button
-                    onClick={() => {
-                      setExpandedSummary(prev => {
-                        const newSet = new Set(prev);
-                        if (newSet.has(weekKey)) {
-                          newSet.delete(weekKey);
-                        } else {
-                          newSet.add(weekKey);
-                        }
-                        return newSet;
-                      });
-                    }}
+                  <div key={idx} className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-md'} rounded-xl ${isMobile ? 'border border-gray-200' : 'border border-white/20'} p-4 shadow-sm hover:shadow-md transition-shadow`}>
+                    <button
+                      onClick={() => {
+                        setExpandedSummary(prev => {
+                          const newSet = new Set(prev);
+                          if (newSet.has(weekKey)) {
+                            newSet.delete(weekKey);
+                          } else {
+                            newSet.add(weekKey);
+                          }
+                          return newSet;
+                        });
+                      }}
                     onTouchStart={(e) => {
                       e.stopPropagation();
                       setExpandedSummary(prev => {
@@ -825,25 +884,30 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                         return newSet;
                       });
                     }}
-                    className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50"
+                    className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50 rounded-lg p-1 -m-1 transition-colors"
                     style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
+                    >
                       <div className="text-left">
-                        <div className="text-sm font-bold text-gray-900">
+                        <div className="text-sm font-bold text-gray-900 mb-1.5">
                           {formatWeekRange(weekSummary.weekStart)}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 rounded-lg">
                           <span className="text-xs font-semibold text-primary">
-                            Total: {formatHours(weekSummary.totalSeconds)}
+                              {formatHours(weekSummary.totalSeconds)}
                           </span>
+                          </div>
                           {weekSummary.totalTSS > 0 && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 rounded-lg">
+                              <FireIcon className="w-3.5 h-3.5 text-purple-600" />
                             <span className="text-xs font-bold text-purple-600">
-                              TSS: {Math.round(weekSummary.totalTSS)}
+                                {Math.round(weekSummary.totalTSS)}
                             </span>
+                            </div>
                           )}
                         </div>
                       </div>
-                      <span className="text-gray-600 flex items-center">
+                      <span className="text-gray-400 flex items-center">
                         {isExpanded ? (
                           <ChevronDownIcon className="w-5 h-5" />
                         ) : (
@@ -853,52 +917,54 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                     </button>
                     
                     {isExpanded && (
-                      <div className="mt-3 pt-3 border-t border-gray-300/40 space-y-2">
-                        {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
-                          <div className={`${isMobile ? 'bg-gray-50' : 'bg-white/10 backdrop-blur-md'} rounded-lg px-2.5 py-1.5 ${isMobile ? 'border border-gray-200' : 'border border-white/20'}`}>
-                            <div className="flex items-center justify-between text-gray-900">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">🏃</span>
-                                <span className="text-xs font-bold">Run</span>
-                                <span className="text-xs text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
-                                <span className="text-xs text-gray-600">{formatHours(weekSummary.runSeconds)}</span>
-                              </div>
+                      <div className="mt-4 pt-4 border-t border-gray-200 space-y-2.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
+                            <div className="flex items-center gap-1.5">
+                              <img src="/icon/run.svg" alt="Run" className="w-4 h-4" />
+                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
+                              <span className="text-xs text-gray-500">•</span>
+                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.runSeconds)}</span>
                               {weekSummary.tssRun > 0 && (
-                                <span className="text-xs text-primary font-bold">TSS: {Math.round(weekSummary.tssRun)}</span>
+                                <>
+                                  <span className="text-xs text-gray-500">•</span>
+                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssRun)} TSS</span>
+                                </>
                               )}
                             </div>
-                          </div>
-                        )}
-                        {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
-                          <div className={`${isMobile ? 'bg-gray-50' : 'bg-white/10 backdrop-blur-md'} rounded-lg px-2.5 py-1.5 ${isMobile ? 'border border-gray-200' : 'border border-white/20'}`}>
-                            <div className="flex items-center justify-between text-gray-900">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">🚴</span>
-                                <span className="text-xs font-bold">Bike</span>
-                                <span className="text-xs text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
-                                <span className="text-xs text-gray-600">{formatHours(weekSummary.bikeSeconds)}</span>
-                              </div>
+                          )}
+                          {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
+                            <div className="flex items-center gap-1.5">
+                              <img src="/icon/bike.svg" alt="Bike" className="w-4 h-4" />
+                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
+                              <span className="text-xs text-gray-500">•</span>
+                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.bikeSeconds)}</span>
                               {weekSummary.tssBike > 0 && (
-                                <span className="text-xs text-primary font-bold">TSS: {Math.round(weekSummary.tssBike)}</span>
+                                <>
+                                  <span className="text-xs text-gray-500">•</span>
+                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssBike)} TSS</span>
+                                </>
                               )}
                             </div>
-                          </div>
-                        )}
-                        {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
-                          <div className={`${isMobile ? 'bg-gray-50' : 'bg-white/10 backdrop-blur-md'} rounded-lg px-2.5 py-1.5 ${isMobile ? 'border border-gray-200' : 'border border-white/20'}`}>
-                            <div className="flex items-center justify-between text-gray-900">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">🏊</span>
-                                <span className="text-xs font-bold">Swim</span>
-                                <span className="text-xs text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
-                                <span className="text-xs text-gray-600">{formatHours(weekSummary.swimSeconds)}</span>
-                              </div>
+                          )}
+                          {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
+                            <div className="flex items-center gap-1.5">
+                              <img src="/icon/swim.svg" alt="Swim" className="w-4 h-4" />
+                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
+                              <span className="text-xs text-gray-500">•</span>
+                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.swimSeconds)}</span>
                               {weekSummary.tssSwim > 0 && (
-                                <span className="text-xs text-primary font-bold">TSS: {Math.round(weekSummary.tssSwim)}</span>
+                                <>
+                                  <span className="text-xs text-gray-500">•</span>
+                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssSwim)} TSS</span>
+                                </>
                               )}
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -911,7 +977,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
         /* Desktop: Original grid layout */
         <div className={`grid gap-px bg-white/10 rounded-xl overflow-hidden`} style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}> 
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
-          <div key={d} className="bg-white/10 backdrop-blur-md text-xs md:text-sm font-medium p-2 md:p-3 text-center text-gray-700">{d}</div>
+          <div key={d} className="bg-white/10 backdrop-blur-md text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-700">{d}</div>
         ))}
         {(() => {
           // Group days into weeks
@@ -950,8 +1016,8 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 };
                 
                 return (
-                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white/10 backdrop-blur-md p-2 min-h-[80px] md:min-h-[90px] transition-colors ${isCurrentMonth ? '' : 'opacity-40'}`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-                    <div className={`text-xs md:text-sm font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
+                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white/10 backdrop-blur-md p-1 md:p-2.5 min-h-[80px] md:min-h-[90px] transition-all ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-offset-1 bg-gradient-to-br from-primary/5 to-primary/10' : 'hover:bg-white/20'} rounded-lg`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                    <div className={`text-xs md:text-sm font-semibold mb-1.5 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                       {dayDate.getDate()}
                     </div>
                     <div className="space-y-1 w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
@@ -963,33 +1029,33 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                           <button 
                             key={i} 
                             onClick={() => onSelectActivity && onSelectActivity(a)} 
-                            className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg border shadow-sm transition-colors flex items-center gap-1 ${
+                            className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
                               isSelected 
-                                ? 'bg-primary text-white border-primary hover:bg-primary-dark' 
-                                : 'bg-primary/10 hover:bg-primary/20 text-primary-dark border-primary/30'
+                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-md hover:shadow-lg' 
+                                : 'bg-white hover:bg-gray-50 text-gray-800 border-gray-200 shadow-sm hover:shadow-md hover:border-primary/30'
                             }`}
                             style={{ minWidth: 0, overflow: 'hidden' }}
                             title={activityTitle}
                           >
-                            <span className="flex-shrink-0">{sportBadge(a.sport)}</span>
-                            <span className="truncate min-w-0 flex-1" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
+                            <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
                           </button>
                         );
                       })}
                       {remainingCount > 0 && (
                         <button
                           onClick={toggleExpand}
-                          className="w-full text-left text-[10px] md:text-[11px] px-1.5 md:px-2 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-dark border border-primary/30 shadow-sm transition-colors font-medium flex items-center gap-1"
+                          className="w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5"
                         >
                           {isExpanded ? (
                             <>
-                              <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
-                              <span>Show less ({remainingCount})</span>
+                              <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
+                              <span className="text-gray-600">Show less ({remainingCount})</span>
                             </>
                           ) : (
                             <>
-                              <span>+</span>
-                              <span>{remainingCount} more</span>
+                              <span className="text-primary font-bold">+</span>
+                              <span className="text-gray-600">{remainingCount} more</span>
                             </>
                           )}
                         </button>
@@ -998,81 +1064,92 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                   </div>
                 );
               }),
-              // Week summary column
+              // Week summary column - smaller and more compact
               weekSummary ? (
-                <div key={`summary-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-3 md:p-2 border-l-2 border-primary/20 min-h-[80px] md:min-h-[90px] min-w-[220px]">
-                  <div className="mb-1 pb-1 border-b border-gray-300/40">
-                    <div className="text-sm font-bold text-gray-900 mb-0.5">
+                <div key={`summary-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-1 border-l-4 border-primary/30 min-h-[80px] md:min-h-[90px] min-w-[160px] max-w-[180px] rounded-r-lg">
+                  <div className="mb-1.5 pb-1.5 border-b border-gray-300/30">
+                    <div className="text-xs font-bold text-gray-900 mb-1">
                       {formatWeekRange(weekSummary.weekStart)}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs md:text-sm font-semibold text-primary">
-                        Total: {formatHours(weekSummary.totalSeconds)}
-                      </span>
-                      {weekSummary.totalTSS > 0 && (
-                        <span className="text-xs md:text-sm font-bold text-purple-600">
-                          TSS: {Math.round(weekSummary.totalTSS)}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 rounded">
+                        <span className="text-xs font-semibold text-primary">
+                          {formatHours(weekSummary.totalSeconds)}
                         </span>
+                      </div>
+                      {weekSummary.totalTSS > 0 && (
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 rounded">
+                          <FireIcon className="w-3.5 h-3.5 text-purple-600" />
+                          <span className="text-xs font-bold text-purple-600">
+                            {Math.round(weekSummary.totalTSS)} TSS
+                          </span>
+                        </div>
                       )}
                       {weekSummary.volumeChange && (
                         <span className="flex items-center">
                           {weekSummary.volumeChange === 'up' && (
-                            <ArrowUpIcon className="w-5 h-5 text-green-600" />
+                            <ArrowUpIcon className="w-3.5 h-3.5 text-green-600" />
                           )}
                           {weekSummary.volumeChange === 'down' && (
-                            <ArrowDownIcon className="w-5 h-5 text-red-600" />
+                            <ArrowDownIcon className="w-3.5 h-3.5 text-red-600" />
                           )}
                           {weekSummary.volumeChange === 'same' && (
-                            <MinusIcon className="w-5 h-5 text-gray-400 opacity-50" />
+                            <MinusIcon className="w-3.5 h-3.5 text-gray-400 opacity-50" />
                           )}
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="space-y-1 md:text-[11px] ">
+                  <div className="flex items-center gap-1 text-xs flex-wrap">
                     {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
-                      <div className="bg-white/10 backdrop-blur-md rounded-lg px-2.5 py-1.5 border border-white/20">
-                        <div className="flex items-center gap-2 text-gray-900">
-                          <span className="text-base">🏃</span>
-                          <span className="font-bold">Run</span>
-                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
-                          <span className="text-gray-600">{formatHours(weekSummary.runSeconds)}</span>
-                          {weekSummary.tssRun > 0 && (
-                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssRun)}</span>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-1">
+                        <img src="/icon/run.svg" alt="Run" className="w-4 h-4" />
+                        <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
+                        <span className="text-xs text-gray-500">•</span>
+                        <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.runSeconds)}</span>
+                        {weekSummary.tssRun > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">•</span>
+                            <FireIcon className="w-3.5 h-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssRun)} TSS</span>
+                          </>
+                        )}
                       </div>
                     )}
                     {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
-                      <div className="bg-white/10 backdrop-blur-md rounded-lg px-2.5 py-1.5 border border-white/20">
-                        <div className="flex items-center gap-2 text-gray-900">
-                          <span className="text-base">🚴</span>
-                          <span className="font-bold">Bike</span>
-                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
-                          <span className="text-gray-600">{formatHours(weekSummary.bikeSeconds)}</span>
-                          {weekSummary.tssBike > 0 && (
-                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssBike)}</span>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <img src="/icon/bike.svg" alt="Bike" className="w-4 h-4" />
+                        <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
+                        <span className="text-xs text-gray-500">•</span>
+                        <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.bikeSeconds)}</span>
+                        {weekSummary.tssBike > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">•</span>
+                            <FireIcon className="w-3.5 h-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssBike)} TSS</span>
+                          </>
+                        )}
                       </div>
                     )}
                     {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
-                      <div className="bg-white/10 backdrop-blur-md rounded-lg px-2.5 py-1.5 border border-white/20">
-                        <div className="flex items-center gap-2 text-gray-900">
-                          <span className="text-base">🏊</span>
-                          <span className="font-bold">Swim</span>
-                          <span className="font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
-                          <span className="text-gray-600">{formatHours(weekSummary.swimSeconds)}</span>
-                          {weekSummary.tssSwim > 0 && (
-                            <span className="text-primary font-bold ml-auto">TSS: {Math.round(weekSummary.tssSwim)}</span>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <img src="/icon/swim.svg" alt="Swim" className="w-4 h-4" />
+                        <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
+                        <span className="text-xs text-gray-500">•</span>
+                        <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.swimSeconds)}</span>
+                        {weekSummary.tssSwim > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">•</span>
+                            <FireIcon className="w-3.5 h-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssSwim)} TSS</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
               ) : (
-                <div key={`summary-empty-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-2 min-h-[80px] md:min-h-[90px] min-w-[200px]"></div>
+                <div key={`summary-empty-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-1 min-h-[80px] md:min-h-[90px] min-w-[160px]"></div>
               )
             ].filter(Boolean);
           });

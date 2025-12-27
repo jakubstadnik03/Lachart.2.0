@@ -27,6 +27,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const zoneTypeInitialized = useRef(new Map()); // Track which months have had zone type auto-selected
   const [tooltipData, setTooltipData] = useState(null); // { x, y, content }
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const lastTrainingCountRef = useRef(0); // Track last known training count
+  const pollingIntervalRef = useRef(null); // Reference to polling interval
   
   // Detect mobile
   useEffect(() => {
@@ -36,6 +38,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+  
   
   // Format pace for display (seconds to mm:ss)
   const formatPace = (seconds) => {
@@ -50,7 +53,11 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       setLoading(true);
       const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
       const data = await getTrainingsWithLactate(athleteId);
-      setTrainings(data || []);
+      const newTrainings = data || [];
+      setTrainings(newTrainings);
+      
+      // Update training count reference
+      lastTrainingCountRef.current = newTrainings.length;
     } catch (error) {
       console.error('Error loading trainings with lactate:', error);
     } finally {
@@ -185,6 +192,26 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     }
   }, []);
 
+  // Helper function to check if selected month is current month
+  const isCurrentMonth = useCallback((monthKey) => {
+    if (!monthKey) return false;
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return monthKey === currentMonthKey;
+  }, []);
+  
+  // Function to refresh current month data if selected
+  const refreshCurrentMonthIfSelected = useCallback(async () => {
+    if (!selectedMonth || !isCurrentMonth(selectedMonth)) return;
+    
+    console.log('Refreshing current month data due to new training...');
+    
+    // Reload metadata to get updated month list
+    await loadAvailableMonths();
+    
+    // Reload current month data with force reload
+    await loadMonthData(selectedMonth, true);
+  }, [selectedMonth, isCurrentMonth, loadAvailableMonths, loadMonthData]);
 
   useEffect(() => {
     loadTrainings();
@@ -235,6 +262,70 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       loadMonthData(selectedMonth);
     }
   }, [selectedMonth, loadMonthData, loadedMonths]);
+
+  // Event listener for new trainings
+  useEffect(() => {
+    const handleTrainingAdded = () => {
+      console.log('Training added event detected, refreshing data...');
+      refreshCurrentMonthIfSelected();
+    };
+    
+    // Listen for custom events
+    window.addEventListener('trainingAdded', handleTrainingAdded);
+    window.addEventListener('trainingUpdated', handleTrainingAdded);
+    window.addEventListener('stravaSyncComplete', handleTrainingAdded);
+    
+    return () => {
+      window.removeEventListener('trainingAdded', handleTrainingAdded);
+      window.removeEventListener('trainingUpdated', handleTrainingAdded);
+      window.removeEventListener('stravaSyncComplete', handleTrainingAdded);
+    };
+  }, [refreshCurrentMonthIfSelected]);
+  
+  // Polling mechanism to check for new trainings
+  useEffect(() => {
+    // Only poll if current month is selected
+    if (!selectedMonth || !isCurrentMonth(selectedMonth)) {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+    
+    // Poll every 30 seconds for new trainings
+    const pollForNewTrainings = async () => {
+      try {
+        const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+        const data = await getTrainingsWithLactate(athleteId);
+        const currentCount = (data || []).length;
+        
+        // If training count increased, refresh data
+        if (currentCount > lastTrainingCountRef.current) {
+          console.log(`New trainings detected (${currentCount} vs ${lastTrainingCountRef.current}), refreshing...`);
+          lastTrainingCountRef.current = currentCount;
+          await refreshCurrentMonthIfSelected();
+        } else {
+          lastTrainingCountRef.current = currentCount;
+        }
+      } catch (error) {
+        console.error('Error polling for new trainings:', error);
+      }
+    };
+    
+    // Initial count
+    lastTrainingCountRef.current = trainings.length;
+    
+    // Start polling
+    pollingIntervalRef.current = setInterval(pollForNewTrainings, 30000); // 30 seconds
+    
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [selectedMonth, isCurrentMonth, trainings.length, user, selectedAthleteId, refreshCurrentMonthIfSelected]);
 
   // Auto-select zone type when month data is loaded (only once per month)
   useEffect(() => {

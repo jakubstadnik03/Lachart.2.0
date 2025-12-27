@@ -5,12 +5,15 @@ import { calculateThresholds, calculatePolynomialRegression } from './DataTable'
 import EditProfileModal from '../Profile/EditProfileModal';
 import api from '../../services/api';
 import { updateUserProfile } from '../../services/api';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const [zones, setZones] = useState(null);
   const [selectedSport, setSelectedSport] = useState('bike');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [showGlossary, setShowGlossary] = useState(false);
   
   // Get unit system and input mode from mockData or default to metric/pace
   const unitSystem = mockData?.unitSystem || 'metric';
@@ -540,13 +543,23 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       <div className="relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl mt-3 sm:mt-5 overflow-hidden">
         <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/20 bg-white/20 rounded-t-2xl sm:rounded-t-3xl backdrop-blur">
           <div className="flex items-center justify-between mb-2">
-            <div>
-          <h4 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 drop-shadow-[0_1px_8px_rgba(0,0,30,0.10)]">
-            Training Zones Table
-          </h4>
-              <p className="text-xs sm:text-sm text-gray-700 mt-1">
-                Training zones from selected test
-              </p>
+            <div className="flex items-center gap-2">
+              <div>
+                <h4 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 drop-shadow-[0_1px_8px_rgba(0,0,30,0.10)]">
+                  Training Zones Table
+                </h4>
+                <p className="text-xs sm:text-sm text-gray-700 mt-1">
+                  Training zones from selected test
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGlossary(true)}
+                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Show glossary"
+                title="Training Glossary"
+              >
+                <InformationCircleIcon className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
             <button
               onClick={() => setIsEditModalOpen(true)}
@@ -706,6 +719,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           }
         }}
         userData={getProfileDataWithZones()}
+      />
+
+      {/* Glossary Modal */}
+      <TrainingGlossary 
+        isOpen={showGlossary} 
+        onClose={() => setShowGlossary(false)} 
+        initialTerm="Training Zones"
+        initialCategory="Lactate"
       />
     </div>
   );

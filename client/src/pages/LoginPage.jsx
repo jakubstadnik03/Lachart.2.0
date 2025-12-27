@@ -114,15 +114,15 @@ const LoginPage = () => {
             setShowEditProfileModal(true);
           } else {
             // Profile is complete, proceed with normal navigation
-            const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-            console.log("Checking for pending invitation after login:", pendingInvitationToken);
-            
-            if (pendingInvitationToken) {
-              console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-              // Don't remove the token yet, let the AcceptCoachInvitation page handle it
-              navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
-            } else {
-              navigate("/dashboard", { replace: true });
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          console.log("Checking for pending invitation after login:", pendingInvitationToken);
+          
+          if (pendingInvitationToken) {
+            console.log("Found pending invitation token after login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
             }
           }
         } catch (loginError) {
@@ -199,15 +199,15 @@ const LoginPage = () => {
             setShowEditProfileModal(true);
           } else {
             // Profile is complete, proceed with normal navigation
-            const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
-            console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
-            
-            if (pendingInvitationToken) {
-              console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
-              // Don't remove the token yet, let the AcceptCoachInvitation page handle it
-              navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
-            } else {
-              navigate("/dashboard", { replace: true });
+          const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
+          console.log("Checking for pending invitation after Google login:", pendingInvitationToken);
+          
+          if (pendingInvitationToken) {
+            console.log("Found pending invitation token after Google login, redirecting to:", `/accept-coach-invitation/${pendingInvitationToken}`);
+            // Don't remove the token yet, let the AcceptCoachInvitation page handle it
+            navigate(`/accept-coach-invitation/${pendingInvitationToken}`, { replace: true });
+          } else {
+            navigate("/dashboard", { replace: true });
             }
           }
         } catch (loginError) {

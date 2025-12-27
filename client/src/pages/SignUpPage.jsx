@@ -70,7 +70,7 @@ const SignUpPage = () => {
         setShowEditProfileModal(true);
       } else {
         // Fallback to login page if auto-login fails
-        navigate('/login');
+      navigate('/login');
       }
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');

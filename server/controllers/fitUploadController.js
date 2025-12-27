@@ -1317,6 +1317,7 @@ async function analyzeTrainingsByMonth(req, res) {
           totalTSS: 0,
           bikeTSS: 0,
           runningTSS: 0,
+          swimmingTSS: 0,
           // Bike statistics
           bikeTrainings: 0,
           bikeTime: 0,
@@ -1853,6 +1854,7 @@ async function analyzeTrainingsByMonth(req, res) {
           totalTSS: 0,
           bikeTSS: 0,
           runningTSS: 0,
+          swimmingTSS: 0,
           // Bike statistics (excluding running/swimming)
           bikeTrainings: 0,
           bikeTime: 0,
@@ -2432,8 +2434,8 @@ async function analyzeTrainingsByMonth(req, res) {
       }
       month.runningTSS = runningTSS;
       
-      // Calculate total TSS
-      month.totalTSS = (month.bikeTSS || 0) + runningTSS;
+      // Calculate total TSS (bike + run + swim)
+      month.totalTSS = (month.bikeTSS || 0) + runningTSS + (month.swimmingTSS || 0);
       
       // Finalize running zone statistics
       // Calculate total running time from zone times if runningTime is 0
@@ -2457,7 +2459,13 @@ async function analyzeTrainingsByMonth(req, res) {
         
       });
       
-      // Finalize swimming zone statistics
+      // Finalize swimming statistics
+      // Calculate swimming average pace
+      let swimmingAvgPace = 0;
+      let swimmingTotalPaceSum = 0;
+      let swimmingPaceCount = 0;
+      
+      // Sum up pace from zone times
       [1, 2, 3, 4, 5].forEach(zoneNum => {
         const swimmingZone = month.swimmingZoneTimes[zoneNum];
         swimmingZone.time = Number(swimmingZone.time) || 0;
@@ -2466,10 +2474,38 @@ async function analyzeTrainingsByMonth(req, res) {
         
         if (swimmingZone.paceCount > 0) {
           swimmingZone.avgPace = swimmingZone.avgPace / swimmingZone.paceCount;
+          swimmingTotalPaceSum += swimmingZone.avgPace * swimmingZone.paceCount;
+          swimmingPaceCount += swimmingZone.paceCount;
         }
-        swimmingZone.percentage = month.totalTime > 0 ? (swimmingZone.time / month.totalTime) * 100 : 0;
-        
+        swimmingZone.percentage = month.swimmingTime > 0 ? (swimmingZone.time / month.swimmingTime) * 100 : 0;
       });
+      
+      if (swimmingPaceCount > 0) {
+        swimmingAvgPace = swimmingTotalPaceSum / swimmingPaceCount;
+      } else if (month.swimmingTime > 0 && month.swimmingDistance > 0) {
+        // Fallback: calculate pace from total distance and time
+        // Pace in seconds per 100m = (time in seconds * 100) / (distance in meters)
+        swimmingAvgPace = (month.swimmingTime * 100) / month.swimmingDistance;
+      }
+      month.swimmingAvgPace = Number(swimmingAvgPace) || 0;
+      
+      // Calculate swimming TSS (using pace - similar to running)
+      let swimmingTSS = 0;
+      if (month.swimmingTime > 0 && month.swimmingAvgPace > 0) {
+        // For swimming, we use threshold pace (LTP2) as reference, or fallback to avg pace
+        const userSwimmingZones = user?.powerZones?.swimming;
+        const thresholdPace = userSwimmingZones?.lt2; // Threshold pace in seconds per 100m
+        let referencePace = thresholdPace;
+        // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+        if (!referencePace || referencePace <= 0) {
+          referencePace = month.swimmingAvgPace;
+        }
+        // Swimming TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+        // Faster pace (lower seconds) = higher intensity = higher TSS
+        const intensityRatio = referencePace / month.swimmingAvgPace; // > 1 if faster than reference
+        swimmingTSS = Math.round((month.swimmingTime * Math.pow(intensityRatio, 2)) / 3600 * 100);
+      }
+      month.swimmingTSS = swimmingTSS;
       });
     }
 

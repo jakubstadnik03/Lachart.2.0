@@ -68,7 +68,9 @@ router.get('/strava/callback', async (req, res) => {
       athleteId: athlete?.id?.toString() || user.strava?.athleteId || null,
       accessToken: access_token,
       refreshToken: refresh_token,
-      expiresAt: expires_at
+      expiresAt: expires_at,
+      // Preserve existing autoSync setting if it exists, otherwise default to false
+      autoSync: user.strava?.autoSync !== undefined ? user.strava.autoSync : false
     };
     // Save Strava profile picture if available
     if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
@@ -98,6 +100,15 @@ async function getValidStravaToken(user) {
   // refresh
   const client_id = process.env.STRAVA_CLIENT_ID;
   const client_secret = process.env.STRAVA_CLIENT_SECRET;
+  if (!client_id || !client_secret) {
+    console.error('Strava credentials missing for token refresh');
+    return null;
+  }
+  if (!user.strava.refreshToken) {
+    console.error('No refresh token available for user');
+    return null;
+  }
+  try {
   const resp = await axios.post('https://www.strava.com/oauth/token', {
     client_id,
     client_secret,
@@ -109,6 +120,16 @@ async function getValidStravaToken(user) {
   user.strava.expiresAt = resp.data.expires_at;
   await user.save();
   return user.strava.accessToken;
+  } catch (error) {
+    console.error('Error refreshing Strava token:', error.response?.data || error.message);
+    // If refresh token is invalid, clear Strava connection
+    if (error.response?.status === 401 || error.response?.status === 400) {
+      console.log('Refresh token invalid, clearing Strava connection for user');
+      user.strava = null;
+      await user.save();
+    }
+    return null;
+  }
 }
 
 // Helper function to delay requests to respect rate limits
@@ -594,7 +615,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Strava activity ID not found' });
     }
     
-    const token = await getValidStravaToken(user);
+    let token = await getValidStravaToken(user);
     if (!token) {
       return res.status(401).json({ error: 'Strava not connected or token invalid' });
     }
@@ -609,11 +630,43 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
       });
     } catch (apiError) {
+      // If we get 401, try refreshing token once more
+      if (apiError.response?.status === 401) {
+        console.log('Got 401 from Strava API, attempting token refresh...');
+        // Reload user to get fresh data
+        const refreshedUser = await User.findById(req.user.userId);
+        token = await getValidStravaToken(refreshedUser);
+        if (token) {
+          try {
+            // Retry with refreshed token
+            detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
+            });
+          } catch (retryError) {
+            console.error('Strava API error after token refresh:', retryError.response?.data || retryError.message);
+            return res.status(retryError.response?.status || 500).json({ 
+              error: 'Failed to fetch activity from Strava after token refresh',
+              details: retryError.response?.data || retryError.message 
+            });
+          }
+        } else {
+          console.error('Could not refresh Strava token after 401 error');
+          return res.status(401).json({ 
+            error: 'Strava token expired and could not be refreshed. Please reconnect your Strava account.',
+            requiresReconnect: true
+          });
+        }
+      } else {
       console.error('Strava API error:', apiError.response?.data || apiError.message);
       return res.status(apiError.response?.status || 500).json({ 
         error: 'Failed to fetch activity from Strava',
         details: apiError.response?.data || apiError.message 
       });
+      }
     }
     // Laps (intervals)
     let laps = [];
@@ -1414,12 +1467,12 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
           avatar: verifyUser.avatar,
           avatarType: typeof verifyUser.avatar
         });
-        
-        return res.json({ 
-          success: true, 
+      
+      return res.json({ 
+        success: true, 
           avatar: verifyUser.avatar,
-          message: 'Avatar updated from Strava'
-        });
+        message: 'Avatar updated from Strava'
+      });
       } else {
         return res.status(404).json({ error: 'No valid Strava profile picture URL found' });
       }

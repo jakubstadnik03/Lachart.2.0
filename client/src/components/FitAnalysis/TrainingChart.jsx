@@ -200,6 +200,13 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
     };
   }, [chartData, smoothing]);
 
+  // Check if training has elevation data and set showElevation default
+  useEffect(() => {
+    if (processedData && processedData.maxAltitude !== null && processedData.minAltitude !== null && !isSwimming) {
+      setShowElevation(true);
+    }
+  }, [processedData, isSwimming]);
+
   // Chart dimensions - adjust padding for narrow layouts (reduced spacing to match IntervalChart)
   const chartHeight = isMobile ? 250 : 400;
   const isNarrow = containerWidth < 800;
@@ -664,9 +671,9 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
   const handleMouseLeave = useCallback(() => {
     // On mobile, don't clear clicked point on mouse leave
     if (!isMobile) {
-      setCursorX(null);
-      setHoveredPoint(null);
-      if (onLeave) onLeave();
+    setCursorX(null);
+    setHoveredPoint(null);
+    if (onLeave) onLeave();
     }
   }, [onLeave, isMobile]);
 

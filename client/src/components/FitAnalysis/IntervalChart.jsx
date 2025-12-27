@@ -4,6 +4,7 @@ import { formatDuration, formatDistance } from '../../utils/fitAnalysisUtils';
 const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hoveredBar, setHoveredBar] = useState(null);
+  const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile
   const chartContainerRef = useRef(null);
   const barRefs = useRef({});
   
@@ -426,7 +427,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const { labels: yAxisLabels, adjustedMinValue, adjustedMaxValue, reversed } = getYAxisLabels();
 
   return (
-    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow-hidden`}>
+    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow-visible`}>
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-2 mb-2 sm:mb-4`}>
         <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold text-gray-900`}>Activity Intervals</h3>
         <div className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'flex-wrap' : ''}`}>
@@ -488,7 +489,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px' }}>
+      <div ref={chartContainerRef} className="relative w-full overflow-visible" style={{ height: isMobile ? '250px' : '400px' }}>
         {/* Y-axis labels - for pace: fastest (min) at top, slowest (max) at bottom; for cadence: min at bottom, max at top */}
         <div className={`absolute left-0 top-0 bottom-12 ${isMobile ? 'w-8' : 'w-12'} flex flex-col justify-between ${isMobile ? 'pr-1' : 'pr-2'} z-10`}>
           {yAxisLabels.map((label, i) => {
@@ -519,7 +520,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         </div>
 
         {/* Chart area */}
-        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
+        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-visible`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
           {/* Grid lines */}
           <div className="absolute inset-0">
             {yAxisLabels.map((_, i) => (
@@ -534,7 +535,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           </div>
 
           {/* Bars */}
-          <div className="relative h-full flex items-end gap-0.5 overflow-hidden" style={{ minWidth: isMobile ? '100%' : 'auto' }}>
+          <div className="relative h-full flex items-end gap-0.5 overflow-visible" style={{ minWidth: isMobile ? '100%' : 'auto' }}>
             {bars.map((bar, index) => {
               // For pace, reverse the height calculation (smaller pace = faster = higher bar)
               const height = adjustedMaxValue > adjustedMinValue 
@@ -583,9 +584,11 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                   onClick={() => {
                     if (isMobile) {
                       // On mobile, toggle tooltip on click
-                      if (hoveredBar && hoveredBar.index === index) {
+                      if (clickedBarIndex === index) {
+                        setClickedBarIndex(null);
                         setHoveredBar(null);
                       } else {
+                        setClickedBarIndex(index);
                         setHoveredBar({ bar, index, widthPercent });
                       }
                     }
@@ -594,11 +597,18 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     if (isMobile) {
                       e.preventDefault();
                       // On mobile, toggle tooltip on touch
-                      if (hoveredBar && hoveredBar.index === index) {
+                      if (clickedBarIndex === index) {
+                        setClickedBarIndex(null);
                         setHoveredBar(null);
                       } else {
+                        setClickedBarIndex(index);
                         setHoveredBar({ bar, index, widthPercent });
                       }
+                    }
+                  }}
+                  ref={(el) => {
+                    if (el) {
+                      barRefs.current[index] = el;
                     }
                   }}
                 >
@@ -618,8 +628,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           
         </div>
         
-        {/* Tooltip positioned at top of chart container - outside chart area */}
-        {hoveredBar && (() => {
+        {/* Tooltip positioned above the bar */}
+        {(hoveredBar || (isMobile && clickedBarIndex !== null && hoveredBar)) && (() => {
           const bar = hoveredBar.bar;
           const avgSpeed = bar.lap.average_speed ? (bar.lap.average_speed * 3.6).toFixed(1) : '-';
           const paceSeconds = (isRun || isSwim) && bar.lap.average_speed && bar.lap.average_speed > 0 
@@ -637,6 +647,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           const containerElement = chartContainerRef.current;
           
           let tooltipLeft = '50%';
+          let tooltipBottom = 'auto';
           
           if (barElement && containerElement) {
             const barRect = barElement.getBoundingClientRect();
@@ -650,6 +661,14 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             
             // Convert to percentage
             tooltipLeft = `${(relativeX / containerWidth) * 100}%`;
+            
+            // Position tooltip above the bar
+            // Calculate bar's top position relative to container
+            const barTop = barRect.top - containerRect.top;
+            // Position tooltip above the bar with some margin (8px)
+            // Use bottom positioning from container bottom to ensure visibility
+            const barTopFromBottom = containerRect.height - barTop;
+            tooltipBottom = `${barTopFromBottom + 8}px`; // 8px above bar, positioned from bottom
           } else {
             // Fallback calculation if refs are not available
             const cumulativeWidth = bars.slice(0, hoveredBar.index).reduce((sum, b) => sum + (b.distance / totalDistance * 100), 0);
@@ -658,71 +677,72 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             const containerWidth = containerElement?.offsetWidth || 800;
             const chartAreaWidthPercent = 100 - ((chartAreaLeftMargin * 2) / containerWidth * 100);
             tooltipLeft = `${(chartAreaLeftMargin / containerWidth * 100) + (barCenterPercent * chartAreaWidthPercent / 100)}%`;
+            tooltipBottom = '60px'; // Default position above bars
           }
           
           return (
             <div 
               className="absolute pointer-events-none z-[99999]"
-              style={{
-                top: '10px',
+                    style={{
+                bottom: tooltipBottom,
                 left: tooltipLeft,
                 transform: 'translateX(-50%)'
-              }}
-            >
-                <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px]">
-                  <div className="space-y-1 text-xs">
-                    <div className="font-semibold text-gray-900">
-                      {(isRun || isSwim) ? (isSwim ? `100m ${bar.lapNumber}` : `Km ${bar.lapNumber}`) : `Lap ${bar.lapNumber}`}
-                    </div>
-                    <div className="text-gray-600">
-                      Distance: {bar.distance > 0 ? (bar.distance >= 1000 ? `${(bar.distance / 1000).toFixed(2)} km` : `${bar.distance.toFixed(0)} m`) : '-'}
-                    </div>
-                    <div className="text-gray-600">
-                      Moving Time: {formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}
-                    </div>
-                    {(isRun || isSwim) ? (
-                      <>
-                        <div className="text-amber-600 font-medium">
-                          Pace: {paceFormatted}
+                    }}
+                  >
+                    <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px]">
+                      <div className="space-y-1 text-xs">
+                        <div className="font-semibold text-gray-900">
+                          {(isRun || isSwim) ? (isSwim ? `100m ${bar.lapNumber}` : `Km ${bar.lapNumber}`) : `Lap ${bar.lapNumber}`}
                         </div>
+                        <div className="text-gray-600">
+                          Distance: {bar.distance > 0 ? (bar.distance >= 1000 ? `${(bar.distance / 1000).toFixed(2)} km` : `${bar.distance.toFixed(0)} m`) : '-'}
+                        </div>
+                        <div className="text-gray-600">
+                          Moving Time: {formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}
+                        </div>
+                        {(isRun || isSwim) ? (
+                          <>
+                            <div className="text-amber-600 font-medium">
+                              Pace: {paceFormatted}
+                            </div>
+                            <div className="text-teal-600 font-medium">
+                              Avg. Speed: {avgSpeed} km/h
+                            </div>
+                          </>
+                        ) : (
                         <div className="text-teal-600 font-medium">
                           Avg. Speed: {avgSpeed} km/h
                         </div>
-                      </>
-                    ) : (
-                    <div className="text-teal-600 font-medium">
-                      Avg. Speed: {avgSpeed} km/h
-                    </div>
-                    )}
-                    {!isRun && !isSwim && (
-                    <div className="text-purple-600 font-medium">
-                      Avg. Power: {Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W
-                    </div>
-                    )}
-                    <div className="text-red-500 font-medium">
-                      Avg. HR: {Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}
-                    </div>
+                        )}
+                        {!isRun && !isSwim && (
+                        <div className="text-purple-600 font-medium">
+                          Avg. Power: {Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W
+                        </div>
+                        )}
+                        <div className="text-red-500 font-medium">
+                          Avg. HR: {Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}
+                        </div>
                     {(bar.lap.max_heartrate || bar.lap.maxHeartRate || bar.maxHeartRate) > 0 && (
-                    <div className="text-red-600 font-semibold">
+                        <div className="text-red-600 font-semibold">
                       Max. HR: {Math.round(bar.lap.max_heartrate || bar.lap.maxHeartRate || bar.maxHeartRate)}
+                        </div>
+                        )}
+                      </div>
                     </div>
-                    )}
-                  </div>
-                </div>
-                {/* Arrow pointing down to the bar */}
-                <div
+                    {/* Arrow pointing down to the bar */}
+                    <div
                   className="absolute top-full left-1/2 transform -translate-x-1/2"
-                  style={{
-                    width: 0,
-                    height: 0,
-                    borderLeft: '6px solid transparent',
-                    borderRight: '6px solid transparent',
-                    borderTop: '6px solid white',
-                    filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.1))'
-                  }}
-                />
-              </div>
-            );
+                      style={{
+                        width: 0,
+                        height: 0,
+                        borderLeft: '6px solid transparent',
+                        borderRight: '6px solid transparent',
+                        borderTop: '6px solid white',
+                        filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.1))'
+                      }}
+                    />
+                </div>
+              );
           })()}
 
         {/* X-axis labels - show cumulative distance/time instead of individual intervals */}

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit } from 'lucide-react';
+import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
+import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 // Tutorial steps configuration
 const tutorialSteps = [
@@ -140,6 +141,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [highlightedField, setHighlightedField] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [inputMode, setInputMode] = useState('pace');
+  const [showGlossary, setShowGlossary] = useState(false);
   // Get unitSystem from user profile, fallback to testData or 'metric'
   const getUserUnitSystem = () => {
     if (user?.units?.distance === 'imperial') return 'imperial';
@@ -234,14 +236,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     if (user?.units?.distance === 'imperial') {
       setUnitSystem('imperial');
     } else if (testData?.unitSystem) {
-      setUnitSystem(testData.unitSystem);
+        setUnitSystem(testData.unitSystem);
     } else {
       setUnitSystem('metric');
-    }
+      }
     
     if (testData?.inputMode) {
-      setInputMode(testData.inputMode);
-    }
+        setInputMode(testData.inputMode);
+      }
   }, [testData, user?.units?.distance]);
 
   // Convert display format when switching inputMode/unitSystem (for existing values only)
@@ -894,6 +896,16 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               </button>
             )}
 
+      {/* Glossary Button */}
+      <button
+        onClick={() => setShowGlossary(true)}
+        className="absolute top-[1.3rem] right-12 text-gray-500 hover:text-gray-700 transition-colors"
+        aria-label="Show glossary"
+        title="Training Glossary"
+      >
+        <Info size={20} />
+      </button>
+
       <div className="flex flex-col gap-2 flex-shrink-0">
         {/* Title and Edit Button Row */}
         <div className="flex items-center gap-2 justify-between">
@@ -1275,6 +1287,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           Please fill in the {highlightedField} field
         </div>
       )}
+
+      {/* Glossary Modal */}
+      <TrainingGlossary 
+        isOpen={showGlossary} 
+        onClose={() => setShowGlossary(false)} 
+        initialTerm="Lactate Testing"
+        initialCategory="Lactate"
+      />
     </div>
   );
 }

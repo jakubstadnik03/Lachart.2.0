@@ -84,11 +84,11 @@ const CompleteRegistrationPage = () => {
         <div className="max-w-md w-full space-y-8">
           <div>
             <div className='mx-auto flex items-center gap-2 justify-center'>
-              <img
+            <img
                 className="h-12 w-auto"
-                src="/images/LaChart.png"
-                alt="LaChart Logo"
-              />
+              src="/images/LaChart.png"
+              alt="LaChart Logo"
+            />
               <h1 className='text-2xl font-bold text-primary'>LaChart</h1>
             </div>
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">

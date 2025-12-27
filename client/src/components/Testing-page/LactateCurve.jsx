@@ -11,6 +11,8 @@ import {
   Legend,
 } from "chart.js";
 import { HelpCircle, Info } from 'lucide-react';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -102,6 +104,7 @@ const convertSecondsToSpeed = (seconds, unitSystem) => {
 
 const LactateCurve = ({ mockData, demoMode = false }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showGlossary, setShowGlossary] = useState(false);
   
   // Detect mobile
   useEffect(() => {
@@ -416,9 +419,23 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
 
     return (
       <div className={`relative w-full ${isMobile ? 'h-[400px]' : 'min-h-[500px] h-[600px]'} ${isMobile ? 'p-1.5' : 'p-2 md:p-4'} bg-white ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-lg overflow-hidden flex flex-col`}>
+        <button
+          onClick={() => setShowGlossary(true)}
+          className="absolute top-2 right-2 z-10 p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+          aria-label="Show glossary"
+          title="Training Glossary"
+        >
+          <InformationCircleIcon className="w-5 h-5 text-gray-500" />
+        </button>
         <div className="flex-1 min-h-0" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
           <Line data={data} options={options} />
         </div>
+        <TrainingGlossary 
+          isOpen={showGlossary} 
+          onClose={() => setShowGlossary(false)} 
+          initialTerm="Lactate Curve"
+          initialCategory="Lactate"
+        />
       </div>
     );
   } catch (error) {

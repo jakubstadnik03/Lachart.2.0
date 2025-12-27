@@ -124,27 +124,140 @@ const SettingsPage = () => {
     const checkIntegrationStatus = async () => {
         try {
           const status = await getIntegrationStatus();
-          setStravaConnected(Boolean(status.stravaConnected));
+          const wasConnected = stravaConnected;
+          const isNowConnected = Boolean(status.stravaConnected);
+          
+          setStravaConnected(isNowConnected);
           setGarminConnected(Boolean(status.garminConnected));
+          
+          // If Strava connection status changed (from not connected to connected), reload user profile
+          if (!wasConnected && isNowConnected && user) {
+            try {
+              console.log('Strava connection status changed, reloading user profile...');
+              const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+              });
+              if (profileResponse.ok) {
+                const updatedUser = await profileResponse.json();
+                console.log('Reloaded user profile after Strava connection change:', {
+                  hasStrava: !!updatedUser.strava,
+                  autoSync: updatedUser.strava?.autoSync
+                });
+                saveUserToStorage(updatedUser);
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+              }
+            } catch (e) {
+              console.error('Error reloading user profile after Strava connection:', e);
+            }
+          }
         } catch (e) {
           // ignore if not logged
       }
     };
     checkIntegrationStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+  
+  // Check for Strava callback in URL and reload user profile
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const isStravaConnected = urlParams.get('strava') === 'connected' || 
+                               hashParams.get('strava') === 'connected' ||
+                               window.location.search.includes('strava=connected');
+    
+    if (isStravaConnected) {
+      // Reload user profile after Strava connection
+      const reloadUserProfile = async () => {
+        try {
+          console.log('Strava connection detected, reloading user profile...');
+          
+          // Wait a bit for backend to process
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (profileResponse.ok) {
+            const updatedUser = await profileResponse.json();
+            console.log('Reloaded user profile after Strava connection:', {
+              hasStrava: !!updatedUser.strava,
+              autoSync: updatedUser.strava?.autoSync,
+              athleteId: updatedUser.strava?.athleteId
+            });
+            
+            saveUserToStorage(updatedUser);
+            window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+            
+            // Update integration status
+            try {
+              const status = await getIntegrationStatus();
+              setStravaConnected(Boolean(status.stravaConnected));
+              console.log('Integration status updated:', status.stravaConnected);
+            } catch (e) {
+              console.error('Error checking integration status:', e);
+            }
+            
+            // Clean up URL
+            const cleanPath = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanPath);
+            
+            addNotification('Strava account connected successfully', 'success');
+          } else {
+            console.error('Failed to reload user profile:', profileResponse.status);
+          }
+        } catch (e) {
+          console.error('Error reloading user profile after Strava callback:', e);
+        }
+      };
+      reloadUserProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load Strava auto-sync setting from user profile
   useEffect(() => {
     // Load from user profile if available
-    if (user?.strava && user.strava.autoSync !== undefined) {
-      console.log('Loading autoSync from user profile:', user.strava.autoSync);
-      setStravaAutoSync(user.strava.autoSync);
-    } else if (!user?.strava) {
+    if (user?.strava) {
+      // Check if autoSync is explicitly set (can be false, true, or undefined)
+      if (user.strava.autoSync !== undefined) {
+        console.log('Loading autoSync from user profile:', user.strava.autoSync);
+        setStravaAutoSync(user.strava.autoSync);
+      } else {
+        // If strava is connected but autoSync is undefined, default to false
+        console.log('Strava connected but autoSync undefined, defaulting to false');
+        setStravaAutoSync(false);
+      }
+    } else {
       // If strava is not connected, default to false
       setStravaAutoSync(false);
     }
-    // If user.strava exists but autoSync is undefined, keep current state (don't change)
   }, [user?.strava?.autoSync, user?.strava]);
+  
+  // Listen for user updates from AuthProvider
+  useEffect(() => {
+    const handleUserUpdate = (event) => {
+      const updatedUser = event.detail;
+      if (updatedUser?.strava) {
+        console.log('User updated event received, autoSync:', updatedUser.strava.autoSync);
+        if (updatedUser.strava.autoSync !== undefined) {
+          setStravaAutoSync(updatedUser.strava.autoSync);
+        }
+        setStravaConnected(true);
+      } else if (updatedUser && !updatedUser.strava) {
+        setStravaConnected(false);
+        setStravaAutoSync(false);
+      }
+    };
+    
+    window.addEventListener('userUpdated', handleUserUpdate);
+    return () => window.removeEventListener('userUpdated', handleUserUpdate);
+  }, []);
 
   // Load settings from user profile or localStorage (fallback)
   useEffect(() => {
@@ -1074,8 +1187,14 @@ const SettingsPage = () => {
               <div className={`grid ${isMobile ? 'grid-cols-1 gap-2.5' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
-                    <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} ${stravaConnected ? 'text-green-600' : 'text-gray-500'}`}>
+                    <div className="flex items-center gap-2">
+                      {/* Strava Logo */}
+                      <div className="flex items-center justify-center w-8 h-8 bg-orange-500 rounded-lg">
+                        <span className="text-white font-bold text-sm">S</span>
+                      </div>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
+                    </div>
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${stravaConnected ? 'text-green-600' : 'text-gray-500'}`}>
                       {stravaConnected ? 'Connected' : 'Not connected'}
                     </span>
                   </div>

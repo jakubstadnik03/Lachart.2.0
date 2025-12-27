@@ -211,11 +211,14 @@ export default function TrainingTable({
     if (onActivitySelect) {
       onActivitySelect(activity);
     } else {
-      // Fallback: navigate to FitAnalysisPage
+      // Navigate to FitAnalysisPage with appropriate ID
       if (activity.type === 'fit' && activity._id) {
         navigate(`/fit-analysis?trainingId=${activity._id}`);
       } else if (activity.type === 'strava' && (activity.stravaId || activity.id)) {
         navigate(`/fit-analysis?stravaId=${activity.stravaId || activity.id}`);
+      } else if (activity._id) {
+        // For regular trainings (Training model), use trainingId
+        navigate(`/fit-analysis?trainingId=${activity._id}`);
       }
     }
   };
@@ -428,7 +431,9 @@ export default function TrainingTable({
         <div className="flex flex-col px-2 sm:px-5 pb-2 sm:pb-3.5 w-full max-md:max-w-full">
           <div className="flex flex-wrap gap-3 sm:gap-10 items-center w-full max-md:max-w-full">
             <div className="flex-1 shrink self-stretch my-auto text-base sm:text-lg font-semibold leading-loose text-gray-900 basis-3.5">
-              View last trainings by categories
+              {selectedCategory === 'all' 
+                ? 'View last trainings by categories'
+                : `View last trainings ${selectedCategory.charAt(0).toUpperCase() + selectedCategory.slice(1)} category`}
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
              

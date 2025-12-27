@@ -5,6 +5,10 @@ import TrainingTable from "../components/DashboardPage/TrainingTable";
 import { TrainingStats } from "../components/DashboardPage/TrainingStats";
 import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 import SpiderChart from "../components/DashboardPage/SpiderChart";
+import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
+import TrainingStatusCard from "../components/DashboardPage/TrainingStatusCard";
+import TodayMetricsCards from "../components/DashboardPage/TodayMetricsCards";
+import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities } from '../services/api';
 import AthleteSelector from "../components/AthleteSelector";
@@ -529,11 +533,59 @@ const DashboardPage = () => {
         </motion.div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        {/* Weekly Calendar */}
+        {/* Today's Metrics Cards */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="lg:col-span-3 md:col-span-2"
+        >
+          <TodayMetricsCards 
+            athleteId={selectedAthleteId}
+          />
+        </motion.div>
+
+        {/* Training Status Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="lg:col-span-2 md:col-span-2"
+        >
+          <TrainingStatusCard 
+            athleteId={selectedAthleteId}
+          />
+        </motion.div>
+
+        {/* Form & Fitness Chart */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          className="lg:col-span-5 md:col-span-2"
+        >
+          <FormFitnessChart 
+            athleteId={selectedAthleteId}
+          />
+        </motion.div>
+
+        {/* Weekly Training Load */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="lg:col-span-5 md:col-span-2"
+        >
+          <WeeklyTrainingLoad 
+            athleteId={selectedAthleteId}
+          />
+        </motion.div>
+
+        {/* Weekly Calendar */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
           className="lg:col-span-5 md:col-span-2 mb-6"
         >
           <WeeklyCalendar 

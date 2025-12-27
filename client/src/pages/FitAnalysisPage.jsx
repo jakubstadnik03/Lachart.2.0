@@ -947,14 +947,23 @@ const FitAnalysisPage = () => {
     // Always load trainings first, then check for trainingId in URL params
     const params = new URLSearchParams(window.location.search);
     const trainingId = params.get('trainingId');
+    const stravaId = params.get('stravaId');
     
     const initialize = async () => {
       await loadTrainings();
+      await loadRegularTrainings();
+      await loadExternalActivities();
+      
     if (trainingId) {
         // Wait a bit for trainings to be loaded before loading specific training
         setTimeout(() => {
       loadTrainingFromTrainingModel(trainingId);
-        }, 100);
+        }, 200);
+      } else if (stravaId) {
+        // Wait a bit for activities to be loaded before loading specific Strava activity
+        setTimeout(() => {
+          loadStravaDetail(stravaId);
+        }, 200);
     }
     };
     
@@ -1621,6 +1630,9 @@ const FitAnalysisPage = () => {
   // Load training from Training model (from TrainingTable)
   const loadTrainingFromTrainingModel = async (trainingId) => {
     try {
+      // Ensure regularTrainings are loaded first so calendar can find the activity
+      await loadRegularTrainings();
+      
       const response = await getTrainingById(trainingId);
       const data = response.data || response; // Handle both response formats
       
@@ -2257,42 +2269,42 @@ const FitAnalysisPage = () => {
         <CalendarView
           activities={(() => {
             const allActivities = [
-              ...trainings.map(t => ({ 
-                id: t._id, 
-                date: t.timestamp, 
-                title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
-                sport: t.sport,
-                type: 'fit',
-                distance: t.totalDistance || t.distance,
-                totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-                tss: t.tss || t.totalTSS,
-                avgPower: t.avgPower || t.averagePower || null,
-                avgSpeed: t.avgSpeed || t.averageSpeed || null
-              })),
-              ...regularTrainings.map(t => ({ 
-                id: `regular-${t._id}`, 
-                date: t.date || t.timestamp, 
-                title: t.title || 'Untitled Training', 
-                sport: t.sport,
-                type: 'regular',
-                distance: t.totalDistance || t.distance,
-                totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-                tss: t.tss || t.totalTSS,
-                avgPower: t.avgPower || t.averagePower || null,
-                avgSpeed: t.avgSpeed || t.averageSpeed || null
-              })),
-              ...externalActivities.map(a => ({ 
-                id: `strava-${a.stravaId}`, 
-                date: a.startDate, 
-                title: a.titleManual || a.name || 'Untitled Activity', 
-                sport: a.sport,
-                type: 'strava',
-                distance: a.distance,
-                totalElapsedTime: a.movingTime || a.elapsedTime,
-                tss: a.tss || a.totalTSS,
-                avgPower: a.averagePower || a.average_watts || null,
-                avgSpeed: a.averageSpeed || a.average_speed || null
-              }))
+            ...trainings.map(t => ({ 
+              id: t._id, 
+              date: t.timestamp, 
+              title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
+              sport: t.sport,
+              type: 'fit',
+              distance: t.totalDistance || t.distance,
+              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+              tss: t.tss || t.totalTSS,
+              avgPower: t.avgPower || t.averagePower || null,
+              avgSpeed: t.avgSpeed || t.averageSpeed || null
+            })),
+            ...regularTrainings.map(t => ({ 
+              id: `regular-${t._id}`, 
+              date: t.date || t.timestamp, 
+              title: t.title || 'Untitled Training', 
+              sport: t.sport,
+              type: 'regular',
+              distance: t.totalDistance || t.distance,
+              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+              tss: t.tss || t.totalTSS,
+              avgPower: t.avgPower || t.averagePower || null,
+              avgSpeed: t.avgSpeed || t.averageSpeed || null
+            })),
+            ...externalActivities.map(a => ({ 
+              id: `strava-${a.stravaId}`, 
+              date: a.startDate, 
+              title: a.titleManual || a.name || 'Untitled Activity', 
+              sport: a.sport,
+              type: 'strava',
+              distance: a.distance,
+              totalElapsedTime: a.movingTime || a.elapsedTime,
+              tss: a.tss || a.totalTSS,
+              avgPower: a.averagePower || a.average_watts || null,
+              avgSpeed: a.averageSpeed || a.average_speed || null
+            }))
             ];
             console.log('CalendarView activities:', {
               total: allActivities.length,
@@ -2310,9 +2322,11 @@ const FitAnalysisPage = () => {
           })()}
           selectedActivityId={
             selectedTraining?._id || 
-            (selectedTraining?.isFromTrainingModel ? localStorage.getItem('fitAnalysis_selectedTrainingModelId') : null) ||
+            (selectedTraining?.isFromTrainingModel ? `regular-${localStorage.getItem('fitAnalysis_selectedTrainingModelId')}` : null) ||
             (selectedTraining?.isRegularTraining ? `regular-${localStorage.getItem('fitAnalysis_selectedRegularTrainingId')}` : null) ||
-            localStorage.getItem('fitAnalysis_selectedTrainingId')
+            localStorage.getItem('fitAnalysis_selectedTrainingId') ||
+            (selectedStrava ? `strava-${selectedStrava.id || selectedStrava.stravaId}` : null) ||
+            (localStorage.getItem('fitAnalysis_selectedStravaId') ? `strava-${localStorage.getItem('fitAnalysis_selectedStravaId')}` : null)
           }
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={(a) => { 
