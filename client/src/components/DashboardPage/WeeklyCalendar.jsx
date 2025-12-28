@@ -57,6 +57,18 @@ function categoryColor(category) {
   return colors[category] || 'bg-gray-100 border-gray-300 text-gray-800';
 }
 
+function categoryBorderColor(category) {
+  const borderColors = {
+    endurance: 'border-blue-400',
+    tempo: 'border-green-400',
+    threshold: 'border-yellow-400',
+    vo2max: 'border-orange-400',
+    anaerobic: 'border-red-400',
+    recovery: 'border-gray-400'
+  };
+  return borderColors[category] || 'border-white/15';
+}
+
 function categoryLabel(category) {
   const labels = {
     endurance: 'Endurance',
@@ -499,8 +511,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                                 onClick={() => handleActivityClick(act)}
                                 className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[9px] ${
                                   isSelected
-                                    ? 'bg-white/30 backdrop-blur-md text-text border-white/30 shadow-sm'
-                                    : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text border-white/15'
+                                    ? `bg-white/30 backdrop-blur-md text-text shadow-sm ${act.category ? categoryBorderColor(act.category) : 'border-white/30'}`
+                                    : `bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${act.category ? categoryBorderColor(act.category) : 'border-white/15'}`
                                 }`}
                                 title={act.title || act.name || 'Activity'}
                               >
@@ -514,7 +526,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                         )}
                         {dayActivities.length > 2 && (
                           <div className="text-[8px] text-lighterText text-center">
-                            +{dayActivities.length - 2}
+                            +{dayActivities.length - 2} more
                           </div>
                         )}
                       </div>
@@ -564,8 +576,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                             onClick={() => handleActivityClick(act)}
                             className={`w-full text-left px-1.5 py-1 rounded border transition-colors ${
                               isSelected
-                                ? 'bg-white/30 backdrop-blur-md text-text border-white/30 shadow-sm'
-                                : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text border-white/15'
+                                ? `bg-white/30 backdrop-blur-md text-text shadow-sm ${act.category ? categoryBorderColor(act.category) : 'border-white/30'}`
+                                : `bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${act.category ? categoryBorderColor(act.category) : 'border-white/15'}`
                             }`}
                             title={act.title || act.name || 'Activity'}
                           >
@@ -591,7 +603,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                     )}
                     {dayActivities.length > 2 && (
                       <div className="text-[9px] text-lighterText text-center">
-                        +{dayActivities.length - 2}
+                        +{dayActivities.length - 2} more
                       </div>
                     )}
                   </div>
@@ -1095,7 +1107,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                             <button
                               key={i}
                               onClick={() => handleActivityClick(act)}
-                              className="w-full text-left px-1.5 py-1 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text border-white/15"
+                              className={`w-full text-left px-1.5 py-1 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${
+                                act.category ? categoryBorderColor(act.category) : 'border-white/15'
+                              }`}
                               title={act.title || act.name || 'Activity'}
                             >
                               <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1115,7 +1129,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                       )}
                       {dayActivities.length > 2 && (
                         <div className="text-[8px] text-lighterText text-center">
-                          +{dayActivities.length - 2}
+                          +{dayActivities.length - 2} more
                         </div>
                       )}
                     </div>
@@ -1157,7 +1171,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                         <button
                           key={i}
                           onClick={() => handleActivityClick(act)}
-                            className="w-full text-left px-2 py-1.5 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text border-white/15"
+                            className={`w-full text-left px-2 py-1.5 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${
+                              act.category ? categoryBorderColor(act.category) : 'border-white/15'
+                            }`}
                           title={act.title || act.name || 'Activity'}
                         >
                           <div className="flex items-center justify-between gap-1 mb-0.5">

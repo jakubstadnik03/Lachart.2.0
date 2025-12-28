@@ -195,6 +195,7 @@ const LactateCurveCalculator = ({ mockData }) => {
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
+  const trainingTitle = (mockData?.title || mockData?.name || '').toString().trim();
   
   // Get unit system and input mode from mockData or default to metric/pace
   const unitSystem = mockData?.unitSystem || 'metric';
@@ -485,7 +486,13 @@ const LactateCurveCalculator = ({ mockData }) => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h2 className="text-lg sm:text-xl font-bold">
-              Lactate Curve <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
+              Lactate Curve
+              {trainingTitle && (
+                <span className="text-base sm:text-lg text-gray-800 ml-2">
+                  {trainingTitle}
+                </span>
+              )}
+              <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
             </h2>
             <button
               onClick={() => setShowGlossary(true)}

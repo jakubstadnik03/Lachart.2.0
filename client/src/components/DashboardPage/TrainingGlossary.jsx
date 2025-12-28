@@ -208,6 +208,14 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
   const [selectedTerm, setSelectedTerm] = useState(initialTerm);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory || 'Training');
   const selectedTermRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Update selectedTerm and category when initialTerm changes
   useEffect(() => {
@@ -239,12 +247,12 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
 
   // Render modal using React Portal to document.body to ensure it's always on top
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
+    <div className={`fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center ${isMobile ? 'p-0' : 'p-4'}`}>
+      <div className={`bg-white w-full flex flex-col ${isMobile ? 'h-[100dvh] max-h-[100dvh] rounded-none' : 'rounded-lg max-w-5xl max-h-[90vh]'}`}>
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
+        <div className={`sticky top-0 bg-white border-b border-gray-200 z-10 ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-semibold text-gray-900">TRAINING GLOSSARY</h2>
+            <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>TRAINING GLOSSARY</h2>
             <button
               onClick={onClose}
               className="p-1 hover:bg-gray-100 rounded-full transition-colors"
@@ -255,7 +263,7 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
           </div>
           
           {/* Category Tabs */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className={`flex gap-2 overflow-x-auto pb-2 ${isMobile ? '[-webkit-overflow-scrolling:touch]' : ''}`}>
             {Object.keys(GLOSSARY_CATEGORIES).map((category) => (
               <button
                 key={category}
@@ -267,7 +275,7 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
                     setSelectedTerm(firstTerm);
                   }
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`px-3 py-2 rounded-lg ${isMobile ? 'text-xs' : 'text-sm'} font-medium whitespace-nowrap transition-colors ${
                   selectedCategory === category
                     ? 'bg-red-500 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -277,11 +285,30 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
               </button>
             ))}
           </div>
+
+          {/* Mobile: Term selector instead of left sidebar */}
+          {isMobile && (
+            <div className="mt-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Term</label>
+              <select
+                value={selectedTerm}
+                onChange={(e) => setSelectedTerm(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                {categoryTerms.map((term) => (
+                  ALL_GLOSSARY_TERMS[term] ? (
+                    <option key={term} value={term}>{term}</option>
+                  ) : null
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className={`flex flex-1 overflow-hidden ${isMobile ? 'flex-col' : ''}`}>
           {/* Left side - Term list */}
+          {!isMobile && (
           <div className="w-64 border-r border-gray-200 overflow-y-auto bg-gray-50">
             <div className="p-4 space-y-1">
               {categoryTerms.map((term) => {
@@ -304,30 +331,31 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
               })}
             </div>
           </div>
+          )}
 
           {/* Right side - Content */}
           <div className="flex-1 overflow-y-auto bg-white">
-            <div className="p-6">
+            <div className={`${isMobile ? 'p-4' : 'p-6'}`}>
               {currentContent ? (
                 <>
-                  <h3 className="text-2xl font-semibold text-gray-900 mb-4">{currentContent.title}</h3>
+                  <h3 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-semibold text-gray-900 mb-3`}>{currentContent.title}</h3>
                   
                   {currentContent.description && (
                     <div className="mb-6">
-                      <p className="text-gray-700 leading-relaxed">{currentContent.description}</p>
+                      <p className={`${isMobile ? 'text-sm' : 'text-base'} text-gray-700 leading-relaxed`}>{currentContent.description}</p>
                     </div>
                   )}
                   
                   {currentContent.calculation && (
                     <div className="mb-6 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
                       <h4 className="font-semibold text-gray-900 mb-2">Calculation:</h4>
-                      <p className="text-gray-700 leading-relaxed">{currentContent.calculation}</p>
+                      <p className={`${isMobile ? 'text-sm' : 'text-base'} text-gray-700 leading-relaxed whitespace-pre-line`}>{currentContent.calculation}</p>
                     </div>
                   )}
                   
                   {currentContent.additional && (
                     <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                      <p className="text-gray-700 whitespace-pre-line leading-relaxed">{currentContent.additional}</p>
+                      <p className={`${isMobile ? 'text-sm' : 'text-base'} text-gray-700 whitespace-pre-line leading-relaxed`}>{currentContent.additional}</p>
                     </div>
                   )}
 
@@ -337,7 +365,7 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
                       {currentContent.definitions.map((def, index) => (
                         <div key={index} className="border-l-4 border-red-500 pl-4 py-2 bg-red-50 rounded-r-lg">
                           <h5 className="font-semibold text-gray-900 mb-2">{def.term}</h5>
-                          <p className="text-gray-700 leading-relaxed">{def.definition}</p>
+                          <p className={`${isMobile ? 'text-sm' : 'text-base'} text-gray-700 leading-relaxed`}>{def.definition}</p>
                         </div>
                       ))}
                     </div>

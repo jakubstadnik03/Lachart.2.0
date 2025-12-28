@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { formatDuration, formatDistance, formatSpeed } from '../../utils/fitAnalysisUtils';
+import { formatDuration, formatDistance, formatSpeed, formatPace } from '../../utils/fitAnalysisUtils';
 import { updateLactateValues } from '../../services/api';
 
-const LapsTable = ({ training, onUpdate, user }) => {
+const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
+  const sportLower = (training?.sport || '').toLowerCase();
+  const isRun = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
   
   // Additional safety check - ensure no duplicates in the component
   const uniqueLaps = React.useMemo(() => {
@@ -120,19 +122,28 @@ const LapsTable = ({ training, onUpdate, user }) => {
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden sm:table-cell">Distance</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden md:table-cell">Avg Speed</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden md:table-cell">{isRun ? 'Avg Pace' : 'Avg Speed'}</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
             </tr>
           </thead>
           <tbody className="bg-white/40 backdrop-blur-sm divide-y divide-gray-200/30">
-            {uniqueLaps.map((lap, index) => (
-              <tr key={index} className={`transition-colors hover:bg-white/60 ${lap.lactate ? 'bg-primary/10' : ''}`}>
+            {uniqueLaps.map((lap, index) => {
+              const lapNumber = lap?.lapNumber ?? (index + 1);
+              const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+              return (
+              <tr
+                key={index}
+                onClick={() => onSelectLapNumber && onSelectLapNumber(lapNumber)}
+                className={`transition-colors hover:bg-white/60 cursor-pointer ${lap.lactate ? 'bg-primary/10' : ''} ${isSelected ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}
+              >
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance, user)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">{formatSpeed(lap.avgSpeed, user)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">
+                  {isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user)}
+                </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
@@ -146,6 +157,7 @@ const LapsTable = ({ training, onUpdate, user }) => {
                         ...lactateInputs,
                         [`lap-${index}`]: e.target.value
                       })}
+                      onClick={(e) => e.stopPropagation()}
                       className="w-16 sm:w-20 md:w-24 px-1.5 sm:px-2 py-1 sm:py-1.5 border border-primary/50 rounded-lg text-xs sm:text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                   ) : (
@@ -155,7 +167,8 @@ const LapsTable = ({ training, onUpdate, user }) => {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ComposedChart,
   Line,
@@ -18,6 +19,12 @@ import {
 } from '@heroicons/react/24/outline';
 
 const TrainingComparison = ({ trainings }) => {
+  const navigate = useNavigate();
+  const stripUnits = (text) => {
+    if (!text || typeof text !== 'string') return text;
+    // Keep digits, dot and colon (e.g. "1.25 km" -> "1.25", "00:45" -> "00:45")
+    return text.replace(/[^0-9.:]/g, '');
+  };
   // Load saved selections from localStorage
   const [selectedCategory, setSelectedCategory] = useState(() => {
     const saved = localStorage.getItem('trainingComparison_category');
@@ -573,7 +580,7 @@ const TrainingComparison = ({ trainings }) => {
   const renderTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
     const intervalNumber = label;
-    
+
     // Show all selected trainings in tooltip
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-md p-3 text-xs min-w-[240px] max-w-[500px]">
@@ -604,65 +611,62 @@ const TrainingComparison = ({ trainings }) => {
             const sport = (meta?.training?.sport || '').toLowerCase();
             const isBike = sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
             
-            // Format metric label - for bike, show "Power" in W, otherwise show metric name
-            const metricLabel =
-              selectedMetric === 'power'
-                ? (isBike ? 'Power' : 'Power/Pace')
-                : selectedMetric === 'heartRate'
-                  ? 'Heart Rate'
-                  : selectedMetric === 'lactate'
-                    ? 'Lactate'
-                    : 'RPE';
-            
-            // Format metric value - for bike power, show in W
-            const formatMetricForTooltip = (val, metric) => {
+            // Compact formatter (no units/labels) so it fits on one line
+            const formatMetricCompact = (val, metric) => {
               if (val === null || val === undefined) return 'N/A';
-              if (metric === 'power' && isBike) {
-                // For bike, always show as power in W
-                return `${Math.round(val)} W`;
+              if (metric === 'power') {
+                if (isBike) return `${Math.round(val)}`;
+                // pace-like seconds => mm:ss (no unit)
+                if (typeof val === 'number' && val > 100) {
+                  const minutes = Math.floor(val / 60);
+                  const seconds = Math.round(val % 60);
+                  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                }
+                return `${Math.round(val)}`;
               }
-              return formatMetricValue(val, metric);
+              if (metric === 'heartRate') return `${Math.round(val)}`;
+              if (metric === 'lactate') return `${Number(val).toFixed(1)}`;
+              if (metric === 'RPE') return `${val}`;
+              return `${val}`;
             };
             
-            const distanceText = formatIntervalDistance(result);
+            const distanceText = stripUnits(formatIntervalDistance(result));
             const durationText = formatIntervalDuration(result);
             const color = point.color || '#6366F1';
 
-            // Build all info on one line
+            // Build compact one-line summary (no separators, no units/labels)
             const infoParts = [];
             infoParts.push(trainingLabel);
-            if (durationText !== 'N/A') {
-              infoParts.push(`Dur: ${durationText}`);
-            }
-            if (distanceText) {
-              infoParts.push(`Dist: ${distanceText}`);
-            }
-            infoParts.push(`${metricLabel}: ${formatMetricForTooltip(originalValue, selectedMetric)}`);
+            if (durationText !== 'N/A') infoParts.push(durationText);
+            if (distanceText) infoParts.push(distanceText);
+            infoParts.push(formatMetricCompact(originalValue, selectedMetric));
             
             // Add other metrics if available
             if (result) {
               if (selectedMetric !== 'power' && result.power) {
-                infoParts.push(`Power: ${isBike ? `${Math.round(result.power)}W` : formatMetricValue(result.power, 'power')}`);
+                // For non-bike pace, keep compact mm:ss; for bike power just number
+                const powerVal = result.power;
+                if (typeof powerVal === 'string' && powerVal.includes(':')) {
+                  infoParts.push(powerVal);
+                } else {
+                  infoParts.push(`${Math.round(Number(powerVal) || 0)}`);
+                }
               }
               if (selectedMetric !== 'heartRate' && result.heartRate) {
-                infoParts.push(`HR: ${Math.round(result.heartRate)}`);
+                infoParts.push(`${Math.round(result.heartRate)}`);
               }
               if (selectedMetric !== 'lactate' && result.lactate) {
-                infoParts.push(`Lac: ${result.lactate.toFixed(1)}`);
+                infoParts.push(`${result.lactate.toFixed(1)}`);
               }
               if (selectedMetric !== 'RPE' && result.RPE) {
-                infoParts.push(`RPE: ${result.RPE}`);
+                infoParts.push(`${result.RPE}`);
               }
             }
 
             return (
               <div key={idx} className="pb-1 border-b border-gray-100 last:border-b-0 last:pb-0">
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span
-                    className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="text-gray-900">{infoParts.join(' • ')}</span>
+                <div className="text-xs">
+                  <span className="text-gray-900 whitespace-nowrap">{infoParts.join('|')}</span>
                 </div>
               </div>
             );
@@ -820,12 +824,20 @@ const TrainingComparison = ({ trainings }) => {
                 console.log('Training clicked:', JSON.stringify(training, null, 2));
                 console.log('Training object:', training);
                 
+                // IMPORTANT: use client-side navigation so we don't hard-reload and get redirected to '/'
+                // on hosts that don't serve SPA routes directly.
                 const tid = training?._id || training?.id;
-                if (tid) {
-                  window.location.href = `/fit-analysis?trainingId=${encodeURIComponent(tid)}`;
-                } else {
-                  console.warn('Missing training id, cannot open fit-analysis', training);
+                const stravaId = training?.stravaId || training?.sourceStravaActivityId || null;
+                if (stravaId) {
+                  navigate(`/training-calendar?stravaId=${encodeURIComponent(String(stravaId))}`);
+                  return;
                 }
+                if (tid) {
+                  // trainingId here is Training model id (FitAnalysisPage will resolve to source FIT/Strava if present)
+                  navigate(`/training-calendar?trainingId=${encodeURIComponent(String(tid))}`);
+                  return;
+                }
+                console.warn('Missing training id, cannot open fit-analysis', training);
               };
               return (
                 <div
@@ -1274,10 +1286,6 @@ const TrainingComparison = ({ trainings }) => {
                       {visibleTrainings.map((item, idx) => (
                         <th key={item.training._id || idx} className="px-4 py-3 text-center font-semibold text-gray-900 min-w-[120px]">
                           <div className="flex flex-col items-center gap-1">
-                            <span
-                              className="inline-block w-3 h-3 rounded-full"
-                              style={{ backgroundColor: item.color }}
-                            />
                             <span className="text-xs">{item.dateLabel}</span>
                             <span className="text-xs text-gray-500">{item.training.title || `Training ${idx + 1}`}</span>
                           </div>
@@ -1392,31 +1400,19 @@ const TrainingComparison = ({ trainings }) => {
                             }
                             
                             const { result, metricValue, formatMetricForTable } = intervalData;
+                            const compact = [];
+                            const durationText = formatIntervalDuration(result);
+                            const distanceText = stripUnits(formatIntervalDistance(result));
+                            compact.push(formatMetricForTable(metricValue).replace(/[a-zA-Z/]+/g, '').trim());
+                            if (durationText !== 'N/A') compact.push(durationText);
+                            if (distanceText) compact.push(distanceText);
+                            if (result?.heartRate) compact.push(`${Math.round(result.heartRate)}`);
+                            if (result?.lactate !== null && result?.lactate !== undefined && result?.lactate !== 0) compact.push(`${result.lactate.toFixed(1)}`);
                             
                             return (
                               <td key={item.training._id || idx} className="px-4 py-3 text-center">
-                                <div className="flex flex-col items-center gap-1">
-                                  <span className="font-semibold text-gray-900">
-                                    {formatMetricForTable(metricValue)}
-                                  </span>
-                                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                                    <span>{formatIntervalDuration(result)}</span>
-                                    {result.heartRate && result.heartRate !== 0 && (
-                                      <span className="text-blue-600 font-medium">
-                                        HR: {Math.round(result.heartRate)}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {formatIntervalDistance(result) && (
-                                    <span className="text-xs text-gray-500">
-                                      {formatIntervalDistance(result)}
-                                    </span>
-                                  )}
-                                  {result.lactate !== null && result.lactate !== undefined && result.lactate !== 0 && (
-                                    <span className="text-xs text-purple-600 font-medium">
-                                      Lac: {result.lactate.toFixed(1)} mmol/L
-                                    </span>
-                                  )}
+                                <div className="text-xs text-gray-900 whitespace-nowrap">
+                                  {compact.filter(Boolean).join('|')}
                                 </div>
                               </td>
                             );

@@ -416,8 +416,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   
   // Fallback pro onSportChange, pokud není poskytnut
   const handleSportChange = (sport) => {
-    // Save to localStorage
-    localStorage.setItem('trainingStats_selectedSport', sport);
+    // Save to localStorage only when uncontrolled (otherwise parent decides persistence)
+    if (selectedSport === undefined || selectedSport === null) {
+      localStorage.setItem('trainingStats_selectedSport', sport);
+    }
     // Update internal state if not controlled by parent
     if (selectedSport === undefined || selectedSport === null) {
       setInternalSelectedSport(sport);

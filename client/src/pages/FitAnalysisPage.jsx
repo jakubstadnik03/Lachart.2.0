@@ -751,6 +751,7 @@ const FitAnalysisPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   const [selectedTraining, setSelectedTraining] = useState(null);
+  const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
   // Detect mobile
@@ -761,6 +762,11 @@ const FitAnalysisPage = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Reset selected lap when training changes
+  useEffect(() => {
+    setSelectedLapNumber(null);
+  }, [selectedTraining?._id]);
   
   // Training chart hover state
   const [hoveredTrainingRecord, setHoveredTrainingRecord] = useState(null);
@@ -1042,11 +1048,12 @@ const FitAnalysisPage = () => {
       
       console.log('After deduplication:', uniqueLaps.length);
       
-      // Merge titleManual and description into detail object
+      // Merge titleManual, description, and category into detail object
       const detailWithMeta = {
         ...data.detail,
         titleManual: data.titleManual,
         description: data.description,
+        category: data.category || null,
         laps: uniqueLaps,
         rawLaps
       };
@@ -1668,13 +1675,9 @@ const FitAnalysisPage = () => {
         }
       } else if (data.sourceStravaActivityId) {
         try {
-          const stravaDetail = await getStravaActivityDetail(data.sourceStravaActivityId);
-          
-          setSelectedStrava(stravaDetail);
-          setSelectedTraining(null);
-          localStorage.setItem('fitAnalysis_selectedStravaId', data.sourceStravaActivityId);
-          localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
-          localStorage.removeItem('fitAnalysis_selectedTrainingId');
+          // Use the same loader as when selecting from calendar, so selectedStrava has the expected shape
+          // and CalendarView can highlight/anchor correctly.
+          await loadStravaDetail(data.sourceStravaActivityId);
           
           // Clean URL params
           const url = new URL(window.location.href);
@@ -2274,6 +2277,7 @@ const FitAnalysisPage = () => {
               date: t.timestamp, 
               title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
               sport: t.sport,
+              category: t.category || null,
               type: 'fit',
               distance: t.totalDistance || t.distance,
               totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
@@ -2286,6 +2290,7 @@ const FitAnalysisPage = () => {
               date: t.date || t.timestamp, 
               title: t.title || 'Untitled Training', 
               sport: t.sport,
+              category: t.category || null,
               type: 'regular',
               distance: t.totalDistance || t.distance,
               totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
@@ -2298,6 +2303,7 @@ const FitAnalysisPage = () => {
               date: a.startDate, 
               title: a.titleManual || a.name || 'Untitled Activity', 
               sport: a.sport,
+              category: a.category || null,
               type: 'strava',
               distance: a.distance,
               totalElapsedTime: a.movingTime || a.elapsedTime,
@@ -3250,12 +3256,27 @@ const FitAnalysisPage = () => {
                     );
                   })()}
 
+                  {/* Interval Chart (FIT) - linked with LapsTable row clicks */}
+                  {selectedTraining && selectedTraining.laps && selectedTraining.laps.length > 0 && (
+                    <div className={`${isMobile ? 'mb-2' : 'mb-4 md:mb-6'}`}>
+                      <IntervalChart
+                        laps={selectedTraining.laps}
+                        sport={selectedTraining.sport || 'cycling'}
+                        records={selectedTraining.records || []}
+                        user={user}
+                        selectedLapNumber={selectedLapNumber}
+                        onSelectLapNumber={setSelectedLapNumber}
+                      />
+                    </div>
+                  )}
 
                   {/* Laps/Intervals */}
                   <LapsTable 
                     training={selectedTraining}
                     onUpdate={loadTrainingDetail}
                     user={user}
+                    selectedLapNumber={selectedLapNumber}
+                    onSelectLapNumber={setSelectedLapNumber}
                   />
             </motion.div>
                         </div>
@@ -3291,11 +3312,13 @@ const FitAnalysisPage = () => {
             const suggestionsRef = useRef(null);
 
             useEffect(() => {
-              setTitle(selectedStrava?.titleManual || selectedStrava?.name || '');
-              setDescription(selectedStrava?.description || '');
-              setCategory(selectedStrava?.category || '');
+              if (selectedStrava) {
+                setTitle(selectedStrava?.titleManual || selectedStrava?.name || '');
+                setDescription(selectedStrava?.description || '');
+                setCategory(selectedStrava?.category || '');
+              }
             // eslint-disable-next-line react-hooks/exhaustive-deps
-            }, []);
+            }, [selectedStrava?.id, selectedStrava?.category]);
 
             // Load all titles when editing starts
             useEffect(() => {
@@ -3479,7 +3502,7 @@ const FitAnalysisPage = () => {
                             className={`${isMobile ? 'px-1.5 py-1 text-xs flex-1' : 'px-2 py-1.5 text-sm'} border border-gray-300 ${isMobile ? 'rounded-md' : 'rounded-lg'} bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent`}
                             autoFocus
                           >
-                            <option value="">Žádná</option>
+                            <option value="">None</option>
                             <option value="endurance">Endurance</option>
                             <option value="tempo">Tempo</option>
                             <option value="threshold">Threshold</option>
@@ -3517,7 +3540,7 @@ const FitAnalysisPage = () => {
                             category === 'recovery' ? 'bg-gray-100 text-gray-800' :
                             'bg-gray-100 text-gray-500'
                           }`}>
-                            {category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Kategorie'}
+                            {category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Category'}
                           </span>
                           <button
                             onClick={() => setIsEditingCategory(true)}

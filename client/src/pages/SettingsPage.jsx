@@ -227,7 +227,7 @@ const SettingsPage = () => {
       // Check if autoSync is explicitly set (can be false, true, or undefined)
       if (user.strava.autoSync !== undefined) {
         console.log('Loading autoSync from user profile:', user.strava.autoSync);
-        setStravaAutoSync(user.strava.autoSync);
+      setStravaAutoSync(user.strava.autoSync);
       } else {
         // If strava is connected but autoSync is undefined, default to false
         console.log('Strava connected but autoSync undefined, defaulting to false');
@@ -1192,7 +1192,7 @@ const SettingsPage = () => {
                       <div className="flex items-center justify-center w-8 h-8 bg-orange-500 rounded-lg">
                         <span className="text-white font-bold text-sm">S</span>
                       </div>
-                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
+                    <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
                     </div>
                     <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${stravaConnected ? 'text-green-600' : 'text-gray-500'}`}>
                       {stravaConnected ? 'Connected' : 'Not connected'}

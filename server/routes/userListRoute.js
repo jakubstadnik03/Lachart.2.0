@@ -542,6 +542,69 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
     }
 });
 
+// Get athlete's profile INCLUDING zones/units (for dashboards/testing recommendations)
+router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { athleteId } = req.params;
+
+        const user = await userDao.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Allow access either to the athlete's coach or to the athlete for their own profile
+        if (user.role === 'coach') {
+            const athlete = await userDao.findById(athleteId);
+            if (!athlete) {
+                return res.status(404).json({ error: "Athlete not found" });
+            }
+            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+                return res.status(403).json({ error: "This athlete does not belong to your team" });
+            }
+        } else if (user.role === 'athlete' && userId !== athleteId) {
+            return res.status(403).json({ error: "You are not authorized to view this profile" });
+        }
+
+        const athlete = await userDao.findById(athleteId);
+        if (!athlete) {
+            return res.status(404).json({ error: "Athlete not found" });
+        }
+
+        // Return data without sensitive information (but include zones/units for analytics)
+        const athleteResponse = {
+            _id: athlete._id,
+            name: athlete.name,
+            surname: athlete.surname,
+            email: athlete.email,
+            role: athlete.role,
+            dateOfBirth: athlete.dateOfBirth,
+            address: athlete.address,
+            phone: athlete.phone,
+            height: athlete.height,
+            weight: athlete.weight,
+            sport: athlete.sport,
+            specialization: athlete.specialization,
+            bio: athlete.bio,
+            avatar: athlete.avatar,
+            coachId: athlete.coachId,
+            powerZones: athlete.powerZones,
+            heartRateZones: athlete.heartRateZones,
+            units: athlete.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
+            strava: athlete.strava ? {
+              athleteId: athlete.strava.athleteId,
+              autoSync: athlete.strava.autoSync !== undefined ? athlete.strava.autoSync : false,
+              lastSyncDate: athlete.strava.lastSyncDate
+            } : null
+        };
+
+        res.status(200).json(athleteResponse);
+    } catch (error) {
+        console.error("Error getting athlete profile (with zones):", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get user profile (including power zones and units)
 router.get("/profile", verifyToken, async (req, res) => {
     try {

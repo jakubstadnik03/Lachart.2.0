@@ -76,8 +76,8 @@ const SportIcon = ({ sport, className = "w-4 h-4" }) => {
   }
   if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
     return (
-      <div className={`${className} rounded-full bg-purple-100 p-0.5 flex items-center justify-center`}>
-        <BoltIcon className="w-3 h-3 text-purple-600" />
+      <div className={`${className} rounded-full bg-primary/10 p-0.5 flex items-center justify-center`}>
+        <BoltIcon className="w-3 h-3 text-primary" />
       </div>
     );
   }
@@ -103,10 +103,47 @@ const SportBadgeSummary = ({ sport }) => {
     return <img src="/icon/swim.svg" alt="Swim" className="w-5 h-5" />;
   }
   if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
-    return <BoltIcon className="w-5 h-5 text-purple-500" />;
+    return <BoltIcon className="w-5 h-5 text-primary" />;
   }
   return <BoltIcon className="w-5 h-5 text-gray-500" />;
 };
+
+// Category helper functions
+function categoryColor(category) {
+  const colors = {
+    endurance: 'bg-blue-100 border-blue-300 text-blue-800',
+    tempo: 'bg-green-100 border-green-300 text-green-800',
+    threshold: 'bg-yellow-100 border-yellow-300 text-yellow-800',
+    vo2max: 'bg-orange-100 border-orange-300 text-orange-800',
+    anaerobic: 'bg-red-100 border-red-300 text-red-800',
+    recovery: 'bg-gray-100 border-gray-300 text-gray-800'
+  };
+  return colors[category] || 'bg-gray-100 border-gray-300 text-gray-800';
+}
+
+function categoryBorderColor(category) {
+  const borderColors = {
+    endurance: 'border-blue-400',
+    tempo: 'border-green-400',
+    threshold: 'border-yellow-400',
+    vo2max: 'border-orange-400',
+    anaerobic: 'border-red-400',
+    recovery: 'border-gray-400'
+  };
+  return borderColors[category] || 'border-gray-300';
+}
+
+function categoryLabel(category) {
+  const labels = {
+    endurance: 'Endurance',
+    tempo: 'Tempo',
+    threshold: 'Threshold',
+    vo2max: 'VO2max',
+    anaerobic: 'Anaerobic',
+    recovery: 'Recovery'
+  };
+  return labels[category] || 'Uncategorized';
+}
 
 export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate, user = null, onMonthChange = null }) {
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
@@ -627,8 +664,11 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       const acts = activitiesByDay.get(key) || [];
                       const isToday = isSameDay(dayDate, new Date());
                       const isExpanded = expandedDays.has(key);
-                      const visibleActs = isExpanded ? acts : acts.slice(0, 2);
-                      const remainingCount = acts.length - 2;
+                      const hasOverflow = acts.length > 3;
+                      const visibleActs = isExpanded
+                        ? acts
+                        : (hasOverflow ? acts.slice(0, 2) : acts.slice(0, 3));
+                      const remainingCount = hasOverflow ? (acts.length - 2) : 0;
                       
                       const toggleExpand = (e) => {
                         e.stopPropagation();
@@ -698,30 +738,35 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   }}
                                   className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-0.5' : 'text-[10px] px-2 py-1.5'} rounded-lg border transition-all flex items-center gap-1.5 touch-manipulation ${
                                     isSelected 
-                                      ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-md hover:shadow-lg active:shadow-md' 
-                                      : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-800 border-gray-200 shadow-sm hover:shadow-md hover:border-primary/30'
+                                      ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg active:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
+                                      : `bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-800 shadow-sm hover:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'} ${a.category ? 'hover:border-opacity-70' : 'hover:border-primary/30'}`
                                   }`}
                                   style={{ WebkitTapHighlightColor: 'transparent' }}
                                 >
                                   <SportIcon sport={a.sport} className={isMobile ? "w-3 h-3" : "w-4 h-4"} />
-                                  <span className={`truncate font-medium ${isMobile ? 'text-[8px]' : 'text-[10px]'}`}>{activityTitle}</span>
+                                  <span className={`truncate font-medium ${isMobile ? 'text-[8px]' : 'text-[10px]'} flex-1`}>{activityTitle}</span>
+                                  {a.category && (
+                                    <div className={`${isMobile ? 'text-[7px] px-0.5 py-0' : 'text-[8px] px-1 py-0.5'} rounded flex-shrink-0 ${categoryColor(a.category)}`}>
+                                      {isMobile ? categoryLabel(a.category).substring(0, 3) : categoryLabel(a.category).substring(0, 4)}
+                                    </div>
+                                  )}
                                 </button>
                               );
                             })}
-                            {remainingCount > 0 && (
+                            {hasOverflow && (
                               <button
                                 onClick={toggleExpand}
-                              onTouchStart={(e) => {
-                                e.stopPropagation();
-                                toggleExpand(e);
-                              }}
-                              className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-1' : 'text-[10px] px-2 py-1.5'} rounded-lg bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium touch-manipulation flex items-center gap-1.5`}
-                              style={{ WebkitTapHighlightColor: 'transparent' }}
+                                onTouchStart={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpand(e);
+                                }}
+                                className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-1' : 'text-[10px] px-2 py-1.5'} rounded-lg bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium touch-manipulation flex items-center gap-1.5`}
+                                style={{ WebkitTapHighlightColor: 'transparent' }}
                               >
                                 {isExpanded ? (
                                   <>
                                     <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
-                                    <span className="text-gray-600">Show less ({remainingCount})</span>
+                                    <span className="text-gray-600">Show less</span>
                                   </>
                                 ) : (
                                   <>
@@ -796,11 +841,11 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       {dayDate.getDate()}
                     </div>
                     <div className="flex flex-wrap gap-0.5 w-full justify-start">
-                      {acts.slice(0, 1).map((a, i) => {
+                      {(acts.length > 3 ? acts.slice(0, 2) : acts.slice(0, 3)).map((a, i) => {
                         const activityId = a.id || a._id;
                         const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
                         const handleActivityClick = (e) => {
-                          e.stopPropagation();
+                              e.stopPropagation();
                           if (onSelectActivity) {
                             onSelectActivity(a);
                           }
@@ -812,35 +857,41 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                           }
                         };
                         return (
-                          <button
-                            key={i}
-                            onClick={handleActivityClick}
-                            onTouchStart={handleTouchStart}
-                            className={`text-[7px] px-1 py-0.5 rounded-md border flex items-center justify-center touch-manipulation transition-all ${
+                          <div key={i} className="flex items-center gap-0.5">
+                            <button
+                              onClick={handleActivityClick}
+                              onTouchStart={handleTouchStart}
+                              className={`text-[7px] px-1 py-0.5 rounded-md border flex items-center justify-center touch-manipulation transition-all ${
                               isSelected 
-                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-sm active:shadow-md' 
-                                : 'bg-white text-gray-700 border-gray-200 shadow-sm hover:shadow-md active:bg-gray-50'
-                            }`}
-                            style={{ WebkitTapHighlightColor: 'transparent' }}
-                          >
-                            <SportIcon sport={a.sport} className="w-2.5 h-2.5" />
-                          </button>
+                                  ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-sm active:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
+                                  : `bg-white text-gray-700 shadow-sm hover:shadow-md active:bg-gray-50 ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'}`
+                              }`}
+                              style={{ WebkitTapHighlightColor: 'transparent' }}
+                            >
+                              <SportIcon sport={a.sport} className="w-2.5 h-2.5" />
+                            </button>
+                            {a.category && (
+                              <div className={`text-[6px] px-0.5 py-0 rounded ${categoryColor(a.category)}`} title={categoryLabel(a.category)}>
+                                {categoryLabel(a.category).substring(0, 2)}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
-                      {acts.length > 1 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDayClick(dayDate);
-                            }}
-                            onTouchStart={(e) => {
-                              e.stopPropagation();
-                              handleDayClick(dayDate);
-                            }}
+                      {acts.length > 3 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDayClick(dayDate);
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            handleDayClick(dayDate);
+                          }}
                           className="text-[7px] px-1 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold touch-manipulation active:bg-gray-300 border border-gray-200 shadow-sm transition-all"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
                         >
-                          +{acts.length - 1}
+                          +{acts.length - 2} more
                         </button>
                       )}
                     </div>
@@ -898,9 +949,9 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                           </span>
                           </div>
                           {weekSummary.totalTSS > 0 && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 rounded-lg">
-                              <FireIcon className="w-3.5 h-3.5 text-purple-600" />
-                            <span className="text-xs font-bold text-purple-600">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 rounded-lg">
+                              <FireIcon className="w-3.5 h-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary">
                                 {Math.round(weekSummary.totalTSS)}
                             </span>
                             </div>
@@ -919,7 +970,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                     {isExpanded && (
                       <div className="mt-4 pt-4 border-t border-gray-200 space-y-2.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
+                        {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
                             <div className="flex items-center gap-1.5">
                               <img src="/icon/run.svg" alt="Run" className="w-4 h-4" />
                               <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
@@ -932,9 +983,9 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssRun)} TSS</span>
                                 </>
                               )}
-                            </div>
-                          )}
-                          {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
+                          </div>
+                        )}
+                        {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
                             <div className="flex items-center gap-1.5">
                               <img src="/icon/bike.svg" alt="Bike" className="w-4 h-4" />
                               <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
@@ -947,9 +998,9 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssBike)} TSS</span>
                                 </>
                               )}
-                            </div>
-                          )}
-                          {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
+                          </div>
+                        )}
+                        {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
                             <div className="flex items-center gap-1.5">
                               <img src="/icon/swim.svg" alt="Swim" className="w-4 h-4" />
                               <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
@@ -962,8 +1013,8 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                                   <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssSwim)} TSS</span>
                                 </>
                               )}
-                            </div>
-                          )}
+                          </div>
+                        )}
                         </div>
                       </div>
                     )}
@@ -999,8 +1050,11 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                 const acts = activitiesByDay.get(key) || [];
                 const isToday = isSameDay(dayDate, new Date());
                 const isExpanded = expandedDays.has(key);
-                const visibleActs = isExpanded ? acts : acts.slice(0, 3);
-                const remainingCount = acts.length - 3;
+                const hasOverflow = acts.length > 3;
+                const visibleActs = isExpanded
+                  ? acts
+                  : (hasOverflow ? acts.slice(0, 2) : acts.slice(0, 3));
+                const remainingCount = hasOverflow ? (acts.length - 2) : 0;
                 
                 const toggleExpand = (e) => {
                   e.stopPropagation();
@@ -1031,18 +1085,23 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                             onClick={() => onSelectActivity && onSelectActivity(a)} 
                             className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
                               isSelected 
-                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white border-primary shadow-md hover:shadow-lg' 
-                                : 'bg-white hover:bg-gray-50 text-gray-800 border-gray-200 shadow-sm hover:shadow-md hover:border-primary/30'
+                                ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
+                                : `bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'} ${a.category ? 'hover:border-opacity-70' : 'hover:border-primary/30'}`
                             }`}
                             style={{ minWidth: 0, overflow: 'hidden' }}
                             title={activityTitle}
                           >
                             <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
                             <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
+                            {a.category && (
+                              <div className={`text-[8px] px-1 py-0.5 rounded flex-shrink-0 ${categoryColor(a.category)}`}>
+                                {categoryLabel(a.category).substring(0, 4)}
+                              </div>
+                            )}
                           </button>
                         );
                       })}
-                      {remainingCount > 0 && (
+                      {hasOverflow && (
                         <button
                           onClick={toggleExpand}
                           className="w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium flex items-center gap-1.5"
@@ -1050,7 +1109,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                           {isExpanded ? (
                             <>
                               <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
-                              <span className="text-gray-600">Show less ({remainingCount})</span>
+                              <span className="text-gray-600">Show less</span>
                             </>
                           ) : (
                             <>
@@ -1075,14 +1134,14 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                       <div className="flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 rounded">
                         <span className="text-xs font-semibold text-primary">
                           {formatHours(weekSummary.totalSeconds)}
-                        </span>
+                      </span>
                       </div>
                       {weekSummary.totalTSS > 0 && (
-                        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 rounded">
-                          <FireIcon className="w-3.5 h-3.5 text-purple-600" />
-                          <span className="text-xs font-bold text-purple-600">
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 bg-primary/10 rounded">
+                          <FireIcon className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-xs font-bold text-primary">
                             {Math.round(weekSummary.totalTSS)} TSS
-                          </span>
+                        </span>
                         </div>
                       )}
                       {weekSummary.volumeChange && (
@@ -1107,7 +1166,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                         <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
                         <span className="text-xs text-gray-500">•</span>
                         <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.runSeconds)}</span>
-                        {weekSummary.tssRun > 0 && (
+                          {weekSummary.tssRun > 0 && (
                           <>
                             <span className="text-xs text-gray-500">•</span>
                             <FireIcon className="w-3.5 h-3.5 text-primary" />
@@ -1122,7 +1181,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                         <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
                         <span className="text-xs text-gray-500">•</span>
                         <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.bikeSeconds)}</span>
-                        {weekSummary.tssBike > 0 && (
+                          {weekSummary.tssBike > 0 && (
                           <>
                             <span className="text-xs text-gray-500">•</span>
                             <FireIcon className="w-3.5 h-3.5 text-primary" />
@@ -1137,7 +1196,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
                         <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
                         <span className="text-xs text-gray-500">•</span>
                         <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.swimSeconds)}</span>
-                        {weekSummary.tssSwim > 0 && (
+                          {weekSummary.tssSwim > 0 && (
                           <>
                             <span className="text-xs text-gray-500">•</span>
                             <FireIcon className="w-3.5 h-3.5 text-primary" />

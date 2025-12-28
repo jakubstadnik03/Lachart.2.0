@@ -279,6 +279,16 @@ export default function TrainingTable({
     let averageValue;
     
     const itemSport = item.sport?.toLowerCase() || '';
+    const getSpeedMps = (obj) => {
+      const v = obj?.avgSpeed ?? obj?.averageSpeed ?? obj?.average_speed ?? obj?.avg_speed;
+      const n = Number(v);
+      return !isNaN(n) && n > 0 ? n : null;
+    };
+    const getAvgPowerWatts = (obj) => {
+      const v = obj?.avgPower ?? obj?.averagePower ?? obj?.average_watts ?? obj?.avg_power;
+      const n = Number(v);
+      return !isNaN(n) && n > 0 ? n : 0;
+    };
     
     // Check if item has results/records (for both FIT and Strava with processed data)
     const hasResults = (item.results && item.results.length > 0) || (item.records && item.records.length > 0);
@@ -290,17 +300,33 @@ export default function TrainingTable({
       const paces = resultsToUse
         .map(r => parsePaceToSeconds(r.power))
         .filter(p => p !== null && p > 0);
-      averageValue = paces.length > 0 
-        ? Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length)
-        : 0;
+      if (paces.length > 0) {
+        averageValue = Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length);
+      } else {
+        // Fallback for FIT/Strava records that don't have "power" as pace string
+        // Prefer item-level avgSpeed/averageSpeed, otherwise average from records speed field
+        const speedFromItem = getSpeedMps(item);
+        const speeds = resultsToUse
+          .map(r => Number(r.speed))
+          .filter(s => !isNaN(s) && s > 0);
+        const avgSpeedMps = speedFromItem || (speeds.length ? (speeds.reduce((a, b) => a + b, 0) / speeds.length) : null);
+        if (avgSpeedMps) {
+          averageValue = itemSport === 'swimming' || itemSport === 'swim'
+            ? Math.round(100 / avgSpeedMps)
+            : Math.round(1000 / avgSpeedMps);
+        } else {
+          averageValue = 0;
+        }
+      }
     } else if (item.type === 'strava') {
       // Strava activities without results - calculate from average_speed
       if (itemSport === 'running' || itemSport === 'run') {
         // For running, calculate pace from average_speed
         // Strava average_speed is in m/s, convert to pace (seconds per km)
-        if (item.average_speed && item.average_speed > 0) {
+        const speed = getSpeedMps(item);
+        if (speed) {
           // Convert m/s to seconds per km: 1000 / (m/s) = seconds per km
-          averageValue = Math.round(1000 / item.average_speed);
+          averageValue = Math.round(1000 / speed);
         } else if (item.averagePace) {
           // If averagePace is already in seconds, use it
           averageValue = typeof item.averagePace === 'number' ? item.averagePace : parsePaceToSeconds(item.averagePace) || 0;
@@ -311,9 +337,10 @@ export default function TrainingTable({
         }
       } else if (itemSport === 'swimming' || itemSport === 'swim') {
         // For swimming, calculate pace from average_speed
-        if (item.average_speed && item.average_speed > 0) {
+        const speed = getSpeedMps(item);
+        if (speed) {
           // Convert m/s to seconds per 100m: 100 / (m/s) = seconds per 100m
-          averageValue = Math.round(100 / item.average_speed);
+          averageValue = Math.round(100 / speed);
         } else if (item.averagePace) {
           averageValue = typeof item.averagePace === 'number' ? item.averagePace : parsePaceToSeconds(item.averagePace) || 0;
         } else {
@@ -321,7 +348,7 @@ export default function TrainingTable({
         }
       } else {
         // For cycling and other sports, use average power
-        averageValue = item.avgPower || item.averagePower || item.average_watts || 0;
+        averageValue = getAvgPowerWatts(item);
       }
     } else {
       // FIT trainings - calculate from results (same logic as TrainingStats)
@@ -330,26 +357,34 @@ export default function TrainingTable({
         const paces = (item.results || [])
           .map(r => parsePaceToSeconds(r.power))
           .filter(p => p !== null && p > 0);
-        averageValue = paces.length > 0 
-          ? Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length)
-          : 0;
+        if (paces.length > 0) {
+          averageValue = Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length);
+        } else {
+          const speed = getSpeedMps(item);
+          averageValue = speed ? Math.round(1000 / speed) : 0;
+        }
       } else if (itemSport === 'swimming' || itemSport === 'swim') {
         // For swimming: power field contains pace in mm:ss format
         const paces = (item.results || [])
           .map(r => parsePaceToSeconds(r.power))
           .filter(p => p !== null && p > 0);
-        averageValue = paces.length > 0 
-          ? Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length)
-          : 0;
+        if (paces.length > 0) {
+          averageValue = Math.round(paces.reduce((sum, p) => sum + p, 0) / paces.length);
+        } else {
+          const speed = getSpeedMps(item);
+          averageValue = speed ? Math.round(100 / speed) : 0;
+        }
       } else {
         // For cycling and other sports: power field contains watts
         const results = item.results || [];
         const powers = results
           .map(r => Number(r.power))
           .filter(p => !isNaN(p) && p > 0);
-        averageValue = powers.length > 0
-          ? Math.round(powers.reduce((sum, p) => sum + p, 0) / powers.length)
-          : 0;
+        if (powers.length > 0) {
+          averageValue = Math.round(powers.reduce((sum, p) => sum + p, 0) / powers.length);
+        } else {
+          averageValue = getAvgPowerWatts(item);
+        }
       }
     }
 
@@ -366,37 +401,50 @@ export default function TrainingTable({
       
       if (previousTraining.type === 'strava') {
         if (prevSport === 'running' || prevSport === 'run') {
-          if (previousTraining.average_speed && previousTraining.average_speed > 0) {
-            previousValue = Math.round(1000 / previousTraining.average_speed);
+          const speed = getSpeedMps(previousTraining);
+          if (speed) {
+            previousValue = Math.round(1000 / speed);
           } else {
             previousValue = typeof previousTraining.averagePace === 'number' 
               ? previousTraining.averagePace 
               : parsePaceToSeconds(previousTraining.averagePace || previousTraining.avgPace) || 0;
           }
         } else if (prevSport === 'swimming' || prevSport === 'swim') {
-          if (previousTraining.average_speed && previousTraining.average_speed > 0) {
-            previousValue = Math.round(100 / previousTraining.average_speed);
+          const speed = getSpeedMps(previousTraining);
+          if (speed) {
+            previousValue = Math.round(100 / speed);
           } else {
             previousValue = typeof previousTraining.averagePace === 'number' 
               ? previousTraining.averagePace 
               : parsePaceToSeconds(previousTraining.averagePace || previousTraining.avgPace) || 0;
           }
         } else {
-          previousValue = previousTraining.avgPower || previousTraining.averagePower || previousTraining.average_watts || 0;
+          previousValue = getAvgPowerWatts(previousTraining);
         }
       } else {
         if (prevSport === 'running' || prevSport === 'run' || prevSport === 'swimming' || prevSport === 'swim') {
           const previousPaces = (previousTraining.results || [])
             .map(r => parsePaceToSeconds(r.power))
             .filter(p => p !== null && p > 0);
-          previousValue = previousPaces.length > 0
-            ? Math.round(previousPaces.reduce((sum, p) => sum + p, 0) / previousPaces.length)
-            : 0;
+          if (previousPaces.length > 0) {
+            previousValue = Math.round(previousPaces.reduce((sum, p) => sum + p, 0) / previousPaces.length);
+          } else {
+            const speed = getSpeedMps(previousTraining);
+            if (speed) {
+              previousValue = prevSport === 'swimming' || prevSport === 'swim'
+                ? Math.round(100 / speed)
+                : Math.round(1000 / speed);
+            } else {
+              previousValue = 0;
+            }
+          }
         } else {
           const prevResults = previousTraining.results || [];
-          previousValue = prevResults.length > 0
-            ? Math.round(prevResults.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / prevResults.length)
-            : 0;
+          if (prevResults.length > 0) {
+            previousValue = Math.round(prevResults.reduce((sum, r) => sum + (parseFloat(r.power) || 0), 0) / prevResults.length);
+          } else {
+            previousValue = getAvgPowerWatts(previousTraining);
+          }
         }
       }
       

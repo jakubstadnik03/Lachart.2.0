@@ -37,17 +37,23 @@ const DashboardPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Initialize selectedSport with localStorage or default to 'all'
-  const [selectedSport, setSelectedSport] = useState(() => {
-    const saved = localStorage.getItem('trainingStats_selectedSport');
-    // Default to 'all' if nothing saved
-    return saved || 'all';
-  });
+  // Dashboard sport filter should not be shared with TrainingPage/TrainingStats localStorage key.
+  // Use per-athlete dashboard key so it won't "randomly" flip to run/bike when another page saves its selection.
+  const dashboardSportStorageKey = `dashboard_selectedSport_${selectedAthleteId || athleteId || user?._id || 'unknown'}`;
+  const [selectedSport, setSelectedSport] = useState('all');
   
-  // Save to localStorage when selectedSport changes
+  // Load selectedSport per athlete
   useEffect(() => {
-    localStorage.setItem('trainingStats_selectedSport', selectedSport);
-  }, [selectedSport]);
+    if (!dashboardSportStorageKey) return;
+    const saved = localStorage.getItem(dashboardSportStorageKey);
+    setSelectedSport(saved || 'all');
+  }, [dashboardSportStorageKey]);
+  
+  // Persist selectedSport per athlete
+  useEffect(() => {
+    if (!dashboardSportStorageKey) return;
+    localStorage.setItem(dashboardSportStorageKey, selectedSport);
+  }, [dashboardSportStorageKey, selectedSport]);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
