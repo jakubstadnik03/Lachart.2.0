@@ -235,74 +235,47 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     });
 
     const data = [];
-    const fitnessWindowDays = 42; // Fitness = rolling average of last 42 days
-    const fatigueWindowDays = 7; // Fatigue = rolling average of last 7 days
 
-    // Calculate from earliest activity to ensure accurate fitness/fatigue values
+    // TrainingPeaks-like model:
+    // - CTL (Fitness): exponential moving average of daily TSS with time constant 42 days
+    // - ATL (Fatigue): exponential moving average of daily TSS with time constant 7 days
+    // - TSB (Form): yesterday's CTL - yesterday's ATL (i.e., before applying today's TSS)
+    const CTL_TC = 42;
+    const ATL_TC = 7;
+    const alphaCTL = 1 / CTL_TC;
+    const alphaATL = 1 / ATL_TC;
+
+    let ctl = 0;
+    let atl = 0;
+
+    // Calculate from earliest activity to ensure accurate CTL/ATL values
     for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().split('T')[0];
-      
-      // Calculate Fitness: rolling average of daily TSS over last 42 days (including today)
-      // Window: from (d - 41) to d (42 days total)
-      // Sum all TSS in the window and divide by number of days (including rest days with 0 TSS)
-      const fitnessStartDate = new Date(d);
-      fitnessStartDate.setDate(fitnessStartDate.getDate() - (fitnessWindowDays - 1)); // -41 to get 42 days including today
-      fitnessStartDate.setHours(0, 0, 0, 0);
-      
-      let fitnessSum = 0;
-      let totalDays = 0;
-      let trainingDays = 0;
-      for (let fd = new Date(fitnessStartDate); fd <= d; fd.setDate(fd.getDate() + 1)) {
-        const fdStr = fd.toISOString().split('T')[0];
-        const tss = dailyTSS[fdStr] || 0; // Days without training = 0 TSS
-        fitnessSum += tss;
-        totalDays++;
-        if (tss > 0) trainingDays++;
-      }
-      // Average daily TSS over the window period (all days count, rest days = 0 TSS)
-      // This gives the average daily training load over the period
-      const fitness = totalDays > 0 ? fitnessSum / totalDays : 0;
+      const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
 
-      // Calculate Fatigue: rolling average of daily TSS over last 7 days (including today)
-      // Window: from (d - 6) to d (7 days total)
-      // Sum all TSS in the window and divide by number of days (including rest days with 0 TSS)
-      const fatigueStartDate = new Date(d);
-      fatigueStartDate.setDate(fatigueStartDate.getDate() - (fatigueWindowDays - 1)); // -6 to get 7 days including today
-      fatigueStartDate.setHours(0, 0, 0, 0);
-      
-      let fatigueSum = 0;
-      let totalDaysFatigue = 0;
-      let trainingDaysFatigue = 0;
-      for (let fd = new Date(fatigueStartDate); fd <= d; fd.setDate(fd.getDate() + 1)) {
-        const fdStr = fd.toISOString().split('T')[0];
-        const tss = dailyTSS[fdStr] || 0; // Days without training = 0 TSS
-        fatigueSum += tss;
-        totalDaysFatigue++;
-        if (tss > 0) trainingDaysFatigue++;
-      }
-      // Average daily TSS over the window period (all days count, rest days = 0 TSS)
-      // This gives the average daily training load over the period
-      const fatigue = totalDaysFatigue > 0 ? fatigueSum / totalDaysFatigue : 0;
-      
+      // Form for this day is yesterday's balance (before updating today)
+      const form = ctl - atl;
+
+      // Update CTL/ATL with today's TSS (EMA)
+      ctl = ctl + alphaCTL * (tssToday - ctl);
+      atl = atl + alphaATL * (tssToday - atl);
+
       // Debug logging for today's values
       if (dateStr === today.toISOString().split('T')[0]) {
-        console.log(`[Fitness/Fatigue Debug] Date: ${dateStr}`);
-        console.log(`  Fitness: ${fitness.toFixed(1)} (sum: ${fitnessSum}, days: ${totalDays}, training days: ${trainingDays})`);
-        console.log(`  Fatigue: ${fatigue.toFixed(1)} (sum: ${fatigueSum}, days: ${totalDaysFatigue}, training days: ${trainingDaysFatigue})`);
-        console.log(`  Form: ${(fitness - fatigue).toFixed(1)}`);
+        console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
+        console.log(`  TSS: ${tssToday}`);
+        console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);
+        console.log(`  ATL(Fatigue): ${atl.toFixed(1)}`);
+        console.log(`  TSB(Form): ${form.toFixed(1)} (yesterday CTL-ATL)`);
       }
-      
-      // Calculate Form: Fitness - Fatigue
-      const form = fitness - fatigue;
 
-      // Only add to data if date is within requested range
       if (d >= displayStartDate) {
         data.push({
           date: dateStr,
           dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          Fitness: Math.round(fitness),
+          Fitness: Math.round(ctl),
           Form: Math.round(form),
-          Fatigue: Math.round(fatigue)
+          Fatigue: Math.round(atl)
         });
       }
     }

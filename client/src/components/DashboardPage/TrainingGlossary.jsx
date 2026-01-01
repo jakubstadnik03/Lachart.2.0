@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 
 // Organize terms by category
 const GLOSSARY_CATEGORIES = {
@@ -290,17 +290,20 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
           {isMobile && (
             <div className="mt-2">
               <label className="block text-xs font-semibold text-gray-700 mb-1">Term</label>
-              <select
-                value={selectedTerm}
-                onChange={(e) => setSelectedTerm(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
-              >
-                {categoryTerms.map((term) => (
-                  ALL_GLOSSARY_TERMS[term] ? (
-                    <option key={term} value={term}>{term}</option>
-                  ) : null
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={selectedTerm}
+                  onChange={(e) => setSelectedTerm(e.target.value)}
+                  className="appearance-none w-full pl-3 pr-9 py-2 h-10 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  {categoryTerms.map((term) => (
+                    ALL_GLOSSARY_TERMS[term] ? (
+                      <option key={term} value={term}>{term}</option>
+                    ) : null
+                  ))}
+                </select>
+                <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+              </div>
             </div>
           )}
         </div>

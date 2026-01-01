@@ -1,11 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
-import { getFormFitnessData } from '../../services/api';
+import React, { useState, useEffect, useMemo } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LineChart, Line } from 'recharts';
+import { ArrowTrendingUpIcon, InformationCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { getFormFitnessData, getTodayMetrics } from '../../services/api';
 import TrainingGlossary from './TrainingGlossary';
 
 const FormFitnessChart = ({ athleteId }) => {
   const [showGlossary, setShowGlossary] = useState(false);
+  const [selectedTerm, setSelectedTerm] = useState('Form & Fitness');
+
+  const [todayMetrics, setTodayMetrics] = useState({
+    fitness: 0,
+    fatigue: 0,
+    form: 0,
+    fitnessChange: 0,
+    fatigueChange: 0,
+    formChange: 0
+  });
   
   // Load time range from localStorage or default to 60 days
   const getStoredTimeRange = () => {
@@ -37,6 +47,25 @@ const FormFitnessChart = ({ athleteId }) => {
   const [sportFilter, setSportFilter] = useState(getStoredSportFilter());
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [zoomRange, setZoomRange] = useState(null); // { start: number, end: number } indices in chartData
+  const [refAreaLeft, setRefAreaLeft] = useState(null); // global index in chartData
+  const [refAreaRight, setRefAreaRight] = useState(null); // global index in chartData
+
+  const [deltaMode, setDeltaMode] = useState(() => {
+    try {
+      return localStorage.getItem('formFitnessDeltaMode') || 'timeframe';
+    } catch (e) {
+      return 'timeframe';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('formFitnessDeltaMode', deltaMode);
+    } catch (e) {
+      // ignore
+    }
+  }, [deltaMode]);
   
   // Save time range to localStorage when it changes
   const handleTimeRangeChange = (newTimeRange) => {
@@ -70,9 +99,17 @@ const FormFitnessChart = ({ athleteId }) => {
                      timeRange === '180 days' ? 180 :
                      timeRange === '365 days' ? 365 : 60;
         
-        const response = await getFormFitnessData(athleteId, days, sportFilter);
-        if (response && response.data) {
-          setChartData(response.data);
+        const [ffResponse, todayResponse] = await Promise.all([
+          getFormFitnessData(athleteId, days, sportFilter),
+          getTodayMetrics(athleteId)
+        ]);
+
+        if (ffResponse && ffResponse.data) {
+          setChartData(ffResponse.data);
+        }
+
+        if (todayResponse && todayResponse.data) {
+          setTodayMetrics(todayResponse.data);
         }
       } catch (error) {
         console.error('Error loading form fitness data:', error);
@@ -85,34 +122,237 @@ const FormFitnessChart = ({ athleteId }) => {
     loadData();
   }, [athleteId, timeRange, sportFilter]);
 
+  const timeframeLabel = useMemo(() => {
+    const days = timeRange === '30 days' ? 30 :
+      timeRange === '60 days' ? 60 :
+      timeRange === '90 days' ? 90 :
+      timeRange === '180 days' ? 180 :
+      timeRange === '365 days' ? 365 : 60;
+    return `${days} days`;
+  }, [timeRange]);
+
+  const insights = useMemo(() => {
+    if (!chartData || chartData.length === 0) return null;
+    const first = chartData[0];
+    const last = chartData[chartData.length - 1];
+
+    const fitness = Number(last.Fitness || 0);
+    const fatigue = Number(last.Fatigue || 0);
+    const form = Number(last.Form || 0);
+
+    const getIdxFromEnd = (daysBack) => {
+      const idx = Math.max(0, chartData.length - 1 - daysBack);
+      return idx;
+    };
+
+    let fitnessDelta = 0;
+    let fatigueDelta = 0;
+    let formDelta = 0;
+    let deltaLabel = '';
+
+    if (deltaMode === 'yesterday') {
+      fitnessDelta = Number(todayMetrics.fitnessChange || 0);
+      fatigueDelta = Number(todayMetrics.fatigueChange || 0);
+      formDelta = Number(todayMetrics.formChange || 0);
+      deltaLabel = 'from yesterday';
+    } else if (deltaMode === '7d') {
+      const base = chartData[getIdxFromEnd(7)] || first;
+      fitnessDelta = fitness - Number(base.Fitness || 0);
+      fatigueDelta = fatigue - Number(base.Fatigue || 0);
+      formDelta = form - Number(base.Form || 0);
+      deltaLabel = 'over 7 days';
+    } else if (deltaMode === '28d') {
+      const base = chartData[getIdxFromEnd(28)] || first;
+      fitnessDelta = fitness - Number(base.Fitness || 0);
+      fatigueDelta = fatigue - Number(base.Fatigue || 0);
+      formDelta = form - Number(base.Form || 0);
+      deltaLabel = 'over 28 days';
+    } else {
+      fitnessDelta = fitness - Number(first.Fitness || 0);
+      fatigueDelta = fatigue - Number(first.Fatigue || 0);
+      formDelta = form - Number(first.Form || 0);
+      deltaLabel = `over ${timeframeLabel}`;
+    }
+
+    const fitnessStatus =
+      fitnessDelta > 5 ? 'Productive Training' :
+      fitnessDelta < -5 ? 'Detraining' :
+      'Maintaining';
+
+    const formStatus =
+      form <= -30 ? 'Overloading' :
+      form <= -10 ? 'Fatigued' :
+      form < 10 ? 'Normal' :
+      'Fresh';
+
+    const fatigueStatus =
+      fatigueDelta > 5 ? 'Building Fatigue' :
+      fatigueDelta < -5 ? 'Shedding Fatigue' :
+      'Maintaining Fatigue';
+
+    return {
+      fitness, fatigue, form,
+      fitnessDelta, fatigueDelta, formDelta,
+      fitnessStatus, fatigueStatus, formStatus,
+      deltaLabel
+    };
+  }, [chartData, deltaMode, timeframeLabel, todayMetrics]);
+
+  const handleInfoClick = (term) => {
+    setSelectedTerm(term);
+    setShowGlossary(true);
+  };
+
+  const deltaDisplayText = (delta, label) => {
+    const n = Math.abs(Math.round(delta));
+    if (!label) return '';
+    return `${delta >= 0 ? '↑' : '↓'} ${n} ${label}`;
+  };
+
+  const effectiveZoomRange = useMemo(() => {
+    if (!chartData || chartData.length === 0) return { start: 0, end: 0 };
+    const start = zoomRange?.start != null ? Math.max(0, Math.min(chartData.length - 1, zoomRange.start)) : 0;
+    const end = zoomRange?.end != null ? Math.max(0, Math.min(chartData.length - 1, zoomRange.end)) : (chartData.length - 1);
+    return start <= end ? { start, end } : { start: end, end: start };
+  }, [chartData, zoomRange]);
+
+  const zoomedData = useMemo(() => {
+    if (!chartData || chartData.length === 0) return [];
+    return chartData.slice(effectiveZoomRange.start, effectiveZoomRange.end + 1);
+  }, [chartData, effectiveZoomRange]);
+
+  // If data length changes (filters/time range), keep zoom in bounds / reset selection
+  useEffect(() => {
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+    if (!chartData || chartData.length === 0) {
+      setZoomRange(null);
+      return;
+    }
+    if (!zoomRange) return;
+    if (zoomRange.start >= chartData.length || zoomRange.end >= chartData.length) {
+      setZoomRange(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartData.length]);
+
+  const selectionX1 = useMemo(() => {
+    if (refAreaLeft == null) return null;
+    return chartData?.[refAreaLeft]?.dateLabel ?? null;
+  }, [refAreaLeft, chartData]);
+
+  const selectionX2 = useMemo(() => {
+    if (refAreaRight == null) return null;
+    return chartData?.[refAreaRight]?.dateLabel ?? null;
+  }, [refAreaRight, chartData]);
+
+  const getGlobalIndexFromChartEvent = (e) => {
+    if (!e) return null;
+    if (typeof e.activeTooltipIndex === 'number' && e.activeTooltipIndex >= 0) {
+      return effectiveZoomRange.start + e.activeTooltipIndex;
+    }
+    if (e.activeLabel) {
+      const idx = chartData.findIndex(d => d.dateLabel === e.activeLabel);
+      return idx >= 0 ? idx : null;
+    }
+    return null;
+  };
+
+  const handleZoomMouseDown = (e) => {
+    const idx = getGlobalIndexFromChartEvent(e);
+    if (idx == null) return;
+    setRefAreaLeft(idx);
+    setRefAreaRight(idx);
+  };
+
+  const handleZoomMouseMove = (e) => {
+    if (refAreaLeft == null) return;
+    const idx = getGlobalIndexFromChartEvent(e);
+    if (idx == null) return;
+    setRefAreaRight(idx);
+  };
+
+  const handleZoomMouseUp = () => {
+    if (refAreaLeft == null || refAreaRight == null) return;
+    const start = Math.min(refAreaLeft, refAreaRight);
+    const end = Math.max(refAreaLeft, refAreaRight);
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+    if (end - start < 1) return; // ignore click without a range
+    setZoomRange({ start, end });
+  };
+
+  const handleZoomReset = () => {
+    setZoomRange(null);
+    setRefAreaLeft(null);
+    setRefAreaRight(null);
+  };
+
+  const miniTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || payload.length === 0) return null;
+    const p = payload[0];
+    const dp = chartData.find(d => d.dateLabel === label) || null;
+    const dateText = dp?.date ? new Date(dp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : label;
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
+        <div className="font-semibold text-gray-900">{dateText}</div>
+        <div className="text-gray-700">
+          {p.name}: <span className="font-semibold">{p.value}</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Form & Fitness</h3>
         <div className="flex items-center gap-2">
-          <select
-            value={sportFilter}
-            onChange={(e) => handleSportFilterChange(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1 text-gray-600 bg-white"
-          >
-            <option value="all">All Sports</option>
-            <option value="bike">Bike</option>
-            <option value="run">Run</option>
-            <option value="swim">Swim</option>
-          </select>
-          <select
-            value={timeRange}
-            onChange={(e) => handleTimeRangeChange(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1 text-gray-600 bg-white"
-          >
-            <option value="30 days">Past 30 days</option>
-            <option value="60 days">Past 60 days</option>
-            <option value="90 days">Past 90 days</option>
-            <option value="180 days">Past 6 months</option>
-            <option value="365 days">Past year</option>
-          </select>
+          <div className="relative">
+            <select
+              value={sportFilter}
+              onChange={(e) => handleSportFilterChange(e.target.value)}
+              className="appearance-none text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-9 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="all">All Sports</option>
+              <option value="bike">Bike</option>
+              <option value="run">Run</option>
+              <option value="swim">Swim</option>
+            </select>
+            <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+          </div>
+
+          <div className="relative">
+            <select
+              value={timeRange}
+              onChange={(e) => handleTimeRangeChange(e.target.value)}
+              className="appearance-none text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-9 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="30 days">Past 30 days</option>
+              <option value="60 days">Past 60 days</option>
+              <option value="90 days">Past 90 days</option>
+              <option value="180 days">Past 6 months</option>
+              <option value="365 days">Past year</option>
+            </select>
+            <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+          </div>
+
+          <div className="relative">
+            <select
+              value={deltaMode}
+              onChange={(e) => setDeltaMode(e.target.value)}
+              className="appearance-none text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-9 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="timeframe">Over time frame</option>
+              <option value="yesterday">From yesterday</option>
+              <option value="7d">Over 7 days</option>
+              <option value="28d">Over 28 days</option>
+            </select>
+            <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+          </div>
+
           <button
-            onClick={() => setShowGlossary(true)}
+            onClick={() => handleInfoClick('Form & Fitness')}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
             aria-label="Show explanation"
           >
@@ -126,9 +366,134 @@ const FormFitnessChart = ({ athleteId }) => {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       ) : (
-        <div className="h-64 sm:h-80">
+        <>
+        {/* Performance Insights cards (TrainingPeaks-like) */}
+        {insights && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            {/* Fitness */}
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Fitness</div>
+                <button
+                  onClick={() => handleInfoClick('Form & Fitness')}
+                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Show explanation"
+                >
+                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <div className="text-3xl font-bold text-blue-600">{insights.fitness}</div>
+                <div className="text-xs text-gray-600">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
+              </div>
+              <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
+              <div className="mt-2 select-none">
+                <ResponsiveContainer width="100%" height={56}>
+                  <LineChart
+                    data={zoomedData}
+                    onMouseDown={handleZoomMouseDown}
+                    onMouseMove={handleZoomMouseMove}
+                    onMouseUp={handleZoomMouseUp}
+                    onDoubleClick={handleZoomReset}
+                  >
+                    <XAxis dataKey="dateLabel" hide />
+                    <Tooltip content={miniTooltip} />
+                    {selectionX1 && selectionX2 && (
+                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
+                    )}
+                    <Line type="monotone" dataKey="Fitness" name="Fitness" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Form */}
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Form</div>
+                <button
+                  onClick={() => handleInfoClick('Form & Fitness')}
+                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Show explanation"
+                >
+                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <div className={`text-3xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
+                <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
+              </div>
+              <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
+              <div className="mt-2 select-none">
+                <ResponsiveContainer width="100%" height={56}>
+                  <LineChart
+                    data={zoomedData}
+                    onMouseDown={handleZoomMouseDown}
+                    onMouseMove={handleZoomMouseMove}
+                    onMouseUp={handleZoomMouseUp}
+                    onDoubleClick={handleZoomReset}
+                  >
+                    <XAxis dataKey="dateLabel" hide />
+                    <Tooltip content={miniTooltip} />
+                    {selectionX1 && selectionX2 && (
+                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
+                    )}
+                    <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
+                    <Line type="monotone" dataKey="Form" name="Form" stroke="#f97316" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Fatigue */}
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-gray-500 uppercase">Fatigue</div>
+                <button
+                  onClick={() => handleInfoClick('Form & Fitness')}
+                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  aria-label="Show explanation"
+                >
+                  <InformationCircleIcon className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <div className="text-3xl font-bold text-pink-600">{insights.fatigue}</div>
+                <div className="text-xs text-gray-600">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
+              </div>
+              <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
+              <div className="mt-2 select-none">
+                <ResponsiveContainer width="100%" height={56}>
+                  <LineChart
+                    data={zoomedData}
+                    onMouseDown={handleZoomMouseDown}
+                    onMouseMove={handleZoomMouseMove}
+                    onMouseUp={handleZoomMouseUp}
+                    onDoubleClick={handleZoomReset}
+                  >
+                    <XAxis dataKey="dateLabel" hide />
+                    <Tooltip content={miniTooltip} />
+                    {selectionX1 && selectionX2 && (
+                      <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
+                    )}
+                    <Line type="monotone" dataKey="Fatigue" name="Fatigue" stroke="#db2777" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="h-64 sm:h-80 select-none">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <AreaChart
+              data={zoomedData}
+              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+              onMouseDown={handleZoomMouseDown}
+              onMouseMove={handleZoomMouseMove}
+              onMouseUp={handleZoomMouseUp}
+              onDoubleClick={handleZoomReset}
+            >
             <defs>
               <linearGradient id="colorFitness" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -169,6 +534,9 @@ const FormFitnessChart = ({ athleteId }) => {
                 return label;
               }}
             />
+            {selectionX1 && selectionX2 && (
+              <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
+            )}
             <Area 
               type="monotone" 
               dataKey="Fitness" 
@@ -201,6 +569,7 @@ const FormFitnessChart = ({ athleteId }) => {
           </AreaChart>
         </ResponsiveContainer>
         </div>
+        </>
       )}
 
       <div className="flex justify-center gap-4 mt-4">
@@ -222,7 +591,7 @@ const FormFitnessChart = ({ athleteId }) => {
       <TrainingGlossary 
         isOpen={showGlossary} 
         onClose={() => setShowGlossary(false)} 
-        initialTerm="Form & Fitness"
+        initialTerm={selectedTerm}
       />
     </div>
   );

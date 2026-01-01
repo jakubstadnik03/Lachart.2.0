@@ -1211,6 +1211,11 @@ async function analyzeTrainingsByMonth(req, res) {
     let fitTrainingsProcessed = 0;
     let fitTrainingsSkipped = 0;
 
+    // Treat very slow pace / near-zero speed as "paused" so it doesn't distort averages (FIT GPS noise while stopped).
+    // Keep consistent with IntervalChart (20:00/km for running pauses).
+    const RUN_PAUSE_PACE_SECONDS = 1200; // 20:00 /km
+    const SWIM_PAUSE_PACE_SECONDS = 600; // 10:00 /100m (acts as "paused"/rest)
+
     // If onlyMetadata, we'll just collect month keys without full analysis
     if (onlyMetadata) {
       console.log('\n=== COLLECTING MONTH METADATA (no full analysis) ===');
@@ -1374,10 +1379,24 @@ async function analyzeTrainingsByMonth(req, res) {
       if (training.records && training.records.length > 0) {
         let previousTimestamp = null;
         let recordsWithPower = 0;
+        let previousDistance = null;
         
         training.records.forEach((record, index) => {
-        // Collect heart rate data
-        if (record.heartRate && record.heartRate > 0) {
+        // Determine "moving" status for this record (avoid counting pauses / coasting)
+        const recordPower = Number(record.power || 0);
+        const recordSpeed = Number(record.speed || 0); // m/s
+        const runPaceSeconds = (isRunning && recordSpeed > 0) ? (1000 / recordSpeed) : null;
+        const swimPaceSeconds = (isSwimming && recordSpeed > 0) ? (100 / recordSpeed) : null;
+        const isMovingRecord = isCycling
+          ? (recordPower > 0) // count only when pedaling (power > 0)
+          : isRunning
+            ? (runPaceSeconds != null && runPaceSeconds > 0 && runPaceSeconds <= RUN_PAUSE_PACE_SECONDS)
+            : isSwimming
+              ? (swimPaceSeconds != null && swimPaceSeconds > 0 && swimPaceSeconds <= SWIM_PAUSE_PACE_SECONDS)
+              : true;
+
+        // Collect heart rate data (only when moving to avoid stopped/rest periods lowering averages)
+        if (isMovingRecord && record.heartRate && record.heartRate > 0) {
           const hr = record.heartRate;
           maxHeartRateInTraining = Math.max(maxHeartRateInTraining, hr);
           totalHeartRateSum += hr;
@@ -1491,6 +1510,10 @@ async function analyzeTrainingsByMonth(req, res) {
         else if (isRunning && record.speed && record.speed > 0) {
           // Calculate pace in seconds per km (pace = 1000 / speed in m/s)
           const paceSeconds = 1000 / record.speed;
+          // Ignore pauses / GPS drift when stopped (extremely slow pace)
+          if (paceSeconds > RUN_PAUSE_PACE_SECONDS) {
+            return;
+          }
           
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           runningTimeInTraining += timeIncrement;
@@ -1502,7 +1525,14 @@ async function analyzeTrainingsByMonth(req, res) {
             runningMaxPaceInTraining = paceSeconds;
           }
           if (record.distance) {
-            runningDistanceInTraining += record.distance;
+            // record.distance in FIT is cumulative from start; use delta to avoid exploding totals
+            if (previousDistance != null) {
+              const delta = record.distance - previousDistance;
+              if (delta > 0 && delta < 50) { // sanity: < 50m per record tick
+                runningDistanceInTraining += delta;
+              }
+            }
+            previousDistance = record.distance;
           }
 
           // Always calculate zones, even if not from profile (use default zones)
@@ -1546,6 +1576,10 @@ async function analyzeTrainingsByMonth(req, res) {
         else if (isSwimming && record.speed && record.speed > 0) {
           // Calculate pace in seconds per 100m (pace = 100 / speed in m/s)
           const paceSeconds = 100 / record.speed;
+          // Ignore rests / extremely slow speeds in pool/open water
+          if (paceSeconds > SWIM_PAUSE_PACE_SECONDS) {
+            return;
+          }
           
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
 
@@ -1567,7 +1601,10 @@ async function analyzeTrainingsByMonth(req, res) {
         }
         else if (record.timestamp && previousTimestamp) {
           // Even without power/speed, track time
-          monthlyAnalysis[monthKey].totalTime += timeIncrement;
+          // Do not count paused/rest time towards totals used for averages
+          // (keeps pace/power/HR stats consistent with "moving only")
+          // We still keep a training count; totals here are intended for "active" time.
+          // monthlyAnalysis[monthKey].totalTime += timeIncrement;
         }
         });
       }
@@ -2079,6 +2116,9 @@ async function analyzeTrainingsByMonth(req, res) {
         else if (isStravaRunning && speed && speed > 0) {
           // Calculate pace in seconds per km (pace = 1000 / speed in m/s)
           const paceSeconds = 1000 / speed;
+          if (paceSeconds > RUN_PAUSE_PACE_SECONDS) {
+            continue;
+          }
           
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
@@ -2122,6 +2162,9 @@ async function analyzeTrainingsByMonth(req, res) {
         else if (isStravaSwimming && speed && speed > 0) {
           // Calculate pace in seconds per 100m (pace = 100 / speed in m/s)
           const paceSeconds = 100 / speed;
+          if (paceSeconds > SWIM_PAUSE_PACE_SECONDS) {
+            continue;
+          }
           
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
@@ -2694,13 +2737,34 @@ async function getPowerMetrics(req, res) {
     
     // Load Strava activities with power data
     const StravaActivity = require('../models/StravaActivity');
-    const stravaActivities = await StravaActivity.find({
-      userId: athleteId,
+    // StravaActivity.userId is ObjectId in DB; athleteId may come as string. Query both forms for robustness.
+    const athleteIdStr = String(athleteId);
+    let athleteIdObj = null;
+    try {
+      // eslint-disable-next-line no-undef
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(athleteIdStr)) {
+        athleteIdObj = new mongoose.Types.ObjectId(athleteIdStr);
+      }
+    } catch (e) {
+      athleteIdObj = null;
+    }
+
+    let stravaActivities = await StravaActivity.find({
+      userId: athleteIdStr,
       sport: { $in: ['Ride', 'VirtualRide'] }
     })
       .select('_id startDate stravaId sport averagePower')
-      .sort({ startDate: -1 }) // Most recent first
       .lean();
+
+    if (stravaActivities.length === 0 && athleteIdObj) {
+      stravaActivities = await StravaActivity.find({
+        userId: athleteIdObj,
+        sport: { $in: ['Ride', 'VirtualRide'] }
+      })
+        .select('_id startDate stravaId sport averagePower')
+        .lean();
+    }
     
     // Process FIT trainings
     const fitTrainingsProcessed = fitTrainings
@@ -2735,21 +2799,34 @@ async function getPowerMetrics(req, res) {
     
     console.log(`[Power Metrics] Found ${fitTrainings.length} FIT trainings, ${stravaActivities.length} Strava activities (${stravaActivitiesWithPower.length} with power)`);
     
-    // Process Strava activities - process in batches to avoid rate limiting
-    // Strava allows 100 requests per 15 minutes, so we need to be very careful
-    // For "All Time" calculation, we want to process more activities if possible
-    // Limit to 50 most recent activities for All Time, 30 for compare periods
+    // Process Strava activities - process in batches to avoid rate limiting.
+    // NOTE: Strava streams require API calls. We cannot realistically scan "all time" for accounts with lots of rides.
+    // We therefore select a capped subset of activities designed to maximize chance of finding peaks.
     const isAllTime = comparePeriod === 'alltime';
-    const MAX_STRAVA_ACTIVITIES = isAllTime ? 50 : 30; // More for All Time
-    const MIN_FIT_TRAININGS_FOR_SKIP_STRAVA = 10; // If we have 10+ FIT trainings, skip Strava
+    const MAX_STRAVA_ACTIVITIES = isAllTime ? 80 : 40; // Increase a bit; still capped for rate limits
+    const nowMs = Date.now();
+    const compareStartMs =
+      comparePeriod === '90days' ? nowMs - (90 * 24 * 60 * 60 * 1000) :
+      comparePeriod === '30days' ? nowMs - (30 * 24 * 60 * 60 * 1000) :
+      0;
     
     let stravaActivitiesToProcess = [];
-    if (fitTrainingsProcessed.length >= MIN_FIT_TRAININGS_FOR_SKIP_STRAVA) {
-      console.log(`[Power Metrics] Skipping Strava activities (${fitTrainingsProcessed.length} FIT trainings available, threshold: ${MIN_FIT_TRAININGS_FOR_SKIP_STRAVA})`);
-    } else {
-      stravaActivitiesToProcess = stravaActivitiesWithPower.slice(0, MAX_STRAVA_ACTIVITIES);
-      console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length} Strava activities (max ${MAX_STRAVA_ACTIVITIES} to avoid rate limiting)...`);
-    }
+    const stravaPool = (compareStartMs > 0 && !isAllTime)
+      ? stravaActivitiesWithPower.filter(a => a.startDate && new Date(a.startDate).getTime() >= compareStartMs)
+      : stravaActivitiesWithPower;
+
+    // Prefer activities with higher averagePower first (more likely to contain peak efforts) and then newer.
+    stravaActivitiesToProcess = stravaPool
+      .slice()
+      .sort((a, b) => {
+        const apA = Number(a.averagePower || 0);
+        const apB = Number(b.averagePower || 0);
+        if (apB !== apA) return apB - apA;
+        return new Date(b.startDate || 0) - new Date(a.startDate || 0);
+      })
+      .slice(0, MAX_STRAVA_ACTIVITIES);
+
+    console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length}/${stravaPool.length} Strava activities (cap ${MAX_STRAVA_ACTIVITIES})...`);
     
     let rateLimitHit = false;
     // Only process Strava activities if we have any to process
@@ -3023,7 +3100,17 @@ async function getPowerMetrics(req, res) {
       personalRecords,
       improvements,
       monthlyMetrics: Object.keys(monthlyMetrics).length > 0 ? monthlyMetrics : undefined,
-      trainingsCount: allTrainings.length
+      trainingsCount: allTrainings.length,
+      sources: {
+        fit: { processed: fitTrainingsProcessed.length },
+        strava: {
+          totalWithPower: stravaActivitiesWithPower.length,
+          pool: stravaPool.length,
+          processed: stravaTrainingsProcessed.length,
+          requested: stravaActivitiesToProcess.length,
+          limited: stravaPool.length > stravaActivitiesToProcess.length
+        }
+      }
     };
     
     res.json(result);
