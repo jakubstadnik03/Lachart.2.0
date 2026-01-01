@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from 'recharts';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getWeeklyTrainingLoad } from '../../services/api';
 import TrainingGlossary from './TrainingGlossary';
 
 const WeeklyTrainingLoad = ({ athleteId }) => {
   const [showGlossary, setShowGlossary] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   // Load time range from localStorage or default to '3 months'
   const getStoredTimeRange = () => {
@@ -85,37 +86,103 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
 
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Weekly Training Load</h3>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Weekly Training Load</h3>
         <div className="flex items-center gap-2">
-          <select
-            value={sportFilter}
-            onChange={(e) => handleSportFilterChange(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1 text-gray-600 bg-white"
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="Open settings"
+            title="Settings"
           >
-            <option value="all">All Sports</option>
-            <option value="bike">Bike</option>
-            <option value="run">Run</option>
-            <option value="swim">Swim</option>
-          </select>
-          <select
-            value={timeRange}
-            onChange={(e) => handleTimeRangeChange(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-2 py-1 text-gray-600 bg-white"
-          >
-            <option value="3 months">Past 3 months</option>
-            <option value="6 months">Past 6 months</option>
-            <option value="12 months">Past 12 months</option>
-          </select>
+            <EllipsisHorizontalIcon className="w-6 h-6 text-gray-500" />
+          </button>
           <button
             onClick={() => setShowGlossary(true)}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             aria-label="Show explanation"
+            title="Glossary"
           >
-            <InformationCircleIcon className="w-5 h-5 text-gray-500" />
+            <InformationCircleIcon className="w-6 h-6 text-gray-500" />
           </button>
         </div>
       </div>
+
+      {/* Settings modal */}
+      {showSettings && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/40 flex items-end sm:items-center justify-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowSettings(false);
+          }}
+        >
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl border border-gray-200 max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <div className="font-semibold text-gray-900">Settings</div>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Close settings"
+              >
+                <XMarkIcon className="w-6 h-6 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div>
+                <div className="text-xs font-semibold text-gray-600 mb-1">Sport</div>
+                <div className="relative">
+                  <select
+                    value={sportFilter}
+                    onChange={(e) => handleSportFilterChange(e.target.value)}
+                    className="appearance-none w-full text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-10 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  >
+                    <option value="all">All Sports</option>
+                    <option value="bike">Bike</option>
+                    <option value="run">Run</option>
+                    <option value="swim">Swim</option>
+                  </select>
+                  <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-gray-600 mb-1">Time frame</div>
+                <div className="relative">
+                  <select
+                    value={timeRange}
+                    onChange={(e) => handleTimeRangeChange(e.target.value)}
+                    className="appearance-none w-full text-sm border border-gray-300 rounded-lg pl-3 pr-9 py-2 text-gray-700 bg-white h-10 leading-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  >
+                    <option value="3 months">Past 3 months</option>
+                    <option value="6 months">Past 6 months</option>
+                    <option value="12 months">Past 12 months</option>
+                  </select>
+                  <ChevronDownIcon className="w-4 h-4 text-gray-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setShowGlossary(true);
+                    setShowSettings(false);
+                  }}
+                  className="h-10 px-4 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-200 transition-colors w-full"
+                >
+                  Open glossary
+                </button>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="h-10 px-4 text-sm bg-white hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors w-full"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="h-64 sm:h-80 flex items-center justify-center">

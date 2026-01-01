@@ -132,6 +132,7 @@ const fitUploadRoute = require("./routes/fitUploadRoute");
 const lactateSessionRoutes = require("./routes/lactateSessionRoutes");
 const integrationsRoutes = require("./routes/integrationsRoutes");
 const workoutClusteringRoutes = require("./routes/workoutClusteringRoutes");
+const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 
 // Routes
 app.use("/test", testRoutes);
@@ -143,6 +144,9 @@ app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/workout-clustering", workoutClusteringRoutes);
+
+// Weekly Strava summary emails (Mondays) - controlled by env
+startWeeklyReportsScheduler();
 
 // Simple trainer test API (demo - no auth required)
 // In-memory storage for demo purposes

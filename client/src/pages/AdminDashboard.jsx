@@ -313,7 +313,7 @@ const AdminDashboard = () => {
                     </div>
                     
                     <div className="mt-2 pt-2 border-t border-gray-100">
-                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                      <div className="grid grid-cols-2 gap-1.5 text-center">
                         <div>
                           <div className="text-xs text-gray-500">Sport</div>
                           <div className="text-xs font-medium text-gray-900 capitalize mt-0.5 truncate">{user.sport || 'N/A'}</div>
@@ -322,12 +322,33 @@ const AdminDashboard = () => {
                           <div className="text-xs text-gray-500">Trainings</div>
                           <div className="text-base font-semibold text-blue-600 mt-0.5">{user.trainingCount || 0}</div>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 text-center mt-2">
                         <div>
                           <div className="text-xs text-gray-500">Tests</div>
                           <div className="text-base font-semibold text-purple-600 mt-0.5">
                             {user.testCount !== undefined && user.testCount !== null ? user.testCount : 0}
                           </div>
                         </div>
+                        <div>
+                          <div className="text-xs text-gray-500">Logins</div>
+                          <div className="text-base font-semibold text-gray-900 mt-0.5">
+                            {user.loginCount !== undefined && user.loginCount !== null ? user.loginCount : 0}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold ${
+                          user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          Strava: {user.stravaConnected ? 'Connected' : '—'}
+                        </span>
+                        {user.lastLogin && (
+                          <span className="text-gray-400">
+                            Last login: {new Date(user.lastLogin).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                       {user.role === 'coach' && (
                         <div className="text-xs text-gray-400 mt-1.5 text-center">
@@ -350,6 +371,8 @@ const AdminDashboard = () => {
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sport</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trainings</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Logins</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Status</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -406,6 +429,23 @@ const AdminDashboard = () => {
                                 <span className="ml-2 text-xs text-gray-400 hidden xl:inline">(athletes + own)</span>
                               )}
                             </div>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                            <span className="text-base lg:text-lg font-semibold text-gray-900">
+                              {user.loginCount !== undefined && user.loginCount !== null ? user.loginCount : 0}
+                            </span>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {user.stravaConnected ? 'Connected' : '—'}
+                            </span>
+                            {user.stravaConnected && user.strava?.lastSyncDate && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                Sync: {new Date(user.strava.lastSyncDate).toLocaleDateString()}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 lg:px-6 py-4 hidden lg:table-cell">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${

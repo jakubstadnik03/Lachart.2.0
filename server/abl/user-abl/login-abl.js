@@ -49,8 +49,11 @@ class LoginAbl {
 
             console.log("Token generated successfully");
 
-            // Update lastLogin timestamp
-            await this.userDao.update(user._id, { lastLogin: new Date() });
+            // Update lastLogin timestamp + increment loginCount
+            await this.userDao.update(user._id, { 
+                $set: { lastLogin: new Date() },
+                $inc: { loginCount: 1 }
+            });
 
             res.status(200).json({
                 token,

@@ -330,6 +330,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
         if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
         if (req.body.units) updateData.units = req.body.units;
+        if (req.body.notifications) updateData.notifications = req.body.notifications;
 
         console.log('Updating user profile:', { userId, updateData });
         console.log('Heart Rate Zones being saved:', JSON.stringify(req.body.heartRateZones, null, 2));
@@ -348,6 +349,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             surname: updatedUser.surname,
             email: updatedUser.email,
             role: updatedUser.role,
+            admin: updatedUser.admin,
             dateOfBirth: updatedUser.dateOfBirth,
             address: updatedUser.address,
             phone: updatedUser.phone,
@@ -356,10 +358,23 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             sport: updatedUser.sport,
             specialization: updatedUser.specialization,
             bio: updatedUser.bio,
+            avatar: updatedUser.avatar,
+            coachId: updatedUser.coachId,
             athletes: updatedUser.athletes,
             powerZones: updatedUser.powerZones, // Include power zones
             heartRateZones: updatedUser.heartRateZones, // Include heart rate zones
-            units: updatedUser.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Include units
+            units: updatedUser.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
+            notifications: updatedUser.notifications || {
+                emailNotifications: true,
+                trainingReminders: true,
+                weeklyReports: true,
+                achievementAlerts: true
+            },
+            strava: updatedUser.strava ? {
+                athleteId: updatedUser.strava.athleteId,
+                autoSync: updatedUser.strava.autoSync !== undefined ? updatedUser.strava.autoSync : false,
+                lastSyncDate: updatedUser.strava.lastSyncDate
+            } : null
         };
 
         res.status(200).json(userResponse);
@@ -640,6 +655,12 @@ router.get("/profile", verifyToken, async (req, res) => {
             powerZones: user.powerZones, // Include power zones
             heartRateZones: user.heartRateZones, // Include heart rate zones
             units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
+            notifications: user.notifications || {
+              emailNotifications: true,
+              trainingReminders: true,
+              weeklyReports: true,
+              achievementAlerts: true
+            },
             strava: user.strava ? {
               athleteId: user.strava.athleteId,
               autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
@@ -1540,6 +1561,21 @@ router.get("/admin/users", verifyToken, async (req, res) => {
         }
 
         const users = await userDao.findAll();
+        const Event = require('../models/Event');
+
+        // Fallback: compute login counts from Event logs (if loginCount is missing/0 on the user document)
+        const loginCountsByUserId = new Map();
+        try {
+            const loginAgg = await Event.aggregate([
+                { $match: { type: 'login', userId: { $ne: null } } },
+                { $group: { _id: '$userId', count: { $sum: 1 } } }
+            ]);
+            loginAgg.forEach(row => {
+                if (row && row._id) loginCountsByUserId.set(String(row._id), Number(row.count || 0));
+            });
+        } catch (e) {
+            console.warn('[Admin Users] Failed to aggregate login events:', e.message);
+        }
         
         // Get counts for each user
         console.log('Processing users for admin dashboard...');
@@ -1683,6 +1719,14 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 sport: user.sport,
                 createdAt: user.createdAt,
                 lastLogin: user.lastLogin,
+                loginCount: (user.loginCount && Number(user.loginCount) > 0)
+                    ? Number(user.loginCount)
+                    : (loginCountsByUserId.get(String(user._id)) || 0),
+                stravaConnected: !!(user.strava && user.strava.athleteId),
+                strava: user.strava ? {
+                    athleteId: user.strava.athleteId,
+                    lastSyncDate: user.strava.lastSyncDate
+                } : null,
                 isActive: user.isActive !== false, // Default to true if not set
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount
@@ -1693,6 +1737,30 @@ router.get("/admin/users", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error fetching users for admin:", error);
         res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Send weekly report emails for last week (admin only)
+router.post("/admin/send-weekly-reports/last-week", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { getLastWeekRangeUTC, sendWeeklyReportsForWeek } = require('../services/weeklyReportService');
+        const { weekStart, weekEnd } = getLastWeekRangeUTC(new Date());
+
+        const result = await sendWeeklyReportsForWeek({ weekStart, weekEnd, force: true });
+        res.status(200).json({
+            ok: true,
+            weekStart: weekStart.toISOString(),
+            weekEnd: weekEnd.toISOString(),
+            result
+        });
+    } catch (error) {
+        console.error("Error sending weekly reports (admin):", error);
+        res.status(500).json({ error: "Failed to send weekly reports: " + error.message });
     }
 });
 

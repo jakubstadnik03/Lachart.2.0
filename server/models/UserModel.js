@@ -39,6 +39,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  loginCount: {
+    type: Number,
+    default: 0
+  },
   googleId: {
     type: String,
     sparse: true,
@@ -190,6 +194,15 @@ const userSchema = new mongoose.Schema({
       enum: ['celsius', 'fahrenheit'],
       default: 'celsius'
     }
+  },
+  // Email/notification preferences
+  notifications: {
+    emailNotifications: { type: Boolean, default: true },
+    trainingReminders: { type: Boolean, default: true },
+    weeklyReports: { type: Boolean, default: true },
+    achievementAlerts: { type: Boolean, default: true },
+    // Used to avoid duplicate weekly report sends
+    weeklyReportsLastSentWeekStart: { type: Date, default: null }
   }
 }, {
   timestamps: true

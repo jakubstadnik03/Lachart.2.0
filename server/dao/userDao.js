@@ -117,7 +117,7 @@ class UserDao {
           user[key] = updateData[key];
           
           // Mark nested objects as modified so Mongoose saves them properly
-          if (key === 'powerZones' || key === 'heartRateZones' || key === 'units') {
+          if (key === 'powerZones' || key === 'heartRateZones' || key === 'units' || key === 'notifications') {
             user.markModified(key);
             console.log(`Marked ${key} as modified`);
           }

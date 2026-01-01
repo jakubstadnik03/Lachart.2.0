@@ -6,7 +6,6 @@ import { TrainingStats } from "../components/DashboardPage/TrainingStats";
 import TrainingGraph from "../components/DashboardPage/TrainingGraph";
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
-import TrainingStatusCard from "../components/DashboardPage/TrainingStatusCard";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities } from '../services/api';
@@ -538,18 +537,6 @@ const DashboardPage = () => {
         </motion.div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        {/* Training Status Card */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="lg:col-span-5 md:col-span-2"
-        >
-          <TrainingStatusCard 
-            athleteId={selectedAthleteId}
-          />
-        </motion.div>
-
         {/* Form & Fitness Chart */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}

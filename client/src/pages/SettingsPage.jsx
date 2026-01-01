@@ -282,15 +282,25 @@ const SettingsPage = () => {
     }
     
     // Notifications still use localStorage
-    const savedNotifications = localStorage.getItem('userNotifications');
-    if (savedNotifications) {
-      try {
-        setNotifications(JSON.parse(savedNotifications));
-      } catch (e) {
-        console.error('Error loading notifications:', e);
+    // Notifications: prefer user profile, fallback to localStorage (backward compatibility)
+    if (user?.notifications) {
+      setNotifications(user.notifications);
+    } else {
+      const savedNotifications = localStorage.getItem('userNotifications');
+      if (savedNotifications) {
+        try {
+          const parsed = JSON.parse(savedNotifications);
+          setNotifications(parsed);
+          // Also save to backend if user is logged in
+          if (user?._id) {
+            saveNotificationsToBackend(parsed).catch(() => {});
+          }
+        } catch (e) {
+          console.error('Error loading notifications:', e);
+        }
       }
     }
-  }, [user?.units, user?._id]);
+  }, [user?.units, user?._id, user?.notifications]);
 
   // Save units to backend
   const saveUnitsToBackend = async (newUnits) => {
@@ -319,6 +329,33 @@ const SettingsPage = () => {
     }
   };
 
+  // Save notification preferences to backend
+  const saveNotificationsToBackend = async (newNotifications) => {
+    try {
+      const response = await fetch(API_ENDPOINTS.EDIT_PROFILE, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notifications: newNotifications })
+      });
+
+      if (response.ok) {
+        const updatedUser = await response.json();
+        // Update user in localStorage (using optimized storage)
+        saveUserToStorage(updatedUser);
+        // Trigger event to update AuthProvider
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+      } else {
+        throw new Error('Failed to save notification preferences');
+      }
+    } catch (error) {
+      console.error('Error saving notification preferences to backend:', error);
+      throw error;
+    }
+  };
+
   // Save settings to backend and localStorage
   const saveUnits = async (newUnits) => {
     try {
@@ -334,10 +371,18 @@ const SettingsPage = () => {
     }
   };
 
-  const saveNotifications = (newNotifications) => {
-    setNotifications(newNotifications);
-    localStorage.setItem('userNotifications', JSON.stringify(newNotifications));
-    addNotification('Notification preferences saved', 'success');
+  const saveNotifications = async (newNotifications) => {
+    try {
+      setNotifications(newNotifications);
+      // Save to backend
+      await saveNotificationsToBackend(newNotifications);
+      // Also save to localStorage as backup
+      localStorage.setItem('userNotifications', JSON.stringify(newNotifications));
+      addNotification('Notification preferences saved', 'success');
+    } catch (error) {
+      console.error('Error saving notifications:', error);
+      addNotification('Failed to save notification preferences', 'error');
+    }
   };
 
   const handleFileSelect = (e) => {
@@ -862,7 +907,19 @@ const SettingsPage = () => {
                   <input
                     type="checkbox"
                     checked={notifications.emailNotifications}
-                    onChange={(e) => saveNotifications({ ...notifications, emailNotifications: e.target.checked })}
+                    onChange={(e) => {
+                      const enabled = e.target.checked;
+                      const next = enabled
+                        ? { ...notifications, emailNotifications: true }
+                        : {
+                            ...notifications,
+                            emailNotifications: false,
+                            trainingReminders: false,
+                            weeklyReports: false,
+                            achievementAlerts: false
+                          };
+                      saveNotifications(next);
+                    }}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
@@ -932,6 +989,36 @@ const SettingsPage = () => {
                 </label>
               </div>
             </div>
+
+            {(user?.admin || user?.role === 'admin') && (
+              <div className={`${isMobile ? 'mt-3' : 'mt-6'} border-t pt-4`}>
+                <h4 className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-900 ${isMobile ? 'mb-2' : 'mb-3'}`}>Admin Tools</h4>
+                <button
+                  onClick={async () => {
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/user/admin/send-weekly-reports/last-week`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        }
+                      });
+                      const data = await response.json().catch(() => ({}));
+                      if (!response.ok) {
+                        throw new Error(data.error || 'Failed to send weekly reports');
+                      }
+                      addNotification(`Weekly reports sent: ${data?.result?.sent || 0}, skipped: ${data?.result?.skipped || 0}`, 'success');
+                    } catch (e) {
+                      console.error('Admin weekly report send failed:', e);
+                      addNotification(e.message || 'Failed to send weekly reports', 'error');
+                    }
+                  }}
+                  className={`${isMobile ? 'px-3 py-2 text-[10px] w-full' : 'px-4 py-2 text-sm'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-primary-dark transition-colors`}
+                  title="Send last week's weekly report email to eligible users"
+                >
+                  Send mail for last week
+                </button>
+              </div>
+            )}
           </div>
         );
 

@@ -11,6 +11,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile
   const chartContainerRef = useRef(null);
   const barRefs = useRef({});
+  const lastTouchAtRef = useRef(0);
   
   // Detect mobile
   useEffect(() => {
@@ -293,6 +294,24 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     setClickedBarIndex(idx);
     setHoveredBar({ bar: chartData.bars[idx], index: idx, widthPercent: 0 });
   }, [selectedLapNumber, chartData]);
+
+  // Close "locked" tooltip when clicking/tapping outside the chart
+  useEffect(() => {
+    if (clickedBarIndex == null) return;
+
+    const handlePointerDown = (e) => {
+      const container = chartContainerRef.current;
+      if (!container) return;
+      if (container.contains(e.target)) return; // inside chart -> handled by bar click
+
+      setClickedBarIndex(null);
+      setHoveredBar(null);
+      if (onSelectLapNumber) onSelectLapNumber(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [clickedBarIndex, onSelectLapNumber]);
 
   const getMetricColor = () => {
     switch (selectedMetric) {
@@ -613,6 +632,10 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     }
                   }}
                   onClick={() => {
+                    // On mobile, a tap can trigger both touch and click; ignore click right after touch
+                    if (isMobile && Date.now() - lastTouchAtRef.current < 600) {
+                      return;
+                    }
                     // On click, toggle tooltip and keep it visible
                     if (clickedBarIndex === index) {
                       // If clicking the same bar, hide tooltip
@@ -627,6 +650,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     }
                   }}
                   onTouchStart={(e) => {
+                    // Mark touch so the synthetic click won't immediately toggle off
+                    lastTouchAtRef.current = Date.now();
                     e.preventDefault();
                     // Toggle tooltip on touch (works on both mobile and desktop)
                     if (clickedBarIndex === index) {

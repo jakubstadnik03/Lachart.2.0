@@ -712,108 +712,116 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
       </div>
       )}
 
-      <div className={`flex flex-wrap items-stretch ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
-          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
-            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-              <ClockIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-              Duration
-            </div>
-            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary`}>
-              {formatDuration(totalTime)}
-            </div>
-            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <ClockIcon className="h-4 w-4" />
+            </span>
+            Duration
           </div>
-          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
-            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-              <MapPinIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-              Distance
-            </div>
-            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary`}>
-              {formatDistance(training.totalDistance, user)}
-            </div>
-            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+          <div className="mt-2 text-base font-semibold text-gray-900">{formatDuration(totalTime)}</div>
+          <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <MapPinIcon className="h-4 w-4" />
+            </span>
+            Distance
           </div>
-          <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-red/30 bg-red/10 flex flex-col justify-between`}>
-            <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-              <HeartIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-              Avg HR
-            </div>
-            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-red`}>
-              {training.avgHeartRate ? `${Math.round(training.avgHeartRate)}` : '-'}
-            </div>
-            <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
-              {maxHeartRate ? `Max: ${Math.round(maxHeartRate)}` : ''}
-              </div>
+          <div className="mt-2 text-base font-semibold text-gray-900">{formatDistance(training.totalDistance, user)}</div>
+          <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red/10 text-red">
+              <HeartIcon className="h-4 w-4" />
+            </span>
+            Avg HR
           </div>
-          {/* Only show Avg Power if power data is available */}
-          {training.avgPower && training.avgPower > 0 && (
-            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-primary/30 bg-primary/10 flex flex-col justify-between`}>
-              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-                <BoltIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+          <div className="mt-2 text-base font-semibold text-gray-900">
+            {training.avgHeartRate ? `${Math.round(training.avgHeartRate)} bpm` : '-'}
+          </div>
+          <div className="mt-0.5 text-xs text-gray-500">
+            {maxHeartRate ? `Max ${Math.round(maxHeartRate)} bpm` : '\u00A0'}
+          </div>
+        </div>
+
+        {/* Only show Avg Power if power data is available */}
+        {training.avgPower && training.avgPower > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600">
+                <BoltIcon className="h-4 w-4" />
+              </span>
               Avg Power
             </div>
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-primary-dark`}>
-                {Math.round(training.avgPower)}
+            <div className="mt-2 text-base font-semibold text-gray-900">{Math.round(training.avgPower)} W</div>
+            <div className="mt-0.5 text-xs text-gray-500">{maxPower ? `Max ${Math.round(maxPower)} W` : '\u00A0'}</div>
+          </div>
+        )}
+
+        {avgCadence && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
+                <CpuChipIcon className="h-4 w-4" />
+              </span>
+              Cadence
             </div>
-              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
-                {maxPower ? `Max: ${Math.round(maxPower)}` : ''}
-              </div>
-              </div>
-            )}
-          {avgCadence && (
-            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-blue-300 bg-blue-50 flex flex-col justify-between`}>
-              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-                <CpuChipIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-                Cadence
-              </div>
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-blue-700`}>
-                {Math.round(avgCadence)}
-              </div>
-              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+            <div className="mt-2 text-base font-semibold text-gray-900">{Math.round(avgCadence)} rpm</div>
+            <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+          </div>
+        )}
+
+        {calculateTSS !== null && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600">
+                <BoltIcon className="h-4 w-4" />
+              </span>
+              TSS
+              {typeof calculateTSS === 'object' && calculateTSS.estimated && (
+                <span className="text-[11px] text-gray-400" title="Estimated TSS (FTP not set in profile)">*</span>
+              )}
             </div>
-          )}
-          {calculateTSS !== null && (
-            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-purple-300 bg-purple-50 flex flex-col justify-between`}>
-              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-                <BoltIcon className={isMobile ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
-                TSS
-                {typeof calculateTSS === 'object' && calculateTSS.estimated && (
-                  <span className={`${isMobile ? 'text-[7px]' : 'text-[8px]'} text-gray-400 ml-0.5`} title="Estimated TSS (FTP not set in profile)">
-                    *
-                  </span>
-                )}
-              </div>
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-purple-700`}>
-                {typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
-              </div>
-              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}>
-                {calculateIF !== null ? `IF: ${calculateIF}` : ''}
-                </div>
+            <div className="mt-2 text-base font-semibold text-gray-900">
+              {typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS}
             </div>
-          )}
-          {training.avgSpeed && (
-            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-green-300 bg-green-50 flex flex-col justify-between`}>
-              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-                Speed
-              </div>
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-green-700`}>
-                {(training.avgSpeed * 3.6).toFixed(1)}
-              </div>
-              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+            <div className="mt-0.5 text-xs text-gray-500">{calculateIF !== null ? `IF ${calculateIF}` : '\u00A0'}</div>
+          </div>
+        )}
+
+        {training.avgSpeed && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-greenos/10 text-greenos">
+                <MapPinIcon className="h-4 w-4" />
+              </span>
+              Avg Speed
             </div>
-          )}
-          {training.totalAscent && training.totalAscent > 0 && (
-            <div className={`flex-shrink-0 ${isMobile ? 'w-[70px] p-0.5 h-[50px]' : 'w-[85px] p-1 h-[60px]'} rounded-lg border border-orange-300 bg-orange-50 flex flex-col justify-between`}>
-              <div className={`${isMobile ? 'text-[8px]' : 'text-[9px]'} text-gray-600 flex items-center gap-0.5 mb-0.5`}>
-                Elevation
-              </div>
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-bold text-orange-700`}>
-                +{Math.round(training.totalAscent)}
-              </div>
-              <div className={`${isMobile ? 'text-[7px] h-[10px]' : 'text-[8px] h-[12px]'} text-gray-500`}></div>
+            <div className="mt-2 text-base font-semibold text-gray-900">{(training.avgSpeed * 3.6).toFixed(1)} km/h</div>
+            <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+          </div>
+        )}
+
+        {training.totalAscent && training.totalAscent > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/10 text-orange-600">
+                <MapPinIcon className="h-4 w-4" />
+              </span>
+              Elevation
             </div>
-          )}
-        </div>
+            <div className="mt-2 text-base font-semibold text-gray-900">+{Math.round(training.totalAscent)} m</div>
+            <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+          </div>
+        )}
+      </div>
     </>
   );
 };
