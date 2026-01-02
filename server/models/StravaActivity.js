@@ -41,5 +41,7 @@ const stravaActivitySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 stravaActivitySchema.index({ userId: 1, stravaId: 1 }, { unique: true });
+// Speeds up calendar queries (/api/integrations/activities) that sort by date
+stravaActivitySchema.index({ userId: 1, startDate: -1 });
 
 module.exports = mongoose.model('StravaActivity', stravaActivitySchema);

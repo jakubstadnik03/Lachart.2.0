@@ -25,8 +25,9 @@ function TrainingRow({ training, activity, trainingId, sport, date, averagePace,
 
   const getBackgroundColor = (status) => {
     const colors = {
-      up: "bg-green-500 text-green bg-opacity-10",
-      down: "bg-red-500 text-red-500 bg-opacity-10",
+      // Tailwind-safe color classes
+      up: "bg-green-500 text-green-600 bg-opacity-10",
+      down: "bg-red-500 text-red-600 bg-opacity-10",
       same: "bg-gray-200 text-gray-600"
     };
     return colors[status];
@@ -448,14 +449,23 @@ export default function TrainingTable({
         }
       }
       
-      if (itemSport === 'running' || itemSport === 'run' || itemSport === 'swimming' || itemSport === 'swim') {
-        // Pro běh a plavání: rychlejší tempo (menší číslo) = lepší = "up" (zeleně)
-        if (averageValue < previousValue) status = "up";
-        else if (averageValue > previousValue) status = "down";
+      const isPaceSport = (itemSport === 'running' || itemSport === 'run' || itemSport === 'swimming' || itemSport === 'swim');
+      const cur = Number(averageValue);
+      const prev = Number(previousValue);
+
+      // Only compare when both numbers are valid and > 0
+      if (!isNaN(cur) && !isNaN(prev) && cur > 0 && prev > 0) {
+        if (isPaceSport) {
+          // Run/Swim pace: smaller seconds = faster = better => green "up"
+          if (cur < prev) status = "up";
+          else if (cur > prev) status = "down";
+        } else {
+          // Bike/others: bigger watts = better => green "up"
+          if (cur > prev) status = "up";
+          else if (cur < prev) status = "down";
+        }
       } else {
-        // Pro ostatní sporty: vyšší power = lepší
-        if (averageValue > previousValue) status = "up";
-        else if (averageValue < previousValue) status = "down";
+        status = "same";
       }
     }
 

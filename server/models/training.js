@@ -73,4 +73,7 @@ const trainingSchema = new mongoose.Schema({
     timestamps: true,
 });
 
+// Speeds up athlete calendar/training list queries (filter by athlete + date)
+trainingSchema.index({ athleteId: 1, date: -1 });
+
 module.exports = mongoose.model('Training', trainingSchema); 

@@ -356,14 +356,19 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
 
   const xLabel = sport === 'bike'
     ? 'Power (W)'
-    : (inputMode === 'pace')
-      ? 'Pace (sec)'
-      : (unitSystem === 'imperial' ? 'Speed (mph)' : 'Speed (km/h)');
+    : (sport === 'run' || sport === 'swim')
+      ? `Pace (${sport === 'swim'
+          ? (unitSystem === 'imperial' ? 'min/100yd' : 'min/100m')
+          : (unitSystem === 'imperial' ? 'min/mile' : 'min/km')})`
+      : 'Intensity';
 
   const lactateSvg = buildLactateCurveSvg({
     results: test.results || [],
     sportLabel: `${sport.toUpperCase()} • Lactate Curve`,
-    xLabel
+    xLabel,
+    sport,
+    unitSystem,
+    inputMode
   });
   const stagesSvg = buildStagesSvg({ results: test.results || [], sport, unitSystem, inputMode });
 

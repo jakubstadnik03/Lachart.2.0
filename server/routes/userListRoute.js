@@ -630,9 +630,12 @@ router.get("/profile", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        console.log('Loading user profile - heartRateZones:', JSON.stringify(user.heartRateZones, null, 2));
-        console.log('Loading user profile - avatar from DB:', user.avatar);
-        console.log('Loading user profile - strava.autoSync from DB:', user.strava?.autoSync);
+        // Hot endpoint: avoid heavy logs; enable only when explicitly debugging.
+        if (process.env.DEBUG_PROFILE === '1') {
+            console.log('Loading user profile - heartRateZones:', JSON.stringify(user.heartRateZones, null, 2));
+            console.log('Loading user profile - avatar from DB:', user.avatar);
+            console.log('Loading user profile - strava.autoSync from DB:', user.strava?.autoSync);
+        }
 
         // Return data without sensitive information
         const userResponse = {
@@ -668,10 +671,12 @@ router.get("/profile", verifyToken, async (req, res) => {
               // Don't include accessToken, refreshToken, expiresAt for security
             } : null
         };
-        
-        console.log('Returning user profile - avatar:', userResponse.avatar);
-        console.log('Returning user profile - strava.autoSync:', userResponse.strava?.autoSync);
+        if (process.env.DEBUG_PROFILE === '1') {
+            console.log('Returning user profile - avatar:', userResponse.avatar);
+            console.log('Returning user profile - strava.autoSync:', userResponse.strava?.autoSync);
+        }
 
+        res.set('Cache-Control', 'private, max-age=60');
         res.status(200).json(userResponse);
     } catch (error) {
         console.error("Error getting user profile:", error);

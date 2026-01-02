@@ -83,6 +83,51 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     },
     monthlyMetrics: {}
   });
+
+  // Stable "all time" reference used for normalization so the max doesn't jump
+  // when user changes compare period / selected months.
+  const [allTimeRef, setAllTimeRef] = useState(null);
+
+  useEffect(() => {
+    const loadAllTimeRef = async () => {
+      if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') return;
+      const cacheKey = `powerRadar_allTimeRef_v1`;
+      const cacheTsKey = `powerRadar_allTimeRef_v1_ts`;
+      const CACHE_DURATION = 60 * 60 * 1000; // 1h
+
+      try {
+        const now = Date.now();
+        const cached = localStorage.getItem(cacheKey);
+        const ts = Number(localStorage.getItem(cacheTsKey) || 0);
+        if (cached && ts && (now - ts) < CACHE_DURATION) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed?.allTime && typeof parsed.allTime === 'object') {
+              setAllTimeRef(parsed);
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+
+        const resp = await api.get(`/api/fit/power-metrics?comparePeriod=alltime`);
+        const metrics = resp.data;
+        if (metrics?.allTime && typeof metrics.allTime === 'object') {
+          setAllTimeRef(metrics);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(metrics));
+            localStorage.setItem(cacheTsKey, String(Date.now()));
+          } catch {
+            // ignore cache errors
+          }
+        }
+      } catch (e) {
+        // keep last known ref if any
+      }
+    };
+
+    loadAllTimeRef();
+  }, [currentSelectedSport]);
   
   // Load power metrics from backend or cache
   useEffect(() => {
@@ -236,28 +281,22 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     return powerMetrics.monthlyMetrics || {};
   }, [powerMetrics.monthlyMetrics]);
 
-  // Prefer best-known All Time values (API allTime may be missing/understated depending on sources/caps)
+  // Prefer best-known All Time values (stable reference; does NOT depend on selected months)
   const allTimeBest = useMemo(() => {
+    const src = allTimeRef || powerMetrics;
     const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
     const best = {};
-    const allTime = powerMetrics?.allTime || {};
-    const pr = powerMetrics?.personalRecords || {};
-    const compare = powerMetrics?.compare || {};
-    const monthly = powerMetrics?.monthlyMetrics || {};
+    const allTime = src?.allTime || {};
+    const pr = src?.personalRecords || {};
 
     keys.forEach((k) => {
       const prVal = Number(pr?.[k]?.value || 0);
       const allTimeVal = Number(allTime?.[k] || 0);
-      const compareVal = Number(compare?.[k] || 0);
-      const monthlyVal = Math.max(
-        0,
-        ...Object.values(monthly).map((m) => Number(m?.[k] || 0))
-      );
-      best[k] = Math.max(allTimeVal, prVal, compareVal, monthlyVal, 0);
+      best[k] = Math.max(allTimeVal, prVal, 0);
     });
 
     return best;
-  }, [powerMetrics]);
+  }, [powerMetrics, allTimeRef]);
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -267,21 +306,14 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     
     const labels = ['5s', '1min', '5min', '20min', '60min'];
     
+    const normalize = (value, intervalKey) => {
+      const max = Number(allTimeBest?.[intervalKey] || 0);
+      const v = Number(value || 0);
+      return max > 0 ? (v / max) * 100 : 0;
+    };
+
     // For monthly view
     if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
-      const intervalMaxes = {
-        sprint5s: Math.max(...Object.values(monthlyMetrics).map(m => m.sprint5s), allTimeBest.sprint5s, 1),
-        attack1min: Math.max(...Object.values(monthlyMetrics).map(m => m.attack1min), allTimeBest.attack1min, 1),
-        vo2max5min: Math.max(...Object.values(monthlyMetrics).map(m => m.vo2max5min), allTimeBest.vo2max5min, 1),
-        threshold20min: Math.max(...Object.values(monthlyMetrics).map(m => m.threshold20min), allTimeBest.threshold20min, 1),
-        endurance60min: Math.max(...Object.values(monthlyMetrics).map(m => m.endurance60min), allTimeBest.endurance60min, 1)
-      };
-      
-      const normalize = (value, intervalKey) => {
-        const max = intervalMaxes[intervalKey];
-        return max > 0 ? (value / max) * 100 : 0;
-      };
-      
   const monthColors = [
         '#2596be', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
         '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
@@ -292,18 +324,15 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         {
           label: 'All Time',
           data: [
-            normalize(allTimeBest.sprint5s, 'sprint5s'),
-            normalize(allTimeBest.attack1min, 'attack1min'),
-            normalize(allTimeBest.vo2max5min, 'vo2max5min'),
-            normalize(allTimeBest.threshold20min, 'threshold20min'),
-            normalize(allTimeBest.endurance60min, 'endurance60min')
+            100, 100, 100, 100, 100
           ],
           borderColor: '#2596be',
           backgroundColor: 'rgba(37, 150, 190, 0.2)',
           borderWidth: 2,
           pointBackgroundColor: '#2596be',
           pointRadius: 4,
-          fill: true
+          fill: true,
+          __kind: 'alltime'
         },
         ...selectedMonths.map((monthKey, index) => {
           const monthData = monthlyMetrics[monthKey];
@@ -324,7 +353,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             borderWidth: 2,
             pointBackgroundColor: monthColors[index % monthColors.length],
             pointRadius: 3,
-            fill: true
+            fill: true,
+            __kind: 'month',
+            __monthKey: monthKey
           };
         }).filter(Boolean)
       ];
@@ -332,38 +363,21 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       return { labels, datasets };
     }
     
-    // For other periods
-    const intervalMaxes = {
-      sprint5s: Math.max(allTimeBest.sprint5s, powerMetrics.compare.sprint5s, 1),
-      attack1min: Math.max(allTimeBest.attack1min, powerMetrics.compare.attack1min, 1),
-      vo2max5min: Math.max(allTimeBest.vo2max5min, powerMetrics.compare.vo2max5min, 1),
-      threshold20min: Math.max(allTimeBest.threshold20min, powerMetrics.compare.threshold20min, 1),
-      endurance60min: Math.max(allTimeBest.endurance60min, powerMetrics.compare.endurance60min, 1)
-    };
-    
-    const normalize = (value, intervalKey) => {
-      const max = intervalMaxes[intervalKey];
-      return max > 0 ? (value / max) * 100 : 0;
-    };
-
     return {
       labels,
     datasets: [
         {
           label: 'All Time',
           data: [
-            normalize(allTimeBest.sprint5s, 'sprint5s'),
-            normalize(allTimeBest.attack1min, 'attack1min'),
-            normalize(allTimeBest.vo2max5min, 'vo2max5min'),
-            normalize(allTimeBest.threshold20min, 'threshold20min'),
-            normalize(allTimeBest.endurance60min, 'endurance60min')
+            100, 100, 100, 100, 100
           ],
           borderColor: '#2596be',
           backgroundColor: 'rgba(37, 150, 190, 0.2)',
       borderWidth: 2,
           pointBackgroundColor: '#2596be',
       pointRadius: 4,
-          fill: true
+          fill: true,
+          __kind: 'alltime'
         },
         ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
           label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
@@ -379,7 +393,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           borderWidth: 2,
           pointBackgroundColor: 'rgba(239, 68, 68, 1)',
           pointRadius: 4,
-          fill: true
+          fill: true,
+          __kind: 'compare'
         }] : [])
       ]
     };
@@ -456,25 +471,28 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           label: (context) => {
               if (!context || !context.dataset) return '';
               const label = context.dataset.label || '';
+              const kind = context.dataset.__kind;
+              const monthKey = context.dataset.__monthKey;
               const index = context.dataIndex;
-              const metrics = label === 'All Time' ? allTimeBest : powerMetrics.compare;
-              if (!metrics) return '';
-              const values = [metrics.sprint5s, metrics.attack1min, metrics.vo2max5min, metrics.threshold20min, metrics.endurance60min];
-              const allTimeValue = allTimeBest[['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'][index]];
-              const compareValue = values[index];
-              const percentageOfAllTime = allTimeValue > 0 ? Math.round((compareValue / allTimeValue) * 100) : 0;
-              
-              if (label === 'All Time') {
-                return `${label}: ${values[index]}W (100%)`;
-              } else {
-                return `${label}: ${values[index]}W (${percentageOfAllTime}% of All Time)`;
-              }
+              const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+              const k = keys[index];
+              const allTimeValue = Number(allTimeBest?.[k] || 0);
+
+              let raw = 0;
+              if (kind === 'alltime') raw = allTimeValue;
+              else if (kind === 'compare') raw = Number(powerMetrics?.compare?.[k] || 0);
+              else if (kind === 'month') raw = Number(monthlyMetrics?.[monthKey]?.[k] || 0);
+              else raw = Number(powerMetrics?.compare?.[k] || 0);
+
+              const pct = allTimeValue > 0 ? Math.round((raw / allTimeValue) * 100) : 0;
+              if (kind === 'alltime') return `${label}: ${Math.round(raw)}W (100%)`;
+              return `${label}: ${Math.round(raw)}W (${pct}% of All Time)`;
             }
           }
         }
       }
     };
-  }, [powerMetrics, allTimeBest]);
+  }, [powerMetrics, allTimeBest, monthlyMetrics]);
 
   // Table data
   const tableData = [

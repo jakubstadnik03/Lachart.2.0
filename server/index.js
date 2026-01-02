@@ -61,12 +61,14 @@ app.use(compression()); // Compress responses
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Logování pro debugging
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
-  console.log('Headers:', req.headers);
-  next();
-});
+// Debug logging (disable by default; it slows down every request a lot)
+if (process.env.DEBUG_HTTP === '1') {
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    console.log('Headers:', req.headers);
+    next();
+  });
+}
 
 // MongoDB Connection
 mongoose

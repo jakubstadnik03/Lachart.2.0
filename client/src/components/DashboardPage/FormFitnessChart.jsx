@@ -268,7 +268,16 @@ const FormFitnessChart = ({ athleteId }) => {
     return null;
   };
 
+  const isTwoFingerTouch = (e) => {
+    const t = e?.touches || e?.nativeEvent?.touches;
+    return Boolean(t && t.length >= 2);
+  };
+
   const handleZoomMouseDown = (e) => {
+    // Mobile UX: allow one-finger scrolling; only start zoom selection with 2 fingers
+    if (isMobile && (e?.type?.includes('touch') || e?.nativeEvent?.type?.includes('touch'))) {
+      if (!isTwoFingerTouch(e)) return;
+    }
     const idx = getGlobalIndexFromChartEvent(e);
     if (idx == null) return;
     // Don't set state yet (prevents rerender on simple click for tooltip).
@@ -277,6 +286,10 @@ const FormFitnessChart = ({ athleteId }) => {
   };
 
   const handleZoomMouseMove = (e) => {
+    // Mobile UX: one-finger scrolling should not create selection; require 2 fingers
+    if (isMobile && (e?.type?.includes('touch') || e?.nativeEvent?.type?.includes('touch'))) {
+      if (!isTwoFingerTouch(e)) return;
+    }
     if (selectionStartRef.current == null) return;
     const idx = getGlobalIndexFromChartEvent(e);
     if (idx == null) return;

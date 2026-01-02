@@ -148,6 +148,9 @@ const fitTrainingSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Speeds up calendar queries that filter by athlete and time range
+fitTrainingSchema.index({ athleteId: 1, timestamp: -1 });
+
 module.exports = mongoose.model('FitTraining', fitTrainingSchema);
 
 

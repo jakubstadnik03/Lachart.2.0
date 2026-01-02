@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap } from '../services/api';
 import { motion } from 'framer-motion';
@@ -747,6 +747,8 @@ const FitAnalysisPage = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { activityId } = useParams();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
@@ -955,33 +957,68 @@ const FitAnalysisPage = () => {
     const trainingId = params.get('trainingId');
     const fitTrainingId = params.get('fitTrainingId');
     const stravaId = params.get('stravaId');
+
+    const openFromActivityId = (rawId) => {
+      if (!rawId) return;
+      const id = String(rawId);
+      if (id.startsWith('strava-')) {
+        loadStravaDetail(id.replace('strava-', ''));
+        return;
+      }
+      if (id.startsWith('regular-')) {
+        loadRegularTrainingDetail(id.replace('regular-', ''));
+        return;
+      }
+      if (id.startsWith('fit-')) {
+        loadTrainingDetail(id.replace('fit-', ''));
+        return;
+      }
+      if (id.startsWith('training-')) {
+        loadTrainingFromTrainingModel(id.replace('training-', ''));
+        return;
+      }
+      // Backwards-compat (old links might be just raw FitTraining _id)
+      loadTrainingDetail(id);
+    };
     
     const initialize = async () => {
       await loadTrainings();
       await loadRegularTrainings();
       await loadExternalActivities();
+
+      // Canonical path: /training-calendar/:activityId
+      if (activityId) {
+        setTimeout(() => {
+          openFromActivityId(activityId);
+        }, 200);
+        return;
+      }
       
     if (trainingId) {
         // Wait a bit for trainings to be loaded before loading specific training
         setTimeout(() => {
-      loadTrainingFromTrainingModel(trainingId);
+          // Move to canonical URL with id at the end
+          navigate(`/training-calendar/${encodeURIComponent(`training-${trainingId}`)}`, { replace: true });
+          openFromActivityId(`training-${trainingId}`);
         }, 200);
       } else if (fitTrainingId) {
         // Open a FitTraining directly
         setTimeout(() => {
-          loadTrainingDetail(fitTrainingId);
+          navigate(`/training-calendar/${encodeURIComponent(`fit-${fitTrainingId}`)}`, { replace: true });
+          openFromActivityId(`fit-${fitTrainingId}`);
         }, 200);
       } else if (stravaId) {
         // Wait a bit for activities to be loaded before loading specific Strava activity
         setTimeout(() => {
-          loadStravaDetail(stravaId);
+          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`, { replace: true });
+          openFromActivityId(`strava-${stravaId}`);
         }, 200);
     }
     };
     
     initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activityId]);
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -1005,43 +1042,7 @@ const FitAnalysisPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadExternalActivities = useCallback(async () => {
-    try {
-      // For athlete, don't send athleteId (backend will use their own userId)
-      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
-      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
-      
-      const params = athleteId ? { athleteId } : {};
-      const acts = await listExternalActivities(params);
-      setExternalActivities(acts || []);
-      
-      // Check if we should restore Strava selection (only on initial load or when athlete changes)
-      const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
-      if (savedStravaId) {
-        // Verify the activity still exists
-        const activityExists = acts?.some(a => String(a.stravaId) === savedStravaId);
-        if (activityExists) {
-          // Only load if not already selected (to avoid unnecessary API calls)
-          if (!selectedStrava || String(selectedStrava.id) !== savedStravaId) {
-            loadStravaDetail(savedStravaId);
-          }
-        } else {
-          // Activity no longer exists, remove from localStorage
-          localStorage.removeItem('fitAnalysis_selectedStravaId');
-        }
-      }
-    } catch (e) {
-      // Handle rate limit errors gracefully
-      if (e.response?.status === 429) {
-        console.warn('Rate limit exceeded when loading external activities. Please wait a moment.');
-        // Don't show error to user, just log it
-        return;
-      }
-      console.error('Error loading external activities:', e);
-    }
-  }, [selectedAthleteId, user?.role, user?._id, selectedStrava]);
-
-  const loadStravaDetail = async (id) => {
+  const loadStravaDetail = useCallback(async (id, { overrideTitle = null } = {}) => {
     try {
       const data = await getStravaActivityDetail(id);
       
@@ -1063,6 +1064,11 @@ const FitAnalysisPage = () => {
         laps: uniqueLaps,
         rawLaps
       };
+
+      // Allow overriding title from Training model (without mutating Strava activity in DB)
+      if (overrideTitle && typeof overrideTitle === 'string' && overrideTitle.trim()) {
+        detailWithMeta.titleManual = overrideTitle.trim();
+      }
       
       // Ensure streams data is properly set
       if (!data.streams) {
@@ -1102,7 +1108,43 @@ const FitAnalysisPage = () => {
       setSelectedStrava(null);
       setSelectedStravaStreams(null);
     }
-  };
+  }, [addNotification]);
+
+  const loadExternalActivities = useCallback(async () => {
+    try {
+      // For athlete, don't send athleteId (backend will use their own userId)
+      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
+      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      
+      const params = athleteId ? { athleteId } : {};
+      const acts = await listExternalActivities(params);
+      setExternalActivities(acts || []);
+      
+      // Check if we should restore Strava selection (only on initial load or when athlete changes)
+      const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
+      if (savedStravaId) {
+        // Verify the activity still exists
+        const activityExists = acts?.some(a => String(a.stravaId) === savedStravaId);
+        if (activityExists) {
+          // Only load if not already selected (to avoid unnecessary API calls)
+          if (!selectedStrava || String(selectedStrava.id) !== savedStravaId) {
+            loadStravaDetail(savedStravaId);
+          }
+        } else {
+          // Activity no longer exists, remove from localStorage
+          localStorage.removeItem('fitAnalysis_selectedStravaId');
+        }
+      }
+    } catch (e) {
+      // Handle rate limit errors gracefully
+      if (e.response?.status === 429) {
+        console.warn('Rate limit exceeded when loading external activities. Please wait a moment.');
+        // Don't show error to user, just log it
+        return;
+      }
+      console.error('Error loading external activities:', e);
+    }
+  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -1683,7 +1725,7 @@ const FitAnalysisPage = () => {
         try {
           // Use the same loader as when selecting from calendar, so selectedStrava has the expected shape
           // and CalendarView can highlight/anchor correctly.
-          await loadStravaDetail(data.sourceStravaActivityId);
+          await loadStravaDetail(data.sourceStravaActivityId, { overrideTitle: data.title || null });
           
           // Clean URL params
           const url = new URL(window.location.href);
@@ -2131,6 +2173,8 @@ const FitAnalysisPage = () => {
       customTitle: '',
       description: selectedStrava?.description || '',
       date: dateStr,
+      // Link back to Strava so we can merge calendar entries and keep Strava data as the source of truth
+      sourceStravaActivityId: String(selectedStrava.id || selectedStrava.stravaId || ''),
       specifics: {
         specific: '',
         weather: '',
@@ -2164,7 +2208,10 @@ const FitAnalysisPage = () => {
         ...formData,
         results: cleanedResults,
         athleteId: targetId,
-        coachId: user?.role === 'coach' ? user._id : undefined
+        coachId: user?.role === 'coach' ? user._id : undefined,
+        // Persist source links if present (used to merge calendar entries)
+        sourceStravaActivityId: formData?.sourceStravaActivityId || undefined,
+        sourceFitTrainingId: formData?.sourceFitTrainingId || undefined
       };
       
       // Check if training already exists (by title and date)
@@ -2277,9 +2324,17 @@ const FitAnalysisPage = () => {
         {/* Calendar Section */}
         <CalendarView
           activities={(() => {
+            // Merge Training-model entries that are linked to a Strava activity into a single calendar item:
+            // show the Training title, but keep all Strava-derived metrics and open Strava detail on click.
+            const trainingByStravaId = new Map();
+            (regularTrainings || []).forEach(t => {
+              const sid = t?.sourceStravaActivityId;
+              if (sid) trainingByStravaId.set(String(sid), t);
+            });
+
             const allActivities = [
             ...trainings.map(t => ({ 
-              id: t._id, 
+              id: `fit-${t._id}`, 
               date: t.timestamp, 
               title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training', 
               sport: t.sport,
@@ -2291,23 +2346,28 @@ const FitAnalysisPage = () => {
               avgPower: t.avgPower || t.averagePower || null,
               avgSpeed: t.avgSpeed || t.averageSpeed || null
             })),
-            ...regularTrainings.map(t => ({ 
-              id: `regular-${t._id}`, 
-              date: t.date || t.timestamp, 
-              title: t.title || 'Untitled Training', 
-              sport: t.sport,
-              category: t.category || null,
-              type: 'regular',
-              distance: t.totalDistance || t.distance,
-              totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
-              tss: t.tss || t.totalTSS,
-              avgPower: t.avgPower || t.averagePower || null,
-              avgSpeed: t.avgSpeed || t.averageSpeed || null
-            })),
+            // Only show regular trainings that are NOT linked to a Strava activity (linked ones will be merged into the Strava item below)
+            ...regularTrainings
+              .filter(t => !t?.sourceStravaActivityId)
+              .map(t => ({ 
+                id: `regular-${t._id}`, 
+                date: t.date || t.timestamp, 
+                title: t.title || 'Untitled Training', 
+                sport: t.sport,
+                category: t.category || null,
+                type: 'regular',
+                distance: t.totalDistance || t.distance,
+                totalElapsedTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+                tss: t.tss || t.totalTSS,
+                avgPower: t.avgPower || t.averagePower || null,
+                avgSpeed: t.avgSpeed || t.averageSpeed || null
+              })),
             ...externalActivities.map(a => ({ 
               id: `strava-${a.stravaId}`, 
               date: a.startDate, 
-              title: a.titleManual || a.name || 'Untitled Activity', 
+              // If there's a linked Training-model entry, use its title (but keep Strava data)
+              title: (trainingByStravaId.get(String(a.stravaId))?.title) || (a.titleManual || a.name || 'Untitled Activity'),
+              linkedTrainingTitle: trainingByStravaId.get(String(a.stravaId))?.title || null,
               sport: a.sport,
               category: a.category || null,
               type: 'strava',
@@ -2333,23 +2393,39 @@ const FitAnalysisPage = () => {
             return allActivities;
           })()}
           selectedActivityId={
-            selectedTraining?._id || 
-            (selectedTraining?.isFromTrainingModel ? `regular-${localStorage.getItem('fitAnalysis_selectedTrainingModelId')}` : null) ||
+            (selectedTraining
+              ? (selectedTraining?.isFromTrainingModel
+                  ? `training-${selectedTraining?._id}`
+                  : (selectedTraining?.isRegularTraining
+                      ? `regular-${selectedTraining?._id}`
+                      : `fit-${selectedTraining?._id}`))
+              : null) ||
+            (selectedTraining?.isFromTrainingModel ? `training-${localStorage.getItem('fitAnalysis_selectedTrainingModelId')}` : null) ||
             (selectedTraining?.isRegularTraining ? `regular-${localStorage.getItem('fitAnalysis_selectedRegularTrainingId')}` : null) ||
-            localStorage.getItem('fitAnalysis_selectedTrainingId') ||
+            (localStorage.getItem('fitAnalysis_selectedTrainingId') ? `fit-${localStorage.getItem('fitAnalysis_selectedTrainingId')}` : null) ||
             (selectedStrava ? `strava-${selectedStrava.id || selectedStrava.stravaId}` : null) ||
             (localStorage.getItem('fitAnalysis_selectedStravaId') ? `strava-${localStorage.getItem('fitAnalysis_selectedStravaId')}` : null)
           }
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={(a) => { 
-            if (a?.id && String(a.id).startsWith('strava-')) {
-              const sid = String(a.id).replace('strava-','');
-              loadStravaDetail(sid);
-            } else if (a?.id && String(a.id).startsWith('regular-')) {
-              const regularId = String(a.id).replace('regular-','');
+            if (!a?.id) return;
+            const rid = String(a.id);
+            // Keep URL in sync (id at the end)
+            navigate(`/training-calendar/${encodeURIComponent(rid)}`);
+
+            if (rid.startsWith('strava-')) {
+              const sid = rid.replace('strava-','');
+              loadStravaDetail(sid, { overrideTitle: a?.linkedTrainingTitle || null });
+            } else if (rid.startsWith('regular-')) {
+              const regularId = rid.replace('regular-','');
               loadRegularTrainingDetail(regularId);
-            } else if (a?.id) {
-              loadTrainingDetail(a.id);
+            } else if (rid.startsWith('fit-')) {
+              loadTrainingDetail(rid.replace('fit-',''));
+            } else if (rid.startsWith('training-')) {
+              loadTrainingFromTrainingModel(rid.replace('training-',''));
+            } else {
+              // Backwards-compat for old id formats
+              loadTrainingDetail(rid);
             }
           }}
           onMonthChange={useCallback(({ year, month }) => {

@@ -553,9 +553,16 @@ router.get('/activities', verifyToken, async (req, res) => {
 
     // Increased limit to 5000 activities to support longer history in calendar view
     // This should cover several years of activities for most users
+    // IMPORTANT: Keep this payload small (calendar view).
+    // Returning `raw` or `laps` for thousands of activities is extremely slow and bloats responses.
     const acts = await StravaActivity.find({ userId: targetUserId.toString() })
       .sort({ startDate: -1 })
-      .limit(5000); // Limit to most recent 5000 activities (covers ~13+ years with daily activities)
+      .limit(5000) // Limit to most recent 5000 activities (covers ~13+ years with daily activities)
+      .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
+      .lean();
+
+    // Cache-friendly headers (private because this is user-scoped)
+    res.set('Cache-Control', 'private, max-age=60');
     res.json(acts);
   } catch (error) {
     console.error('Error fetching external activities:', error);

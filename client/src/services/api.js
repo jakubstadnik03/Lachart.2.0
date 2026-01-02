@@ -9,18 +9,20 @@ const api = axios.create({
   }
 });
 
-// Add request interceptor to include auth token
+function getAuthToken() {
+  return localStorage.getItem('token') || localStorage.getItem('authToken') || null;
+}
+
+// Add request interceptor to include auth token (single source of truth)
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Auth endpoints
@@ -31,7 +33,6 @@ export const login = async (credentials) => {
         'Content-Type': 'application/json',
       }
     });
-    console.log('Login response:', response);
     return response;
   } catch (error) {
     console.error('Login error:', error);
@@ -88,27 +89,12 @@ export const deleteTest = (id) => api.delete(`/test/${id}`);
 export const getTestingsByAthleteId = async (athleteId) => {
   try {
     const response = await api.get(API_ENDPOINTS.ATHLETE_TESTS(athleteId));
-    console.log('Tests response:', response.data); // Pro debug
     return response.data;
   } catch (error) {
     console.error('Error fetching athlete tests:', error);
     throw error;
   }
 };
-
-// Přidáme interceptor pro přidání tokenu do každého requestu
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
 
 // Interceptor pro zpracování chyb
 api.interceptors.response.use(
@@ -124,6 +110,60 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// --- Lightweight GET caching + request coalescing (big UX win across the app) ---
+// Prevents duplicate GETs fired by multiple components at once (Profile, Testing, Calendar, etc.).
+// Default TTL is short to avoid staleness; callers can opt-out via { noCache: true } or { cacheTtlMs }.
+const __getCache = new Map(); // key -> { expiresAt, response }
+const __getInFlight = new Map(); // key -> Promise
+
+function stableStringify(obj) {
+  if (!obj || typeof obj !== 'object') return String(obj ?? '');
+  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map(k => `${k}:${stableStringify(obj[k])}`).join(',')}}`;
+}
+
+function buildGetCacheKey(url, config) {
+  const token = getAuthToken() || '';
+  const params = config?.params ? stableStringify(config.params) : '';
+  // include baseURL because some code uses absolute URLs
+  const base = config?.baseURL || api.defaults.baseURL || '';
+  return `${token}::${base}::${url}::${params}`;
+}
+
+const __originalGet = api.get.bind(api);
+api.get = (url, config = {}) => {
+  const noCache = Boolean(config.noCache || config.headers?.['x-no-cache']);
+  const responseType = config.responseType;
+  // Skip caching for blobs/streams
+  const cacheable = !noCache && (!responseType || responseType === 'json');
+  if (!cacheable) return __originalGet(url, config);
+
+  const key = buildGetCacheKey(url, config);
+  const now = Date.now();
+  const ttl = Number(config.cacheTtlMs) || 15000; // 15s default
+
+  const hit = __getCache.get(key);
+  if (hit && hit.expiresAt > now) {
+    return Promise.resolve(hit.response);
+  }
+
+  const inFlight = __getInFlight.get(key);
+  if (inFlight) return inFlight;
+
+  const p = __originalGet(url, config)
+    .then((resp) => {
+      __getCache.set(key, { expiresAt: now + ttl, response: resp });
+      return resp;
+    })
+    .finally(() => {
+      __getInFlight.delete(key);
+    });
+
+  __getInFlight.set(key, p);
+  return p;
+};
 
 export const updateUserProfile = async (userData) => {
   try {

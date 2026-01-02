@@ -91,7 +91,7 @@ function AppRoutes() {
           } 
         />
         <Route 
-          path="/training-calendar" 
+          path="/training-calendar/:activityId?" 
           element={<FitAnalysisPage />}
         />
         <Route 
