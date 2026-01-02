@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
+import api from '../../services/api';
+import { calculateZonesFromTest } from './zoneCalculator';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -192,6 +194,11 @@ const convertSpeedToPace = (speed, unitSystem = 'metric') => {
 const LactateCurveCalculator = ({ mockData }) => {
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null); // { type: 'success'|'error', message: string }
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTo, setEmailTo] = useState('');
+  const [zoneOverride, setZoneOverride] = useState(null);
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
@@ -216,13 +223,53 @@ const LactateCurveCalculator = ({ mockData }) => {
     return null;
   }
 
+  const openEmailModal = () => {
+    const zones = calculateZonesFromTest(mockData);
+    setZoneOverride(zones);
+    setEmailStatus(null);
+    setShowEmailModal(true);
+  };
+
+  const handleSendEmail = async () => {
+    const testId = mockData?._id;
+    if (!testId) {
+      setEmailStatus({ type: 'error', message: 'Missing test id.' });
+      return;
+    }
+
+    try {
+      setSendingEmail(true);
+      setEmailStatus(null);
+      await api.post(`/test/${testId}/send-report-email`, {
+        toEmail: emailTo?.trim() ? emailTo.trim() : null,
+        overrides: zoneOverride ? { zones: zoneOverride } : null
+      });
+      setEmailStatus({ type: 'success', message: 'Email sent.' });
+      setShowEmailModal(false);
+    } catch (e) {
+      const reason = e?.response?.data?.reason;
+      const msg =
+        reason === 'email_not_configured' ? 'Email is not configured on server.' :
+        reason === 'forbidden' ? 'You do not have access to send this report.' :
+        reason === 'test_not_found' ? 'Test not found.' :
+        (e?.response?.data?.error || 'Failed to send email.');
+      setEmailStatus({ type: 'error', message: msg });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   const thresholds = calculateThresholds(mockData);
   const results = mockData.results;
   
   // Convert values to numbers, handling decimal commas
+  // For pace sports in pace-mode: keep X axis in seconds (pace) so we can reverse it (slower -> faster)
   const xVals = results.map(r => {
     const power = r.power?.toString().replace(',', '.');
-    return isPaceSport ? convertPaceToSpeed(Number(power), unitSystem) : Number(power);
+    const v = Number(power);
+    if (!isPaceSport) return v;
+    if (inputMode === 'pace') return v; // seconds
+    return convertPaceToSpeed(v, unitSystem); // speed mode
   });
   
   const yVals = results.map(r => {
@@ -312,8 +359,12 @@ const LactateCurveCalculator = ({ mockData }) => {
     data: sortedResults.map(r => {
       const power = r.power?.toString().replace(',', '.');
       const lactate = r.lactate?.toString().replace(',', '.');
+      const xRaw = Number(power);
+      const x = isPaceSport
+        ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
+        : xRaw;
       return { 
-        x: isPaceSport ? convertPaceToSpeed(Number(power), unitSystem) : Number(power), 
+        x,
         y: Number(lactate),
         originalPace: isPaceSport ? r.power : null
       };
@@ -338,7 +389,9 @@ const LactateCurveCalculator = ({ mockData }) => {
     .map(key => ({
       label: key,
       data: [{
-        x: isPaceSport ? convertPaceToSpeed(thresholds[key], unitSystem) : thresholds[key],
+        x: isPaceSport
+          ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
+          : thresholds[key],
         y: thresholds.lactates[key],
         originalPace: isPaceSport ? thresholds[key] : null
       }],
@@ -361,6 +414,7 @@ const LactateCurveCalculator = ({ mockData }) => {
     scales: {
       x: {
         type: 'linear',
+        reverse: Boolean(isPaceSport && inputMode === 'pace'),
         min: Math.min(...xVals) - (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
         max: Math.max(...xVals) + (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
         title: { 
@@ -385,9 +439,9 @@ const LactateCurveCalculator = ({ mockData }) => {
           callback: function(value) {
             if (isPaceSport) {
               if (inputMode === 'pace') {
-                const paceSeconds = convertSpeedToPace(value, unitSystem);
-                const minutes = Math.floor(paceSeconds / 60);
-                const seconds = Math.floor(paceSeconds % 60);
+                // value is already pace seconds
+                const minutes = Math.floor(value / 60);
+                const seconds = Math.floor(value % 60);
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
                 return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
               } else {
@@ -440,7 +494,7 @@ const LactateCurveCalculator = ({ mockData }) => {
             
             if (isPaceSport) {
               if (inputMode === 'pace') {
-                const paceStr = formatSecondsToMMSS(convertSpeedToPace(xVal, unitSystem));
+                const paceStr = formatSecondsToMMSS(xVal);
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
                 return `${label}: ${paceStr} ${unit} | ${yVal.toFixed(2)} mmol/L`;
               } else {
@@ -503,6 +557,25 @@ const LactateCurveCalculator = ({ mockData }) => {
               <InformationCircleIcon className="w-5 h-5 text-gray-500" />
             </button>
           </div>
+          <div className="flex flex-col items-start sm:items-end gap-1">
+            <button
+              onClick={openEmailModal}
+              disabled={sendingEmail}
+              className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                sendingEmail
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
+              }`}
+              title="Send report to email"
+            >
+              {sendingEmail ? 'Sending…' : 'Send results to email'}
+            </button>
+            {emailStatus?.message && (
+              <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {emailStatus.message}
+              </div>
+            )}
+          </div>
           <p className="text-sm sm:text-base text-gray-500">
             Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
           </p>
@@ -528,6 +601,151 @@ const LactateCurveCalculator = ({ mockData }) => {
         initialTerm="Lactate Curve"
         initialCategory="Lactate"
       />
+
+      {/* Email modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowEmailModal(false)} />
+          <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm sm:text-base font-semibold text-gray-900">Send report to email</div>
+                <div className="text-xs text-gray-500 truncate">
+                  {mockData?.title ? mockData.title : 'Lactate test'} • {formatDate(mockData?.date)}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="px-3 py-2 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-200 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-auto">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Recipient email (optional)</label>
+                <input
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="Leave empty to use your account email"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
+                <div className="text-sm font-semibold text-gray-900 mb-2">Zones (editable)</div>
+                {!zoneOverride ? (
+                  <div className="text-sm text-gray-600">Zones could not be calculated for this test.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {['zone1','zone2','zone3','zone4','zone5'].map((zKey) => {
+                      const zNum = zKey.replace('zone','');
+                      const main = mockData?.sport === 'bike' ? zoneOverride.power?.[zKey] : zoneOverride.pace?.[zKey];
+                      const hr = zoneOverride.heartRate?.[zKey];
+                      const mainLabel = mockData?.sport === 'bike' ? 'Power' : 'Pace';
+
+                      const setMain = (field, val) => {
+                        setZoneOverride((prev) => {
+                          if (!prev) return prev;
+                          const next = { ...prev };
+                          if (mockData?.sport === 'bike') {
+                            next.power = { ...(next.power || {}) };
+                            next.power[zKey] = { ...(next.power[zKey] || {}) };
+                            next.power[zKey][field] = Number(val);
+                          } else {
+                            next.pace = { ...(next.pace || {}) };
+                            next.pace[zKey] = { ...(next.pace[zKey] || {}) };
+                            next.pace[zKey][field] = val;
+                          }
+                          return next;
+                        });
+                      };
+
+                      const setHr = (field, val) => {
+                        setZoneOverride((prev) => {
+                          if (!prev) return prev;
+                          const next = { ...prev };
+                          next.heartRate = { ...(next.heartRate || {}) };
+                          next.heartRate[zKey] = { ...(next.heartRate[zKey] || {}) };
+                          next.heartRate[zKey][field] = Number(val);
+                          return next;
+                        });
+                      };
+
+                      return (
+                        <div key={zKey} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                          <div className="sm:col-span-2 text-sm font-semibold text-gray-900">Z{zNum}</div>
+                          <div className="sm:col-span-5">
+                            <div className="text-[11px] font-semibold text-gray-600 mb-1">{mainLabel}</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                value={main?.min ?? ''}
+                                onChange={(e) => setMain('min', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="min"
+                              />
+                              <input
+                                value={main?.max ?? ''}
+                                onChange={(e) => setMain('max', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="max"
+                              />
+                            </div>
+                          </div>
+                          <div className="sm:col-span-5">
+                            <div className="text-[11px] font-semibold text-gray-600 mb-1">HR</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                value={hr?.min ?? ''}
+                                onChange={(e) => setHr('min', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="min"
+                              />
+                              <input
+                                value={hr?.max ?? ''}
+                                onChange={(e) => setHr('max', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="max"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {emailStatus?.message && (
+                <div className={`text-sm ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {emailStatus.message}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 sm:p-5 border-t border-gray-100 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="px-3 py-2 text-xs sm:text-sm bg-white hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={sendingEmail}
+                className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                  sendingEmail
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-primary text-white border-primary hover:opacity-90'
+                }`}
+              >
+                {sendingEmail ? 'Sending…' : 'Send email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

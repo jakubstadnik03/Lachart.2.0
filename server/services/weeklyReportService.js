@@ -1,6 +1,8 @@
 const nodemailer = require('nodemailer');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
+const FitTraining = require('../models/fitTraining');
+const Training = require('../models/training');
 const fitnessMetricsController = require('../controllers/fitnessMetricsController');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 
@@ -31,6 +33,255 @@ function formatSecondsToHMS(seconds) {
 
 function metersToKm(meters) {
   return (Number(meters) || 0) / 1000;
+}
+
+function parseDurationToSeconds(durationStr) {
+  if (!durationStr || typeof durationStr !== 'string') return 0;
+  const parts = durationStr.split(':').map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return 0;
+  const nums = parts.map(p => Number(p));
+  if (nums.some(n => Number.isNaN(n))) return 0;
+  if (nums.length === 2) {
+    // mm:ss
+    const [m, s] = nums;
+    return Math.max(0, Math.round(m * 60 + s));
+  }
+  if (nums.length === 3) {
+    // hh:mm:ss
+    const [h, m, s] = nums;
+    return Math.max(0, Math.round(h * 3600 + m * 60 + s));
+  }
+  return 0;
+}
+
+function normalizeSportToCore(sportRaw) {
+  const s = String(sportRaw || '').toLowerCase();
+  if (!s) return 'other';
+  if (s.includes('swim') || s === 'swimming') return 'swim';
+  if (s.includes('run') || s.includes('walk') || s.includes('hike') || s === 'running') return 'run';
+  if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') return 'bike';
+  // FitTraining uses 'running'/'cycling'/'swimming' already; Training model uses 'run'/'bike'/'swim'
+  if (s === 'run') return 'run';
+  if (s === 'bike') return 'bike';
+  if (s === 'swim') return 'swim';
+  return 'other';
+}
+
+function formatCoreSportLabel(core) {
+  if (core === 'run') return 'Run';
+  if (core === 'bike') return 'Bike';
+  if (core === 'swim') return 'Swim';
+  return 'Other';
+}
+
+function formatCategoryLabel(category) {
+  if (!category) return '—';
+  const c = String(category);
+  return c.charAt(0).toUpperCase() + c.slice(1);
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function calcDelta(current, previous) {
+  const c = Number(current) || 0;
+  const p = Number(previous) || 0;
+  const diff = c - p;
+  const pct = p > 0 ? (diff / p) * 100 : (c > 0 ? 100 : 0);
+  return { diff, pct };
+}
+
+function deltaBadgeHtml({ diffLabel, pct, isPositiveBetter = true }) {
+  // For time/distance/tss: bigger is "better" for progress in weekly volume context.
+  const positive = (pct >= 0);
+  const isGood = isPositiveBetter ? positive : !positive;
+  const color = isGood ? '#16a34a' : '#ef4444';
+  const bg = isGood ? '#dcfce7' : '#fee2e2';
+  const sign = positive ? '+' : '−';
+  const pctLabel = Number.isFinite(pct) ? `${sign}${Math.abs(pct).toFixed(0)}%` : '—';
+  return `
+    <span style="display:inline-block; padding: 2px 8px; border-radius: 999px; background:${bg}; color:${color}; font-weight:700; font-size:12px; white-space:nowrap;">
+      ${escapeHtml(diffLabel)} (${escapeHtml(pctLabel)})
+    </span>
+  `.trim();
+}
+
+function formatSecondsDelta(diffSeconds) {
+  const s = Math.abs(Math.round(Number(diffSeconds) || 0));
+  return formatSecondsToHMS(s);
+}
+
+function formatKmDelta(diffMeters) {
+  const km = Math.abs(metersToKm(diffMeters));
+  return `${km.toFixed(1)} km`;
+}
+
+async function loadWeekSessions(userId, weekStart, weekEnd, userProfile) {
+  const [strava, fits, trainings] = await Promise.all([
+    StravaActivity.find({ userId, startDate: { $gte: weekStart, $lt: weekEnd } })
+      .sort({ startDate: 1 })
+      .select('stravaId name titleManual category sport startDate movingTime distance averageHeartRate averagePower averageSpeed'),
+    FitTraining.find({ athleteId: String(userId), timestamp: { $gte: weekStart, $lt: weekEnd } })
+      .sort({ timestamp: 1 })
+      .select('_id titleManual titleAuto category sport timestamp totalElapsedTime totalDistance avgHeartRate avgPower avgSpeed'),
+    Training.find({ athleteId: String(userId), date: { $gte: weekStart, $lt: weekEnd } })
+      .sort({ date: 1 })
+      .select('_id title sport date duration results sourceFitTrainingId sourceStravaActivityId')
+  ]);
+
+  const clientUrl = getClientUrl();
+
+  const sessions = [];
+
+  // Strava sessions
+  for (const a of strava) {
+    const seconds = Number(a.movingTime || 0);
+    const distanceMeters = Number(a.distance || 0);
+    const coreSport = normalizeSportToCore(a.sport);
+    const name = (a.titleManual && a.titleManual.trim()) ? a.titleManual : (a.name || 'Untitled');
+    const linkUrl = `${clientUrl}/training-calendar?stravaId=${encodeURIComponent(String(a.stravaId))}`;
+    const tss = calculateActivityTSS(a, userProfile);
+    sessions.push({
+      source: 'strava',
+      sourceLabel: 'STRAVA',
+      linkUrl,
+      id: String(a.stravaId),
+      name,
+      category: a.category || null,
+      sportRaw: a.sport || '',
+      coreSport,
+      startDate: a.startDate,
+      seconds,
+      distanceMeters,
+      tss,
+      avgHr: Number(a.averageHeartRate || 0) || null,
+      avgPower: Number(a.averagePower || 0) || null
+    });
+  }
+
+  // Fit sessions
+  for (const f of fits) {
+    const seconds = Number(f.totalElapsedTime || 0);
+    const distanceMeters = Number(f.totalDistance || 0);
+    const coreSport = normalizeSportToCore(f.sport);
+    const name = (f.titleManual && f.titleManual.trim()) ? f.titleManual : (f.titleAuto || f.originalFileName || 'Untitled');
+    const linkUrl = `${clientUrl}/training-calendar?fitTrainingId=${encodeURIComponent(String(f._id))}`;
+    // Reuse TSS logic with a Strava-like object
+    const tss = calculateActivityTSS({
+      sport: f.sport,
+      totalElapsedTime: seconds,
+      averagePower: f.avgPower,
+      averageSpeed: f.avgSpeed
+    }, userProfile);
+    sessions.push({
+      source: 'fit',
+      sourceLabel: 'FIT',
+      linkUrl,
+      id: String(f._id),
+      name,
+      category: f.category || null,
+      sportRaw: f.sport || '',
+      coreSport,
+      startDate: f.timestamp,
+      seconds,
+      distanceMeters,
+      tss,
+      avgHr: Number(f.avgHeartRate || 0) || null,
+      avgPower: Number(f.avgPower || 0) || null
+    });
+  }
+
+  // Manual Training-model sessions
+  for (const t of trainings) {
+    const secondsFromField = parseDurationToSeconds(t.duration);
+    const secondsFromResults = Array.isArray(t.results)
+      ? t.results.reduce((sum, r) => sum + (Number(r.durationSeconds || r.duration || 0) || 0) + (Number(r.restSeconds || r.rest || 0) || 0), 0)
+      : 0;
+    const seconds = secondsFromResults > 0 ? secondsFromResults : secondsFromField;
+    const coreSport = normalizeSportToCore(t.sport);
+    const linkUrl = `${clientUrl}/training-calendar?trainingId=${encodeURIComponent(String(t._id))}`;
+    sessions.push({
+      source: 'training',
+      sourceLabel: 'MANUAL',
+      linkUrl,
+      id: String(t._id),
+      name: t.title || 'Untitled',
+      category: null,
+      sportRaw: t.sport || '',
+      coreSport,
+      startDate: t.date,
+      seconds,
+      distanceMeters: 0,
+      tss: 0,
+      avgHr: null,
+      avgPower: null
+    });
+  }
+
+  // stable sort: date asc, then source
+  sessions.sort((a, b) => {
+    const da = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const db = b.startDate ? new Date(b.startDate).getTime() : 0;
+    if (da !== db) return da - db;
+    return String(a.source).localeCompare(String(b.source));
+  });
+
+  return sessions;
+}
+
+function aggregateSessions(sessions) {
+  const totals = {
+    totalSeconds: 0,
+    totalDistanceMeters: 0,
+    totalTSS: 0,
+    bySport: {
+      run: { seconds: 0, distanceMeters: 0, tss: 0, count: 0 },
+      bike: { seconds: 0, distanceMeters: 0, tss: 0, count: 0 },
+      swim: { seconds: 0, distanceMeters: 0, tss: 0, count: 0 },
+      other: { seconds: 0, distanceMeters: 0, tss: 0, count: 0 }
+    }
+  };
+
+  let hrWeightedSum = 0;
+  let hrWeight = 0;
+  let powerWeightedSum = 0;
+  let powerWeight = 0;
+
+  for (const s of sessions) {
+    const seconds = Number(s.seconds || 0);
+    const dist = Number(s.distanceMeters || 0);
+    const tss = Number(s.tss || 0);
+    totals.totalSeconds += seconds;
+    totals.totalDistanceMeters += dist;
+    totals.totalTSS += tss;
+
+    const core = s.coreSport || 'other';
+    if (!totals.bySport[core]) totals.bySport[core] = { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
+    totals.bySport[core].seconds += seconds;
+    totals.bySport[core].distanceMeters += dist;
+    totals.bySport[core].tss += tss;
+    totals.bySport[core].count += 1;
+
+    if (s.avgHr && seconds > 0) {
+      hrWeightedSum += Number(s.avgHr) * seconds;
+      hrWeight += seconds;
+    }
+    if (s.avgPower && seconds > 0) {
+      powerWeightedSum += Number(s.avgPower) * seconds;
+      powerWeight += seconds;
+    }
+  }
+
+  totals.avgHr = hrWeight ? Math.round(hrWeightedSum / hrWeight) : null;
+  totals.avgPower = powerWeight ? Math.round(powerWeightedSum / powerWeight) : null;
+
+  return totals;
 }
 
 // Copy of the TSS logic used in server/controllers/fitnessMetricsController.js
@@ -133,10 +384,32 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
   const fourWeeksAgo = new Date(end);
   fourWeeksAgo.setUTCDate(fourWeeksAgo.getUTCDate() - 28);
 
-  const stravaActivities = await StravaActivity.find({
-    userId,
-    startDate: { $gte: fourWeeksAgo, $lt: end }
-  }).select('startDate movingTime averagePower averageSpeed sport');
+  const [stravaActivities, fitTrainings] = await Promise.all([
+    StravaActivity.find({
+      userId,
+      startDate: { $gte: fourWeeksAgo, $lt: end }
+    }).select('startDate movingTime averagePower averageSpeed sport'),
+    FitTraining.find({
+      athleteId: String(userId),
+      timestamp: { $gte: fourWeeksAgo, $lt: end }
+    }).select('timestamp totalElapsedTime avgPower avgSpeed sport')
+  ]);
+
+  const all = [];
+  for (const a of stravaActivities) {
+    all.push({ date: a.startDate, tss: calculateActivityTSS(a, userProfile) });
+  }
+  for (const f of fitTrainings) {
+    all.push({
+      date: f.timestamp,
+      tss: calculateActivityTSS({
+        sport: f.sport,
+        totalElapsedTime: f.totalElapsedTime,
+        averagePower: f.avgPower,
+        averageSpeed: f.avgSpeed
+      }, userProfile)
+    });
+  }
 
   // Compute weekly sums: week 0 is [weekStart, weekEnd), then previous weeks based on weekStart
   const weekStarts = [0, 1, 2, 3].map(i => {
@@ -152,12 +425,13 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
 
   const weekly = weekStarts.map((s, idx) => {
     const e = weekEnds[idx];
-    return stravaActivities
-      .filter(a => {
-        const d = new Date(a.startDate);
+    return all
+      .filter(x => {
+        const d = x.date ? new Date(x.date) : null;
+        if (!d || Number.isNaN(d.getTime())) return false;
         return d >= s && d < e;
       })
-      .reduce((sum, a) => sum + calculateActivityTSS(a, userProfile), 0);
+      .reduce((sum, x) => sum + (Number(x.tss) || 0), 0);
   });
 
   const currentWeekTSS = weekly[0] || 0;
@@ -176,44 +450,18 @@ async function buildWeeklyReportSummary(user, weekStart, weekEnd) {
     ftp: user.ftp || 250
   };
 
-  const activities = await StravaActivity.find({
-    userId: user._id,
-    startDate: { $gte: weekStart, $lt: weekEnd }
-  })
-    .sort({ startDate: 1 })
-    .select('name titleManual sport startDate movingTime distance averageHeartRate averagePower averageSpeed');
+  const [currentSessions, prevSessions] = await Promise.all([
+    loadWeekSessions(user._id, weekStart, weekEnd, userProfile),
+    (() => {
+      const prevStart = new Date(weekStart);
+      prevStart.setUTCDate(prevStart.getUTCDate() - 7);
+      const prevEnd = new Date(weekStart);
+      return loadWeekSessions(user._id, prevStart, prevEnd, userProfile);
+    })()
+  ]);
 
-  let totalSeconds = 0;
-  let totalDistance = 0;
-  let totalTSS = 0;
-  let hrWeightedSum = 0;
-  let hrWeight = 0;
-  let powerWeightedSum = 0;
-  let powerWeight = 0;
-
-  for (const a of activities) {
-    const seconds = Number(a.movingTime || 0);
-    const dist = Number(a.distance || 0);
-    const tss = calculateActivityTSS(a, userProfile);
-    totalSeconds += seconds;
-    totalDistance += dist;
-    totalTSS += tss;
-
-    const hr = Number(a.averageHeartRate || 0);
-    if (hr > 0 && seconds > 0) {
-      hrWeightedSum += hr * seconds;
-      hrWeight += seconds;
-    }
-
-    const pw = Number(a.averagePower || 0);
-    if (pw > 0 && seconds > 0) {
-      powerWeightedSum += pw * seconds;
-      powerWeight += seconds;
-    }
-  }
-
-  const avgHr = hrWeight ? Math.round(hrWeightedSum / hrWeight) : null;
-  const avgPower = powerWeight ? Math.round(powerWeightedSum / powerWeight) : null;
+  const currentTotals = aggregateSessions(currentSessions);
+  const prevTotals = aggregateSessions(prevSessions);
 
   // “Fitness” shown like FormBeat: use Form (TSB) from your existing model on the last day of the week
   let formValue = null;
@@ -233,17 +481,20 @@ async function buildWeeklyReportSummary(user, weekStart, weekEnd) {
   return {
     trainingStatus,
     formValue,
-    totalTSS: Math.round(totalTSS || 0),
-    totalSeconds,
-    totalDistanceMeters: totalDistance,
-    avgHr,
-    avgPower,
-    activities: activities.map(a => ({
-      name: (a.titleManual && a.titleManual.trim()) ? a.titleManual : (a.name || 'Untitled'),
-      sport: a.sport || '',
-      startDate: a.startDate,
-      seconds: Number(a.movingTime || 0),
-      distanceMeters: Number(a.distance || 0)
+    totals: currentTotals,
+    previousTotals: prevTotals,
+    activities: currentSessions.map(s => ({
+      source: s.source,
+      sourceLabel: s.sourceLabel,
+      linkUrl: s.linkUrl,
+      name: s.name,
+      category: s.category,
+      sport: s.sportRaw,
+      coreSport: s.coreSport,
+      startDate: s.startDate,
+      seconds: Number(s.seconds || 0),
+      distanceMeters: Number(s.distanceMeters || 0),
+      tss: Number(s.tss || 0)
     }))
   };
 }
@@ -253,28 +504,98 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
   const weekStartLabel = weekStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const weekEndLabel = new Date(weekEnd.getTime() - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
-  const km = metersToKm(summary.totalDistanceMeters);
-  const duration = formatSecondsToHMS(summary.totalSeconds);
+  const totals = summary.totals || {};
+  const prev = summary.previousTotals || {};
+  const km = metersToKm(totals.totalDistanceMeters || 0);
+  const duration = formatSecondsToHMS(totals.totalSeconds || 0);
 
   const trainingStatus = summary.trainingStatus?.statusText || '—';
   const statusAccent = summary.trainingStatus?.accent || '#767EB5';
 
+  const deltaTotalSeconds = calcDelta(totals.totalSeconds || 0, prev.totalSeconds || 0);
+  const deltaTotalDistance = calcDelta(totals.totalDistanceMeters || 0, prev.totalDistanceMeters || 0);
+  const deltaTotalTss = calcDelta(totals.totalTSS || 0, prev.totalTSS || 0);
+
+  const sportCard = (core) => {
+    const cur = totals.bySport?.[core] || { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
+    const p = prev.bySport?.[core] || { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
+    const ds = calcDelta(cur.seconds, p.seconds);
+    const dd = calcDelta(cur.distanceMeters, p.distanceMeters);
+
+    const timeDelta = deltaBadgeHtml({ diffLabel: `${ds.diff >= 0 ? '+' : '−'}${formatSecondsDelta(ds.diff)}`, pct: ds.pct });
+    const distDelta = deltaBadgeHtml({ diffLabel: `${dd.diff >= 0 ? '+' : '−'}${formatKmDelta(dd.diff)}`, pct: dd.pct });
+
+    return `
+      <div style="border: 1px solid #eef2f7; border-radius: 12px; padding: 14px; background: #ffffff;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px;">
+          <div style="font-weight: 800; color:#111827; font-size: 14px;">${escapeHtml(formatCoreSportLabel(core))}</div>
+          <div style="color:#6b7280; font-size: 12px;">${escapeHtml(String(cur.count || 0))} sessions</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
+          <div>
+            <div style="color:#6b7280; font-size: 12px;">Time</div>
+            <div style="font-weight: 800; color:#111827; font-size: 16px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
+          </div>
+          <div style="text-align:right;">
+            ${timeDelta}
+          </div>
+        </div>
+        <div style="height: 8px;"></div>
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
+          <div>
+            <div style="color:#6b7280; font-size: 12px;">Distance</div>
+            <div style="font-weight: 800; color:#111827; font-size: 16px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
+          </div>
+          <div style="text-align:right;">
+            ${distDelta}
+          </div>
+        </div>
+      </div>
+    `.trim();
+  };
+
   const activityRows = summary.activities
-    .slice(0, 12)
     .map(a => {
-      const dateLabel = a.startDate ? new Date(a.startDate).toLocaleDateString('en-US', { weekday: 'short' }) : '';
+      const d = a.startDate ? new Date(a.startDate) : null;
+      const dateLabel = d && !Number.isNaN(d.getTime())
+        ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        : '';
       const distKm = metersToKm(a.distanceMeters);
+      const category = formatCategoryLabel(a.category);
+      const coreSport = a.coreSport || normalizeSportToCore(a.sport);
+
+      const sourcePillBg = a.sourceLabel === 'STRAVA' ? '#e0f2fe' : (a.sourceLabel === 'FIT' ? '#ede9fe' : '#f3f4f6');
+      const sourcePillColor = a.sourceLabel === 'STRAVA' ? '#0369a1' : (a.sourceLabel === 'FIT' ? '#6d28d9' : '#111827');
+
+      const nameHtml = `
+        <a href="${escapeHtml(a.linkUrl || clientUrl)}" style="color:#111827; text-decoration:none; font-weight: 700;">
+          ${escapeHtml(a.name)}
+        </a>
+      `.trim();
+
       return `
         <tr>
-          <td style="padding: 10px 0; border-bottom: 1px solid #eef2f7;">
-            <div style="font-weight: 600; color: #111827; font-size: 14px;">${a.name}</div>
-            <div style="color: #6b7280; font-size: 12px;">${dateLabel} • ${a.sport || ''}</div>
+          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; vertical-align: top;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
+              <span style="display:inline-block; padding: 2px 8px; border-radius: 999px; background:${sourcePillBg}; color:${sourcePillColor}; font-weight:800; font-size:11px; letter-spacing: 0.2px;">
+                ${escapeHtml(a.sourceLabel || '—')}
+              </span>
+              <span style="color:#6b7280; font-size:12px;">${escapeHtml(dateLabel)}</span>
+            </div>
+            <div style="margin-top: 4px; font-size: 14px;">${nameHtml}</div>
+            <div style="margin-top: 3px; color: #6b7280; font-size: 12px;">
+              ${escapeHtml(formatCoreSportLabel(coreSport))} • Category: ${escapeHtml(category)}
+            </div>
           </td>
-          <td style="padding: 10px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap;">
-            ${formatSecondsToHMS(a.seconds)}
+          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
+            ${escapeHtml(formatSecondsToHMS(a.seconds))}
           </td>
-          <td style="padding: 10px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap;">
-            ${distKm.toFixed(1)} km</td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
+            ${a.distanceMeters ? `${distKm.toFixed(1)} km` : '—'}
+          </td>
+          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
+            ${a.tss ? String(Math.round(a.tss)) : '—'}
+          </td>
         </tr>
       `;
     })
@@ -298,29 +619,39 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
       </div>
       <table role="presentation" style="width: 100%; border-collapse: collapse;">
         ${metricsRow('Fitness', summary.formValue === null ? '—' : String(summary.formValue), '#111827')}
-        ${metricsRow('TSS', String(summary.totalTSS))}
+        ${metricsRow('TSS', `${String(Math.round(totals.totalTSS || 0))} ${deltaBadgeHtml({ diffLabel: `${deltaTotalTss.diff >= 0 ? '+' : '−'}${Math.abs(Math.round(deltaTotalTss.diff))}`, pct: deltaTotalTss.pct })}`)}
         ${metricsRow('Duration', duration)}
         ${metricsRow('Distance', `${km.toFixed(1)} km`)}
-        ${metricsRow('HR', summary.avgHr ? `${summary.avgHr}` : '—')}
-        ${metricsRow('Normalized Power', summary.avgPower ? `${summary.avgPower} W` : '—')}
+        ${metricsRow('Vs last week (time)', deltaBadgeHtml({ diffLabel: `${deltaTotalSeconds.diff >= 0 ? '+' : '−'}${formatSecondsDelta(deltaTotalSeconds.diff)}`, pct: deltaTotalSeconds.pct }))}
+        ${metricsRow('Vs last week (distance)', deltaBadgeHtml({ diffLabel: `${deltaTotalDistance.diff >= 0 ? '+' : '−'}${formatKmDelta(deltaTotalDistance.diff)}`, pct: deltaTotalDistance.pct }))}
+        ${metricsRow('Avg HR', totals.avgHr ? `${totals.avgHr}` : '—')}
+        ${metricsRow('Avg Power', totals.avgPower ? `${totals.avgPower} W` : '—')}
       </table>
     </div>
 
     <div style="height: 18px;"></div>
 
-    <h3 style="margin: 0 0 10px; color: #111827; font-size: 18px;">Activities (${summary.activities.length})</h3>
+    <h3 style="margin: 0 0 10px; color: #111827; font-size: 18px;">Weekly Breakdown</h3>
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+      ${sportCard('run')}
+      ${sportCard('bike')}
+      ${sportCard('swim')}
+    </div>
+
+    <div style="height: 18px;"></div>
+
+    <h3 style="margin: 0 0 10px; color: #111827; font-size: 18px;">Trainings (${summary.activities.length})</h3>
     <table role="presentation" style="width: 100%; border-collapse: collapse;">
       <tr>
-        <th style="text-align:left; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Activity</th>
+        <th style="text-align:left; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Training</th>
         <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Duration</th>
         <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Distance</th>
+        <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">TSS</th>
       </tr>
       ${activityRows || `
-        <tr><td colspan="3" style="padding: 14px 0; color:#6b7280;">No activities found for this week.</td></tr>
+        <tr><td colspan="4" style="padding: 14px 0; color:#6b7280;">No trainings found for this week.</td></tr>
       `}
     </table>
-
-    ${summary.activities.length > 12 ? `<p style="margin: 12px 0 0; color:#6b7280; font-size: 12px;">Showing first 12 activities.</p>` : ''}
   `.trim();
 }
 
@@ -338,7 +669,6 @@ async function sendWeeklyReportEmailToUser(user, weekStart, weekEnd, { force = f
   if (!user?.email) return { sent: false, reason: 'no_email' };
   if (!user?.notifications?.emailNotifications) return { sent: false, reason: 'email_notifications_disabled' };
   if (!user?.notifications?.weeklyReports) return { sent: false, reason: 'weekly_reports_disabled' };
-  if (!user?.strava?.accessToken || !user?.strava?.athleteId) return { sent: false, reason: 'strava_not_connected' };
 
   const alreadySent = user.notifications?.weeklyReportsLastSentWeekStart
     ? new Date(user.notifications.weeklyReportsLastSentWeekStart).toISOString().split('T')[0] === weekStart.toISOString().split('T')[0]
@@ -390,9 +720,7 @@ async function sendWeeklyReportsForWeek({ weekStart, weekEnd, force = false } = 
     email: { $ne: null },
     isActive: { $ne: false },
     'notifications.emailNotifications': true,
-    'notifications.weeklyReports': true,
-    'strava.accessToken': { $ne: null },
-    'strava.athleteId': { $ne: null }
+    'notifications.weeklyReports': true
   }).select('name email strava powerZones ftp notifications isActive');
 
   const results = {

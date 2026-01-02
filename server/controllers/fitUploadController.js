@@ -2754,7 +2754,8 @@ async function getPowerMetrics(req, res) {
       userId: athleteIdStr,
       sport: { $in: ['Ride', 'VirtualRide'] }
     })
-      .select('_id startDate stravaId sport averagePower')
+      // include extra predictors so we can pick better candidates for peak power without scanning all rides
+      .select('_id startDate stravaId sport averagePower movingTime raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
       .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
@@ -2762,7 +2763,7 @@ async function getPowerMetrics(req, res) {
         userId: athleteIdObj,
         sport: { $in: ['Ride', 'VirtualRide'] }
       })
-        .select('_id startDate stravaId sport averagePower')
+        .select('_id startDate stravaId sport averagePower movingTime raw.max_watts raw.maxWatts raw.weighted_average_watts raw.weightedAverageWatts')
         .lean();
     }
     
@@ -2803,7 +2804,8 @@ async function getPowerMetrics(req, res) {
     // NOTE: Strava streams require API calls. We cannot realistically scan "all time" for accounts with lots of rides.
     // We therefore select a capped subset of activities designed to maximize chance of finding peaks.
     const isAllTime = comparePeriod === 'alltime';
-    const MAX_STRAVA_ACTIVITIES = isAllTime ? 80 : 40; // Increase a bit; still capped for rate limits
+    // cap must be low enough to avoid Strava 429; selection below tries to be "high-signal"
+    const MAX_STRAVA_ACTIVITIES = isAllTime ? 60 : 35;
     const nowMs = Date.now();
     const compareStartMs =
       comparePeriod === '90days' ? nowMs - (90 * 24 * 60 * 60 * 1000) :
@@ -2815,16 +2817,53 @@ async function getPowerMetrics(req, res) {
       ? stravaActivitiesWithPower.filter(a => a.startDate && new Date(a.startDate).getTime() >= compareStartMs)
       : stravaActivitiesWithPower;
 
-    // Prefer activities with higher averagePower first (more likely to contain peak efforts) and then newer.
-    stravaActivitiesToProcess = stravaPool
+    const getWeighted = (a) => Number(a?.raw?.weighted_average_watts || a?.raw?.weightedAverageWatts || 0);
+    const getMaxWatts = (a) => Number(a?.raw?.max_watts || a?.raw?.maxWatts || 0);
+    const getAvg = (a) => Number(a?.averagePower || 0);
+    const getTime = (a) => Number(a?.movingTime || a?.elapsedTime || 0);
+    const getDateMs = (a) => a?.startDate ? new Date(a.startDate).getTime() : 0;
+
+    const uniqByStravaId = (arr) => {
+      const seen = new Set();
+      const out = [];
+      for (const x of arr) {
+        const id = x?.stravaId;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push(x);
+      }
+      return out;
+    };
+
+    const topN = (arr, n, scoreFn) => {
+      return arr
       .slice()
       .sort((a, b) => {
-        const apA = Number(a.averagePower || 0);
-        const apB = Number(b.averagePower || 0);
-        if (apB !== apA) return apB - apA;
-        return new Date(b.startDate || 0) - new Date(a.startDate || 0);
-      })
-      .slice(0, MAX_STRAVA_ACTIVITIES);
+          const sa = scoreFn(a);
+          const sb = scoreFn(b);
+          if (sb !== sa) return sb - sa;
+          return getDateMs(b) - getDateMs(a);
+        })
+        .slice(0, n);
+    };
+
+    if (isAllTime) {
+      // For "all time": don't just use avg power; 5-min peaks often live in interval sessions with mediocre avg.
+      // Use a blend of predictors + recency + duration.
+      const eligible = stravaPool.filter(a => getTime(a) >= 5 * 60); // must be long enough for 5min
+      const picks = uniqByStravaId([
+        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => Math.max(getWeighted(a), getAvg(a))), // best predictor for sustained power
+        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getMaxWatts(a) || (getAvg(a) * 1.3)), // sprinty rides can also contain hard 5min
+        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getTime(a)), // long rides can contain best 20/60min
+        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => getDateMs(a)) // recency
+      ]);
+
+      stravaActivitiesToProcess = picks.slice(0, MAX_STRAVA_ACTIVITIES);
+    } else {
+      // For compare periods, prefer higher weighted/avg power (and then newer)
+      const eligible = stravaPool.filter(a => getTime(a) >= 60); // basic sanity
+      stravaActivitiesToProcess = topN(eligible, MAX_STRAVA_ACTIVITIES, (a) => Math.max(getWeighted(a), getAvg(a)));
+    }
 
     console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length}/${stravaPool.length} Strava activities (cap ${MAX_STRAVA_ACTIVITIES})...`);
     

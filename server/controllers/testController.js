@@ -1,4 +1,5 @@
 const testAbl = require('../abl/testAbl');
+const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
 
 const testController = {
     // Get all tests for the authenticated user
@@ -61,6 +62,37 @@ const testController = {
             res.status(204).send();
         } catch (error) {
             res.status(500).json({ error: 'Error deleting test' });
+        }
+    },
+
+    // Send lactate test report to email (HTML + inline SVG)
+    sendTestReportEmail: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const toEmail = req.body?.toEmail || null;
+            const overrides = req.body?.overrides || null;
+
+            const result = await sendLactateTestReportEmail({
+                requesterUserId: req.user.userId,
+                testId: id,
+                toEmail,
+                overrides
+            });
+
+            if (!result.sent) {
+                const reason = result.reason || 'send_failed';
+                const status =
+                    reason === 'forbidden' ? 403 :
+                    reason === 'test_not_found' ? 404 :
+                    reason === 'email_not_configured' ? 503 :
+                    400;
+                return res.status(status).json({ sent: false, reason });
+            }
+
+            return res.json({ sent: true });
+        } catch (error) {
+            console.error('[TestController] sendTestReportEmail error:', error);
+            return res.status(500).json({ sent: false, error: 'Failed to send email' });
         }
     }
 };

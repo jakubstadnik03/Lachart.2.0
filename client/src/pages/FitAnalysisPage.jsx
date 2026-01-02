@@ -953,6 +953,7 @@ const FitAnalysisPage = () => {
     // Always load trainings first, then check for trainingId in URL params
     const params = new URLSearchParams(window.location.search);
     const trainingId = params.get('trainingId');
+    const fitTrainingId = params.get('fitTrainingId');
     const stravaId = params.get('stravaId');
     
     const initialize = async () => {
@@ -964,6 +965,11 @@ const FitAnalysisPage = () => {
         // Wait a bit for trainings to be loaded before loading specific training
         setTimeout(() => {
       loadTrainingFromTrainingModel(trainingId);
+        }, 200);
+      } else if (fitTrainingId) {
+        // Open a FitTraining directly
+        setTimeout(() => {
+          loadTrainingDetail(fitTrainingId);
         }, 200);
       } else if (stravaId) {
         // Wait a bit for activities to be loaded before loading specific Strava activity

@@ -18,6 +18,7 @@ ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, 
 
 export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [] }) {
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load comparePeriod from localStorage or default to '90days'
   const [comparePeriod, setComparePeriod] = useState(() => {
@@ -91,17 +92,20 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       }
       
       // Define cache keys outside try block so they're accessible in catch
-      const cacheKey = `powerRadar_metrics_${comparePeriod}_${selectedMonths.join(',')}`;
-      const cacheTimestampKey = `powerRadar_metrics_timestamp_${comparePeriod}_${selectedMonths.join(',')}`;
-      const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours - long cache to reduce API calls
+      // v2 cache: avoid mixing old cached response expectations with new tooltip/normalization
+      const cacheKey = `powerRadar_metrics_v2_${comparePeriod}_${selectedMonths.join(',')}`;
+      const cacheTimestampKey = `powerRadar_metrics_v2_timestamp_${comparePeriod}_${selectedMonths.join(',')}`;
+      // Keep cache shorter so new uploads/syncs show quickly
+      const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
       
       try {
+        let usedCachedData = false;
         // Check localStorage cache first
         const cachedData = localStorage.getItem(cacheKey);
         const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
         const now = Date.now();
         
-        // Use cache if it exists and is less than 24 hours old
+        // Use cache for fast paint, but still revalidate via API (stale-while-revalidate)
         if (cachedData && cacheTimestamp) {
           const cacheAge = now - parseInt(cacheTimestamp);
           if (cacheAge < CACHE_DURATION) {
@@ -110,21 +114,21 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               // Validate that parsed data has the expected structure
               if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
                 setPowerMetrics(parsed);
-                setLoading(false);
+                usedCachedData = true;
                 console.log('[SpiderChart] Using cached power metrics (valid)');
-                return;
               } else {
                 console.warn('[SpiderChart] Cached data has invalid structure, loading from API');
               }
             } catch (e) {
               console.error('[SpiderChart] Error parsing cached power metrics:', e);
             }
-    } else {
+          } else {
             // Cache exists but is expired - use it as fallback while loading
             try {
               const parsed = JSON.parse(cachedData);
               if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
                 setPowerMetrics(parsed);
+                usedCachedData = true;
                 console.log('[SpiderChart] Using expired cache as fallback');
               }
             } catch (e) {
@@ -133,8 +137,14 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           }
         }
         
-        // Set loading state before API call
-        setLoading(true);
+        // Set loading state before API call (if we already painted from cache, refresh in background)
+        if (usedCachedData) {
+          setLoading(false);
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+          setRefreshing(false);
+        }
         
         // Load from API
         const params = new URLSearchParams();
@@ -150,6 +160,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         if (!metrics || !metrics.allTime || typeof metrics.allTime !== 'object') {
           console.error('[SpiderChart] Invalid API response structure:', metrics);
           setLoading(false);
+          setRefreshing(false);
           return;
       }
         
@@ -178,6 +189,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                 console.log('[SpiderChart] Using cached power metrics due to network error');
                 setPowerMetrics(cachedMetrics);
                 setLoading(false);
+                setRefreshing(false);
                 return;
               }
             }
@@ -186,6 +198,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           }
           // If no cached data available, keep existing data
           setLoading(false);
+          setRefreshing(false);
           return;
         }
         
@@ -195,6 +208,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         // If we get here, keep existing data (from previous load or default)
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
     
@@ -222,6 +236,29 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     return powerMetrics.monthlyMetrics || {};
   }, [powerMetrics.monthlyMetrics]);
 
+  // Prefer best-known All Time values (API allTime may be missing/understated depending on sources/caps)
+  const allTimeBest = useMemo(() => {
+    const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+    const best = {};
+    const allTime = powerMetrics?.allTime || {};
+    const pr = powerMetrics?.personalRecords || {};
+    const compare = powerMetrics?.compare || {};
+    const monthly = powerMetrics?.monthlyMetrics || {};
+
+    keys.forEach((k) => {
+      const prVal = Number(pr?.[k]?.value || 0);
+      const allTimeVal = Number(allTime?.[k] || 0);
+      const compareVal = Number(compare?.[k] || 0);
+      const monthlyVal = Math.max(
+        0,
+        ...Object.values(monthly).map((m) => Number(m?.[k] || 0))
+      );
+      best[k] = Math.max(allTimeVal, prVal, compareVal, monthlyVal, 0);
+    });
+
+    return best;
+  }, [powerMetrics]);
+
   // Prepare chart data
   const chartData = useMemo(() => {
     if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
@@ -233,11 +270,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     // For monthly view
     if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
       const intervalMaxes = {
-        sprint5s: Math.max(...Object.values(monthlyMetrics).map(m => m.sprint5s), powerMetrics.allTime.sprint5s, 1),
-        attack1min: Math.max(...Object.values(monthlyMetrics).map(m => m.attack1min), powerMetrics.allTime.attack1min, 1),
-        vo2max5min: Math.max(...Object.values(monthlyMetrics).map(m => m.vo2max5min), powerMetrics.allTime.vo2max5min, 1),
-        threshold20min: Math.max(...Object.values(monthlyMetrics).map(m => m.threshold20min), powerMetrics.allTime.threshold20min, 1),
-        endurance60min: Math.max(...Object.values(monthlyMetrics).map(m => m.endurance60min), powerMetrics.allTime.endurance60min, 1)
+        sprint5s: Math.max(...Object.values(monthlyMetrics).map(m => m.sprint5s), allTimeBest.sprint5s, 1),
+        attack1min: Math.max(...Object.values(monthlyMetrics).map(m => m.attack1min), allTimeBest.attack1min, 1),
+        vo2max5min: Math.max(...Object.values(monthlyMetrics).map(m => m.vo2max5min), allTimeBest.vo2max5min, 1),
+        threshold20min: Math.max(...Object.values(monthlyMetrics).map(m => m.threshold20min), allTimeBest.threshold20min, 1),
+        endurance60min: Math.max(...Object.values(monthlyMetrics).map(m => m.endurance60min), allTimeBest.endurance60min, 1)
       };
       
       const normalize = (value, intervalKey) => {
@@ -255,11 +292,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         {
           label: 'All Time',
           data: [
-            normalize(powerMetrics.allTime.sprint5s, 'sprint5s'),
-            normalize(powerMetrics.allTime.attack1min, 'attack1min'),
-            normalize(powerMetrics.allTime.vo2max5min, 'vo2max5min'),
-            normalize(powerMetrics.allTime.threshold20min, 'threshold20min'),
-            normalize(powerMetrics.allTime.endurance60min, 'endurance60min')
+            normalize(allTimeBest.sprint5s, 'sprint5s'),
+            normalize(allTimeBest.attack1min, 'attack1min'),
+            normalize(allTimeBest.vo2max5min, 'vo2max5min'),
+            normalize(allTimeBest.threshold20min, 'threshold20min'),
+            normalize(allTimeBest.endurance60min, 'endurance60min')
           ],
           borderColor: '#2596be',
           backgroundColor: 'rgba(37, 150, 190, 0.2)',
@@ -297,11 +334,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     
     // For other periods
     const intervalMaxes = {
-      sprint5s: Math.max(powerMetrics.allTime.sprint5s, powerMetrics.compare.sprint5s, 1),
-      attack1min: Math.max(powerMetrics.allTime.attack1min, powerMetrics.compare.attack1min, 1),
-      vo2max5min: Math.max(powerMetrics.allTime.vo2max5min, powerMetrics.compare.vo2max5min, 1),
-      threshold20min: Math.max(powerMetrics.allTime.threshold20min, powerMetrics.compare.threshold20min, 1),
-      endurance60min: Math.max(powerMetrics.allTime.endurance60min, powerMetrics.compare.endurance60min, 1)
+      sprint5s: Math.max(allTimeBest.sprint5s, powerMetrics.compare.sprint5s, 1),
+      attack1min: Math.max(allTimeBest.attack1min, powerMetrics.compare.attack1min, 1),
+      vo2max5min: Math.max(allTimeBest.vo2max5min, powerMetrics.compare.vo2max5min, 1),
+      threshold20min: Math.max(allTimeBest.threshold20min, powerMetrics.compare.threshold20min, 1),
+      endurance60min: Math.max(allTimeBest.endurance60min, powerMetrics.compare.endurance60min, 1)
     };
     
     const normalize = (value, intervalKey) => {
@@ -315,11 +352,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         {
           label: 'All Time',
           data: [
-            normalize(powerMetrics.allTime.sprint5s, 'sprint5s'),
-            normalize(powerMetrics.allTime.attack1min, 'attack1min'),
-            normalize(powerMetrics.allTime.vo2max5min, 'vo2max5min'),
-            normalize(powerMetrics.allTime.threshold20min, 'threshold20min'),
-            normalize(powerMetrics.allTime.endurance60min, 'endurance60min')
+            normalize(allTimeBest.sprint5s, 'sprint5s'),
+            normalize(allTimeBest.attack1min, 'attack1min'),
+            normalize(allTimeBest.vo2max5min, 'vo2max5min'),
+            normalize(allTimeBest.threshold20min, 'threshold20min'),
+            normalize(allTimeBest.endurance60min, 'endurance60min')
           ],
           borderColor: '#2596be',
           backgroundColor: 'rgba(37, 150, 190, 0.2)',
@@ -346,7 +383,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         }] : [])
       ]
     };
-  }, [powerMetrics, comparePeriod, monthlyMetrics, selectedMonths, availableMonths]);
+  }, [powerMetrics, comparePeriod, monthlyMetrics, selectedMonths, availableMonths, allTimeBest]);
 
   // Chart options
   const chartOptions = useMemo(() => {
@@ -420,10 +457,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               if (!context || !context.dataset) return '';
               const label = context.dataset.label || '';
               const index = context.dataIndex;
-              const metrics = label === 'All Time' ? powerMetrics.allTime : powerMetrics.compare;
+              const metrics = label === 'All Time' ? allTimeBest : powerMetrics.compare;
               if (!metrics) return '';
               const values = [metrics.sprint5s, metrics.attack1min, metrics.vo2max5min, metrics.threshold20min, metrics.endurance60min];
-              const allTimeValue = powerMetrics.allTime[['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'][index]];
+              const allTimeValue = allTimeBest[['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'][index]];
               const compareValue = values[index];
               const percentageOfAllTime = allTimeValue > 0 ? Math.round((compareValue / allTimeValue) * 100) : 0;
               
@@ -437,7 +474,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         }
       }
     };
-  }, [powerMetrics]);
+  }, [powerMetrics, allTimeBest]);
 
   // Table data
   const tableData = [
@@ -445,45 +482,45 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       label: '5s',
       name: 'Sprint',
       compareValue: powerMetrics.compare.sprint5s,
-      allTimeValue: powerMetrics.allTime.sprint5s,
-      percentage: powerMetrics.allTime.sprint5s > 0 
-        ? Math.round((powerMetrics.compare.sprint5s / powerMetrics.allTime.sprint5s) * 100)
+      allTimeValue: allTimeBest.sprint5s,
+      percentage: allTimeBest.sprint5s > 0 
+        ? Math.round((powerMetrics.compare.sprint5s / allTimeBest.sprint5s) * 100)
         : 0
     },
     {
       label: '1min',
       name: 'Attack',
       compareValue: powerMetrics.compare.attack1min,
-      allTimeValue: powerMetrics.allTime.attack1min,
-      percentage: powerMetrics.allTime.attack1min > 0
-        ? Math.round((powerMetrics.compare.attack1min / powerMetrics.allTime.attack1min) * 100)
+      allTimeValue: allTimeBest.attack1min,
+      percentage: allTimeBest.attack1min > 0
+        ? Math.round((powerMetrics.compare.attack1min / allTimeBest.attack1min) * 100)
         : 0
     },
     {
       label: '5min',
       name: 'VO2 Max',
       compareValue: powerMetrics.compare.vo2max5min,
-      allTimeValue: powerMetrics.allTime.vo2max5min,
-      percentage: powerMetrics.allTime.vo2max5min > 0
-        ? Math.round((powerMetrics.compare.vo2max5min / powerMetrics.allTime.vo2max5min) * 100)
+      allTimeValue: allTimeBest.vo2max5min,
+      percentage: allTimeBest.vo2max5min > 0
+        ? Math.round((powerMetrics.compare.vo2max5min / allTimeBest.vo2max5min) * 100)
         : 0
     },
     {
       label: '20min',
       name: 'Threshold',
       compareValue: powerMetrics.compare.threshold20min,
-      allTimeValue: powerMetrics.allTime.threshold20min,
-      percentage: powerMetrics.allTime.threshold20min > 0
-        ? Math.round((powerMetrics.compare.threshold20min / powerMetrics.allTime.threshold20min) * 100)
+      allTimeValue: allTimeBest.threshold20min,
+      percentage: allTimeBest.threshold20min > 0
+        ? Math.round((powerMetrics.compare.threshold20min / allTimeBest.threshold20min) * 100)
         : 0
     },
     {
       label: '60min',
       name: 'Endurance',
       compareValue: powerMetrics.compare.endurance60min,
-      allTimeValue: powerMetrics.allTime.endurance60min,
-      percentage: powerMetrics.allTime.endurance60min > 0
-        ? Math.round((powerMetrics.compare.endurance60min / powerMetrics.allTime.endurance60min) * 100)
+      allTimeValue: allTimeBest.endurance60min,
+      percentage: allTimeBest.endurance60min > 0
+        ? Math.round((powerMetrics.compare.endurance60min / allTimeBest.endurance60min) * 100)
         : 0
     }
   ];
@@ -541,6 +578,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             displayKey="label"
             valueKey="value"
           />
+          {refreshing && (
+            <span className="text-[10px] text-gray-500">Refreshing…</span>
+          )}
                       </div>
                     </div>
 

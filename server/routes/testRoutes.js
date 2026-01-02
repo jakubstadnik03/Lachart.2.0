@@ -55,6 +55,12 @@ router.get('/', verifyToken, testController.getTests);
  */
 router.get('/:id', verifyToken, testController.getTestById);
 
+/**
+ * Send a lactate test report to email (HTML + inline SVG)
+ * POST /test/:id/send-report-email
+ */
+router.post('/:id/send-report-email', verifyToken, testController.sendTestReportEmail);
+
 // Compatibility alias: GET /test/list/:athleteId to fetch tests by athlete
 router.get('/list/:athleteId', verifyToken, async (req, res) => {
     try {
