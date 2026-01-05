@@ -63,11 +63,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Debug logging (disable by default; it slows down every request a lot)
 if (process.env.DEBUG_HTTP === '1') {
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
-    console.log('Headers:', req.headers);
-    next();
-  });
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  next();
+});
 }
 
 // MongoDB Connection

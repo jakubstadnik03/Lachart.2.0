@@ -61,6 +61,12 @@ router.get('/:id', verifyToken, testController.getTestById);
  */
 router.post('/:id/send-report-email', verifyToken, testController.sendTestReportEmail);
 
+/**
+ * Send demo test results to email (no authentication required)
+ * POST /test/send-demo-email
+ */
+router.post('/send-demo-email', testController.sendDemoTestEmail);
+
 // Compatibility alias: GET /test/list/:athleteId to fetch tests by athlete
 router.get('/list/:athleteId', verifyToken, async (req, res) => {
     try {

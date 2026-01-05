@@ -175,10 +175,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       showFor: ["coach", "athlete"]
     },
     {
-      name: "Training",
-      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",
-      icon: "/icon/training.svg",
-      iconWhite: "/icon/training-white.svg",
+      name: "Testing",
+      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
+      icon: "/icon/testing.svg",
+      iconWhite: "/icon/testing-white.svg",
       showFor: ["coach", "athlete"]
     },
     {
@@ -196,10 +196,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     //   showFor: ["coach", "athlete"]
     // },
     {
-      name: "Testing",
-      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
-      icon: "/icon/testing.svg",
-      iconWhite: "/icon/testing-white.svg",
+      name: "Training",
+      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",
+      icon: "/icon/training.svg",
+      iconWhite: "/icon/training-white.svg",
       showFor: ["coach", "athlete"]
     },
     {
@@ -292,7 +292,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
-          className="p-4 pt-0 flex-1 overflow-y-auto min-h-0"
+          className="p-4 pt-0 flex-[4] overflow-y-auto min-h-0"
           style={{ 
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain'
@@ -429,7 +429,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            className="p-4 border-t border-gray-200 flex-1 overflow-y-auto min-h-0"
+            className="p-4 border-t border-gray-200 flex-1 overflow-y-auto min-h-0 max-h-[40vh]"
             style={{ 
               WebkitOverflowScrolling: 'touch',
               overscrollBehavior: 'contain'
@@ -480,7 +480,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                 ))}
               </ul>
             ) : (
-              <div className="text-sm text-gray-500">Žádní atleti nejsou k dispozici</div>
+              <div className="text-sm text-gray-500">No athletes available</div>
             )}
           </motion.div>
         )}

@@ -203,6 +203,11 @@ const userSchema = new mongoose.Schema({
     achievementAlerts: { type: Boolean, default: true },
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
+  },
+  // Mobile push notification tokens (Expo)
+  expoPushTokens: {
+    type: [String],
+    default: []
   }
 }, {
   timestamps: true

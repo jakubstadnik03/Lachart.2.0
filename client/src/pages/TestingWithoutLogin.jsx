@@ -10,10 +10,19 @@ import Header from '../components/Header/Header';
 import WelcomeModal from '../components/WelcomeModal';
 import Menu from '../components/Menu';
 import Footer from '../components/Footer';
-import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestCompletion } from '../utils/analytics';
+import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestCompletion, trackUserRegistration } from '../utils/analytics';
 // SEO: Helmet meta tags at the top of the main component
 import { Helmet } from 'react-helmet';
-import { X as CloseIcon } from 'lucide-react';
+import { X as CloseIcon, Mail } from 'lucide-react';
+import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { sendDemoTestEmail, register } from '../services/api';
+import api from '../services/api';
+import { useAuth } from '../context/AuthProvider';
+import { saveUserToStorage } from '../utils/userStorage';
+import { GoogleLogin } from '@react-oauth/google';
+import { API_BASE_URL } from '../config/api.config';
+import { logUserRegistration } from '../utils/eventLogger';
+import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 
 // Animation variants
 const containerVariants = {
@@ -93,6 +102,18 @@ const LactateCurveCalculatorPage = () => {
     const welcomeTimerRef = useRef(null);
     const [showFeatureModal, setShowFeatureModal] = useState(false);
     const featureTimerRef = useRef(null);
+    const [showGlossary, setShowGlossary] = useState(false);
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emailFormData, setEmailFormData] = useState({
+        email: '',
+        name: '',
+        surname: '',
+        password: '',
+        confirmPassword: ''
+    });
+    const [emailError, setEmailError] = useState(null);
+    const [isSendingEmail, setIsSendingEmail] = useState(false);
+    const { login } = useAuth();
 
     // Create refs for scroll animations
     const formRef = useRef(null);
@@ -400,6 +421,182 @@ const LactateCurveCalculatorPage = () => {
                Number(lactate) > 0;
     });
 
+    // Handle send test to email
+    const handleSendTestToEmail = () => {
+        if (!hasValidData) {
+            addNotification('Please fill in test data first', 'warning');
+            return;
+        }
+        setShowEmailModal(true);
+        trackDemoUsage('send_email_clicked', { 
+            sport: testData.sport,
+            intervals: testData.results.length 
+        });
+    };
+
+    // Handle Google registration and send email
+    const handleGoogleSuccess = async (response) => {
+        setIsSendingEmail(true);
+        setEmailError(null);
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/auth/google`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    googleId: response.credential,
+                    email: response.email,
+                    name: response.given_name,
+                    surname: response.family_name,
+                }),
+            });
+
+            const data = await res.json();
+            
+            if (data.token) {
+                trackUserRegistration('google', 'athlete');
+                trackConversionFunnel('signup_complete', { method: 'google', role: 'athlete', source: 'demo_email' });
+                
+                // Log registration event
+                await logUserRegistration('google', data.user?._id);
+                
+                // Save token and user
+                localStorage.setItem('token', data.token);
+                saveUserToStorage(data.user);
+                api.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
+                
+                // Update auth state
+                await login(null, null, data.token, data.user);
+
+                // Prepare test data for email
+                const emailTestData = prepareCalculatorData();
+
+                // Send email with test results
+                await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`);
+
+                addNotification('Test results sent to your email!', 'success');
+                trackDemoUsage('test_email_sent', { 
+                    sport: testData.sport,
+                    intervals: testData.results.length,
+                    method: 'google'
+                });
+
+                // Close modal
+                setShowEmailModal(false);
+
+                // Optionally navigate to dashboard
+                setTimeout(() => {
+                    navigate('/dashboard');
+                }, 2000);
+            } else {
+                setEmailError('Google authentication failed. Please try again.');
+                trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
+            }
+        } catch (error) {
+            console.error('Google auth error:', error);
+            setEmailError('Failed to authenticate with Google. Please try again.');
+            trackEvent('register_error', { method: 'google', error: error.message });
+        } finally {
+            setIsSendingEmail(false);
+        }
+    };
+
+    const handleGoogleError = () => {
+        setEmailError('Google authentication failed. Please try again.');
+        trackEvent('register_error', { method: 'google', error: 'User cancelled or error occurred' });
+    };
+
+    // Handle email form submission
+    const handleEmailFormSubmit = async (e) => {
+        e.preventDefault();
+        setEmailError(null);
+
+        // Validate form
+        if (!emailFormData.email || !emailFormData.name || !emailFormData.surname || !emailFormData.password) {
+            setEmailError('Please fill in all required fields');
+            return;
+        }
+
+        if (emailFormData.password !== emailFormData.confirmPassword) {
+            setEmailError("Passwords don't match");
+            return;
+        }
+
+        if (emailFormData.password.length < 6) {
+            setEmailError('Password must be at least 6 characters');
+            return;
+        }
+
+        setIsSendingEmail(true);
+
+        try {
+            // First, register the user
+            const registrationData = {
+                email: emailFormData.email,
+                password: emailFormData.password,
+                confirmPassword: emailFormData.confirmPassword,
+                name: emailFormData.name,
+                surname: emailFormData.surname,
+                role: 'athlete'
+            };
+
+            const registerResponse = await register(registrationData);
+            trackUserRegistration('email', 'athlete');
+            trackConversionFunnel('signup_complete', { method: 'email', role: 'athlete', source: 'demo_email' });
+
+            // Save token and user
+            if (registerResponse?.data?.token && registerResponse?.data?.user) {
+                localStorage.setItem('token', registerResponse.data.token);
+                saveUserToStorage(registerResponse.data.user);
+                api.defaults.headers.common["Authorization"] = `Bearer ${registerResponse.data.token}`;
+                
+                // Update auth state
+                await login(emailFormData.email, emailFormData.password, registerResponse.data.token, registerResponse.data.user);
+            }
+
+            // Prepare test data for email
+            const emailTestData = prepareCalculatorData();
+
+            // Send email with test results
+            await sendDemoTestEmail(emailTestData, emailFormData.email, `${emailFormData.name} ${emailFormData.surname}`);
+
+            addNotification('Test results sent to your email!', 'success');
+            trackDemoUsage('test_email_sent', { 
+                sport: testData.sport,
+                intervals: testData.results.length 
+            });
+
+            // Close modal and reset form
+            setShowEmailModal(false);
+            setEmailFormData({
+                email: '',
+                name: '',
+                surname: '',
+                password: '',
+                confirmPassword: ''
+            });
+
+            // Optionally navigate to dashboard
+            setTimeout(() => {
+                navigate('/dashboard');
+            }, 2000);
+        } catch (error) {
+            console.error('Error sending test to email:', error);
+            if (error.response?.data?.error?.includes('already exist')) {
+                setEmailError('An account with this email already exists. Please sign in instead.');
+            } else {
+                setEmailError(error.response?.data?.error || error.message || 'Failed to send email. Please try again.');
+            }
+            trackEvent('send_email_error', { 
+                error: error.response?.data?.error || error.message 
+            });
+        } finally {
+            setIsSendingEmail(false);
+        }
+    };
+
     // Prepare data for LactateCurveCalculator
     const prepareCalculatorData = () => {
         if (!testData || !testData.results) {
@@ -475,7 +672,7 @@ const LactateCurveCalculatorPage = () => {
     }, [hasValidData]);
 
     return (
-        <div className="min-h-screen bg-gray-50 flex">
+        <div className="min-h-screen bg-gray-50 flex overflow-x-hidden w-full relative">
             <Helmet>
                 <title>Lactate Curve Calculator | Free Lactate Testing, LT1, LT2, OBLA &amp; Training Zones Online</title>
                 <link rel="canonical" href="https://lachart.net/lactate-curve-calculator" />
@@ -505,7 +702,7 @@ const LactateCurveCalculatorPage = () => {
                 `}</script>
             </Helmet>
             {/* Left Menu - hidden on mobile, visible on desktop */}
-            <div className="menu-container hidden md:block" ref={menuRef}>
+            <div className="menu-container hidden md:block fixed top-0 left-0 h-screen overflow-y-auto z-40" ref={menuRef}>
             <Menu 
                     isMenuOpen={true} 
                     setIsMenuOpen={() => {}}
@@ -515,7 +712,7 @@ const LactateCurveCalculatorPage = () => {
             </div>
 
             {/* Main Content Container */}
-            <div className="flex-1 flex flex-col min-h-screen">
+            <div className="flex-1 flex flex-col min-h-screen w-full overflow-x-hidden md:ml-64">
                 {/* Header */}
                 <Header 
                     isMenuOpen={false} 
@@ -526,12 +723,12 @@ const LactateCurveCalculatorPage = () => {
                 {/* Main Content */}
           {/* Main Content */}
           <motion.main 
-                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible"
+                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible w-full max-w-full"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
                 >
-                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-y-hidden">
+                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-y-hidden overflow-x-hidden w-full">
                         {/* Page Header */}
                         <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
   {/* EKG SVG background */}
@@ -611,96 +808,125 @@ const LactateCurveCalculatorPage = () => {
 
 
                         {/* Main Content Area */}
-                        <div className="space-y-8 mt-8 px-4">
-                            {/* Testing Form Section */}
+                        <div className="space-y-8 mt-8 px-4 overflow-x-hidden w-full">
+                            {/* Top Controls - Fill Demo Data and Help */}
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                                <motion.div 
+                                    className="relative z-[12000]"
+                                    whileTap={{ scale: 0.98 }}
+                                >
+                                    <button
+                                        onClick={toggleDemoDropdown}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
+                                    >
+                                        Fill with Demo Data
+                                        <svg 
+                                            className={`w-4 h-4 ml-2 transition-transform ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <AnimatePresence>
+                                        {isDemoDropdownOpen && (
+                                            <motion.div 
+                                                className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-[9999]"
+                                                initial={{ opacity: 0, y: -10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                transition={{ duration: 0.2 }}
+                                                style={{ transform: 'translateZ(0)' }}
+                                            >
+                                                <div className="py-1">
+                                                    <motion.button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDemoDataSelect('bike');
+                                                        }}
+                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                        whileHover={{ x: 5 }}
+                                                    >
+                                                        Bike Demo Data
+                                                    </motion.button>
+                                                    <motion.button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDemoDataSelect('run');
+                                                        }}
+                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                        whileHover={{ x: 5 }}
+                                                    >
+                                                        Run Demo Data
+                                                    </motion.button>
+                                                    <motion.button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDemoDataSelect('swim');
+                                                        }}
+                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                        whileHover={{ x: 5 }}
+                                                    >
+                                                        Swim Demo Data
+                                                    </motion.button>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </motion.div>
+                                
+                                <div className="flex items-center gap-3">
+                                    <motion.button
+                                        onClick={handleResetForm}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        Reset Form
+                                    </motion.button>
+                                    
+                                    <button
+                                        onClick={() => setShowGlossary(true)}
+                                        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                                        aria-label="Show glossary"
+                                        title="Training Glossary"
+                                    >
+                                        <InformationCircleIcon className="w-6 h-6" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Form and Curve Side by Side */}
+                            <div className="flex flex-col lg:flex-row gap-6 items-start overflow-x-hidden w-full">
+                                {/* Lactate Curve Section - Left (Wider) */}
+                                <motion.div 
+                                    ref={curveRef}
+                                    initial="hidden"
+                                    animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
+                                    variants={fadeInUpVariants}
+                                    className="flex-1 lg:flex-none lg:w-2/3 max-w-full overflow-x-hidden"
+                                    whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
+                                >
+                                    <div className="w-full">
+                                            <LactateCurve 
+                                                mockData={prepareCalculatorData()} 
+                                                demoMode={true} 
+                                            />
+                                    </div>
+                                </motion.div>
+
+                                {/* Testing Form Section - Right (Narrower) */}
                             <motion.div 
                                 ref={formRef}
                                 initial="hidden"
                                 animate={isFormInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible"
+                                    className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-hidden flex-1 lg:flex-none lg:w-1/3 max-w-full"
                                 whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                             >
                                 <div className="p-4 sm:p-6">
-                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">Test Data Entry</h2>
-                                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                                            <motion.div 
-                                                className="relative z-[12000] w-full sm:w-auto"
-                                                whileHover={{ scale: 1.02 }}
-                                                whileTap={{ scale: 0.98 }}
-                                            >
-                                                <button
-                                                    onClick={toggleDemoDropdown}
-                                                    className="w-full px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
-                                                >
-                                                    Fill with Demo Data
-                                                    <svg 
-                                                        className={`w-4 h-4 ml-2 transition-transform ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
-                                                        fill="none" 
-                                                        stroke="currentColor" 
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                    </svg>
-                                                </button>
-                                                <AnimatePresence>
-                                                    {isDemoDropdownOpen && (
-                                                        <motion.div 
-                                                            className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-[9999]"
-                                                            initial={{ opacity: 0, y: -10 }}
-                                                            animate={{ opacity: 1, y: 0 }}
-                                                            exit={{ opacity: 0, y: -10 }}
-                                                            transition={{ duration: 0.2 }}
-                                                            style={{ transform: 'translateZ(0)' }}
-                                                        >
-                                                            <div className="py-1">
-                                                                <motion.button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDemoDataSelect('bike');
-                                                                    }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                                    whileHover={{ x: 5 }}
-                                                                >
-                                                                    Bike Demo Data
-                                                                </motion.button>
-                                                                <motion.button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDemoDataSelect('run');
-                                                                    }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                                    whileHover={{ x: 5 }}
-                                                                >
-                                                                    Run Demo Data
-                                                                </motion.button>
-                                                                <motion.button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleDemoDataSelect('swim');
-                                                                    }}
-                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                                    whileHover={{ x: 5 }}
-                                                                >
-                                                                    Swim Demo Data
-                                                                </motion.button>
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </motion.div>
-                                            <motion.button
-                                                onClick={handleResetForm}
-                                                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                                                whileHover={{ scale: 1.02 }}
-                                                whileTap={{ scale: 0.98 }}
-                                            >
-                                                Reset Form
-                                            </motion.button>
-                        </div>
-                        </div>
-                                    <div className="w-full overflow-x-auto">
+                                    <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-6">Test Data Entry</h2>
+                                    <div className="w-full overflow-x-hidden">
                                         <div className="w-full min-w-0">
                             <TestingForm
                                 testData={testData}
@@ -713,33 +939,28 @@ const LactateCurveCalculatorPage = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </motion.div>
+                                </motion.div>
+                            </div>
+
+                            {/* Training Zones Generator - Full Width */}
+                            {hasValidData && (
+                                <motion.div 
+                                    initial="hidden"
+                                    animate={hasValidData ? "visible" : "hidden"}
+                                    variants={fadeInUpVariants}
+                                    className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6 overflow-x-hidden w-full"
+                                    whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
+                                >
+                                    <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones</h2>
+                                    <div className="w-full">
+                                        <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
+                                    </div>
+                                </motion.div>
+                            )}
 
                             {/* Results Section */}
                             {hasValidData && (
                                 <div className="space-y-8">
-                                    {/* Lactate Curve Section */}
-                            <motion.div 
-                                ref={curveRef}
-                                initial="hidden"
-                                animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
-                                        variants={fadeInUpVariants}
-                                        className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
-                                        whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
-                                    >
-                                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Lactate Curve Analysis</h2>
-                                        <div className="w-full">
-                                            <div className="w-full min-w-0">
-                                                <LactateCurve 
-                                                    mockData={prepareCalculatorData()} 
-                                                    demoMode={true} 
-                                                />
-                                                <div className="mt-8">
-                                                    <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </motion.div>
 
                                     {/* Calculator Section */}
                                     <motion.div 
@@ -750,15 +971,11 @@ const LactateCurveCalculatorPage = () => {
                                         className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6"
                                         whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                     >
-                                        <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones Calculator</h2>
-                                        <div className="w-full">
-                                            <div className="w-full min-w-0">
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
-                                                    demoMode={true} 
+                                                    demoMode={true}
                                                 />
-                                    </div>
-                                    </div>
+                                    
                                     </motion.div>
                                 </div>
                             )}
@@ -769,19 +986,28 @@ const LactateCurveCalculatorPage = () => {
                                 initial="hidden"
                                 animate={isButtonsInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                className="flex flex-col sm:flex-row justify-center gap-4 pt-8 px-4"
+                                className="flex flex-col sm:flex-row justify-center items-stretch sm:items-center gap-3 sm:gap-4 pt-8 px-4 w-full"
                             >
+                                {hasValidData && (
+                                    <motion.button
+                                        onClick={handleSendTestToEmail}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center px-4 sm:px-6 py-3 border border-transparent text-sm sm:text-base font-medium rounded-lg text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl"
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        <Mail className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                                        <span className="whitespace-nowrap">Send Test Results to Email</span>
+                                    </motion.button>
+                                )}
                                 <motion.button
                                     onClick={() => { 
                                         trackDemoUsage('cta_click', { label: 'demo_create_account' }); 
                                         trackConversionFunnel('signup_start', { source: 'demo_page' });
                                         navigate('/signup'); 
                                     }}
-                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-4 sm:px-6 py-3 border border-transparent text-sm sm:text-base font-medium rounded-lg text-white bg-primary hover:bg-primary-dark transition-colors shadow-sm hover:shadow-md"
+                                    whileTap={{ scale: 0.98 }}
                                 >
-                                    Create Account
+                                    <span className="whitespace-nowrap">Create Account</span>
                                 </motion.button>
                                 <motion.button
                                     onClick={() => { 
@@ -789,11 +1015,10 @@ const LactateCurveCalculatorPage = () => {
                                         trackConversionFunnel('login_start', { source: 'demo_page' });
                                         navigate('/login'); 
                                     }}
-                                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-primary text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
+                                    className="w-full sm:w-auto inline-flex items-center justify-center px-4 sm:px-6 py-3 border border-primary text-sm sm:text-base font-medium rounded-lg text-primary hover:bg-primary hover:text-white transition-colors shadow-sm hover:shadow-md"
+                                    whileTap={{ scale: 0.98 }}
                                 >
-                                    Sign In
+                                    <span className="whitespace-nowrap">Sign In</span>
                                 </motion.button>
                             </motion.div>
                         </div>
@@ -803,6 +1028,177 @@ const LactateCurveCalculatorPage = () => {
                 {/* Footer */}
                 <Footer />
                 <WelcomeModal open={showWelcome} onClose={() => setShowWelcome(false)} />
+                
+                {/* Glossary Modal */}
+                <TrainingGlossary 
+                    isOpen={showGlossary} 
+                    onClose={() => setShowGlossary(false)} 
+                    initialTerm="Lactate Testing"
+                    initialCategory="Lactate"
+                />
+                
+                {/* Send Test to Email Modal */}
+                <AnimatePresence>
+                    {showEmailModal && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center px-4"
+                            onClick={() => !isSendingEmail && setShowEmailModal(false)}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+                            >
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-2xl font-bold text-gray-900">Send Test Results to Email</h3>
+                                    <button 
+                                        className="text-gray-500 hover:text-gray-700 transition-colors" 
+                                        onClick={() => !isSendingEmail && setShowEmailModal(false)}
+                                        disabled={isSendingEmail}
+                                    >
+                                        <CloseIcon size={24} />
+                                    </button>
+                                </div>
+                                
+                                <p className="text-gray-600 mb-6">
+                                    Create a free account and we'll send your test results to your email. You'll also be able to save and track your tests over time.
+                                </p>
+
+                                {/* Google Sign Up Button */}
+                                <div className="mb-6">
+                                    <GoogleLogin
+                                        onSuccess={handleGoogleSuccess}
+                                        onError={handleGoogleError}
+                                        useOneTap={false}
+                                        theme="outline"
+                                        size="large"
+                                        text="signup_with"
+                                        shape="rectangular"
+                                        disabled={isSendingEmail}
+                                    />
+                                </div>
+
+                                <div className="relative mb-6">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-gray-300"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-sm">
+                                        <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+                                    </div>
+                                </div>
+
+                                <form onSubmit={handleEmailFormSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Email <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="email"
+                                            required
+                                            value={emailFormData.email}
+                                            onChange={(e) => setEmailFormData({ ...emailFormData, email: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                            placeholder="your@email.com"
+                                            disabled={isSendingEmail}
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                First Name <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={emailFormData.name}
+                                                onChange={(e) => setEmailFormData({ ...emailFormData, name: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                                placeholder="John"
+                                                disabled={isSendingEmail}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Last Name <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={emailFormData.surname}
+                                                onChange={(e) => setEmailFormData({ ...emailFormData, surname: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                                placeholder="Doe"
+                                                disabled={isSendingEmail}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Password <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="password"
+                                            required
+                                            value={emailFormData.password}
+                                            onChange={(e) => setEmailFormData({ ...emailFormData, password: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                            placeholder="At least 6 characters"
+                                            minLength={6}
+                                            disabled={isSendingEmail}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Confirm Password <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="password"
+                                            required
+                                            value={emailFormData.confirmPassword}
+                                            onChange={(e) => setEmailFormData({ ...emailFormData, confirmPassword: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                            placeholder="Confirm your password"
+                                            disabled={isSendingEmail}
+                                        />
+                                    </div>
+
+                                    {emailError && (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                            {emailError}
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-3 pt-4">
+                                        <button
+                                            type="submit"
+                                            disabled={isSendingEmail}
+                                            className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                                        >
+                                            {isSendingEmail ? 'Sending...' : 'Create Account & Send Email'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowEmailModal(false)}
+                                            disabled={isSendingEmail}
+                                            className="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* Feature/Signup Modal after 60s */}
                 <AnimatePresence>
                   {showFeatureModal && (

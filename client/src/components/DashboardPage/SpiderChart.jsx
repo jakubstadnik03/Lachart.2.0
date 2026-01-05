@@ -167,7 +167,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             } catch (e) {
               console.error('[SpiderChart] Error parsing cached power metrics:', e);
             }
-          } else {
+    } else {
             // Cache exists but is expired - use it as fallback while loading
             try {
               const parsed = JSON.parse(cachedData);
@@ -187,7 +187,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           setLoading(false);
           setRefreshing(true);
         } else {
-          setLoading(true);
+        setLoading(true);
           setRefreshing(false);
         }
         
@@ -311,7 +311,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       const v = Number(value || 0);
       return max > 0 ? (v / max) * 100 : 0;
     };
-
+    
     // For monthly view
     if (comparePeriod === 'monthly' && selectedMonths.length > 0) {
   const monthColors = [
@@ -362,7 +362,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       
       return { labels, datasets };
     }
-    
+
     return {
       labels,
     datasets: [

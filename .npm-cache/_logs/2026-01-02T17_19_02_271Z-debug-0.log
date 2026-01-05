@@ -1,0 +1,84 @@
+0 verbose cli /Users/jakubstadnik/.nvm/versions/node/v18.19.0/bin/node /Users/jakubstadnik/.nvm/versions/node/v18.19.0/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.2.3
+2 info using node@v18.19.0
+3 timing npm:load:whichnode Completed in 0ms
+4 timing config:load:defaults Completed in 1ms
+5 timing config:load:file:/Users/jakubstadnik/.nvm/versions/node/v18.19.0/lib/node_modules/npm/npmrc Completed in 1ms
+6 timing config:load:builtin Completed in 1ms
+7 timing config:load:cli Completed in 2ms
+8 timing config:load:env Completed in 0ms
+9 timing config:load:file:/Users/jakubstadnik/Documents/GitHub/Lachart.2.0/.npmrc Completed in 0ms
+10 timing config:load:project Completed in 2ms
+11 timing config:load:file:/Users/jakubstadnik/.npmrc Completed in 1ms
+12 timing config:load:user Completed in 1ms
+13 timing config:load:file:/Users/jakubstadnik/.nvm/versions/node/v18.19.0/etc/npmrc Completed in 0ms
+14 timing config:load:global Completed in 0ms
+15 timing config:load:setEnvs Completed in 0ms
+16 timing config:load Completed in 8ms
+17 timing npm:load:configload Completed in 8ms
+18 timing config:load:flatten Completed in 1ms
+19 timing npm:load:mkdirpcache Completed in 0ms
+20 timing npm:load:mkdirplogs Completed in 1ms
+21 verbose title npm exec create-expo-app@latest app --template blank-typescript
+22 verbose argv "exec" "--yes" "--" "create-expo-app@latest" "app" "--template" "blank-typescript"
+23 timing npm:load:setTitle Completed in 0ms
+24 timing npm:load:display Completed in 1ms
+25 verbose logfile logs-max:10 dir:/Users/jakubstadnik/Documents/GitHub/Lachart.2.0/.npm-cache/_logs/2026-01-02T17_19_02_271Z-
+26 verbose logfile /Users/jakubstadnik/Documents/GitHub/Lachart.2.0/.npm-cache/_logs/2026-01-02T17_19_02_271Z-debug-0.log
+27 timing npm:load:logFile Completed in 4ms
+28 timing npm:load:timers Completed in 0ms
+29 timing npm:load:configScope Completed in 0ms
+30 timing npm:load Completed in 24ms
+31 silly logfile done cleaning log files
+32 timing arborist:ctor Completed in 0ms
+33 http fetch GET 200 https://registry.npmjs.org/create-expo-app 173ms (cache miss)
+34 timing arborist:ctor Completed in 0ms
+35 http fetch GET 200 https://registry.npmjs.org/npm 289ms (cache miss)
+36 timing arborist:ctor Completed in 0ms
+37 timing arborist:ctor Completed in 0ms
+38 timing idealTree:init Completed in 1ms
+39 timing idealTree:userRequests Completed in 1ms
+40 silly idealTree buildDeps
+41 silly fetch manifest create-expo-app@3.5.3
+42 http fetch GET 200 https://registry.npmjs.org/create-expo-app 7ms (cache hit)
+43 silly placeDep ROOT create-expo-app@3.5.3 OK for:  want: 3.5.3
+44 timing idealTree:#root Completed in 10ms
+45 timing idealTree:node_modules/create-expo-app Completed in 0ms
+46 timing idealTree:buildDeps Completed in 10ms
+47 timing idealTree:fixDepFlags Completed in 0ms
+48 timing idealTree Completed in 13ms
+49 timing reify:loadTrees Completed in 13ms
+50 timing reify:diffTrees Completed in 1ms
+51 silly reify moves {}
+52 timing reify:retireShallow Completed in 1ms
+53 timing reify:createSparse Completed in 0ms
+54 timing reify:loadBundles Completed in 0ms
+55 silly audit bulk request { 'create-expo-app': [ '3.5.3' ] }
+56 silly tarball no local data for create-expo-app@https://registry.npmjs.org/create-expo-app/-/create-expo-app-3.5.3.tgz. Extracting by manifest.
+57 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 385ms
+58 timing auditReport:getReport Completed in 385ms
+59 silly audit report {}
+60 timing auditReport:init Completed in 0ms
+61 timing reify:audit Completed in 385ms
+62 http fetch GET 200 https://registry.npmjs.org/create-expo-app/-/create-expo-app-3.5.3.tgz 972ms (cache miss)
+63 timing reifyNode:node_modules/create-expo-app Completed in 974ms
+64 timing reify:unpack Completed in 974ms
+65 timing reify:unretire Completed in 0ms
+66 timing build:queue Completed in 1ms
+67 timing build:link:node_modules/create-expo-app Completed in 2ms
+68 timing build:link Completed in 2ms
+69 timing build:deps Completed in 3ms
+70 timing build Completed in 3ms
+71 timing reify:build Completed in 3ms
+72 timing reify:trash Completed in 0ms
+73 timing reify:save Completed in 5ms
+74 timing reify Completed in 1000ms
+75 timing command:exec Completed in 1993ms
+76 notice
+76 notice New major version of npm available! 10.2.3 -> 11.7.0
+76 notice Changelog: <https://github.com/npm/cli/releases/tag/v11.7.0>
+76 notice Run `npm install -g npm@11.7.0` to update!
+76 notice
+77 verbose exit 0
+78 timing npm Completed in 2168ms
+79 info ok

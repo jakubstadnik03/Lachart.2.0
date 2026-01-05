@@ -26,41 +26,60 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null }) {
+function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null }) {
   const getWidth = () => {
-    // Najdeme všechny tréninky stejného typu
-    const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
-    
-    // Najdeme nejdelší interval napříč všemi tréninky stejného typu
-    const maxDuration = Math.max(...sameTypeTrainings.flatMap(t => 
-      t.results.map(r => {
-        const dur = r.duration;
-        if (typeof dur === 'string' && (dur.includes('km') || dur.includes('m'))) {
+    // Funkce pro převod duration na číselnou hodnotu (normalizovanou pro porovnání)
+    const parseDurationToNumber = (dur, durType) => {
+      if (!dur) return 0;
+      
+      // Pokud je durationType 'distance', parsujeme jako vzdálenost v km
+      if (durType === 'distance') {
+        if (typeof dur === 'string') {
+          // Parsování stringu s jednotkami (např. "2.01km", "1000m", "1.5 km")
           const match = dur.match(/^([\d.]+)\s*(km|m)$/i);
           if (match) {
             const value = parseFloat(match[1]);
             const unit = match[2].toLowerCase();
             return unit === 'km' ? value : value / 1000;
           }
+          // Pokud je to číslo jako string bez jednotek, předpokládáme km
+          const numValue = parseFloat(dur);
+          if (!isNaN(numValue)) return numValue;
         }
-        return Number(dur) || 0;
-      })
-    ));
+        // Pokud je to číslo, předpokládáme km
+        return typeof dur === 'number' ? dur : parseFloat(dur) || 0;
+      } else {
+        // Pokud je durationType 'time', parsujeme jako čas v sekundách
+        if (typeof dur === 'string') {
+          // Parsování MM:SS nebo HH:MM:SS formátu
+          if (dur.includes(':')) {
+            const parts = dur.split(':').map(Number);
+            if (parts.length === 2) {
+              return parts[0] * 60 + parts[1];
+            } else if (parts.length === 3) {
+              return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            }
+          }
+          // Pokud je to číslo jako string, předpokládáme sekundy
+          const numValue = parseFloat(dur);
+          if (!isNaN(numValue)) return numValue;
+        }
+        // Pokud je to číslo, předpokládáme sekundy
+        return typeof dur === 'number' ? dur : parseFloat(dur) || 0;
+      }
+    };
+
+    // Najdeme všechny tréninky stejného typu
+    const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
+    
+    // Najdeme nejdelší interval napříč všemi tréninky stejného typu
+    const allDurations = sameTypeTrainings.flatMap(t => 
+      t.results.map(r => parseDurationToNumber(r.duration, r.durationType || 'time'))
+    );
+    const maxDuration = allDurations.length > 0 ? Math.max(...allDurations) : 1;
 
     // Vypočítáme poměr vůči nejdelšímu intervalu
-    const currentDuration = (() => {
-      const dur = duration;
-      if (typeof dur === 'string' && (dur.includes('km') || dur.includes('m'))) {
-        const match = dur.match(/^([\d.]+)\s*(km|m)$/i);
-        if (match) {
-          const value = parseFloat(match[1]);
-          const unit = match[2].toLowerCase();
-          return unit === 'km' ? value : value / 1000;
-        }
-      }
-      return Number(dur) || 0;
-    })();
-    
+    const currentDuration = parseDurationToNumber(duration, durationType || 'time');
     const durationRatio = maxDuration > 0 ? currentDuration / maxDuration : 0.5;
     
     // Celkový počet intervalů napříč všemi zobrazenými tréninky
@@ -118,21 +137,41 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
       }
     }
     
-    // Základní šířka je optimální šířka omezená minimem a maximem
-    baseWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 0.9));
+    // Základní šířka pro nejkratší interval
+    baseWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 0.7));
     
-    // Maximální šířka s ohledem na poměr délky intervalu
-    maxWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 1.5));
+    // Maximální šířka pro nejdelší interval - větší rozsah pro výraznější rozdíly
+    maxWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 2.5));
     
     // Upravíme šířku podle poměru délky intervalu
-    // Delší intervaly jsou širší, ale stále se musí vejít
-    const adjustedWidth = baseWidth + (durationRatio * (maxWidth - baseWidth));
+    // Delší intervaly jsou výrazně širší
+    // Použijeme mírně nelineární funkci pro výraznější rozdíly (exponent 0.7)
+    const adjustedWidth = baseWidth + (Math.pow(durationRatio, 0.7) * (maxWidth - baseWidth));
     
     // Zajistíme, že se všechny sloupce vejdou
-    // Maximální možná šířka = dostupná šířka / počet intervalů v nejdelším tréninku
-    const maxPossibleWidth = availableWidth / maxIntervalsInTraining * 0.95;
+    // Vypočítáme celkovou šířku všech intervalů v nejdelším tréninku s jejich poměrovými šířkami
+    const longestTraining = sameTypeTrainings.reduce((longest, t) => 
+      t.results.length > longest.results.length ? t : longest, 
+      sameTypeTrainings[0] || { results: [] }
+    );
     
-    return Math.max(minWidth, Math.min(adjustedWidth, maxPossibleWidth));
+    if (longestTraining.results.length > 0) {
+      const totalWidthNeeded = longestTraining.results.reduce((sum, r) => {
+        const rDuration = parseDurationToNumber(r.duration, r.durationType || 'time');
+        const rRatio = maxDuration > 0 ? rDuration / maxDuration : 0.5;
+        const rWidth = baseWidth + (Math.pow(rRatio, 0.7) * (maxWidth - baseWidth));
+        return sum + rWidth;
+      }, 0);
+      
+      // Pokud by celková šířka přesáhla dostupnou, škálujeme všechny šířky
+      const scaleFactor = totalWidthNeeded > availableWidth ? availableWidth / totalWidthNeeded : 1;
+      const scaledWidth = adjustedWidth * scaleFactor;
+      
+      return Math.max(minWidth, Math.min(scaledWidth, maxWidth));
+    }
+    
+    // Fallback pro prázdný trénink
+    return Math.max(minWidth, Math.min(adjustedWidth, maxWidth));
   };
 
   const width = getWidth();
@@ -258,12 +297,15 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
           <StatCard
             stats={[
               { label: "Interval", value: `#${index + 1}`, unit: "" },
-              ...(duration ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }] : []),
+              // Show Distance or Duration based on durationType
+              ...(duration && durationType === 'distance' ? [{ label: "Distance", value: formatDistance(duration), unit: "" }] : []),
+              ...(duration && durationType !== 'distance' ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }] : []),
+              // For run sport, show Pace instead of Power
               ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}/km` : formatPace(power), unit: "" }] : []),
-              ...(sport === 'run' && distance ? [{ label: "Distance", value: formatDistance(distance), unit: "" }] : []),
-              // Parse distance from duration if it's a distance type
-              ...(sport === 'run' && duration && typeof duration === 'string' && (duration.includes('km') || duration.includes('m')) ? [{ label: "Distance", value: formatDistance(duration), unit: "" }] : []),
+              // For other sports, show Power
               ...(sport !== 'run' && power ? [{ label: "Power", value: power, unit: "W" }] : []),
+              // Also show distance if explicitly provided (separate from duration)
+              ...(distance && durationType !== 'distance' ? [{ label: "Distance", value: formatDistance(distance), unit: "" }] : []),
               ...(heartRate ? [{ label: "Heart Rate", value: heartRate, unit: "Bpm" }] : []),
               ...(lactate ? [{ label: "Lactate", value: lactate, unit: "mmol/L" }] : []),
             ]}
@@ -925,11 +967,12 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           height={height}
                           color={barColors[resultIndex % barColors.length]}
                           power={result.power}
-                          pace={selectedSport === 'run' ? result.power : result.pace}
-                          distance={result.distance || (selectedSport === 'run' && result.durationType === 'distance' ? result.duration : null)}
+                          pace={currentSelectedSport === 'run' ? result.power : result.pace}
+                          distance={result.distance || (currentSelectedSport === 'run' && result.durationType === 'distance' ? result.duration : null)}
                           lactate={result.lactate}
                           heartRate={result.heartRate}
                           duration={result.duration}
+                          durationType={result.durationType || 'time'}
                           index={resultIndex}
                           isHovered={hoveredBar?.trainingIndex === trainingIndex && hoveredBar?.intervalIndex === resultIndex}
                           onHover={(isHovered) => setHoveredBar(isHovered ? { trainingIndex, intervalIndex: resultIndex } : null)}
@@ -943,7 +986,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           selectedTraining={currentSelectedTitle}
                           displayCount={displayCount}
                           isFullWidth={isFullWidth}
-                          sport={selectedSport}
+                          sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
                           user={user}
                         />
                       );
@@ -995,7 +1038,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                 key={training._id || training.id || index}
                 training={training}
                 previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
-                sport={selectedSport}
+                sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
               />
             ))}
         </div>

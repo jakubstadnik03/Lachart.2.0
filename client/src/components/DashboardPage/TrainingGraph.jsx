@@ -35,11 +35,32 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
   };
 
-  // Funkce pro formátování délky intervalu
+  // Funkce pro formátování vzdálenosti
+  const formatDistance = (distance) => {
+    if (!distance) return null;
+    if (typeof distance === 'string') {
+      // Pokud už obsahuje jednotky, vrať to tak jak je
+      if (distance.includes('km') || distance.includes('m')) {
+        return distance;
+      }
+    }
+    const numDistance = parseFloat(distance);
+    if (!isNaN(numDistance)) {
+      // Pokud je menší než 1 km, zobraz v metrech
+      if (numDistance < 1) {
+        return `${Math.round(numDistance * 1000)}m`;
+      }
+      return `${numDistance.toFixed(2)}km`;
+    }
+    return null;
+  };
+
+  // Funkce pro formátování délky intervalu (čas)
   const formatLength = (duration) => {
     if (!duration) return null;
     if (typeof duration === 'string') {
-      if (duration.includes('km') || duration.includes('m') || duration.includes('min')) {
+      // Pokud už obsahuje jednotky nebo formát MM:SS, vrať to tak jak je
+      if (duration.includes('km') || duration.includes('m') || duration.includes('min') || duration.includes(':')) {
         return duration;
       }
     }
@@ -56,12 +77,13 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
   // Seznam metrik k zobrazení
   const metrics = [];
   
-  // Power/Pace
+  // Power/Pace - pro run sport zobrazujeme Pace, pro bike Power
   if (dataPoint.power && dataPoint.power !== 0) {
+    const isRun = sport === 'run';
     metrics.push({
-      label: sport === 'bike' ? 'Power' : 'Pace',
+      label: isRun ? 'Pace' : 'Power',
       value: dataPoint.power,
-      formattedValue: sport === 'bike' ? `${dataPoint.power}` : formatPace(dataPoint.power),
+      formattedValue: isRun ? formatPace(dataPoint.power) : `${dataPoint.power}W`,
       color: 'blue',
     });
   }
@@ -76,16 +98,31 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
     });
   }
   
-  // Duration
+  // Duration/Distance - podle durationType
   if (dataPoint.duration && dataPoint.duration !== 0) {
-    const formattedDuration = formatLength(dataPoint.duration);
-    if (formattedDuration) {
-      metrics.push({
-        label: 'Duration',
-        value: dataPoint.duration,
-        formattedValue: formattedDuration,
-        color: 'green',
-      });
+    const durationType = dataPoint.durationType || 'time';
+    if (durationType === 'distance') {
+      // Pokud je durationType 'distance', zobrazujeme to jako Distance
+      const formattedDistance = formatDistance(dataPoint.duration);
+      if (formattedDistance) {
+        metrics.push({
+          label: 'Distance',
+          value: dataPoint.duration,
+          formattedValue: formattedDistance,
+          color: 'green',
+        });
+      }
+    } else {
+      // Pokud je durationType 'time', zobrazujeme to jako Duration
+      const formattedDuration = formatLength(dataPoint.duration);
+      if (formattedDuration) {
+        metrics.push({
+          label: 'Duration',
+          value: dataPoint.duration,
+          formattedValue: formattedDuration,
+          color: 'green',
+        });
+      }
     }
   }
   
@@ -676,7 +713,8 @@ const TrainingGraph = ({
             tooltip={tooltip} 
             datasets={selectedTrainingData.results.map(r => ({
               ...r,
-              power: formatPowerValue(r.power, currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport)
+              // Keep original power value for tooltip formatting
+              power: r.power
             }))} 
             sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
           />

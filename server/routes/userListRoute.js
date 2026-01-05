@@ -46,6 +46,80 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Register Expo push token for the logged-in user (mobile app)
+router.post("/push-token", verifyToken, async (req, res) => {
+    try {
+        const { expoPushToken } = req.body || {};
+        if (!expoPushToken || typeof expoPushToken !== "string") {
+            return res.status(400).json({ error: "expoPushToken is required" });
+        }
+
+        // Basic validation (Expo tokens often look like: ExponentPushToken[xxxx])
+        const tokenStr = expoPushToken.trim();
+        if (tokenStr.length < 10) {
+            return res.status(400).json({ error: "Invalid expoPushToken" });
+        }
+
+        await User.findByIdAndUpdate(
+            req.user.userId,
+            { $addToSet: { expoPushTokens: tokenStr } },
+            { new: true }
+        );
+
+        res.status(200).json({ ok: true });
+    } catch (error) {
+        console.error("Error saving expo push token:", error);
+        res.status(500).json({ error: "Failed to save push token" });
+    }
+});
+
+// Send a test push notification to the logged-in user's saved Expo tokens
+router.post("/push-test", verifyToken, async (req, res) => {
+    try {
+        const { title, body, data } = req.body || {};
+        const user = await User.findById(req.user.userId).lean();
+        const tokens = Array.isArray(user?.expoPushTokens) ? user.expoPushTokens : [];
+        if (tokens.length === 0) {
+            return res.status(200).json({ ok: true, sent: 0, message: "No push tokens registered" });
+        }
+
+        const messages = tokens.map((to) => ({
+            to,
+            sound: "default",
+            title: title || "LaChart",
+            body: body || "Test notification",
+            data: data && typeof data === "object" ? data : {}
+        }));
+
+        // Expo push API accepts up to 100 messages per request
+        const chunkSize = 100;
+        const chunks = [];
+        for (let i = 0; i < messages.length; i += chunkSize) {
+            chunks.push(messages.slice(i, i + chunkSize));
+        }
+
+        const results = [];
+        for (const chunk of chunks) {
+            const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate"
+                },
+                body: JSON.stringify(chunk)
+            });
+            const json = await resp.json().catch(() => null);
+            results.push({ status: resp.status, body: json });
+        }
+
+        res.status(200).json({ ok: true, sent: tokens.length, results });
+    } catch (error) {
+        console.error("Error sending test push:", error);
+        res.status(500).json({ error: "Failed to send push" });
+    }
+});
+
 // Get coach's athletes
 router.get("/coach/athletes", verifyToken, async (req, res) => {
     try {

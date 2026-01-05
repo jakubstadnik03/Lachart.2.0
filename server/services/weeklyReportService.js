@@ -386,8 +386,8 @@ async function calculateWeeklyTrainingStatusForRange(userId, weekStart, weekEnd,
 
   const [stravaActivities, fitTrainings] = await Promise.all([
     StravaActivity.find({
-      userId,
-      startDate: { $gte: fourWeeksAgo, $lt: end }
+    userId,
+    startDate: { $gte: fourWeeksAgo, $lt: end }
     }).select('startDate movingTime averagePower averageSpeed sport'),
     FitTraining.find({
       athleteId: String(userId),

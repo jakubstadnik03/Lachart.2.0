@@ -1,5 +1,6 @@
 const testAbl = require('../abl/testAbl');
 const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
+const { sendDemoTestEmail } = require('../services/demoTestEmailService');
 
 const testController = {
     // Get all tests for the authenticated user
@@ -92,6 +93,48 @@ const testController = {
             return res.json({ sent: true });
         } catch (error) {
             console.error('[TestController] sendTestReportEmail error:', error);
+            return res.status(500).json({ sent: false, error: 'Failed to send email' });
+        }
+    },
+
+    // Send demo test results to email (no authentication required)
+    sendDemoTestEmail: async (req, res) => {
+        try {
+            const { testData, email, name } = req.body;
+
+            if (!testData || !email) {
+                return res.status(400).json({ 
+                    sent: false, 
+                    error: 'Test data and email are required' 
+                });
+            }
+
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({ 
+                    sent: false, 
+                    error: 'Invalid email format' 
+                });
+            }
+
+            const result = await sendDemoTestEmail({
+                testData,
+                email,
+                name: name || 'User'
+            });
+
+            if (!result.sent) {
+                const reason = result.reason || 'send_failed';
+                const status =
+                    reason === 'email_not_configured' ? 503 :
+                    400;
+                return res.status(status).json({ sent: false, reason });
+            }
+
+            return res.json({ sent: true });
+        } catch (error) {
+            console.error('[TestController] sendDemoTestEmail error:', error);
             return res.status(500).json({ sent: false, error: 'Failed to send email' });
         }
     }

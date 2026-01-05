@@ -886,9 +886,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
       )}
 
-      {/* Top-right actions (kept inside component padding; prevents overlap) */}
-      <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
-        {demoMode && (
+      {/* Top-right actions (kept inside component padding; prevents overlap) - Hidden in demo mode */}
+      {!demoMode && (
+        <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
           <button
             onClick={() => setCurrentTutorialStep(0)}
             className="text-primary hover:text-primary-dark transition-colors"
@@ -898,19 +898,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           >
             <HelpCircle size={22} />
           </button>
-        )}
 
-        <button
-          onClick={() => setShowGlossary(true)}
-          className="text-gray-500 hover:text-gray-700 transition-colors"
-          aria-label="Show glossary"
-          title="Training Glossary"
-          type="button"
-          style={{ marginRight: '-20px', marginTop: '-20px' }}
-        >
-          <Info size={20} />
-        </button>
-      </div>
+          <button
+            onClick={() => setShowGlossary(true)}
+            className="text-gray-500 hover:text-gray-700 transition-colors"
+            aria-label="Show glossary"
+            title="Training Glossary"
+            type="button"
+            style={{ marginRight: '-20px', marginTop: '-20px' }}
+          >
+            <Info size={20} />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2 flex-shrink-0">
         {/* Title and Edit Button Row */}

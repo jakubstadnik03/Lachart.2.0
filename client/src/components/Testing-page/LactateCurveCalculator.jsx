@@ -191,7 +191,7 @@ const convertSpeedToPace = (speed, unitSystem = 'metric') => {
   }
 };
 
-const LactateCurveCalculator = ({ mockData }) => {
+const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -557,25 +557,27 @@ const LactateCurveCalculator = ({ mockData }) => {
               <InformationCircleIcon className="w-5 h-5 text-gray-500" />
             </button>
           </div>
-          <div className="flex flex-col items-start sm:items-end gap-1">
-            <button
-              onClick={openEmailModal}
-              disabled={sendingEmail}
-              className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
-                sendingEmail
-                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                  : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
-              }`}
-              title="Send report to email"
-            >
-              {sendingEmail ? 'Sending…' : 'Send results to email'}
-            </button>
-            {emailStatus?.message && (
-              <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {emailStatus.message}
-              </div>
-            )}
-          </div>
+          {!demoMode && (
+            <div className="flex flex-col items-start sm:items-end gap-1">
+              <button
+                onClick={openEmailModal}
+                disabled={sendingEmail}
+                className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                  sendingEmail
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
+                }`}
+                title="Send report to email"
+              >
+                {sendingEmail ? 'Sending…' : 'Send results to email'}
+              </button>
+              {emailStatus?.message && (
+                <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {emailStatus.message}
+                </div>
+              )}
+            </div>
+          )}
           <p className="text-sm sm:text-base text-gray-500">
             Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
           </p>
