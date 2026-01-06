@@ -7,7 +7,9 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
 
   if (!training) return null;
   const { date, title, specifics, comments, results, sport, description } = training;
-
+  
+  // Ensure results is an array to prevent undefined errors
+  const safeResults = Array.isArray(results) ? results : [];
 
   const getSportIcon = (sport) => {
     switch (sport) {
@@ -195,10 +197,10 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
         
         {/* Detaily viditelné pouze na větších obrazovkách */}
         <div className="hidden sm:flex col-span-3 items-center justify-center">
-          {results.length} intervals
+          {safeResults.length} intervals
         </div>
-        <div className="hidden sm:block truncate">{specifics.specific}</div>
-        <div className="hidden sm:block truncate">{specifics.weather}</div>
+        <div className="hidden sm:block truncate">{specifics?.specific || ''}</div>
+        <div className="hidden sm:block truncate">{specifics?.weather || ''}</div>
       </div>
 
       {/* Expandovaný obsah */}
@@ -229,7 +231,7 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           {/* Intervals with header */}
           <div className="space-y-0.5">
             {renderIntervalsHeader()}
-            {results.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
+            {safeResults.map((workout, index, array) => renderWorkoutRow(workout, index, array))}
           </div>
           
           {/* Additional information - now for all screen sizes */}
