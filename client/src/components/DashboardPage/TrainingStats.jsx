@@ -69,24 +69,104 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
       }
     };
 
+    // Funkce pro parsování vzdálenosti na km (podobná parseDistanceToKm, ale vrací číslo)
+    const parseDistanceToKmNumber = (value) => {
+      if (!value) return null;
+      
+      if (typeof value === 'number') {
+        return value;
+      }
+      
+      if (typeof value === 'string') {
+        const cleanValue = value.trim().toLowerCase();
+        const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
+        if (kmMatch) {
+          return parseFloat(kmMatch[1]);
+        }
+        const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
+        if (mMatch) {
+          return parseFloat(mMatch[1]) / 1000;
+        }
+        const numValue = parseFloat(cleanValue);
+        if (!isNaN(numValue)) {
+          // Pokud je to celé číslo > 100 bez desetinné tečky, pravděpodobně metry
+          if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
+            return numValue / 1000;
+          }
+          return numValue;
+        }
+      }
+      
+      return null;
+    };
+
+    // Funkce pro získání "velikosti" intervalu - buď vzdálenost (priorita), nebo čas
+    const getIntervalSize = (r) => {
+      // Pokud je durationType 'distance', zkusíme najít vzdálenost v různých polích
+      if (r.durationType === 'distance') {
+        // Zkusíme duration (může být číslo v km nebo string)
+        if (r.duration !== undefined && r.duration !== null) {
+          return { value: parseDurationToNumber(r.duration, 'distance'), type: 'distance' };
+        }
+        // Zkusíme durationSeconds (pokud je to vzdálenost, může být v km)
+        if (r.durationSeconds !== undefined && r.durationSeconds !== null) {
+          // Pokud je durationSeconds číslo, předpokládáme, že je to v km pro distance type
+          return { value: typeof r.durationSeconds === 'number' ? r.durationSeconds : parseFloat(r.durationSeconds) || 0, type: 'distance' };
+        }
+        // Zkusíme samostatné distance pole
+        if (r.distance) {
+          const distKm = parseDistanceToKmNumber(r.distance);
+          if (distKm !== null) {
+            return { value: distKm, type: 'distance' };
+          }
+        }
+        // Pokud není žádná vzdálenost, ale durationType je 'distance', vrátíme null
+        // aby se to nepovažovalo za čas
+        return { value: null, type: 'distance' };
+      }
+      // Pokud je k dispozici samostatné distance pole (i když durationType není 'distance')
+      if (r.distance) {
+        const distKm = parseDistanceToKmNumber(r.distance);
+        if (distKm !== null) {
+          return { value: distKm, type: 'distance' };
+        }
+      }
+      // Jinak použijeme duration jako čas
+      // Pokud duration není definováno, zkusíme durationSeconds
+      const durValue = r.duration !== undefined && r.duration !== null 
+        ? parseDurationToNumber(r.duration, r.durationType || 'time')
+        : (r.durationSeconds !== undefined && r.durationSeconds !== null 
+          ? (typeof r.durationSeconds === 'number' ? r.durationSeconds : parseFloat(r.durationSeconds) || 0)
+          : 0);
+      return { value: durValue, type: 'time' };
+    };
+
     // Najdeme všechny tréninky stejného typu
     const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
     
-    // Najdeme nejdelší interval napříč všemi tréninky stejného typu
-    const allDurations = sameTypeTrainings.flatMap(t => 
-      t.results.map(r => parseDurationToNumber(r.duration, r.durationType || 'time'))
+    // Najdeme všechny velikosti intervalů (vzdálenost nebo čas) napříč všemi tréninky stejného typu
+    const allSizes = sameTypeTrainings.flatMap(t => 
+      t.results.map(r => getIntervalSize(r))
     );
-    const maxDuration = allDurations.length > 0 ? Math.max(...allDurations) : 1;
+    
+    // Rozdělíme na vzdálenosti a časy, filtrujeme null hodnoty
+    const distances = allSizes.filter(s => s.type === 'distance' && s.value !== null && s.value !== undefined).map(s => s.value);
+    const times = allSizes.filter(s => s.type === 'time' && s.value !== null && s.value !== undefined).map(s => s.value);
+    
+    // Pokud máme alespoň jednu vzdálenost, použijeme vzdálenosti pro výpočet
+    // Jinak použijeme časy
+    const useDistance = distances.length > 0;
+    const allValues = useDistance ? distances : times;
+    const maxSize = allValues.length > 0 ? Math.max(...allValues) : 1;
+    const minSize = allValues.length > 0 ? Math.min(...allValues) : 0;
+    const sizeRange = maxSize - minSize;
 
-    // Vypočítáme poměr vůči nejdelšímu intervalu
-    const currentDuration = parseDurationToNumber(duration, durationType || 'time');
-    const durationRatio = maxDuration > 0 ? currentDuration / maxDuration : 0.5;
+    // Získáme velikost aktuálního intervalu
+    const currentSize = getIntervalSize({ duration, durationType, distance });
+    const currentValue = currentSize.value;
     
     // Celkový počet intervalů napříč všemi zobrazenými tréninky
     const totalIntervals = visibleTrainings.reduce((sum, t) => sum + t.results.length, 0);
-    
-    // Počet intervalů v nejdelším tréninku (pro poměrové škálování)
-    const maxIntervalsInTraining = Math.max(...visibleTrainings.map(t => t.results.length));
     
     // Vypočítáme dostupnou šířku pro celý graf (s rezervou pro padding a mezery)
     const availableWidth = containerWidth * 0.95; // 95% pro sloupce, 5% pro padding
@@ -137,16 +217,29 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
       }
     }
     
-    // Základní šířka pro nejkratší interval
-    baseWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 0.7));
+    // Pokud currentValue je null nebo undefined, použijeme stejnou šířku pro všechny
+    if (currentValue === null || currentValue === undefined) {
+      const uniformWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval));
+      return uniformWidth;
+    }
     
-    // Maximální šířka pro nejdelší interval - větší rozsah pro výraznější rozdíly
-    maxWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 2.5));
+    // Použijeme normalizovaný poměr: (currentValue - minSize) / (maxSize - minSize)
+    // Tím zajistíme, že nejmenší interval má poměr 0 a největší má poměr 1
+    // Použijeme to jak pro distance, tak pro time (duration)
+    const sizeRatio = sizeRange > 0 
+      ? (currentValue - minSize) / sizeRange 
+      : 0.5; // Pokud není žádný rozsah, použijeme 0.5 pro stejnou šířku
     
-    // Upravíme šířku podle poměru délky intervalu
-    // Delší intervaly jsou výrazně širší
-    // Použijeme mírně nelineární funkci pro výraznější rozdíly (exponent 0.7)
-    const adjustedWidth = baseWidth + (Math.pow(durationRatio, 0.7) * (maxWidth - baseWidth));
+    // Základní šířka pro nejkratší/nejmenší interval
+    baseWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 0.5));
+    
+    // Maximální šířka pro nejdelší/největší interval - větší rozsah pro výraznější rozdíly
+    maxWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 3.0));
+    
+    // Upravíme šířku podle poměru velikosti intervalu (vzdálenost nebo čas)
+    // Delší/větší intervaly jsou výrazně širší
+    // Použijeme mírně nelineární funkci pro výraznější rozdíly (exponent 0.6 pro větší rozdíly)
+    const adjustedWidth = baseWidth + (Math.pow(sizeRatio, 0.6) * (maxWidth - baseWidth));
     
     // Zajistíme, že se všechny sloupce vejdou
     // Vypočítáme celkovou šířku všech intervalů v nejdelším tréninku s jejich poměrovými šířkami
@@ -156,18 +249,56 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     );
     
     if (longestTraining.results.length > 0) {
-      const totalWidthNeeded = longestTraining.results.reduce((sum, r) => {
-        const rDuration = parseDurationToNumber(r.duration, r.durationType || 'time');
-        const rRatio = maxDuration > 0 ? rDuration / maxDuration : 0.5;
-        const rWidth = baseWidth + (Math.pow(rRatio, 0.7) * (maxWidth - baseWidth));
-        return sum + rWidth;
-      }, 0);
+      // Vypočítáme šířky pro všechny intervaly v nejdelším tréninku
+      const widths = longestTraining.results.map(r => {
+        const rSize = getIntervalSize(r);
+        // Pokud je hodnota null nebo undefined, použijeme stejnou šířku
+        if (rSize.value === null || rSize.value === undefined) {
+          return Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval));
+        }
+        // Použijeme normalizovanou logiku pro distance nebo time
+        const rRatio = sizeRange > 0 
+          ? (rSize.value - minSize) / sizeRange 
+          : 0.5;
+        return baseWidth + (Math.pow(rRatio, 0.6) * (maxWidth - baseWidth));
+      });
+      
+      const totalWidthNeeded = widths.reduce((sum, w) => sum + w, 0);
       
       // Pokud by celková šířka přesáhla dostupnou, škálujeme všechny šířky
+      // Ale zachováme poměry mezi nimi
       const scaleFactor = totalWidthNeeded > availableWidth ? availableWidth / totalWidthNeeded : 1;
+      
+      // Vypočítáme škálovanou šířku pro aktuální interval
       const scaledWidth = adjustedWidth * scaleFactor;
       
-      return Math.max(minWidth, Math.min(scaledWidth, maxWidth));
+      // Po škálování musíme zajistit, že šířka není menší než minWidth
+      // Ale zachováme poměry - použijeme relativní škálování
+      const scaledBaseWidth = baseWidth * scaleFactor;
+      const scaledMaxWidth = maxWidth * scaleFactor;
+      
+      // Pokud je scaledBaseWidth menší než minWidth, upravíme všechny šířky tak, aby minimální byla minWidth
+      // a zachováme poměry
+      if (scaledBaseWidth < minWidth) {
+        // Vypočítáme poměr aktuální šířky v rámci rozsahu
+        const ratioInRange = (scaledWidth - scaledBaseWidth) / (scaledMaxWidth - scaledBaseWidth);
+        // Aplikujeme tento poměr na nový rozsah od minWidth
+        const newMaxWidth = Math.min(calculatedMaxWidth, minWidth + (scaledMaxWidth - scaledBaseWidth));
+        const finalWidth = minWidth + ratioInRange * (newMaxWidth - minWidth);
+        return Math.min(finalWidth, calculatedMaxWidth);
+      }
+      
+      // Pokud je scaledMaxWidth větší než calculatedMaxWidth, ořízneme, ale zachováme poměr
+      if (scaledMaxWidth > calculatedMaxWidth) {
+        const ratioInRange = (scaledWidth - scaledBaseWidth) / (scaledMaxWidth - scaledBaseWidth);
+        const newBaseWidth = Math.max(minWidth, scaledBaseWidth);
+        const newMaxWidth = calculatedMaxWidth;
+        const finalWidth = newBaseWidth + ratioInRange * (newMaxWidth - newBaseWidth);
+        return Math.max(minWidth, Math.min(finalWidth, calculatedMaxWidth));
+      }
+      
+      // Normální případ - škálovaná šířka je v rozsahu
+      return Math.max(minWidth, Math.min(scaledWidth, calculatedMaxWidth));
     }
     
     // Fallback pro prázdný trénink
@@ -636,7 +767,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   const hasRunTrainings = filteredTrainings.some(t => t.sport === 'run');
   const isRun = currentSelectedSport === 'run' || (currentSelectedSport === 'all' && hasRunTrainings);
 
-  const { powerValues, paceValues, minPower, maxPower, minPace, maxPace, averagePower, averagePace } = useMemo(() => {
+  const { powerValues, paceValues, minPower, maxPower, minPace, maxPace } = useMemo(() => {
     if (filteredTrainings.length === 0) return { 
       powerValues: [], 
       paceValues: [],
@@ -647,8 +778,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       maxPace: 600,
       minHeartRate: 0, 
       maxHeartRate: 200,
-      averagePower: [],
-      averagePace: [],
       averageHeartRate: []
     };
   
@@ -684,12 +813,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       const minHeartRate = 0;
       const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
 
-      // Calculate averages for each training session
-      const averagePace = filteredTrainings.map(training => {
-        const paces = training.results.map(r => parsePaceToSeconds(r.power)).filter(p => p !== null && p > 0);
-        return paces.length > 0 ? paces.reduce((a, b) => a + b) / paces.length : null;
-      });
-
       const averageHeartRate = filteredTrainings.map(training => {
         const hrs = training.results.map(r => Number(r.heartRate)).filter(hr => !isNaN(hr) && hr > 0);
         return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
@@ -707,8 +830,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         maxPace,
         minHeartRate,
         maxHeartRate,
-        averagePower: [],
-        averagePace,
         averageHeartRate
       };
     } else {
@@ -741,12 +862,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       const minHeartRate = 0;
       const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
 
-      // Calculate averages for each training session
-      const averagePower = filteredTrainings.map(training => {
-        const powers = training.results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
-        return powers.length > 0 ? powers.reduce((a, b) => a + b) / powers.length : null;
-      });
-
       const averageHeartRate = filteredTrainings.map(training => {
         const hrs = training.results.map(r => Number(r.heartRate)).filter(hr => !isNaN(hr) && hr > 0);
         return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
@@ -762,8 +877,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         maxPace: 600,
         minHeartRate,
         maxHeartRate,
-        averagePower,
-        averagePace: [],
         averageHeartRate
       };
     }
@@ -905,26 +1018,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
             })}
           </div>
 
-          {/* Average lines */}
-          <svg className="absolute inset-0 z-30 pointer-events-none">
-            <path
-              d={(isRun ? averagePace : averagePower).filter(avg => avg !== null).map((avg, i) => {
-                const x = (i * (100 / Math.max((isRun ? averagePace : averagePower).filter(avg => avg !== null).length - 1, 1)))+ '%';
-                let y;
-                if (isRun) {
-                  // Pro pace: rychlejší pace (menší číslo) = nahoře (menší y)
-                  // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
-                  y = maxGraphHeight - ((avg - minPace) / (maxPace - minPace)) * maxGraphHeight;
-                } else {
-                  y = maxGraphHeight - ((avg - minPower) / (maxPower - minPower)) * maxGraphHeight;
-                }
-                return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-              }).join(' ')}
-              stroke="#8B5CF6"
-              strokeWidth="2"
-              fill="none"
-            />
-          </svg>
 
           {/* Bars */}
           <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4">
@@ -942,30 +1035,61 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                   }}
                 >
                   <div className="flex gap-1 h-full justify-center items-end">
-                    {training.results.map((result, resultIndex) => {
-                      let height = 0;
+                    {(() => {
+                      // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
+                      // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
+                      // Pro ostatní: nejvyšší power = nejtmavší
+                      const powerPaceValues = training.results.map((r, idx) => {
+                        if (isRun) {
+                          const paceSeconds = parsePaceToSeconds(r.power);
+                          return { value: paceSeconds, index: idx };
+                        } else {
+                          const powerValue = Number(r.power);
+                          return { value: isNaN(powerValue) ? 0 : powerValue, index: idx };
+                        }
+                      }).filter(p => p.value !== null && p.value > 0);
+                      
+                      // Seřadíme podle hodnoty (pro běh: vzestupně = nejrychlejší první, pro ostatní: sestupně = nejvyšší první)
                       if (isRun) {
-                        // Power u běhu je pace v mm:ss formátu
-                        const paceSeconds = parsePaceToSeconds(result.power);
-                        if (paceSeconds !== null && paceSeconds > 0) {
-                          // Pro pace: rychlejší pace (menší číslo) = vyšší sloupec = nahoře
-                          // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
-                          // Výška = (maxPace - paceSeconds) / (maxPace - minPace) * maxGraphHeight
-                          // Rychlejší pace (menší) = větší rozdíl od maxPace = vyšší sloupec
-                          height = ((maxPace - paceSeconds) / (maxPace - minPace)) * maxGraphHeight;
-                        }
+                        powerPaceValues.sort((a, b) => a.value - b.value); // Vzestupně - nejrychlejší první
                       } else {
-                        const powerValue = Number(result.power);
-                        if (!isNaN(powerValue) && powerValue > 0) {
-                          height = ((powerValue - minPower) / (maxPower - minPower)) * maxGraphHeight;
-                        }
+                        powerPaceValues.sort((a, b) => b.value - a.value); // Sestupně - nejvyšší první
                       }
+                      
+                      // Vytvoříme mapu: index intervalu -> pozice v seřazeném seznamu (0 = nejtmavší)
+                      const colorIndexMap = new Map();
+                      powerPaceValues.forEach((item, sortedIndex) => {
+                        colorIndexMap.set(item.index, sortedIndex);
+                      });
+                      
+                      return training.results.map((result, resultIndex) => {
+                        let height = 0;
+                        if (isRun) {
+                          // Power u běhu je pace v mm:ss formátu
+                          const paceSeconds = parsePaceToSeconds(result.power);
+                          if (paceSeconds !== null && paceSeconds > 0) {
+                            // Pro pace: rychlejší pace (menší číslo) = vyšší sloupec = nahoře
+                            // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
+                            // Výška = (maxPace - paceSeconds) / (maxPace - minPace) * maxGraphHeight
+                            // Rychlejší pace (menší) = větší rozdíl od maxPace = vyšší sloupec
+                            height = ((maxPace - paceSeconds) / (maxPace - minPace)) * maxGraphHeight;
+                          }
+                        } else {
+                          const powerValue = Number(result.power);
+                          if (!isNaN(powerValue) && powerValue > 0) {
+                            height = ((powerValue - minPower) / (maxPower - minPower)) * maxGraphHeight;
+                          }
+                        }
+                        
+                        // Získáme index barvy podle power/pace hodnoty
+                        const colorIndex = colorIndexMap.get(resultIndex) ?? resultIndex;
+                        const color = barColors[Math.min(colorIndex, barColors.length - 1)];
 
-                      return (
-                        <VerticalBar
-                          key={`result-${training._id || training.id || trainingIndex}-${resultIndex}`}
-                          height={height}
-                          color={barColors[resultIndex % barColors.length]}
+                        return (
+                          <VerticalBar
+                            key={`result-${training._id || training.id || trainingIndex}-${resultIndex}`}
+                            height={height}
+                            color={color}
                           power={result.power}
                           pace={currentSelectedSport === 'run' ? result.power : result.pace}
                           distance={result.distance || (currentSelectedSport === 'run' && result.durationType === 'distance' ? result.duration : null)}
@@ -990,7 +1114,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           user={user}
                         />
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                   <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
                     {new Date(training.date).toLocaleDateString('en-US', {
