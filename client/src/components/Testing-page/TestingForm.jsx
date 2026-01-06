@@ -1249,7 +1249,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         </div>
 
         {/* Action Buttons */}
-        {(isNewTest || isEditMode) && !demoMode && (
+        {(isNewTest || isEditMode) && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
             <button 
               onClick={() => {
@@ -1262,7 +1262,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </button>
 
           <div className="flex gap-2 w-full sm:w-auto">
-              {!isNewTest && (
+              {!isNewTest && !demoMode && (
             <button 
                   onClick={() => {
                     logClick('Delete Test Button', { testId: testData._id });
@@ -1274,6 +1274,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </button>
               )}
 
+            {!demoMode && (
             <button 
                 onClick={() => {
                   logClick('Save Button', { isNewTest });
@@ -1283,6 +1284,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             >
                 <Save size={14} /> {isNewTest ? 'Save Test' : 'Save Changes'}
             </button>
+            )}
             </div>
           </div>
         )}

@@ -510,8 +510,12 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     }
   }, [mockData, calculateTrainingZones]);
 
-  // Load user profile for EditProfileModal
+  // Load user profile for EditProfileModal (only when not in demo mode)
   useEffect(() => {
+    if (demoMode) {
+      return; // Don't load user profile in demo mode
+    }
+    
     const loadUserProfile = async () => {
       try {
         const response = await api.get('/user/profile');
@@ -521,7 +525,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       }
     };
     loadUserProfile();
-  }, []);
+  }, [demoMode]);
 
 
 

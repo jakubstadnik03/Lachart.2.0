@@ -53,7 +53,15 @@ function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, 
   // For pace sports we want slower (bigger seconds) on the left, faster on the right.
   const reverseX = Boolean(isPaceSport);
 
+  // Calculate min/max BEFORE sorting (we need original range)
+  const minX = Math.min(...pts.map(p => p.x));
+  const maxX = Math.max(...pts.map(p => p.x));
+  const minY = 0;
+  const maxY = Math.max(6, Math.ceil(Math.max(...pts.map(p => p.y)) + 0.5));
+
   // Sort for a natural left-to-right line direction
+  // For pace: sort descending (biggest first = slowest first = left side)
+  // For power: sort ascending (smallest first = left side)
   pts.sort((a, b) => reverseX ? (b.x - a.x) : (a.x - b.x));
 
   const W = 560, H = 260;
@@ -61,13 +69,10 @@ function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, 
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
 
-  const minX = Math.min(...pts.map(p => p.x));
-  const maxX = Math.max(...pts.map(p => p.x));
-  const minY = 0;
-  const maxY = Math.max(6, Math.ceil(Math.max(...pts.map(p => p.y)) + 0.5));
-
   const sx = (x) => {
     const denom = (maxX - minX || 1);
+    // For pace sports: map maxX (slowest) to left (0), minX (fastest) to right (1)
+    // For power sports: map minX (lowest) to left (0), maxX (highest) to right (1)
     const t = reverseX ? ((maxX - x) / denom) : ((x - minX) / denom);
     return padL + t * innerW;
   };
@@ -85,12 +90,17 @@ function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, 
 
   const circles = pts.map(p => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.8" fill="#FFFFFF" stroke="#111827" stroke-width="1.2" />`).join('');
 
-  const tickEvery = pts.length > 12 ? 2 : 1;
-  const xTicks = pts
+  // For x-axis ticks, we want them in the correct visual order (left to right)
+  // For pace sports: show from slowest (left, biggest seconds) to fastest (right, smallest seconds)
+  // For power sports: show from lowest (left) to highest (right)
+  // Create a sorted copy of all unique x values for ticks
+  const uniqueXValues = [...new Set(pts.map(p => p.x))].sort((a, b) => reverseX ? (b - a) : (a - b));
+  const tickEvery = uniqueXValues.length > 12 ? 2 : 1;
+  const xTicks = uniqueXValues
     .filter((_, idx) => idx % tickEvery === 0)
-    .map(p => {
-      const xx = sx(p.x).toFixed(1);
-      const label = formatIntensityTick(p.x, { sport: coreSport, unitSystem, inputMode });
+    .map(x => {
+      const xx = sx(x).toFixed(1);
+      const label = formatIntensityTick(x, { sport: coreSport, unitSystem, inputMode });
       return `
         <g>
           <line x1="${xx}" y1="${H - padB}" x2="${xx}" y2="${H - padB + 6}" stroke="#9CA3AF" stroke-width="1"/>

@@ -15,7 +15,7 @@ import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestComp
 import { Helmet } from 'react-helmet';
 import { X as CloseIcon, Mail } from 'lucide-react';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
-import { sendDemoTestEmail, register, addTest } from '../services/api';
+import { sendDemoTestEmail, register } from '../services/api';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -25,28 +25,6 @@ import { logUserRegistration } from '../utils/eventLogger';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 
 // Animation variants
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1
-    }
-  }
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: {
-      duration: 0.5,
-      ease: "easeOut"
-    }
-  }
-};
-
 const fadeInUpVariants = {
   hidden: { y: 60, opacity: 0 },
   visible: {
@@ -425,6 +403,7 @@ const LactateCurveCalculatorPage = () => {
                Number(lactate) > 0;
     });
 
+
     // Handle send test to email
     const handleSendTestToEmail = () => {
         if (!hasValidData) {
@@ -467,31 +446,121 @@ const LactateCurveCalculatorPage = () => {
                 await logUserRegistration('google', data.user?._id);
                 
                 // Save token and user
-                localStorage.setItem('token', data.token);
-                saveUserToStorage(data.user);
-                api.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
+                const token = data.token;
+                const user = data.user;
                 
-                // Update auth state
-                await login(null, null, data.token, data.user);
+                localStorage.setItem('token', token);
+                saveUserToStorage(user);
+                api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+                
+                // Update auth state - wait for it to complete
+                await login(null, null, token, user);
+                
+                // Wait a bit more to ensure auth state is fully updated
+                await new Promise(resolve => setTimeout(resolve, 300));
 
                 // Prepare test data for email
                 const emailTestData = prepareCalculatorData();
 
                 // Get userId from registered user
-                const userId = data?.user?._id || data?.user?.id || null;
+                const userId = user?._id || user?.id || null;
 
                 // Save test to user's account
-                if (userId) {
+                if (userId && token) {
                     try {
+                        // Use token directly from data
+                        if (!token) {
+                            throw new Error('No authentication token available');
+                        }
+                        
+                        // Ensure token is in localStorage and headers
+                        localStorage.setItem('token', token);
+                        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+                        
+                        // Ensure date is in proper format (Date object or ISO string)
+                        let testDate = emailTestData.date;
+                        if (!testDate) {
+                            testDate = new Date().toISOString();
+                        } else if (typeof testDate === 'string' && !testDate.includes('T')) {
+                            // If it's just a date string (YYYY-MM-DD), convert to ISO
+                            testDate = new Date(testDate).toISOString();
+                        }
+                        // If already ISO string, keep it as is
+
+                        // Ensure title exists
+                        const testTitle = emailTestData.title || `Lactate Test - ${emailTestData.sport || 'bike'} - ${new Date().toLocaleDateString()}`;
+
+                        // Ensure results have interval field
+                        const resultsWithInterval = emailTestData.results.map((result, index) => ({
+                            ...result,
+                            interval: result.interval || (index + 1)
+                        }));
+
+                        // Parse weight to number if it's a string
+                        let weightValue = emailTestData.weight;
+                        if (typeof weightValue === 'string') {
+                            weightValue = parseFloat(weightValue.replace(',', '.')) || 0;
+                        } else if (!weightValue) {
+                            weightValue = 0;
+                        }
+
                         const testToSave = {
-                            ...emailTestData,
-                            athleteId: userId,
-                            date: emailTestData.date || new Date().toISOString().split('T')[0]
+                            athleteId: String(userId),
+                            sport: emailTestData.sport || 'bike',
+                            title: testTitle,
+                            date: testDate,
+                            description: emailTestData.description || '',
+                            baseLactate: Number(emailTestData.baseLactate) || 0,
+                            weight: Number(weightValue) || 0,
+                            specifics: emailTestData.specifics || { specific: '', weather: '' },
+                            comments: emailTestData.comments || '',
+                            unitSystem: emailTestData.unitSystem || 'metric',
+                            inputMode: emailTestData.inputMode || 'pace',
+                            results: resultsWithInterval
                         };
-                        await addTest(testToSave);
-                        console.log('Test saved to user account');
+                        
+                        // Double-check token before making request
+                        const currentToken = localStorage.getItem('token');
+                        if (!currentToken) {
+                            throw new Error('No authentication token available');
+                        }
+                        
+                        console.log('Saving test to database:', {
+                            athleteId: testToSave.athleteId,
+                            sport: testToSave.sport,
+                            title: testToSave.title,
+                            date: testToSave.date,
+                            resultsCount: testToSave.results.length,
+                            hasToken: !!currentToken,
+                            tokenPreview: currentToken.substring(0, 20) + '...'
+                        });
+                        
+                        // Make request with explicit token header
+                        const savedTest = await api.post('/test', testToSave, {
+                            headers: {
+                                'Authorization': `Bearer ${currentToken}`
+                            }
+                        });
+                        
+                        if (savedTest?.data?._id) {
+                            console.log('Test saved successfully to database:', {
+                                testId: savedTest.data._id,
+                                title: savedTest.data.title,
+                                athleteId: savedTest.data.athleteId
+                            });
+                            addNotification('Test saved to your account!', 'success');
+                        } else {
+                            console.warn('Test save response missing ID:', savedTest);
+                            addNotification('Test may not have been saved correctly', 'warning');
+                        }
                     } catch (error) {
                         console.error('Error saving test to account:', error);
+                        console.error('Error details:', {
+                            message: error.message,
+                            response: error.response?.data,
+                            status: error.response?.status
+                        });
+                        addNotification(`Test sent to email, but failed to save to account: ${error.response?.data?.error || error.message}`, 'warning');
                         // Don't fail the whole flow if test save fails
                     }
                 }
@@ -576,12 +645,19 @@ const LactateCurveCalculatorPage = () => {
 
             // Save token and user
             if (registerResponse?.data?.token && registerResponse?.data?.user) {
-                localStorage.setItem('token', registerResponse.data.token);
-                saveUserToStorage(registerResponse.data.user);
-                api.defaults.headers.common["Authorization"] = `Bearer ${registerResponse.data.token}`;
+                const token = registerResponse.data.token;
+                const user = registerResponse.data.user;
                 
-                // Update auth state
-                await login(emailFormData.email, emailFormData.password, registerResponse.data.token, registerResponse.data.user);
+                // Save to localStorage first
+                localStorage.setItem('token', token);
+                saveUserToStorage(user);
+                api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+                
+                // Update auth state - wait for it to complete
+                await login(emailFormData.email, emailFormData.password, token, user);
+                
+                // Wait a bit more to ensure auth state is fully updated
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
 
             // Prepare test data for email
@@ -591,17 +667,103 @@ const LactateCurveCalculatorPage = () => {
             const userId = registerResponse?.data?.user?._id || registerResponse?.data?.user?.id || null;
 
             // Save test to user's account
-            if (userId) {
+            if (userId && registerResponse?.data?.token) {
                 try {
+                    // Use token directly from registerResponse
+                    const token = registerResponse.data.token;
+                    
+                    // Verify token is available
+                    if (!token) {
+                        throw new Error('No authentication token available');
+                    }
+                    
+                    // Ensure token is in localStorage and headers
+                    localStorage.setItem('token', token);
+                    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+                    // Ensure date is in proper format (Date object or ISO string)
+                    let testDate = emailTestData.date;
+                    if (!testDate) {
+                        testDate = new Date().toISOString();
+                    } else if (typeof testDate === 'string' && !testDate.includes('T')) {
+                        // If it's just a date string (YYYY-MM-DD), convert to ISO
+                        testDate = new Date(testDate).toISOString();
+                    }
+                    // If already ISO string, keep it as is
+
+                    // Ensure title exists
+                    const testTitle = emailTestData.title || `Lactate Test - ${emailTestData.sport || 'bike'} - ${new Date().toLocaleDateString()}`;
+
+                    // Ensure results have interval field
+                    const resultsWithInterval = emailTestData.results.map((result, index) => ({
+                        ...result,
+                        interval: result.interval || (index + 1)
+                    }));
+
+                    // Parse weight to number if it's a string
+                    let weightValue = emailTestData.weight;
+                    if (typeof weightValue === 'string') {
+                        weightValue = parseFloat(weightValue.replace(',', '.')) || 0;
+                    } else if (!weightValue) {
+                        weightValue = 0;
+                    }
+
                     const testToSave = {
-                        ...emailTestData,
-                        athleteId: userId,
-                        date: emailTestData.date || new Date().toISOString().split('T')[0]
+                        athleteId: String(userId),
+                        sport: emailTestData.sport || 'bike',
+                        title: testTitle,
+                        date: testDate,
+                        description: emailTestData.description || '',
+                        baseLactate: Number(emailTestData.baseLactate) || 0,
+                        weight: Number(weightValue) || 0,
+                        specifics: emailTestData.specifics || { specific: '', weather: '' },
+                        comments: emailTestData.comments || '',
+                        unitSystem: emailTestData.unitSystem || 'metric',
+                        inputMode: emailTestData.inputMode || 'pace',
+                        results: resultsWithInterval
                     };
-                    await addTest(testToSave);
-                    console.log('Test saved to user account');
+                    
+                    // Double-check token before making request
+                    const currentToken = localStorage.getItem('token');
+                    if (!currentToken) {
+                        throw new Error('No authentication token available');
+                    }
+                    
+                    console.log('Saving test to database:', {
+                        athleteId: testToSave.athleteId,
+                        sport: testToSave.sport,
+                        title: testToSave.title,
+                        date: testToSave.date,
+                        resultsCount: testToSave.results.length,
+                        hasToken: !!currentToken,
+                        tokenPreview: currentToken.substring(0, 20) + '...'
+                    });
+                    
+                        // Make request with explicit token header
+                        const savedTest = await api.post('/test', testToSave, {
+                            headers: {
+                                'Authorization': `Bearer ${currentToken}`
+                            }
+                        });
+                        
+                        if (savedTest?.data?._id) {
+                            console.log('Test saved successfully to database:', {
+                                testId: savedTest.data._id,
+                                title: savedTest.data.title,
+                                athleteId: savedTest.data.athleteId
+                            });
+                            addNotification('Test saved to your account!', 'success');
+                        } else {
+                            console.warn('Test save response missing ID:', savedTest);
+                            addNotification('Test may not have been saved correctly', 'warning');
+                        }
                 } catch (error) {
                     console.error('Error saving test to account:', error);
+                    console.error('Error details:', {
+                        message: error.message,
+                        response: error.response?.data,
+                        status: error.response?.status
+                    });
+                    addNotification(`Test sent to email, but failed to save to account: ${error.response?.data?.error || error.message}`, 'warning');
                     // Don't fail the whole flow if test save fails
                 }
             }
@@ -670,7 +832,7 @@ const LactateCurveCalculatorPage = () => {
             baseLactate: baseLactate,
             // Keep baseLa as original string for display purposes
             baseLa: testData.baseLa !== undefined ? testData.baseLa : baseLaStr,
-            results: testData.results.map(result => {
+            results: testData.results.map((result, idx) => {
                 if (!result) return null;
 
                 let power = result.power;
@@ -686,7 +848,7 @@ const LactateCurveCalculatorPage = () => {
                 }
 
                 return {
-                    ...result,
+                    interval: result.interval || (idx + 1),
                     power: power ? parseFloat(String(power).replace(',', '.')) : 0,
                     heartRate: result.heartRate ? parseFloat(String(result.heartRate).replace(',', '.')) : 0,
                     lactate: result.lactate ? parseFloat(String(result.lactate).replace(',', '.')) : 0,
@@ -721,7 +883,7 @@ const LactateCurveCalculatorPage = () => {
     }, [hasValidData]);
 
     return (
-        <div className="min-h-screen bg-gray-50 flex overflow-x-hidden w-full relative">
+        <div className="min-h-screen bg-gray-50 flex overflow-x-hidden overflow-y-hidden w-full relative">
             <Helmet>
                 <title>Lactate Curve Calculator | Free Lactate Testing, LT1, LT2, OBLA &amp; Training Zones Online</title>
                 <link rel="canonical" href="https://lachart.net/lactate-curve-calculator" />
@@ -752,12 +914,12 @@ const LactateCurveCalculatorPage = () => {
             </Helmet>
             {/* Left Menu - Desktop: always visible, Mobile: animated */}
             <div className="menu-container hidden md:block fixed top-0 left-0 h-screen overflow-y-auto z-40" ref={menuRef}>
-                <Menu 
+            <Menu 
                     isMenuOpen={true} 
                     setIsMenuOpen={() => {}}
-                    user={emptyUser}
-                    token=""
-                />
+                user={emptyUser}
+                token=""
+            />
             </div>
             
             {/* Mobile Menu */}
@@ -765,9 +927,9 @@ const LactateCurveCalculatorPage = () => {
                 <Menu 
                     isMenuOpen={isMenuOpen} 
                     setIsMenuOpen={setIsMenuOpen}
-                    user={emptyUser}
-                    token=""
-                />
+                user={emptyUser}
+                token=""
+            />
             </div>
 
             {/* Main Content Container */}
@@ -781,13 +943,8 @@ const LactateCurveCalculatorPage = () => {
 
                 {/* Main Content */}
           {/* Main Content */}
-          <motion.main 
-                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-auto w-full max-w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                >
-                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden w-full">
+          <main className="flex-1 px-4 py-8 pt-16 md:pt-8 overflow-x-hidden overflow-y-visible w-full max-w-full">
+                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden overflow-y-visible w-full">
                         {/* Page Header */}
                         <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
   {/* EKG SVG background */}
@@ -832,117 +989,102 @@ const LactateCurveCalculatorPage = () => {
 </div>
 
                         {/* Info Cards */}
-                        <motion.div 
-                            className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto px-4"
-                            variants={itemVariants}
-                        >
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto px-4">
                             {/* Demo Info Card */}
-                            <motion.div 
-                                className="bg-blue-50 border border-blue-200 rounded-xl sm:p-3 lg:p-6 shadow-sm"
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                            >
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl sm:p-3 lg:p-6 shadow-sm">
                                 <h2 className="text-lg font-semibold text-blue-900 mb-2">
                                     🧪 Try Without Login
                                 </h2>
                                 <p className="text-blue-800">
                                     This is a demo version where you can test the lactate analysis features. No account required, but data won't be saved.
                                 </p>
-                            </motion.div>
+                            </div>
 
                             {/* Instructions Card */}
-                            <motion.div 
-                                className="bg-purple-50 border border-purple-200 rounded-xl sm:p-3 lg:p-6 shadow-sm"
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                            >
+                            <div className="bg-purple-50 border border-purple-200 rounded-xl sm:p-3 lg:p-6 shadow-sm">
                                 <h2 className="text-lg font-semibold text-purple-900 mb-2">
                                     📝 How to Use
                                 </h2>
                                 <p className="text-purple-800">
                                     Fill in the test form below with your lactate test data. The curve and calculations will update automatically.
                                 </p>
-                            </motion.div>
-                        </motion.div>
+                            </div>
+                        </div>
 
 
                         {/* Main Content Area */}
-                        <div className="space-y-8 mt-8 px-0 overflow-x-hidden w-full overflow-y-hidden">
+                        <div className="space-y-8 mt-8 px-0 overflow-x-hidden w-full">
                             {/* Top Controls - Fill Demo Data and Help */}
-                            <div className="flex flex-row sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                                <motion.div 
-                                    className="relative z-[12000]"
-                                    whileTap={{ scale: 0.98 }}
-                                >
-                                    <button
-                                        onClick={toggleDemoDropdown}
-                                        className="sm:px-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
-                                    >
-                                        Fill with Demo Data
-                                        <svg 
-                                            className={`w-4 h-4 ml-2 transition-transform ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
-                                            fill="none" 
-                                            stroke="currentColor" 
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </button>
-                                    <AnimatePresence>
-                                        {isDemoDropdownOpen && (
-                                            <motion.div 
+                            <div className="flex flex-row sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 px-4">
+                                <div className="relative">
+                                                <button
+                                                    onClick={toggleDemoDropdown}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
+                                                >
+                                                    Fill with Demo Data
+                                                    <svg 
+                                                        className={`w-4 h-4 ml-2 transition-transform ${isDemoDropdownOpen ? 'rotate-180' : ''}`} 
+                                                        fill="none" 
+                                                        stroke="currentColor" 
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </button>
+                                                <AnimatePresence>
+                                                    {isDemoDropdownOpen && (
+                                                        <motion.div 
                                                 className="absolute left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-[9999]"
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -10 }}
-                                                transition={{ duration: 0.2 }}
-                                                style={{ transform: 'translateZ(0)' }}
-                                            >
-                                                <div className="py-1">
-                                                    <motion.button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDemoDataSelect('bike');
-                                                        }}
-                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                        whileHover={{ x: 5 }}
-                                                    >
-                                                        Bike Demo Data
-                                                    </motion.button>
-                                                    <motion.button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDemoDataSelect('run');
-                                                        }}
-                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                        whileHover={{ x: 5 }}
-                                                    >
-                                                        Run Demo Data
-                                                    </motion.button>
-                                                    <motion.button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDemoDataSelect('swim');
-                                                        }}
-                                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                                        whileHover={{ x: 5 }}
-                                                    >
-                                                        Swim Demo Data
-                                                    </motion.button>
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </motion.div>
+                                                            initial={{ opacity: 0, y: -10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -10 }}
+                                                            transition={{ duration: 0.2 }}
+                                                            style={{ transform: 'translateZ(0)' }}
+                                                        >
+                                                            <div className="py-1">
+                                                                <motion.button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDemoDataSelect('bike');
+                                                                    }}
+                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    whileHover={{ x: 5 }}
+                                                                >
+                                                                    Bike Demo Data
+                                                                </motion.button>
+                                                                <motion.button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDemoDataSelect('run');
+                                                                    }}
+                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    whileHover={{ x: 5 }}
+                                                                >
+                                                                    Run Demo Data
+                                                                </motion.button>
+                                                                <motion.button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDemoDataSelect('swim');
+                                                                    }}
+                                                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                    whileHover={{ x: 5 }}
+                                                                >
+                                                                    Swim Demo Data
+                                                                </motion.button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                </div>
                                 
                                 <div className="flex items-center gap-3">
-                                    <motion.button
-                                        onClick={handleResetForm}
+                                    <button
+                                                onClick={handleResetForm}
                                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                                        whileTap={{ scale: 0.98 }}
-                                    >
-                                        Reset Form
-                                    </motion.button>
+                                            >
+                                                Reset Form
+                                    </button>
                                     
                                     <button
                                         onClick={() => setShowGlossary(true)}
@@ -952,26 +1094,24 @@ const LactateCurveCalculatorPage = () => {
                                     >
                                         <InformationCircleIcon className="w-6 h-6" />
                                     </button>
-                                </div>
-                            </div>
+                        </div>
+                        </div>
 
                             {/* Form and Curve Side by Side */}
-                            <div className="flex flex-col lg:flex-row gap-6 items-start overflow-x-hidden w-full">
+                            <div className="flex flex-col lg:flex-row gap-6 items-start  w-full">
                                 {/* Lactate Curve Section - Left (Wider) */}
                                 <motion.div 
                                     ref={curveRef}
                                     initial="hidden"
                                     animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
                                     variants={fadeInUpVariants}
-                                    className="flex-1 lg:flex-none lg:w-2/3 max-w-full overflow-x-hidden"
+                                    className="flex-1 lg:flex-none lg:w-2/3 max-w-full "
                                     whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                 >
-                                    <div className="w-full">
                                             <LactateCurve 
                                                 mockData={prepareCalculatorData()} 
                                                 demoMode={true} 
                                             />
-                                    </div>
                                 </motion.div>
 
                                 {/* Testing Form Section - Right (Narrower) */}
@@ -998,23 +1138,23 @@ const LactateCurveCalculatorPage = () => {
                                         </div>
                                     </div>
                                 </div>
-                                </motion.div>
+                            </motion.div>
                             </div>
 
                             {/* Training Zones Generator - Full Width */}
                             {hasValidData && (
-                                <motion.div 
-                                    initial="hidden"
+                            <motion.div 
+                                initial="hidden"
                                     animate={hasValidData ? "visible" : "hidden"}
-                                    variants={fadeInUpVariants}
+                                        variants={fadeInUpVariants}
                                     className="bg-white rounded-xl shadow-sm border border-gray-100 sm:p-3 lg:p-6 overflow-x-hidden w-full"
-                                    whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
-                                >
+                                        whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
+                                    >
                                     <h2 className="text-2xl font-semibold text-gray-900 mb-6">Training Zones</h2>
-                                    <div className="w-full">
-                                        <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
-                                    </div>
-                                </motion.div>
+                                        <div className="w-full">
+                                                    <TrainingZonesGenerator mockData={prepareCalculatorData()} demoMode={true} />
+                                        </div>
+                                    </motion.div>
                             )}
 
                             {/* Results Section */}
@@ -1032,7 +1172,7 @@ const LactateCurveCalculatorPage = () => {
                                     >
                                                 <LactateCurveCalculator 
                                                     mockData={prepareCalculatorData()} 
-                                                    demoMode={true}
+                                                    demoMode={true} 
                                                 />
                                     
                                     </motion.div>
@@ -1082,7 +1222,7 @@ const LactateCurveCalculatorPage = () => {
                             </motion.div>
                         </div>
                     </div>
-                </motion.main>
+                </main>
 
                 {/* Footer */}
                 <Footer />
@@ -1111,9 +1251,9 @@ const LactateCurveCalculatorPage = () => {
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.9 }}
                                 onClick={(e) => e.stopPropagation()}
-                                className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+                                className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-8 max-h-[95vh] overflow-y-auto"
                             >
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex justify-between items-center mb-3">
                                     <h3 className="text-2xl font-bold text-gray-900">Send Test Results to Email</h3>
                                     <button 
                                         className="text-gray-500 hover:text-gray-700 transition-colors" 
@@ -1124,12 +1264,12 @@ const LactateCurveCalculatorPage = () => {
                                     </button>
                                 </div>
                                 
-                                <p className="text-gray-600 mb-6">
+                                <p className="text-gray-600 mb-5 text-sm">
                                     Create a free account and we'll send your test results to your email. You'll also be able to save and track your tests over time.
                                 </p>
 
                                 {/* Google Sign Up Button */}
-                                <div className="mb-6">
+                                <div className="mb-4">
                                     <GoogleLogin
                                         onSuccess={handleGoogleSuccess}
                                         onError={handleGoogleError}
@@ -1142,7 +1282,7 @@ const LactateCurveCalculatorPage = () => {
                                     />
                                 </div>
 
-                                <div className="relative mb-6">
+                                <div className="relative mb-4">
                                     <div className="absolute inset-0 flex items-center">
                                         <div className="w-full border-t border-gray-300"></div>
                                     </div>
@@ -1151,7 +1291,7 @@ const LactateCurveCalculatorPage = () => {
                                     </div>
                                 </div>
 
-                                <form onSubmit={handleEmailFormSubmit} className="space-y-4">
+                                <form onSubmit={handleEmailFormSubmit} className="space-y-3">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
                                             Email <span className="text-red-500">*</span>
@@ -1198,35 +1338,36 @@ const LactateCurveCalculatorPage = () => {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Password <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="password"
-                                            required
-                                            value={emailFormData.password}
-                                            onChange={(e) => setEmailFormData({ ...emailFormData, password: e.target.value })}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                                            placeholder="At least 8 characters"
-                                            minLength={8}
-                                            disabled={isSendingEmail}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Confirm Password <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="password"
-                                            required
-                                            value={emailFormData.confirmPassword}
-                                            onChange={(e) => setEmailFormData({ ...emailFormData, confirmPassword: e.target.value })}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                                            placeholder="Confirm your password"
-                                            disabled={isSendingEmail}
-                                        />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Password <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="password"
+                                                required
+                                                value={emailFormData.password}
+                                                onChange={(e) => setEmailFormData({ ...emailFormData, password: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                                placeholder="At least 8 characters"
+                                                minLength={8}
+                                                disabled={isSendingEmail}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Confirm Password <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="password"
+                                                required
+                                                value={emailFormData.confirmPassword}
+                                                onChange={(e) => setEmailFormData({ ...emailFormData, confirmPassword: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                                                placeholder="Confirm your password"
+                                                disabled={isSendingEmail}
+                                            />
+                                        </div>
                                     </div>
 
                                     <div>
@@ -1281,7 +1422,7 @@ const LactateCurveCalculatorPage = () => {
                                         </div>
                                     )}
 
-                                    <div className="flex gap-3 pt-4">
+                                    <div className="flex gap-3 pt-2">
                                         <button
                                             type="submit"
                                             disabled={isSendingEmail}
