@@ -427,12 +427,36 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   `.trim();
 
   const transporter = createTransporter();
-  const to = toEmail || requester.email || athlete.email;
-  if (!to) return { sent: false, reason: 'no_recipient_email' };
+  
+  // If requester is coach, send email to both coach and athlete
+  const isCoach = requester.role === 'coach';
+  const recipients = new Set(); // Use Set to avoid duplicates
+  
+  // Add primary recipient (toEmail if provided, otherwise requester email)
+  if (toEmail) {
+    recipients.add(toEmail);
+  } else if (requester.email) {
+    recipients.add(requester.email);
+  }
+  
+  // If coach, always also send to athlete (unless athlete email is already in recipients)
+  if (isCoach && athlete.email) {
+    recipients.add(athlete.email);
+  }
+  
+  // Fallback: if no recipients yet, use athlete email
+  if (recipients.size === 0 && athlete.email) {
+    recipients.add(athlete.email);
+  }
+  
+  if (recipients.size === 0) {
+    return { sent: false, reason: 'no_recipient_email' };
+  }
 
+  // Send email to all recipients
   await transporter.sendMail({
     from: { name: 'LaChart', address: process.env.EMAIL_USER },
-    to,
+    to: Array.from(recipients).join(', '), // Multiple recipients separated by comma
     subject: title,
     html: generateEmailTemplate({
       title,

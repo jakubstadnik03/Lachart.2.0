@@ -1044,7 +1044,9 @@ const FitAnalysisPage = () => {
 
   const loadStravaDetail = useCallback(async (id, { overrideTitle = null } = {}) => {
     try {
-      const data = await getStravaActivityDetail(id);
+      // For coach, pass selectedAthleteId to get athlete's Strava token
+      const athleteId = user?.role === 'coach' ? selectedAthleteId : null;
+      const data = await getStravaActivityDetail(id, athleteId);
       
       const rawLaps = Array.isArray(data.laps) ? data.laps : [];
 
@@ -1108,13 +1110,19 @@ const FitAnalysisPage = () => {
       setSelectedStrava(null);
       setSelectedStravaStreams(null);
     }
-  }, [addNotification]);
+  }, [selectedAthleteId, user?.role, addNotification]);
 
   const loadExternalActivities = useCallback(async () => {
     try {
       // For athlete, don't send athleteId (backend will use their own userId)
-      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
-      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      // For coach, send athleteId if selected, otherwise don't load activities (coach should select an athlete)
+      const athleteId = user?.role === 'athlete' ? null : selectedAthleteId;
+      
+      // If coach but no athlete selected, don't load activities
+      if (user?.role === 'coach' && !athleteId) {
+        setExternalActivities([]);
+        return;
+      }
       
       const params = athleteId ? { athleteId } : {};
       const acts = await listExternalActivities(params);
@@ -1510,8 +1518,15 @@ const FitAnalysisPage = () => {
   const loadTrainings = useCallback(async () => {
     try {
       // For athlete, don't send athleteId (backend will use their own userId)
-      // For coach, send athleteId if selected, otherwise null (backend will use coach's userId)
-      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      // For coach, send athleteId if selected, otherwise don't load trainings (coach should select an athlete)
+      const athleteId = user?.role === 'athlete' ? null : selectedAthleteId;
+      
+      // If coach but no athlete selected, don't load trainings
+      if (user?.role === 'coach' && !athleteId) {
+        setTrainings([]);
+        return;
+      }
+      
       const data = await getFitTrainings(athleteId);
       
       // Remove duplicates based on _id before setting
@@ -1561,8 +1576,14 @@ const FitAnalysisPage = () => {
   const loadRegularTrainings = useCallback(async () => {
     try {
       // For athlete, use their own ID
-      // For coach, use selectedAthleteId or their own ID
-      const athleteId = user?.role === 'athlete' ? user._id : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      // For coach, use selectedAthleteId (must be selected, don't use coach's own ID)
+      const athleteId = user?.role === 'athlete' ? user._id : selectedAthleteId;
+      
+      // If coach but no athlete selected, don't load trainings
+      if (user?.role === 'coach' && !athleteId) {
+        setRegularTrainings([]);
+        return;
+      }
       
       if (!athleteId) {
         return; // Skip if no athleteId

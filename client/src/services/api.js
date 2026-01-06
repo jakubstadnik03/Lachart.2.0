@@ -496,8 +496,9 @@ export const updateAvatarFromStrava = async () => {
   return data; // { success, avatar, message }
 };
 
-export const getStravaActivityDetail = async (stravaId) => {
-  const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`);
+export const getStravaActivityDetail = async (stravaId, athleteId = null) => {
+  const params = athleteId ? { athleteId } : {};
+  const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`, { params });
   return data; // { detail, streams, laps, titleManual, description }
 };
 
