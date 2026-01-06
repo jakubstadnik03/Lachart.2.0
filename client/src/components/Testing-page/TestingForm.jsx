@@ -1249,7 +1249,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         </div>
 
         {/* Action Buttons */}
-        {(isNewTest || isEditMode) && (
+        {(isNewTest || isEditMode) && !demoMode && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
             <button 
               onClick={() => {

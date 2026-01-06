@@ -16,10 +16,12 @@ const LOGO_URL = `${CLIENT_URL}/logo192.png`;
  * @param {String} options.content - Main email content (HTML)
  * @param {String} options.buttonText - Button text (optional)
  * @param {String} options.buttonUrl - Button URL (optional)
+ * @param {String} options.loginButtonText - Login button text (optional)
+ * @param {String} options.loginButtonUrl - Login button URL (optional)
  * @param {String} options.footerText - Additional footer text (optional)
  * @returns {String} HTML email template
  */
-function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerText }) {
+function generateEmailTemplate({ title, content, buttonText, buttonUrl, loginButtonText, loginButtonUrl, footerText }) {
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -57,6 +59,17 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, footerTe
                                 <tr>
                                     <td style="text-align: center;">
                                         <a href="${buttonUrl}" style="display: inline-block; padding: 14px 32px; background-color: #767EB5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(118, 126, 181, 0.3);">${buttonText}</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            ` : ''}
+                            
+                            ${loginButtonText && loginButtonUrl ? `
+                            <!-- Login Button -->
+                            <table role="presentation" style="width: 100%; margin: 10px 0 30px;">
+                                <tr>
+                                    <td style="text-align: center;">
+                                        <a href="${loginButtonUrl}" style="display: inline-block; padding: 14px 32px; background-color: #ffffff; color: #767EB5; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; border: 2px solid #767EB5; box-shadow: 0 2px 4px rgba(118, 126, 181, 0.2);">${loginButtonText}</a>
                                     </td>
                                 </tr>
                             </table>

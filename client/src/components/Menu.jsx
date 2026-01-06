@@ -9,6 +9,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const { user: authUser, token: authToken, logout, loading } = useAuth();
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -20,12 +21,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const token = propToken || authToken;
 
   // All useEffects - move all up here
-  useEffect(() => {
-    // Open menu if we have a user (either from props or auth) or if we're in demo mode
-    if (user || propUser) {
-      setIsMenuOpen(true);
-    }
-  }, [user, propUser, setIsMenuOpen]);
+  // Note: Auto-opening menu is now handled by parent components (like TestingWithoutLogin)
+  // This allows parent to control menu state, especially on mobile
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -48,7 +45,16 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   }, [user, token]);
 
   useEffect(() => {
-    if (window.innerWidth < 768) {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    // Close menu on mobile when pathname changes
+    if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
       setIsMenuOpen(false);
     }
   }, [location.pathname, setIsMenuOpen]);
@@ -238,8 +244,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         ref={menuRef}
         initial={{ x: -300, opacity: 0 }}
         animate={{ 
-          x: isMenuOpen ? 0 : -300,
-          opacity: isMenuOpen ? 1 : 0
+          x: isDesktop ? 0 : (isMenuOpen ? 0 : -300),
+          opacity: isDesktop ? 1 : (isMenuOpen ? 1 : 0)
         }}
         transition={{ 
           type: "spring", 

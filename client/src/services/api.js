@@ -85,7 +85,7 @@ export const getTestById = (id) => api.get(`/test/${id}`);
 export const addTest = (testData) => api.post('/test', testData);
 export const updateTest = (id, testData) => api.put(`/test/${id}`, testData);
 export const deleteTest = (id) => api.delete(`/test/${id}`);
-export const sendDemoTestEmail = (testData, email, name) => api.post('/test/send-demo-email', { testData, email, name });
+export const sendDemoTestEmail = (testData, email, name, userId = null) => api.post('/test/send-demo-email', { testData, email, name, userId });
 
 export const getTestingsByAthleteId = async (athleteId) => {
   try {

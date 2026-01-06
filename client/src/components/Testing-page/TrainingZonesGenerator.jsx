@@ -561,12 +561,14 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 <InformationCircleIcon className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
-            >
-              Set Zones
-            </button>
+            {!demoMode && (
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
+              >
+                Set Zones
+              </button>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">

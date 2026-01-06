@@ -15,7 +15,7 @@ import { trackEvent, trackDemoUsage, trackConversionFunnel, trackLactateTestComp
 import { Helmet } from 'react-helmet';
 import { X as CloseIcon, Mail } from 'lucide-react';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
-import { sendDemoTestEmail, register } from '../services/api';
+import { sendDemoTestEmail, register, addTest } from '../services/api';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { saveUserToStorage } from '../utils/userStorage';
@@ -109,7 +109,9 @@ const LactateCurveCalculatorPage = () => {
         name: '',
         surname: '',
         password: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        role: 'athlete',
+        termsAccepted: false
     });
     const [emailError, setEmailError] = useState(null);
     const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -181,6 +183,8 @@ const LactateCurveCalculatorPage = () => {
             const handleResize = () => {
                 if (window.innerWidth >= 768) {
                     setIsMenuOpen(true);
+                } else {
+                    setIsMenuOpen(false);
                 }
             };
 
@@ -473,8 +477,27 @@ const LactateCurveCalculatorPage = () => {
                 // Prepare test data for email
                 const emailTestData = prepareCalculatorData();
 
+                // Get userId from registered user
+                const userId = data?.user?._id || data?.user?.id || null;
+
+                // Save test to user's account
+                if (userId) {
+                    try {
+                        const testToSave = {
+                            ...emailTestData,
+                            athleteId: userId,
+                            date: emailTestData.date || new Date().toISOString().split('T')[0]
+                        };
+                        await addTest(testToSave);
+                        console.log('Test saved to user account');
+                    } catch (error) {
+                        console.error('Error saving test to account:', error);
+                        // Don't fail the whole flow if test save fails
+                    }
+                }
+
                 // Send email with test results
-                await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`);
+                await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`, userId);
 
                 addNotification('Test results sent to your email!', 'success');
                 trackDemoUsage('test_email_sent', { 
@@ -524,8 +547,13 @@ const LactateCurveCalculatorPage = () => {
             return;
         }
 
-        if (emailFormData.password.length < 6) {
-            setEmailError('Password must be at least 6 characters');
+        if (emailFormData.password.length < 8) {
+            setEmailError('Password must be at least 8 characters');
+            return;
+        }
+
+        if (!emailFormData.termsAccepted) {
+            setEmailError('You must agree to the Terms & Conditions and Privacy Policy');
             return;
         }
 
@@ -539,12 +567,12 @@ const LactateCurveCalculatorPage = () => {
                 confirmPassword: emailFormData.confirmPassword,
                 name: emailFormData.name,
                 surname: emailFormData.surname,
-                role: 'athlete'
+                role: emailFormData.role
             };
 
             const registerResponse = await register(registrationData);
-            trackUserRegistration('email', 'athlete');
-            trackConversionFunnel('signup_complete', { method: 'email', role: 'athlete', source: 'demo_email' });
+            trackUserRegistration('email', emailFormData.role);
+            trackConversionFunnel('signup_complete', { method: 'email', role: emailFormData.role, source: 'demo_email' });
 
             // Save token and user
             if (registerResponse?.data?.token && registerResponse?.data?.user) {
@@ -559,8 +587,27 @@ const LactateCurveCalculatorPage = () => {
             // Prepare test data for email
             const emailTestData = prepareCalculatorData();
 
+            // Get userId from registered user
+            const userId = registerResponse?.data?.user?._id || registerResponse?.data?.user?.id || null;
+
+            // Save test to user's account
+            if (userId) {
+                try {
+                    const testToSave = {
+                        ...emailTestData,
+                        athleteId: userId,
+                        date: emailTestData.date || new Date().toISOString().split('T')[0]
+                    };
+                    await addTest(testToSave);
+                    console.log('Test saved to user account');
+                } catch (error) {
+                    console.error('Error saving test to account:', error);
+                    // Don't fail the whole flow if test save fails
+                }
+            }
+
             // Send email with test results
-            await sendDemoTestEmail(emailTestData, emailFormData.email, `${emailFormData.name} ${emailFormData.surname}`);
+            await sendDemoTestEmail(emailTestData, emailFormData.email, `${emailFormData.name} ${emailFormData.surname}`, userId);
 
             addNotification('Test results sent to your email!', 'success');
             trackDemoUsage('test_email_sent', { 
@@ -575,7 +622,9 @@ const LactateCurveCalculatorPage = () => {
                 name: '',
                 surname: '',
                 password: '',
-                confirmPassword: ''
+                confirmPassword: '',
+                role: 'athlete',
+                termsAccepted: false
             });
 
             // Optionally navigate to dashboard
@@ -701,34 +750,44 @@ const LactateCurveCalculatorPage = () => {
                     }
                 `}</script>
             </Helmet>
-            {/* Left Menu - hidden on mobile, visible on desktop */}
+            {/* Left Menu - Desktop: always visible, Mobile: animated */}
             <div className="menu-container hidden md:block fixed top-0 left-0 h-screen overflow-y-auto z-40" ref={menuRef}>
-            <Menu 
+                <Menu 
                     isMenuOpen={true} 
                     setIsMenuOpen={() => {}}
-                user={emptyUser}
-                token=""
-            />
+                    user={emptyUser}
+                    token=""
+                />
+            </div>
+            
+            {/* Mobile Menu */}
+            <div className="menu-container md:hidden fixed top-0 left-0 h-screen overflow-y-auto z-40">
+                <Menu 
+                    isMenuOpen={isMenuOpen} 
+                    setIsMenuOpen={setIsMenuOpen}
+                    user={emptyUser}
+                    token=""
+                />
             </div>
 
             {/* Main Content Container */}
-            <div className="flex-1 flex flex-col min-h-screen w-full overflow-x-hidden md:ml-64">
+            <div className="flex-1 flex flex-col min-h-screen w-full overflow-x-hidden overflow-y-auto md:ml-64 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {/* Header */}
                 <Header 
-                    isMenuOpen={false} 
-                    setIsMenuOpen={() => {}}
+                    isMenuOpen={isMenuOpen} 
+                    setIsMenuOpen={setIsMenuOpen}
                     user={emptyUser}
                 />
 
                 {/* Main Content */}
           {/* Main Content */}
           <motion.main 
-                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-visible w-full max-w-full"
+                    className="flex-1 px-4 py-8 overflow-x-hidden overflow-y-auto w-full max-w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
                 >
-                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-y-hidden overflow-x-hidden w-full">
+                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden w-full">
                         {/* Page Header */}
                         <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
   {/* EKG SVG background */}
@@ -808,16 +867,16 @@ const LactateCurveCalculatorPage = () => {
 
 
                         {/* Main Content Area */}
-                        <div className="space-y-8 mt-8 px-4 overflow-x-hidden w-full">
+                        <div className="space-y-8 mt-8 px-0 overflow-x-hidden w-full overflow-y-hidden">
                             {/* Top Controls - Fill Demo Data and Help */}
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                            <div className="flex flex-row sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                                 <motion.div 
                                     className="relative z-[12000]"
                                     whileTap={{ scale: 0.98 }}
                                 >
                                     <button
                                         onClick={toggleDemoDropdown}
-                                        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
+                                        className="sm:px-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors flex items-center justify-between"
                                     >
                                         Fill with Demo Data
                                         <svg 
@@ -1149,8 +1208,8 @@ const LactateCurveCalculatorPage = () => {
                                             value={emailFormData.password}
                                             onChange={(e) => setEmailFormData({ ...emailFormData, password: e.target.value })}
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                                            placeholder="At least 6 characters"
-                                            minLength={6}
+                                            placeholder="At least 8 characters"
+                                            minLength={8}
                                             disabled={isSendingEmail}
                                         />
                                     </div>
@@ -1168,6 +1227,52 @@ const LactateCurveCalculatorPage = () => {
                                             placeholder="Confirm your password"
                                             disabled={isSendingEmail}
                                         />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Role <span className="text-red-500">*</span>
+                                        </label>
+                                        <div className="flex gap-4">
+                                            <label className="flex items-center cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="role"
+                                                    value="athlete"
+                                                    checked={emailFormData.role === 'athlete'}
+                                                    onChange={(e) => setEmailFormData({ ...emailFormData, role: e.target.value })}
+                                                    className="mr-2 text-primary focus:ring-primary"
+                                                    disabled={isSendingEmail}
+                                                />
+                                                <span className="text-sm text-gray-700">Athlete</span>
+                                            </label>
+                                            <label className="flex items-center cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="role"
+                                                    value="coach"
+                                                    checked={emailFormData.role === 'coach'}
+                                                    onChange={(e) => setEmailFormData({ ...emailFormData, role: e.target.value })}
+                                                    className="mr-2 text-primary focus:ring-primary"
+                                                    disabled={isSendingEmail}
+                                                />
+                                                <span className="text-sm text-gray-700">Coach</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-start">
+                                        <input
+                                            type="checkbox"
+                                            id="terms"
+                                            checked={emailFormData.termsAccepted}
+                                            onChange={(e) => setEmailFormData({ ...emailFormData, termsAccepted: e.target.checked })}
+                                            className="mt-1 mr-2 text-primary focus:ring-primary rounded"
+                                            disabled={isSendingEmail}
+                                        />
+                                        <label htmlFor="terms" className="text-sm text-gray-700 cursor-pointer">
+                                            I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Terms & Conditions</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Privacy Policy</a>. <span className="text-red-500">*</span>
+                                        </label>
                                     </div>
 
                                     {emailError && (

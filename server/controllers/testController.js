@@ -100,7 +100,7 @@ const testController = {
     // Send demo test results to email (no authentication required)
     sendDemoTestEmail: async (req, res) => {
         try {
-            const { testData, email, name } = req.body;
+            const { testData, email, name, userId } = req.body;
 
             if (!testData || !email) {
                 return res.status(400).json({ 
@@ -121,7 +121,8 @@ const testController = {
             const result = await sendDemoTestEmail({
                 testData,
                 email,
-                name: name || 'User'
+                name: name || 'User',
+                userId: userId || null
             });
 
             if (!result.sent) {
