@@ -477,8 +477,28 @@ export const autoSyncStravaActivities = async () => {
 };
 
 export const syncGarminActivities = async (since=null) => {
-  const { data } = await api.post('/api/integrations/garmin/sync', { since });
-  return data;
+  const { data } = await api.post('/api/integrations/garmin/sync', { since }, {
+    timeout: 600000 // 10 minutes timeout for large syncs
+  });
+  return data; // { imported, updated }
+};
+
+export const autoSyncGarminActivities = async () => {
+  try {
+    const { data } = await api.post('/api/integrations/garmin/auto-sync', {}, {
+      timeout: 120000 // 2 minutes timeout for auto-sync
+    });
+    return data; // { imported, updated }
+  } catch (error) {
+    // Silently fail for auto-sync - don't show errors to user
+    console.log('Garmin auto-sync failed:', error);
+    return { imported: 0, updated: 0 };
+  }
+};
+
+export const garminLogin = async (credentials) => {
+  const { data } = await api.post('/api/integrations/garmin/login', credentials);
+  return data; // { success, message }
 };
 
 export const listExternalActivities = async (params={}) => {

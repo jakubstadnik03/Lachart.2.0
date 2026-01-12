@@ -42,7 +42,9 @@ const TestingPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`/test/list/${targetId}`);
+      // For tester role, use any ID (backend will return all tests)
+      const testId = user?.role === 'tester' ? user._id : targetId;
+      const response = await api.get(`/test/list/${testId}`);
       setTests(response.data);
     } catch (err) {
       console.error('Error loading tests:', err);

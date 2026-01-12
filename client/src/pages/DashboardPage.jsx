@@ -83,7 +83,9 @@ const DashboardPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`/test/list/${targetId}`);
+      // For tester role, use any ID (backend will return all tests)
+      const testId = user?.role === 'tester' ? user._id : targetId;
+      const response = await api.get(`/test/list/${testId}`);
       if (response && response.data) {
         setTests(response.data);
         return response.data;
@@ -95,7 +97,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   const loadAthlete = useCallback(async (targetId) => {
     try {

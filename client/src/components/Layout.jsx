@@ -9,6 +9,7 @@ import EditProfileModal from "./Profile/EditProfileModal";
 import StravaConnectModal from "./Onboarding/StravaConnectModal";
 import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
+import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
@@ -26,26 +27,135 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user, setIsMenuOpen]);
 
   // Check if user profile is incomplete or Strava is not connected
+  // Wait for user data to fully load before checking
   useEffect(() => {
-    if (user && !hasCheckedProfile && location.pathname !== '/lactate-guide') {
-      const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
-      const isStravaNotConnected = !user.strava?.athleteId;
-      
-      // Check if we've already shown the modal in this session
-      const hasShownModal = sessionStorage.getItem('profileModalShown');
-      
-      if ((isProfileIncomplete || isStravaNotConnected) && !hasShownModal) {
-        if (isProfileIncomplete) {
-          setShowEditProfileModal(true);
-        } else if (isStravaNotConnected) {
-          setShowStravaModal(true);
-        }
-        sessionStorage.setItem('profileModalShown', 'true');
-      }
-      
-      setHasCheckedProfile(true);
+    if (!user || hasCheckedProfile || location.pathname === '/lactate-guide') {
+      return;
     }
+
+    // Wait for user data to be fully loaded (delay to ensure user object is complete)
+    const checkProfile = setTimeout(() => {
+      // Double-check that user object is complete
+      if (!user._id) {
+        setHasCheckedProfile(true); // Mark as checked to avoid re-checking
+        return; // User not fully loaded yet
+      }
+
+      // Re-fetch user profile to ensure we have latest data
+      const verifyUserData = async () => {
+        try {
+          const response = await api.get('/user/profile');
+          const freshUser = response.data;
+          
+          const isProfileIncomplete = !freshUser.dateOfBirth || !freshUser.height || !freshUser.weight || !freshUser.sport;
+          const isStravaNotConnected = !freshUser.strava?.athleteId;
+          
+          // Check if we've already shown the modal (use localStorage for persistence)
+          // Only show once per day to avoid annoying users
+          const lastShown = localStorage.getItem('profileModalLastShown');
+          const now = Date.now();
+          const oneDayAgo = now - (24 * 60 * 60 * 1000); // 24 hours
+          
+          // Only show modal if:
+          // 1. Profile is actually incomplete or Strava is not connected
+          // 2. We haven't shown it in the last 24 hours
+          if ((isProfileIncomplete || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
+            // Additional delay before showing modal to avoid interrupting user
+            setTimeout(() => {
+              // Final check before showing modal - re-verify user data one more time
+              api.get('/user/profile').then((finalResponse) => {
+                const finalUser = finalResponse.data;
+                const stillIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
+                const stillNotConnected = !finalUser.strava?.athleteId;
+                
+                if (stillIncomplete) {
+                  setShowEditProfileModal(true);
+                  localStorage.setItem('profileModalLastShown', now.toString());
+                } else if (stillNotConnected) {
+                  setShowStravaModal(true);
+                  localStorage.setItem('profileModalLastShown', now.toString());
+                }
+              }).catch(() => {
+                // If final check fails, don't show modal
+              });
+            }, 3000); // 3 second delay before showing modal
+          }
+        } catch (error) {
+          console.error('Error verifying user data:', error);
+          // If API call fails, don't show modal
+        }
+      };
+      
+      verifyUserData();
+      setHasCheckedProfile(true);
+    }, 2000); // Wait 2 seconds for user data to load
+
+    return () => clearTimeout(checkProfile);
   }, [user, hasCheckedProfile, location.pathname]);
+
+  // Auto-sync Strava activities if enabled (runs on app load)
+  useEffect(() => {
+    if (!user?._id || !user?.strava?.autoSync || !user?.strava?.athleteId) {
+      return;
+    }
+
+    // Only auto-sync for the current user (not for coach viewing athlete)
+    if (user?.role === 'coach') {
+      return; // Coaches sync is handled in DashboardPage
+    }
+
+    // Auto-sync on mount with a delay to avoid blocking page load
+    const performAutoSync = async () => {
+      try {
+        const result = await autoSyncStravaActivities();
+        if (result.imported > 0 || result.updated > 0) {
+          console.log(`Auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
+          // Dispatch event to reload data in other components
+          window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
+        }
+      } catch (error) {
+        console.log('Auto-sync failed on app load:', error);
+        // Silent fail - don't show errors to user
+      }
+    };
+
+    // Delay auto-sync slightly to avoid blocking page load
+    const timeoutId = setTimeout(performAutoSync, 3000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [user?._id, user?.strava?.autoSync, user?.strava?.athleteId, user?.role]);
+
+  // Auto-sync Garmin activities if enabled (runs on app load)
+  useEffect(() => {
+    if (!user?._id || !user?.garmin?.autoSync || !user?.garmin?.accessToken) {
+      return;
+    }
+
+    // Only auto-sync for the current user (not for coach viewing athlete)
+    if (user?.role === 'coach') {
+      return; // Coaches sync is handled in DashboardPage
+    }
+
+    // Auto-sync on mount with a delay to avoid blocking page load
+    const performAutoSync = async () => {
+      try {
+        const result = await autoSyncGarminActivities();
+        if (result.imported > 0 || result.updated > 0) {
+          console.log(`Garmin auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
+          // Dispatch event to reload data in other components
+          window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
+        }
+      } catch (error) {
+        console.log('Garmin auto-sync failed on app load:', error);
+        // Silent fail - don't show errors to user
+      }
+    };
+
+    // Delay auto-sync slightly to avoid blocking page load
+    const timeoutId = setTimeout(performAutoSync, 4000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [user?._id, user?.garmin?.autoSync, user?.garmin?.accessToken, user?.role]);
 
   // Allow access to lactate-guide and admin without login - render them directly
   if (location.pathname === '/lactate-guide') {

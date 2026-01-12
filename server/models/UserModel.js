@@ -24,7 +24,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'coach', 'athlete'],
+    enum: ['admin', 'coach', 'athlete', 'tester'],
     default: 'athlete'
   },
   admin: {
@@ -109,10 +109,12 @@ const userSchema = new mongoose.Schema({
     lastSyncDate: { type: Date, default: null } // Last successful sync date
   },
   garmin: {
-    // Placeholder for potential OAuth tokens
+    athleteId: { type: String, default: null },
     accessToken: { type: String, default: null },
     refreshToken: { type: String, default: null },
-    expiresAt: { type: Number, default: null }
+    expiresAt: { type: Number, default: null },
+    autoSync: { type: Boolean, default: false }, // Enable automatic sync
+    lastSyncDate: { type: Date, default: null } // Last successful sync date
   },
   // Power zones from lactate tests
   powerZones: {

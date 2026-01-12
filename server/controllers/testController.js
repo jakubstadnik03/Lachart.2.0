@@ -6,6 +6,16 @@ const testController = {
     // Get all tests for the authenticated user
     getTests: async (req, res) => {
         try {
+            const User = require('../models/UserModel');
+            const Test = require('../models/test');
+            const user = await User.findById(req.user.userId);
+            
+            // If user is tester, return all tests
+            if (user && user.role === 'tester') {
+                const allTests = await Test.find({}).sort({ date: -1 });
+                return res.json(allTests);
+            }
+            
             const tests = await testAbl.getTestsByAthleteId(req.user.userId);
             res.json(tests);
         } catch (error) {

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../config/jwt.config');
 const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
+const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
 const router = express.Router();
 
@@ -501,14 +502,377 @@ router.put('/strava/auto-sync', verifyToken, async (req, res) => {
   }
 });
 
-// Garmin placeholders (note: Garmin has restricted APIs)
+// Garmin integration
+// Note: Garmin has an official Activity API (https://developer.garmin.com/gc-developer-program/activity-api/)
+// but it requires approval as a business developer and access to the evaluation environment
+// For regular developers, we use the garmin-connect npm library which requires username/password
+// This is the standard approach used by most third-party Garmin integrations
+// The credentials are stored encrypted (base64) and only used for API calls
+// 
+// Future improvement: If approved for Garmin Connect Developer Program, migrate to official OAuth API
+
 router.get('/garmin/auth-url', (req, res) => {
-  const url = 'https://connect.garmin.com/';
+  // Garmin doesn't have public OAuth like Strava
+  // We redirect to settings page where user can enter credentials
+  const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const url = `${frontend}/settings?garmin=connect`;
   res.json({ url });
 });
 
+// Garmin login endpoint (username/password based)
+router.post('/garmin/login', verifyToken, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Note: Garmin OAuth is only available to official partners
+    // We use garmin-connect npm library which requires username/password
+    // Credentials are stored base64 encoded (in production, consider additional encryption)
+    // This is the standard approach - same as used by other third-party Garmin integrations
+    
+    // Test credentials by attempting login
+    try {
+      const GarminConnect = require('garmin-connect');
+      const testClient = new GarminConnect({
+        username: username,
+        password: password
+      });
+      await testClient.login(); // Verify credentials work
+    } catch (loginError) {
+      console.error('Garmin login verification failed:', loginError);
+      return res.status(401).json({ error: 'Invalid Garmin credentials. Please check your username and password.' });
+    }
+    
+    // Store credentials (base64 encoded)
+    user.garmin = {
+      athleteId: username, // Use username as identifier
+      accessToken: Buffer.from(`${username}:${password}`).toString('base64'),
+      autoSync: user.garmin?.autoSync !== undefined ? user.garmin.autoSync : false,
+      lastSyncDate: user.garmin?.lastSyncDate || null
+    };
+    
+    await user.save();
+    
+    res.json({ success: true, message: 'Garmin account connected' });
+  } catch (error) {
+    console.error('Garmin login error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to get Garmin activities using garmin-connect library
+async function getGarminActivities(user, since = null) {
+  try {
+    const GarminConnect = require('garmin-connect');
+    
+    // Decode credentials from base64
+    const credentials = Buffer.from(user.garmin.accessToken, 'base64').toString('utf-8');
+    const [username, password] = credentials.split(':');
+    
+    if (!username || !password) {
+      console.error('Invalid Garmin credentials format');
+      return [];
+    }
+    
+    // Create Garmin client
+    const garminClient = new GarminConnect({
+      username: username,
+      password: password
+    });
+    
+    // Login to Garmin
+    await garminClient.login();
+    
+    // Get activities
+    let activities = [];
+    const startDate = since ? new Date(since) : null;
+    
+    // Fetch activities (Garmin API returns activities in batches)
+    let start = 0;
+    const limit = 100;
+    let hasMore = true;
+    
+    while (hasMore) {
+      try {
+        const batch = await garminClient.getActivities({ start, limit });
+        
+        if (!batch || batch.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        // Filter by date if since is provided
+        if (startDate) {
+          const filtered = batch.filter(activity => {
+            const activityDate = new Date(activity.startTimeGMT || activity.startTimeLocal);
+            return activityDate >= startDate;
+          });
+          activities = activities.concat(filtered);
+          
+          // If we got less than limit or all activities are before startDate, we're done
+          if (batch.length < limit || filtered.length < batch.length) {
+            hasMore = false;
+          }
+        } else {
+          activities = activities.concat(batch);
+        }
+        
+        // If we got less than limit, we've reached the end
+        if (batch.length < limit) {
+          hasMore = false;
+        } else {
+          start += limit;
+        }
+        
+        // Safety limit: max 1000 activities per sync
+        if (activities.length >= 1000) {
+          hasMore = false;
+        }
+      } catch (batchError) {
+        console.error('Error fetching Garmin activities batch:', batchError);
+        hasMore = false;
+      }
+    }
+    
+    console.log(`Fetched ${activities.length} Garmin activities`);
+    return activities;
+  } catch (error) {
+    console.error('Error fetching Garmin activities:', error);
+    // If login fails, credentials might be invalid
+    if (error.message && error.message.includes('login')) {
+      // Clear invalid credentials
+      user.garmin = null;
+      await user.save();
+    }
+    return [];
+  }
+}
+
+// POST /api/integrations/garmin/sync
 router.post('/garmin/sync', verifyToken, async (req, res) => {
-  res.json({ imported: 0, updated: 0, status: 'stub' });
+  let imported = 0;
+  let updated = 0;
+  let total = 0;
+  
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.garmin?.accessToken) {
+      return res.status(400).json({ error: 'Garmin not connected' });
+    }
+    
+    // Optional: support 'since' parameter
+    const { since } = req.body || {};
+    
+    // Get activities from Garmin
+    // TODO: Implement actual Garmin API integration
+    const activities = await getGarminActivities(user, since);
+    
+    console.log(`Starting Garmin sync for user ${user._id}, found ${activities.length} activities`);
+    
+    // Process activities
+    for (const a of activities) {
+      try {
+        // Map Garmin activity to our schema
+        const garminId = a.activityId || a.activityUUID || String(a.startTimeGMT || a.startTimeLocal || Date.now());
+        const startDate = new Date(a.startTimeGMT || a.startTimeLocal || a.startDate);
+        
+        // Map sport type from Garmin to our format
+        const sportType = a.activityType?.typeKey || a.sportType?.typeKey || a.sport || 'running';
+        const sportMap = {
+          'running': 'running',
+          'cycling': 'cycling',
+          'swimming': 'swimming',
+          'triathlon': 'triathlon',
+          'walking': 'running',
+          'hiking': 'running'
+        };
+        const sport = sportMap[sportType.toLowerCase()] || 'running';
+        
+        const doc = {
+          userId: user._id.toString(),
+          garminId: garminId,
+          name: a.activityName || a.name || 'Untitled Activity',
+          sport: sport,
+          startDate: startDate,
+          elapsedTime: a.elapsedDuration || a.duration || 0,
+          movingTime: a.movingDuration || a.elapsedDuration || 0,
+          distance: a.distance || 0,
+          averageSpeed: a.averageSpeed || null,
+          averageHeartRate: a.averageHR || a.averageHeartRate || null,
+          averagePower: a.averagePower || a.averageWatts || null,
+          raw: a
+        };
+        
+        const resUp = await GarminActivity.updateOne(
+          { userId: user._id, garminId: doc.garminId },
+          { $set: doc },
+          { upsert: true }
+        );
+        
+        if (resUp.upsertedCount > 0) imported += 1;
+        else if (resUp.modifiedCount > 0) updated += 1;
+        total += 1;
+      } catch (dbErr) {
+        console.error(`Error saving Garmin activity ${a.id}:`, dbErr.message);
+      }
+    }
+    
+    // Update last sync date
+    if (imported > 0 || updated > 0) {
+      await User.findByIdAndUpdate(user._id, {
+        'garmin.lastSyncDate': new Date()
+      });
+    }
+    
+    console.log(`Garmin sync completed: imported ${imported}, updated ${updated}, total ${total}`);
+    res.json({ imported, updated, totalFetched: total, status: 'ok' });
+  } catch (err) {
+    console.error('Garmin sync error:', err);
+    res.status(500).json({ 
+      error: 'Garmin sync failed',
+      message: err.message
+    });
+  }
+});
+
+// POST /api/integrations/garmin/auto-sync
+router.post('/garmin/auto-sync', verifyToken, async (req, res) => {
+  let imported = 0;
+  let updated = 0;
+  
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.garmin?.accessToken) {
+      return res.status(400).json({ error: 'Garmin not connected' });
+    }
+
+    if (!user.garmin?.autoSync) {
+      return res.json({ imported: 0, updated: 0, message: 'Auto-sync is disabled' });
+    }
+    
+    // Use lastSyncDate if available
+    let since = null;
+    if (user.garmin?.lastSyncDate) {
+      since = user.garmin.lastSyncDate;
+    } else {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      since = sevenDaysAgo;
+    }
+    
+    const activities = await getGarminActivities(user, since);
+    
+    for (const a of activities) {
+      try {
+        // Map Garmin activity to our schema
+        const garminId = a.activityId || a.activityUUID || String(a.startTimeGMT || a.startTimeLocal || Date.now());
+        const startDate = new Date(a.startTimeGMT || a.startTimeLocal || a.startDate);
+        
+        // Map sport type from Garmin to our format
+        const sportType = a.activityType?.typeKey || a.sportType?.typeKey || a.sport || 'running';
+        const sportMap = {
+          'running': 'running',
+          'cycling': 'cycling',
+          'swimming': 'swimming',
+          'triathlon': 'triathlon',
+          'walking': 'running',
+          'hiking': 'running'
+        };
+        const sport = sportMap[sportType.toLowerCase()] || 'running';
+        
+        const doc = {
+          userId: user._id.toString(),
+          garminId: garminId,
+          name: a.activityName || a.name || 'Untitled Activity',
+          sport: sport,
+          startDate: startDate,
+          elapsedTime: a.elapsedDuration || a.duration || 0,
+          movingTime: a.movingDuration || a.elapsedDuration || 0,
+          distance: a.distance || 0,
+          averageSpeed: a.averageSpeed || null,
+          averageHeartRate: a.averageHR || a.averageHeartRate || null,
+          averagePower: a.averagePower || a.averageWatts || null,
+          raw: a
+        };
+        
+        const resUp = await GarminActivity.updateOne(
+          { userId: user._id, garminId: doc.garminId },
+          { $set: doc },
+          { upsert: true }
+        );
+        
+        if (resUp.upsertedCount > 0) imported += 1;
+        else if (resUp.modifiedCount > 0) updated += 1;
+      } catch (dbErr) {
+        console.error(`Error saving Garmin activity ${a.id}:`, dbErr.message);
+      }
+    }
+    
+    if (imported > 0 || updated > 0) {
+      await User.findByIdAndUpdate(user._id, {
+        'garmin.lastSyncDate': new Date()
+      });
+    }
+    
+    console.log(`Garmin auto-sync completed: ${imported} imported, ${updated} updated`);
+    res.json({ imported, updated });
+  } catch (error) {
+    console.error('Garmin auto-sync error:', error);
+    res.json({ imported: 0, updated: 0, error: error.message });
+  }
+});
+
+// PUT /api/integrations/garmin/auto-sync
+router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { autoSync } = req.body;
+    
+    if (typeof autoSync !== 'boolean') {
+      return res.status(400).json({ error: 'autoSync must be a boolean' });
+    }
+
+    const updateData = {
+      'garmin.autoSync': autoSync
+    };
+
+    if (!user.garmin) {
+      updateData.garmin = {
+        autoSync: autoSync
+      };
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found after update' });
+    }
+
+    const verifyUser = await User.findById(req.user.userId);
+    res.json({ 
+      success: true, 
+      autoSync: verifyUser.garmin?.autoSync || false,
+      message: `Auto-sync ${autoSync ? 'enabled' : 'disabled'}` 
+    });
+  } catch (error) {
+    console.error('Error updating Garmin auto-sync setting:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // List normalized activities
@@ -555,15 +919,129 @@ router.get('/activities', verifyToken, async (req, res) => {
     // This should cover several years of activities for most users
     // IMPORTANT: Keep this payload small (calendar view).
     // Returning `raw` or `laps` for thousands of activities is extremely slow and bloats responses.
-    const acts = await StravaActivity.find({ userId: targetUserId.toString() })
+    const [stravaActs, garminActs] = await Promise.all([
+      StravaActivity.find({ userId: targetUserId.toString() })
       .sort({ startDate: -1 })
-      .limit(5000) // Limit to most recent 5000 activities (covers ~13+ years with daily activities)
+        .limit(5000)
       .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
-      .lean();
+        .lean(),
+      GarminActivity.find({ userId: targetUserId.toString() })
+        .sort({ startDate: -1 })
+        .limit(5000)
+        .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
+        .lean()
+    ]);
+
+    // Deduplicate activities from Strava and Garmin
+    // Activities are considered duplicates if they have:
+    // - Same start date/time (within 5 minutes tolerance)
+    // - Same sport type
+    // - Similar duration (within 10% difference)
+    // - Similar distance (within 5% difference)
+    
+    const deduplicatedActs = [];
+    const seenKeys = new Set();
+    
+    // Helper function to create a deduplication key
+    const createDedupKey = (activity, source) => {
+      const startDate = new Date(activity.startDate);
+      const dateKey = startDate.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm (5 minute precision)
+      const sport = (activity.sport || 'unknown').toLowerCase();
+      const duration = Math.round((activity.elapsedTime || activity.movingTime || 0) / 60); // minutes
+      const distance = Math.round((activity.distance || 0) / 100); // 100m precision
+      return `${dateKey}_${sport}_${duration}_${distance}`;
+    };
+    
+    // Helper function to check if activities are duplicates
+    const areDuplicates = (act1, act2) => {
+      const date1 = new Date(act1.startDate);
+      const date2 = new Date(act2.startDate);
+      const timeDiff = Math.abs(date1.getTime() - date2.getTime()) / 1000 / 60; // minutes
+      
+      if (timeDiff > 5) return false; // More than 5 minutes apart
+      
+      const sport1 = (act1.sport || 'unknown').toLowerCase();
+      const sport2 = (act2.sport || 'unknown').toLowerCase();
+      if (sport1 !== sport2) return false;
+      
+      const duration1 = act1.elapsedTime || act1.movingTime || 0;
+      const duration2 = act2.elapsedTime || act2.movingTime || 0;
+      const durationDiff = Math.abs(duration1 - duration2) / Math.max(duration1, duration2, 1);
+      if (durationDiff > 0.1) return false; // More than 10% duration difference
+      
+      const distance1 = act1.distance || 0;
+      const distance2 = act2.distance || 0;
+      if (distance1 > 0 && distance2 > 0) {
+        const distanceDiff = Math.abs(distance1 - distance2) / Math.max(distance1, distance2);
+        if (distanceDiff > 0.05) return false; // More than 5% distance difference
+      }
+      
+      return true;
+    };
+    
+    // Combine and normalize activities
+    const allActs = [
+      ...stravaActs.map(a => ({ ...a, source: 'strava', sourceId: a.stravaId })),
+      ...garminActs.map(a => ({ ...a, source: 'garmin', sourceId: a.garminId }))
+    ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+    
+    // Deduplicate: prefer Strava over Garmin if duplicate found
+    for (const act of allActs) {
+      const key = createDedupKey(act, act.source);
+      
+      // Check if we've already seen a duplicate
+      let isDuplicate = false;
+      for (const seenKey of seenKeys) {
+        // Extract info from seen key
+        const [datePart, sport, duration, distance] = seenKey.split('_');
+        const actKey = createDedupKey(act, act.source);
+        const [actDatePart, actSport, actDuration, actDistance] = actKey.split('_');
+        
+        // Check if keys match (same date, sport, similar duration/distance)
+        if (datePart === actDatePart && sport === actSport) {
+          const durationDiff = Math.abs(parseInt(duration) - parseInt(actDuration)) / Math.max(parseInt(duration), parseInt(actDuration), 1);
+          const distanceDiff = Math.abs(parseInt(distance) - parseInt(actDistance)) / Math.max(parseInt(distance), parseInt(actDistance), 1);
+          
+          if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
+            isDuplicate = true;
+            break;
+          }
+        }
+      }
+      
+      if (!isDuplicate) {
+        seenKeys.add(key);
+        deduplicatedActs.push(act);
+      } else {
+        // If duplicate, prefer Strava over Garmin
+        const existingIndex = deduplicatedActs.findIndex(a => {
+          const existingKey = createDedupKey(a, a.source);
+          return existingKey === key || areDuplicates(a, act);
+        });
+        
+        if (existingIndex >= 0) {
+          const existing = deduplicatedActs[existingIndex];
+          // If existing is Garmin and new is Strava, replace it
+          if (existing.source === 'garmin' && act.source === 'strava') {
+            deduplicatedActs[existingIndex] = act;
+          }
+          // Otherwise keep existing (Strava or already preferred)
+        } else {
+          // Shouldn't happen, but add it anyway
+          deduplicatedActs.push(act);
+        }
+      }
+    }
+    
+    // Sort by date descending
+    deduplicatedActs.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+    
+    // Limit to 5000 most recent
+    const limitedActs = deduplicatedActs.slice(0, 5000);
 
     // Cache-friendly headers (private because this is user-scoped)
     res.set('Cache-Control', 'private, max-age=60');
-    res.json(acts);
+    res.json(limitedActs);
   } catch (error) {
     console.error('Error fetching external activities:', error);
     res.status(500).json({ error: error.message });

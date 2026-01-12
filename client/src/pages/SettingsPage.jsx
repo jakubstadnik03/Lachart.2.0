@@ -6,7 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { Mail, User, Calendar, Info, UserPlus, UserMinus, Shield, Trash2, Settings, Bell, CreditCard, Link as LinkIcon } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, startGarminAuth, syncGarminActivities, autoSyncGarminActivities, garminLogin } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 
 const SettingsPage = () => {
@@ -29,6 +29,11 @@ const SettingsPage = () => {
   const [stravaConnected, setStravaConnected] = useState(false);
   const [garminConnected, setGarminConnected] = useState(false);
   const [stravaAutoSync, setStravaAutoSync] = useState(false);
+  const [garminAutoSync, setGarminAutoSync] = useState(false);
+  const [stravaLogoError, setStravaLogoError] = useState(false);
+  const [garminLogoError, setGarminLogoError] = useState(false);
+  const [garminLoginModal, setGarminLoginModal] = useState(false);
+  const [garminCredentials, setGarminCredentials] = useState({ username: '', password: '' });
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -208,6 +213,30 @@ const SettingsPage = () => {
             window.history.replaceState({}, document.title, cleanPath);
             
             addNotification('Strava account connected successfully', 'success');
+            
+            // Automatically sync Strava activities after connection
+            try {
+              console.log('Starting automatic Strava sync after connection...');
+              const syncResult = await syncStravaActivities();
+              console.log('Automatic sync completed:', syncResult);
+              if (syncResult.imported > 0 || syncResult.updated > 0) {
+                addNotification(`Strava sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
+                // Reload user profile to get updated sync date
+                const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  }
+                });
+                if (profileResponse.ok) {
+                  const refreshedUser = await profileResponse.json();
+                  saveUserToStorage(refreshedUser);
+                  window.dispatchEvent(new CustomEvent('userUpdated', { detail: refreshedUser }));
+                }
+              }
+            } catch (syncError) {
+              console.error('Error during automatic Strava sync:', syncError);
+              // Don't show error to user - sync can be done manually later
+            }
           } else {
             console.error('Failed to reload user profile:', profileResponse.status);
           }
@@ -238,6 +267,19 @@ const SettingsPage = () => {
       setStravaAutoSync(false);
     }
   }, [user?.strava?.autoSync, user?.strava]);
+
+  // Load Garmin auto-sync setting from user profile
+  useEffect(() => {
+    if (user?.garmin) {
+      if (user.garmin.autoSync !== undefined) {
+        setGarminAutoSync(user.garmin.autoSync);
+      } else {
+        setGarminAutoSync(false);
+      }
+    } else {
+      setGarminAutoSync(false);
+    }
+  }, [user?.garmin?.autoSync, user?.garmin]);
   
   // Listen for user updates from AuthProvider
   useEffect(() => {
@@ -434,6 +476,105 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Strava sync error:', e);
       addNotification('Failed to sync Strava activities', 'error');
+    }
+  };
+
+  const handleConnectGarmin = async () => {
+    setGarminLoginModal(true);
+  };
+
+  const handleGarminLogin = async () => {
+    try {
+      const result = await garminLogin(garminCredentials);
+      setGarminLoginModal(false);
+      setGarminCredentials({ username: '', password: '' });
+      addNotification('Garmin account connected successfully', 'success');
+      
+      // Reload user profile
+      try {
+        const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken') || localStorage.getItem('token')}`
+          }
+        });
+        if (profileResponse.ok) {
+          const updatedUser = await profileResponse.json();
+          saveUserToStorage(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+      } catch (profileError) {
+        console.error('Error reloading user profile:', profileError);
+      }
+      
+      // Check integration status
+      try {
+        const status = await getIntegrationStatus();
+        setGarminConnected(Boolean(status.garminConnected));
+      } catch (statusError) {
+        console.error('Error checking integration status:', statusError);
+      }
+      
+      // Automatically sync Garmin activities after connection
+      try {
+        const syncResult = await syncGarminActivities();
+        if (syncResult.imported > 0 || syncResult.updated > 0) {
+          addNotification(`Garmin sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
+          await handleSyncComplete();
+        }
+      } catch (syncError) {
+        console.error('Error during automatic Garmin sync:', syncError);
+      }
+    } catch (e) {
+      console.error('Garmin login error:', e);
+      const errorMessage = e.response?.data?.error || e.message || 'Failed to connect Garmin account';
+      addNotification(errorMessage, 'error');
+    }
+  };
+
+  const handleSyncGarmin = async () => {
+    try {
+      const res = await syncGarminActivities();
+      addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
+      await handleSyncComplete();
+    } catch (e) {
+      console.error('Garmin sync error:', e);
+      addNotification('Failed to sync Garmin activities', 'error');
+    }
+  };
+
+  const handleToggleGarminAutoSync = async (enabled) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/integrations/garmin/auto-sync`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ autoSync: enabled })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setGarminAutoSync(result.autoSync);
+        addNotification(`Garmin auto-sync ${enabled ? 'enabled' : 'disabled'}`, 'success');
+        
+        // Reload user profile
+        const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (profileResponse.ok) {
+          const updatedUser = await profileResponse.json();
+          saveUserToStorage(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+      } else {
+        addNotification('Failed to update Garmin auto-sync setting', 'error');
+      }
+    } catch (e) {
+      console.error('Error updating Garmin auto-sync:', e);
+      addNotification('Failed to update Garmin auto-sync setting', 'error');
     }
   };
 
@@ -1276,9 +1417,23 @@ const SettingsPage = () => {
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
                       {/* Strava Logo */}
-                      <div className="flex items-center justify-center w-8 h-8 bg-orange-500 rounded-lg">
-                        <span className="text-white font-bold text-sm">S</span>
-                      </div>
+                      {!stravaLogoError ? (
+                        <img 
+                          src="/icon/strava.svg" 
+                          alt="Strava" 
+                          className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'}`}
+                          loading="eager"
+                          decoding="async"
+                          onError={() => {
+                            console.error('Strava logo failed to load, trying PNG fallback');
+                            setStravaLogoError(true);
+                          }}
+                        />
+                      ) : (
+                        <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-orange-500 rounded-lg`}>
+                          <span className="text-white font-bold text-sm">S</span>
+                        </div>
+                      )}
                     <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
                     </div>
                     <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${stravaConnected ? 'text-green-600' : 'text-gray-500'}`}>
@@ -1340,6 +1495,74 @@ const SettingsPage = () => {
                     </button>
                   </div>
                 </div>
+
+                {/* Garmin Integration - Admin Only */}
+                {(user?.admin || user?.role === 'admin') && (
+                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                  <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                    <div className="flex items-center gap-2">
+                      {/* Garmin Logo */}
+                      {!garminLogoError ? (
+                        <img 
+                          src="/icon/Garmin_logo_2006.svg.png" 
+                          alt="Garmin" 
+                          className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} object-contain`}
+                          onError={() => setGarminLogoError(true)}
+                        />
+                      ) : (
+                        <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-blue-500 rounded-lg`}>
+                          <span className="text-white font-bold text-sm">G</span>
+                        </div>
+                      )}
+                    <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Garmin</h4>
+                    </div>
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${garminConnected ? 'text-green-600' : 'text-gray-500'}`}>
+                      {garminConnected ? 'Connected' : 'Not connected'}
+                    </span>
+                  </div>
+                  
+                  {garminConnected && (
+                    <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
+                      <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
+                        <div className={isMobile ? 'w-full' : ''}>
+                          <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Auto-sync</label>
+                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500`}>Automatically sync new activities</p>
+                        </div>
+                        <label className={`relative inline-flex items-center cursor-pointer ${isMobile ? 'self-end' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={garminAutoSync}
+                            onChange={(e) => handleToggleGarminAutoSync(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className={[
+                            `${isMobile ? 'w-9 h-5' : 'w-11 h-6'} bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full`,
+                            `${isMobile ? 'after:h-4 after:w-4' : 'after:h-5 after:w-5'} after:transition-all peer-checked:bg-primary`,
+                            "after:content-['']"
+                          ].join(' ')}></div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
+                    <button
+                      onClick={handleConnectGarmin}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
+                    >
+                      {garminConnected ? 'Reconnect' : 'Connect'}
+                    </button>
+                    {garminConnected && (
+                      <button
+                        onClick={handleSyncGarmin}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
+                      >
+                        Sync Now
+                      </button>
+                    )}
+                  </div>
+                </div>
+                )}
            
                   <FitUploadSection
                     files={files}
@@ -1407,6 +1630,75 @@ const SettingsPage = () => {
       <div className={`${isMobile ? 'px-2' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'py-2' : 'py-8'}`}>
         {renderTabContent()}
       </div>
+
+      {/* Garmin Login Modal */}
+      {garminLoginModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-xl ${isMobile ? 'p-4' : 'p-6'} max-w-md w-full`}>
+            <h3 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-gray-900 mb-4`}>Connect Garmin</h3>
+            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 mb-4`}>
+              Enter your Garmin Connect credentials to sync your activities.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleGarminLogin();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label htmlFor="garmin-username" className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700 block mb-1`}>
+                  Username/Email
+                </label>
+                <input
+                  id="garmin-username"
+                  type="email"
+                  name="username"
+                  autoComplete="username"
+                  value={garminCredentials.username}
+                  onChange={(e) => setGarminCredentials({ ...garminCredentials, username: e.target.value })}
+                  className={`w-full ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} border border-gray-300 ${isMobile ? 'rounded-md' : 'rounded'} focus:outline-none focus:ring-2 focus:ring-primary`}
+                  placeholder="your@email.com"
+                />
+              </div>
+              <div>
+                <label htmlFor="garmin-password" className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700 block mb-1`}>
+                  Password
+                </label>
+                <input
+                  id="garmin-password"
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  value={garminCredentials.password}
+                  onChange={(e) => setGarminCredentials({ ...garminCredentials, password: e.target.value })}
+                  className={`w-full ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} border border-gray-300 ${isMobile ? 'rounded-md' : 'rounded'} focus:outline-none focus:ring-2 focus:ring-primary`}
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGarminLoginModal(false);
+                    setGarminCredentials({ username: '', password: '' });
+                  }}
+                  className={`flex-1 ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!garminCredentials.username || !garminCredentials.password}
+                  className={`flex-1 ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Connect
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

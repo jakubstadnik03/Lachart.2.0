@@ -70,6 +70,16 @@ router.post('/send-demo-email', testController.sendDemoTestEmail);
 // Compatibility alias: GET /test/list/:athleteId to fetch tests by athlete
 router.get('/list/:athleteId', verifyToken, async (req, res) => {
     try {
+        const User = require('../models/UserModel');
+        const Test = require('../models/test');
+        const user = await User.findById(req.user.userId);
+        
+        // If user is tester, return all tests regardless of athleteId
+        if (user && user.role === 'tester') {
+            const allTests = await Test.find({}).sort({ date: -1 });
+            return res.status(200).json(allTests);
+        }
+        
         const { athleteId } = req.params;
         const tests = await testAbl.getTestsByAthleteId(athleteId);
         res.status(200).json(tests);
