@@ -27,7 +27,8 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const storedToken = localStorage.getItem("token");
+      // Check both token keys for compatibility
+      const storedToken = localStorage.getItem("token") || localStorage.getItem("authToken");
       const storedUser = localStorage.getItem("user");
       
       if (storedToken) {
@@ -35,8 +36,8 @@ export const AuthProvider = ({ children }) => {
           // Nastavení autorizační hlavičky pro API
           api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
           
-          // Ověření tokenu pomocí profilového endpointu
-          const response = await api.get('/user/profile');
+          // Ověření tokenu pomocí profilového endpointu (no cache for auth check)
+          const response = await api.get('/user/profile', { noCache: true });
           
           // Aktualizace stavu
           setToken(storedToken);
@@ -44,20 +45,45 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
           // Update localStorage with fresh user data (using optimized storage)
           saveUserToStorage(response.data);
+          
+          // Ensure both token keys are set for compatibility
+          if (!localStorage.getItem("token")) {
+            localStorage.setItem("token", storedToken);
+          }
+          if (!localStorage.getItem("authToken")) {
+            localStorage.setItem("authToken", storedToken);
+          }
+          
+          // Restore last route if we're on the home page
+          if (location.pathname === '/') {
+            const lastRoute = localStorage.getItem('lastRoute');
+            if (lastRoute && lastRoute !== '/' && lastRoute !== '/login' && lastRoute !== '/signup') {
+              navigate(lastRoute, { replace: true });
+            }
+          }
         } catch (error) {
-          console.error("Token verification failed:", error);
-          removeToken();
+          // Only remove token if it's a 401 (Unauthorized) - not for network errors or other issues
+          if (error.response?.status === 401) {
+            console.error("Token verification failed (401 Unauthorized):", error);
+            removeToken();
+          } else {
+            // For other errors (network, timeout, etc.), keep the token but log the error
+            console.warn("Token verification failed (non-401 error), keeping token:", error);
+            // Still set loading to false so the app can continue
+            setLoading(false);
+          }
         }
       } else if (storedUser) {
         // Pokud máme uloženého uživatele, ale ne token, odstraníme uživatele
         localStorage.removeItem("user");
+        setLoading(false);
+      } else {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
     checkAuth();
-  }, [removeToken]);
+  }, [removeToken, navigate, location.pathname]);
 
   // Listen for user updates (e.g., from SettingsPage after auto-sync change)
   useEffect(() => {

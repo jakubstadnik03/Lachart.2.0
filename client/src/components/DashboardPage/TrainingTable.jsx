@@ -235,15 +235,12 @@ export default function TrainingTable({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  if (!allActivities || allActivities.length === 0) {
-    return <div className="text-center py-4">No trainings available</div>;
-  }
-
   // Filtrujeme tréninky podle sportu, kategorie a seřadíme podle data
   // Normalize selectedSport for comparison
   const normalizedSelectedSport = selectedSport === 'all' ? 'all' : normalizeSport(selectedSport);
   
-  const filteredTrainings = allActivities
+  // Always show the table structure, even if empty
+  const filteredTrainings = (allActivities || [])
     .filter(t => {
       const sportMatch = normalizedSelectedSport === 'all' || t.sport === normalizedSelectedSport;
       const categoryMatch = selectedCategory === 'all' || t.category === selectedCategory;
@@ -600,13 +597,19 @@ export default function TrainingTable({
         </div>
         <div className="grid grid-cols-4 gap-y-1 sm:gap-y-2 w-full text-xs sm:text-base text-gray-600">
           <TableHeader selectedSport={selectedSport} />
-          {formattedTrainings.map((training, index) => (
+          {formattedTrainings.length > 0 ? (
+            formattedTrainings.map((training, index) => (
             <TrainingRow 
               key={index} 
               {...training} 
               onTrainingClick={handleTrainingClick}
             />
-          ))}
+            ))
+          ) : (
+            <div className="col-span-4 text-center py-8 text-gray-500">
+              No trainings available. Connect with Strava or upload FIT files to see your training data.
+            </div>
+          )}
         </div>
       </div>
     </div>

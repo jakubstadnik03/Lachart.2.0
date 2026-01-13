@@ -27,7 +27,7 @@ import TestingWithoutLogin from './pages/TestingWithoutLogin';
 import About from './pages/About';
 import Documentation from './pages/Documentation';
 import { Analytics } from "@vercel/analytics/react"
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { initAnalytics, trackPageView } from './utils/analytics';
 import './App.css';
 import FeedbackWidget from './components/FeedbackWidget';
@@ -40,6 +40,7 @@ import Privacy from './pages/Privacy';
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Memoize the Layout component to prevent unnecessary re-renders
   const LayoutWithProps = useMemo(() => (
@@ -50,6 +51,36 @@ function AppRoutes() {
   React.useEffect(() => {
     trackPageView(location.pathname + location.search);
   }, [location.pathname, location.search]);
+
+  // Save current route to localStorage (only for protected routes)
+  React.useEffect(() => {
+    const publicRoutes = [
+      '/',
+      '/about',
+      '/privacy',
+      '/login',
+      '/signup',
+      '/lactate-curve-calculator',
+      '/forgot-password',
+      '/documentation',
+      '/lactate-guide'
+    ];
+    
+    const isPublicRoute = publicRoutes.some(route => 
+      location.pathname === route || 
+      location.pathname.startsWith('/reset-password/') ||
+      location.pathname.startsWith('/complete-registration/') ||
+      location.pathname.startsWith('/accept-invitation/') ||
+      location.pathname.startsWith('/accept-coach-invitation/')
+    );
+
+    // Only save protected routes
+    if (!isPublicRoute) {
+      const routeToSave = location.pathname + location.search;
+      localStorage.setItem('lastRoute', routeToSave);
+    }
+  }, [location.pathname, location.search]);
+
 
   return (
     <Routes>

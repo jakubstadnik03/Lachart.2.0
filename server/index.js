@@ -75,12 +75,16 @@ mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    maxPoolSize: 10, // Maintain up to 10 socket connections
+    minPoolSize: 2, // Maintain at least 2 socket connections
   })
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
 // Initialize cache
-const cache = new NodeCache({ stdTTL: 600 }); // Cache for 10 minutes
+const cache = new NodeCache({ stdTTL: 60 }); // Cache for 1 minute (reduced from 10 minutes for better data freshness)
 
 // Rate limiting
 const limiter = rateLimit({
@@ -190,8 +194,8 @@ app.get("/api/tests/:id", (req, res) => {
   }
 });
 
-// Apply cache middleware to routes that can be cached
-app.use('/api/training', cacheMiddleware(600), trainingRoute);
+// Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
+app.use('/api/training', cacheMiddleware(60), trainingRoute);
 
 // Swagger configuration
 const swaggerOptions = {

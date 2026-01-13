@@ -15,6 +15,7 @@ const AdminDashboard = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchData = async () => {
     try {
@@ -108,6 +109,15 @@ const AdminDashboard = () => {
     { id: 'users', name: 'Users', icon: '👥' },
     { id: 'analytics', name: 'Analytics', icon: '📈' }
   ];
+
+  // Filter users based on search query (email or name)
+  const filteredUsers = users.filter(user => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const name = `${user.name || ''} ${user.surname || ''}`.toLowerCase();
+    return email.includes(query) || name.includes(query);
+  });
 
 
   return (
@@ -264,13 +274,31 @@ const AdminDashboard = () => {
           >
             <div className="bg-white rounded-lg shadow overflow-hidden -mx-4 sm:mx-0">
               <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
-                <h3 className="text-sm sm:text-lg font-semibold text-gray-900">User Management</h3>
-                <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                  <div>
+                    <h3 className="text-sm sm:text-lg font-semibold text-gray-900">User Management</h3>
+                    <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
+                  </div>
+                  <div className="flex-1 sm:flex-initial sm:max-w-xs">
+                    <input
+                      type="text"
+                      placeholder="Search by email or name..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                  </div>
+                </div>
               </div>
               
               {/* Mobile Card View */}
               <div className="block md:hidden divide-y divide-gray-200">
-                {users.map((user) => (
+                {filteredUsers.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    {searchQuery ? `No users found matching "${searchQuery}"` : 'No users found'}
+                  </div>
+                ) : (
+                  filteredUsers.map((user) => (
                   <div key={user._id} className="p-3 hover:bg-gray-50">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center flex-1 min-w-0 pr-2">
@@ -357,7 +385,8 @@ const AdminDashboard = () => {
                       )}
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* Desktop Table View */}
@@ -378,7 +407,14 @@ const AdminDashboard = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {users.map((user) => (
+                      {filteredUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan="9" className="px-4 lg:px-6 py-8 text-center text-gray-500">
+                            {searchQuery ? `No users found matching "${searchQuery}"` : 'No users found'}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredUsers.map((user) => (
                         <tr key={user._id} className="hover:bg-gray-50">
                           <td className="px-4 lg:px-6 py-4">
                             <div className="flex items-center">
@@ -463,7 +499,8 @@ const AdminDashboard = () => {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

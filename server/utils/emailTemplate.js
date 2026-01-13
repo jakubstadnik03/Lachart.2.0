@@ -95,7 +95,7 @@ function generateEmailTemplate({ title, content, buttonText, buttonUrl, loginBut
                             <p style="margin: 10px 0 0; color: #9ca3af; font-size: 12px; text-align: center;">
                                 <a href="${CLIENT_URL}" style="color: #767EB5; text-decoration: none;">Visit LaChart</a> | 
                                 <a href="${CLIENT_URL}/about" style="color: #767EB5; text-decoration: none;">About</a> | 
-                                <a href="mailto:jakub.stadnik01@gmail.com" style="color: #767EB5; text-decoration: none;">Support</a>
+                                <a href="mailto:lachart@lachart.net" style="color: #767EB5; text-decoration: none;">Support</a>
                             </p>
                         </td>
                     </tr>

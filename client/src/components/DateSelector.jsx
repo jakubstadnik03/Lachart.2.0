@@ -48,8 +48,9 @@ function DateButton({ date, isSelected, onClick }) {
   );
 }
 
-function DateSelector({ dates, onSelectDate }) {
-  const [selectedDate, setSelectedDate] = useState(null);
+function DateSelector({ tests, onSelectTest, selectedTestId }) {
+  // tests should be array of objects: [{ date, _id }, ...]
+  const [selectedId, setSelectedId] = useState(selectedTestId || null);
   const scrollContainerRef = useRef(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
@@ -58,20 +59,28 @@ function DateSelector({ dates, onSelectDate }) {
   const PAGE_SIZE = 4;
   const [page, setPage] = useState(0); // only for mobile
 
+  // Update selectedId when selectedTestId prop changes
   useEffect(() => {
-    if (dates && dates.length > 0) {
-      const sortedDates = [...dates].sort((a, b) => new Date(b) - new Date(a));
-      const latestDate = sortedDates[0];
-      if (!selectedDate || !dates.includes(selectedDate)) {
-        setSelectedDate(latestDate);
-        onSelectDate(latestDate);
+    if (selectedTestId) {
+      setSelectedId(selectedTestId);
+    }
+  }, [selectedTestId]);
+
+  useEffect(() => {
+    if (tests && tests.length > 0) {
+      // Sort tests by date (newest first)
+      const sortedTests = [...tests].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const latestTest = sortedTests[0];
+      if (!selectedId || !tests.find(t => t._id === selectedId)) {
+        setSelectedId(latestTest._id);
+        onSelectTest(latestTest._id);
       }
       if (isMobile) setPage(0);
     } else {
-      setSelectedDate(null);
+      setSelectedId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dates, isMobile]);
+  }, [tests, isMobile]);
 
   useEffect(() => {
     const checkScroll = () => {
@@ -92,7 +101,7 @@ function DateSelector({ dates, onSelectDate }) {
 
     const container = scrollContainerRef.current;
     if (container) {
-      // Check on mount and when dates change
+      // Check on mount and when tests change
       checkScroll();
       
       // Use ResizeObserver to detect container size changes
@@ -115,25 +124,25 @@ function DateSelector({ dates, onSelectDate }) {
         clearTimeout(timeoutId);
       };
     }
-  }, [dates, isMobile]);
+  }, [tests, isMobile]);
 
-  const handleDateSelect = (date) => {
-    setSelectedDate(date);
-    onSelectDate(date);
+  const handleTestSelect = (testId) => {
+    setSelectedId(testId);
+    onSelectTest(testId);
   };
 
-  // Pro mobil zobrazujeme jen konkrétní stránku datumů
-  const sortedDates = [...(dates || [])].sort((a, b) => new Date(b) - new Date(a));
-  let visibleDates = sortedDates;
-  if(isMobile && sortedDates.length > PAGE_SIZE) {
+  // Sort tests by date (newest first) and get visible tests for mobile pagination
+  const sortedTests = [...(tests || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  let visibleTests = sortedTests;
+  if(isMobile && sortedTests.length > PAGE_SIZE) {
     const start = page * PAGE_SIZE;
     const end = start + PAGE_SIZE;
-    visibleDates = sortedDates.slice(start, end);
+    visibleTests = sortedTests.slice(start, end);
   }
 
   // Šipky pro stránkování na mobilu (přepis stávajících podmínek pro showLeftArrow/showRightArrow jen na mobilu)
   const customShowLeftArrow = isMobile && page > 0;
-  const customShowRightArrow = isMobile && ((page+1) * PAGE_SIZE < sortedDates.length);
+  const customShowRightArrow = isMobile && ((page+1) * PAGE_SIZE < sortedTests.length);
 
   // Animace stránky (framer-motion direction)
   const [direction, setDirection] = useState(0); // -1 (left), 1 (right)
@@ -143,7 +152,7 @@ function DateSelector({ dates, onSelectDate }) {
       setDirection(-1);
       setPage(page - 1);
     }
-    if (dir === 'right' && (page + 1) * PAGE_SIZE < sortedDates.length) {
+    if (dir === 'right' && (page + 1) * PAGE_SIZE < sortedTests.length) {
       setDirection(1);
       setPage(page + 1);
     }
@@ -193,7 +202,7 @@ function DateSelector({ dates, onSelectDate }) {
             overscrollBehaviorX: 'contain'
           }}
         >
-          {!dates || dates.length === 0 ? (
+          {!tests || tests.length === 0 ? (
             <p className="px-2 sm:px-3 text-xs sm:text-sm">No tests available</p>
           ) : (
             <motion.div
@@ -205,12 +214,12 @@ function DateSelector({ dates, onSelectDate }) {
               className="flex gap-1 sm:gap-1.5 items-center w-full"
               style={{ minHeight: '32px' }}
             >
-              {visibleDates.map((date) => (
-                <div key={date} className="snap-start flex-shrink-0">
+              {visibleTests.map((test) => (
+                <div key={test._id} className="snap-start flex-shrink-0">
                   <DateButton
-                    date={date}
-                    isSelected={date === selectedDate}
-                    onClick={() => handleDateSelect(date)}
+                    date={test.date}
+                    isSelected={test._id === selectedId}
+                    onClick={() => handleTestSelect(test._id)}
                   />
                 </div>
               ))}

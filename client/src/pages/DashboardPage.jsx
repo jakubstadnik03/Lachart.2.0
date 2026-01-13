@@ -359,11 +359,12 @@ const DashboardPage = () => {
         lastLoadTimeRef.current = now;
         hasLoadedOnceRef.current = true;
         
+        // Load all data in parallel for better performance
         const [trainingsData, athleteData] = await Promise.all([
           loadTrainings(targetAthleteId),
           loadAthlete(targetAthleteId),
-          loadTests(targetAthleteId),
-          loadCalendarData(targetAthleteId)
+          loadTests(targetAthleteId), // loadTests already sets tests state internally
+          loadCalendarData(targetAthleteId) // loadCalendarData already sets calendar state internally
         ]);
 
         if (trainingsData) {
@@ -393,16 +394,26 @@ const DashboardPage = () => {
       return; // Don't auto-sync when viewing another athlete
     }
 
+    // Check if we've already synced in this session
+    const syncKey = `strava_auto_sync_dashboard_${user._id}`;
+    const lastSync = sessionStorage.getItem(syncKey);
+    const now = Date.now();
+    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
+      return;
+    }
+
     // Auto-sync on mount and when user changes
     const performAutoSync = async () => {
       try {
         const result = await autoSyncStravaActivities();
+        sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed: ${result.imported} imported, ${result.updated} updated`);
           // Reload calendar data after sync
           loadCalendarData(user._id);
         }
       } catch (error) {
+        // 429 errors are already handled in autoSyncStravaActivities
         console.log('Auto-sync failed:', error);
         // Silent fail - don't show errors to user
       }
@@ -469,12 +480,8 @@ const DashboardPage = () => {
     }
   }, [filteredTests, selectedSport]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleDateSelect = (date) => {
-    const selectedTest = filteredTests.find(test => {
-      const testDate = new Date(test.date).toISOString().split('T')[0];
-      const selectedDateStr = new Date(date).toISOString().split('T')[0];
-      return testDate === selectedDateStr;
-    });
+  const handleDateSelectorTestSelect = (testId) => {
+    const selectedTest = filteredTests.find(test => test._id === testId);
     if (selectedTest) {
       setCurrentTest(selectedTest);
     }
@@ -665,8 +672,9 @@ const DashboardPage = () => {
             {filteredTests && filteredTests.length > 0 ? (
               <>
                 <DateSelector
-                  dates={filteredTests.map(test => test.date)}
-                  onSelectDate={handleDateSelect}
+                  tests={filteredTests}
+                  onSelectTest={handleDateSelectorTestSelect}
+                  selectedTestId={currentTest?._id}
                 />
                 {currentTest && currentTest.results && (
                   <>

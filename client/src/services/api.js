@@ -106,7 +106,11 @@ api.interceptors.response.use(
       console.error('API Error:', error);
     }
     if (error.response?.status === 401) {
+      // Remove both token keys for consistency
       localStorage.removeItem('authToken');
+      localStorage.removeItem('token');
+      // Don't automatically remove token on 401 - let AuthProvider handle it
+      // This prevents race conditions where multiple requests fail simultaneously
     }
     return Promise.reject(error);
   }
@@ -143,7 +147,7 @@ api.get = (url, config = {}) => {
 
   const key = buildGetCacheKey(url, config);
   const now = Date.now();
-  const ttl = Number(config.cacheTtlMs) || 15000; // 15s default
+  const ttl = Number(config.cacheTtlMs) || 10000; // 10s default (reduced from 30s to improve data freshness)
 
   const hit = __getCache.get(key);
   if (hit && hit.expiresAt > now) {
@@ -155,8 +159,15 @@ api.get = (url, config = {}) => {
 
   const p = __originalGet(url, config)
     .then((resp) => {
-      __getCache.set(key, { expiresAt: now + ttl, response: resp });
+      // Only cache successful responses (status 200-299)
+      if (resp && resp.status >= 200 && resp.status < 300) {
+        __getCache.set(key, { expiresAt: now + ttl, response: resp });
+      }
       return resp;
+    })
+    .catch((error) => {
+      // Don't cache error responses
+      throw error;
     })
     .finally(() => {
       __getInFlight.delete(key);
@@ -463,16 +474,46 @@ export const syncStravaActivities = async (since=null) => {
   return data; // { imported, updated }
 };
 
+// Track in-flight auto-sync to prevent multiple simultaneous syncs
+let stravaAutoSyncInFlight = false;
+let garminAutoSyncInFlight = false;
+
 export const autoSyncStravaActivities = async () => {
+  // Prevent multiple simultaneous syncs
+  if (stravaAutoSyncInFlight) {
+    console.log('Strava auto-sync already in progress, skipping...');
+    return { imported: 0, updated: 0 };
+  }
+
+  // Check for 429 errors in recent attempts (prevent rapid retries)
+  const last429Key = 'strava_auto_sync_last_429';
+  const last429 = localStorage.getItem(last429Key);
+  const now = Date.now();
+  if (last429 && (now - parseInt(last429)) < 60000) { // Wait 1 minute after 429
+    console.log('Strava auto-sync: Too many requests, waiting...');
+    return { imported: 0, updated: 0 };
+  }
+
+  stravaAutoSyncInFlight = true;
   try {
     const { data } = await api.post('/api/integrations/strava/auto-sync', {}, {
       timeout: 120000 // 2 minutes timeout for auto-sync
     });
+    // Clear 429 flag on success
+    localStorage.removeItem(last429Key);
     return data; // { imported, updated }
   } catch (error) {
-    // Silently fail for auto-sync - don't show errors to user
+    // Handle 429 (Too Many Requests) gracefully
+    if (error.response?.status === 429) {
+      console.log('Strava auto-sync: Rate limited (429), will retry later');
+      localStorage.setItem(last429Key, now.toString());
+      return { imported: 0, updated: 0 };
+    }
+    // Silently fail for other errors - don't show errors to user
     console.log('Auto-sync failed:', error);
     return { imported: 0, updated: 0 };
+  } finally {
+    stravaAutoSyncInFlight = false;
   }
 };
 
@@ -484,15 +525,41 @@ export const syncGarminActivities = async (since=null) => {
 };
 
 export const autoSyncGarminActivities = async () => {
+  // Prevent multiple simultaneous syncs
+  if (garminAutoSyncInFlight) {
+    console.log('Garmin auto-sync already in progress, skipping...');
+    return { imported: 0, updated: 0 };
+  }
+
+  // Check for 429 errors in recent attempts (prevent rapid retries)
+  const last429Key = 'garmin_auto_sync_last_429';
+  const last429 = localStorage.getItem(last429Key);
+  const now = Date.now();
+  if (last429 && (now - parseInt(last429)) < 60000) { // Wait 1 minute after 429
+    console.log('Garmin auto-sync: Too many requests, waiting...');
+    return { imported: 0, updated: 0 };
+  }
+
+  garminAutoSyncInFlight = true;
   try {
     const { data } = await api.post('/api/integrations/garmin/auto-sync', {}, {
       timeout: 120000 // 2 minutes timeout for auto-sync
     });
+    // Clear 429 flag on success
+    localStorage.removeItem(last429Key);
     return data; // { imported, updated }
   } catch (error) {
-    // Silently fail for auto-sync - don't show errors to user
+    // Handle 429 (Too Many Requests) gracefully
+    if (error.response?.status === 429) {
+      console.log('Garmin auto-sync: Rate limited (429), will retry later');
+      localStorage.setItem(last429Key, now.toString());
+      return { imported: 0, updated: 0 };
+    }
+    // Silently fail for other errors - don't show errors to user
     console.log('Garmin auto-sync failed:', error);
     return { imported: 0, updated: 0 };
+  } finally {
+    garminAutoSyncInFlight = false;
   }
 };
 

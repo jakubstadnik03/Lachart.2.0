@@ -684,6 +684,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       setHighlightedField('sport');
     }
     
+    // Validate baseLactate - should be a positive number
+    const baseLaNum = formData.baseLa ? parseFloat(formData.baseLa.toString().replace(',', '.')) : 0;
+    if (!formData.baseLa || formData.baseLa.trim() === '' || isNaN(baseLaNum) || baseLaNum <= 0) {
+      errors.push('Base lactate is required and must be greater than 0');
+      setHighlightedField('baseLa');
+    }
+    
     if (errors.length > 0) {
       errors.forEach(error => addNotification(error, 'error'));
       return false;
@@ -886,9 +893,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
       )}
 
-      {/* Top-right actions (kept inside component padding; prevents overlap) - Hidden in demo mode */}
-      {!demoMode && (
-        <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+      {/* Top-right actions (kept inside component padding; prevents overlap) */}
+      <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+        {demoMode && (
           <button
             onClick={() => setCurrentTutorialStep(0)}
             className="text-primary hover:text-primary-dark transition-colors"
@@ -898,19 +905,19 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           >
             <HelpCircle size={22} />
           </button>
+        )}
 
-          <button
-            onClick={() => setShowGlossary(true)}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
-            aria-label="Show glossary"
-            title="Training Glossary"
-            type="button"
-            style={{ marginRight: '-20px', marginTop: '-20px' }}
-          >
-            <Info size={20} />
-          </button>
-        </div>
-      )}
+        <button
+          onClick={() => setShowGlossary(true)}
+          className="text-gray-500 hover:text-gray-700 transition-colors"
+          aria-label="Show glossary"
+          title="Training Glossary"
+          type="button"
+          style={{ marginRight: '-20px', marginTop: '-20px' }}
+        >
+          <Info size={20} />
+        </button>
+      </div>
 
       <div className="flex flex-col gap-2 flex-shrink-0">
         {/* Title and Edit Button Row */}
@@ -1067,18 +1074,40 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
 
           <div className="relative">
-            <label className="block text-xs font-medium text-gray-700 mb-0.5">Base La</label>
-            <input 
-              ref={el => inputRefs.current['baseLa'] = el}
-              type="text"
-              value={formData.baseLa}
-              onChange={(e) => handleFormDataChange('baseLa', e.target.value)}
-              className={`w-full p-1 border rounded-lg text-sm ${
-                currentTutorialStep === 3 ? 'ring-2 ring-primary border-primary' : ''
-              }`}
-              disabled={!isNewTest && !isEditMode}
-              placeholder="mmol/L"
-            />
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">
+              Base La
+              {(!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
+            </label>
+            <div className="relative group">
+              <input 
+                ref={el => inputRefs.current['baseLa'] = el}
+                type="text"
+                value={formData.baseLa}
+                onChange={(e) => handleFormDataChange('baseLa', e.target.value)}
+                className={`w-full p-1 border rounded-lg text-sm ${
+                  currentTutorialStep === 3 ? 'ring-2 ring-primary border-primary' : ''
+                } ${
+                  (!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) 
+                    ? 'border-red-300 bg-red-50' 
+                    : ''
+                }`}
+                disabled={!isNewTest && !isEditMode}
+                placeholder="mmol/L"
+              />
+              {(!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) && (
+                <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
+                  <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">
+                    <div className="space-y-1">
+                      <p>⚠️ <strong>Base lactate is required</strong></p>
+                      <p>for accurate threshold calculations</p>
+                    </div>
+                    <div className="absolute -top-1 left-4 w-2 h-2 bg-red-600 transform rotate-45"></div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="relative">

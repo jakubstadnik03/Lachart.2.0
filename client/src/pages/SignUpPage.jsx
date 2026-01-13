@@ -517,7 +517,7 @@ const SignUpPage = () => {
                   <li><b>Analytics:</b> The app collects anonymous usage stats to improve the product.</li>
                   <li><b>Consent:</b> By signing up, you consent to receive transactional emails (activation, password, notifications).</li>
                 </ol>
-                <p>For more details or concerns, contact us at <a href="mailto:jakub.stadnik01@gmail.com" className="underline text-primary">jakub.stadnik01@gmail.com</a>.</p>
+                <p>For more details or concerns, contact us at <a href="mailto:lachart@lachart.net" className="underline text-primary">lachart@lachart.net</a>.</p>
                 <p className="text-xs text-gray-400 mt-2">This is a demo EULA. Your real legal text goes here.</p>
               </div>
               <div className="flex justify-end gap-2">

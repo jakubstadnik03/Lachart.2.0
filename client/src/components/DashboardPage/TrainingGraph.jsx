@@ -382,16 +382,16 @@ const TrainingGraph = ({
 
   if (!trainingList) return <div>Loading trainings...</div>;
   if (loading) return <div>Loading...</div>;
-  if (!trainingList.length) return <div>No trainings available</div>;
+  // Always render the component structure, even if empty
 
   const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
   const sportTrainings = currentSelectedSport === 'all' 
-    ? trainingList 
-    : trainingList.filter(t => t.sport === currentSelectedSport);
+    ? (trainingList || [])
+    : (trainingList || []).filter(t => t.sport === currentSelectedSport);
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
-  if (sportTrainings.length === 0) {
+  if (!trainingList || trainingList.length === 0 || sportTrainings.length === 0) {
     return (
       <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg">
         <div className="flex justify-between items-center mb-6">

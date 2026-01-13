@@ -111,7 +111,7 @@ const Privacy = () => {
             </ul>
             <p className="text-gray-700 mt-4">
               If you have questions about our use of the Strava API, please contact us at{' '}
-              <a href="mailto:jakub.stadnik01@gmail.com" className="text-primary underline">jakub.stadnik01@gmail.com</a>.
+              <a href="mailto:lachart@lachart.net" className="text-primary underline">lachart@lachart.net</a>.
             </p>
           </motion.section>
 
@@ -137,7 +137,7 @@ const Privacy = () => {
             <h2 className="text-xl font-semibold text-gray-900 mb-3">Contact</h2>
             <p className="text-gray-700">
               For privacy questions or requests, contact us at
-              {' '}<a href="mailto:jakub.stadnik01@gmail.com" className="text-primary underline">jakub.stadnik01@gmail.com</a>.
+              {' '}<a href="mailto:lachart@lachart.net" className="text-primary underline">lachart@lachart.net</a>.
             </p>
           </motion.section>
         </div>

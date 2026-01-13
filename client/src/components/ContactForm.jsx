@@ -11,7 +11,7 @@ const ContactForm = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     // Use mailto for now
-    const mailto = `mailto:jakub.stadnik01@gmail.com?subject=LaChart%20Contact%20from%20${encodeURIComponent(form.name)}&body=${encodeURIComponent(form.message + '\n\nFrom: ' + form.name + ' (' + form.email + ')')}`;
+    const mailto = `mailto:lachart@lachart.net?subject=LaChart%20Contact%20from%20${encodeURIComponent(form.name)}&body=${encodeURIComponent(form.message + '\n\nFrom: ' + form.name + ' (' + form.email + ')')}`;
     window.location.href = mailto;
     setSubmitted(true);
   };

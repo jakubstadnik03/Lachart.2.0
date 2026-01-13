@@ -41,14 +41,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         return; // User not fully loaded yet
       }
 
-      // Re-fetch user profile to ensure we have latest data
+      // Check user data from already loaded user object (avoid unnecessary API call)
       const verifyUserData = async () => {
         try {
-          const response = await api.get('/user/profile');
-          const freshUser = response.data;
-          
-          const isProfileIncomplete = !freshUser.dateOfBirth || !freshUser.height || !freshUser.weight || !freshUser.sport;
-          const isStravaNotConnected = !freshUser.strava?.athleteId;
+          // Use existing user data first to avoid blocking page load
+          const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
+          const isStravaNotConnected = !user.strava?.athleteId;
           
           // Check if we've already shown the modal (use localStorage for persistence)
           // Only show once per day to avoid annoying users
@@ -62,8 +60,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           if ((isProfileIncomplete || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
             // Additional delay before showing modal to avoid interrupting user
             setTimeout(() => {
-              // Final check before showing modal - re-verify user data one more time
-              api.get('/user/profile').then((finalResponse) => {
+              // Only fetch fresh data if we need to show modal (single API call instead of multiple)
+              api.get('/user/profile', { cacheTtlMs: 60000 }).then((finalResponse) => {
                 const finalUser = finalResponse.data;
                 const stillIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
                 const stillNotConnected = !finalUser.strava?.athleteId;
@@ -82,7 +80,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           }
         } catch (error) {
           console.error('Error verifying user data:', error);
-          // If API call fails, don't show modal
+          // If check fails, don't show modal
         }
       };
       
@@ -94,6 +92,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user, hasCheckedProfile, location.pathname]);
 
   // Auto-sync Strava activities if enabled (runs on app load)
+  // Only sync once per session to avoid rate limiting
   useEffect(() => {
     if (!user?._id || !user?.strava?.autoSync || !user?.strava?.athleteId) {
       return;
@@ -104,16 +103,26 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       return; // Coaches sync is handled in DashboardPage
     }
 
+    // Check if we've already synced in this session
+    const syncKey = `strava_auto_sync_${user._id}`;
+    const lastSync = sessionStorage.getItem(syncKey);
+    const now = Date.now();
+    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
+      return;
+    }
+
     // Auto-sync on mount with a delay to avoid blocking page load
     const performAutoSync = async () => {
       try {
         const result = await autoSyncStravaActivities();
+        sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
           // Dispatch event to reload data in other components
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
         }
       } catch (error) {
+        // 429 errors are already handled in autoSyncStravaActivities
         console.log('Auto-sync failed on app load:', error);
         // Silent fail - don't show errors to user
       }
@@ -126,6 +135,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user?._id, user?.strava?.autoSync, user?.strava?.athleteId, user?.role]);
 
   // Auto-sync Garmin activities if enabled (runs on app load)
+  // Only sync once per session to avoid rate limiting
   useEffect(() => {
     if (!user?._id || !user?.garmin?.autoSync || !user?.garmin?.accessToken) {
       return;
@@ -136,16 +146,26 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       return; // Coaches sync is handled in DashboardPage
     }
 
+    // Check if we've already synced in this session
+    const syncKey = `garmin_auto_sync_${user._id}`;
+    const lastSync = sessionStorage.getItem(syncKey);
+    const now = Date.now();
+    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
+      return;
+    }
+
     // Auto-sync on mount with a delay to avoid blocking page load
     const performAutoSync = async () => {
       try {
         const result = await autoSyncGarminActivities();
+        sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Garmin auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
           // Dispatch event to reload data in other components
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
         }
       } catch (error) {
+        // 429 errors are already handled in autoSyncGarminActivities
         console.log('Garmin auto-sync failed on app load:', error);
         // Silent fail - don't show errors to user
       }

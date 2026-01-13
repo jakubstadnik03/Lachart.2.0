@@ -148,35 +148,28 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     const power = result.power.toString().replace(',', '.');
     
     if (mockData.sport === 'run' || mockData.sport === 'swim') {
-      // For running and swimming, check MM:SS format
+      // For running and swimming, accept both MM:SS format and numbers (seconds)
       if (typeof power === 'string' && power.includes(':')) {
         const [minutes, seconds] = power.split(':').map(Number);
-        console.log('Parsed pace:', { minutes, seconds });
         if (isNaN(minutes) || isNaN(seconds)) {
-          console.log('Invalid pace format - NaN values');
           return false;
         }
         if (minutes < 0 || seconds < 0 || seconds >= 60) {
-          console.log('Invalid pace values - out of range');
           return false;
         }
-      } else if (!isNaN(Number(power))) {
-        // If it's a number, try to convert it to MM:SS format
+      } else if (!isNaN(Number(power)) && Number(power) > 0) {
+        // If it's a number, accept it as seconds (valid pace)
         const totalSeconds = Math.floor(Number(power));
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        if (minutes < 0 || seconds < 0 || seconds >= 60) {
-          console.log('Invalid converted pace values - out of range');
+        if (totalSeconds <= 0) {
           return false;
         }
       } else {
-        console.log('Invalid pace format - not a number or MM:SS');
         return false;
       }
     } else {
       // For cycling, check if it's a valid number
-      if (isNaN(Number(power))) {
-        console.log('Invalid power value - not a number');
+      const powerNum = Number(power);
+      if (isNaN(powerNum) || powerNum <= 0) {
         return false;
       }
     }

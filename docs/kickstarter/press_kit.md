@@ -16,7 +16,7 @@ Key Messages
 - For cyclists, runners, swimmers; for coaches and teams
 
 Contact
-- Email: jakub.stadnik01@gmail.com
+- Email: lachart@lachart.net
 
 Founder Bio
 Jakub Stádník, 22, is a software engineering student and professional triathlete (IRONMAN PB: 8:00:45). He created LaChart to solve his own frustration with lactate testing data management during training. The app bridges the gap between complex lab analysis and practical training application.

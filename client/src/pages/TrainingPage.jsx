@@ -254,7 +254,7 @@ const TrainingPage = () => {
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="all">Všechny kategorie</option>
+            <option value="all">All categories</option>
             <option value="endurance">Endurance</option>
             <option value="tempo">Tempo</option>
             <option value="threshold">Threshold</option>

@@ -231,18 +231,20 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     const lt2_lactate = thresholds.lactates?.['LTP2'];
     const baseLactate = mockData.baseLactate || 1.0;
     
-    if (!lt1_value || !lt2_value || !hr1 || !hr2) {
-      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 nebo HR není dostupné!', { 
+    // Check if we have at least LTP1 and LTP2 (HR is optional)
+    if (!lt1_value || !lt2_value) {
+      console.warn('[Zones] Nelze vypočítat zóny protože LTP1/LTP2 není dostupné!', { 
         lt1_value, 
-        lt2_value, 
-        hr1, 
-        hr2,
+        lt2_value,
         allThresholds: Object.keys(thresholds),
         availableHRs: Object.keys(thresholds.heartRates || {})
       });
       setZones(null);
       return;
     }
+    
+    // HR is optional - if not available, we'll show zones without HR
+    const hasHR = hr1 && hr2;
     
     // Validace: Pro bike (power) musí být LTP2 > LTP1, pro run/swim (pace) musí být LTP2 < LTP1
     if (sport === 'bike') {
@@ -335,7 +337,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone1_min_power,
             max: zone1_max_power,
             description: '70–90% LT1 (recovery, reference wide zone)',
-            hr: `${Math.round(hr1*0.70)}–${Math.round(hr1*0.90)} BPM`,
+            hr: hasHR ? `${Math.round(hr1*0.70)}–${Math.round(hr1*0.90)} BPM` : 'N/A',
             percent: '70–90% LT1',
             lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
           },
@@ -343,7 +345,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone2_min_power,
             max: zone2_max_power,
             description: '90%–100% LT1',
-            hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM`,
+            hr: hasHR ? `${Math.round(hr1*0.90)}–${Math.round(hr1*1.00)} BPM` : 'N/A',
             percent: '90–100% LT1',
             lactate: `${finalZone2.min.toFixed(1)}–${finalZone2.max.toFixed(1)}`,
           },
@@ -351,7 +353,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone3_min_power,
             max: zone3_max_power,
             description: '100% LT1 – 95% LT2',
-            hr: `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM`,
+            hr: hasHR ? `${Math.round(hr1*1.00)}–${Math.round(hr2*0.95)} BPM` : 'N/A',
             percent: '100% LT1 – 95% LT2',
             lactate: `${finalZone3.min.toFixed(1)}–${finalZone3.max.toFixed(1)}`,
           },
@@ -359,7 +361,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone4_min_power,
             max: zone4_max_power,
             description: '96%–104% LT2 (threshold)',
-            hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
+            hr: hasHR ? `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM` : 'N/A',
             percent: '96–104% LT2',
             lactate: `${lt2_lactate_value.toFixed(1)}–4.0`,
           },
@@ -367,18 +369,18 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             min: zone5_min_power,
             max: zone5_max_power,
             description: '105–120% LT2 (sprint/VO2max+ reference)',
-            hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
+            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM` : 'N/A',
             percent: '105–120% LT2',
             lactate: `4.0–${finalZone5.max.toFixed(1)}`,
           },
         },
-        heartRate: {
+        heartRate: hasHR ? {
           zone1: { min: Math.round(hr1*0.70), max: Math.round(hr1*0.90) },
           zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
           zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
           zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
           zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
-        }
+        } : null
       });
     } else {
       // Pro run/swim: použít tempo (sekundy)
@@ -530,10 +532,21 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
 
 
+  // Check if baseLactate is missing or zero
+  const hasBaseLactate = mockData?.baseLactate && mockData.baseLactate > 0;
+
   if (!zones) {
     return (
       <div className="text-center py-8">
         <div className="text-gray-500">No valid test data available for zone calculation</div>
+        {!hasBaseLactate && (
+          <div className="mt-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm max-w-full">
+            <div className="space-y-1">
+              <p>⚠️ <strong>Base lactate is missing or zero.</strong></p>
+              <p>Please edit the test and add base lactate value for accurate zone calculations.</p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -545,6 +558,17 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
 
       {/* Combined Training Zones Table */}
       <div className="relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl mt-3 sm:mt-5 overflow-hidden">
+        {!hasBaseLactate && (
+          <div className="px-3 sm:px-4 py-2 bg-red-50 border-l-4 border-red-500 rounded-lg mb-3 max-w-full">
+            <div className="flex items-start gap-2">
+              <span className="text-red-600 font-bold flex-shrink-0 mt-0.5">⚠️</span>
+              <div className="text-sm text-red-700 break-words space-y-1">
+                <p><strong>Base lactate is missing or zero.</strong></p>
+                <p>Please edit the test and add base lactate value for accurate threshold and zone calculations.</p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/20 bg-white/20 rounded-t-2xl sm:rounded-t-3xl backdrop-blur">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">

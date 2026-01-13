@@ -6,7 +6,7 @@ import PreviousTestingComponent from "../components/Testing-page/PreviousTesting
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
 import NotificationBadge from "../components/Testing-page/NotificationBadge";
 import AthleteSelector from "../components/AthleteSelector";
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
@@ -16,6 +16,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
   const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
   const [showNewTesting, setShowNewTesting] = useState(false);
@@ -30,6 +31,9 @@ const TestingPage = () => {
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(true);
   const navigate = useNavigate();
+  
+  // Get testId from URL
+  const testIdFromUrl = searchParams.get('testId');
 
   const sports = [
     { id: "all", name: "All Sports" },
@@ -74,6 +78,19 @@ const TestingPage = () => {
     const targetId = selectedAthleteId || user._id;
     loadTests(targetId);
   }, [user, isAuthenticated, navigate, selectedAthleteId]);
+  
+  // Listen for URL changes (including testId parameter)
+  useEffect(() => {
+    const handlePopState = () => {
+      // Force re-render when URL changes
+      const newParams = new URLSearchParams(window.location.search);
+      setSearchParams(newParams);
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load zones/profile + Strava/FIT summary data for recommendations
   useEffect(() => {
@@ -393,7 +410,7 @@ const TestingPage = () => {
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="w-full max-w-[1600px] mx-auto overflow-x-hidden md:p-6"
+      className="w-full max-w-[1600px] mx-auto md:p-6 min-w-0"
     >
       {user?.role === 'coach' && (
         <motion.div 
@@ -609,12 +626,13 @@ const TestingPage = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="w-full min-w-0 overflow-x-hidden"
+        className="w-full min-w-0"
       >
         <PreviousTestingComponent 
           selectedSport={selectedSport}
           tests={tests}
           setTests={setTests}
+          selectedTestId={testIdFromUrl}
         />
       </motion.div>
 

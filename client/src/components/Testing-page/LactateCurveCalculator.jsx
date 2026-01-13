@@ -29,6 +29,7 @@ ChartJS.register(
 
 const colorMap = {
     'Measured data': '#000000',  
+    'Polynomial Fit': '#2196F3',  // Blue for polynomial curve
     'Log-log': '#52525b',       
     'IAT': '#3b82f6',          // Přidáno - modrá barva pro IAT
     'OBLA 2.0': '#86efac',      
@@ -46,6 +47,7 @@ const colorMap = {
  
   const legendItems = [
     { color: 'border border-black border-solid bg-zinc-50', label: 'Data points', dsLabel: 'Measured data' },
+    { color: 'bg-blue-600', label: 'Polynomial Fit', dsLabel: 'Polynomial Fit' },
     { color: 'bg-zinc-700', label: 'Log-log', dsLabel: 'Log-log' },
     { color: 'bg-blue-500', label: 'IAT', dsLabel: 'IAT' },  // Přidáno
     { color: 'bg-green-300', label: 'OBLA 2.0', dsLabel: 'OBLA 2.0' },
@@ -61,6 +63,8 @@ const colorMap = {
   ];
   const Legend = ({ chartRef }) => {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
+    const [hideAllActive, setHideAllActive] = useState(false);
+    const [previousHiddenState, setPreviousHiddenState] = useState({});
   
     React.useEffect(() => {
       const chart = chartRef?.current;
@@ -85,6 +89,52 @@ const colorMap = {
       chart.update();
   
       setHiddenDatasets(prev => ({ ...prev, [dsLabel]: isVisible }));
+      
+      // If user manually toggles something, deactivate "Hide all"
+      if (hideAllActive) {
+        setHideAllActive(false);
+      }
+    };
+
+    const handleHideAll = () => {
+      const chart = chartRef?.current;
+      if (!chart) return;
+
+      if (hideAllActive) {
+        // Restore previous state
+        chart.data.datasets.forEach((ds, index) => {
+          const wasHidden = previousHiddenState[ds.label] || false;
+          chart.setDatasetVisibility(index, !wasHidden);
+        });
+        setHiddenDatasets(previousHiddenState);
+        setHideAllActive(false);
+      } else {
+        // Save current state
+        const currentState = {};
+        chart.data.datasets.forEach((ds, index) => {
+          currentState[ds.label] = !chart.isDatasetVisible(index);
+        });
+        setPreviousHiddenState(currentState);
+        
+        // Hide everything except measured data and polynomial fit
+        const newHiddenState = {};
+        chart.data.datasets.forEach((ds, index) => {
+          if (ds.label === 'Measured data' || ds.label === 'Polynomial Fit') {
+            // Show measured data and polynomial fit
+            chart.setDatasetVisibility(index, true);
+            newHiddenState[ds.label] = false;
+          } else {
+            // Hide everything else
+            chart.setDatasetVisibility(index, false);
+            newHiddenState[ds.label] = true;
+          }
+        });
+        
+        setHiddenDatasets(newHiddenState);
+        setHideAllActive(true);
+      }
+      
+      chart.update();
     };
     const handleMouseEnter = (dsLabel) => {
       const chart = chartRef?.current;
@@ -137,6 +187,18 @@ const colorMap = {
   
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-2 text-xs font-semibold text-black w-full lg:w-[100px]">
+        <div
+          className={`cursor-pointer flex items-center ${
+            hideAllActive ? 'line-through text-gray-400' : ''
+          }`}
+          onClick={handleHideAll}
+          title="Hide all except measured data and polynomial fit"
+        >
+          <div className="flex items-center gap-2 min-w-[100px]">
+            <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-gray-400" />
+            <div className="whitespace-nowrap">Hide all</div>
+          </div>
+        </div>
         {legendItems.map((item, index) => (
           <div
             key={index}
@@ -262,9 +324,51 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const thresholds = calculateThresholds(mockData);
   const results = mockData.results;
   
+  // Filter out invalid results first
+  const validResults = results.filter(r => {
+    if (!r || r.power === undefined || r.power === null || r.lactate === undefined || r.lactate === null) {
+      return false;
+    }
+    const power = r.power?.toString().replace(',', '.');
+    const lactate = r.lactate?.toString().replace(',', '.');
+    const powerNum = Number(power);
+    const lactateNum = Number(lactate);
+    
+    if (isNaN(powerNum) || isNaN(lactateNum)) {
+      return false;
+    }
+    
+    if (isPaceSport) {
+      // For pace sports, power should be positive (seconds)
+      if (powerNum <= 0) return false;
+    } else {
+      // For bike, power should be positive (watts)
+      if (powerNum <= 0) return false;
+    }
+    
+    // Lactate should be positive
+    if (lactateNum < 0) return false;
+    
+    return true;
+  });
+  
+  if (validResults.length < 2) {
+    console.warn('[LactateCurveCalculator] Not enough valid results:', validResults.length);
+    return (
+      <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5">
+        <div className="text-center py-8">
+          <div className="text-gray-500">Not enough valid data points to display the curve</div>
+          <div className="text-sm text-gray-400 mt-2">
+            Need at least 2 valid measurements with both power/pace and lactate values
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   // Convert values to numbers, handling decimal commas
   // For pace sports in pace-mode: keep X axis in seconds (pace) so we can reverse it (slower -> faster)
-  const xVals = results.map(r => {
+  const xVals = validResults.map(r => {
     const power = r.power?.toString().replace(',', '.');
     const v = Number(power);
     if (!isPaceSport) return v;
@@ -272,19 +376,80 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return convertPaceToSpeed(v, unitSystem); // speed mode
   });
   
-  const yVals = results.map(r => {
+  const yVals = validResults.map(r => {
     const lactate = r.lactate?.toString().replace(',', '.');
     return Number(lactate);
   });
 
-  // Sort results by pace (slowest to fastest) for running and swimming
+  // Add base lactate point at the beginning of the graph if available
+  const baseLactatePoint = (() => {
+    const baseLa = mockData?.baseLactate || mockData?.baseLa;
+    if (!baseLa || baseLa === 0) return null;
+    
+    const baseLaNum = typeof baseLa === 'string' 
+      ? parseFloat(baseLa.toString().replace(',', '.')) 
+      : Number(baseLa);
+    
+    if (isNaN(baseLaNum) || baseLaNum <= 0) return null;
+    
+    // Place base lactate before the slowest measurement with a small gap
+    // For pace sports: use the slowest pace (highest value) and go slightly slower
+    // For bike: use the lowest power and go slightly lower
+    let baseX;
+    if (isPaceSport) {
+      if (inputMode === 'pace') {
+        // In pace mode: xVals are in seconds, highest = slowest
+        const maxPace = Math.max(...xVals); // Slowest pace (highest seconds)
+        // Use smaller gap - approximately 15-20 seconds slower, or 3-5% if that's less
+        // This ensures base lactate is close to the first measurement point
+        const paceRange = Math.max(...xVals) - Math.min(...xVals);
+        const gapSeconds = Math.min(20, paceRange * 0.05); // Max 20 seconds or 5% of range
+        const basePace = maxPace + gapSeconds;
+        baseX = basePace;
+      } else {
+        // In speed mode: xVals are already in km/h (converted from pace)
+        // We need to find the slowest pace from valid data, then convert to speed
+        const slowestPace = Math.max(...validResults.map(r => {
+          const power = r.power?.toString().replace(',', '.');
+          return Number(power);
+        })); // Slowest pace in seconds
+        const slowestSpeed = convertPaceToSpeed(slowestPace, unitSystem); // Convert to km/h
+        baseX = Math.max(0.1, slowestSpeed * 0.9); // 10% slower than slowest, but at least 0.1 km/h
+        
+        // Validate: for running, speed should be reasonable (max ~30 km/h for elite, ~20 km/h for normal)
+        // For swimming, max ~8 km/h
+        const maxReasonableSpeed = isSwimming ? 10 : 30;
+        if (baseX > maxReasonableSpeed) {
+          // If calculated speed is too high, use a reasonable default
+          baseX = slowestSpeed * 0.95; // Just slightly slower than slowest
+          if (baseX > maxReasonableSpeed) {
+            // If still too high, don't show base lactate point
+            return null;
+          }
+        }
+      }
+    } else {
+      // For bike: lowest power = slowest
+      const minPower = Math.min(...xVals);
+      baseX = Math.max(0, minPower * 0.9); // 10% lower than lowest, but at least 0
+    }
+    
+    return {
+      x: baseX,
+      y: baseLaNum,
+      label: 'Base Lactate',
+      originalPace: isPaceSport && inputMode === 'pace' ? baseX : null
+    };
+  })();
+
+  // Sort valid results by pace (slowest to fastest) for running and swimming
   const sortedResults = isPaceSport 
-    ? [...results].sort((a, b) => {
+    ? [...validResults].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
         const bPower = Number(b.power?.toString().replace(',', '.'));
         return bPower - aPower; // Sort descending (slowest to fastest)
       })
-    : results;
+    : validResults;
 
   // Polynomial Regression (degree 3)
   const polyRegression = (() => {
@@ -336,15 +501,39 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   })();
 
   // Generate points for polynomial curve only if regression is valid
+  // Curve can be decreasing if it better fits the data points
+  // IMPORTANT: Curve starts from the first actual measurement, NOT from base lactate
+  // Base lactate is only displayed as a reference point, but doesn't affect the curve
   const polyPoints = [];
   if (polyRegression) {
-    const minPower = Math.min(...xVals);
-    const maxPower = Math.max(...xVals);
-    const step = (maxPower - minPower) / 100;
-
-    for (let x = minPower; x <= maxPower; x += step) {
+    // Determine the range for the curve - always based on actual measurements (xVals), not base lactate
+    // For pace sports in pace mode: from slowest (highest) to fastest (lowest)
+    // For pace sports in speed mode: from slowest (lowest) to fastest (highest)
+    // For bike: from lowest to highest
+    let startX, endX;
+    if (isPaceSport && inputMode === 'pace') {
+      // Pace mode: highest = slowest, lowest = fastest
+      endX = Math.min(...xVals); // Fastest
+      startX = Math.max(...xVals); // Slowest (always from actual measurements)
+    } else {
+      // Speed mode or bike: lowest = slowest, highest = fastest
+      startX = Math.min(...xVals); // Slowest (always from actual measurements)
+      endX = Math.max(...xVals); // Fastest
+    }
+    
+    const step = Math.abs(endX - startX) / 300; // More points for smoother curve
+    
+    // Generate curve points from start to end (only actual measurements, not base lactate)
+    const direction = startX < endX ? 1 : -1; // Determine direction
+    for (let x = startX; direction * x <= direction * endX; x += direction * step) {
       try {
-        const y = polyRegression(x);
+        let y = polyRegression(x);
+        
+        // Only ensure y is never negative (allow decreasing curve)
+        if (y < 0) {
+          y = 0;
+        }
+        
         if (!isNaN(y) && isFinite(y)) {
           polyPoints.push({ x, y });
         }
@@ -354,26 +543,75 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   }
 
-  const measuredDataSet = {
-    label: 'Measured data',
-    data: sortedResults.map(r => {
+  const measuredDataPoints = sortedResults
+    .map(r => {
       const power = r.power?.toString().replace(',', '.');
       const lactate = r.lactate?.toString().replace(',', '.');
       const xRaw = Number(power);
       const x = isPaceSport
         ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
         : xRaw;
+      
+      // Validate x value - filter out unrealistic values
+      if (isPaceSport && inputMode === 'speed') {
+        // For running: max reasonable speed ~30 km/h, for swimming ~10 km/h
+        const maxReasonableSpeed = isSwimming ? 10 : 30;
+        if (x > maxReasonableSpeed || x < 0.1) {
+          console.warn(`[LactateCurveCalculator] Filtering out unrealistic speed value: ${x} km/h`);
+          return null;
+        }
+      }
+      
+      // Validate y value (lactate)
+      const y = Number(lactate);
+      if (isNaN(y) || y < 0 || y > 20) {
+        console.warn(`[LactateCurveCalculator] Filtering out invalid lactate value: ${y} mmol/L`);
+        return null;
+      }
+      
       return { 
         x,
-        y: Number(lactate),
+        y,
         originalPace: isPaceSport ? r.power : null
       };
-    }),
+    })
+    .filter(point => point !== null); // Remove null values
+
+  // Add base lactate point at the beginning if it exists
+  let allMeasuredDataPoints = baseLactatePoint 
+    ? [baseLactatePoint, ...measuredDataPoints]
+    : measuredDataPoints;
+
+  // Sort all data points from slowest to fastest (by x value)
+  // For pace sports in pace mode: highest x = slowest, lowest x = fastest (reverse order)
+  // For pace sports in speed mode: lowest x = slowest, highest x = fastest (normal order)
+  // For bike: lowest x = slowest, highest x = fastest (normal order)
+  allMeasuredDataPoints = [...allMeasuredDataPoints].sort((a, b) => {
+    if (isPaceSport && inputMode === 'pace') {
+      // For pace mode: reverse order (highest x = slowest = first)
+      return b.x - a.x;
+    } else {
+      // For speed mode or bike: normal order (lowest x = slowest = first)
+      return a.x - b.x;
+    }
+  });
+
+  const measuredDataSet = {
+    label: 'Measured data',
+    data: allMeasuredDataPoints,
     showLine: false,
-    pointBackgroundColor: '#f8fafc',
-    pointBorderColor: '#000000',
-    pointBorderWidth: 1,
-    pointRadius: 5,
+    pointBackgroundColor: allMeasuredDataPoints.map((_, idx) => 
+      idx === 0 && baseLactatePoint ? '#3b82f6' : '#f8fafc'  // Blue for base lactate
+    ),
+    pointBorderColor: allMeasuredDataPoints.map((_, idx) => 
+      idx === 0 && baseLactatePoint ? '#1e40af' : '#000000'  // Darker blue border for base lactate
+    ),
+    pointBorderWidth: allMeasuredDataPoints.map((_, idx) => 
+      idx === 0 && baseLactatePoint ? 2 : 1  // Thicker border for base lactate
+    ),
+    pointRadius: allMeasuredDataPoints.map((_, idx) => 
+      idx === 0 && baseLactatePoint ? 6 : 5  // Slightly larger for base lactate
+    ),
   };
 
   const polyDataSet = polyPoints.length > 0 ? {
@@ -385,21 +623,42 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   } : null;
 
   const thresholdDatasets = Object.keys(thresholds)
-    .filter(key => !['heartRates', 'lactates'].includes(key))
-    .map(key => ({
+    .filter(key => !['heartRates', 'lactates', 'LTRatio'].includes(key)) // LTRatio je poměr, ne hodnota power/pace, takže ho nezobrazovat v grafu
+    .map(key => {
+      // Zkontrolovat, že máme validní hodnoty pro x a y
+      let xValue = isPaceSport
+        ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
+        : thresholds[key];
+      const yValue = thresholds.lactates[key];
+      
+      // Validate x value - filter out unrealistic values for speed mode
+      if (isPaceSport && inputMode === 'speed') {
+        const maxReasonableSpeed = isSwimming ? 10 : 30;
+        if (xValue > maxReasonableSpeed || xValue < 0.1) {
+          console.warn(`[LactateCurveCalculator] Filtering out unrealistic threshold speed value: ${xValue} km/h for ${key}`);
+          return null;
+        }
+      }
+      
+      // Pokud jsou hodnoty nevalidní (NaN, null, undefined), přeskočit tento threshold
+      if (xValue == null || isNaN(xValue) || yValue == null || isNaN(yValue)) {
+        return null;
+      }
+      
+      return {
       label: key,
       data: [{
-        x: isPaceSport
-          ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
-          : thresholds[key],
-        y: thresholds.lactates[key],
+          x: xValue,
+          y: yValue,
         originalPace: isPaceSport ? thresholds[key] : null
       }],
       borderColor: colorMap[key] || '#2196F3',
       backgroundColor: colorMap[key] || '#2196F3',
       pointRadius: 6,
       showLine: false,
-    }));
+      };
+    })
+    .filter(dataset => dataset !== null); // Odstranit null hodnoty
 
   const allDatasets = [
     ...thresholdDatasets,
@@ -407,16 +666,48 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ...(polyDataSet ? [polyDataSet] : [])
   ];
 
+  // Calculate X axis range - need to consider all data points (measured, base lactate, thresholds, polynomial)
+  const allXValues = [
+    ...xVals,
+    ...(baseLactatePoint ? [baseLactatePoint.x] : []),
+    ...(polyPoints.length > 0 ? polyPoints.map(p => p.x) : []),
+    ...thresholdDatasets
+      .filter(ds => ds !== null)
+      .flatMap(ds => ds.data.map(d => d.x))
+  ].filter(x => !isNaN(x) && isFinite(x));
+  
+  if (allXValues.length === 0) {
+    console.warn('[LactateCurveCalculator] No valid X values for axis');
+    return null;
+  }
+  
+  const minX = Math.min(...allXValues);
+  const maxX = Math.max(...allXValues);
+  const xRange = maxX - minX;
+  const padding = xRange * 0.1; // 10% padding on each side
+
   const data = { datasets: allDatasets };
+  const isReverse = Boolean(isPaceSport && inputMode === 'pace');
+  
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
       x: {
         type: 'linear',
-        reverse: Boolean(isPaceSport && inputMode === 'pace'),
-        min: Math.min(...xVals) - (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
-        max: Math.max(...xVals) + (Math.max(...xVals) - Math.min(...xVals)) * 0.1,
+        reverse: isReverse,
+        // For reverse axis (pace mode): 
+        //   min = right side = fastest tempo (lowest seconds) = Math.min(...xVals)
+        //   max = left side = slowest tempo (highest seconds) = Math.max(...xVals)
+        // For normal axis:
+        //   min = left side = slowest (lowest value)
+        //   max = right side = fastest (highest value)
+        min: isReverse
+          ? Math.max(minX - padding, 0) // Show faster than fastest (right side)
+          : Math.max(minX - padding, 0), // Show slower than slowest (left side)
+        max: isReverse
+          ? maxX + padding // Show slower than slowest (left side)
+          : maxX + padding, // Show faster than fastest (right side)
         title: { 
           display: true, 
           text: isPaceSport ? 
@@ -437,6 +728,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         },
         ticks: {
           callback: function(value) {
+            // Show "Base Lactate" for base lactate point position
+            if (baseLactatePoint && Math.abs(value - baseLactatePoint.x) < 0.01) {
+              return 'Base Lactate';
+            }
             if (isPaceSport) {
               if (inputMode === 'pace') {
                 // value is already pace seconds
@@ -491,6 +786,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             const label = ctx.dataset.label;
             const xVal = ctx.parsed.x;
             const yVal = ctx.parsed.y;
+            const point = ctx.raw;
+            
+            // Check if this is the base lactate point
+            if (point && point.label === 'Base Lactate') {
+              // For base lactate, show only the lactate value, not power/pace
+              return `Base Lactate: ${yVal.toFixed(2)} mmol/L`;
+            }
             
             if (isPaceSport) {
               if (inputMode === 'pace') {
@@ -578,9 +880,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               )}
             </div>
           )}
+          <div className="flex items-center gap-2">
           <p className="text-sm sm:text-base text-gray-500">
-            Base Lactate: <span className="text-blue-500 font-medium">{mockData.baseLactate} mmol/L</span>
-          </p>
+              Base Lactate: <span className={`font-medium ${(!mockData.baseLactate || mockData.baseLactate === 0) ? 'text-red-500' : 'text-blue-500'}`}>
+                {mockData.baseLactate || 0} mmol/L
+              </span>
+            </p>
+            {(!mockData.baseLactate || mockData.baseLactate === 0) && (
+              <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-md font-semibold">
+                ⚠️ Missing
+              </span>
+            )}
+          </div>
         </div>
         
         <div className="flex flex-col lg:flex-row gap-4">

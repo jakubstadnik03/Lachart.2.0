@@ -188,6 +188,11 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       await getLatestPowerZones();
       // User zones are loaded but not used in this component
     } catch (error) {
+      // Silently handle 429 (Too Many Requests) - don't log as error
+      if (error.response?.status === 429) {
+        console.log('Rate limited when loading user zones, will retry later');
+        return;
+      }
       console.error('Error loading user zones:', error);
     }
   }, []);

@@ -60,7 +60,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   }, [location.pathname, setIsMenuOpen]);
 
   // THEN: run loading check
-  if (loading) return null;
+  // Only hide menu if loading AND no user (to prevent flickering when user is already loaded)
+  if (loading && !user) return null;
 
   const handleMenuItemClick = () => {
     if (window.innerWidth < 768) {
@@ -178,21 +179,21 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/dashboard/${athleteId}` : "/dashboard",
       icon: "/icon/dashboard.svg",
       iconWhite: "/icon/dashboard-white.svg",
-      showFor: ["coach", "athlete"]
+      showFor: ["coach", "athlete", "tester"]
     },
     {
       name: "Testing",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
       icon: "/icon/testing.svg",
       iconWhite: "/icon/testing-white.svg",
-      showFor: ["coach", "athlete"]
+      showFor: ["coach", "athlete", "tester"]
     },
     {
       name: "Training Calendar",
       path: "/training-calendar",
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
-      showFor: ["coach", "athlete"]
+      showFor: ["coach", "athlete", "tester"]
      },
     // {
     //   name: "Lactate Statistics",
@@ -206,7 +207,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",
       icon: "/icon/training.svg",
       iconWhite: "/icon/training-white.svg",
-      showFor: ["coach", "athlete"]
+      showFor: ["coach", "athlete", "tester"]
     },
     {
       name: "Lactate Testing",
@@ -227,7 +228,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/profile",
       icon: "/icon/profile.svg",
       iconWhite: "/icon/profile-white.svg",
-      showFor: ["coach", "athlete"]
+      showFor: ["coach", "athlete", "tester"]
     },
     {
       name: "Admin Dashboard",
