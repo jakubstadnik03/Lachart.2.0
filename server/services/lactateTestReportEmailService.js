@@ -4,7 +4,7 @@ const Test = require('../models/test');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
 const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
-const { buildLactateCurveSvg, buildStagesSvg, escapeHtml } = require('../utils/lactateReportSvgs');
+const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -378,7 +378,6 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
     unitSystem,
     inputMode
   });
-  const stagesSvg = buildStagesSvg({ results: test.results || [], sport, unitSystem, inputMode });
 
   const baseTitle = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(test.date)}`;
   const promoIntro = overrides?.promo
@@ -417,7 +416,6 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
         </div>
       </div>
 
-      ${stagesSvg ? `<div>${stagesSvg}</div>` : ''}
       ${lactateSvg ? `<div>${lactateSvg}</div>` : ''}
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
