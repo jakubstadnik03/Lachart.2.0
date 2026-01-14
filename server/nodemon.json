@@ -1,0 +1,6 @@
+{
+  "exec": "node --max-old-space-size=512",
+  "watch": ["*.js", "routes", "controllers", "services", "models", "utils"],
+  "ext": "js,json",
+  "ignore": ["node_modules", "*.test.js"]
+}

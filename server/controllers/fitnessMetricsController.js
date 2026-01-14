@@ -101,6 +101,18 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
   try {
     console.log('calculateFormFitnessData called with athleteId:', athleteId, 'days:', days, 'sportFilter:', sportFilter);
     
+    // Limit days to prevent excessive memory usage (max 180 days)
+    const maxDays = 180;
+    const effectiveDays = Math.min(days, maxDays);
+    
+    // Calculate date range: we need activities from (days + 60) ago to ensure accurate CTL/ATL calculation
+    // CTL has 42-day time constant, so we need at least 60 days of history for accurate calculation
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const queryStartDate = new Date(today);
+    queryStartDate.setDate(queryStartDate.getDate() - (effectiveDays + 60)); // Extra 60 days for CTL calculation
+    queryStartDate.setHours(0, 0, 0, 0);
+    
     // Get user profile for TSS calculation
     let user = null;
     try {
@@ -130,27 +142,39 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
       // Not a valid ObjectId, use string
     }
 
-    // Get all activities with TSS
-    const fitTrainings = await FitTraining.find({ athleteId: athleteIdStr })
+    // Get activities with TSS - only from queryStartDate onwards to reduce memory usage
+    const fitTrainings = await FitTraining.find({ 
+      athleteId: athleteIdStr,
+      timestamp: { $gte: queryStartDate }
+    })
       .select('timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed')
       .sort({ timestamp: 1 })
       .lean();
 
-    // StravaActivity uses userId, try both formats
-    let stravaActivities = await StravaActivity.find({ userId: athleteIdStr })
+    // StravaActivity uses userId, try both formats - limit by date
+    let stravaActivities = await StravaActivity.find({ 
+      userId: athleteIdStr,
+      startDate: { $gte: queryStartDate }
+    })
       .select('startDate movingTime averagePower averageSpeed sport')
       .sort({ startDate: 1 })
       .lean();
 
     // If no results and athleteId is ObjectId, try with ObjectId format
     if (stravaActivities.length === 0 && athleteIdObj) {
-      stravaActivities = await StravaActivity.find({ userId: athleteIdObj })
+      stravaActivities = await StravaActivity.find({ 
+        userId: athleteIdObj,
+        startDate: { $gte: queryStartDate }
+      })
         .select('startDate movingTime averagePower averageSpeed sport')
         .sort({ startDate: 1 })
         .lean();
     }
 
-    const trainings = await Training.find({ athleteId: athleteIdStr })
+    const trainings = await Training.find({ 
+      athleteId: athleteIdStr,
+      date: { $gte: queryStartDate }
+    })
       .select('date sport')
       .sort({ date: 1 })
       .lean();
@@ -207,16 +231,16 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     }
 
     // Calculate Fitness, Fatigue, and Form over time
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // End of today
-    
-    // Find the earliest activity date
-    const earliestActivityDate = new Date(allActivities[0].date);
+    // Use the queryStartDate as calculation start (we already limited queries to this date)
+    // Find the earliest activity date from loaded data
+    const earliestActivityDate = allActivities.length > 0 
+      ? new Date(allActivities[0].date)
+      : queryStartDate;
     earliestActivityDate.setHours(0, 0, 0, 0);
     
-    // Calculate start date: either (today - days) or earliest activity, whichever is later
+    // Calculate start date: either (today - effectiveDays) or earliest activity, whichever is later
     const requestedStartDate = new Date(today);
-    requestedStartDate.setDate(requestedStartDate.getDate() - days);
+    requestedStartDate.setDate(requestedStartDate.getDate() - effectiveDays);
     requestedStartDate.setHours(0, 0, 0, 0);
     
     // Start from earliest activity to ensure accurate calculation
@@ -253,37 +277,86 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     let atl = 0;
 
     // Calculate from earliest activity to ensure accurate CTL/ATL values
-    for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
-      const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
+    // Use a more memory-efficient approach: calculate in batches and clear intermediate data
+    const daysToCalculate = Math.ceil((today - calculationStartDate) / (1000 * 60 * 60 * 24));
+    
+    // If calculating more than 200 days, suggest garbage collection periodically
+    if (daysToCalculate > 200 && global.gc) {
+      // Force garbage collection every 100 days if available
+      let gcCounter = 0;
+      for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
 
-      // Form for this day is yesterday's balance (before updating today)
-      const form = ctl - atl;
+        // Form for this day is yesterday's balance (before updating today)
+        const form = ctl - atl;
 
-      // Update CTL/ATL with today's TSS (EMA)
-      ctl = ctl + alphaCTL * (tssToday - ctl);
-      atl = atl + alphaATL * (tssToday - atl);
+        // Update CTL/ATL with today's TSS (EMA)
+        ctl = ctl + alphaCTL * (tssToday - ctl);
+        atl = atl + alphaATL * (tssToday - atl);
 
-      // Debug logging for today's values
-      if (dateStr === today.toISOString().split('T')[0]) {
-        console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
-        console.log(`  TSS: ${tssToday}`);
-        console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);
-        console.log(`  ATL(Fatigue): ${atl.toFixed(1)}`);
-        console.log(`  TSB(Form): ${form.toFixed(1)} (yesterday CTL-ATL)`);
+        // Debug logging for today's values
+        if (dateStr === today.toISOString().split('T')[0]) {
+          console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
+          console.log(`  TSS: ${tssToday}`);
+          console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);
+          console.log(`  ATL(Fatigue): ${atl.toFixed(1)}`);
+          console.log(`  TSB(Form): ${form.toFixed(1)} (yesterday CTL-ATL)`);
+        }
+
+        if (d >= displayStartDate) {
+          data.push({
+            date: dateStr,
+            dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            Fitness: Math.round(ctl),
+            Form: Math.round(form),
+            Fatigue: Math.round(atl)
+          });
+        }
+        
+        // Suggest GC every 100 days
+        gcCounter++;
+        if (gcCounter % 100 === 0 && global.gc) {
+          global.gc();
+        }
       }
+    } else {
+      // Normal calculation for smaller date ranges
+      for (let d = new Date(calculationStartDate); d <= today; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        const tssToday = dailyTSS[dateStr] || 0; // rest days are 0
 
-      if (d >= displayStartDate) {
-        data.push({
-          date: dateStr,
-          dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          Fitness: Math.round(ctl),
-          Form: Math.round(form),
-          Fatigue: Math.round(atl)
-        });
+        // Form for this day is yesterday's balance (before updating today)
+        const form = ctl - atl;
+
+        // Update CTL/ATL with today's TSS (EMA)
+        ctl = ctl + alphaCTL * (tssToday - ctl);
+        atl = atl + alphaATL * (tssToday - atl);
+
+        // Debug logging for today's values
+        if (dateStr === today.toISOString().split('T')[0]) {
+          console.log(`[Fitness/Fatigue Debug TP] Date: ${dateStr}`);
+          console.log(`  TSS: ${tssToday}`);
+          console.log(`  CTL(Fitness): ${ctl.toFixed(1)}`);
+          console.log(`  ATL(Fatigue): ${atl.toFixed(1)}`);
+          console.log(`  TSB(Form): ${form.toFixed(1)} (yesterday CTL-ATL)`);
+        }
+
+        if (d >= displayStartDate) {
+          data.push({
+            date: dateStr,
+            dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            Fitness: Math.round(ctl),
+            Form: Math.round(form),
+            Fatigue: Math.round(atl)
+          });
+        }
       }
     }
 
+    // Clear dailyTSS object to free memory before returning
+    Object.keys(dailyTSS).forEach(key => delete dailyTSS[key]);
+    
     console.log('calculateFormFitnessData returning', data.length, 'data points');
     return data;
   } catch (error) {

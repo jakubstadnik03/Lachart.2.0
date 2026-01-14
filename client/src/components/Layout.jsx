@@ -1,15 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, memo, lazy, Suspense } from "react";
 import { useAuth } from "../context/AuthProvider";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import TestingWithoutLogin from "../pages/TestingWithoutLogin";
 import EditProfileModal from "./Profile/EditProfileModal";
 import StravaConnectModal from "./Onboarding/StravaConnectModal";
 import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
+
+// Lazy load TestingWithoutLogin to reduce initial bundle size
+const TestingWithoutLogin = lazy(() => import("../pages/TestingWithoutLogin"));
+
+// Memoize heavy components to prevent unnecessary re-renders
+const MemoizedMenu = memo(Menu);
+const MemoizedHeader = memo(Header);
+const MemoizedFooter = memo(Footer);
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
@@ -19,6 +26,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const { addNotification } = useNotification();
 
+  // Memoize menu and header props to prevent unnecessary re-renders
+  // Must be called before any early returns (React hooks rules)
+  const menuProps = useMemo(() => ({ isMenuOpen, setIsMenuOpen }), [isMenuOpen, setIsMenuOpen]);
+  const headerProps = useMemo(() => ({ isMenuOpen, setIsMenuOpen }), [isMenuOpen, setIsMenuOpen]);
+
   // Ensure menu is open when component mounts
   useEffect(() => {
     if (user) {
@@ -27,18 +39,17 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user, setIsMenuOpen]);
 
   // Check if user profile is incomplete or Strava is not connected
-  // Wait for user data to fully load before checking
+  // Optimized: reduced delays and check immediately if user data is available
   useEffect(() => {
     if (!user || hasCheckedProfile || location.pathname === '/lactate-guide') {
       return;
     }
 
-    // Wait for user data to be fully loaded (delay to ensure user object is complete)
-    const checkProfile = setTimeout(() => {
-      // Double-check that user object is complete
+    // Check immediately if user object is complete, otherwise wait briefly
+    const checkProfile = () => {
       if (!user._id) {
-        setHasCheckedProfile(true); // Mark as checked to avoid re-checking
-        return; // User not fully loaded yet
+        setHasCheckedProfile(true);
+        return;
       }
 
       // Check user data from already loaded user object (avoid unnecessary API call)
@@ -58,7 +69,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // 1. Profile is actually incomplete or Strava is not connected
           // 2. We haven't shown it in the last 24 hours
           if ((isProfileIncomplete || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
-            // Additional delay before showing modal to avoid interrupting user
+            // Reduced delay before showing modal (was 3s, now 1.5s)
             setTimeout(() => {
               // Only fetch fresh data if we need to show modal (single API call instead of multiple)
               api.get('/user/profile', { cacheTtlMs: 60000 }).then((finalResponse) => {
@@ -76,7 +87,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               }).catch(() => {
                 // If final check fails, don't show modal
               });
-            }, 3000); // 3 second delay before showing modal
+            }, 1500); // Reduced from 3000ms to 1500ms
           }
         } catch (error) {
           console.error('Error verifying user data:', error);
@@ -86,9 +97,16 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       
       verifyUserData();
       setHasCheckedProfile(true);
-    }, 2000); // Wait 2 seconds for user data to load
+    };
 
-    return () => clearTimeout(checkProfile);
+    // If user data is already complete, check immediately
+    // Otherwise wait briefly (reduced from 2000ms to 500ms)
+    if (user._id && user.dateOfBirth !== undefined) {
+      checkProfile();
+    } else {
+      const timeoutId = setTimeout(checkProfile, 500); // Reduced from 2000ms
+      return () => clearTimeout(timeoutId);
+    }
   }, [user, hasCheckedProfile, location.pathname]);
 
   // Auto-sync Strava activities if enabled (runs on app load)
@@ -128,8 +146,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    // Delay auto-sync slightly to avoid blocking page load
-    const timeoutId = setTimeout(performAutoSync, 3000);
+    // Delay auto-sync slightly to avoid blocking page load (reduced from 3000ms to 2000ms)
+    const timeoutId = setTimeout(performAutoSync, 2000);
     
     return () => clearTimeout(timeoutId);
   }, [user?._id, user?.strava?.autoSync, user?.strava?.athleteId, user?.role]);
@@ -171,8 +189,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       }
     };
 
-    // Delay auto-sync slightly to avoid blocking page load
-    const timeoutId = setTimeout(performAutoSync, 4000);
+    // Delay auto-sync slightly to avoid blocking page load (reduced from 4000ms to 2500ms)
+    const timeoutId = setTimeout(performAutoSync, 2500);
     
     return () => clearTimeout(timeoutId);
   }, [user?._id, user?.garmin?.autoSync, user?.garmin?.accessToken, user?.role]);
@@ -184,18 +202,29 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // If user is not logged in, show TestingWithoutLogin
   if (!user) {
-    return <TestingWithoutLogin />;
+    return (
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <p className="mt-4 text-gray-600">Loading...</p>
+          </div>
+        </div>
+      }>
+        <TestingWithoutLogin />
+      </Suspense>
+    );
   }
 
   return (
     <div className="h-screen bg-gray-100 flex overflow-hidden">
       {/* Menu na levé straně */}
-      <Menu isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+      <MemoizedMenu {...menuProps} />
 
       {/* Hlavní obsah včetně header, main content a footer */}
       <div className="flex-1 flex flex-col h-full ml-0 overflow-hidden">
         {/* Header */}
-        <Header isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+        <MemoizedHeader {...headerProps} />
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
         <main className="flex-1 px-3 sm:px-3 md:px-4 pt-16 md:pt-0 overflow-y-auto">
@@ -205,14 +234,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             </div>
             {/* Footer na mobilu - na konci obsahu */}
             <div className="md:hidden">
-              <Footer />
+              <MemoizedFooter />
             </div>
           </div>
         </main>
 
         {/* Footer na desktopu - sticky */}
         <div className="hidden md:block">
-        <Footer />
+        <MemoizedFooter />
         </div>
       </div>
       {isMenuOpen && (

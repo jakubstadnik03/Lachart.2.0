@@ -79,6 +79,20 @@ const FeedbackWidget = () => {
                   ✕
                 </button>
               </div>
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs text-gray-700 mb-2">
+                  <strong>Enjoying LaChart?</strong> If the app helps you, consider supporting its development:
+                </p>
+                <a
+                  href="https://buymeacoffee.com/lachart"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition-colors"
+                >
+                  <span className="text-sm">☕</span>
+                  Support on Buy Me a Coffee
+                </a>
+              </div>
               <form ref={formRef} onSubmit={sendEmail} className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Name (optional)</label>

@@ -101,6 +101,26 @@ const ContactUs = () => {
                     </p>
                 </motion.div>
 
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.15, duration: 0.5 }}
+                    className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-lg"
+                >
+                    <p className="text-sm text-gray-700 mb-3">
+                        <strong>Enjoying LaChart?</strong> If the app helps you, consider supporting its development:
+                    </p>
+                    <a
+                        href="https://buymeacoffee.com/lachart"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition-colors"
+                    >
+                        <span className="text-base">☕</span>
+                        Support on Buy Me a Coffee
+                    </a>
+                </motion.div>
+
                 <motion.form
                     ref={formRef}
                     onSubmit={handleSubmit}
