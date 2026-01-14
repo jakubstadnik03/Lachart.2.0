@@ -1419,7 +1419,7 @@ const SettingsPage = () => {
                       {/* Strava Logo */}
                       {!stravaLogoError ? (
                         <img 
-                          src="/icon/strava.svg" 
+                          src="/icon/strava.png" 
                           alt="Strava" 
                           className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'}`}
                           loading="eager"

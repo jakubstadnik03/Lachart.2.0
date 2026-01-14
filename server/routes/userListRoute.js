@@ -21,6 +21,7 @@ const StravaActivity = require("../models/StravaActivity");
 const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
+const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
 
 // Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -1807,6 +1808,12 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     lastSyncDate: user.strava.lastSyncDate
                 } : null,
                 isActive: user.isActive !== false, // Default to true if not set
+                notifications: user.notifications || {
+                    emailNotifications: true,
+                    trainingReminders: true,
+                    weeklyReports: true,
+                    achievementAlerts: true
+                },
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount
             };
@@ -1896,6 +1903,60 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error fetching admin stats:", error);
         res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+});
+
+// Send reactivation email with latest lactate test (admin only)
+router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { userId } = req.params;
+        const targetUser = await userDao.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!targetUser.email) {
+            return res.status(400).json({ error: "User has no email address configured" });
+        }
+
+        // Respect global emailNotifications preference
+        if (targetUser.notifications && targetUser.notifications.emailNotifications === false) {
+            return res.status(400).json({ error: "Email notifications are disabled for this user" });
+        }
+
+        // Find latest lactate test for this user
+        const latestTest = await Test.findOne({ athleteId: String(targetUser._id) })
+            .sort({ date: -1, createdAt: -1 })
+            .exec();
+
+        if (!latestTest) {
+            return res.status(400).json({ error: "User has no lactate tests to include in the email" });
+        }
+
+        const result = await sendLactateTestReportEmail({
+            requesterUserId: currentUser._id,
+            testId: latestTest._id,
+            toEmail: targetUser.email,
+            overrides: {
+                promo: true,
+                subject: "Your last lactate test in LaChart – plan your next block",
+                ignoreEmailPreferences: false
+            }
+        });
+
+        if (!result.sent) {
+            return res.status(400).json({ error: "Failed to send email", reason: result.reason });
+        }
+
+        res.status(200).json({ ok: true, message: "Reactivation email sent", testId: latestTest._id });
+    } catch (error) {
+        console.error("Error sending reactivation email:", error);
+        res.status(500).json({ error: "Failed to send reactivation email" });
     }
 });
 

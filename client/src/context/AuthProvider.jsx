@@ -17,8 +17,56 @@ export const AuthProvider = ({ children }) => {
   const location = useLocation();
 
   const removeToken = useCallback(() => {
+    // Základní auth údaje
     localStorage.removeItem("token");
+    localStorage.removeItem("authToken");
     localStorage.removeItem("user");
+
+    // Vyčistit per‑user cache a filtry, aby se data nepřenášela mezi účty
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (
+          key === 'trainingStats_selectedSport' ||
+          key.startsWith('dashboard_selectedSport_') ||
+          key.startsWith('calendarData_') ||
+          key.startsWith('calendarData_timestamp_') ||
+          key === 'lastRoute' ||
+          key.startsWith('weeklyTrainingLoad_') ||
+          key === 'weeklyTrainingLoadTimeRange' ||
+          key === 'weeklyTrainingLoadSportFilter' ||
+          key.startsWith('formFitness_series_') ||
+          key.startsWith('formFitness_today_') ||
+          key === 'formFitnessTimeRange' ||
+          key === 'formFitnessSportFilter' ||
+          key === 'formFitnessDeltaMode' ||
+          key.startsWith('athleteTrainings_') ||
+          key.startsWith('lactateTrainings_') ||
+          key.startsWith('monthlyAnalysis_') ||
+          key.startsWith('powerRadar_') ||
+          key.startsWith('trainingComparison_') ||
+          key === 'weeklyCalendar_activities' ||
+          key === 'weeklyCalendar_cacheTime' ||
+          key === 'profileModalLastShown' ||
+          key === 'lactateCurve_lastTest'
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+      // Session‑only věci (welcome modal, auto‑sync throttling apod.)
+      try {
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
+    } catch (e) {
+      console.warn('Error clearing app caches on logout:', e);
+    }
+
     delete api.defaults.headers.common["Authorization"];
     setToken(null);
     setUser(null);
@@ -61,11 +109,14 @@ export const AuthProvider = ({ children }) => {
               navigate(lastRoute, { replace: true });
             }
           }
+          // Auth check successfully completed
+          setLoading(false);
         } catch (error) {
           // Only remove token if it's a 401 (Unauthorized) - not for network errors or other issues
           if (error.response?.status === 401) {
             console.error("Token verification failed (401 Unauthorized):", error);
             removeToken();
+            setLoading(false);
           } else {
             // For other errors (network, timeout, etc.), keep the token but log the error
             console.warn("Token verification failed (non-401 error), keeping token:", error);
@@ -108,6 +159,10 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (email, password, token, user) => {
     try {
+      // Před každým novým přihlášením vždy kompletně smažeme předchozí stav,
+      // aby se nikdy „nelepil“ starý účet (jiný email / jiný uživatel).
+      removeToken();
+
       if (token && user) {
         setToken(token);
         setUser(user);
@@ -150,16 +205,21 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(async () => {
     try {
-      await api.post('/user/logout');
+      // Fire-and-forget – nečekáme na pomalý server, UX zůstane rychlé
+      api.post('/user/logout').catch((error) => {
+        console.error('Logout error (ignored for UX):', error);
+      });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       removeToken();
-      // Při odhlášení přesměrujeme na login stránku s informací o původní URL
-      navigate('/login', { 
-        replace: true,
-        state: { from: location.pathname }
-      });
+      // Při odhlášení přesměrujeme na login stránku a uděláme full reload,
+      // aby se vyčistil veškerý in‑memory stav (proti „prolínání“ dat mezi účty).
+      navigate('/login', { replace: true });
+      // Malé zpoždění, aby react-router stihl přepsat URL.
+      setTimeout(() => {
+        window.location.reload();
+      }, 0);
     }
   }, [navigate, removeToken, location]);
 

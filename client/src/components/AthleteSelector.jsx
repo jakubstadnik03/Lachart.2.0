@@ -27,6 +27,12 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
   const handleAthleteChange = (e) => {
     const newAthleteId = e.target.value;
     if (newAthleteId) {
+      // Globální volba atleta – sdílená napříč stránkami (Dashboard, Training, Testing, Menu)
+      try {
+        localStorage.setItem('global_selectedAthleteId', newAthleteId);
+      } catch {
+        // ignore storage errors
+      }
       onAthleteChange(newAthleteId);
       // Only navigate if not on training-calendar (which doesn't use athleteId in URL)
       if (currentPath !== 'training-calendar') {
@@ -57,7 +63,7 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
             paddingRight: '2.5rem'
           }}
         >
-          <option value="">Vyberte atleta</option>
+          <option value="">Select athlete</option>
           {user && user.role === 'coach' && (
             <option key={user._id} value={user._id}>
               {user.name} {user.surname} (Me)

@@ -155,11 +155,13 @@ function AppRoutes() {
 }
 
 function App() {
+  const isProd = process.env.NODE_ENV === 'production';
   // Memoize the GoogleOAuthProvider configuration
   const googleOAuthConfig = useMemo(() => ({
     clientId: process.env.REACT_APP_GOOGLE_CLIENT_ID,
     onScriptLoadError: () => console.error('Failed to load Google OAuth script'),
-    onScriptLoadSuccess: () => console.log('Google OAuth script loaded successfully'),
+    // Don't log success every time to keep console clean
+    onScriptLoadSuccess: () => {},
     auto_select: false,
     cancel_on_tap_outside: true,
     useOneTap: false,
@@ -172,11 +174,11 @@ function App() {
         <NotificationProvider>
           <AuthProvider>
             <TrainingProvider>
-              {initAnalytics('G-HNHPQH30BL')}
+              {/* Only initialize analytics & Vercel tracking in production to avoid noisy dev logs */}
+              {isProd && initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
-              <Analytics />
+              {isProd && <Analytics />}
               <FeedbackWidget />
-
             </TrainingProvider>
           </AuthProvider>
         </NotificationProvider>

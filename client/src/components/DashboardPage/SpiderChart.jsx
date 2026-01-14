@@ -60,9 +60,6 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     }
   }, [selectedMonths]);
 
-  // Get current selected sport
-  const currentSelectedSport = selectedSport || 'bike';
-
   // Power metrics state
   const [powerMetrics, setPowerMetrics] = useState({
     allTime: { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 },
@@ -90,7 +87,6 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
 
   useEffect(() => {
     const loadAllTimeRef = async () => {
-      if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') return;
       const cacheKey = `powerRadar_allTimeRef_v1`;
       const cacheTsKey = `powerRadar_allTimeRef_v1_ts`;
       const CACHE_DURATION = 60 * 60 * 1000; // 1h
@@ -127,15 +123,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     };
 
     loadAllTimeRef();
-  }, [currentSelectedSport]);
+  }, []);
   
   // Load power metrics from backend or cache
   useEffect(() => {
     const loadPowerMetrics = async () => {
-      if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') {
-        return;
-      }
-      
       // Define cache keys outside try block so they're accessible in catch
       // v2 cache: avoid mixing old cached response expectations with new tooltip/normalization
       const cacheKey = `powerRadar_metrics_v2_${comparePeriod}_${selectedMonths.join(',')}`;
@@ -215,11 +207,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           if (metricsCacheData.length < 50000) { // Only cache if < 50KB
             localStorage.setItem(cacheKey, metricsCacheData);
             localStorage.setItem(cacheTimestampKey, now.toString());
-            console.log('[SpiderChart] Cached power metrics');
           }
         } catch (e) {
           // Ignore cache errors
-          console.warn('[SpiderChart] Error caching power metrics:', e);
       }
         
         setPowerMetrics(metrics);
@@ -231,7 +221,6 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             if (cachedData) {
               const cachedMetrics = JSON.parse(cachedData);
               if (cachedMetrics && cachedMetrics.allTime && typeof cachedMetrics.allTime === 'object') {
-                console.log('[SpiderChart] Using cached power metrics due to network error');
                 setPowerMetrics(cachedMetrics);
                 setLoading(false);
                 setRefreshing(false);
@@ -258,7 +247,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     };
     
     loadPowerMetrics();
-  }, [comparePeriod, selectedMonths, currentSelectedSport]);
+  }, [comparePeriod, selectedMonths]);
 
   // Get available months from powerMetrics.monthlyMetrics
   const availableMonths = useMemo(() => {
@@ -555,15 +544,6 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
-
-  // Early returns
-  if (currentSelectedSport !== 'bike' && currentSelectedSport !== 'all') {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-6">
-        <p className="text-gray-500 text-center">Power Radar is only available for cycling</p>
-      </div>
-    );
-          }
 
   if (loading) {
     return (

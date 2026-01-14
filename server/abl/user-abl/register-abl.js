@@ -1,5 +1,7 @@
 const UserDao = require("../../dao/userDao");
 const bcrypt = require("bcryptjs");
+const nodemailer = require("nodemailer");
+const { generateEmailTemplate, getClientUrl } = require("../../utils/emailTemplate");
 
 class RegisterAbl {
     constructor() {
@@ -55,6 +57,44 @@ class RegisterAbl {
             // Zkontrolujeme, že heslo bylo správně uloženo
             const savedUser = await this.userDao.findByEmail(email);
             console.log("Saved user password hash length:", savedUser.password.length);
+
+            // Po úspěšné registraci pošleme potvrzovací e‑mail (best effort, neblokuje registraci)
+            try {
+                if (savedUser?.email) {
+                    const transporter = nodemailer.createTransport({
+                        service: 'gmail',
+                        auth: {
+                            user: process.env.EMAIL_USER,
+                            pass: process.env.EMAIL_APP_PASSWORD
+                        }
+                    });
+
+                    const clientUrl = getClientUrl();
+                    const emailContent = `
+                        <p>Dear <strong>${savedUser.name} ${savedUser.surname}</strong>,</p>
+                        <p>thank you for creating your LaChart account.</p>
+                        <p>You can now log in and start working with lactate tests, training analysis and your calendar.</p>
+                    `;
+
+                    await transporter.sendMail({
+                        from: {
+                            name: "LaChart",
+                            address: process.env.EMAIL_USER
+                        },
+                        to: savedUser.email,
+                        subject: "Welcome to LaChart – your registration is complete",
+                        html: generateEmailTemplate({
+                            title: "Registration confirmed",
+                            content: emailContent,
+                            buttonText: "Log in to LaChart",
+                            buttonUrl: `${clientUrl}/login`
+                        })
+                    });
+                }
+            } catch (emailError) {
+                console.error("Registration confirmation email error:", emailError);
+                // Nevracíme chybu uživateli – registrace proběhla, jen se nepovedlo odeslat e‑mail
+            }
 
             res.status(201).json({
                 message: "Uživatel úspěšně vytvořen",

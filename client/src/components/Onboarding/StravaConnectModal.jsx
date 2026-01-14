@@ -32,9 +32,7 @@ const StravaConnectModal = ({ isOpen, onClose, onSkip }) => {
       <div className="space-y-6">
         <div className="text-center">
           <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-            <svg className="w-8 h-8 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.599h-5.688l2.852-5.599m5.73-2.824L12.36 0 8.611 6.372l3.747 7.38z"/>
-            </svg>
+            <img src="/icon/strava.png" alt="Strava" className="w-8 h-8" />
           </div>
           <h3 className="text-xl font-bold text-gray-900 mb-2">Connect Your Strava Account</h3>
           <p className="text-sm text-gray-600">

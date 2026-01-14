@@ -133,23 +133,27 @@ async function calculateFormFitnessData(athleteId, days = 60, sportFilter = 'all
     // Get all activities with TSS
     const fitTrainings = await FitTraining.find({ athleteId: athleteIdStr })
       .select('timestamp trainingStressScore totalElapsedTime sport avgPower avgSpeed')
-      .sort({ timestamp: 1 });
+      .sort({ timestamp: 1 })
+      .lean();
 
     // StravaActivity uses userId, try both formats
     let stravaActivities = await StravaActivity.find({ userId: athleteIdStr })
       .select('startDate movingTime averagePower averageSpeed sport')
-      .sort({ startDate: 1 });
+      .sort({ startDate: 1 })
+      .lean();
 
     // If no results and athleteId is ObjectId, try with ObjectId format
     if (stravaActivities.length === 0 && athleteIdObj) {
       stravaActivities = await StravaActivity.find({ userId: athleteIdObj })
         .select('startDate movingTime averagePower averageSpeed sport')
-        .sort({ startDate: 1 });
+        .sort({ startDate: 1 })
+        .lean();
     }
 
     const trainings = await Training.find({ athleteId: athleteIdStr })
       .select('date sport')
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .lean();
 
     // Combine all activities with TSS and sport info
     // Use stored TSS if available, otherwise calculate it (same logic as CalendarView.jsx)
@@ -366,19 +370,25 @@ async function calculateTrainingStatus(athleteId) {
     const fitTrainings = await FitTraining.find({ 
       athleteId: athleteIdStr,
       timestamp: { $gte: fourWeeksAgo }
-    }).select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed');
+    })
+      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed')
+      .lean();
 
     // StravaActivity uses userId
     let stravaActivities = await StravaActivity.find({ 
       userId: athleteIdStr,
       startDate: { $gte: fourWeeksAgo }
-    }).select('startDate movingTime averagePower averageSpeed sport');
+    })
+      .select('startDate movingTime averagePower averageSpeed sport')
+      .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
       stravaActivities = await StravaActivity.find({ 
         userId: athleteIdObj,
         startDate: { $gte: fourWeeksAgo }
-      }).select('startDate movingTime averagePower averageSpeed sport');
+      })
+        .select('startDate movingTime averagePower averageSpeed sport')
+        .lean();
     }
 
     const allActivities = [
@@ -517,19 +527,25 @@ async function calculateWeeklyTrainingLoad(athleteId, months = 3, sportFilter = 
     const fitTrainings = await FitTraining.find({ 
       athleteId: athleteIdStr,
       timestamp: { $gte: startDate }
-    }).select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed');
+    })
+      .select('timestamp trainingStressScore sport totalElapsedTime avgPower avgSpeed')
+      .lean();
 
     // StravaActivity uses userId
     let stravaActivities = await StravaActivity.find({ 
       userId: athleteIdStr,
       startDate: { $gte: startDate }
-    }).select('startDate movingTime averagePower averageSpeed sport');
+    })
+      .select('startDate movingTime averagePower averageSpeed sport')
+      .lean();
 
     if (stravaActivities.length === 0 && athleteIdObj) {
       stravaActivities = await StravaActivity.find({ 
         userId: athleteIdObj,
         startDate: { $gte: startDate }
-      }).select('startDate movingTime averagePower averageSpeed sport');
+      })
+        .select('startDate movingTime averagePower averageSpeed sport')
+        .lean();
     }
 
     const allActivities = [

@@ -5,7 +5,10 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#EEF2FF" />
+    <!-- Old iOS-specific PWA flag; keep for backwards compatibility, but primary is mobile-web-app-capable -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- Standard mobile web app flag to satisfy modern browsers -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="google-adsense-account" content="ca-pub-4939106843043880">
     
@@ -65,7 +68,6 @@
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     
     <!-- Preload Strava logo for faster loading -->
-    <link rel="preload" href="%PUBLIC_URL%/icon/strava.svg" as="image" />
     <!--
       Notice the use of %PUBLIC_URL% in the tags above.
       It will be replaced with the URL of the `public` folder during the build.

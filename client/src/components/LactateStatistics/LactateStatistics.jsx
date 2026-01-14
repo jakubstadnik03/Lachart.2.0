@@ -49,15 +49,58 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   };
 
   const loadTrainings = useCallback(async () => {
+    const athleteId = user?.role === 'athlete'
+      ? null
+      : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+
+    const cacheKey = `lactateTrainings_${athleteId || 'default'}`;
+    const tsKey = `${cacheKey}_ts`;
+    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+    let usedCache = false;
+
+    // 1) Try to hydrate from cache first for instant render
     try {
-      setLoading(true);
-      const athleteId = user?.role === 'athlete' ? null : (selectedAthleteId || (user?.role === 'coach' ? user._id : null));
+      const cached = localStorage.getItem(cacheKey);
+      const ts = localStorage.getItem(tsKey);
+      if (cached && ts) {
+        const age = Date.now() - parseInt(ts, 10);
+        if (!Number.isNaN(age) && age < CACHE_TTL) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setTrainings(parsed);
+            lastTrainingCountRef.current = parsed.length;
+            setLoading(false);
+            usedCache = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading lactate trainings cache:', e);
+    }
+
+    try {
+      if (!usedCache) {
+        setLoading(true);
+      }
+
       const data = await getTrainingsWithLactate(athleteId);
       const newTrainings = data || [];
       setTrainings(newTrainings);
-      
+
       // Update training count reference
       lastTrainingCountRef.current = newTrainings.length;
+
+      // Persist to cache for reuse on other pages / next visits
+      try {
+        const payload = JSON.stringify(newTrainings);
+        if (payload.length < 200000) {
+          localStorage.setItem(cacheKey, payload);
+          localStorage.setItem(tsKey, Date.now().toString());
+        }
+      } catch (e) {
+        console.warn('Error saving lactate trainings cache:', e);
+      }
     } catch (error) {
       console.error('Error loading trainings with lactate:', error);
     } finally {
@@ -81,7 +124,6 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
           const cacheMaxAge = 60 * 60 * 1000; // 1 hour
           
           if (cacheAge < cacheMaxAge && data && data.length > 0) {
-            console.log('Using cached metadata');
             setAvailableMonths(data);
             const lastMonth = data[data.length - 1];
             setSelectedMonth(lastMonth.monthKey);

@@ -65,16 +65,6 @@ export const prepareTrainingChartData = (training) => {
     const recordTime = r.timestamp ? new Date(r.timestamp).getTime() : startTime + (i * 1000);
     const timeFromStart = (recordTime - startTime) / 1000; // Convert to seconds
     
-    // Debug first few records to see what data we have
-    if (i < 3) {
-      console.log(`Record ${i}:`, {
-        cadence: r.cadence,
-        altitude: r.altitude,
-        hasCadence: r.cadence !== null && r.cadence !== undefined,
-        hasAltitude: r.altitude !== null && r.altitude !== undefined
-      });
-    }
-    
     return {
       ...r,
       timeFromStart,
@@ -92,12 +82,6 @@ export const prepareTrainingChartData = (training) => {
   const maxHeartRate = Math.max(...recordsWithTime.map(r => r.heartRate || 0).filter(v => v > 0), 1);
   const maxPower = Math.max(...recordsWithTime.map(r => r.power || 0).filter(v => v > 0), 1);
   
-  // Debug cadence and altitude data
-  const cadenceValues = recordsWithTime.map(r => r.cadence).filter(v => v !== null && v !== undefined && v > 0);
-  const altitudeValues = recordsWithTime.map(r => r.altitude).filter(v => v !== null && v !== undefined);
-  console.log('prepareTrainingChartData - Cadence values sample:', cadenceValues.slice(0, 10), 'Total:', cadenceValues.length);
-  console.log('prepareTrainingChartData - Altitude values sample:', altitudeValues.slice(0, 10), 'Total:', altitudeValues.length);
-  
   // Calculate maxCadence - only if there are valid cadence values > 0
   const validCadenceValues = recordsWithTime.map(r => r.cadence).filter(v => v !== null && v !== undefined && v > 0);
   const maxCadence = validCadenceValues.length > 0 ? Math.max(...validCadenceValues) : null;
@@ -107,8 +91,6 @@ export const prepareTrainingChartData = (training) => {
   const maxAltitude = validAltitudeValues.length > 0 ? Math.max(...validAltitudeValues) : null;
   const minAltitude = validAltitudeValues.length > 0 ? Math.min(...validAltitudeValues) : null;
   
-  console.log('prepareTrainingChartData - Max values:', { maxCadence, maxAltitude, minAltitude });
-
   return {
     records: recordsWithTime,
     maxTime,

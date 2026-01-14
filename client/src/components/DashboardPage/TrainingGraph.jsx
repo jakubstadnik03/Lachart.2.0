@@ -524,6 +524,11 @@ const TrainingGraph = ({
     })) || [];
 
 
+  const sportForScale = currentSelectedSport === 'all' && selectedTrainingData 
+    ? selectedTrainingData.sport 
+    : currentSelectedSport;
+  const isRunScale = sportForScale === 'run';
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -556,13 +561,13 @@ const TrainingGraph = ({
         title: { display: false },
         min: ranges.power.min,
         max: ranges.power.max,
+        // For running we treat "faster" (lower pace value) as visually higher,
+        // so we reverse the Y axis.
+        reverse: isRunScale,
         ticks: {
           stepSize: Math.round((ranges.power.max - ranges.power.min) / 4),
           callback: (value) => {
-            const sportForFormat = currentSelectedSport === 'all' && selectedTrainingData 
-              ? selectedTrainingData.sport 
-              : currentSelectedSport;
-            return formatPowerValue(value, sportForFormat);
+            return formatPowerValue(value, sportForScale);
           },
           display: true,
           autoSkip: false,

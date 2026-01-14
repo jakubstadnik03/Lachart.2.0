@@ -280,11 +280,6 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
             >
-              {console.log('Rendering LactateCurve with data:', {
-                sport: currentTest.sport,
-                results: currentTest.results,
-                baseLactate: currentTest.baseLactate
-              })}
             <LactateCurve mockData={currentTest} />
             </motion.div>
             <motion.div 

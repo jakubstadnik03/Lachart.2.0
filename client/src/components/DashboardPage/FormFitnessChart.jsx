@@ -93,15 +93,64 @@ const FormFitnessChart = ({ athleteId }) => {
   useEffect(() => {
     const loadData = async () => {
       if (!athleteId) return;
+
+      // Convert time range to days
+      const days = timeRange === '30 days' ? 30 :
+                   timeRange === '60 days' ? 60 :
+                   timeRange === '90 days' ? 90 :
+                   timeRange === '180 days' ? 180 :
+                   timeRange === '365 days' ? 365 : 60;
+
+      const cacheKeySeries = `formFitness_series_${athleteId}_${days}_${sportFilter}`;
+      const cacheKeyToday = `formFitness_today_${athleteId}`;
+      const tsSeries = `${cacheKeySeries}_ts`;
+      const tsToday = `${cacheKeyToday}_ts`;
+      const SERIES_TTL = 10 * 60 * 1000; // 10 minutes
+      const TODAY_TTL = 5 * 60 * 1000;   // 5 minutes
+
+      let usedCache = false;
+
+      // 1) Try to paint from cache first
       try {
-        setLoading(true);
-        // Convert time range to days
-        const days = timeRange === '30 days' ? 30 :
-                     timeRange === '60 days' ? 60 :
-                     timeRange === '90 days' ? 90 :
-                     timeRange === '180 days' ? 180 :
-                     timeRange === '365 days' ? 365 : 60;
-        
+        const now = Date.now();
+
+        const cachedSeries = localStorage.getItem(cacheKeySeries);
+        const tsS = localStorage.getItem(tsSeries);
+        if (cachedSeries && tsS) {
+          const age = now - parseInt(tsS, 10);
+          if (!Number.isNaN(age) && age < SERIES_TTL) {
+            const parsed = JSON.parse(cachedSeries);
+            if (Array.isArray(parsed)) {
+              setChartData(parsed);
+              usedCache = true;
+            }
+          }
+        }
+
+        const cachedToday = localStorage.getItem(cacheKeyToday);
+        const tsT = localStorage.getItem(tsToday);
+        if (cachedToday && tsT) {
+          const age = now - parseInt(tsT, 10);
+          if (!Number.isNaN(age) && age < TODAY_TTL) {
+            const parsed = JSON.parse(cachedToday);
+            if (parsed && typeof parsed === 'object') {
+              setTodayMetrics(parsed);
+            }
+          }
+        }
+
+        if (usedCache) {
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Error reading form & fitness cache:', e);
+      }
+
+      try {
+        if (!usedCache) {
+          setLoading(true);
+        }
+
         const [ffResponse, todayResponse] = await Promise.all([
           getFormFitnessData(athleteId, days, sportFilter),
           getTodayMetrics(athleteId)
@@ -109,10 +158,31 @@ const FormFitnessChart = ({ athleteId }) => {
 
         if (ffResponse && ffResponse.data) {
           setChartData(ffResponse.data);
+          // cache time series
+          try {
+            const payload = JSON.stringify(ffResponse.data);
+            if (payload.length < 150000) {
+              localStorage.setItem(cacheKeySeries, payload);
+              localStorage.setItem(tsSeries, Date.now().toString());
+            }
+          } catch (e) {
+            console.warn('Error saving form & fitness series cache:', e);
+          }
+        } else {
+          setChartData([]);
         }
 
         if (todayResponse && todayResponse.data) {
           setTodayMetrics(todayResponse.data);
+          try {
+            const payload = JSON.stringify(todayResponse.data);
+            if (payload.length < 20000) {
+              localStorage.setItem(cacheKeyToday, payload);
+              localStorage.setItem(tsToday, Date.now().toString());
+            }
+          } catch (e) {
+            console.warn('Error saving today metrics cache:', e);
+          }
         }
       } catch (error) {
         console.error('Error loading form fitness data:', error);

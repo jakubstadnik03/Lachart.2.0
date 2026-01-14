@@ -59,7 +59,6 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   useEffect(() => {
     if (userData) {
       try {
-        console.log('Initial userData:', userData);
         // Auto-select sport if provided from TrainingZonesGenerator
         if (userData._selectedSport) {
           setSelectedSport(userData._selectedSport);

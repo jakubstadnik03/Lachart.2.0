@@ -6,7 +6,7 @@ async function createMeasurement(data) {
 }
 
 async function getMeasurementsByAthleteId(athleteId) {
-  return Measurement.find({ athleteId });
+  return Measurement.find({ athleteId }).lean();
 }
 
 // More services like updateMeasurement, deleteMeasurement, etc.

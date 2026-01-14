@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 
@@ -16,6 +16,7 @@ const AdminDashboard = () => {
   const [error, setError] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -26,23 +27,7 @@ const AdminDashboard = () => {
         getEventStats(null, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), new Date().toISOString())
       ]);
       
-      // Debug: Log coach users data
-      const coachUsers = usersData.filter(u => u.role === 'coach');
-      console.log('[AdminDashboard] Coach users data:', coachUsers.map(u => ({
-        name: `${u.name} ${u.surname}`,
-        testCount: u.testCount,
-        testCountType: typeof u.testCount,
-        trainingCount: u.trainingCount,
-        trainingCountType: typeof u.trainingCount,
-        _id: u._id,
-        role: u.role
-      })));
-      
-      // Also log raw data for first coach to see structure
-      if (coachUsers.length > 0) {
-        console.log('[AdminDashboard] First coach raw data:', coachUsers[0]);
-      }
-      
+      // Data loaded successfully; debug logging removed to keep console clean
       setUsers(usersData);
       setStats(statsData);
       setEventStats(eventStatsData);
@@ -67,6 +52,20 @@ const AdminDashboard = () => {
     } catch (err) {
       addNotification('Failed to update user', 'error');
       console.error('Update error:', err);
+    }
+  };
+
+  const handleSendReactivationEmail = async (targetUser) => {
+    try {
+      setEmailLoadingUserId(targetUser._id);
+      await sendReactivationEmail(targetUser._id);
+      addNotification(`Reactivation email sent to ${targetUser.email}`, 'success');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send reactivation email';
+      addNotification(message, 'error');
+      console.error('Reactivation email error:', err);
+    } finally {
+      setEmailLoadingUserId(null);
     }
   };
 
@@ -339,6 +338,22 @@ const AdminDashboard = () => {
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
+                    <div className="flex flex-wrap gap-2 mt-1.5">
+                      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
+                        user.notifications?.emailNotifications === false
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        Email: {user.notifications?.emailNotifications === false ? 'OFF' : 'ON'}
+                      </span>
+                      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
+                        user.notifications?.weeklyReports === false
+                          ? 'bg-gray-100 text-gray-600'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        Weekly: {user.notifications?.weeklyReports === false ? 'OFF' : 'ON'}
+                      </span>
+                    </div>
                     
                     <div className="mt-2 pt-2 border-t border-gray-100">
                       <div className="grid grid-cols-2 gap-1.5 text-center">
@@ -383,6 +398,20 @@ const AdminDashboard = () => {
                           Tests include athletes + own
                         </div>
                       )}
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          disabled={emailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                          onClick={() => handleSendReactivationEmail(user)}
+                          className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
+                            user.notifications?.emailNotifications === false
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                              : 'border-primary text-primary hover:bg-primary/5'
+                          } ${emailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          {emailLoadingUserId === user._id ? 'Sending…' : 'Send reactivation email'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                   ))
@@ -402,6 +431,7 @@ const AdminDashboard = () => {
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Logins</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Status</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -483,6 +513,24 @@ const AdminDashboard = () => {
                               </div>
                             )}
                           </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm">
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
+                                user.notifications?.emailNotifications === false
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-emerald-100 text-emerald-700'
+                              }`}>
+                                Email: {user.notifications?.emailNotifications === false ? 'OFF' : 'ON'}
+                              </span>
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
+                                user.notifications?.weeklyReports === false
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                Weekly: {user.notifications?.weeklyReports === false ? 'OFF' : 'ON'}
+                              </span>
+                            </div>
+                          </td>
                           <td className="px-4 lg:px-6 py-4 hidden lg:table-cell">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                               user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -490,12 +538,24 @@ const AdminDashboard = () => {
                               {user.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm font-medium">
+                          <td className="px-4 lg:px-6 py-4 text-sm font-medium space-y-2">
                             <button
                               onClick={() => setEditingUser(user)}
-                              className="text-primary hover:text-primary-dark"
+                              className="block text-primary hover:text-primary-dark"
                             >
                               Edit
+                            </button>
+                            <button
+                              type="button"
+                              disabled={emailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                              onClick={() => handleSendReactivationEmail(user)}
+                              className={`block text-xs ${
+                                user.notifications?.emailNotifications === false
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-emerald-600 hover:text-emerald-700'
+                              } ${emailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                            >
+                              {emailLoadingUserId === user._id ? 'Sending…' : 'Send reactivation email'}
                             </button>
                           </td>
                         </tr>

@@ -652,7 +652,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                   onTouchStart={(e) => {
                     // Mark touch so the synthetic click won't immediately toggle off
                     lastTouchAtRef.current = Date.now();
-                    e.preventDefault();
+                    // NOTE: don't call preventDefault here – React attaches touch listeners as passive,
+                    // so calling preventDefault would trigger "Unable to preventDefault inside passive event listener" warnings.
                     // Toggle tooltip on touch (works on both mobile and desktop)
                     if (clickedBarIndex === index) {
                       setClickedBarIndex(null);

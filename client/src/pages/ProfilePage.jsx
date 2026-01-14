@@ -193,7 +193,7 @@ const ProfilePage = () => {
         }))
       ];
 
-      // Cache the combined data
+      // Cache the combined data (limit to first 100 to keep UI snappy)
       try {
         const limitedCombined = combined.slice(0, 100); // Only cache first 100 activities
         const dataToCache = JSON.stringify(limitedCombined);
@@ -205,8 +205,10 @@ const ProfilePage = () => {
         }
       }
 
-      setCalendarData(combined);
-      console.log('[ProfilePage] Loaded calendar data:', combined.length, 'activities');
+      // For rendering we also limit to 100 to avoid rendering thousands of items
+      const limitedForView = combined.slice(0, 100);
+      setCalendarData(limitedForView);
+      console.log('[ProfilePage] Loaded calendar data:', limitedForView.length, 'activities');
     } catch (error) {
       console.error('Error loading calendar data:', error);
     }
@@ -257,8 +259,8 @@ const ProfilePage = () => {
         setTrainings(trainingsResponse.data || []);
         setTests(testsResponse.data || []);
         
-        // Load calendar data (FIT trainings and Strava activities)
-        await loadCalendarData(profileData._id);
+        // Načti kalendář na pozadí – neblokuj celou stránku
+        loadCalendarData(profileData._id);
       } else {
         setTrainings([]);
         setTests([]);

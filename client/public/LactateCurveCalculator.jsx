@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -193,6 +193,20 @@ const LactateCurveCalculator = ({ mockData }) => {
       year: '2-digit'
     });
   };
+
+  // Persist last used test so it can be reused quickly on other pages/sessions
+  useEffect(() => {
+    try {
+      if (mockData) {
+        const payload = JSON.stringify(mockData);
+        if (payload.length < 200000) {
+          localStorage.setItem('lactateCurve_lastTest', payload);
+        }
+      }
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [mockData]);
 
   if (!mockData || !mockData.results) {
     console.error('mockData or mockData.results is not defined');

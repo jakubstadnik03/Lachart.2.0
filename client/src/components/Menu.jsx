@@ -14,7 +14,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.split('/')[1];
-  const currentAthleteId = location.pathname.split('/')[2];
+  const currentAthleteIdFromUrl = location.pathname.split('/')[2];
 
   // Use prop user/token if provided, otherwise use auth values
   const user = propUser || authUser;
@@ -63,6 +63,24 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   // Only hide menu if loading AND no user (to prevent flickering when user is already loaded)
   if (loading && !user) return null;
 
+  // Pro trenéra: efektivně vybraný atlet (URL > global > sám trenér)
+  let effectiveAthleteId = null;
+  if (user?.role === 'coach') {
+    effectiveAthleteId = currentAthleteIdFromUrl;
+    if (!effectiveAthleteId) {
+      try {
+        effectiveAthleteId = localStorage.getItem('global_selectedAthleteId') || null;
+      } catch {
+        // ignore
+      }
+    }
+    if (!effectiveAthleteId) {
+      effectiveAthleteId = user?._id || null;
+    }
+  } else {
+    effectiveAthleteId = currentAthleteIdFromUrl || null;
+  }
+
   const handleMenuItemClick = () => {
     if (window.innerWidth < 768) {
       setIsMenuOpen(false);
@@ -73,6 +91,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     try {
       if (window.innerWidth < 768) {
         setIsMenuOpen(false);
+      }
+
+      // Globální volba atleta – sdílená napříč stránkami
+      try {
+        localStorage.setItem('global_selectedAthleteId', athleteId);
+      } catch {
+        // ignore
       }
 
       // Pokud jsme na stránce athletes nebo profile, přesměrujeme na profil atleta
@@ -95,7 +120,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       }
 
       // Pokud klikneme na stejného atleta, zrušíme výběr
-      if (currentAthleteId === athleteId) {
+      if (currentAthleteIdFromUrl === athleteId) {
         navigate(`/${currentPath}`, { replace: true });
         return;
       }
@@ -137,10 +162,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   const handleLogout = async () => {
     try {
-      await api.post('/user/logout');
-      logout();
-      setIsMenuOpen(false);
-      navigate('/login');
+      // AuthProvider.logout už řeší volání API i přesměrování
+      await logout();
+      if (typeof setIsMenuOpen === 'function') {
+        setIsMenuOpen(false);
+      }
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -299,7 +325,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
-          className="p-4 pt-0 flex-[4] overflow-y-auto min-h-0"
+          className="p-4 pt-0 flex-1 lg:flex-[3] overflow-y-auto min-h-0"
           style={{ 
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain'
@@ -404,7 +430,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                     whileTap={{ scale: 0.98 }}
                   >
                     <NavLink
-                      to={item.getPath ? item.getPath(currentAthleteId) : item.path}
+                      to={item.getPath ? item.getPath(effectiveAthleteId) : item.path}
                       onClick={handleMenuItemClick}
                       className={({ isActive }) =>
                         `flex items-center text-sm font-medium p-3 rounded-lg ${
@@ -436,7 +462,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            className="p-4 border-t border-gray-200 flex-1 overflow-y-auto min-h-0 max-h-[40vh]"
+            className="p-4 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 
               WebkitOverflowScrolling: 'touch',
               overscrollBehavior: 'contain'
@@ -464,14 +490,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                     <motion.button
                       whileHover={{ 
                         scale: 1.02,
-                        backgroundColor: currentAthleteId === athlete._id && currentPath !== 'athletes'
+                        backgroundColor: effectiveAthleteId === athlete._id && currentPath !== 'athletes'
                           ? "rgb(237, 233, 254)"
                           : "rgb(243, 244, 246)"
                       }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleAthleteClick(athlete._id)}
                       className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
-                        currentAthleteId === athlete._id && currentPath !== 'athletes'
+                        effectiveAthleteId === athlete._id && currentPath !== 'athletes'
                           ? "bg-violet-100 text-violet-700"
                           : "text-gray-700 hover:bg-gray-100"
                       }`}
@@ -501,7 +527,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           {!user?.role ? (
             <div className="p-4 border-t border-gray-200">
               <div className="text-center text-sm text-gray-500">
-                <p>© 2025 LaChart</p>
+                <p>© 2026 LaChart</p>
                 <p className="mt-1">All rights reserved</p>
               </div>
             </div>

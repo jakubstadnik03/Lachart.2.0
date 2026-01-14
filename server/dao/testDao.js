@@ -13,7 +13,7 @@ class TestDao {
 
     async getTestsByAthleteId(athleteId) {
         try {
-            return await Test.find({ athleteId });
+            return await Test.find({ athleteId }).lean();
         } catch (error) {
             throw error;
         }
@@ -21,7 +21,7 @@ class TestDao {
 
     async getTestById(id) {
         try {
-            return await Test.findById(id);
+            return await Test.findById(id).lean();
         } catch (error) {
             throw error;
         }

@@ -321,7 +321,9 @@ const TrainingComparison = ({ trainings }) => {
     }
     
     if (metric === 'lactate') {
-      return `${value.toFixed(1)} mmol/L`;
+      const num = Number(value);
+      if (Number.isNaN(num)) return 'N/A';
+      return `${num.toFixed(1)} mmol/L`;
     }
     
     if (metric === 'RPE') {
@@ -625,7 +627,11 @@ const TrainingComparison = ({ trainings }) => {
                 return `${Math.round(val)}`;
               }
               if (metric === 'heartRate') return `${Math.round(val)}`;
-              if (metric === 'lactate') return `${Number(val).toFixed(1)}`;
+              if (metric === 'lactate') {
+                const num = Number(val);
+                if (Number.isNaN(num)) return 'N/A';
+                return `${num.toFixed(1)}`;
+              }
               if (metric === 'RPE') return `${val}`;
               return `${val}`;
             };
@@ -655,8 +661,11 @@ const TrainingComparison = ({ trainings }) => {
               if (selectedMetric !== 'heartRate' && result.heartRate) {
                 infoParts.push(`${Math.round(result.heartRate)}`);
               }
-              if (selectedMetric !== 'lactate' && result.lactate) {
-                infoParts.push(`${result.lactate.toFixed(1)}`);
+              if (selectedMetric !== 'lactate' && result.lactate !== null && result.lactate !== undefined) {
+                const lact = Number(result.lactate);
+                if (!Number.isNaN(lact) && lact !== 0) {
+                  infoParts.push(`${lact.toFixed(1)}`);
+                }
               }
               if (selectedMetric !== 'RPE' && result.RPE) {
                 infoParts.push(`${result.RPE}`);
@@ -1320,9 +1329,11 @@ const TrainingComparison = ({ trainings }) => {
                             metricValue = null;
                           }
                         } else if (selectedMetric === 'lactate') {
-                          metricValue = result.lactate;
-                          if (metricValue === null || metricValue === undefined || metricValue === 0) {
+                          const lact = Number(result.lactate);
+                          if (Number.isNaN(lact) || lact === 0) {
                             metricValue = null;
+                          } else {
+                            metricValue = lact;
                           }
                         } else if (selectedMetric === 'RPE') {
                           metricValue = result.RPE;
@@ -1407,7 +1418,12 @@ const TrainingComparison = ({ trainings }) => {
                             if (durationText !== 'N/A') compact.push(durationText);
                             if (distanceText) compact.push(distanceText);
                             if (result?.heartRate) compact.push(`${Math.round(result.heartRate)}`);
-                            if (result?.lactate !== null && result?.lactate !== undefined && result?.lactate !== 0) compact.push(`${result.lactate.toFixed(1)}`);
+                            if (result?.lactate !== null && result?.lactate !== undefined) {
+                              const lact = Number(result.lactate);
+                              if (!Number.isNaN(lact) && lact !== 0) {
+                                compact.push(`${lact.toFixed(1)}`);
+                              }
+                            }
                             
                             return (
                               <td key={item.training._id || idx} className="px-4 py-3 text-center">

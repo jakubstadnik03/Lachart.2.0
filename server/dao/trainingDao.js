@@ -12,7 +12,7 @@ class TrainingDao {
       console.log('Finding trainings for athlete:', athleteId);
       // Convert ObjectId to string since athleteId is stored as String in the schema
       const athleteIdStr = athleteId instanceof mongoose.Types.ObjectId ? athleteId.toString() : String(athleteId);
-      const trainings = await this.Training.find({ athleteId: athleteIdStr });
+      const trainings = await this.Training.find({ athleteId: athleteIdStr }).lean();
       console.log('Found trainings:', trainings.length);
       return trainings;
     } catch (error) {
@@ -35,7 +35,7 @@ class TrainingDao {
       const athleteIdStrings = athleteIds.map(id => 
         id instanceof mongoose.Types.ObjectId ? id.toString() : String(id)
       );
-      const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } });
+      const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } }).lean();
       console.log('Found trainings:', trainings.length);
       return trainings;
     } catch (error) {
@@ -67,7 +67,7 @@ class TrainingDao {
 
   async findById(id) {
     try {
-      return await this.Training.findById(id);
+      return await this.Training.findById(id).lean();
     } catch (error) {
       console.error('Error in findById:', error);
       throw error;
@@ -107,7 +107,7 @@ class TrainingDao {
       const userIdStr = userId instanceof mongoose.Types.ObjectId ? userId.toString() : String(userId);
       const trainings = await this.Training.find({ 
         athleteId: userIdStr 
-      }).sort({ date: -1 });
+      }).sort({ date: -1 }).lean();
       
       console.log('All trainings found:', trainings.length);
       console.log('Training titles:', trainings.map(t => t.title));

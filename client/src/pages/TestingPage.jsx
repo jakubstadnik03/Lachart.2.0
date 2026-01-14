@@ -18,7 +18,19 @@ const TestingPage = () => {
   const { athleteId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
+  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
+    if (athleteId) return athleteId;
+    if (user?.role === 'coach') {
+      try {
+        const globalId = localStorage.getItem('global_selectedAthleteId');
+        if (globalId) return globalId;
+      } catch {
+        // ignore storage errors
+      }
+      return user?._id || null;
+    }
+    return null;
+  });
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);

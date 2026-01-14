@@ -162,10 +162,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
     const maxHeartRate = Math.max(...filteredHr.filter(v => v > 0), 1);
     const maxPower = Math.max(...filteredPower.filter(v => v > 0), 1);
     
-    // Debug filtered cadence and altitude
-    const rawCadenceValues = distanceData.map(d => d.cadence).filter(v => v !== null && v !== undefined);
-    console.log('processedData - Raw cadence values (before smoothing):', rawCadenceValues.length, 'Sample:', rawCadenceValues.slice(0, 10), 'Max:', rawCadenceValues.length > 0 ? Math.max(...rawCadenceValues) : 'N/A');
-    
     // For cadence, check if we have any non-null values in the original data
     const hasCadenceData = distanceData.some(d => d.cadence !== null && d.cadence !== undefined);
     const validCadence = filteredCadence.filter((v, i) => {
@@ -176,8 +172,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
       // Only include if original data had altitude (not null)
       return distanceData[i].altitude !== null && distanceData[i].altitude !== undefined;
     });
-    console.log('processedData - Has cadence data:', hasCadenceData, 'Valid cadence count (after smoothing):', validCadence.length, 'Sample:', validCadence.slice(0, 5));
-    console.log('processedData - Valid altitude count:', validAltitude.length, 'Sample:', validAltitude.slice(0, 5));
     
     // Calculate maxCadence - if we have cadence data, use max of valid values (even if 0)
     const maxCadence = hasCadenceData && validCadence.length > 0 
@@ -185,8 +179,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
       : null;
     const maxAltitude = validAltitude.length > 0 ? Math.max(...validAltitude) : null;
     const minAltitude = validAltitude.length > 0 ? Math.min(...validAltitude) : null;
-    
-    console.log('processedData - Calculated max values:', { maxCadence, maxAltitude, minAltitude });
     
     return {
       points: filteredPoints,

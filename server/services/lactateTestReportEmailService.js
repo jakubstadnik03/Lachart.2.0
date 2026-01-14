@@ -291,7 +291,7 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
     return { sent: false, reason: 'email_not_configured' };
   }
 
-  const requester = await User.findById(requesterUserId).select('email role athletes name surname');
+  const requester = await User.findById(requesterUserId).select('email role athletes name surname admin');
   if (!requester) return { sent: false, reason: 'requester_not_found' };
 
   const test = await Test.findById(testId);
@@ -301,10 +301,18 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   const athleteId = String(test.athleteId);
   const isSelf = String(requester._id) === athleteId;
   const isCoachAllowed = requester.role === 'coach' && (requester.athletes || []).some(a => String(a) === athleteId);
-  if (!isSelf && !isCoachAllowed) return { sent: false, reason: 'forbidden' };
+  const isAdmin = requester.role === 'admin' || requester.admin === true;
+  if (!isSelf && !isCoachAllowed && !isAdmin) return { sent: false, reason: 'forbidden' };
 
-  const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones');
+  const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications');
   if (!athlete) return { sent: false, reason: 'athlete_not_found' };
+
+  // Respect basic email notification preference if available, unless overrides explicitly ignore it
+  if (!overrides?.ignoreEmailPreferences) {
+    if (athlete.notifications && athlete.notifications.emailNotifications === false) {
+      return { sent: false, reason: 'email_notifications_disabled' };
+    }
+  }
 
   const sport = test.sport;
   const unitSystem = test.unitSystem || 'metric';
@@ -372,11 +380,25 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   });
   const stagesSvg = buildStagesSvg({ results: test.results || [], sport, unitSystem, inputMode });
 
-  const title = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(test.date)}`;
+  const baseTitle = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(test.date)}`;
+  const promoIntro = overrides?.promo
+    ? `
+      <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#f5f3ff;margin-bottom:10px;">
+        <div style="font-weight:800;color:#4c1d95;font-size:16px;margin-bottom:4px;">We've prepared your last lactate test</div>
+        <div style="color:#4b5563;font-size:14px;line-height:1.6;">
+          Take a look at your latest lactate curve and zones and log back in to LaChart to plan your next block of training.
+        </div>
+      </div>
+    `
+    : '';
   const clientUrl = getClientUrl();
+  const testUrl = `${clientUrl}/testing?testId=${test._id}`;
+  const aboutUrl = `${clientUrl}/about`;
+  const trainingImageUrl = `${clientUrl}/images/lachart_training.png`;
 
   const content = `
     <div style="display:flex;flex-direction:column;gap:14px;">
+      ${promoIntro}
       ${renderUserInfo(athlete)}
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
@@ -423,11 +445,64 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
         <div style="font-weight:800;color:#111827;font-size:16px;margin-bottom:10px;">What to focus on</div>
         ${renderFocusBlock(focus)}
       </div>
+
+      ${
+        overrides?.promo
+          ? `
+      <div style="border-radius:16px;overflow:hidden;background:#0f172a;margin-top:4px;">
+        <div style="padding:18px 18px 0;display:flex;flex-direction:column;gap:16px;color:#e5e7eb;">
+          <div>
+            <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#38bdf8;margin-bottom:4px;">What's new in LaChart</div>
+            <div style="font-size:18px;font-weight:800;color:#f9fafb;line-height:1.3;margin-bottom:6px;">
+              Connect your training, see your intervals, and log lactate directly to workouts.
+            </div>
+            <div style="font-size:14px;line-height:1.6;color:#cbd5f5;">
+              You can now connect your profile with Strava, automatically sync your rides and runs, track training load and intervals,
+              and attach lactate values directly to intervals to see how you respond to each workout.
+            </div>
+          </div>
+
+          <div style="border-radius:14px;overflow:hidden;background:#020617;border:1px solid rgba(148,163,184,0.6);box-shadow:0 18px 45px rgba(15,23,42,0.9);">
+            <img src="${trainingImageUrl}" alt="LaChart training analytics" style="display:block;width:100%;max-height:340px;object-fit:cover;" />
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:1.6;color:#e5e7eb;">
+            <div style="font-weight:700;color:#f9fafb;">For coaches</div>
+            <div style="color:#cbd5f5;">
+              Create athletes, add their lactate tests, send rich reports to their email, and follow how their thresholds and zones evolve
+              across the season – all in one platform.
+            </div>
+          </div>
+
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 2px;">
+            <a
+              href="${testUrl}"
+              style="display:inline-block;background:#38bdf8;color:#0f172a;font-weight:700;font-size:14px;padding:10px 18px;border-radius:999px;text-decoration:none;"
+            >
+              Open this test in LaChart
+            </a>
+            <a
+              href="${aboutUrl}"
+              style="display:inline-block;color:#e5e7eb;font-weight:500;font-size:13px;padding:9px 16px;border-radius:999px;border:1px solid rgba(148,163,184,0.7);text-decoration:none;"
+            >
+              Learn more about LaChart →
+            </a>
+          </div>
+
+          <div style="font-size:12px;color:#9ca3af;margin:0 0 14px;">
+            Have questions or feedback? Just reply to this email – we read every message.
+          </div>
+        </div>
+      </div>
+      `
+          : ''
+      }
     </div>
   `.trim();
 
   const transporter = createTransporter();
-  
+  const subject = overrides?.subject || baseTitle;
+
   // If requester is coach, send email to both coach and athlete
   const isCoach = requester.role === 'coach';
   const recipients = new Set(); // Use Set to avoid duplicates
@@ -457,12 +532,12 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   await transporter.sendMail({
     from: { name: 'LaChart', address: process.env.EMAIL_USER },
     to: Array.from(recipients).join(', '), // Multiple recipients separated by comma
-    subject: title,
+    subject,
     html: generateEmailTemplate({
-      title,
+      title: baseTitle,
       content,
-      buttonText: 'Open LaChart',
-      buttonUrl: `${clientUrl}/`,
+      buttonText: overrides?.promo ? 'Open this test in LaChart' : 'Open LaChart',
+      buttonUrl: overrides?.promo ? testUrl : `${clientUrl}/`,
       footerText: 'Tip: Repeat the test under similar conditions for best comparisons.'
     })
   });

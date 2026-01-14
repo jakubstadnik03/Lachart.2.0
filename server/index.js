@@ -71,6 +71,8 @@ app.use((req, res, next) => {
 }
 
 // MongoDB Connection
+// Prepare for Mongoose 7 default change (avoid strictQuery deprecation warning)
+mongoose.set('strictQuery', false);
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,

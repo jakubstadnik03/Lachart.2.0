@@ -259,6 +259,17 @@ export const getAdminStats = async () => {
   }
 };
 
+// Send reactivation email with latest lactate test to a specific user (admin only)
+export const sendReactivationEmail = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/send-reactivation-email/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending reactivation email:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);
@@ -294,17 +305,29 @@ export const downloadLactateSessionFit = async (sessionId) => {
 export const saveLactateSession = createLactateSession;
 
 // Fitness metrics endpoints
+// Use a slightly longer cache TTL here because these are aggregate metrics that
+// are relatively expensive to compute but don't change every second.
 export const getFormFitnessData = (athleteId, days = 60, sport = 'all') => 
-  api.get(`/user/athlete/${athleteId}/form-fitness?days=${days}&sport=${sport}`);
+  api.get(`/user/athlete/${athleteId}/form-fitness`, {
+    params: { days, sport },
+    cacheTtlMs: 60000, // 60s cache – avoids repeated heavy aggregation on quick navigations
+  });
 
 export const getTodayMetrics = (athleteId) => 
-  api.get(`/user/athlete/${athleteId}/today-metrics`);
+  api.get(`/user/athlete/${athleteId}/today-metrics`, {
+    cacheTtlMs: 60000,
+  });
 
 export const getTrainingStatus = (athleteId) => 
-  api.get(`/user/athlete/${athleteId}/training-status`);
+  api.get(`/user/athlete/${athleteId}/training-status`, {
+    cacheTtlMs: 60000,
+  });
 
 export const getWeeklyTrainingLoad = (athleteId, months = 3, sport = 'all') => 
-  api.get(`/user/athlete/${athleteId}/weekly-training-load?months=${months}&sport=${sport}`);
+  api.get(`/user/athlete/${athleteId}/weekly-training-load`, {
+    params: { months, sport },
+    cacheTtlMs: 60000,
+  });
 
 export default api;
 

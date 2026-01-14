@@ -15,7 +15,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 const TrainingPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
+  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
+    if (athleteId) return athleteId;
+    if (user?.role === 'coach') {
+      try {
+        const globalId = localStorage.getItem('global_selectedAthleteId');
+        if (globalId) return globalId;
+      } catch {
+        // ignore
+      }
+      return user?._id || null;
+    }
+    return null;
+  });
   const [trainings, setTrainings] = useState([]);
   // Initialize selectedSport with localStorage or default to 'all'
   const [selectedSport, setSelectedSport] = useState(() => {
@@ -40,17 +52,47 @@ const TrainingPage = () => {
   // console.log('Current user:', user);
 
   const loadTrainings = useCallback(async (targetId) => {
+    const cacheKey = `athleteTrainings_${targetId}`;
+    const tsKey = `${cacheKey}_ts`;
+    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+    let usedCache = false;
+
+    // 1) Zkusit načíst tréninky z cache pro rychlé vykreslení
     try {
-      setLoading(true);
+      const cached = localStorage.getItem(cacheKey);
+      const ts = localStorage.getItem(tsKey);
+      if (cached && ts) {
+        const age = Date.now() - parseInt(ts, 10);
+        if (!Number.isNaN(age) && age < CACHE_TTL) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setTrainings(parsed);
+            usedCache = true;
+            setLoading(false);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading trainings cache:', e);
+    }
+
+    // 2) Vždy se pokusíme data z API obnovit (stale-while-revalidate)
+    try {
+      if (!usedCache) {
+        setLoading(true);
+      }
       setError(null);
-      const response = await api.get(`/user/athlete/${targetId}/trainings`);
-      // Also load FIT trainings and Strava activities for category filtering
+
+      const response = await api.get(`/user/athlete/${targetId}/trainings`, {
+        // kratší TTL v axios cache – chrání server při rychlém přepínání
+        cacheTtlMs: 60000,
+      });
       const [fitResponse, stravaResponse] = await Promise.all([
         api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
         api.get(`/api/integrations/activities`, { params: { athleteId: targetId } }).catch(() => ({ data: [] }))
       ]);
       
-      // Combine all trainings with category info
       const allTrainings = [
         ...response.data,
         ...(fitResponse.data || []).map(t => ({ ...t, category: t.category || null })),
@@ -69,9 +111,20 @@ const TrainingPage = () => {
           setSelectedTraining(sportTrainings[0]._id);
         }
       }
+
+      // 3) Uložit do localStorage, aby další stránky/otevření byly rychlé
+      try {
+        const payload = JSON.stringify(allTrainings);
+        if (payload.length < 300000) {
+          localStorage.setItem(cacheKey, payload);
+          localStorage.setItem(tsKey, Date.now().toString());
+        }
+      } catch (e) {
+        console.warn('Error saving trainings cache:', e);
+      }
     } catch (err) {
       console.error('Error loading trainings:', err);
-     //  setError('Failed to load trainings');
+      //  setError('Failed to load trainings');
     } finally {
       setLoading(false);
     }

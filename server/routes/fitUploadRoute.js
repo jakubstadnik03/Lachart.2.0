@@ -176,7 +176,7 @@ router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analy
  *           type: array
  *           items:
  *             type: string
- *         description: Selected months for monthly view (format: YYYY-MM)
+ *         description: "Selected months for monthly view (format YYYY-MM)"
  *     responses:
  *       200:
  *         description: Power metrics for Power Radar

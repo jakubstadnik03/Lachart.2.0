@@ -31,7 +31,20 @@ import { motion } from 'framer-motion';
 const DashboardPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteId || (user?.role === 'coach' ? user._id : null));
+  const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
+    if (athleteId) return athleteId;
+    if (user?.role === 'coach') {
+      // Prefer globally vybraného atleta (ze selectu/Menu), jinak sebe
+      try {
+        const globalId = localStorage.getItem('global_selectedAthleteId');
+        if (globalId) return globalId;
+      } catch {
+        // ignore
+      }
+      return user._id;
+    }
+    return null;
+  });
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -63,17 +76,75 @@ const DashboardPage = () => {
   // Training calendar data (FIT files and Strava activities)
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
 
+  // Load athlete trainings with localStorage caching (shared with TrainingPage)
   const loadTrainings = useCallback(async (targetId) => {
+    const cacheKey = `athleteTrainings_${targetId}`;
+    const tsKey = `${cacheKey}_ts`;
+    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+    let usedCache = false;
+
+    // 1) Try to load trainings from cache for fast initial render
     try {
-      setLoading(true);
-      setError(null);
-      const response = await api.get(`/user/athlete/${targetId}/trainings`);
-      if (response && response.data) {
-        return response.data;
+      const cached = localStorage.getItem(cacheKey);
+      const ts = localStorage.getItem(tsKey);
+      if (cached && ts) {
+        const age = Date.now() - parseInt(ts, 10);
+        if (!Number.isNaN(age) && age < CACHE_TTL) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setTrainings(parsed);
+            usedCache = true;
+            setLoading(false);
+          }
+        }
       }
+    } catch (e) {
+      console.warn('Error reading trainings cache (dashboard):', e);
+    }
+
+    // 2) Always try to refresh from API (stale-while-revalidate)
+    try {
+      if (!usedCache) {
+        setLoading(true);
+      }
+      setError(null);
+
+      const response = await api.get(`/user/athlete/${targetId}/trainings`, {
+        // Shorter TTL in axios cache – protects server on quick navigations
+        cacheTtlMs: 60000,
+      });
+
+      // Optionally enrich with FIT trainings and Strava activities (same as TrainingPage)
+      const [fitResponse, stravaResponse] = await Promise.all([
+        api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
+        api.get(`/api/integrations/activities`, { params: { athleteId: targetId } }).catch(() => ({ data: [] }))
+      ]);
+
+      const allTrainings = [
+        ...(response.data || []),
+        ...(fitResponse.data || []).map(t => ({ ...t, category: t.category || null })),
+        ...(stravaResponse.data || []).map(a => ({ ...a, category: a.category || null }))
+      ];
+
+      setTrainings(allTrainings);
+
+      // 3) Save to localStorage so next dashboard/TrainingPage open is instant
+      try {
+        const payload = JSON.stringify(allTrainings);
+        if (payload.length < 300000) {
+          localStorage.setItem(cacheKey, payload);
+          localStorage.setItem(tsKey, Date.now().toString());
+        }
+      } catch (e) {
+        console.warn('Error saving trainings cache (dashboard):', e);
+      }
+
+      return allTrainings;
     } catch (error) {
-      console.error('Error loading trainings:', error);
-     // setError(error.message);
+      console.error('Error loading trainings (dashboard):', error);
+      // setError(error.message);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -239,10 +310,12 @@ const DashboardPage = () => {
         }
       }
 
-      setCalendarData(combined);
-      console.log('[DashboardPage] Calendar data loaded and set:', combined.length, 'activities');
-      if (combined.length > 0) {
-        console.log('[DashboardPage] Sample activity:', combined[0]);
+      // For rendering we also limit to 100 to keep WeeklyCalendar fast
+      const limitedForView = combined.slice(0, 100);
+      setCalendarData(limitedForView);
+      console.log('[DashboardPage] Calendar data loaded and set:', limitedForView.length, 'activities');
+      if (limitedForView.length > 0) {
+        console.log('[DashboardPage] Sample activity:', limitedForView[0]);
       }
       return combined;
     } catch (error) {

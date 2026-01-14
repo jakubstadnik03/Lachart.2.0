@@ -5,9 +5,6 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
   const { user, isAuthenticated } = useAuth();
   const location = useLocation();
 
-  // Debug log
-  console.log('ProtectedRoute current user:', user);
-
   if (!isAuthenticated) {
     // Uložíme si původní cestu pro případné přesměrování po přihlášení
     return <Navigate to="/login" state={{ from: location }} replace />;

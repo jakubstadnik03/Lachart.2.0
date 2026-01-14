@@ -62,14 +62,57 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
   useEffect(() => {
     const loadData = async () => {
       if (!athleteId) return;
+
+      const months =
+        timeRange === '3 months' ? 3 :
+        timeRange === '6 months' ? 6 :
+        12;
+
+      // Per-athlete/time-range/sport cache shared across pages
+      const cacheKey = `weeklyTrainingLoad_${athleteId}_${months}_${sportFilter}`;
+      const tsKey = `${cacheKey}_ts`;
+      const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+      let usedCache = false;
+
+      // 1) Try to paint from cache immediately
       try {
-        setLoading(true);
-        const months = timeRange === '3 months' ? 3 : timeRange === '6 months' ? 6 : 12;
+        const cached = localStorage.getItem(cacheKey);
+        const ts = localStorage.getItem(tsKey);
+        if (cached && ts) {
+          const age = Date.now() - parseInt(ts, 10);
+          if (!Number.isNaN(age) && age < CACHE_TTL) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              setChartData(parsed);
+              setLoading(false);
+              usedCache = true;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading weekly training load cache:', e);
+      }
+
+      try {
+        if (!usedCache) {
+          setLoading(true);
+        }
         const response = await getWeeklyTrainingLoad(athleteId, months, sportFilter);
         if (response && response.data) {
-          // Backend returns { data: [...] }, so we need to extract the data array
           const data = Array.isArray(response.data) ? response.data : (response.data.data || []);
           setChartData(data);
+
+          // 2) Save to cache so other renders/pages are instant
+          try {
+            const payload = JSON.stringify(data);
+            if (payload.length < 100000) {
+              localStorage.setItem(cacheKey, payload);
+              localStorage.setItem(tsKey, Date.now().toString());
+            }
+          } catch (e) {
+            console.warn('Error saving weekly training load cache:', e);
+          }
         } else {
           setChartData([]);
         }

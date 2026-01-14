@@ -144,9 +144,11 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
   useEffect(() => {
     if (activities && activities.length > 0) {
       try {
-        localStorage.setItem('weeklyCalendar_activities', JSON.stringify(activities));
+        // Limit what we cache to keep memory and parse time reasonable
+        const limited = activities.slice(0, 100);
+        localStorage.setItem('weeklyCalendar_activities', JSON.stringify(limited));
         localStorage.setItem('weeklyCalendar_cacheTime', Date.now().toString());
-        setCachedActivities(activities);
+        setCachedActivities(limited);
       } catch (error) {
         console.error('Error saving activities to cache:', error);
       }
@@ -156,18 +158,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
   // Use cached activities if current activities are empty
   const effectiveActivities = activities && activities.length > 0 ? activities : cachedActivities;
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[WeeklyCalendar] Props received - activities:', activities?.length || 0, 'cachedActivities:', cachedActivities?.length || 0);
-    if (activities && activities.length > 0) {
-      console.log('[WeeklyCalendar] Activities received:', activities.length);
-      console.log('[WeeklyCalendar] Sample activity:', activities[0]);
-    } else if (cachedActivities && cachedActivities.length > 0) {
-      console.log('[WeeklyCalendar] Using cached activities:', cachedActivities.length);
-    } else {
-      console.log('[WeeklyCalendar] No activities available - activities:', activities, 'cachedActivities:', cachedActivities);
-    }
-  }, [activities, cachedActivities]);
+  // Debug logging removed to keep console clean in dev
 
   const activitiesByDay = useMemo(() => {
     const map = new Map();

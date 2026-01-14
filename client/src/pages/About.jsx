@@ -637,7 +637,7 @@ const About = () => {
       {/* Connect & Sync Section - TrainingPeaks Style */}
       <section id="connect" className="py-20 bg-gray-50 scroll-mt-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <div>
               <h2 className="text-base text-primary font-semibold tracking-wide uppercase mb-3">Device Connections</h2>
               <h3 className="text-4xl font-extrabold text-gray-900 mb-6">
@@ -656,12 +656,12 @@ const About = () => {
               </div>
             </div>
             <div className="flex justify-center">
-            <LazyImage 
-              src="/images/lachart1.png" 
+              <LazyImage 
+                src="/images/lachart1.png" 
                 alt="LaChart Device Integration" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-contain" 
-            />
-          </div>
+                className="w-full max-w-2xl h-[260px] sm:h-[320px] lg:h-[380px] rounded-3xl shadow-2xl border border-gray-200 object-contain bg-white" 
+              />
+            </div>
         </div>
         </div>
       </section>
@@ -670,7 +670,7 @@ const About = () => {
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Every Ride, Run, and Rep */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center mb-24">
             <div className="order-2 lg:order-1">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -686,20 +686,20 @@ const About = () => {
             </div>
             <div className="order-1 lg:order-2 flex justify-center">
               <LazyImage 
-                src="/images/lachart1.jpeg" 
+                src="/images/lachart_training.png" 
                 alt="Every Ride, Run, and Rep - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
           </div>
 
           {/* Sync, Link, and Connect */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center mb-24">
             <div className="flex justify-center order-1 lg:order-1">
               <LazyImage 
                 src="/images/lachart2.jpeg" 
                 alt="Sync, Link, and Connect - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
             <div className="order-2 lg:order-2">
@@ -718,7 +718,7 @@ const About = () => {
           </div>
 
           {/* Plan, Execute, and Succeed */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center mb-24">
             <div className="order-2 lg:order-1">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -734,20 +734,20 @@ const About = () => {
         </div>
             <div className="order-1 lg:order-2 flex justify-center">
               <LazyImage 
-                src="/images/lachart3.jpeg" 
+                src="/images/lactate_testing.png" 
                 alt="Plan, Execute, and Succeed - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
           </div>
 
           {/* Go Beyond a Single Sport */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center mb-24">
             <div className="flex justify-center order-1 lg:order-1">
               <LazyImage 
                 src="/images/lachart4.jpeg" 
                 alt="Go Beyond a Single Sport - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
             <div className="order-2 lg:order-2">
@@ -767,7 +767,7 @@ const About = () => {
           </div>
 
           {/* Don't Think, Just Train */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center mb-24">
             <div className="order-2 lg:order-1">
               <h3 className="text-3xl font-extrabold text-gray-900 mb-4">Lactate Recording & Progress Tracking</h3>
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
@@ -786,18 +786,18 @@ const About = () => {
               <LazyImage 
                 src="/images/lachart5.jpeg" 
                 alt="Don't Think, Just Train - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
           </div>
 
           {/* Metrics That Actually Make Sense */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <div className="flex justify-center order-1 lg:order-1">
               <LazyImage 
                 src="/images/lachart6.jpeg" 
                 alt="Metrics That Actually Make Sense - LaChart Features" 
-                className="w-full max-w-lg rounded-2xl shadow-xl object-cover aspect-video" 
+                className="w-full max-w-2xl h-[260px] sm:h-[340px] lg:h-[420px] rounded-3xl shadow-2xl border border-gray-200 object-cover" 
               />
             </div>
             <div className="order-2 lg:order-2">
@@ -932,11 +932,26 @@ const About = () => {
             className="mySwiper !pb-12"
           >
             {[
-              { src: '/images/lachart5.png', alt: 'Dashboard', title: 'Interactive Dashboard' },
-              { src: '/images/lachart4.png', alt: 'Performance Analysis', title: 'Performance Analysis' },
-              { src: '/images/lachart6.png', alt: 'Training Log', title: 'Training Log' },
-              { src: '/images/lachart1.png', alt: 'Lactate Curve', title: 'Lactate Curve Analysis' },
-              { src: '/images/lachart3.png', alt: 'Training Interface', title: 'Training Interface' }
+              {
+                src: '/images/lactate-curve-calculator.png',
+                alt: 'Lactate Curve Calculator',
+                title: 'Lactate Curve Calculator'
+              },
+              {
+                src: '/images/Form-fitness-chart.png',
+                alt: 'Form & Fitness Chart',
+                title: 'Form & Fitness Trend'
+              },
+              {
+                src: '/images/training-calendar.png',
+                alt: 'Training Calendar',
+                title: 'Training Calendar Overview'
+              },
+              {
+                src: '/images/training-analytics.png',
+                alt: 'Training Analytics',
+                title: 'Training Analytics & TSS'
+              }
             ].map((image) => (
               <SwiperSlide key={image.alt} className="!w-[300px] sm:!w-[450px] md:!w-[600px]">
                 {({ isActive }) => (

@@ -208,20 +208,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     const sport = mockData.sport || 'bike';
     setSelectedSport(sport);
     
-    console.log('[Zones] Calculating zones for sport:', sport, {
-      resultsCount: mockData.results.length,
-      baseLactate: mockData.baseLactate,
-      results: mockData.results.map(r => ({ power: r.power, lactate: r.lactate, hr: r.heartRate }))
-    });
-    
     const thresholds = calculateThresholds(mockData);
-    console.log('[Zones] Thresholds calculated:', {
-      hasLTP1: !!thresholds['LTP1'],
-      hasLTP2: !!thresholds['LTP2'],
-      hasHR1: !!thresholds.heartRates['LTP1'],
-      hasHR2: !!thresholds.heartRates['LTP2'],
-      allThresholds: Object.keys(thresholds).filter(k => k !== 'heartRates' && k !== 'lactates')
-    });
     
     const lt1_value = thresholds['LTP1'];
     const lt2_value = thresholds['LTP2'];
