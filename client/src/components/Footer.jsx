@@ -4,7 +4,7 @@ export default function Footer() {
   return (
     <div className="flex overflow-hidden flex-wrap gap-4 sm:gap-10 justify-between items-center self-center px-6 py-5 w-full text-sm leading-none bg-white border-t border-gray-200 max-md:px-5 max-md:max-w-full">
       <div className="self-stretch my-auto text-gray-600">
-        © 2026 La Chart. All Rights Reserved.
+        © 2026 LaChart. All Rights Reserved.
       </div>
       <div className="flex items-center gap-4 sm:gap-6">
         <a
@@ -18,7 +18,7 @@ export default function Footer() {
           <span className="text-xs sm:text-sm font-medium">Buy me a coffee</span>
         </a>
         <div className="self-stretch my-auto text-right text-blue-500">
-          Made by <span className="text-blue-500">La Chart</span>
+          Made by <span className="text-blue-500">LaChart</span>
         </div>
       </div>
     </div>

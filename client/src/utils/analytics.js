@@ -55,6 +55,16 @@ export function trackEvent(action, params = {}) {
   });
 }
 
+// --- Google Ads conversions / custom events ---
+
+// Example: dedicated conversion for "Kontakt na ten stránky" from Google Ads
+export function trackAdsConversionKontakt(params = {}) {
+  if (!initialized || !window.gtag) return;
+  window.gtag('event', 'ads_conversion_Kontakt_Na_ten_str_nky__1', {
+    ...params,
+  });
+}
+
 // Enhanced tracking functions for key metrics
 
 export function trackUserRegistration(method, userRole = 'athlete') {

@@ -46,7 +46,8 @@ const DashboardPage = () => {
     return null;
   });
   const [trainings, setTrainings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Start with loading=false so page content can render immediately; sections have their own loaders.
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // Dashboard sport filter should not be shared with TrainingPage/TrainingStats localStorage key.
   // Use per-athlete dashboard key so it won't "randomly" flip to run/bike when another page saves its selection.
@@ -75,6 +76,21 @@ const DashboardPage = () => {
   
   // Training calendar data (FIT files and Strava activities)
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
+
+  // For heavy dashboard widgets (TrainingTable, TrainingStats, TrainingGraph, SpiderChart),
+  // work only with a limited number of the most recent trainings to keep calculations fast.
+  const MAX_DASHBOARD_TRAININGS = 40;
+  const recentTrainings = React.useMemo(() => {
+    if (!trainings || trainings.length === 0) return [];
+    // Sort by date (or timestamp) from newest to oldest and take only the first N
+    return [...trainings]
+      .sort((a, b) => {
+        const dateA = new Date(a.date || a.timestamp || 0);
+        const dateB = new Date(b.date || b.timestamp || 0);
+        return dateB - dateA;
+      })
+      .slice(0, MAX_DASHBOARD_TRAININGS);
+  }, [trainings]);
 
   // Load athlete trainings with localStorage caching (shared with TrainingPage)
   const loadTrainings = useCallback(async (targetId) => {
@@ -499,9 +515,9 @@ const DashboardPage = () => {
   }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData]);
 
   useEffect(() => {
-    if (trainings.length > 0) {
-      // Get available sports from trainings
-      const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+    if (recentTrainings.length > 0) {
+      // Get available sports from recent trainings only (keeps UI snappy)
+      const availableSports = [...new Set(recentTrainings.map(t => t.sport))].filter(Boolean);
       
       // If current selectedSport is not available and is not 'all', switch to first available
       // 'all' is always valid, so we don't reset it
@@ -511,8 +527,8 @@ const DashboardPage = () => {
       }
       
       const sportTrainings = selectedSport === 'all' 
-        ? trainings 
-        : trainings.filter(t => t.sport === selectedSport);
+        ? recentTrainings 
+        : recentTrainings.filter(t => t.sport === selectedSport);
       const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
       
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
@@ -525,7 +541,7 @@ const DashboardPage = () => {
         }
       }
     }
-  }, [selectedSport, trainings, selectedTitle]);
+  }, [selectedSport, recentTrainings, selectedTitle]);
 
   // Filter tests based on selected sport
   const filteredTests = selectedSport === 'all' 
@@ -568,16 +584,6 @@ const DashboardPage = () => {
     setSelectedAthleteId(newAthleteId);
     navigate(`/dashboard/${newAthleteId}`);
   };
-
-  if (loading) return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-center justify-center h-screen"
-    >
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-    </motion.div>
-  );
 
   if (error) return (
     <motion.div 
@@ -666,7 +672,7 @@ const DashboardPage = () => {
           className="lg:col-span-3 md:col-span-2"
         >
           <TrainingTable 
-            trainings={trainings}
+            trainings={recentTrainings}
             calendarData={calendarData}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
@@ -690,7 +696,7 @@ const DashboardPage = () => {
           className="lg:col-span-2 md:col-span-2"
         >
           <SpiderChart 
-            trainings={trainings}
+            trainings={recentTrainings}
             selectedSport={selectedSport}
             setSelectedSport={setSelectedSport}
             calendarData={calendarData}
@@ -704,7 +710,7 @@ const DashboardPage = () => {
           className="lg:col-span-3 md:col-span-2"
         >
           <TrainingStats 
-            trainings={trainings}
+            trainings={recentTrainings}
             selectedSport={selectedSport}
             onSportChange={setSelectedSport}
             selectedTitle={selectedTitle}
@@ -722,7 +728,7 @@ const DashboardPage = () => {
           className="lg:col-span-2 md:col-span-2"
         >
           <TrainingGraph 
-            trainingList={trainings}
+            trainingList={recentTrainings}
             selectedSport={selectedSport}
             setSelectedSport={setSelectedSport}
             selectedTitle={selectedTitle}

@@ -41,7 +41,6 @@ const TrainingPage = () => {
   }, [selectedSport]);
   const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const navigate = useNavigate();
@@ -56,8 +55,6 @@ const TrainingPage = () => {
     const tsKey = `${cacheKey}_ts`;
     const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-    let usedCache = false;
-
     // 1) Zkusit načíst tréninky z cache pro rychlé vykreslení
     try {
       const cached = localStorage.getItem(cacheKey);
@@ -68,8 +65,6 @@ const TrainingPage = () => {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
             setTrainings(parsed);
-            usedCache = true;
-            setLoading(false);
           }
         }
       }
@@ -79,14 +74,11 @@ const TrainingPage = () => {
 
     // 2) Vždy se pokusíme data z API obnovit (stale-while-revalidate)
     try {
-      if (!usedCache) {
-        setLoading(true);
-      }
       setError(null);
 
       const response = await api.get(`/user/athlete/${targetId}/trainings`, {
         // kratší TTL v axios cache – chrání server při rychlém přepínání
-        cacheTtlMs: 60000,
+        cacheTtlMs: 6000,
       });
       const [fitResponse, stravaResponse] = await Promise.all([
         api.get(`/api/fit/trainings`, { params: { athleteId: targetId } }).catch(() => ({ data: [] })),
@@ -125,8 +117,6 @@ const TrainingPage = () => {
     } catch (err) {
       console.error('Error loading trainings:', err);
       //  setError('Failed to load trainings');
-    } finally {
-      setLoading(false);
     }
   }, [selectedSport]);
 
@@ -197,7 +187,6 @@ const TrainingPage = () => {
         throw new Error('User not authenticated');
       }
 
-      setLoading(true);
       setError(null);
 
       const targetId = selectedAthleteId || user._id;
@@ -247,21 +236,10 @@ const TrainingPage = () => {
         setTimeout(() => notification.remove(), 500);
       }, 3000);
     } finally {
-      setLoading(false);
       setIsSubmitting(false);
     }
   };
 
-
-  if (loading) return (
-    <motion.div 
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    className="flex items-center justify-center h-screen"
-  >
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-  </motion.div>
-  );
 
   if (error) return (
     <motion.div 

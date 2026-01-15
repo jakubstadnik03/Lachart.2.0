@@ -34,7 +34,8 @@ const TestingPage = () => {
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Page-level loading starts as false; individual blocks/components show their own spinners.
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
@@ -397,16 +398,6 @@ const TestingPage = () => {
     setSelectedAthleteId(newAthleteId);
     navigate(`/testing/${newAthleteId}`, { replace: true });
   };
-
-  if (loading) return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-center justify-center h-screen"
-    >
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-    </motion.div>
-  );
 
   if (error) return (
     <motion.div 

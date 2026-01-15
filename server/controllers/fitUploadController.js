@@ -427,13 +427,15 @@ async function getFitTrainings(req, res) {
     // When userId is ObjectId, convert it to string
     const targetAthleteIdStr = targetAthleteId ? String(targetAthleteId) : String(userId);
     
-    console.log('Fetching FIT trainings:', {
-      userId: String(userId),
-      userIdType: typeof userId,
-      targetAthleteId: targetAthleteIdStr,
-      userRole: user.role,
-      athleteIdParam: req.query.athleteId
-    });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Fetching FIT trainings:', {
+        userId: String(userId),
+        userIdType: typeof userId,
+        targetAthleteId: targetAthleteIdStr,
+        userRole: user.role,
+        athleteIdParam: req.query.athleteId
+      });
+    }
     
     try {
       // Find trainings with the athleteId as string
@@ -2776,7 +2778,9 @@ async function getPowerMetrics(req, res) {
         records: t.records
       }));
     
-    console.log(`[Power Metrics] Processed ${fitTrainingsProcessed.length} FIT trainings with power data`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Processed ${fitTrainingsProcessed.length} FIT trainings with power data`);
+    }
     
     // Log date ranges for FIT trainings
     if (fitTrainingsProcessed.length > 0) {
@@ -2785,7 +2789,9 @@ async function getPowerMetrics(req, res) {
         .map(t => new Date(t.timestamp))
         .sort((a, b) => a - b);
       if (fitDates.length > 0) {
-        console.log(`[Power Metrics] FIT trainings date range: ${fitDates[0].toISOString()} to ${fitDates[fitDates.length - 1].toISOString()}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Power Metrics] FIT trainings date range: ${fitDates[0].toISOString()} to ${fitDates[fitDates.length - 1].toISOString()}`);
+        }
       }
     }
     
@@ -2798,7 +2804,9 @@ async function getPowerMetrics(req, res) {
     // Filter only activities with power data
     const stravaActivitiesWithPower = stravaActivities.filter(a => a.averagePower && a.averagePower > 0);
     
-    console.log(`[Power Metrics] Found ${fitTrainings.length} FIT trainings, ${stravaActivities.length} Strava activities (${stravaActivitiesWithPower.length} with power)`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Found ${fitTrainings.length} FIT trainings, ${stravaActivities.length} Strava activities (${stravaActivitiesWithPower.length} with power)`);
+    }
     
     // Process Strava activities - process in batches to avoid rate limiting.
     // NOTE: Strava streams require API calls. We cannot realistically scan "all time" for accounts with lots of rides.
@@ -2865,7 +2873,9 @@ async function getPowerMetrics(req, res) {
       stravaActivitiesToProcess = topN(eligible, MAX_STRAVA_ACTIVITIES, (a) => Math.max(getWeighted(a), getAvg(a)));
     }
 
-    console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length}/${stravaPool.length} Strava activities (cap ${MAX_STRAVA_ACTIVITIES})...`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length}/${stravaPool.length} Strava activities (cap ${MAX_STRAVA_ACTIVITIES})...`);
+    }
     
     let rateLimitHit = false;
     // Only process Strava activities if we have any to process
@@ -2875,14 +2885,18 @@ async function getPowerMetrics(req, res) {
       
       // Skip if we hit rate limit
       if (rateLimitHit) {
-        console.log(`[Power Metrics] Skipping remaining ${stravaActivitiesToProcess.length - i} activities due to rate limit`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Power Metrics] Skipping remaining ${stravaActivitiesToProcess.length - i} activities due to rate limit`);
+        }
         break;
       }
       
       try {
         const stravaToken = await getValidStravaToken(user);
         if (!stravaToken) {
-          console.log(`[Power Metrics] No valid Strava token, skipping remaining activities`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[Power Metrics] No valid Strava token, skipping remaining activities`);
+          }
           break;
         }
         
@@ -2925,11 +2939,13 @@ async function getPowerMetrics(req, res) {
         if (error.response?.status === 429) {
           // Rate limited, stop processing
           rateLimitHit = true;
-          console.log(`[Power Metrics] Rate limited after processing ${stravaTrainingsProcessed.length} Strava activities`);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`[Power Metrics] Rate limited after processing ${stravaTrainingsProcessed.length} Strava activities`);
+          }
           break;
         }
         // Log other errors but continue
-        if (error.code !== 'ECONNABORTED') { // Don't log timeout errors
+        if (error.code !== 'ECONNABORTED' && process.env.NODE_ENV !== 'production') { // Don't log timeout errors
           console.warn(`[Power Metrics] Error loading Strava activity ${activity.stravaId}:`, error.message);
         }
         continue;
@@ -2937,7 +2953,9 @@ async function getPowerMetrics(req, res) {
       }
     }
     
-    console.log(`[Power Metrics] Processed ${stravaTrainingsProcessed.length} Strava activities with power data`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Processed ${stravaTrainingsProcessed.length} Strava activities with power data`);
+    }
     
     // Log date ranges for Strava activities
     if (stravaTrainingsProcessed.length > 0) {
@@ -2946,14 +2964,18 @@ async function getPowerMetrics(req, res) {
         .map(t => new Date(t.timestamp))
         .sort((a, b) => a - b);
       if (stravaDates.length > 0) {
-        console.log(`[Power Metrics] Strava activities date range: ${stravaDates[0].toISOString()} to ${stravaDates[stravaDates.length - 1].toISOString()}`);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[Power Metrics] Strava activities date range: ${stravaDates[0].toISOString()} to ${stravaDates[stravaDates.length - 1].toISOString()}`);
+        }
       }
     }
     
     // Combine FIT and Strava trainings
     const allTrainings = [...fitTrainingsProcessed, ...stravaTrainingsProcessed];
     
-    console.log(`[Power Metrics] Total trainings to process: ${allTrainings.length} (${fitTrainingsProcessed.length} FIT + ${stravaTrainingsProcessed.length} Strava)`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Total trainings to process: ${allTrainings.length} (${fitTrainingsProcessed.length} FIT + ${stravaTrainingsProcessed.length} Strava)`);
+    }
     
     // Calculate metrics for each training
     const allMetrics = allTrainings
@@ -2974,10 +2996,12 @@ async function getPowerMetrics(req, res) {
       });
     
     // Calculate All Time maximums
-    console.log(`[Power Metrics] Calculating All Time from ${allMetrics.length} training metrics`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Calculating All Time from ${allMetrics.length} training metrics`);
+    }
     
     // Debug: Log sample metrics
-    if (allMetrics.length > 0) {
+    if (allMetrics.length > 0 && process.env.NODE_ENV !== 'production') {
       console.log(`[Power Metrics] Sample metrics (first 3):`, allMetrics.slice(0, 3).map(m => ({
         date: m.date.toISOString(),
         sprint5s: m.sprint5s,
@@ -3002,7 +3026,9 @@ async function getPowerMetrics(req, res) {
       endurance60min: getMaxValue('endurance60min')
     };
     
-    console.log(`[Power Metrics] All Time values:`, allTime);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] All Time values:`, allTime);
+    }
     
     // Calculate compare period maximums
     const now = Date.now();
@@ -3036,8 +3062,10 @@ async function getPowerMetrics(req, res) {
       endurance60min: getCompareMaxValue('endurance60min')
     } : { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 };
     
-    console.log(`[Power Metrics] Compare period (${comparePeriod}):`, compare);
-    console.log(`[Power Metrics] Compare metrics count: ${compareMetrics.length}, date range: ${compareDate > 0 ? new Date(compareDate).toISOString() : 'all time'} to ${new Date(now).toISOString()}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Power Metrics] Compare period (${comparePeriod}):`, compare);
+      console.log(`[Power Metrics] Compare metrics count: ${compareMetrics.length}, date range: ${compareDate > 0 ? new Date(compareDate).toISOString() : 'all time'} to ${new Date(now).toISOString()}`);
+    }
     
     // Find personal records
     const findMaxWithDate = (key) => {

@@ -39,7 +39,10 @@ router.post("/register", async (req, res) => {
 // Login endpoint
 router.post("/login", async (req, res) => {
     try {
-        console.log("Login request received:", req.body);
+        // In non-production, log only basic info (no password)
+        if (process.env.NODE_ENV !== 'production') {
+            console.log("Login request received:", { email: req.body?.email });
+        }
         await loginAbl.login(req, res);
     } catch (error) {
         console.error("Login route error:", error);

@@ -9,11 +9,17 @@ class TrainingDao {
 
   async findByAthleteId(athleteId) {
     try {
-      console.log('Finding trainings for athlete:', athleteId);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Finding trainings for athlete:', athleteId);
+      }
       // Convert ObjectId to string since athleteId is stored as String in the schema
       const athleteIdStr = athleteId instanceof mongoose.Types.ObjectId ? athleteId.toString() : String(athleteId);
-      const trainings = await this.Training.find({ athleteId: athleteIdStr }).lean();
-      console.log('Found trainings:', trainings.length);
+      const trainings = await this.Training.find({ athleteId: athleteIdStr })
+        .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
+        .lean();
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Found trainings:', trainings.length);
+      }
       return trainings;
     } catch (error) {
       console.error('Error in findByAthleteId:', error);
@@ -23,7 +29,9 @@ class TrainingDao {
 
   async findByAthleteIds(athleteIds) {
     try {
-      console.log('Finding trainings for athletes:', athleteIds);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Finding trainings for athletes:', athleteIds);
+      }
       
       // If no athlete IDs provided, return empty array
       if (!athleteIds || athleteIds.length === 0) {
@@ -35,8 +43,12 @@ class TrainingDao {
       const athleteIdStrings = athleteIds.map(id => 
         id instanceof mongoose.Types.ObjectId ? id.toString() : String(id)
       );
-      const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } }).lean();
-      console.log('Found trainings:', trainings.length);
+      const trainings = await this.Training.find({ athleteId: { $in: athleteIdStrings } })
+        .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
+        .lean();
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Found trainings:', trainings.length);
+      }
       return trainings;
     } catch (error) {
       console.error('Error in findByAthleteIds:', error);
@@ -46,17 +58,23 @@ class TrainingDao {
 
   async createTraining(trainingData) {
     try {
-      console.log('Creating training with data:', JSON.stringify(trainingData, null, 2));
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Creating training with data:', JSON.stringify(trainingData, null, 2));
+      }
       
       // Validace dat
       this.validateTrainingData(trainingData);
       
-      console.log('After validation:', JSON.stringify(trainingData, null, 2));
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('After validation:', JSON.stringify(trainingData, null, 2));
+      }
       
       const training = new this.Training(trainingData);
       const savedTraining = await training.save();
       
-      console.log('Saved training:', JSON.stringify(savedTraining, null, 2));
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Saved training:', JSON.stringify(savedTraining, null, 2));
+      }
       
       return savedTraining;
     } catch (error) {
@@ -97,34 +115,47 @@ class TrainingDao {
 
   async findByTitle(title, userId) {
     try {
-      console.log('Finding trainings with title:', title, 'for user:', userId);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Finding trainings with title:', title, 'for user:', userId);
+      }
       
       // Normalize the search title by removing spaces and special characters
       const normalizedSearchTitle = title.replace(/[\s-:]/g, '').toLowerCase();
-      console.log('Normalized search title:', normalizedSearchTitle);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Normalized search title:', normalizedSearchTitle);
+      }
       
       // Convert ObjectId to string since athleteId is stored as String in the schema
       const userIdStr = userId instanceof mongoose.Types.ObjectId ? userId.toString() : String(userId);
       const trainings = await this.Training.find({ 
         athleteId: userIdStr 
-      }).sort({ date: -1 }).lean();
+      })
+      .sort({ date: -1 })
+      .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
+      .lean();
       
-      console.log('All trainings found:', trainings.length);
-      console.log('Training titles:', trainings.map(t => t.title));
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('All trainings found:', trainings.length);
+        console.log('Training titles:', trainings.map(t => t.title));
+      }
       
       // Filter trainings by comparing normalized titles
       const filteredTrainings = trainings.filter(training => {
         const normalizedTrainingTitle = training.title.replace(/[\s-:]/g, '').toLowerCase();
-        console.log('Comparing:', {
-          original: training.title,
-          normalized: normalizedTrainingTitle,
-          searchTitle: normalizedSearchTitle,
-          matches: normalizedTrainingTitle === normalizedSearchTitle
-        });
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('Comparing:', {
+            original: training.title,
+            normalized: normalizedTrainingTitle,
+            searchTitle: normalizedSearchTitle,
+            matches: normalizedTrainingTitle === normalizedSearchTitle
+          });
+        }
         return normalizedTrainingTitle === normalizedSearchTitle;
       });
       
-      console.log('Filtered trainings:', filteredTrainings.length);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Filtered trainings:', filteredTrainings.length);
+      }
       return filteredTrainings;
     } catch (error) {
       console.error('Error in findByTitle:', error);

@@ -41,7 +41,6 @@ const LactateCurveCalculatorPage = () => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    console.log(isMenuOpen);
     
     const menuRef = useRef(null);
     const [testData, setTestData] = useState(() => {
@@ -94,6 +93,26 @@ const LactateCurveCalculatorPage = () => {
     const [emailError, setEmailError] = useState(null);
     const [isSendingEmail, setIsSendingEmail] = useState(false);
     const { login } = useAuth();
+
+    // Legacy training tools state (kept minimal for quick calculators below)
+    const [zone2Ftp, setZone2Ftp] = useState('');
+    const [zone2HrThreshold, setZone2HrThreshold] = useState('');
+    const [tssNp, setTssNp] = useState('');
+
+    // Helpers for simple pace formatting (used in quick run zones calculator)
+    const parsePaceToSeconds = (value) => {
+        if (!value || typeof value !== 'string' || !value.includes(':')) return null;
+        const [m, s] = value.split(':').map(Number);
+        if (Number.isNaN(m) || Number.isNaN(s)) return null;
+        return m * 60 + s;
+    };
+
+    const formatPaceFromSeconds = (seconds) => {
+        if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+        const m = Math.floor(seconds / 60);
+        const s = Math.round(seconds % 60);
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
 
     // Create refs for scroll animations
     const formRef = useRef(null);
@@ -871,16 +890,14 @@ const LactateCurveCalculatorPage = () => {
         }
     }, [testData, hasValidData]);
 
-    // When valid data appears (e.g., after filling mock data), scroll to curve and ensure visible
+    // Ensure page starts at top on initial load
     useEffect(() => {
-        if (hasValidData && curveRef.current) {
-            try {
-                curveRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            } catch (e) {
-                // no-op
-            }
+        try {
+            window.scrollTo(0, 0);
+        } catch {
+            // ignore
         }
-    }, [hasValidData]);
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50 flex overflow-x-hidden overflow-y-hidden w-full relative">
@@ -944,76 +961,84 @@ const LactateCurveCalculatorPage = () => {
                 {/* Main Content */}
           {/* Main Content */}
           <main className="flex-1 px-4 py-8 pt-16 md:pt-8 overflow-x-hidden overflow-y-visible w-full max-w-full">
-                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden overflow-y-visible w-full">
-                        {/* Page Header */}
-                        <div className="w-full bg-gradient-to-r from-blue-100/60 via-white to-purple-100/80 pb-14 pt-18 px-4 rounded-3xl shadow-2xl mb-14 border-t-4 border-b-4 border-primary/40 relative overflow-hidden">
-  {/* EKG SVG background */}
-  <svg className="absolute left-1/2 -translate-x-1/2 top-7 w-64 md:w-[420px] opacity-25 z-0" viewBox="0 0 300 40" fill="none">
-    <path d="M5 35Q38 5 62 27Q90 44 135 16Q170 1 295 36" stroke="#4F46E5" strokeWidth="6" fill="none"/>
-  </svg>
-  <div className="max-w-5xl mx-auto text-center relative z-10">
-    <h1 className="text-5xl md:text-6xl font-extrabold mb-7 leading-snug tracking-tight bg-gradient-to-br from-primary via-pink-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
+                    <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden overflow-y-hidden w-full">
+                        {/* Page Header – modern hero */}
+                        <section className="w-full bg-white rounded-3xl shadow-sm border border-gray-100 mb-10 overflow-hidden relative">
+                          <div className="absolute inset-x-0 -top-20 h-40 bg-gradient-to-r from-primary/20 via-pink-300/20 to-purple-400/10 blur-3xl pointer-events-none" />
+                          <div className="relative px-4 sm:px-8 py-8 sm:py-10 lg:py-12 flex flex-col lg:flex-row items-start lg:items-center gap-6 lg:gap-10">
+                            <div className="flex-1 min-w-0">
+                              <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[11px] sm:text-xs font-semibold text-primary mb-3">
+                                Free online tool • No login required
+                              </div>
+                              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-gray-900 tracking-tight mb-3">
       Lactate Curve Calculator
     </h1>
-    <div className="h-3 inline-block mb-4">
-      <span className="block w-32 mx-auto rounded-full h-1 bg-gradient-to-r from-indigo-400 via-pink-400 to-yellow-400"></span>
-    </div>
-    <h2 className="text-2xl md:text-3xl font-bold mb-7 leading-snug underline underline-offset-8 decoration-primary/60 text-gray-900">
-      Analyze Your <span className="bg-primary/10 px-2 rounded font-semibold">Lactate Test</span> Instantly With Our <span className="text-primary font-bold">Advanced Calculator</span>
-    </h2>
-    <p className="text-xl md:text-2xl text-gray-800 mb-4 font-medium max-w-4xl mx-auto">
-      Upload or enter your blood lactate testing stages below to generate your personalized curve and calculate endurance thresholds (
-      <span className="text-indigo-800 font-bold">LT1</span>,
-      <span className="text-pink-700 font-bold"> LT2</span>, <span className="text-orange-700 font-bold">OBLA</span>
-      ).
-      <br className="hidden md:block"/>
-      <span className="block mt-2 bg-gradient-to-r from-pink-600 to-blue-500 bg-clip-text text-transparent font-bold text-2xl">
-        Automated calculation of LT1, LT2 (OBLA), and training zones!
-      </span>
-    </p>
-    <div className="flex flex-col md:flex-row md:gap-8 gap-5 justify-center items-center mt-6 px-2">
-      <div className="flex-1 bg-white/80 border border-indigo-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
-        <span className="text-primary font-bold">No sign-up, no ads</span> – calculation runs entirely in your browser.<br />Private, secure, and 100% free.
+                              <p className="text-sm sm:text-base text-gray-600 max-w-2xl mb-4">
+                                Turn your blood lactate test into a clear curve with LT1, LT2/OBLA and ready‑to‑use training
+                                zones for running, cycling and swimming.
+                              </p>
+                              <div className="flex flex-wrap gap-3 mb-4">
+                                <div className="inline-flex items-center px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2" />
+                                  Works entirely in your browser – data stays on your device
       </div>
-      <div className="flex-1 bg-white/80 border border-pink-100 rounded-2xl py-4 px-6 shadow-md text-lg leading-relaxed font-medium max-w-md mx-auto">
-        Perfect for <span className="bg-yellow-100 rounded px-1 font-semibold">running, cycling, swimming</span>. Step test ready. Metric & Imperial units.
+                                <div className="inline-flex items-center px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mr-2" />
+                                  Supports bike, run and swim step tests
       </div>
     </div>
-    <p className="text-md md:text-lg text-gray-600 mb-3 mt-8 px-2 md:px-12 max-w-3xl mx-auto">
-      <span className="bg-indigo-50 px-2 py-1 rounded">Lactate testing is the gold standard for creating evidence-based training plans and maximizing endurance performance.</span> This tool visualizes your curve, finds all key thresholds, and generates scientifically accurate training zones for every athlete.
-    </p>
-    <p className="text-sm md:text-base text-gray-500 max-w-2xl mx-auto italic">
-      Used by professional coaches and recreational athletes worldwide.
-    </p>
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => navigate('/signup')}
+                                  className="inline-flex items-center justify-center px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-primary to-pink-500 shadow-sm hover:shadow-md hover:from-primary/90 hover:to-pink-500/90 transition-all"
+                                >
+                                  Save tests – sign up for free
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate('/about')}
+                                  className="inline-flex items-center justify-center px-4 sm:px-5 py-2.5 rounded-xl text-sm font-medium text-gray-800 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+                                >
+                                  Learn how LaChart uses lactate data →
+                                </button>
   </div>
 </div>
-
-                        {/* Info Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto px-4">
-                            {/* Demo Info Card */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-xl sm:p-3 lg:p-6 shadow-sm">
-                                <h2 className="text-lg font-semibold text-blue-900 mb-2">
-                                    🧪 Try Without Login
-                                </h2>
-                                <p className="text-blue-800">
-                                    This is a demo version where you can test the lactate analysis features. No account required, but data won't be saved.
+                            <div className="w-full lg:w-80 xl:w-96">
+                              <div className="bg-gradient-to-br from-primary/10 via-white to-purple-50 border border-primary/20 rounded-2xl p-4 sm:p-5 shadow-sm">
+                                <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                                  What you get from this calculator
+                                </h3>
+                                <ul className="text-xs sm:text-sm text-gray-700 space-y-1.5">
+                                  <li>• Clean lactate curve from your test stages</li>
+                                  <li>• Estimated LT1 (aerobic) and LT2 / OBLA (anaerobic) thresholds</li>
+                                  <li>• Sport‑specific training zones for power / pace / heart rate</li>
+                                  <li>• Option to send a full PDF‑style report after you create an account</li>
+                                </ul>
+                                <p className="mt-3 text-[11px] text-gray-500">
+                                  LaChart is used by endurance coaches and self‑coached athletes to turn lab and field lactate
+                                  tests into practical training plans.
                                 </p>
                             </div>
+                            </div>
+                          </div>
+                        </section>
 
-                            {/* Instructions Card */}
-                            <div className="bg-purple-50 border border-purple-200 rounded-xl sm:p-3 lg:p-6 shadow-sm">
-                                <h2 className="text-lg font-semibold text-purple-900 mb-2">
-                                    📝 How to Use
-                                </h2>
-                                <p className="text-purple-800">
-                                    Fill in the test form below with your lactate test data. The curve and calculations will update automatically.
-                                </p>
+                        {/* Short info row */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl mx-auto px-4">
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-900">
+                            🧪 <span className="font-semibold">Try without login:</span> enter demo data or your own test – we
+                            won&apos;t save anything unless you create an account.
+                          </div>
+                          <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-900">
+                            📝 <span className="font-semibold">Tip:</span> use 3–6 minute stages with small intensity steps and
+                            sample lactate at the end of each stage for the cleanest curve.
                             </div>
                         </div>
 
 
                         {/* Main Content Area */}
-                        <div className="space-y-8 mt-8 px-0 overflow-x-hidden w-full">
+                        <div className="space-y-8 mt-8 px-0  w-full">
                             {/* Top Controls - Fill Demo Data and Help */}
                             <div className="flex flex-row sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 px-4">
                                 <div className="relative">
@@ -1156,6 +1181,171 @@ const LactateCurveCalculatorPage = () => {
                                         </div>
                                     </motion.div>
                             )}
+
+                            {/* Simple zones calculators – bike / run / HR */}
+                            <section className="mt-8">
+                              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:p-8">
+                                <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2 mb-4">
+                                  <div>
+                                    <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+                                      Quick zones calculators
+                                    </h2>
+                                    <p className="text-xs sm:text-sm text-gray-600">
+                                      Rough training zones based on FTP / threshold pace / threshold HR. For precise lactate‑based
+                                      zones, use the test + generator above.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                                  {/* Bike power zones */}
+                                  <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 sm:p-5">
+                                    <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+                                      Bike power zones (from FTP)
+                                    </h3>
+                                    <div className="mb-3">
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        FTP / LT2 (W)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={zone2Ftp}
+                                        onChange={(e) => setZone2Ftp(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                                        placeholder="e.g. 260"
+                                      />
+                                    </div>
+                                    {(() => {
+                                      const ftp = parseFloat(zone2Ftp || '0');
+                                      if (!ftp || ftp <= 0) {
+                                        return (
+                                          <p className="text-xs text-gray-500">
+                                            Enter FTP to see approximate 5‑zone power ranges.
+                                          </p>
+                                        );
+                                      }
+                                      const z = [
+                                        { label: 'Z1 Endurance', lo: 0.55, hi: 0.75 },
+                                        { label: 'Z2 Tempo', lo: 0.76, hi: 0.9 },
+                                        { label: 'Z3 Threshold', lo: 0.91, hi: 1.05 },
+                                        { label: 'Z4 VO2', lo: 1.06, hi: 1.2 },
+                                        { label: 'Z5 Anaerobic', lo: 1.21, hi: 1.5 },
+                                      ];
+                                      return (
+                                        <div className="mt-2 space-y-1.5 text-xs text-gray-700">
+                                          {z.map((zone) => (
+                                            <div key={zone.label} className="flex items-center justify-between">
+                                              <span className="mr-2">{zone.label}</span>
+                                              <span className="font-semibold text-gray-900">
+                                                {Math.round(ftp * zone.lo)}–{Math.round(ftp * zone.hi)} W
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  {/* Run pace zones */}
+                                  <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 sm:p-5">
+                                    <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+                                      Run pace zones (per km)
+                                    </h3>
+                                    <div className="mb-3">
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Threshold pace (mm:ss / km)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={zone2HrThreshold}
+                                        onChange={(e) => setZone2HrThreshold(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                                        placeholder="e.g. 4:00"
+                                      />
+                                    </div>
+                                    {(() => {
+                                      const thrSec = parsePaceToSeconds(zone2HrThreshold || '');
+                                      if (!thrSec) {
+                                        return (
+                                          <p className="text-xs text-gray-500">
+                                            Enter threshold pace to see easy / tempo / interval pace bands.
+                                          </p>
+                                        );
+                                      }
+                                      const zones = [
+                                        { label: 'Z1 Easy', lo: thrSec + 60, hi: thrSec + 90 },
+                                        { label: 'Z2 Steady', lo: thrSec + 30, hi: thrSec + 60 },
+                                        { label: 'Z3 Threshold', lo: thrSec - 10, hi: thrSec + 10 },
+                                        { label: 'Z4 Interval', lo: thrSec - 20, hi: thrSec - 5 },
+                                        { label: 'Z5 Repetition', lo: thrSec - 40, hi: thrSec - 25 },
+                                      ];
+                                      return (
+                                        <div className="mt-2 space-y-1.5 text-xs text-gray-700">
+                                          {zones.map((z) => (
+                                            <div key={z.label} className="flex items-center justify-between">
+                                              <span className="mr-2">{z.label}</span>
+                                              <span className="font-semibold text-gray-900">
+                                                {formatPaceFromSeconds(z.lo)}–{formatPaceFromSeconds(z.hi)} /km
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+
+                                  {/* Heart rate zones */}
+                                  <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 sm:p-5">
+                                    <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+                                      Heart rate zones (from threshold HR)
+                                    </h3>
+                                    <div className="mb-3">
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Threshold HR (bpm)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={tssNp}
+                                        onChange={(e) => setTssNp(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                                        placeholder="e.g. 170"
+                                      />
+                                    </div>
+                                    {(() => {
+                                      const thr = parseFloat(tssNp || '0');
+                                      if (!thr || thr <= 0) {
+                                        return (
+                                          <p className="text-xs text-gray-500">
+                                            Enter threshold HR to see approximate Z1–Z5 heart rate ranges.
+                                          </p>
+                                        );
+                                      }
+                                      const zones = [
+                                        { label: 'Z1 Recovery', lo: 0.65, hi: 0.78 },
+                                        { label: 'Z2 Endurance', lo: 0.79, hi: 0.88 },
+                                        { label: 'Z3 Tempo', lo: 0.89, hi: 0.94 },
+                                        { label: 'Z4 Threshold', lo: 0.95, hi: 1.02 },
+                                        { label: 'Z5 VO2max', lo: 1.03, hi: 1.10 },
+                                      ];
+                                      return (
+                                        <div className="mt-2 space-y-1.5 text-xs text-gray-700">
+                                          {zones.map((z) => (
+                                            <div key={z.label} className="flex items-center justify-between">
+                                              <span className="mr-2">{z.label}</span>
+                                              <span className="font-semibold text-gray-900">
+                                                {Math.round(thr * z.lo)}–{Math.round(thr * z.hi)} bpm
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              </div>
+                            </section>
 
                             {/* Results Section */}
                             {hasValidData && (

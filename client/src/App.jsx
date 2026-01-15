@@ -8,9 +8,9 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Analytics } from "@vercel/analytics/react"
 import { useLocation } from 'react-router-dom';
-import { initAnalytics, trackPageView } from './utils/analytics';
+import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import './App.css';
-import FeedbackWidget from './components/FeedbackWidget';
+import BuyMeACoffeeWidget from './components/BuyMeACoffeeWidget';
 
 // Lazy load all pages for code splitting and faster initial load
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -39,6 +39,10 @@ const FitAnalysisPage = lazy(() => import('./pages/FitAnalysisPage'));
 const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
 const LactateStatisticsPage = lazy(() => import('./pages/LactateStatisticsPage'));
 const Privacy = lazy(() => import('./pages/Privacy'));
+const Zone2CalculatorPage = lazy(() => import('./pages/Zone2CalculatorPage'));
+const FtpCalculatorPage = lazy(() => import('./pages/FtpCalculatorPage'));
+const TssCalculatorPage = lazy(() => import('./pages/TssCalculatorPage'));
+const TrainingZonesCalculatorPage = lazy(() => import('./pages/TrainingZonesCalculatorPage'));
 
 // Loading component for Suspense fallback
 const PageLoader = () => (
@@ -61,6 +65,15 @@ function AppRoutes() {
   // Track page views on route change
   React.useEffect(() => {
     trackPageView(location.pathname + location.search);
+    // Example: fire Google Ads conversion when user reaches key pages.
+    // Here: when user opens Training, Testing or Dashboard (can be adjusted).
+    if (
+      location.pathname.startsWith('/training') ||
+      location.pathname.startsWith('/testing') ||
+      location.pathname.startsWith('/dashboard')
+    ) {
+      trackAdsConversionKontakt();
+    }
   }, [location.pathname, location.search]);
 
   // Save current route to localStorage (only for protected routes)
@@ -103,6 +116,10 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/lactate-curve-calculator" element={<TestingWithoutLogin />} />
+        <Route path="/zone2-calculator" element={<Zone2CalculatorPage />} />
+        <Route path="/ftp-calculator" element={<FtpCalculatorPage />} />
+        <Route path="/tss-calculator" element={<TssCalculatorPage />} />
+        <Route path="/training-zones-calculator" element={<TrainingZonesCalculatorPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
@@ -191,7 +208,7 @@ function App() {
               {isProd && initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
               {isProd && <Analytics />}
-              <FeedbackWidget />
+              <BuyMeACoffeeWidget />
             </TrainingProvider>
           </AuthProvider>
         </NotificationProvider>

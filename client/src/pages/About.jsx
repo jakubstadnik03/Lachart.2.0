@@ -1515,12 +1515,52 @@ const About = () => {
                     lachart@lachart.net
                   </a>
                 </li>
+                <li className="flex items-center">
+                  <svg className="h-6 w-6 text-primary" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7.75 2h8.5A5.75 5.75 0 0 1 22 7.75v8.5A5.75 5.75 0 0 1 16.25 22h-8.5A5.75 5.75 0 0 1 2 16.25v-8.5A5.75 5.75 0 0 1 7.75 2Zm0 1.5A4.25 4.25 0 0 0 3.5 7.75v8.5A4.25 4.25 0 0 0 7.75 20.5h8.5A4.25 4.25 0 0 0 20.5 16.25v-8.5A4.25 4.25 0 0 0 16.25 3.5h-8.5Zm8.75 2a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 1.5A3.5 3.5 0 1 0 12 15a3.5 3.5 0 0 0 0-7Z" />
+                  </svg>
+                  <a
+                    href="https://www.instagram.com/lachartapp/?igsh=MXUwZWF3MnU2OXE0dg%3D%3D"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-gray-600 hover:text-primary"
+                  >
+                    @lachartapp on Instagram
+                  </a>
+                </li>
               </ul>
             </div>
           </div>
-          <div className="mt-8 border-t border-gray-200 pt-8 text-center">
+          <div className="mt-8 border-t border-gray-200 pt-8 text-center space-y-3">
             <p className="text-base text-gray-400">
               &copy; {new Date().getFullYear()} LaChart. All rights reserved.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+              <a
+                href="https://lachart.net/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary transition-colors"
+              >
+                Privacy Policy
+              </a>
+              <span className="text-gray-300">•</span>
+              <a
+                href="/terms"
+                className="hover:text-primary transition-colors"
+              >
+                Terms of Use
+              </a>
+            </div>
+            <p className="text-sm text-gray-500">
+              Need help or have questions?{" "}
+              <a
+                href="mailto:lachart@lachart.net"
+                className="text-primary hover:text-primary-dark font-medium"
+              >
+                Contact us
+              </a>
+              .
             </p>
           </div>
         </div>

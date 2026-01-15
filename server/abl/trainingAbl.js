@@ -226,20 +226,33 @@ class TrainingAbl {
     }
 
     async getTrainingsByAthlete(athleteId) {
-        // Get Training records
+        // Get Training records (already using .lean() in DAO)
         const trainings = await this.trainingDao.findByAthleteId(athleteId);
         
-        // Get FitTraining records
-        const fitTrainings = await FitTraining.find({ athleteId: athleteId.toString() });
+        const athleteIdStr = athleteId.toString();
         
-        // Get StravaActivity records
-        const stravaActivities = await StravaActivity.find({ userId: athleteId });
+        // Get FitTraining records – return only lightweight fields and as plain objects
+        const fitTrainings = await FitTraining.find(
+            { athleteId: athleteIdStr },
+            // Only fields needed for lists / basic info; detailed view uses dedicated endpoints
+            'timestamp title titleManual titleAuto originalFileName sport totalElapsedTime totalTimerTime athleteId category'
+        )
+        .sort({ timestamp: -1 })
+        .lean();
+        
+        // Get StravaActivity records – again, only lightweight fields
+        const stravaActivities = await StravaActivity.find(
+            { userId: athleteId },
+            'startDate name titleManual sport averagePower movingTime elapsedTime distance stravaId category'
+        )
+        .sort({ startDate: -1 })
+        .lean();
         
         // Return combined results
         return {
-            trainings: trainings,
-            fitTrainings: fitTrainings,
-            stravaActivities: stravaActivities
+            trainings,
+            fitTrainings,
+            stravaActivities
         };
     }
 
@@ -257,11 +270,15 @@ class TrainingAbl {
 
     async getTrainingTitles(userId) {
         try {
-            console.log('Getting training titles for user:', userId);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Getting training titles for user:', userId);
+            }
 
             const user = await this.userDao.findById(userId);
             if (!user) {
-                console.error('User not found:', userId);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error('User not found:', userId);
+                }
                 throw new Error('Uživatel nenalezen');
             }
 
@@ -269,7 +286,9 @@ class TrainingAbl {
 
             if (user.role === 'coach') {
                 const athletes = await this.userDao.findAthletesByCoachId(userId);
-                console.log('Found athletes:', athletes.length);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('Found athletes:', athletes.length);
+                }
 
                 if (athletes && athletes.length > 0) {
                     const athleteIds = athletes.map(athlete => athlete._id);
@@ -279,7 +298,9 @@ class TrainingAbl {
                 trainings = await this.trainingDao.findByAthleteId(userId);
             }
 
-            console.log('Found trainings:', trainings.length);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Found trainings:', trainings.length);
+            }
 
             const titles = [...new Set(
                 trainings
@@ -287,23 +308,31 @@ class TrainingAbl {
                     .filter(Boolean)
             )].sort();
 
-            console.log('Unique titles:', titles.length);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Unique titles:', titles.length);
+            }
             return titles;
         } catch (error) {
             console.error('Error in getTrainingTitles:', error);
-            console.error('Stack:', error.stack);
+            if (process.env.NODE_ENV !== 'production') {
+                console.error('Stack:', error.stack);
+            }
             throw error;
         }
     }
 
     async getTrainingsByTitle(title, userId) {
         try {
-            console.log('Getting trainings by title:', title, 'for user:', userId);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Getting trainings by title:', title, 'for user:', userId);
+            }
             
             // Získání uživatele pro zjištění role
             const user = await this.userDao.findById(userId);
             if (!user) {
-                console.error('User not found:', userId);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error('User not found:', userId);
+                }
                 throw new Error('Uživatel nenalezen');
             }
 
@@ -316,22 +345,36 @@ class TrainingAbl {
             if (user.role === 'coach') {
                 // Získat ID všech atletů tohoto trenéra
                 const athletes = await this.userDao.findAthletesByCoachId(userId);
-                console.log('Found athletes:', athletes.length);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('Found athletes:', athletes.length);
+                }
                 const athleteIds = athletes.map(athlete => athlete._id);
                 
                 // Získat tréninky všech těchto atletů
                 trainings = await this.trainingDao.findByAthleteIds(athleteIds);
-                // FitTraining
-                fitTrainings = await FitTraining.find({ athleteId: { $in: athleteIds.map(id => id.toString()) } });
-                // StravaActivity
-                stravaActivities = await StravaActivity.find({ userId: { $in: athleteIds } });
+                // FitTraining – lean + projection
+                fitTrainings = await FitTraining.find(
+                    { athleteId: { $in: athleteIds.map(id => id.toString()) } },
+                    'timestamp title titleManual titleAuto originalFileName sport totalElapsedTime totalTimerTime athleteId category'
+                ).lean();
+                // StravaActivity – lean + projection
+                stravaActivities = await StravaActivity.find(
+                    { userId: { $in: athleteIds } },
+                    'startDate name titleManual sport averagePower movingTime elapsedTime distance stravaId category'
+                ).lean();
             } else {
                 // Atlet vidí jen své tréninky
                 trainings = await this.trainingDao.findByTitle(title, userId);
                 // FitTraining
-                fitTrainings = await FitTraining.find({ athleteId: userId.toString() });
+                fitTrainings = await FitTraining.find(
+                    { athleteId: userId.toString() },
+                    'timestamp title titleManual titleAuto originalFileName sport totalElapsedTime totalTimerTime athleteId category'
+                ).lean();
                 // StravaActivity
-                stravaActivities = await StravaActivity.find({ userId: userId });
+                stravaActivities = await StravaActivity.find(
+                    { userId: userId },
+                    'startDate name titleManual sport averagePower movingTime elapsedTime distance stravaId category'
+                ).lean();
             }
 
             // Filtrovat podle title
@@ -346,9 +389,11 @@ class TrainingAbl {
                 return aTitle === normalizedTitle;
             });
 
-            console.log('Returning trainings:', filteredTrainings.length);
-            console.log('Returning FitTrainings:', filteredFitTrainings.length);
-            console.log('Returning StravaActivities:', filteredStravaActivities.length);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Returning trainings:', filteredTrainings.length);
+                console.log('Returning FitTrainings:', filteredFitTrainings.length);
+                console.log('Returning StravaActivities:', filteredStravaActivities.length);
+            }
             
             return {
                 trainings: filteredTrainings,
