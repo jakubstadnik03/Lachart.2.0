@@ -164,7 +164,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setLoading]);
 
   const loadTests = useCallback(async (targetId) => {
     try {
@@ -184,7 +184,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, setLoading]);
 
   const loadAthlete = useCallback(async (targetId) => {
     try {
@@ -200,7 +200,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setLoading]);
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching
   const loadCalendarData = useCallback(async (targetId) => {

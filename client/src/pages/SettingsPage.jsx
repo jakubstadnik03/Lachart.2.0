@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon } from 'lucide-react';
+import { Mail, User, Calendar, Info, UserPlus, UserMinus, Shield, Trash2, Settings, Bell, CreditCard, Link as LinkIcon } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, garminLogin } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, startGarminAuth, syncGarminActivities, autoSyncGarminActivities, garminLogin } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 
 const SettingsPage = () => {
@@ -484,7 +485,7 @@ const SettingsPage = () => {
 
   const handleGarminLogin = async () => {
     try {
-      await garminLogin(garminCredentials);
+      const result = await garminLogin(garminCredentials);
       setGarminLoginModal(false);
       setGarminCredentials({ username: '', password: '' });
       addNotification('Garmin account connected successfully', 'success');
@@ -589,7 +590,7 @@ const SettingsPage = () => {
       });
 
       if (response.ok) {
-        await response.json();
+        const result = await response.json();
         setStravaAutoSync(enabled);
         addNotification(`Auto-sync ${enabled ? 'enabled' : 'disabled'}`, 'success');
         

@@ -244,7 +244,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
     // Use current graphWidth from container
     const currentGraphWidth = graphWidth || (svgWidth - padding.left - padding.right);
     return padding.left + normalizedDistance * currentGraphWidth;
-  }, [processedData, graphWidth, svgWidth, padding.left, padding.right, zoomRange]);
+  }, [processedData, graphWidth, svgWidth, padding.left, zoomRange]);
 
   // Add top padding (10% of graph height) so max values don't touch the top
   const topPaddingRatio = 0.1; // 10% padding at top
@@ -980,6 +980,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
             // On mobile, show only 3 labels (start, middle, end)
             // On desktop, show 11 labels
             const labelCount = isMobile ? 3 : 11;
+            const step = labelCount === 3 ? 2 : 10; // For 3 labels, use indices 0, 1, 2
             
             return Array.from({ length: labelCount }).map((_, i) => {
               const distance = zoomedMinDistance + (zoomedRange / (labelCount - 1)) * i;

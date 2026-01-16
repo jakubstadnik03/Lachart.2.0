@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 
 /**
  * Lightweight wrapper to inject the Buy Me a Coffee floating widget script.

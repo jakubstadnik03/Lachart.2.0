@@ -56,9 +56,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       const verifyUserData = async () => {
         try {
           // Use existing user data first to avoid blocking page load
-          const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
-          const isStravaNotConnected = !user.strava?.athleteId;
-          
+      const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
+      const isStravaNotConnected = !user.strava?.athleteId;
+      
           // Check if we've already shown the modal (use localStorage for persistence)
           // Only show once per day to avoid annoying users
           const lastShown = localStorage.getItem('profileModalLastShown');
@@ -78,12 +78,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const stillNotConnected = !finalUser.strava?.athleteId;
                 
                 if (stillIncomplete) {
-                  setShowEditProfileModal(true);
+          setShowEditProfileModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNotConnected) {
-                  setShowStravaModal(true);
+          setShowStravaModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
-                }
+      }
               }).catch(() => {
                 // If final check fails, don't show modal
               });

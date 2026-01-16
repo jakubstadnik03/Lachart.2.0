@@ -7,7 +7,7 @@ import CalendarView from '../components/Calendar/CalendarView';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
-import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
+import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
@@ -170,36 +170,35 @@ const deduplicateFitTrainingLaps = (laps = []) => {
   return unique;
 };
 
-// Unused config - kept for potential future use
-// const INTERVAL_SENSITIVITY_CONFIG = {
-//   high: {
-//     label: 'High',
-//     changeThreshold: 0.035, // More sensitive: 3.5% (between 3% and 4.5%) - detects smaller changes
-//     stabilityWindow: 1.2, // More sensitive: 1.2 seconds (between 1s and 1.5s) - faster detection
-//     minIntervalDuration: 4, // More sensitive: 4 seconds (catches shorter intervals)
-//     mergeThreshold: 5, // More sensitive: 5 seconds (smaller gaps)
-//     smoothingMultiplier: 0.32, // More sensitive: 0.32 (less smoothing, more sensitivity)
-//     smoothingMin: 1
-//   },
-//   medium: {
-//     label: 'Medium',
-//     changeThreshold: 0.06, // Reduced from 0.1 to 0.06
-//     stabilityWindow: 2, // Reduced from 3 to 2 seconds
-//     minIntervalDuration: 6, // Reduced from 8 to 6 seconds
-//     mergeThreshold: 10, // Reduced from 15 to 10 seconds
-//     smoothingMultiplier: 0.5, // Reduced from 0.6
-//     smoothingMin: 2
-//   },
-//   low: {
-//     label: 'Low',
-//     changeThreshold: 0.12, // Reduced from 0.18 to 0.12
-//     stabilityWindow: 3, // Reduced from 4 to 3 seconds
-//     minIntervalDuration: 10, // Reduced from 12 to 10 seconds
-//     mergeThreshold: 20, // Reduced from 25 to 20 seconds
-//     smoothingMultiplier: 0.7, // Reduced from 0.8
-//     smoothingMin: 3
-//   }
-// };
+const INTERVAL_SENSITIVITY_CONFIG = {
+  high: {
+    label: 'High',
+    changeThreshold: 0.035, // More sensitive: 3.5% (between 3% and 4.5%) - detects smaller changes
+    stabilityWindow: 1.2, // More sensitive: 1.2 seconds (between 1s and 1.5s) - faster detection
+    minIntervalDuration: 4, // More sensitive: 4 seconds (catches shorter intervals)
+    mergeThreshold: 5, // More sensitive: 5 seconds (smaller gaps)
+    smoothingMultiplier: 0.32, // More sensitive: 0.32 (less smoothing, more sensitivity)
+    smoothingMin: 1
+  },
+  medium: {
+    label: 'Medium',
+    changeThreshold: 0.06, // Reduced from 0.1 to 0.06
+    stabilityWindow: 2, // Reduced from 3 to 2 seconds
+    minIntervalDuration: 6, // Reduced from 8 to 6 seconds
+    mergeThreshold: 10, // Reduced from 15 to 10 seconds
+    smoothingMultiplier: 0.5, // Reduced from 0.6
+    smoothingMin: 2
+  },
+  low: {
+    label: 'Low',
+    changeThreshold: 0.12, // Reduced from 0.18 to 0.12
+    stabilityWindow: 3, // Reduced from 4 to 3 seconds
+    minIntervalDuration: 10, // Reduced from 12 to 10 seconds
+    mergeThreshold: 20, // Reduced from 25 to 20 seconds
+    smoothingMultiplier: 0.7, // Reduced from 0.8
+    smoothingMin: 3
+  }
+};
 
 // Strava Laps Table Component
 const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null }) => {
@@ -886,13 +885,18 @@ const FitAnalysisPage = () => {
   }, [userFTP, userProfile, stravaAvgPower, stravaNormalizedPower, isStravaRun, stravaAvgSpeed]);
   
   // Strava interval creation state
+  const [stravaIsDragging, setStravaIsDragging] = useState(false);
+  const [stravaDragStart, setStravaDragStart] = useState({ x: 0, time: 0 });
+  const [stravaDragEnd, setStravaDragEnd] = useState({ x: 0, time: 0 });
   const [showStravaCreateLapButton, setShowStravaCreateLapButton] = useState(false);
   const [stravaSelectedTimeRange, setStravaSelectedTimeRange] = useState({ start: 0, end: 0 });
   const [stravaSelectionStats, setStravaSelectionStats] = useState(null);
   const stravaDragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
   
   // Smoothness state
-  const [smoothingWindow] = useState(5); // seconds
+  const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
+  const [showSmoothnessSlider, setShowSmoothnessSlider] = useState(false);
+  const [intervalSensitivity, setIntervalSensitivity] = useState('medium');
   
   // Export to Training state
   const [showTrainingForm, setShowTrainingForm] = useState(false);
@@ -1148,7 +1152,7 @@ const FitAnalysisPage = () => {
       }
       console.error('Error loading external activities:', e);
     }
-  }, [selectedAthleteId, user?.role, selectedStrava, loadStravaDetail]);
+  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -2300,7 +2304,7 @@ const FitAnalysisPage = () => {
         }
       } else {
         // Create new training
-        await addTraining(trainingData);
+        const newTraining = await addTraining(trainingData);
         if (similarTrainings.length > 0) {
           const similarList = similarTrainings.map(t => 
             `${t.title} (${new Date(t.date).toLocaleDateString('cs-CZ')})`
@@ -3392,8 +3396,8 @@ const FitAnalysisPage = () => {
           const time = selectedStravaStreams?.time?.data || [];
           const maxTime = time.length > 0 ? time[time.length-1] : 0;
           
-          // Get unique laps (deduplicated) - used for display
-          deduplicateStravaLaps(selectedStrava?.laps || []);
+          // Get unique laps (deduplicated)
+          const uniqueLaps = deduplicateStravaLaps(selectedStrava?.laps || []);
 
           // Strava Title and Description Editor Component
           const StravaTitleEditor = ({ onExportToTraining }) => {
@@ -3923,9 +3927,9 @@ const FitAnalysisPage = () => {
                 const time = timeArray;
                 // Apply smoothing if enabled
                 const speed = smoothData(speedArray, smoothingWindow, time);
-                smoothData(hrArray, smoothingWindow, time); // HR smoothing applied
-                smoothData(powerArray, smoothingWindow, time); // Power smoothing applied
-                // altitudeArray used directly (don't smooth altitude)
+                const hr = smoothData(hrArray, smoothingWindow, time);
+                const power = smoothData(powerArray, smoothingWindow, time);
+                const altitude = altitudeArray; // Don't smooth altitude
                 
                 // Determine sport type
                 const sportType = selectedStrava?.sport_type || selectedStrava?.sport || selectedStrava?.type || '';
@@ -4021,8 +4025,8 @@ const FitAnalysisPage = () => {
                       paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
                     } else {
                       // Fallback pokud nejsou data
-                      // paceYAxisMin = 80;  // 1:20/100m
-                      // paceYAxisMax = 120; // 2:00/100m
+                      paceYAxisMin = 80;  // 1:20/100m
+                      paceYAxisMax = 120; // 2:00/100m
                     }
                   }
                 }

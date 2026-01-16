@@ -638,6 +638,7 @@ const TrainingComparison = ({ trainings }) => {
             
             const distanceText = stripUnits(formatIntervalDistance(result));
             const durationText = formatIntervalDuration(result);
+            const color = point.color || '#6366F1';
 
             // Build compact one-line summary (no separators, no units/labels)
             const infoParts = [];
