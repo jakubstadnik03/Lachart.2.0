@@ -264,7 +264,6 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         }
       }
       if (betterLTP2Point) {
-        // Debug logging removed
         // Použít D-max na části křivky od tohoto bodu dál (rychlejší část)
         const fasterPoints = isPaceSport
           ? sortedResults.filter(p => p.power <= betterLTP2Point.power)
@@ -272,11 +271,20 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         if (fasterPoints.length >= 3) {
           const altLTP2Point = calculateDmax(fasterPoints, isPaceSport);
           if (altLTP2Point && altLTP2Point.lactate >= minLactateForLTP2 && altLTP2Point.lactate <= maxLactateForLTP2) {
-            // Debug logging removed
+            // Pokud D-max našel lepší bod (s vyšším laktátem než původní), použít ho
             if (altLTP2Point.lactate > ltp2Point.lactate) {
               ltp2Point = altLTP2Point;
+            } else {
+              // Pokud D-max nenašel lepší bod, použít betterLTP2Point přímo
+              ltp2Point = betterLTP2Point;
             }
+          } else {
+            // Pokud D-max nenašel validní bod, použít betterLTP2Point přímo
+            ltp2Point = betterLTP2Point;
           }
+        } else {
+          // Pokud není dostatek bodů pro D-max, použít betterLTP2Point přímo
+          ltp2Point = betterLTP2Point;
         }
       }
     } else if (ltp2Point.lactate > maxLactateForLTP2) {

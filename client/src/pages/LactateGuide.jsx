@@ -568,7 +568,7 @@ const LactateGuide = () => {
                 transition={{ duration: 0.2 }}
               >
                 <img 
-                  src="/images/lachart1.png" 
+                  src="/images/training-analytics.png" 
                   alt="LaChart application showing lactate curve analysis and calculated thresholds" 
                   className="rounded-xl shadow-lg w-full object-cover hover:shadow-xl transition-all duration-300"
                 />

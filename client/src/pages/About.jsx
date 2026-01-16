@@ -657,9 +657,9 @@ const About = () => {
             </div>
             <div className="flex justify-center">
               <LazyImage 
-                src="/images/lachart1.png" 
+                src="/images/training-analytics.png" 
                 alt="LaChart Device Integration" 
-                className="w-full max-w-2xl h-[260px] sm:h-[320px] lg:h-[380px] rounded-3xl shadow-2xl border border-gray-200 object-contain bg-white" 
+                className="w-full max-w-2xl h-[260px] sm:h-[320px] lg:h-[380px] rounded-3xl shadow-2xl border border-gray-200 object-cover bg-white" 
               />
             </div>
         </div>

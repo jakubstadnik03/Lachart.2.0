@@ -14,7 +14,7 @@ import {
 } from 'chart.js';
 import * as math from 'mathjs'; // Import mathjs for matrix operations
 import DataTable, { calculateThresholds } from './DataTable';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 ChartJS.register(
@@ -261,6 +261,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTo, setEmailTo] = useState('');
   const [zoneOverride, setZoneOverride] = useState(null);
+  const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
@@ -368,7 +369,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   
   // Convert values to numbers, handling decimal commas
   // For pace sports in pace-mode: keep X axis in seconds (pace) so we can reverse it (slower -> faster)
-  const xVals = validResults.map(r => {
+  const xValsMeasured = validResults.map(r => {
     const power = r.power?.toString().replace(',', '.');
     const v = Number(power);
     if (!isPaceSport) return v;
@@ -376,7 +377,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return convertPaceToSpeed(v, unitSystem); // speed mode
   });
   
-  const yVals = validResults.map(r => {
+  const yValsMeasured = validResults.map(r => {
     const lactate = r.lactate?.toString().replace(',', '.');
     return Number(lactate);
   });
@@ -399,10 +400,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     if (isPaceSport) {
       if (inputMode === 'pace') {
         // In pace mode: xVals are in seconds, highest = slowest
-        const maxPace = Math.max(...xVals); // Slowest pace (highest seconds)
+        const maxPace = Math.max(...xValsMeasured); // Slowest pace (highest seconds)
         // Use smaller gap - approximately 15-20 seconds slower, or 3-5% if that's less
         // This ensures base lactate is close to the first measurement point
-        const paceRange = Math.max(...xVals) - Math.min(...xVals);
+        const paceRange = Math.max(...xValsMeasured) - Math.min(...xValsMeasured);
         const gapSeconds = Math.min(20, paceRange * 0.05); // Max 20 seconds or 5% of range
         const basePace = maxPace + gapSeconds;
         baseX = basePace;
@@ -430,7 +431,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       }
     } else {
       // For bike: lowest power = slowest
-      const minPower = Math.min(...xVals);
+      const minPower = Math.min(...xValsMeasured);
       baseX = Math.max(0, minPower * 0.9); // 10% lower than lowest, but at least 0
     }
     
@@ -442,6 +443,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     };
   })();
 
+  // Include base lactate in polynomial regression if available
+  // Combine base lactate with measured values for curve calculation
+  const xVals = baseLactatePoint 
+    ? [baseLactatePoint.x, ...xValsMeasured]
+    : xValsMeasured;
+  
+  const yVals = baseLactatePoint
+    ? [baseLactatePoint.y, ...yValsMeasured]
+    : yValsMeasured;
+
   // Sort valid results by pace (slowest to fastest) for running and swimming
   const sortedResults = isPaceSport 
     ? [...validResults].sort((a, b) => {
@@ -451,20 +462,92 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       })
     : validResults;
 
-  // Polynomial Regression (degree 3)
+  // Polynomial Regression (degree 4)
+  // Degree 4 allows for more flexible curve that can better fit the data points
   const polyRegression = (() => {
     try {
       const n = xVals.length;
-      if (n < 3) {
+      if (n < 5) {
+        // If not enough points for degree 4, use lower degree
+        const degree = Math.min(n - 1, 3);
+        if (degree < 2) {
         console.warn('Not enough data points for polynomial regression');
         return null;
+        }
+
+        const X = [];
+        const Y = [];
+
+        for (let i = 0; i < n; i++) {
+          if (isNaN(xVals[i]) || isNaN(yVals[i])) {
+            console.warn('Invalid data point found:', { x: xVals[i], y: yVals[i] });
+            return null;
+          }
+          const row = [1];
+          for (let d = 1; d <= degree; d++) {
+            row.push(Math.pow(xVals[i], d));
+          }
+          X.push(row);
+          Y.push(yVals[i]);
+        }
+
+        try {
+          const XT = math.transpose(X);
+          const XTX = math.multiply(XT, X);
+          const XTY = math.multiply(XT, Y);
+          const coefficients = math.lusolve(XTX, XTY).flat();
+
+          return (x) => {
+            let result = coefficients[0];
+            for (let d = 1; d <= degree; d++) {
+              result += coefficients[d] * Math.pow(x, d);
+            }
+            return result;
+          };
+        } catch (error) {
+          console.warn('Error in polynomial regression calculation:', error);
+          return null;
+        }
       }
 
       // Check for invalid or duplicate values
       const uniqueXVals = new Set(xVals);
-      if (uniqueXVals.size < 3) {
-        console.warn('Not enough unique x values for polynomial regression');
+      if (uniqueXVals.size < 5) {
+        console.warn('Not enough unique x values for degree 4 polynomial, using lower degree');
+        // Fallback to lower degree
+        const degree = Math.min(uniqueXVals.size - 1, 3);
+        const X = [];
+        const Y = [];
+
+        for (let i = 0; i < n; i++) {
+          if (isNaN(xVals[i]) || isNaN(yVals[i])) {
+            continue;
+          }
+          const row = [1];
+          for (let d = 1; d <= degree; d++) {
+            row.push(Math.pow(xVals[i], d));
+          }
+          X.push(row);
+          Y.push(yVals[i]);
+        }
+
+        try {
+          const XT = math.transpose(X);
+          const XTX = math.multiply(XT, X);
+          const XTY = math.multiply(XT, Y);
+          const coefficients = math.lusolve(XTX, XTY).flat();
+
+          return (x) => {
+            let result = coefficients[0];
+            for (let d = 1; d <= degree; d++) {
+              result += coefficients[d] * Math.pow(x, d);
+            }
+            return result;
+          };
+        } catch (error) {
+          console.warn('Error in polynomial regression calculation:', error);
         return null;
+        }
       }
 
       const X = [];
@@ -475,7 +558,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           console.warn('Invalid data point found:', { x: xVals[i], y: yVals[i] });
           return null;
         }
-        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        // Use degree 4 polynomial
+        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3), Math.pow(xVals[i], 4)]);
         Y.push(yVals[i]);
       }
 
@@ -489,7 +573,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           coefficients[0] +
           coefficients[1] * x +
           coefficients[2] * Math.pow(x, 2) +
-          coefficients[3] * Math.pow(x, 3);
+          coefficients[3] * Math.pow(x, 3) +
+          coefficients[4] * Math.pow(x, 4);
       } catch (error) {
         console.warn('Error in polynomial regression calculation:', error);
         return null;
@@ -500,13 +585,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   })();
 
-  // Generate points for polynomial curve only if regression is valid
-  // Curve can be decreasing if it better fits the data points
-  // IMPORTANT: Curve starts from the first actual measurement, NOT from base lactate
-  // Base lactate is only displayed as a reference point, but doesn't affect the curve
+  // Generate points for polynomial curve
+  // Curve includes base lactate in calculation, so it should pass through or near base lactate
+  // Curve can increase or decrease naturally to match the data
   const polyPoints = [];
   if (polyRegression) {
-    // Determine the range for the curve - always based on actual measurements (xVals), not base lactate
+    // Determine the range for the curve - includes base lactate if available
     // For pace sports in pace mode: from slowest (highest) to fastest (lowest)
     // For pace sports in speed mode: from slowest (lowest) to fastest (highest)
     // For bike: from lowest to highest
@@ -514,10 +598,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     if (isPaceSport && inputMode === 'pace') {
       // Pace mode: highest = slowest, lowest = fastest
       endX = Math.min(...xVals); // Fastest
-      startX = Math.max(...xVals); // Slowest (always from actual measurements)
+      startX = Math.max(...xVals); // Slowest (includes base lactate if available)
     } else {
       // Speed mode or bike: lowest = slowest, highest = fastest
-      startX = Math.min(...xVals); // Slowest (always from actual measurements)
+      startX = Math.min(...xVals); // Slowest (includes base lactate if available)
       endX = Math.max(...xVals); // Fastest
     }
     
@@ -529,7 +613,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       try {
         let y = polyRegression(x);
         
-        // Only ensure y is never negative (allow decreasing curve)
+        // Only ensure y is never negative (allow decreasing curve to match data)
         if (y < 0) {
           y = 0;
         }
@@ -858,6 +942,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             >
               <InformationCircleIcon className="w-5 h-5 text-gray-500" />
             </button>
+            <button
+              onClick={() => setShowDataTable(!showDataTable)}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              aria-label={showDataTable ? "Expand curve" : "Show table"}
+              title={showDataTable ? "Expand curve to full width" : "Show data table"}
+            >
+              {showDataTable ? (
+                <ArrowsPointingOutIcon className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ArrowsPointingInIcon className="w-5 h-5 text-gray-500" />
+              )}
+            </button>
           </div>
           {!demoMode && (
             <div className="flex flex-col items-start sm:items-end gap-1">
@@ -895,17 +991,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         </div>
         
         <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 min-w-0" style={{ height: '400px', minHeight: '300px' }}>
+          <div className={showDataTable ? "flex-1 min-w-0" : "w-full"} style={{ height: '400px', minHeight: '300px' }}>
             <Line ref={chartRef} data={data} options={options} />
           </div>
           
-          <div className="w-full lg:w-[80px] shrink-0">
-            <Legend chartRef={chartRef} />
-          </div>
-          
-          <div className="w-full lg:w-[400px] shrink-0">
-            <DataTable mockData={mockData} />
-          </div>
+          {showDataTable && (
+            <>
+              <div className="w-full lg:w-[80px] shrink-0">
+                <Legend chartRef={chartRef} />
+              </div>
+              
+              <div className="w-full lg:w-[400px] shrink-0">
+                <DataTable mockData={mockData} />
+              </div>
+            </>
+          )}
         </div>
       </div>
       <TrainingGlossary 
