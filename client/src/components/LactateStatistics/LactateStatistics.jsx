@@ -439,11 +439,11 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
 
   if (trainings.length === 0) {
     return (
-      <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-md p-4">
-        <h2 className="text-lg font-bold text-gray-900 mb-2">Lactate Statistics</h2>
-        <div className="text-center py-8 text-gray-500">
+      <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-3">
+        <h2 className="text-sm font-semibold text-text mb-2">Lactate Statistics</h2>
+        <div className="text-center py-6 text-lighterText text-sm">
           <p>No trainings with lactate values found.</p>
-          <p className="text-sm mt-2">Add lactate values to your training intervals to see statistics here.</p>
+          <p className="text-xs mt-1">Add lactate values to your training intervals to see statistics here.</p>
         </div>
       </div>
     );

@@ -74,17 +74,24 @@ const WelcomeModal = ({ open, onClose }) => {
             </div>
 
             <div className="prose prose-sm max-w-none text-gray-700 mb-5">
-              <p>
+              <p className="hidden sm:block">
                 Hi! I'm Jakub Stádník. This is my small passion project to help athletes
                 analyze their lactate curve and view test values clearly in a chart. The
                 app is still in active development, so some parts may not be perfect yet.
               </p>
-              <p>
+              <p className="sm:hidden">
+                Hi! I'm Jakub Stádník. This app helps athletes analyze their lactate curve.
+                It's still in development, so some parts may not be perfect yet.
+              </p>
+              <p className="hidden sm:block">
                 If something doesn't work as expected or you have an idea that would make
                 LaChart better, I'd love to hear from you. Your feedback really helps me
                 prioritize improvements.
               </p>
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="sm:hidden">
+                If something doesn't work or you have ideas, I'd love to hear from you.
+              </p>
+              <div className="mt-2 sm:mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-xs text-gray-700 mb-2">
                   <strong>Enjoying LaChart?</strong> If the app helps you, consider supporting its development:
                 </p>
@@ -98,7 +105,7 @@ const WelcomeModal = ({ open, onClose }) => {
                   Support on Buy Me a Coffee
                 </a>
               </div>
-              <p className="mt-4">
+              <p className="mt-2 sm:mt-4">
                 Thank you for trying LaChart and enjoy exploring your data!
               </p>
             </div>

@@ -4,7 +4,8 @@ import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import EditProfileModal from "./Profile/EditProfileModal";
+import BasicProfileModal from "./Profile/BasicProfileModal";
+import TrainingZonesModal from "./Profile/TrainingZonesModal";
 import StravaConnectModal from "./Onboarding/StravaConnectModal";
 import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
@@ -21,7 +22,8 @@ const MemoizedFooter = memo(Footer);
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
   const location = useLocation();
-  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
+  const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const { addNotification } = useNotification();
@@ -39,9 +41,16 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user, setIsMenuOpen]);
 
   // Check if user profile is incomplete or Strava is not connected
-  // Optimized: reduced delays and check immediately if user data is available
+  // Only for athletes, not coaches
+  // Show modals progressively: Basic Profile -> Training Zones -> Strava
   useEffect(() => {
     if (!user || hasCheckedProfile || location.pathname === '/lactate-guide') {
+      return;
+    }
+
+    // Only show onboarding modals for athletes, not coaches
+    if (user.role === 'coach' || user.role === 'admin') {
+      setHasCheckedProfile(true);
       return;
     }
 
@@ -56,8 +65,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       const verifyUserData = async () => {
         try {
           // Use existing user data first to avoid blocking page load
-      const isProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
-      const isStravaNotConnected = !user.strava?.athleteId;
+          const isBasicProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
+          const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
+          const isStravaNotConnected = !user.strava?.athleteId;
       
           // Check if we've already shown the modal (use localStorage for persistence)
           // Only show once per day to avoid annoying users
@@ -66,28 +76,33 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           const oneDayAgo = now - (24 * 60 * 60 * 1000); // 24 hours
           
           // Only show modal if:
-          // 1. Profile is actually incomplete or Strava is not connected
+          // 1. Something is incomplete
           // 2. We haven't shown it in the last 24 hours
-          if ((isProfileIncomplete || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
-            // Reduced delay before showing modal (was 3s, now 1.5s)
+          if ((isBasicProfileIncomplete || hasNoTrainingZones || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
+            // Delay before showing modal (3 seconds after login)
             setTimeout(() => {
               // Only fetch fresh data if we need to show modal (single API call instead of multiple)
               api.get('/user/profile', { cacheTtlMs: 60000 }).then((finalResponse) => {
                 const finalUser = finalResponse.data;
-                const stillIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
+                const stillBasicIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
+                const stillNoZones = !finalUser.powerZones?.cycling?.lt1 && !finalUser.powerZones?.running?.lt1 && !finalUser.powerZones?.swimming?.lt1;
                 const stillNotConnected = !finalUser.strava?.athleteId;
                 
-                if (stillIncomplete) {
-          setShowEditProfileModal(true);
+                // Show modals progressively
+                if (stillBasicIncomplete) {
+                  setShowBasicProfileModal(true);
+                  localStorage.setItem('profileModalLastShown', now.toString());
+                } else if (stillNoZones) {
+                  setShowTrainingZonesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNotConnected) {
-          setShowStravaModal(true);
+                  setShowStravaModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
-      }
+                }
               }).catch(() => {
                 // If final check fails, don't show modal
               });
-            }, 1500); // Reduced from 3000ms to 1500ms
+            }, 3000); // 3 seconds delay after login
           }
         } catch (error) {
           console.error('Error verifying user data:', error);
@@ -100,11 +115,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     };
 
     // If user data is already complete, check immediately
-    // Otherwise wait briefly (reduced from 2000ms to 500ms)
+    // Otherwise wait briefly
     if (user._id && user.dateOfBirth !== undefined) {
       checkProfile();
     } else {
-      const timeoutId = setTimeout(checkProfile, 500); // Reduced from 2000ms
+      const timeoutId = setTimeout(checkProfile, 500);
       return () => clearTimeout(timeoutId);
     }
   }, [user, hasCheckedProfile, location.pathname]);
@@ -251,14 +266,17 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
       )}
 
-      {/* Edit Profile Modal for users with incomplete profile */}
+      {/* Basic Profile Modal - first step */}
       {user && (
-        <EditProfileModal
-          isOpen={showEditProfileModal}
+        <BasicProfileModal
+          isOpen={showBasicProfileModal}
           onClose={() => {
-            setShowEditProfileModal(false);
-            // After closing edit profile, check if Strava is not connected
-            if (!user.strava?.athleteId) {
+            setShowBasicProfileModal(false);
+            // After closing basic profile, check if training zones are missing
+            const hasNoZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
+            if (hasNoZones) {
+              setShowTrainingZonesModal(true);
+            } else if (!user.strava?.athleteId) {
               setShowStravaModal(true);
             }
           }}
@@ -268,9 +286,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
               if (response.data) {
                 // Dispatch user update event to update global state
                 window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
-                // Close edit profile modal and show Strava modal if not connected
-                setShowEditProfileModal(false);
-                if (!response.data.strava?.athleteId) {
+                // Close basic profile modal and show training zones modal if missing
+                setShowBasicProfileModal(false);
+                const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
+                if (hasNoZones) {
+                  setShowTrainingZonesModal(true);
+                } else if (!response.data.strava?.athleteId) {
                   setShowStravaModal(true);
                 }
                 addNotification('Profile updated successfully', 'success');
@@ -284,7 +305,40 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
       )}
 
-      {/* Strava Connect Modal for users without Strava connection */}
+      {/* Training Zones Modal - second step */}
+      {user && (
+        <TrainingZonesModal
+          isOpen={showTrainingZonesModal}
+          onClose={() => {
+            setShowTrainingZonesModal(false);
+            // After closing training zones, check if Strava is not connected
+            if (!user.strava?.athleteId) {
+              setShowStravaModal(true);
+            }
+          }}
+          onSubmit={async (formData) => {
+            try {
+              const response = await api.put('/user/edit-profile', formData);
+              if (response.data) {
+                // Dispatch user update event to update global state
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                // Close training zones modal and show Strava modal if not connected
+                setShowTrainingZonesModal(false);
+                if (!response.data.strava?.athleteId) {
+                  setShowStravaModal(true);
+                }
+                addNotification('Training zones updated successfully', 'success');
+              }
+            } catch (error) {
+              console.error('Error updating training zones:', error);
+              addNotification('Error updating training zones', 'error');
+            }
+          }}
+          userData={user}
+        />
+      )}
+
+      {/* Strava Connect Modal - third step */}
       {user && (
         <StravaConnectModal
           isOpen={showStravaModal}
