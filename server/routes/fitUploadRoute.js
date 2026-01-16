@@ -85,7 +85,7 @@ router.post('/upload', verifyToken, upload.single('file'), fitUploadController.u
  *       401:
  *         description: Unauthorized
  */
-router.get('/trainings', verifyToken, fitUploadController.getFitTrainings);
+router.get('/trainings', verifyToken, routeCacheMiddleware, fitUploadController.getFitTrainings);
 
 /**
  * @swagger
@@ -117,7 +117,31 @@ router.get('/trainings/titles', verifyToken, fitUploadController.getAllTitles);
  *       401:
  *         description: Unauthorized
  */
-router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTrainingsWithLactate);
+// Cache middleware for slow endpoints (5 minutes cache)
+const cache = require('node-cache');
+const routeCache = new cache({ stdTTL: 300 }); // 5 minutes cache
+
+const routeCacheMiddleware = (req, res, next) => {
+  // Create cache key from URL and query params
+  const cacheKey = `${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
+  const cachedResponse = routeCache.get(cacheKey);
+  
+  if (cachedResponse) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cachedResponse);
+  }
+  
+  // Store original json method
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    routeCache.set(cacheKey, body);
+    res.set('X-Cache', 'MISS');
+    return originalJson(body);
+  };
+  next();
+};
+
+router.get('/trainings/with-lactate', verifyToken, routeCacheMiddleware, fitUploadController.getTrainingsWithLactate);
 
 /**
  * @swagger
@@ -148,7 +172,7 @@ router.get('/trainings/with-lactate', verifyToken, fitUploadController.getTraini
  *       404:
  *         description: Athlete not found
  */
-router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analyzeTrainingsByMonth);
+router.get('/trainings/monthly-analysis', verifyToken, routeCacheMiddleware, fitUploadController.analyzeTrainingsByMonth);
 
 /**
  * @swagger
@@ -183,7 +207,7 @@ router.get('/trainings/monthly-analysis', verifyToken, fitUploadController.analy
  *       401:
  *         description: Unauthorized
  */
-router.get('/power-metrics', verifyToken, fitUploadController.getPowerMetrics);
+router.get('/power-metrics', verifyToken, routeCacheMiddleware, fitUploadController.getPowerMetrics);
 
 /**
  * @swagger

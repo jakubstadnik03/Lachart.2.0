@@ -8,6 +8,33 @@ const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
 const router = express.Router();
 
+// Cache for activities endpoint (2 minutes cache)
+const cache = require('node-cache');
+const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
+
+// Cache middleware for activities
+const activitiesCacheMiddleware = (req, res, next) => {
+  // Create cache key from URL and query params
+  const cacheKey = `${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
+  const cachedResponse = activitiesCache.get(cacheKey);
+  
+  if (cachedResponse) {
+    res.set('X-Cache', 'HIT');
+    res.set('Cache-Control', 'private, max-age=120');
+    return res.json(cachedResponse);
+  }
+  
+  // Store original json method
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    activitiesCache.set(cacheKey, body);
+    res.set('X-Cache', 'MISS');
+    res.set('Cache-Control', 'private, max-age=120');
+    return originalJson(body);
+  };
+  next();
+};
+
 // GET /api/integrations/strava/auth-url
 router.get('/strava/auth-url', (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID || 'STRAVA_CLIENT_ID';
@@ -876,7 +903,7 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
 });
 
 // List normalized activities
-router.get('/activities', verifyToken, async (req, res) => {
+router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
     const user = await User.findById(userId);
@@ -919,15 +946,25 @@ router.get('/activities', verifyToken, async (req, res) => {
     // This should cover several years of activities for most users
     // IMPORTANT: Keep this payload small (calendar view).
     // Returning `raw` or `laps` for thousands of activities is extremely slow and bloats responses.
+    // Optimize: Only fetch last 2 years of activities (reduces query time significantly)
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    
     const [stravaActs, garminActs] = await Promise.all([
-      StravaActivity.find({ userId: targetUserId.toString() })
+      StravaActivity.find({ 
+        userId: targetUserId.toString(),
+        startDate: { $gte: twoYearsAgo }
+      })
       .sort({ startDate: -1 })
-        .limit(5000)
+        .limit(2000) // Reduced from 5000 to 2000 for better performance
       .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
         .lean(),
-      GarminActivity.find({ userId: targetUserId.toString() })
+      GarminActivity.find({ 
+        userId: targetUserId.toString(),
+        startDate: { $gte: twoYearsAgo }
+      })
         .sort({ startDate: -1 })
-        .limit(5000)
+        .limit(2000) // Reduced from 5000 to 2000 for better performance
         .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
         .lean()
     ]);
@@ -985,17 +1022,34 @@ router.get('/activities', verifyToken, async (req, res) => {
       ...garminActs.map(a => ({ ...a, source: 'garmin', sourceId: a.garminId }))
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
+    // Optimized deduplication: use Map for O(1) lookups instead of O(n²) nested loops
+    const dedupMap = new Map(); // key -> activity
+    
     // Deduplicate: prefer Strava over Garmin if duplicate found
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       
-      // Check if we've already seen a duplicate
+      // Check if we've already seen this exact key
+      if (dedupMap.has(key)) {
+        const existing = dedupMap.get(key);
+        // If existing is Garmin and new is Strava, replace it
+        if (existing.source === 'garmin' && act.source === 'strava') {
+          dedupMap.set(key, act);
+          // Update in array
+          const existingIndex = deduplicatedActs.findIndex(a => a === existing);
+          if (existingIndex >= 0) {
+            deduplicatedActs[existingIndex] = act;
+          }
+        }
+        // Otherwise keep existing (Strava or already preferred)
+        continue;
+      }
+      
+      // Check for similar keys (same date and sport, similar duration/distance) - O(n) but only once per activity
       let isDuplicate = false;
-      for (const seenKey of seenKeys) {
-        // Extract info from seen key
+      for (const [seenKey, seenAct] of dedupMap.entries()) {
         const [datePart, sport, duration, distance] = seenKey.split('_');
-        const actKey = createDedupKey(act, act.source);
-        const [actDatePart, actSport, actDuration, actDistance] = actKey.split('_');
+        const [actDatePart, actSport, actDuration, actDistance] = key.split('_');
         
         // Check if keys match (same date, sport, similar duration/distance)
         if (datePart === actDatePart && sport === actSport) {
@@ -1004,32 +1058,24 @@ router.get('/activities', verifyToken, async (req, res) => {
           
           if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
             isDuplicate = true;
+            // If existing is Garmin and new is Strava, replace it
+            if (seenAct.source === 'garmin' && act.source === 'strava') {
+              dedupMap.delete(seenKey);
+              dedupMap.set(key, act);
+              // Update in array
+              const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
+              if (existingIndex >= 0) {
+                deduplicatedActs[existingIndex] = act;
+              }
+            }
             break;
           }
         }
       }
       
       if (!isDuplicate) {
-        seenKeys.add(key);
+        dedupMap.set(key, act);
         deduplicatedActs.push(act);
-      } else {
-        // If duplicate, prefer Strava over Garmin
-        const existingIndex = deduplicatedActs.findIndex(a => {
-          const existingKey = createDedupKey(a, a.source);
-          return existingKey === key || areDuplicates(a, act);
-        });
-        
-        if (existingIndex >= 0) {
-          const existing = deduplicatedActs[existingIndex];
-          // If existing is Garmin and new is Strava, replace it
-          if (existing.source === 'garmin' && act.source === 'strava') {
-            deduplicatedActs[existingIndex] = act;
-          }
-          // Otherwise keep existing (Strava or already preferred)
-        } else {
-          // Shouldn't happen, but add it anyway
-          deduplicatedActs.push(act);
-        }
       }
     }
     
@@ -1048,8 +1094,8 @@ router.get('/activities', verifyToken, async (req, res) => {
   }
 });
 
-// Connection status
-router.get('/status', verifyToken, async (req, res) => {
+// Connection status (cached for 2 minutes)
+router.get('/status', verifyToken, activitiesCacheMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     const stravaConnected = Boolean(user?.strava?.accessToken);

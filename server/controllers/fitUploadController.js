@@ -438,16 +438,28 @@ async function getFitTrainings(req, res) {
     }
     
     try {
+      // Optimize: Only fetch last 2 years of trainings (reduces query time significantly)
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+      
       // Find trainings with the athleteId as string
       // Try both userId.toString() and String(userId) to handle different formats
-      let trainings = await FitTraining.find({ athleteId: targetAthleteIdStr })
+      let trainings = await FitTraining.find({ 
+        athleteId: targetAthleteIdStr,
+        timestamp: { $gte: twoYearsAgo }
+      })
         .sort({ timestamp: -1 })
+        .limit(1000) // Limit to 1000 most recent trainings
         .select('-records'); // Don't send all records by default
 
       // If no results and userId is ObjectId, try with ObjectId.toString() format
       if (trainings.length === 0 && userId && userId.toString && userId.toString() !== targetAthleteIdStr) {
-        trainings = await FitTraining.find({ athleteId: userId.toString() })
+        trainings = await FitTraining.find({ 
+          athleteId: userId.toString(),
+          timestamp: { $gte: twoYearsAgo }
+        })
           .sort({ timestamp: -1 })
+          .limit(1000)
           .select('-records');
       }
 

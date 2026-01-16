@@ -43,17 +43,40 @@ const corsOptions = {
     
       callback(new Error('Not allowed by CORS'));
   },
-  credentials: true,
+  credentials: true, // This is critical - must be true for withCredentials requests
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 204
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  optionsSuccessStatus: 204,
+  preflightContinue: false
 };
 
+// CORS must be applied before other middleware
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Middleware
-app.use(helmet()); // Security headers
+// Configure Helmet to not interfere with CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
+  // Don't override CORS headers
+  contentSecurityPolicy: false, // Disable CSP for now to avoid conflicts
+}));
+
+// Ensure CORS headers are set correctly after Helmet
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (allowedOrigins.includes(origin) || 
+      (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')))) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  }
+  next();
+});
+
 app.use(compression()); // Compress responses
 
 // Základní middleware

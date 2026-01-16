@@ -1,7 +1,7 @@
 // Point to backend API
-// For your current setup we want to use the deployed Render backend.
-// If you later run the Node server locally, you can temporarily switch this back to "http://localhost:8000".
-export const API_BASE_URL = 'https://lachart.onrender.com'; // process.env.REACT_APP_API_URL ||
+// Uses REACT_APP_API_URL from environment variables if set, otherwise defaults to production URL
+// To use localhost: set REACT_APP_API_URL=http://localhost:8000 in .env file
+export const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://lachart.onrender.com';
 
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/user/login`,

@@ -13,13 +13,251 @@ function getAuthToken() {
   return localStorage.getItem('token') || localStorage.getItem('authToken') || null;
 }
 
-// Add request interceptor to include auth token (single source of truth)
+// ===== API CALL MONITORING =====
+// Enable/disable monitoring via localStorage or environment
+const ENABLE_API_MONITORING = process.env.NODE_ENV === 'development' || localStorage.getItem('enableApiMonitoring') === 'true';
+
+// Wrap fetch to also track API calls made via fetch (not just axios)
+// This ensures all API calls are monitored, regardless of whether they use axios or fetch
+if (typeof window !== 'undefined') {
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+    const options = args[1] || {};
+    const method = (options.method || 'GET').toUpperCase();
+    
+    // Only track if it's an API call (contains API_BASE_URL or starts with /api/ or /user/)
+    const isApiCall = url.includes(API_BASE_URL) || 
+                      url.startsWith('/api/') || 
+                      url.startsWith('/user/') ||
+                      url.startsWith('/test/') ||
+                      url.startsWith('/training/');
+    
+    if (isApiCall && ENABLE_API_MONITORING) {
+      const startTime = Date.now();
+      const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+      const endpoint = `${method} ${fullUrl}`;
+      
+      return originalFetch.apply(this, args)
+        .then((response) => {
+          const duration = Date.now() - startTime;
+          
+          if (!apiCallStats.calls.has(endpoint)) {
+            apiCallStats.calls.set(endpoint, {
+              count: 0,
+              totalTime: 0,
+              lastCall: null,
+              calls: [],
+              method: method,
+              url: url
+            });
+          }
+          
+          const stats = apiCallStats.calls.get(endpoint);
+          stats.count++;
+          stats.totalTime += duration;
+          stats.lastCall = Date.now();
+          stats.calls.push({
+            timestamp: Date.now(),
+            duration,
+            cached: false
+          });
+          
+          if (stats.calls.length > 50) {
+            stats.calls.shift();
+          }
+          
+          apiCallStats.totalCalls++;
+          
+          // Log to console
+          const statusColor = response.ok ? '#009900' : '#ff9900';
+          console.log(
+            `%c[API-FETCH] ${method} ${url} ${response.status}`,
+            `color: ${statusColor}`,
+            `(${duration}ms)`
+          );
+          
+          return response;
+        })
+        .catch((error) => {
+          const duration = Date.now() - startTime;
+          
+          if (!apiCallStats.calls.has(endpoint)) {
+            apiCallStats.calls.set(endpoint, {
+              count: 0,
+              totalTime: 0,
+              lastCall: null,
+              calls: [],
+              method: method,
+              url: url
+            });
+          }
+          
+          const stats = apiCallStats.calls.get(endpoint);
+          stats.count++;
+          stats.totalTime += duration;
+          stats.lastCall = Date.now();
+          apiCallStats.totalCalls++;
+          
+          console.log(
+            `%c[API-FETCH] ${method} ${url} (ERROR)`,
+            'color: #cc0000',
+            `(${duration}ms)`
+          );
+          
+          throw error;
+        });
+    }
+    
+    // Not an API call or monitoring disabled, use original fetch
+    return originalFetch.apply(this, args);
+  };
+}
+
+// API call statistics
+const apiCallStats = {
+  calls: new Map(), // endpoint -> { count, totalTime, lastCall, calls: [] }
+  totalCalls: 0,
+  startTime: Date.now()
+};
+
+// Helper to get endpoint key from config
+function getEndpointKey(config) {
+  const method = (config.method || 'get').toUpperCase();
+  const url = config.url || '';
+  const fullUrl = url.startsWith('http') ? url : `${config.baseURL || API_BASE_URL}${url}`;
+  return `${method} ${fullUrl}`;
+}
+
+// Log API call
+function logApiCall(config, startTime) {
+  if (!ENABLE_API_MONITORING) return;
+  
+  const endpoint = getEndpointKey(config);
+  const now = Date.now();
+  const duration = now - startTime;
+  
+  if (!apiCallStats.calls.has(endpoint)) {
+    apiCallStats.calls.set(endpoint, {
+      count: 0,
+      totalTime: 0,
+      lastCall: null,
+      calls: [],
+      method: config.method || 'get',
+      url: config.url || ''
+    });
+  }
+  
+  const stats = apiCallStats.calls.get(endpoint);
+  stats.count++;
+  stats.totalTime += duration;
+  stats.lastCall = now;
+  stats.calls.push({
+    timestamp: now,
+    duration,
+    cached: config.__cached || false
+  });
+  
+  // Keep only last 50 calls per endpoint
+  if (stats.calls.length > 50) {
+    stats.calls.shift();
+  }
+  
+  apiCallStats.totalCalls++;
+  
+  // Log to console with color coding
+  const cached = config.__cached ? ' (CACHED)' : '';
+  const color = config.__cached ? 'color: #888' : 'color: #0066cc';
+  console.log(
+    `%c[API] ${config.method?.toUpperCase() || 'GET'} ${config.url || ''}${cached}`,
+    color,
+    `(${duration}ms)`
+  );
+}
+
+// Expose stats to window for debugging
+if (typeof window !== 'undefined') {
+  window.__apiStats = {
+    getStats: () => {
+      const stats = {
+        totalCalls: apiCallStats.totalCalls,
+        uniqueEndpoints: apiCallStats.calls.size,
+        uptime: Date.now() - apiCallStats.startTime,
+        endpoints: {}
+      };
+      
+      apiCallStats.calls.forEach((value, key) => {
+        stats.endpoints[key] = {
+          count: value.count,
+          avgTime: Math.round(value.totalTime / value.count),
+          totalTime: value.totalTime,
+          lastCall: new Date(value.lastCall).toISOString(),
+          method: value.method,
+          url: value.url,
+          recentCalls: value.calls.slice(-10) // Last 10 calls
+        };
+      });
+      
+      return stats;
+    },
+    printStats: () => {
+      const stats = window.__apiStats.getStats();
+      console.group('📊 API Call Statistics');
+      console.log(`Total calls: ${stats.totalCalls}`);
+      console.log(`Unique endpoints: ${stats.uniqueEndpoints}`);
+      console.log(`Uptime: ${Math.round(stats.uptime / 1000)}s`);
+      console.group('Endpoints:');
+      Object.entries(stats.endpoints)
+        .sort((a, b) => b[1].count - a[1].count)
+        .forEach(([endpoint, data]) => {
+          console.log(
+            `%c${endpoint}`,
+            'font-weight: bold',
+            `- Called ${data.count}x, Avg: ${data.avgTime}ms, Last: ${new Date(data.lastCall).toLocaleTimeString()}`
+          );
+        });
+      console.groupEnd();
+      console.groupEnd();
+      return stats;
+    },
+    clearStats: () => {
+      apiCallStats.calls.clear();
+      apiCallStats.totalCalls = 0;
+      apiCallStats.startTime = Date.now();
+      console.log('API stats cleared');
+    },
+    enable: () => {
+      localStorage.setItem('enableApiMonitoring', 'true');
+      console.log('API monitoring enabled');
+    },
+    disable: () => {
+      localStorage.setItem('enableApiMonitoring', 'false');
+      console.log('API monitoring disabled');
+    }
+  };
+  
+  // Auto-print stats on page unload in dev mode
+  if (ENABLE_API_MONITORING) {
+    window.addEventListener('beforeunload', () => {
+      if (apiCallStats.totalCalls > 0) {
+        console.log('📊 Final API stats before page unload:');
+        window.__apiStats.printStats();
+      }
+    });
+  }
+}
+
+// Add request interceptor to include auth token and track calls
 api.interceptors.request.use(
   (config) => {
     const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Track API call start time
+    config.__startTime = Date.now();
+    
     return config;
   },
   (error) => Promise.reject(error)
@@ -97,10 +335,21 @@ export const getTestingsByAthleteId = async (athleteId) => {
   }
 };
 
-// Interceptor pro zpracování chyb
+// Interceptor pro zpracování chyb a tracking
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log successful API call
+    if (response.config?.__startTime) {
+      logApiCall(response.config, response.config.__startTime);
+    }
+    return response;
+  },
   (error) => {
+    // Log failed API call
+    if (error.config?.__startTime) {
+      logApiCall(error.config, error.config.__startTime);
+    }
+    
     // Silently handle 429 (Too Many Requests) errors - don't log them
     if (error.response?.status !== 429) {
       console.error('API Error:', error);
@@ -151,22 +400,36 @@ api.get = (url, config = {}) => {
 
   const hit = __getCache.get(key);
   if (hit && hit.expiresAt > now) {
+    // Mark as cached for monitoring
+    const cachedConfig = { ...config, __cached: true };
+    if (ENABLE_API_MONITORING) {
+      logApiCall(cachedConfig, now);
+    }
     return Promise.resolve(hit.response);
   }
 
   const inFlight = __getInFlight.get(key);
   if (inFlight) return inFlight;
 
+  const requestStartTime = Date.now();
   const p = __originalGet(url, config)
     .then((resp) => {
       // Only cache successful responses (status 200-299)
       if (resp && resp.status >= 200 && resp.status < 300) {
-        __getCache.set(key, { expiresAt: now + ttl, response: resp });
+      __getCache.set(key, { expiresAt: now + ttl, response: resp });
+      }
+      // Track timing for monitoring
+      if (resp.config) {
+        resp.config.__startTime = requestStartTime;
       }
       return resp;
     })
     .catch((error) => {
       // Don't cache error responses
+      // Track timing for monitoring
+      if (error.config) {
+        error.config.__startTime = requestStartTime;
+      }
       throw error;
     })
     .finally(() => {
