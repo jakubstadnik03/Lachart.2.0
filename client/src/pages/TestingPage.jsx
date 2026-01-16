@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
@@ -55,7 +55,7 @@ const TestingPage = () => {
     { id: "swim", name: "Swimming" },
   ];
 
-  const loadTests = async (targetId) => {
+  const loadTests = useCallback(async (targetId) => {
     try {
       setLoading(true);
       setError(null);
@@ -69,7 +69,7 @@ const TestingPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   // Synchronizace selectedAthleteId s URL parametrem
   useEffect(() => {
@@ -90,7 +90,7 @@ const TestingPage = () => {
 
     const targetId = selectedAthleteId || user._id;
     loadTests(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests]);
   
   // Listen for URL changes (including testId parameter)
   useEffect(() => {

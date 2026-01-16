@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
 import { convertPowerToPace } from '../../utils/paceConverter';
@@ -6,7 +6,6 @@ import { calculateZonesFromTest } from './zoneCalculator';
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
-  const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [allPointsHidden, setAllPointsHidden] = useState(false);
 
   // Early return if no tests or tests array is empty
@@ -276,32 +275,33 @@ const TestComparison = ({ tests = [] }) => {
     },
   };
 
-  const toggleAllPoints = () => {
-    const chart = chartRef.current;
-    if (!chart) return;
+  // Unused function - kept for potential future use
+  // const toggleAllPoints = () => {
+  //   const chart = chartRef.current;
+  //   if (!chart) return;
 
-    const newHiddenPoints = new Set();
-    if (!allPointsHidden) {
-      // Hide all points but keep lines visible
-      Object.keys(zoneColors).forEach(zone => {
-        if (zone !== 'Data points' && zone !== 'Log-log') {
-          newHiddenPoints.add(zone);
-        }
-      });
-    }
+  //   const newHiddenPoints = new Set();
+  //   if (!allPointsHidden) {
+  //     // Hide all points but keep lines visible
+  //     Object.keys(zoneColors).forEach(zone => {
+  //       if (zone !== 'Data points' && zone !== 'Log-log') {
+  //         newHiddenPoints.add(zone);
+  //       }
+  //     });
+  //   }
 
-    setHiddenPoints(newHiddenPoints);
-    setAllPointsHidden(!allPointsHidden);
+  //   setHiddenPoints(newHiddenPoints);
+  //   setAllPointsHidden(!allPointsHidden);
 
-    // Update chart visibility - only hide points, keep lines visible
-    datasets.forEach((dataset, index) => {
-      const meta = chart.getDatasetMeta(index);
-      const isPointDataset = dataset.label.includes('Data points') || 
-                           dataset.label.includes('Polynomial Fit');
-      meta.hidden = !allPointsHidden && !isPointDataset;
-    });
-    chart.update();
-  };
+  //   // Update chart visibility - only hide points, keep lines visible
+  //   datasets.forEach((dataset, index) => {
+  //     const meta = chart.getDatasetMeta(index);
+  //     const isPointDataset = dataset.label.includes('Data points') || 
+  //                          dataset.label.includes('Polynomial Fit');
+  //     meta.hidden = !allPointsHidden && !isPointDataset;
+  //   });
+  //   chart.update();
+  // };
 
   return (
     <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-x-auto">
@@ -459,7 +459,6 @@ const TestComparison = ({ tests = [] }) => {
                         // For bike: positive change = improvement
                         // For pace: positive change = improvement (faster = less seconds)
                         const isImprovementMin = changeMin > 0;
-                        const isImprovementMax = changeMax > 0;
                         const isHRImprovement = hrChangeMin > 0; // Higher HR zones = better fitness
                         
                         return (

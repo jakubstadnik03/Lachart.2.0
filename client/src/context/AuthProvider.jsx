@@ -221,7 +221,7 @@ export const AuthProvider = ({ children }) => {
         window.location.reload();
       }, 0);
     }
-  }, [navigate, removeToken, location]);
+  }, [navigate, removeToken]);
 
   const value = {
     user,

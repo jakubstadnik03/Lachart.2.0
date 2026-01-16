@@ -1093,7 +1093,6 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                         <div className="text-[9px] text-lighterText italic text-center">-</div>
                       ) : (
                         dayActivities.slice(0, 2).map((act, i) => {
-                          const activityId = act.id || act._id;
                           return (
                             <button
                               key={i}
@@ -1157,7 +1156,6 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
                       <div className="text-xs text-lighterText italic text-center">-</div>
                   ) : (
                     dayActivities.map((act, i) => {
-                      const activityId = act.id || act._id;
                       return (
                         <button
                           key={i}
