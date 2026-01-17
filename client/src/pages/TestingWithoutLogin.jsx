@@ -94,25 +94,7 @@ const LactateCurveCalculatorPage = () => {
     const [isSendingEmail, setIsSendingEmail] = useState(false);
     const { login } = useAuth();
 
-    // Legacy training tools state (kept minimal for quick calculators below)
-    const [zone2Ftp, setZone2Ftp] = useState('');
-    const [zone2HrThreshold, setZone2HrThreshold] = useState('');
-    const [tssNp, setTssNp] = useState('');
-
-    // Helpers for simple pace formatting (used in quick run zones calculator)
-    const parsePaceToSeconds = (value) => {
-        if (!value || typeof value !== 'string' || !value.includes(':')) return null;
-        const [m, s] = value.split(':').map(Number);
-        if (Number.isNaN(m) || Number.isNaN(s)) return null;
-        return m * 60 + s;
-    };
-
-    const formatPaceFromSeconds = (seconds) => {
-        if (!Number.isFinite(seconds) || seconds <= 0) return '—';
-        const m = Math.floor(seconds / 60);
-        const s = Math.round(seconds % 60);
-        return `${m}:${String(s).padStart(2, '0')}`;
-    };
+    // Legacy training tools state removed - unused
 
     // Create refs for scroll animations
     const formRef = useRef(null);

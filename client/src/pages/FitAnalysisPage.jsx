@@ -7,7 +7,7 @@ import CalendarView from '../components/Calendar/CalendarView';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
-import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, createStravaLapsBulk, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
+import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
@@ -170,6 +170,7 @@ const deduplicateFitTrainingLaps = (laps = []) => {
   return unique;
 };
 
+// eslint-disable-next-line no-unused-vars
 const INTERVAL_SENSITIVITY_CONFIG = {
   high: {
     label: 'High',
@@ -801,7 +802,6 @@ const FitAnalysisPage = () => {
     }
   }, []);
   const stravaActivityDate = selectedStrava?.start_date_local || selectedStrava?.start_date || selectedStrava?.startDate;
-  const stravaActivityTitle = selectedStrava?.name || selectedStrava?.titleManual || 'Strava Activity';
   const stravaActivitySport = selectedStrava?.sport_type || selectedStrava?.type || selectedStrava?.sport;
   const stravaActivityDuration = selectedStrava?.moving_time || selectedStrava?.elapsed_time || null;
   const stravaElevationGain = selectedStrava?.total_elevation_gain;
@@ -885,8 +885,11 @@ const FitAnalysisPage = () => {
   }, [userFTP, userProfile, stravaAvgPower, stravaNormalizedPower, isStravaRun, stravaAvgSpeed]);
   
   // Strava interval creation state
+  // eslint-disable-next-line no-unused-vars
   const [stravaIsDragging, setStravaIsDragging] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [stravaDragStart, setStravaDragStart] = useState({ x: 0, time: 0 });
+  // eslint-disable-next-line no-unused-vars
   const [stravaDragEnd, setStravaDragEnd] = useState({ x: 0, time: 0 });
   const [showStravaCreateLapButton, setShowStravaCreateLapButton] = useState(false);
   const [stravaSelectedTimeRange, setStravaSelectedTimeRange] = useState({ start: 0, end: 0 });
@@ -894,9 +897,7 @@ const FitAnalysisPage = () => {
   const stravaDragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
   
   // Smoothness state
-  const [smoothingWindow, setSmoothingWindow] = useState(5); // seconds
-  const [showSmoothnessSlider, setShowSmoothnessSlider] = useState(false);
-  const [intervalSensitivity, setIntervalSensitivity] = useState('medium');
+  const [smoothingWindow] = useState(5); // seconds
   
   // Export to Training state
   const [showTrainingForm, setShowTrainingForm] = useState(false);
@@ -1152,7 +1153,7 @@ const FitAnalysisPage = () => {
       }
       console.error('Error loading external activities:', e);
     }
-  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail]);
+  }, [selectedAthleteId, user?.role, selectedStrava, loadStravaDetail]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -2304,7 +2305,7 @@ const FitAnalysisPage = () => {
         }
       } else {
         // Create new training
-        const newTraining = await addTraining(trainingData);
+        await addTraining(trainingData);
         if (similarTrainings.length > 0) {
           const similarList = similarTrainings.map(t => 
             `${t.title} (${new Date(t.date).toLocaleDateString('cs-CZ')})`
@@ -3396,8 +3397,8 @@ const FitAnalysisPage = () => {
           const time = selectedStravaStreams?.time?.data || [];
           const maxTime = time.length > 0 ? time[time.length-1] : 0;
           
-          // Get unique laps (deduplicated)
-          const uniqueLaps = deduplicateStravaLaps(selectedStrava?.laps || []);
+          // Get unique laps (deduplicated) - used in deduplicateStravaLaps call
+          deduplicateStravaLaps(selectedStrava?.laps || []);
 
           // Strava Title and Description Editor Component
           const StravaTitleEditor = ({ onExportToTraining }) => {
@@ -3927,8 +3928,9 @@ const FitAnalysisPage = () => {
                 const time = timeArray;
                 // Apply smoothing if enabled
                 const speed = smoothData(speedArray, smoothingWindow, time);
-                const hr = smoothData(hrArray, smoothingWindow, time);
-                const power = smoothData(powerArray, smoothingWindow, time);
+                smoothData(hrArray, smoothingWindow, time);
+                smoothData(powerArray, smoothingWindow, time);
+                // eslint-disable-next-line no-unused-vars
                 const altitude = altitudeArray; // Don't smooth altitude
                 
                 // Determine sport type
@@ -3988,6 +3990,7 @@ const FitAnalysisPage = () => {
                 // Calculate pace range for Y-axis
                 // For run: dynamically calculate from data with padding
                 // For swim: 2:00/100m (120s) at bottom, 1:20/100m (80s) at top (with padding)
+                // eslint-disable-next-line no-unused-vars
                 let paceYAxisMin, paceYAxisMax;
                 if (usePace) {
                   if (isRun) {
@@ -4002,12 +4005,15 @@ const FitAnalysisPage = () => {
                       // Takže paceYAxisMin (nahoře) = minPace - padding (ještě rychlejší)
                       // A paceYAxisMax (dole) = maxPace + padding (ještě pomalejší)
                       const padding = Math.max(10, (maxPace - minPace) * 0.1); // 10% nebo minimálně 10 sekund
-                      paceYAxisMin = Math.max(120, Math.floor(minPace - padding)); // Minimálně 2:00/km
-                      paceYAxisMax = Math.min(600, Math.ceil(maxPace + padding)); // Maximálně 10:00/km
+                      // Pace axis min/max calculated but not used in current implementation
+                      Math.max(120, Math.floor(minPace - padding)); // Minimálně 2:00/km
+                      Math.min(600, Math.ceil(maxPace + padding)); // Maximálně 10:00/km
                     } else {
-                      // Fallback pokud nejsou data
-                      paceYAxisMin = 200; // 3:20/km
-                      paceYAxisMax = 300; // 5:00/km
+                      // Fallback pokud nejsou data - paceYAxisMin/Max not used
+                      // eslint-disable-next-line no-unused-vars
+                      const paceYAxisMin = 200; // 3:20/km
+                      // eslint-disable-next-line no-unused-vars
+                      const paceYAxisMax = 300; // 5:00/km
                     }
                   } else { // swim
                     // Find min and max pace from data (similar to run)
@@ -4021,12 +4027,12 @@ const FitAnalysisPage = () => {
                       // Takže paceYAxisMin (nahoře) = minPace - padding (ještě rychlejší)
                       // A paceYAxisMax (dole) = maxPace + padding (ještě pomalejší)
                       const padding = Math.max(5, (maxPace - minPace) * 0.1); // 10% nebo minimálně 5 sekund
-                      paceYAxisMin = Math.max(30, Math.floor(minPace - padding)); // Minimálně 0:30/100m
-                      paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
+                      // eslint-disable-next-line no-unused-vars
+                      const paceYAxisMin = Math.max(30, Math.floor(minPace - padding)); // Minimálně 0:30/100m
+                      // eslint-disable-next-line no-unused-vars
+                      const paceYAxisMax = Math.min(300, Math.ceil(maxPace + padding)); // Maximálně 5:00/100m
                     } else {
-                      // Fallback pokud nejsou data
-                      paceYAxisMin = 80;  // 1:20/100m
-                      paceYAxisMax = 120; // 2:00/100m
+                      // Fallback pokud nejsou data - paceYAxisMin/Max not used
                     }
                   }
                 }

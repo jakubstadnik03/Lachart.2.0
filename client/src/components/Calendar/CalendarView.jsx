@@ -3,21 +3,12 @@ import {
   ChevronLeftIcon, 
   ChevronRightIcon, 
   ChevronDownIcon,
-  ChevronUpIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   MinusIcon,
   BoltIcon,
-  FireIcon,
-  ArrowPathIcon,
-  CogIcon,
-  BeakerIcon
+  FireIcon
 } from '@heroicons/react/24/outline';
-import {
-  UserIcon,
-  HeartIcon,
-  SparklesIcon
-} from '@heroicons/react/24/solid';
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 
@@ -88,25 +79,6 @@ const SportIcon = ({ sport, className = "w-4 h-4" }) => {
   );
 };
 
-// Sport badge for summary sections - SVG icons
-const SportBadgeSummary = ({ sport }) => {
-  if (!sport) return null;
-  const s = String(sport).toLowerCase();
-  
-  if (s.includes('run')) {
-    return <img src="/icon/run.svg" alt="Run" className="w-5 h-5" />;
-  }
-  if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) {
-    return <img src="/icon/bike.svg" alt="Bike" className="w-5 h-5" />;
-  }
-  if (s.includes('swim')) {
-    return <img src="/icon/swim.svg" alt="Swim" className="w-5 h-5" />;
-  }
-  if (s.includes('gym') || s.includes('weight') || s.includes('strength')) {
-    return <BoltIcon className="w-5 h-5 text-primary" />;
-  }
-  return <BoltIcon className="w-5 h-5 text-gray-500" />;
-};
 
 // Category helper functions
 function categoryColor(category) {

@@ -241,17 +241,6 @@ const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
   }
 };
 
-const convertSpeedToPace = (speed, unitSystem = 'metric') => {
-  // Převede rychlost na tempo
-  if (!speed) return 0;
-  if (unitSystem === 'imperial') {
-    // Pro imperial: rychlost (mph) na tempo (sekundy na míli)
-    return 3600 / speed;
-  } else {
-    // Pro metric: rychlost (km/h) na tempo (sekundy na km)
-    return 3600 / speed;
-  }
-};
 
 const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const chartRef = useRef(null);

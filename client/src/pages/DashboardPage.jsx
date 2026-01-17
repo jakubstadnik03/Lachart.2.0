@@ -46,7 +46,7 @@ const DashboardPage = () => {
     return null;
   });
   const [trainings, setTrainings] = useState([]);
-  // Start with loading=false so page content can render immediately; sections have their own loaders.
+  // eslint-disable-next-line no-unused-vars
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // Dashboard sport filter should not be shared with TrainingPage/TrainingStats localStorage key.

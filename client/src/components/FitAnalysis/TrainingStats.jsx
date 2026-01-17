@@ -6,25 +6,19 @@ import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
 
 const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  
-  // Detect mobile
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [title, setTitle] = useState(training?.titleManual || training?.titleAuto || training?.originalFileName || '');
   const [description, setDescription] = useState(training?.description || '');
+  // eslint-disable-next-line no-unused-vars
   const [category, setCategory] = useState(training?.category || '');
   const [saving, setSaving] = useState(false);
   const [allTitles, setAllTitles] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [filteredTitles, setFilteredTitles] = useState([]);
   const titleInputRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -451,25 +445,10 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
 
   if (!training) return null;
 
-  const handleSaveTitle = async () => {
-    const trimmedTitle = title.trim();
-    if ((training.titleManual || training.titleAuto || training.originalFileName || '') === trimmedTitle) {
-      setIsEditingTitle(false);
-      return;
-    }
-    initiateSave({ title: trimmedTitle || null });
-  };
-
   const handleSaveDescription = async () => {
     const trimmedDescription = description.trim();
     initiateSave({ description: trimmedDescription || null });
   };
-
-  const handleSaveCategory = async () => {
-    initiateSave({ category: category || null });
-  };
-
-  const displayTitle = training?.titleManual || training?.titleAuto || training?.originalFileName || 'Untitled Training';
 
   const handleModalConfirm = async () => {
     if (!pendingPayload) {
