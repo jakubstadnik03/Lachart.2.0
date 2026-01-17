@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
 import { convertPowerToPace } from '../../utils/paceConverter';
@@ -6,7 +6,6 @@ import { calculateZonesFromTest } from './zoneCalculator';
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
-  const [allPointsHidden, setAllPointsHidden] = useState(false);
 
   // Early return if no tests or tests array is empty
   if (!tests || !Array.isArray(tests) || tests.length === 0) {
@@ -273,11 +272,6 @@ const TestComparison = ({ tests = [] }) => {
         display: false
       }
     },
-  };
-
-      meta.hidden = !allPointsHidden && !isPointDataset;
-    });
-    chart.update();
   };
 
   return (
