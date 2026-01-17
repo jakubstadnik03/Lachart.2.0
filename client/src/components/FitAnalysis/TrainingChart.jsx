@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { prepareTrainingChartData, formatDuration } from '../../utils/fitAnalysisUtils';
 import { useAuth } from '../../context/AuthProvider';
-import { formatDistance, formatSpeed, formatElevation } from '../../utils/unitsConverter';
+import { formatDistance, formatElevation } from '../../utils/unitsConverter';
 
 // Calculate zone for power
 const getPowerZone = (power, powerZones) => {

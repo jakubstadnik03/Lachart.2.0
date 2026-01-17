@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 import { useAuth } from '../../context/AuthProvider';
-import { formatDistance, formatSpeed } from '../../utils/unitsConverter';
+import { formatDistance } from '../../utils/unitsConverter';
 
 // Treat very slow "running pace" as pause so it doesn't squash the Y axis (e.g. pauses between intervals).
 // 20:00/km threshold => 1200 seconds per km.
@@ -310,7 +310,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     });
 
     return { bars, maxValue, minValue, totalDistance, groups };
-  }, [processedLaps, selectedMetric, isRun, isSwim]);
+  }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem]);
 
   // If parent selects a lap (e.g., click in LapsTable), highlight it here
   useEffect(() => {

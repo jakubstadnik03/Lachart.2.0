@@ -351,7 +351,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
         }
       ]
     };
-  }, [training, lapDetails, selectedLapIndices]);
+  }, [training, lapDetails, selectedLapIndices, user]);
 
   // Calculate metrics (must be before early return)
   const calculateTSS = useMemo(() => {
