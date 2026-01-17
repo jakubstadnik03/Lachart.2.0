@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell
+  PieChart, Pie, Cell
 } from 'recharts';
 import { format, parseISO, subMonths } from 'date-fns';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
@@ -510,14 +510,81 @@ const TrainingComparison = ({ training, formatDate }) => {
   const maxHeartRate = Math.max(...training.results.map(r => r.heartRate || 0));
   const maxLactate = Math.max(...training.results.map(r => r.lactate || 0));
   
-  // Calculate total duration
-  const totalDuration = training.results.reduce((sum, result) => sum + (result.duration || 0), 0);
-  
-  // Calculate width for each bar based on duration
-  const getWidth = (duration) => {
-    if (!duration || totalDuration === 0) return 0;
-    return (duration / totalDuration) * 100;
+  // Helper function to parse duration (handles string "5:00" or number)
+  const parseDuration = (duration) => {
+    if (!duration && duration !== 0) return 0;
+    if (typeof duration === 'number') return duration;
+    if (typeof duration === 'string') {
+      if (duration.includes(':')) {
+        const [minutes, seconds] = duration.split(':').map(Number);
+        return (minutes || 0) * 60 + (seconds || 0);
+      }
+      return parseFloat(duration) || 0;
+    }
+    return 0;
   };
+  
+  // Check if results have distance data (for distance-based intervals)
+  const hasDistanceData = training.results && training.results.some(r => r.distance && r.distance > 0);
+  
+  // Calculate total duration or distance
+  const totalDuration = training.results ? training.results.reduce((sum, result) => {
+    return sum + parseDuration(result.duration);
+  }, 0) : 0;
+  
+  const totalDistance = training.results ? training.results.reduce((sum, result) => {
+    return sum + (parseFloat(result.distance) || 0);
+  }, 0) : 0;
+  
+  // Use distance if available, otherwise use duration
+  const useDistance = hasDistanceData && totalDistance > 0;
+  const totalValue = useDistance ? totalDistance : totalDuration;
+  
+  // Calculate cumulative positions and widths for each bar
+  const barPositions = useMemo(() => {
+    if (!training.results || training.results.length === 0) return [];
+    
+    let cumulativePosition = 0;
+    const positions = training.results.map((result, index) => {
+      const durationValue = parseDuration(result.duration);
+      const distanceValue = parseFloat(result.distance) || 0;
+      
+      const value = useDistance ? distanceValue : durationValue;
+      const widthPercent = totalValue > 0 ? (value / totalValue) * 100 : (100 / training.results.length);
+      const leftPercent = cumulativePosition;
+      cumulativePosition += widthPercent;
+      
+      return {
+        index,
+        leftPercent,
+        widthPercent,
+        value,
+        durationValue,
+        distanceValue
+      };
+    });
+    
+    return positions;
+  }, [training.results, useDistance, totalValue]);
+  
+  // Debug: Log all bar positions and widths (always log when component renders)
+  if (barPositions.length > 0) {
+    console.log('=== TrainingStats Bar Positions ===');
+    console.log('Training:', training.title || 'Untitled');
+    console.log('Total Value:', totalValue, useDistance ? '(distance)' : '(duration)');
+    console.log('Results count:', training.results?.length || 0);
+    console.log('Bar Positions:', barPositions.map((pos, idx) => ({
+      interval: idx + 1,
+      value: pos.value,
+      widthPercent: pos.widthPercent.toFixed(2) + '%',
+      leftPercent: pos.leftPercent.toFixed(2) + '%',
+      originalDuration: training.results[idx]?.duration,
+      originalDistance: training.results[idx]?.distance,
+      parsedDuration: pos.durationValue,
+      parsedDistance: pos.distanceValue
+    })));
+    console.log('===================================');
+  }
   
   return (
     <motion.div
@@ -546,21 +613,24 @@ const TrainingComparison = ({ training, formatDate }) => {
       </div>
       
       <div className="relative h-40 mb-4">
-        {training.results.map((result, index) => (
-          <VerticalBar
-            key={index}
-            result={result}
-            index={index}
-            maxPower={maxPower}
-            maxHeartRate={maxHeartRate}
-            maxLactate={maxLactate}
-            width={getWidth(result.duration)}
-            isHovered={hoveredBar === index}
-            onHover={() => setHoveredBar(index)}
-            onLeave={() => setHoveredBar(null)}
-            totalTrainings={training.results.length}
-          />
-        ))}
+        {barPositions.map((barPos) => {
+          const result = training.results[barPos.index];
+          return (
+            <VerticalBar
+              key={barPos.index}
+              result={result}
+              index={barPos.index}
+              maxPower={maxPower}
+              maxHeartRate={maxHeartRate}
+              maxLactate={maxLactate}
+              width={barPos.widthPercent}
+              left={barPos.leftPercent}
+              isHovered={hoveredBar === barPos.index}
+              onHover={() => setHoveredBar(barPos.index)}
+              onLeave={() => setHoveredBar(null)}
+            />
+          );
+        })}
       </div>
       
       <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -589,26 +659,32 @@ const VerticalBar = ({
   maxHeartRate, 
   maxLactate, 
   width, 
+  left,
   isHovered, 
   onHover, 
-  onLeave,
-  totalTrainings
+  onLeave
 }) => {
   // Calculate heights based on max values
   const powerHeight = maxPower > 0 ? (result.power / maxPower) * 100 : 0;
   const heartRateHeight = maxHeartRate > 0 ? (result.heartRate / maxHeartRate) * 100 : 0;
   const lactateHeight = maxLactate > 0 ? (result.lactate / maxLactate) * 100 : 0;
   
-  // Calculate column width based on number of trainings
-  const columnWidth = Math.max(6, Math.min(12, 20 - totalTrainings));
+  // Debug: Log width and left for this bar
+  console.log(`Bar ${index + 1}: width=${width.toFixed(2)}%, left=${left.toFixed(2)}%`);
+  
+  // Use actual width, but ensure minimum 0.1% for visibility
+  const actualWidth = Math.max(0.1, width);
   
   return (
     <div 
-      className="absolute bottom-0 flex items-end"
+      className="absolute bottom-0"
       style={{ 
-        left: `${index * (100 / totalTrainings)}%`, 
-        width: `${columnWidth}%`,
-        height: '100%'
+        left: `${left}%`, 
+        width: `${actualWidth}%`,
+        height: '100%',
+        display: 'flex',
+        alignItems: 'flex-end',
+        boxSizing: 'border-box'
       }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}

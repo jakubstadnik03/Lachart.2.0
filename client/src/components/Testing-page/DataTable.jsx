@@ -3,6 +3,7 @@
 
 import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
 import * as math from 'mathjs';
+import { useAuth } from '../../context/AuthProvider';
 
 // Pomocná funkce pro lineární interpolaci
 const interpolate = (x0, y0, x1, y1, targetY) => {
@@ -1001,9 +1002,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
   
   const DataTable = ({ mockData }) => {
+    // Get user from context for unitSystem
+    let user = null;
+    try {
+      const authHook = useAuth();
+      user = authHook?.user;
+    } catch (e) {
+      // If useAuth hook is not available (e.g., outside AuthProvider), continue without it
+    }
+    
     const thresholds = calculateThresholds(mockData);
     const sport = mockData?.sport || 'bike';
-    const unitSystem = mockData?.unitSystem || 'metric';
+    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
     const inputMode = mockData?.inputMode || 'pace';
   
     // Seznam metod, včetně Log-log

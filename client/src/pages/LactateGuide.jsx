@@ -7,10 +7,26 @@ import { trackGuideInteraction, trackConversionFunnel } from '../utils/analytics
 const LactateGuide = () => {
   // FAQ state and item toggling (match SupportPage behavior)
   const [openFaq, setOpenFaq] = useState(new Set([0]));
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const toggleFaq = (index) => {
     const updated = new Set(openFaq);
     if (updated.has(index)) updated.delete(index); else updated.add(index);
     setOpenFaq(updated);
+  };
+
+  // Smooth scroll to section
+  const scrollToSection = (id) => {
+    const element = document.getElementById(id);
+    if (element) {
+      const headerHeight = 80;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerHeight;
+      window.scrollTo({
+        top: Math.max(0, offsetPosition),
+        behavior: 'smooth'
+      });
+    }
+    setIsMobileMenuOpen(false);
   };
 
   // Track page view and smooth scroll handler
@@ -85,19 +101,55 @@ const LactateGuide = () => {
   );
   return (
     <div className="min-h-screen bg-white" style={{ scrollBehavior: 'smooth' }}>
-      {/* Navbar with hover effects */}
-      <nav className="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-20 relative">
+      {/* Navbar with navigation links */}
+      <nav className="sticky top-0 w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between z-50">
         <div className="flex items-center gap-2">
           <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
             <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
             <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
           </a>
         </div>
-        <div className="flex items-center gap-6">
-          <a href="/login" className="text-primary font-semibold hover:text-primary-dark transition-colors">Login</a>
-          <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors">Register</a>
+        <div className="hidden lg:flex items-center gap-4">
+          <a href="#what-is-lactate" onClick={(e) => { e.preventDefault(); scrollToSection('what-is-lactate'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">What is Lactate</a>
+          <a href="#lactate-threshold" onClick={(e) => { e.preventDefault(); scrollToSection('lactate-threshold'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">Lactate Threshold</a>
+          <a href="#zones" onClick={(e) => { e.preventDefault(); scrollToSection('zones'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">How to Calculate</a>
+          <a href="#testing" onClick={(e) => { e.preventDefault(); scrollToSection('testing'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">Test Protocols</a>
+          <a href="#faq" onClick={(e) => { e.preventDefault(); scrollToSection('faq'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">FAQ</a>
+          <a href="#using-lachart" onClick={(e) => { e.preventDefault(); scrollToSection('using-lachart'); }} className="text-gray-700 hover:text-primary transition-colors text-sm font-medium">Calculator</a>
+        </div>
+        <div className="flex items-center gap-4">
+          <a href="/login" className="text-primary font-semibold hover:text-primary-dark transition-colors text-sm">Login</a>
+          <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors text-sm">Register</a>
+          {/* Mobile menu button */}
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="lg:hidden p-2 text-gray-700 hover:text-primary"
+            aria-label="Toggle menu"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {isMobileMenuOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
         </div>
       </nav>
+
+      {/* Mobile Navigation */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden bg-white border-b shadow-md">
+          <div className="px-6 py-4 flex flex-col gap-2">
+            <a href="#what-is-lactate" onClick={(e) => { e.preventDefault(); scrollToSection('what-is-lactate'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">What is Lactate</a>
+            <a href="#lactate-threshold" onClick={(e) => { e.preventDefault(); scrollToSection('lactate-threshold'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">Lactate Threshold</a>
+            <a href="#zones" onClick={(e) => { e.preventDefault(); scrollToSection('zones'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">How to Calculate</a>
+            <a href="#testing" onClick={(e) => { e.preventDefault(); scrollToSection('testing'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">Test Protocols</a>
+            <a href="#faq" onClick={(e) => { e.preventDefault(); scrollToSection('faq'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">FAQ</a>
+            <a href="#using-lachart" onClick={(e) => { e.preventDefault(); scrollToSection('using-lachart'); }} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary">Calculator</a>
+          </div>
+        </div>
+      )}
 
       <main>
       <Helmet>
@@ -188,8 +240,8 @@ const LactateGuide = () => {
       {/* Hero with sticky in-page nav */}
       <section className="bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 border-b relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5"></div>
-        <div className="max-w-6xl mx-auto px-4 py-10 md:py-14 relative">
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-8 items-start">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 items-start">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -253,11 +305,11 @@ const LactateGuide = () => {
       </section>
 
       {/* Content sections */}
-      <article className="max-w-6xl mx-auto px-4 py-10 bg-gradient-to-b from-white to-gray-50">
+      <article className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 bg-gradient-to-b from-white to-gray-50">
         {/* Section: What is lactate */}
         <motion.section 
           id="what-is-lactate" 
-          className="grid md:grid-cols-2 gap-10 items-center py-8"
+          className="grid md:grid-cols-2 gap-8 lg:gap-10 items-center py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -288,14 +340,14 @@ const LactateGuide = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <img src="/images/lactate-analysis.jpg" alt="Lactate concept" className="rounded-2xl shadow-lg w-full max-w-md object-cover hover:shadow-xl transition-all duration-300" />
+            <img src="/images/testing.png" alt="LaChart - Advanced Lactate Testing and Training Analysis" className="rounded-2xl shadow-lg w-full max-w-md object-contain hover:shadow-xl transition-all duration-300" />
           </motion.div>
         </motion.section>
 
         {/* Section: Lactate threshold */}
         <motion.section 
           id="lactate-threshold" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -361,18 +413,26 @@ const LactateGuide = () => {
         {/* Section: How to calculate lactate threshold */}
         <motion.section 
           id="zones" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">How to Calculate Lactate Threshold: 5 Professional Methods</h2>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">How to Calculate Lactate Threshold: Multiple Professional Methods</h2>
           <p className="mt-3 text-gray-600">
             After conducting your lactate test, LaChart's advanced algorithms fit your lactate curve and calculate thresholds using multiple professional methods for maximum accuracy:
-            <strong> OBLA (4 mmol/L)</strong>, <strong>IAT</strong> (maximal steady state with offset),
-            <strong> Dmax</strong> (maximum perpendicular distance between curve and baseline–peak line),
-            <strong> log–log</strong> (linear fit in log space), and derivation of <strong>LTP1</strong> and <strong>LTP2</strong>. This multi-method approach ensures reliable results for your training zones.
+          </p>
+          <ul className="mt-3 text-gray-600 list-disc pl-6 space-y-2">
+            <li><strong>OBLA (Onset of Blood Lactate Accumulation):</strong> Fixed thresholds at 2.0, 2.5, 3.0, and 3.5 mmol/L</li>
+            <li><strong>IAT (Individual Anaerobic Threshold):</strong> Maximal steady state with offset method</li>
+            <li><strong>Dmax:</strong> Maximum perpendicular distance between curve and baseline–peak line</li>
+            <li><strong>Log-log:</strong> Linear fit in log space for precise threshold determination</li>
+            <li><strong>LTP1 & LTP2:</strong> First and second lactate turning points (power/pace at thresholds)</li>
+            <li><strong>Baseline + Delta:</strong> Thresholds based on resting lactate (Bsln +0.5, +1.0, +1.5 mmol/L)</li>
+          </ul>
+          <p className="mt-3 text-gray-600">
+            This multi-method approach ensures reliable results for your training zones. LaChart automatically calculates all methods and provides you with the most accurate threshold values.
           </p>
           
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">
@@ -406,7 +466,7 @@ const LactateGuide = () => {
         {/* Section: Testing protocols */}
         <motion.section 
           id="testing" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -477,7 +537,7 @@ const LactateGuide = () => {
         </motion.section>
 
         {/* Section: Step-by-step calculation example */}
-        <section id="example" className="py-8">
+        <section id="example" className="py-8 scroll-mt-20">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Step-by-Step Calculation Example</h2>
           <p className="mt-3 text-gray-600">Real cycling test data: 150 W (La 1.2), 180 W (1.5), 210 W (2.0), 240 W (2.6), 270 W (3.4), 300 W (4.6).</p>
           
@@ -511,7 +571,7 @@ const LactateGuide = () => {
         {/* Section: FAQ (same style as SupportPage) */}
         <motion.section 
           id="faq" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -532,7 +592,7 @@ const LactateGuide = () => {
         </motion.section>
 
         {/* Section: Training to raise LT */}
-        <section className="py-8">
+        <section className="py-8 scroll-mt-20">
           <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">How to raise your lactate threshold</h2>
           <ul className="mt-3 text-gray-700 list-disc pl-5 space-y-1">
             <li><strong>Threshold intervals</strong>: sustained efforts at or slightly above LT.</li>
@@ -545,7 +605,7 @@ const LactateGuide = () => {
         {/* Section: Free lactate calculator */}
         <motion.section 
           id="using-lachart" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -622,7 +682,7 @@ const LactateGuide = () => {
         {/* Section: Useful links (Demo & Menu) */}
         <motion.section 
           id="links" 
-          className="py-8"
+          className="py-8 scroll-mt-20"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -700,9 +760,34 @@ const LactateGuide = () => {
               </ul>
             </div>
           </div>
-          <div className="mt-8 border-t border-gray-200 pt-8 text-center">
+          <div className="mt-8 border-t border-gray-200 pt-8 text-center space-y-3">
             <p className="text-base text-gray-400">
               &copy; {new Date().getFullYear()} LaChart. All rights reserved.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+              <a
+                href="/privacy"
+                className="hover:text-primary transition-colors"
+              >
+                Privacy Policy
+              </a>
+              <span className="text-gray-300">•</span>
+              <a
+                href="/terms"
+                className="hover:text-primary transition-colors"
+              >
+                Terms of Use
+              </a>
+            </div>
+            <p className="text-sm text-gray-500">
+              Need help or have questions?{" "}
+              <a
+                href="mailto:lachart@lachart.net"
+                className="text-primary hover:text-primary-dark font-medium"
+              >
+                Contact us
+              </a>
+              .
             </p>
           </div>
         </div>

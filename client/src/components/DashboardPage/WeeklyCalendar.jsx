@@ -81,7 +81,7 @@ function categoryLabel(category) {
   return labels[category] || 'Uncategorized';
 }
 
-const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId }) => {
+const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null }) => {
   const { user } = useAuth();
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -259,20 +259,29 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId 
     return () => window.removeEventListener('selectCalendarActivity', handleSelectActivity);
   }, []); // Only set up listener once
 
-  // Load user profile for TrainingChart
+  // Load user profile for TrainingChart - if coach viewing athlete, load athlete's profile
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const response = await api.get('/user/profile');
-        if (response && response.data) {
-          setUserProfile(response.data);
+        // If coach is viewing an athlete's trainings, load athlete's profile (with zones)
+        if (user?.role === 'coach' && selectedAthleteId && selectedAthleteId !== user._id) {
+          const response = await api.get(`/user/athlete/${selectedAthleteId}/profile`);
+          if (response && response.data) {
+            setUserProfile(response.data);
+          }
+        } else {
+          // Otherwise load current user's profile
+          const response = await api.get('/user/profile');
+          if (response && response.data) {
+            setUserProfile(response.data);
+          }
         }
       } catch (error) {
         console.error('Error loading user profile:', error);
       }
     };
     loadProfile();
-  }, []);
+  }, [user, selectedAthleteId]);
 
   // Sync editing values with trainingDetail
   useEffect(() => {

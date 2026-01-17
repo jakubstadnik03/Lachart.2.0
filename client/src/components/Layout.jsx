@@ -67,7 +67,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // Use existing user data first to avoid blocking page load
           const isBasicProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
           const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
-          const isStravaNotConnected = !user.strava?.athleteId;
+      const isStravaNotConnected = !user.strava?.athleteId;
       
           // Check if we've already shown the modal (use localStorage for persistence)
           // Only show once per day to avoid annoying users
@@ -96,9 +96,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                   setShowTrainingZonesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNotConnected) {
-                  setShowStravaModal(true);
+          setShowStravaModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
-                }
+      }
               }).catch(() => {
                 // If final check fails, don't show modal
               });

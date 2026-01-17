@@ -413,13 +413,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
         {user?.role === "coach" && (
           <div 
-            className="p-4 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
+            className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 
               WebkitOverflowScrolling: 'touch',
               overscrollBehavior: 'contain'
             }}
           >
-            <h2 className="text-sm font-bold text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Athletes</h2>
+            <h2 className="text-sm font-bold pt-4 text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Athletes</h2>
             {loadingAthletes ? (
               <div className="text-sm text-gray-500 pb-2">Načítání atletů...</div>
             ) : athletes.length > 0 ? (

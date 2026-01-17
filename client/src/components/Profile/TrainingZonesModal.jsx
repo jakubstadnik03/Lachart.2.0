@@ -231,11 +231,21 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
     setError('');
   };
 
+  // Get unitSystem from userData
+  const unitSystem = userData?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+  
   const formatPace = (seconds) => {
     if (!seconds || seconds === 0 || isNaN(seconds)) return '';
     const minutes = Math.floor(seconds / 60);
     const secs = Math.round(seconds % 60);
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  const getPaceUnit = (sport) => {
+    if (sport === 'swimming') {
+      return unitSystem === 'imperial' ? '/100yd' : '/100m';
+    }
+    return unitSystem === 'imperial' ? '/mile' : '/km';
   };
 
   return (
@@ -325,12 +335,12 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt1 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.running.lt1))} /km
+                    {formatPace(Number(formData.powerZones.running.lt1))} {getPaceUnit('running')}
                   </p>
                 )}
                 {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt1 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.swimming.lt1))} /100m
+                    {formatPace(Number(formData.powerZones.swimming.lt1))} {getPaceUnit('swimming')}
                   </p>
                 )}
               </div>
@@ -356,12 +366,12 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt2 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.running.lt2))} /km
+                    {formatPace(Number(formData.powerZones.running.lt2))} {getPaceUnit('running')}
                   </p>
                 )}
                 {selectedSport === 'swimming' && formData.powerZones?.swimming?.lt2 && (
                   <p className="text-xs text-gray-500 mt-1 font-medium">
-                    {formatPace(Number(formData.powerZones.swimming.lt2))} /100m
+                    {formatPace(Number(formData.powerZones.swimming.lt2))} {getPaceUnit('swimming')}
                   </p>
                 )}
               </div>

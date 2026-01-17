@@ -212,14 +212,17 @@ export default function TrainingTable({
     if (onActivitySelect) {
       onActivitySelect(activity);
     } else {
-      // Navigate to FitAnalysisPage with appropriate ID
+      // Navigate to FitAnalysisPage with canonical URL format: /training-calendar/{activityId}
       if (activity.type === 'fit' && activity._id) {
-        navigate(`/fit-analysis?trainingId=${activity._id}`);
+        navigate(`/training-calendar/${encodeURIComponent(`fit-${activity._id}`)}`);
       } else if (activity.type === 'strava' && (activity.stravaId || activity.id)) {
-        navigate(`/fit-analysis?stravaId=${activity.stravaId || activity.id}`);
+        const stravaId = activity.stravaId || activity.id;
+        navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+      } else if (activity.type === 'regular' && activity._id) {
+        navigate(`/training-calendar/${encodeURIComponent(`regular-${activity._id}`)}`);
       } else if (activity._id) {
         // For regular trainings (Training model), use trainingId
-        navigate(`/fit-analysis?trainingId=${activity._id}`);
+        navigate(`/training-calendar/${encodeURIComponent(`training-${activity._id}`)}`);
       }
     }
   };

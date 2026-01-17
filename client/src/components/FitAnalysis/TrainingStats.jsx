@@ -4,6 +4,7 @@ import ReactECharts from 'echarts-for-react';
 import { formatDuration, formatDistance, prepareTrainingChartData } from '../../utils/fitAnalysisUtils';
 import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
+import { formatSpeedForUser } from '../../utils/unitsConverter';
 
 const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -259,7 +260,9 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
             .filter(p => p.value !== null && p.value !== undefined)
             .map(p => {
               if (p.seriesName === 'Speed') {
-                return `${p.seriesName}: ${p.value[1].toFixed(1)} km/h`;
+                const speedMps = p.value[1] / 3.6; // Convert km/h to m/s
+                const formatted = formatSpeedForUser(speedMps, user);
+                return `${p.seriesName}: ${formatted}`;
               }
               if (p.seriesName === 'Heart Rate') {
                 return `${p.seriesName}: ${Math.round(p.value[1])} bpm`;
@@ -296,10 +299,10 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
       yAxis: [
         {
           type: 'value',
-          name: 'Speed (km/h)',
+          name: user?.units?.distance === 'imperial' ? 'Speed (mph)' : 'Speed (km/h)',
           position: 'left',
           min: 0,
-          max: chartData.maxSpeed ? Math.ceil(chartData.maxSpeed * 1.1) : 10
+          max: chartData.maxSpeed ? Math.ceil(chartData.maxSpeed * (user?.units?.distance === 'imperial' ? 0.621371 : 1) * 1.1) : (user?.units?.distance === 'imperial' ? 6 : 10)
         },
         {
           type: 'value',
@@ -783,7 +786,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
               </span>
               Avg Speed
             </div>
-            <div className="mt-2 text-base font-semibold text-gray-900">{(training.avgSpeed * 3.6).toFixed(1)} km/h</div>
+            <div className="mt-2 text-base font-semibold text-gray-900">{formatSpeedForUser(training.avgSpeed, user)}</div>
             <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
           </div>
         )}

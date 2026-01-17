@@ -1,17 +1,23 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
+import { useAuth } from '../../context/AuthProvider';
+import { formatDistance, formatSpeed } from '../../utils/unitsConverter';
 
 // Treat very slow "running pace" as pause so it doesn't squash the Y axis (e.g. pauses between intervals).
 // 20:00/km threshold => 1200 seconds per km.
 const RUN_PAUSE_PACE_SECONDS = 20 * 60;
 
 const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
+  const { user: authUser } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hoveredBar, setHoveredBar] = useState(null);
   const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile
   const chartContainerRef = useRef(null);
   const barRefs = useRef({});
   const lastTouchAtRef = useRef(0);
+  
+  // Determine unit system from user profile or default to metric
+  const unitSystem = (user || authUser)?.units?.distance || 'metric';
   
   // Detect mobile
   useEffect(() => {
@@ -187,8 +193,13 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           break;
         case 'speed':
           const speed = lap.average_speed || lap.avgSpeed || 0;
-          value = speed * 3.6; // Convert m/s to km/h
-          unit = 'km/h';
+          if (unitSystem === 'imperial') {
+            value = speed * 3.6 * 0.621371; // Convert m/s to mph
+            unit = 'mph';
+          } else {
+            value = speed * 3.6; // Convert m/s to km/h
+            unit = 'km/h';
+          }
           break;
         case 'cadence':
           value = lap.average_cadence || lap.avgCadence || 0;
@@ -199,18 +210,33 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           const speedMps = lap.average_speed || (lap.avgSpeed ? lap.avgSpeed / 3.6 : 0) || 0;
           if (speedMps > 0) {
             if (isSwim) {
-              value = Math.round(100 / speedMps); // seconds per 100m for swimming
-              unit = 's/100m';
+              if (unitSystem === 'imperial') {
+                value = Math.round(109.361 / speedMps); // seconds per 100yd for swimming
+                unit = 's/100yd';
+              } else {
+                value = Math.round(100 / speedMps); // seconds per 100m for swimming
+                unit = 's/100m';
+              }
             } else {
-              value = Math.round(1000 / speedMps); // seconds per km for running
-              unit = 's/km';
+              if (unitSystem === 'imperial') {
+                value = Math.round(1609.34 / speedMps); // seconds per mile for running
+                unit = 's/mile';
+              } else {
+                value = Math.round(1000 / speedMps); // seconds per km for running
+                unit = 's/km';
+              }
             }
           } else {
             value = 0;
-            unit = isSwim ? 's/100m' : 's/km';
+            if (isSwim) {
+              unit = unitSystem === 'imperial' ? 's/100yd' : 's/100m';
+            } else {
+              unit = unitSystem === 'imperial' ? 's/mile' : 's/km';
+            }
           }
-          // For running: if pace is slower than 20:00/km, treat as pause (value=0)
-          if (isRun && !isSwim && value > RUN_PAUSE_PACE_SECONDS) {
+          // For running: if pace is slower than threshold, treat as pause (value=0)
+          const pauseThreshold = unitSystem === 'imperial' ? (20 * 60 * 1.60934) : RUN_PAUSE_PACE_SECONDS; // ~32:00/mile for imperial
+          if (isRun && !isSwim && value > pauseThreshold) {
             value = 0;
           }
           break;
@@ -584,17 +610,43 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                   ? ((adjustedMaxValue - bar.value) / (adjustedMaxValue - adjustedMinValue)) * 100
                   : ((bar.value - adjustedMinValue) / (adjustedMaxValue - adjustedMinValue)) * 100
                 : 0;
-              const avgSpeed = bar.lap.average_speed ? (bar.lap.average_speed * 3.6).toFixed(1) : '-';
+              // Calculate speed based on unit system
+              const speedMps = bar.lap.average_speed || (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) || 0;
+              const avgSpeed = speedMps > 0 
+                ? (unitSystem === 'imperial' 
+                  ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
+                  : (speedMps * 3.6).toFixed(1) + ' km/h')
+                : '-';
               
               // Calculate pace for running/swimming
-              const paceSeconds = (isRun || isSwim) && bar.lap.average_speed && bar.lap.average_speed > 0 
-                ? (isSwim ? Math.round(100 / bar.lap.average_speed) : Math.round(1000 / bar.lap.average_speed))
-                : ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0 
-                  ? (isSwim ? Math.round(100 / (bar.lap.avgSpeed / 3.6)) : Math.round(1000 / (bar.lap.avgSpeed / 3.6)))
-                  : 0);
+              let paceSeconds = 0;
+              if ((isRun || isSwim) && speedMps > 0) {
+                if (isSwim) {
+                  paceSeconds = unitSystem === 'imperial' 
+                    ? Math.round(109.361 / speedMps) // seconds per 100yd
+                    : Math.round(100 / speedMps); // seconds per 100m
+                } else {
+                  paceSeconds = unitSystem === 'imperial'
+                    ? Math.round(1609.34 / speedMps) // seconds per mile
+                    : Math.round(1000 / speedMps); // seconds per km
+                }
+              } else if ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0) {
+                const avgSpeedMps = bar.lap.avgSpeed / 3.6;
+                if (isSwim) {
+                  paceSeconds = unitSystem === 'imperial'
+                    ? Math.round(109.361 / avgSpeedMps)
+                    : Math.round(100 / avgSpeedMps);
+                } else {
+                  paceSeconds = unitSystem === 'imperial'
+                    ? Math.round(1609.34 / avgSpeedMps)
+                    : Math.round(1000 / avgSpeedMps);
+                }
+              }
               const paceMinutes = Math.floor(paceSeconds / 60);
               const paceSecs = paceSeconds % 60;
-              const paceUnit = isSwim ? '/100m' : '/km';
+              const paceUnit = isSwim 
+                ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
+                : (unitSystem === 'imperial' ? '/mile' : '/km');
               const paceFormatted = paceSeconds > 0 ? `${paceMinutes}:${String(paceSecs).padStart(2, '0')}${paceUnit}` : '-';
               
               // Calculate width based on distance
@@ -609,8 +661,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               
               // Tooltip title
               const tooltipTitle = (isRun || isSwim)
-                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nPace: ${paceFormatted}\nAvg. Speed: ${avgSpeed} km/h\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
-                : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed} km/h\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
+                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nPace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
+                : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
               
               return (
                 <div
@@ -696,15 +748,43 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           
           if (!activeBar) return null;
           const bar = activeBar.bar;
-          const avgSpeed = bar.lap.average_speed ? (bar.lap.average_speed * 3.6).toFixed(1) : '-';
-          const paceSeconds = (isRun || isSwim) && bar.lap.average_speed && bar.lap.average_speed > 0 
-            ? (isSwim ? Math.round(100 / bar.lap.average_speed) : Math.round(1000 / bar.lap.average_speed))
-            : ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0 
-              ? (isSwim ? Math.round(100 / (bar.lap.avgSpeed / 3.6)) : Math.round(1000 / (bar.lap.avgSpeed / 3.6)))
-              : 0);
+          // Calculate speed based on unit system
+          const speedMps = bar.lap.average_speed || (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) || 0;
+          const avgSpeed = speedMps > 0 
+            ? (unitSystem === 'imperial' 
+              ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
+              : (speedMps * 3.6).toFixed(1) + ' km/h')
+            : '-';
+          
+          // Calculate pace for running/swimming
+          let paceSeconds = 0;
+          if ((isRun || isSwim) && speedMps > 0) {
+            if (isSwim) {
+              paceSeconds = unitSystem === 'imperial' 
+                ? Math.round(109.361 / speedMps) // seconds per 100yd
+                : Math.round(100 / speedMps); // seconds per 100m
+            } else {
+              paceSeconds = unitSystem === 'imperial'
+                ? Math.round(1609.34 / speedMps) // seconds per mile
+                : Math.round(1000 / speedMps); // seconds per km
+            }
+          } else if ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0) {
+            const avgSpeedMps = bar.lap.avgSpeed / 3.6;
+            if (isSwim) {
+              paceSeconds = unitSystem === 'imperial'
+                ? Math.round(109.361 / avgSpeedMps)
+                : Math.round(100 / avgSpeedMps);
+            } else {
+              paceSeconds = unitSystem === 'imperial'
+                ? Math.round(1609.34 / avgSpeedMps)
+                : Math.round(1000 / avgSpeedMps);
+            }
+          }
           const paceMinutes = Math.floor(paceSeconds / 60);
           const paceSecs = paceSeconds % 60;
-          const paceUnit = isSwim ? '/100m' : '/km';
+          const paceUnit = isSwim 
+            ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
+            : (unitSystem === 'imperial' ? '/mile' : '/km');
           const paceFormatted = paceSeconds > 0 ? `${paceMinutes}:${String(paceSecs).padStart(2, '0')}${paceUnit}` : '-';
           
           // Calculate tooltip position - same style as TrainingChart.jsx
@@ -813,7 +893,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                           {(isRun || isSwim) ? (isSwim ? `100m ${bar.lapNumber}` : `Km ${bar.lapNumber}`) : `Lap ${bar.lapNumber}`}
                         </div>
                         <div className="text-gray-600">
-                          Distance: {bar.distance > 0 ? (bar.distance >= 1000 ? `${(bar.distance / 1000).toFixed(2)} km` : `${bar.distance.toFixed(0)} m`) : '-'}
+                          Distance: {bar.distance > 0 ? formatDistance(bar.distance, unitSystem).formatted : '-'}
                         </div>
                         <div className="text-gray-600">
                           Moving Time: {formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}
@@ -824,12 +904,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                               Pace: {paceFormatted}
                             </div>
                             <div className="text-secondary font-medium">
-                              Avg. Speed: {avgSpeed} km/h
+                              Avg. Speed: {avgSpeed}
                             </div>
                           </>
                         ) : (
                         <div className="text-secondary font-medium">
-                          Avg. Speed: {avgSpeed} km/h
+                          Avg. Speed: {avgSpeed}
                         </div>
                         )}
                         {!isRun && !isSwim && (
@@ -858,29 +938,19 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             <>
               {/* Start label */}
               <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-left`}>
-                {isRun ? '0.0km' : `0${totalDistance >= 1000 ? 'km' : 'm'}`}
+                {formatDistance(0, unitSystem).formatted}
               </div>
               
               {/* Middle label (if enough bars) */}
               {bars.length > 2 && (
                 <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-center`}>
-                  {isRun
-                    ? `${((totalDistance || 0) / 2000).toFixed(1)}km`
-                    : totalDistance >= 2000 
-                    ? `${(totalDistance / 2000).toFixed(1)}km`
-                    : totalDistance >= 1000
-                    ? `${(totalDistance / 1000).toFixed(1)}km`
-                    : `${Math.round(totalDistance / 2)}m`}
+                  {formatDistance((totalDistance || 0) / 2, unitSystem).formatted}
                 </div>
               )}
               
               {/* End label with total distance and time */}
               <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right`}>
-                {isRun
-                  ? `${((totalDistance || 0) / 1000).toFixed(1)}km`
-                  : totalDistance >= 1000 
-                  ? `${(totalDistance / 1000).toFixed(1)}km`
-                  : `${Math.round(totalDistance)}m`}
+                {formatDistance(totalDistance || 0, unitSystem).formatted}
                 {!isMobile && totalTime > 0 && (
                   <span className="ml-1 text-gray-500">
                     ({formatDuration(totalTime)})

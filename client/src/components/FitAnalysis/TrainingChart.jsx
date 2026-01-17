@@ -1,5 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { prepareTrainingChartData, formatDuration } from '../../utils/fitAnalysisUtils';
+import { useAuth } from '../../context/AuthProvider';
+import { formatDistance, formatSpeed, formatElevation } from '../../utils/unitsConverter';
 
 // Calculate zone for power
 const getPowerZone = (power, powerZones) => {
@@ -25,8 +27,52 @@ const getHeartRateZone = (hr, hrZones) => {
   return null;
 };
 
+// Calculate zone for pace (running/swimming) - pace zones are in seconds, lower = faster
+// For pace: zone 1 is slowest (highest seconds), zone 5 is fastest (lowest seconds)
+// Note: pace zones in profile are stored in seconds per km (metric) or need conversion for imperial
+const getPaceZone = (paceSeconds, paceZones, unitSystem = 'metric') => {
+  if (!paceZones || !paceSeconds || paceSeconds <= 0) return null;
+  
+  // Convert pace zones to current unit system if needed
+  // If zones are in metric (seconds/km) and we need imperial, convert to seconds/mile
+  // 1 mile = 1.60934 km, so pace in seconds/mile = pace in seconds/km * 1.60934
+  for (let i = 1; i <= 5; i++) {
+    const zone = paceZones[`zone${i}`];
+    if (zone) {
+      let zoneMin = zone.min || 0;
+      let zoneMax = zone.max === Infinity || zone.max === null || zone.max === undefined ? Infinity : zone.max;
+      
+      // Convert zone boundaries to current unit system
+      // Assuming zones are stored in metric (seconds/km), convert to imperial if needed
+      if (unitSystem === 'imperial') {
+        zoneMin = zoneMin * 1.60934; // Convert seconds/km to seconds/mile
+        zoneMax = zoneMax === Infinity ? Infinity : zoneMax * 1.60934;
+      }
+      
+      // For pace zones: min is slower (higher seconds), max is faster (lower seconds)
+      // So we check if paceSeconds is between max and min (reversed logic)
+      if (paceSeconds >= zoneMax && paceSeconds <= zoneMin) {
+        return i;
+      }
+    }
+  }
+  return null;
+};
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
+// Format pace from seconds to MM:SS with unit
+const formatPace = (seconds, unitSystem, isSwim = false) => {
+  if (!seconds || seconds <= 0 || isNaN(seconds)) return 'N/A';
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  const unit = isSwim 
+    ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
+    : (unitSystem === 'imperial' ? '/mile' : '/km');
+  return `${minutes}:${String(secs).padStart(2, '0')}${unit}`;
+};
+
+
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
+  const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
   const [showHeartRate, setShowHeartRate] = useState(true);
@@ -45,6 +91,9 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const svgRef = useRef(null);
   const containerRef = useRef(null);
+  
+  // Determine unit system from user profile or default to metric
+  const unitSystem = (user || authUser)?.units?.distance || 'metric';
   
   // Detect mobile
   useEffect(() => {
@@ -997,7 +1046,11 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
                   textAnchor="middle"
                     className={`${isMobile ? 'text-[9px]' : containerWidth < 800 ? 'text-[10px]' : 'text-xs'} fill-gray-600`}
                 >
-                    {distance.toFixed(1)}km
+                    {(() => {
+                      const distanceMeters = distance * 1000; // Convert km to meters
+                      const formatted = formatDistance(distanceMeters, unitSystem);
+                      return formatted.formatted;
+                    })()}
                     {isMobile && i === labelCount - 1 && timeAtDistance > 0 && (
                       <tspan x={x} dy="10" className="text-[8px] fill-gray-500">
                         {formatDuration(timeAtDistance)}
@@ -1029,47 +1082,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
             );
           })}
           
-          {/* Secondary Y-axis labels on the right - show actual values for each visible metric */}
-          {Array.from({ length: 6 }).map((_, i) => {
-            const ratio = 1 - (i / 5);
-            const y = padding.top + (graphHeight / 5) * i;
-            const labels = [];
-            
-            if (processedData && processedData.maxPower > 0 && !isRunning && !isSwimming && showPower) {
-              labels.push({ value: Math.round(processedData.maxPower * ratio), unit: 'W', color: '#9333ea' });
-            }
-            if (showHeartRate) {
-              labels.push({ value: Math.round(processedData.maxHeartRate * ratio), unit: 'bpm', color: '#f87171' });
-            }
-            if (showSpeed) {
-              labels.push({ value: Math.round(processedData.maxSpeed * ratio), unit: 'km/h', color: '#14b8a6' });
-            }
-            if (showCadence && processedData.maxCadence !== null && processedData.maxCadence > 0) {
-              labels.push({ value: Math.round(processedData.maxCadence * ratio), unit: 'rpm', color: '#6b7280' });
-            }
-            if (showElevation && processedData.maxAltitude !== null && processedData.minAltitude !== null) {
-              const elevationRange = processedData.maxAltitude - processedData.minAltitude;
-              const elevationValue = processedData.minAltitude + (elevationRange * ratio);
-              labels.push({ value: Math.round(elevationValue), unit: 'm', color: '#f97316' });
-            }
-            
-            return (
-              <g key={`y-label-right-${i}`}>
-                {labels.map((label, idx) => (
-                  <text
-                    key={`${i}-${idx}`}
-                    x={padding.left + graphWidth + 10 + (idx * (isMobile ? 45 : 60))}
-                    y={y + 4}
-                    textAnchor="start"
-                      className={isMobile ? 'text-[9px]' : containerWidth < 800 ? 'text-[10px]' : 'text-xs'}
-                    fill={label.color}
-                  >
-                    {label.value} {label.unit}
-                  </text>
-                ))}
-              </g>
-            );
-          })}
 
           {/* Cursor line - only show when not dragging */}
           {cursorX !== null && !isDragging && (() => {
@@ -1143,7 +1155,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
             >
               <div className={`space-y-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
                 <div className="font-semibold text-gray-900">
-                  Distance: {activePoint.distance.toFixed(1)} km
+                  Distance: {formatDistance(activePoint.distance * 1000, unitSystem).formatted}
                 </div>
                 <div className="text-gray-600">
                   Time: {formatDuration(activePoint.time)}
@@ -1161,7 +1173,12 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
                 )}
                 {activePoint.speed > 0 && (
                   <div className="text-teal-600 font-medium">
-                    Speed: {activePoint.speed.toFixed(1)} km/h
+                    Speed: {(() => {
+                      const speedValue = unitSystem === 'imperial' 
+                        ? (activePoint.speed * 0.621371).toFixed(1)
+                        : activePoint.speed.toFixed(1);
+                      return `${speedValue} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+                    })()}
                   </div>
                 )}
                 {activePoint.cadence > 0 && (
@@ -1171,12 +1188,49 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave }) => {
                 )}
                 {activePoint.altitude > 0 && (
                   <div className="text-orange-600 font-medium">
-                    Elevation: {Math.round(activePoint.altitude)} m
+                    Elevation: {formatElevation(activePoint.altitude, unitSystem).formatted}
                   </div>
                 )}
                 {/* Zone indicators */}
                 <div className="mt-2 pt-2 border-t border-gray-200 space-y-2">
-                  {powerZones && activePoint.power > 0 && (
+                  {/* For running: show pace zones, for cycling: show power zones */}
+                  {isRunning && powerZones && activePoint.speed > 0 && (() => {
+                    // Convert speed (km/h) to pace (seconds per km or mile)
+                    const speedMps = activePoint.speed / 3.6; // Convert km/h to m/s
+                    const paceSeconds = unitSystem === 'imperial' 
+                      ? Math.round(1609.34 / speedMps) // seconds per mile
+                      : Math.round(1000 / speedMps); // seconds per km
+                    const currentZone = getPaceZone(paceSeconds, powerZones, unitSystem);
+                    return (
+                      <div>
+                        <div className="text-xs font-semibold text-gray-700 mb-1">Pace zone</div>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => {
+                            const zone = powerZones[`zone${i + 1}`];
+                            let zoneMin = zone?.min || 0;
+                            let zoneMax = zone?.max === Infinity || zone?.max === null || zone?.max === undefined ? Infinity : zone.max;
+                            
+                            // Convert zone boundaries to current unit system for display
+                            if (unitSystem === 'imperial') {
+                              zoneMin = zoneMin * 1.60934; // Convert seconds/km to seconds/mile
+                              zoneMax = zoneMax === Infinity ? Infinity : zoneMax * 1.60934;
+                            }
+                            
+                            return (
+                              <div
+                                key={i}
+                                className={`w-3 h-3 rounded ${
+                                  currentZone === i + 1 ? 'bg-green-600 border-2 border-green-800' : 'bg-gray-200 border border-gray-300'
+                                }`}
+                                title={`Zone ${i + 1}: ${formatPace(zoneMax, unitSystem)} - ${formatPace(zoneMin, unitSystem)}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {isCycling && powerZones && activePoint.power > 0 && (
                     <div>
                       <div className="text-xs font-semibold text-gray-700 mb-1">Power zone</div>
                       <div className="flex items-center gap-1">

@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthProvider';
 
 const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSport = 'all' }) => {
+  const { user } = useAuth();
   const [localSportFilter, setLocalSportFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [expanded, setExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const testsPerPage = 3;
+  
+  // Get unitSystem from user profile
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
   
   // Detect mobile
   useEffect(() => {
@@ -22,6 +27,11 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
     const minutes = Math.floor(seconds / 60);
     const secs = Math.round(seconds % 60);
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  // Get pace unit based on unitSystem
+  const getPaceUnit = () => {
+    return unitSystem === 'imperial' ? '/mile' : '/km';
   };
   
   // Convert power to pace for running (simplified conversion)
@@ -223,7 +233,7 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
                   <div className={`${isMobile ? 'text-left' : 'text-right'}`}>
                     <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
                       {maxValue !== null 
-                        ? (test.sport === 'run' ? `${maxValue}/km` : `${Math.round(maxValue)}W`)
+                        ? (test.sport === 'run' ? `${maxValue}${getPaceUnit()}` : `${Math.round(maxValue)}W`)
                         : 'N/A'}
                     </p>
                     <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>

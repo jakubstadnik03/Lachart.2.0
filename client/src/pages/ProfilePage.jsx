@@ -108,12 +108,22 @@ const ProfilePage = () => {
     }
   };
 
+  // Get unitSystem from userInfo
+  const unitSystem = userInfo?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+  
   // Format pace for display (seconds to mm:ss)
   const formatPace = (seconds) => {
     if (!seconds || seconds === 0 || isNaN(seconds)) return '0:00';
     const minutes = Math.floor(seconds / 60);
     const secs = Math.round(seconds % 60);
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  const getPaceUnit = (sport) => {
+    if (sport === 'swimming') {
+      return unitSystem === 'imperial' ? '/100yd' : '/100m';
+    }
+    return unitSystem === 'imperial' ? '/mile' : '/km';
   };
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching
@@ -874,7 +884,7 @@ const ProfilePage = () => {
                       <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
                         <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
                         <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>
-                          {formatPace(userInfo.powerZones.running.lt1)} /km
+                          {formatPace(userInfo.powerZones.running.lt1)} {getPaceUnit('running')}
                         </p>
                       </div>
                     )}
@@ -882,7 +892,7 @@ const ProfilePage = () => {
                       <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
                         <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2</p>
                         <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>
-                          {formatPace(userInfo.powerZones.running.lt2)} /km
+                          {formatPace(userInfo.powerZones.running.lt2)} {getPaceUnit('running')}
                         </p>
                       </div>
                     )}
@@ -925,7 +935,7 @@ const ProfilePage = () => {
                             </td>
                             <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
                               <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /km
+                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} {getPaceUnit('running')}
                               </span>
                             </td>
                             <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>

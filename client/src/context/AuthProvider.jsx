@@ -1,7 +1,7 @@
 "use client";
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import api from '../services/api';
+import api, { clearApiCache } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
 import { saveUserToStorage } from '../utils/userStorage';
 
@@ -50,7 +50,9 @@ export const AuthProvider = ({ children }) => {
           key === 'weeklyCalendar_activities' ||
           key === 'weeklyCalendar_cacheTime' ||
           key === 'profileModalLastShown' ||
-          key === 'lactateCurve_lastTest'
+          key === 'lactateCurve_lastTest' ||
+          key.startsWith('global_selectedAthleteId') ||
+          key.startsWith('testing_recommendations_open_')
         ) {
           keysToRemove.push(key);
         }
@@ -67,7 +69,12 @@ export const AuthProvider = ({ children }) => {
       console.warn('Error clearing app caches on logout:', e);
     }
 
+    // Vyčistit axios defaults a cache
     delete api.defaults.headers.common["Authorization"];
+    
+    // Vyčistit API cache
+    clearApiCache();
+    
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
@@ -162,6 +169,9 @@ export const AuthProvider = ({ children }) => {
       // Před každým novým přihlášením vždy kompletně smažeme předchozí stav,
       // aby se nikdy „nelepil“ starý účet (jiný email / jiný uživatel).
       removeToken();
+      
+      // Krátké zpoždění, aby se stihlo vyčistit localStorage a cache
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       if (token && user) {
         setToken(token);

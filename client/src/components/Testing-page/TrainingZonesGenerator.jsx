@@ -7,16 +7,18 @@ import api from '../../services/api';
 import { updateUserProfile } from '../../services/api';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
+import { useAuth } from '../../context/AuthProvider';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
+  const { user } = useAuth();
   const [zones, setZones] = useState(null);
   const [selectedSport, setSelectedSport] = useState('bike');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   
-  // Get unit system and input mode from mockData or default to metric/pace
-  const unitSystem = mockData?.unitSystem || 'metric';
+  // Get unit system and input mode from user profile, mockData, or default to metric/pace
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
 
   const formatPace = (seconds) => {

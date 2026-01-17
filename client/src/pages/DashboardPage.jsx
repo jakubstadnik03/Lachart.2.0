@@ -657,6 +657,7 @@ const DashboardPage = () => {
           className="lg:col-span-5 md:col-span-2 mb-6"
         >
           <WeeklyCalendar 
+            selectedAthleteId={selectedAthleteId}
             activities={calendarData || []}
             onSelectActivity={(activity) => {
               // Handle activity selection

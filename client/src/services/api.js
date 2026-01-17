@@ -371,6 +371,12 @@ api.interceptors.response.use(
 const __getCache = new Map(); // key -> { expiresAt, response }
 const __getInFlight = new Map(); // key -> Promise
 
+// Export function to clear cache (used on logout)
+export const clearApiCache = () => {
+  __getCache.clear();
+  __getInFlight.clear();
+};
+
 function stableStringify(obj) {
   if (!obj || typeof obj !== 'object') return String(obj ?? '');
   if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`;

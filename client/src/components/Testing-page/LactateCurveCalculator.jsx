@@ -16,6 +16,7 @@ import * as math from 'mathjs'; // Import mathjs for matrix operations
 import DataTable, { calculateThresholds } from './DataTable';
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
+import { useAuth } from '../../context/AuthProvider';
 
 ChartJS.register(
     CategoryScale,
@@ -243,6 +244,7 @@ const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
 
 
 const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
+  const { user } = useAuth();
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -256,8 +258,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const isPaceSport = isRunning || isSwimming;
   const trainingTitle = (mockData?.title || mockData?.name || '').toString().trim();
   
-  // Get unit system and input mode from mockData or default to metric/pace
-  const unitSystem = mockData?.unitSystem || 'metric';
+  // Get unit system and input mode from user profile, mockData, or default to metric/pace
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
 
   const formatDate = (dateString) => {

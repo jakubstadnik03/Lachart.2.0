@@ -39,6 +39,7 @@ const FitAnalysisPage = lazy(() => import('./pages/FitAnalysisPage'));
 const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
 const LactateStatisticsPage = lazy(() => import('./pages/LactateStatisticsPage'));
 const Privacy = lazy(() => import('./pages/Privacy'));
+const Terms = lazy(() => import('./pages/Terms'));
 const Zone2CalculatorPage = lazy(() => import('./pages/Zone2CalculatorPage'));
 const FtpCalculatorPage = lazy(() => import('./pages/FtpCalculatorPage'));
 const TssCalculatorPage = lazy(() => import('./pages/TssCalculatorPage'));
@@ -113,6 +114,7 @@ function AppRoutes() {
         <Route path="/" element={<About />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/lactate-curve-calculator" element={<TestingWithoutLogin />} />

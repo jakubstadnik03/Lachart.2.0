@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from '../context/AuthProvider';
+import { useNotification } from '../context/NotificationContext';
 import api from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
@@ -13,12 +14,14 @@ import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 import { listExternalActivities, getStravaActivityDetail } from '../services/api';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
+  const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
     if (user?.role === 'coach') {
@@ -44,6 +47,7 @@ const TestingPage = () => {
   const [showRecommendations, setShowRecommendations] = useState(true);
   const [hrTestPlan, setHrTestPlan] = useState(null);
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
+  const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const navigate = useNavigate();
   
   // Get testId from URL
@@ -294,11 +298,15 @@ const TestingPage = () => {
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
 
+  // Get unitSystem from user profile
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+
   const formatPace = (secondsPerKm) => {
     if (!secondsPerKm || secondsPerKm <= 0) return '-';
     const m = Math.floor(secondsPerKm / 60);
     const s = Math.round(secondsPerKm % 60);
-    return `${m}:${String(s).padStart(2, '0')}`;
+    const unit = unitSystem === 'imperial' ? '/mile' : '/km';
+    return `${m}:${String(s).padStart(2, '0')}${unit}`;
   };
 
   // Simple LT2 estimate from test: interpolate power/pace at 4.0 mmol/L if possible
@@ -493,12 +501,51 @@ const TestingPage = () => {
       };
 
       const response = await api.post('/test', processedTest);
+      const testId = response.data._id;
       setTests(prev => [...prev, response.data]);
       setShowNewTesting(false);
+
+      // If coach created test for an athlete, offer to send email
+      if (user?.role === 'coach' && selectedAthleteId && selectedAthleteId !== user._id) {
+        try {
+          // Get athlete profile to check for email
+          const athleteProfile = await api.get(`/user/athlete/${selectedAthleteId}/profile`);
+          const athleteEmail = athleteProfile?.data?.email;
+          
+          if (athleteEmail) {
+            // Ask user if they want to send email
+            if (window.confirm(`Test created successfully! Would you like to send the test results to ${athleteEmail}?`)) {
+              try {
+                await api.post(`/test/${testId}/send-report-email`, {
+                  toEmail: athleteEmail
+                });
+                addNotification('Test sent to athlete\'s email!', 'success');
+              } catch (emailError) {
+                console.error('Error sending email:', emailError);
+                addNotification('Test created, but failed to send email', 'warning');
+              }
+            }
+          }
+        } catch (profileError) {
+          console.warn('Could not fetch athlete profile for email:', profileError);
+        }
+      }
     } catch (err) {
       console.error('Error adding test:', err);
       setError('Failed to add test. Please try again.');
     }
+  };
+
+  const handleAthleteCreated = (athleteId, athleteData) => {
+    // Select the newly created athlete
+    setSelectedAthleteId(athleteId);
+    navigate(`/testing/${athleteId}`, { replace: true });
+    
+    // Open the test form
+    setShowNewTesting(true);
+    
+    // Refresh tests list
+    loadTests(athleteId);
   };
 
   const handleAthleteChange = (newAthleteId) => {
@@ -564,6 +611,26 @@ const TestingPage = () => {
           >
             <InformationCircleIcon className="w-5 h-5 text-gray-500" />
           </button>
+          {!showRecommendations && (
+            <button
+              onClick={() => setShowRecommendations(true)}
+              className="px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary-dark shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+              title="Show Recommendations"
+            >
+              <InformationCircleIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Show Recommendations</span>
+            </button>
+          )}
+          {user?.role === 'coach' && (
+            <button
+              onClick={() => setShowAddAthleteModal(true)}
+              className="px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+              title="Add New Athlete & Create Test"
+            >
+              <UserPlusIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Add Athlete & Test</span>
+            </button>
+          )}
           <NotificationBadge
             isActive={showNewTesting}
             onToggle={() => setShowNewTesting((prev) => !prev)}
@@ -572,23 +639,14 @@ const TestingPage = () => {
       </div>
 
       {/* Lactate Test Advisor */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="w-full mb-3 sm:mb-6"
-      >
-        {!showRecommendations ? (
-          <div className="flex items-center justify-between bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4">
-            <div className="text-sm font-semibold text-gray-900">Recommendations hidden</div>
-            <button
-              onClick={() => setShowRecommendations(true)}
-              className="px-3 py-2 text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-200 transition-colors"
-            >
-              Show recommendations
-            </button>
-          </div>
-        ) : (
+      {showRecommendations && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ delay: 0.2 }}
+          className="w-full mb-3 sm:mb-6"
+        >
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4 md:p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -725,7 +783,7 @@ const TestingPage = () => {
                 <div>
                   <span className="font-semibold">Protocol:</span>{' '}
                   {advisor.run.startPaceSecPerKm && advisor.run.endPaceSecPerKm
-                    ? `${formatPace(advisor.run.startPaceSecPerKm)}→${formatPace(advisor.run.endPaceSecPerKm)} /km (-${advisor.run.stepSecPerKm}s), ${advisor.run.stageMin}min stage + ${advisor.run.restMin}min rest`
+                    ? `${formatPace(advisor.run.startPaceSecPerKm)}→${formatPace(advisor.run.endPaceSecPerKm)} (-${advisor.run.stepSecPerKm}s), ${advisor.run.stageMin}min stage + ${advisor.run.restMin}min rest`
                     : 'Set threshold pace in profile or sync Strava runs to estimate.'}
                 </div>
                 <div>
@@ -769,7 +827,7 @@ const TestingPage = () => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 10 }} reversed />
-                    <Tooltip formatter={(v) => `${formatPace(v)} /km`} />
+                    <Tooltip formatter={(v) => formatPace(v)} />
                     <Line type="monotone" dataKey="lt2" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -778,8 +836,8 @@ const TestingPage = () => {
             </div>
           </div>
           </div>
-        )}
-      </motion.div>
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {showNewTesting && (
@@ -819,6 +877,15 @@ const TestingPage = () => {
         initialTerm="Lactate Testing"
         initialCategory="Lactate"
       />
+
+      {/* Add Athlete & Test Modal */}
+      {user?.role === 'coach' && (
+        <AddAthleteAndTestModal
+          isOpen={showAddAthleteModal}
+          onClose={() => setShowAddAthleteModal(false)}
+          onAthleteCreated={handleAthleteCreated}
+        />
+      )}
     </motion.div>
   );
 };

@@ -50,60 +50,61 @@ const SupportPage = () => {
     about: [
       {
         question: "What is LaChart?",
-        answer: "LaChart is a specialized application designed for athletes and coaches focused on lactate testing and analysis. It provides comprehensive tools for tracking and analyzing lactate threshold data, helping users optimize their training zones and performance metrics. The application is completely free."
+        answer: "LaChart is a comprehensive platform for endurance athletes and coaches focused on lactate threshold testing and analysis. It provides tools for generating lactate curves, calculating training zones (LT1, LT2, LTP1, LTP2, OBLA, IAT), tracking progress over time, and analyzing training data from Strava and FIT files. The application is completely free."
       },
       {
         question: "What types of athletes benefit from LaChart?",
-        answer: "LaChart is particularly valuable for endurance athletes including runners, cyclists, triathletes, and swimmers. It's also an essential tool for coaches and sports scientists who conduct regular lactate testing and need sophisticated analysis tools."
+        answer: "LaChart is designed for all endurance athletes including runners, cyclists, triathletes, and swimmers. It's also an essential tool for coaches who manage multiple athletes and need to track their lactate test history, training calendars, and performance metrics."
       }
     ],
     account: [
       {
         question: "How do I create an account?",
-        answer: "Creating an account is simple. Just click the 'Sign Up' button, enter your email and password, and choose your role (athlete or coach). You can then customize your profile and start using LaChart's features. Everything is free."
+        answer: "Creating an account is simple and free. Click the 'Sign Up' button, enter your email and password, and choose your role (athlete or coach). You can then complete your profile with basic information, set up training zones, and optionally connect your Strava account to sync training data."
       },
       {
-        question: "Can I have multiple athletes under one coach account?",
-        answer: "Yes, coach accounts can manage multiple athletes. You can invite athletes to connect with your account, view their test results, and manage their training plans all from one dashboard."
+        question: "Can coaches manage multiple athletes?",
+        answer: "Yes, coach accounts can manage multiple athletes. You can add athletes, view their historical lactate tests, track their training calendars, and monitor lactate values from workouts. Switch between athletes seamlessly from your dashboard to get a complete overview of each athlete's development."
       }
     ],
     training: [
       {
         question: "How does LaChart help with training optimization?",
-        answer: "LaChart transforms complex lactate data into actionable training insights. It automatically calculates training zones based on your lactate test results, helps track changes in lactate threshold over time, and provides detailed analysis of aerobic and anaerobic adaptations."
+        answer: "LaChart automatically calculates 5 training zones (Active Recovery, Endurance, Tempo, Lactate Threshold, VO2 Max) from your lactate thresholds. You can compare historical tests to track how your zones shift over time, record lactate values to training intervals, and compare the same workout types (e.g., 10x1km runs) to see your progress."
       },
       {
-        question: "Can I track multiple types of training?",
-        answer: "Yes, LaChart supports various training types including running, cycling, and swimming. Each sport has specific metrics and analysis tools tailored to its unique characteristics."
+        question: "What training data can I analyze?",
+        answer: "LaChart supports running, cycling, and swimming. You can sync workouts from Strava, upload FIT files directly, or enter training data manually. The platform analyzes power, heart rate, cadence, speed, calculates TSS, and automatically detects intervals from power fluctuations."
       }
     ],
     lactate: [
       {
-        question: "What are the key features of lactate testing in LaChart?",
+        question: "What lactate threshold calculations does LaChart provide?",
         answer: (
           <div className={isMobile ? "space-y-1" : "space-y-2"}>
-            <p>LaChart offers various methods of lactate analysis including:</p>
+            <p>LaChart calculates all critical lactate thresholds from your test data:</p>
             <ul className={`list-disc ${isMobile ? 'pl-4 space-y-0.5 text-xs' : 'pl-5 space-y-1'}`}>
-              <li><span className="font-medium">Log-log Analysis:</span> Mathematical approach for precise threshold determination</li>
-              <li><span className="font-medium">Fixed Thresholds:</span> Including OBLA 2.0, 2.5, 3.0, and 3.5 mmol/L</li>
-              <li><span className="font-medium">Baseline + Delta:</span> Bsln +0.5, +1.0, +1.5 mmol/L analysis</li>
-              <li><span className="font-medium">LTP1 & LTP2:</span> First and second lactate turning points</li>
-              <li><span className="font-medium">LTRatio:</span> Advanced lactate ratio analysis for threshold determination</li>
+              <li><span className="font-medium">LT1 & LT2:</span> First and second lactate thresholds</li>
+              <li><span className="font-medium">LTP1 & LTP2:</span> First and second lactate turning points (power/pace at thresholds)</li>
+              <li><span className="font-medium">OBLA:</span> Onset of Blood Lactate Accumulation at 2.0, 2.5, 3.0, and 3.5 mmol/L</li>
+              <li><span className="font-medium">IAT:</span> Individual Anaerobic Threshold</li>
+              <li><span className="font-medium">Log-log:</span> Mathematical approach for precise threshold determination</li>
+              <li><span className="font-medium">Baseline + Delta:</span> Thresholds based on resting lactate (Bsln +0.5, +1.0, +1.5 mmol/L)</li>
             </ul>
           </div>
         )
       },
       {
-        question: "How do I interpret different lactate markers?",
+        question: "How do I perform a lactate test?",
         answer: (
           <div className={isMobile ? "space-y-1" : "space-y-2"}>
-            <p>LaChart helps you understand various lactate markers:</p>
+            <p>You can create a lactate test in LaChart by:</p>
             <ul className={`list-disc ${isMobile ? 'pl-4 space-y-0.5 text-xs' : 'pl-5 space-y-1'}`}>
-              <li><span className="font-medium">LTP1:</span> First lactate turning point, indicating aerobic threshold</li>
-              <li><span className="font-medium">LTP2:</span> Second lactate turning point, indicating anaerobic threshold</li>
-              <li><span className="font-medium">OBLA:</span> Onset of Blood Lactate Accumulation at various levels (2.0-3.5 mmol/L)</li>
-              <li><span className="font-medium">Baseline + Delta:</span> Individual threshold determination based on resting lactate</li>
-              <li><span className="font-medium">LTRatio:</span> Advanced analysis of lactate accumulation patterns</li>
+              <li>Entering test steps with power/pace, heart rate, and lactate measurements</li>
+              <li>LaChart automatically generates your lactate curve and calculates all thresholds</li>
+              <li>Compare your current test with historical tests to track progress</li>
+              <li>Export results to PDF for professional reporting</li>
+              <li>Use the free calculator without registration, or save tests in your account</li>
             </ul>
           </div>
         )
@@ -122,27 +123,27 @@ const SupportPage = () => {
   };
 
   return (
-    <div className={`bg-gradient-to-b from-purple-50 to-white ${isMobile ? 'm-1 rounded-lg' : 'm-5 rounded-3xl'}`} style={isMobile ? {} : { height: 'calc(100vh - 190px)' }}>
-      <div className={`${isMobile ? 'px-2' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'py-4' : 'py-12'}`}>
-        <div className={`${isMobile ? 'flex flex-col' : 'grid lg:grid-cols-2'} ${isMobile ? 'gap-4' : 'gap-12'} items-center`}>
+    <div className={`bg-gradient-to-b from-purple-50 to-white ${isMobile ? 'm-1 rounded-lg' : 'm-5 rounded-3xl'} overflow-hidden`} style={isMobile ? {} : { height: 'calc(100vh - 190px)' }}>
+      <div className={`${isMobile ? 'px-2' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} ${isMobile ? 'py-4' : 'py-12'} h-full flex flex-col`}>
+        <div className={`${isMobile ? 'flex flex-col' : 'grid lg:grid-cols-2'} ${isMobile ? 'gap-4' : 'gap-12'} items-center flex-shrink-0`}>
           <div>
             <h1 className={`${isMobile ? 'text-xl' : 'text-4xl'} font-bold text-gray-900 ${isMobile ? 'mb-3' : 'mb-6'}`}>
               Frequently asked questions
             </h1>
             <p className={`${isMobile ? 'text-xs' : 'text-lg'} text-gray-600 ${isMobile ? 'mb-4' : 'mb-8'}`}>
-              LaChart specializes in lactate testing analysis, helping athletes and coaches optimize training through precise lactate threshold determination. From basic markers to advanced analysis methods, we provide the tools needed for performance enhancement. The application is completely free.
+              LaChart is a comprehensive platform for endurance athletes and coaches to analyze lactate threshold tests, track training progress, and optimize performance through data-driven insights. All features are completely free.
             </p>
           </div>
     
             <img
-              src="/images/lactate-analysis.jpg"
-              alt="LaChart Analysis Dashboard"
-              className={`${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-xl ${isMobile ? 'w-full' : ''}`}
+              src="/images/testing.png"
+              alt="LaChart - Advanced Lactate Testing and Training Analysis"
+              className={`${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-xl ${isMobile ? 'w-full' : 'w-full max-w-lg'} object-contain`}
             />
 
         </div>
 
-        <div className={isMobile ? 'mt-6' : 'mt-16'}>
+        <div className={`${isMobile ? 'mt-6' : 'mt-8'} flex-1 overflow-y-auto min-h-0`}>
           <div className={`${isMobile ? 'flex flex-col' : 'grid md:grid-cols-4'} ${isMobile ? 'gap-4' : 'gap-8'}`}>
             <div className={isMobile ? 'w-full' : 'md:col-span-1'}>
               <nav className={`${isMobile ? 'flex flex-wrap gap-1' : 'space-y-2'} ${isMobile ? '' : 'sticky top-4'}`}>
@@ -198,7 +199,7 @@ const SupportPage = () => {
                 </button>
               </nav>
             </div>
-            <div className={isMobile ? 'w-full' : 'md:col-span-3'}>
+            <div className={`${isMobile ? 'w-full' : 'md:col-span-3'} overflow-y-auto`}>
               {faqCategories[activeCategory].map((faq, index) => (
                 <FAQItem
                   key={index}

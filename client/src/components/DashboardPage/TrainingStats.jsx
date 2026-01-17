@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { formatDistanceForUser } from "../../utils/unitsConverter";
@@ -26,8 +27,13 @@ function StatCard({ stats }) {
   );
 }
 
-function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null }) {
+function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null, widthPercent = null, trainingResults = null }) {
+  const barRef = useRef(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0, showAbove: true });
   const getWidth = () => {
+    // If widthPercent is provided, we'll use it as percentage in flexbox (handled in style)
+    // This function is kept for backward compatibility with old logic
+    // Otherwise, use the old complex logic (for backward compatibility)
     // Funkce pro převod duration na číselnou hodnotu (normalizovanou pro porovnání)
     const parseDurationToNumber = (dur, durType) => {
       if (!dur) return 0;
@@ -401,13 +407,92 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     return durationValue;
   };
 
+  // If widthPercent is provided, use it as percentage for flexbox
+  // Otherwise, use the old pixel-based width
+  // Ensure minimum width for visibility, especially on mobile
+  const minWidthPx = window.innerWidth < 640 ? 3 : 2; // Slightly larger on mobile
+  const barStyle = widthPercent !== null && widthPercent !== undefined
+    ? {
+        flexBasis: `${Math.max(widthPercent, 0.5)}%`, // Use flexBasis for better flexbox gap handling
+        width: `${Math.max(widthPercent, 0.5)}%`, // Also set width for compatibility
+        minWidth: `${minWidthPx}px`, // Ensure minimum visibility in pixels
+        flexShrink: 1, // Allow shrinking if needed to fit in narrow containers
+        flexGrow: 0
+      }
+    : {
+        width: `${Math.max(width, minWidthPx)}px`,
+        flexShrink: 1, // Allow shrinking if needed
+        flexGrow: 0
+      };
+
+  // Calculate tooltip position when hovered - update whenever bar position changes
+  useEffect(() => {
+    if (isHovered && barRef.current) {
+      const updatePosition = () => {
+        if (!barRef.current) return;
+        
+        const rect = barRef.current.getBoundingClientRect();
+        const tooltipHeight = 120; // Approximate tooltip height
+        const tooltipWidth = 180; // Approximate tooltip width
+        const margin = 8;
+        
+        // The bar is positioned at bottom-0, so its top is at rect.bottom - height
+        // Calculate the actual top of the bar (not the container)
+        const barTop = rect.bottom - height + 4; // height is the actual bar height in pixels
+        
+        // Try to position above the bar first (touching the top of the bar)
+        let top = barTop; // Touch the top of the actual bar
+        let showAbove = true;
+        
+        // Check if tooltip would go off the top of the screen
+        if (top - tooltipHeight < margin) {
+          // Position below the bar instead (touching the bottom of the bar)
+          top = rect.bottom; // Touch the bottom of the bar
+          showAbove = false;
+        }
+        
+        // Center horizontally on the bar
+        let left = rect.left + rect.width / 2;
+        
+        // Check if tooltip would go off the left of the screen
+        if (left - tooltipWidth / 2 < margin) {
+          left = tooltipWidth / 2 + margin;
+        }
+        
+        // Check if tooltip would go off the right of the screen
+        if (left + tooltipWidth / 2 > window.innerWidth - margin) {
+          left = window.innerWidth - tooltipWidth / 2 - margin;
+        }
+        
+        setTooltipPosition({
+          top: top,
+          left: left,
+          showAbove: showAbove
+        });
+      };
+      
+      updatePosition();
+      
+      // Update on scroll and resize to keep tooltip aligned with bar
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [isHovered, height]);
+
   return (
-    <div
-      className="relative flex justify-center shrink-0 h-full"
-      style={{ width: `${width}px` }}
-      onMouseEnter={() => onHover(true)}
-      onMouseLeave={() => onHover(false)}
-    >
+    <>
+      <div
+        ref={barRef}
+        className="relative flex justify-center shrink-0 h-full"
+        style={barStyle}
+        onMouseEnter={() => onHover(true)}
+        onMouseLeave={() => onHover(false)}
+      >
       <div
         className={`w-full rounded-sm ${color} transition-all duration-200 absolute bottom-0 cursor-pointer hover:opacity-90`}
         style={{ 
@@ -417,12 +502,20 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
         }}
       />
       
-      {isHovered && (
+      </div>
+      {isHovered && tooltipPosition.top > 0 && (
         <div 
-          className="absolute left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"
+          className="pointer-events-none"
           style={{
-            bottom: `${height - 10}px`,
-            minWidth: "140px"
+            position: 'fixed',
+            top: `${tooltipPosition.top}px`,
+            left: `${tooltipPosition.left}px`,
+            transform: tooltipPosition.showAbove 
+              ? 'translate(-50%, -100%)' // Above bar
+              : 'translate(-50%, 0)', // Below bar
+            minWidth: "140px",
+            zIndex: 99999,
+            pointerEvents: 'none'
           }}  
         >
           <StatCard
@@ -443,7 +536,7 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
           />
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -464,7 +557,7 @@ function Scale({ values, unit, formatValue, isPace = false }) {
   );
 }
 
-function TrainingComparison({ training, previousTraining, sport }) {
+function TrainingComparison({ training, previousTraining, sport, onTrainingClick }) {
   const getAveragePower = (results) => {
     const powers = results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
     return powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b) / powers.length) : 0;
@@ -533,10 +626,20 @@ function TrainingComparison({ training, previousTraining, sport }) {
     return "text-gray-500";
   };
 
+  const handleDateClick = () => {
+    if (onTrainingClick) {
+      onTrainingClick(training);
+    }
+  };
+
   return (
     <div className="flex items-center gap-1.5 sm:gap-2 py-1 sm:py-1.5 px-2 sm:px-3 bg-gray-50 rounded-lg">
       <div className="flex-1">
-        <div className="text-xs sm:text-sm font-medium text-gray-900">
+        <div 
+          onClick={handleDateClick}
+          className="text-xs sm:text-sm font-medium text-gray-900 cursor-pointer hover:text-primary hover:underline transition-colors duration-200"
+          title="Click to view training details"
+        >
           {new Date(training.date).toLocaleDateString('en-US', {
             day: 'numeric',
             month: 'numeric',
@@ -574,6 +677,7 @@ function TrainingComparison({ training, previousTraining, sport }) {
 }
 
 export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false, user = null }) {
+  const navigate = useNavigate();
   // Get available sports from trainings
   const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
   
@@ -687,6 +791,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
     
     return filtered;
   }, [trainings, currentSelectedSport, currentSelectedTitle]);
+
+  // Reset progress index when filtered trainings or selected title changes
+  useEffect(() => {
+    setProgressIndex(0);
+  }, [filteredTrainings.length, currentSelectedTitle]);
   
   // Handler pro změnu názvu tréninku - synchronizace s TrainingGraph
   const handleTrainingTitleChange = (newTitle) => {
@@ -719,18 +828,20 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
     }
   };
 
+  // Show 2 trainings at a time in Training Progress section
+  const progressItemsPerPage = 2;
   const canNavigateProgressLeft = progressIndex > 0;
-  const canNavigateProgressRight = progressIndex + 2 < filteredTrainings.length;
+  const canNavigateProgressRight = progressIndex + progressItemsPerPage < filteredTrainings.length;
 
   const handleProgressNavigateLeft = () => {
     if (canNavigateProgressLeft) {
-      setProgressIndex(prev => Math.max(0, prev - 1));
+      setProgressIndex(prev => Math.max(0, prev - progressItemsPerPage));
     }
   };
 
   const handleProgressNavigateRight = () => {
     if (canNavigateProgressRight) {
-      setProgressIndex(prev => prev + 1);
+      setProgressIndex(prev => Math.min(filteredTrainings.length - progressItemsPerPage, prev + progressItemsPerPage));
     }
   };
 
@@ -882,7 +993,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
     }
   }, [filteredTrainings, isRun]);
   
-  const barColors = ["bg-violet-500", "bg-violet-400", "bg-violet-300", "bg-violet-200", "bg-violet-100"];
+  const barColors = ["bg-violet-700", "bg-violet-600", "bg-violet-500", "bg-violet-400", "bg-violet-300"];
 
 
 
@@ -997,7 +1108,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
           <Scale values={powerValues} unit="W" formatValue={null} />
         )}
         
-        <div ref={containerRef} className="relative flex-1 flex items-stretch justify-between min-w-0">
+        <div ref={containerRef} className="relative flex-1 flex items-stretch justify-between min-w-0" style={{ overflow: 'visible' }}>
           {/* Grid lines */}
           <div className="absolute inset-0">
             {(isRun ? paceValues : powerValues).map((value, index) => {
@@ -1020,7 +1131,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
 
           {/* Bars */}
-          <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4">
+          <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4" style={{ overflow: 'visible' }}>
             {visibleTrainings.map((training, trainingIndex) => {
               const columnWidth = `${100 / visibleTrainings.length}%`;
               
@@ -1031,11 +1142,146 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                   style={{ 
                     width: columnWidth,
                     height: `${maxGraphHeight}px`,
-                    padding: '0 4px'
+                    padding: '0 2px',
+                    overflow: 'visible'
                   }}
                 >
-                  <div className="flex gap-1 h-full justify-center items-end">
+                  <div 
+                    className="relative h-full w-full flex items-end" 
+                    style={{ 
+                      gap: '3px',
+                      overflowX: 'auto',
+                      overflowY: 'visible',
+                      minWidth: 0 // Allow flex shrinking
+                    }}
+                  >
                     {(() => {
+                      // Helper function to parse duration (handles string "5:00" or number)
+                      const parseDuration = (duration) => {
+                        if (!duration && duration !== 0) return 0;
+                        if (typeof duration === 'number') return duration;
+                        if (typeof duration === 'string') {
+                          if (duration.includes(':')) {
+                            const [minutes, seconds] = duration.split(':').map(Number);
+                            return (minutes || 0) * 60 + (seconds || 0);
+                          }
+                          return parseFloat(duration) || 0;
+                        }
+                        return 0;
+                      };
+
+                      // Helper function to parse distance to meters
+                      const parseDistanceToMeters = (dist) => {
+                        if (!dist) return 0;
+                        if (typeof dist === 'string') {
+                          const cleanValue = dist.trim().toLowerCase();
+                          // Match "2 km", "2km", "2.5 km", etc.
+                          const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
+                          if (kmMatch) return parseFloat(kmMatch[1]) * 1000; // Convert to meters
+                          // Match "1000 m", "1000m", etc.
+                          const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
+                          if (mMatch) return parseFloat(mMatch[1]);
+                          // Try to parse as number
+                          const numValue = parseFloat(cleanValue);
+                          if (!isNaN(numValue)) {
+                            // If it's a whole number > 100 without decimal, assume meters
+                            if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
+                              return numValue;
+                            }
+                            // Otherwise assume km (e.g., "2" means 2km = 2000m)
+                            return numValue * 1000;
+                          }
+                        }
+                        // If it's a number
+                        if (typeof dist === 'number') {
+                          // If > 100, assume meters; otherwise assume km
+                          return dist > 100 ? dist : dist * 1000;
+                        }
+                        return 0;
+                      };
+
+                      // Check if results have distance data (for distance-based intervals)
+                      const hasDistanceData = training.results && training.results.some(r => {
+                        const dist = r.distance || (r.durationType === 'distance' ? r.duration : null);
+                        return dist && parseDistanceToMeters(dist) > 0;
+                      });
+
+                      // Calculate total duration or distance for this training
+                      const totalDuration = training.results ? training.results.reduce((sum, result) => {
+                        return sum + parseDuration(result.duration);
+                      }, 0) : 0;
+
+                      const totalDistance = training.results ? training.results.reduce((sum, result) => {
+                        const dist = result.distance || (result.durationType === 'distance' ? result.duration : null);
+                        return sum + parseDistanceToMeters(dist);
+                      }, 0) : 0;
+
+                      // Use distance if available, otherwise use duration
+                      const useDistance = hasDistanceData && totalDistance > 0;
+                      const totalValue = useDistance ? totalDistance : totalDuration;
+
+                      // Calculate width percentages and left positions for each interval
+                      // Account for gaps between intervals (3px each, N-1 gaps for N intervals)
+                      // With flexbox gap, we need to ensure bars fit within container
+                      // Approach: calculate widthPercent accounting for gap space
+                      const numIntervals = training.results.length;
+                      
+                      // For flexbox with gap, we'll calculate widthPercent as:
+                      // widthPercent = (value/totalValue) * (100% - gapPercentage)
+                      // where gapPercentage accounts for all gaps
+                      
+                      // Calculate gap percentage based on actual container width
+                      // Get container width from ref if available, otherwise estimate
+                      const containerWidthPx = containerWidth || 300; // Fallback to 300px
+                      const gapSizePx = 3; // pixels per gap
+                      const totalGapWidthPx = (numIntervals - 1) * gapSizePx;
+                      const gapPercent = containerWidthPx > 0 
+                        ? Math.min(20, (totalGapWidthPx / containerWidthPx) * 100) // Cap at 20%
+                        : Math.min(15, (numIntervals - 1) * 1.5); // Fallback estimate
+                      const availableWidthPercent = Math.max(50, 100 - gapPercent); // Ensure at least 50% available
+                      
+                      let cumulativeLeft = 0;
+                      const intervalPositions = training.results.map((result, index) => {
+                        const durationValue = parseDuration(result.duration);
+                        const distanceValue = result.distance || (result.durationType === 'distance' ? result.duration : null);
+                        const parsedDistance = parseDistanceToMeters(distanceValue);
+
+                        const value = useDistance ? parsedDistance : durationValue;
+                        // Calculate width as percentage of available space (after accounting for gaps)
+                        const widthPercent = totalValue > 0 
+                          ? (value / totalValue) * availableWidthPercent 
+                          : (availableWidthPercent / training.results.length);
+                        const leftPercent = cumulativeLeft;
+                        cumulativeLeft += widthPercent;
+                        return { widthPercent, leftPercent };
+                      });
+
+                      // Debug: Log widths
+                      console.log('=== DashboardPage TrainingStats Bar Widths ===');
+                      console.log('Training:', training.title || 'Untitled');
+                      console.log('Total Value:', totalValue, useDistance ? '(distance in meters)' : '(duration in seconds)');
+                      console.log('Total Distance:', totalDistance, 'meters');
+                      console.log('Total Duration:', totalDuration, 'seconds');
+                      console.log('Use Distance:', useDistance);
+                      console.log('Results count:', training.results?.length || 0);
+                      console.log('Interval Widths:', intervalPositions.map((pos, idx) => {
+                        const result = training.results[idx];
+                        const dist = result?.distance || (result?.durationType === 'distance' ? result?.duration : null);
+                        const parsedDist = parseDistanceToMeters(dist);
+                        const durVal = parseDuration(result?.duration);
+                        return {
+                          interval: idx + 1,
+                          widthPercent: pos.widthPercent.toFixed(2) + '%',
+                          duration: result?.duration,
+                          distance: result?.distance,
+                          durationType: result?.durationType,
+                          parsedDistance: parsedDist,
+                          parsedDuration: durVal,
+                          value: useDistance ? parsedDist : durVal
+                        };
+                      }));
+                      console.log('==============================================');
+
                       // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
                       // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
                       // Pro ostatní: nejvyšší power = nejtmavší
@@ -1112,6 +1358,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           isFullWidth={isFullWidth}
                           sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
                           user={user}
+                          widthPercent={intervalPositions[resultIndex]?.widthPercent}
+                          trainingResults={training.results}
                         />
                       );
                     });
@@ -1133,39 +1381,74 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
       <div className="mt-2 sm:mt-3">
         <div className="flex items-center justify-between mb-1 sm:mb-1.5">
-          <div className="text-xs sm:text-sm font-medium text-gray-900">Training Progress</div>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              onClick={handleProgressNavigateLeft}
-              disabled={!canNavigateProgressLeft}
-              className={`p-1 rounded hover:bg-gray-100 ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <button
-              onClick={handleProgressNavigateRight}
-              disabled={!canNavigateProgressRight}
-              className={`p-1 rounded hover:bg-gray-100 ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+          <div className="text-xs sm:text-sm font-medium text-gray-900">
+            Training Progress
+            {filteredTrainings.length > progressItemsPerPage && (
+              <span className="ml-2 text-gray-500 text-[10px] sm:text-xs font-normal">
+                ({progressIndex + 1}-{Math.min(progressIndex + progressItemsPerPage, filteredTrainings.length)} of {filteredTrainings.length})
+              </span>
+            )}
           </div>
+          {filteredTrainings.length > progressItemsPerPage && (
+            <div className="flex items-center gap-1 sm:gap-2">
+              <button
+                onClick={handleProgressNavigateLeft}
+                disabled={!canNavigateProgressLeft}
+                className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Previous trainings"
+              >
+                <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={handleProgressNavigateRight}
+                disabled={!canNavigateProgressRight}
+                className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Next trainings"
+              >
+                <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
         <div className="space-y-1">
           {filteredTrainings
-            .slice(progressIndex, progressIndex + 2)
-            .map((training, index) => (
-              <TrainingComparison
-                key={training._id || training.id || index}
-                training={training}
-                previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
-                sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
-              />
-            ))}
+            .slice(progressIndex, progressIndex + progressItemsPerPage)
+            .map((training, index) => {
+              const handleTrainingClick = (trainingData) => {
+                // Navigate to FitAnalysisPage with canonical URL format
+                // Training objects from DashboardPage may have 'type' property or not
+                // Try to determine type from available properties
+                if (trainingData.type === 'fit' && trainingData._id) {
+                  navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingData._id}`)}`);
+                } else if (trainingData.type === 'strava' && (trainingData.stravaId || trainingData.id)) {
+                  const stravaId = trainingData.stravaId || trainingData.id;
+                  navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                } else if (trainingData.type === 'regular' && trainingData._id) {
+                  navigate(`/training-calendar/${encodeURIComponent(`regular-${trainingData._id}`)}`);
+                } else if (trainingData.stravaId || trainingData.id) {
+                  // Strava activity (without explicit type)
+                  const stravaId = trainingData.stravaId || trainingData.id;
+                  navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                } else if (trainingData._id) {
+                  // Regular training (Training model) - most common case
+                  navigate(`/training-calendar/${encodeURIComponent(`training-${trainingData._id}`)}`);
+                }
+              };
+              
+              return (
+                <TrainingComparison
+                  key={training._id || training.id || index}
+                  training={training}
+                  previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
+                  sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
+                  onTrainingClick={handleTrainingClick}
+                />
+              );
+            })}
         </div>
       </div>
     </div>

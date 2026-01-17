@@ -132,25 +132,82 @@ const SignUpPage = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen flex bg-[#EEF2FF] pt-safe-top pb-safe-bottom overflow-hidden"
+      className="min-h-screen flex flex-col bg-[#EEF2FF] pt-safe-top"
     >
-      {/* Left side - Background */}
-      <motion.div 
-        initial={{ x: -100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.2 }}
-        className="hidden lg:flex lg:w-1/2 bg-gradient-to-r from-[#EEF2FF] via-[#E5E9FF] to-transparent overflow-hidden"
-      >
-        {/* Zde můžete přidat obrázek nebo grafiku */}
-      </motion.div>
+      <div className="flex flex-1 min-h-0" style={{ minHeight: '100vh' }}>
+        {/* Left side - Background with Image and SEO Content */}
+        <motion.div 
+          initial={{ x: -100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="hidden lg:flex lg:w-1/2 overflow-y-auto"
+        >
+          <div className="flex flex-col items-center justify-center w-full min-h-full px-8 py-8 space-y-4">
+            {/* Image */}
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="w-full max-w-md"
+            >
+              <img
+                src="/images/testing.png"
+                alt="LaChart - Advanced Lactate Testing and Training Analysis"
+                className="w-full h-auto rounded-2xl shadow-2xl object-contain"
+              />
+            </motion.div>
 
-      {/* Right side - Form */}
-      <motion.div 
-        initial={{ x: 100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.2 }}
-        className="w-full lg:w-1/2 flex items-center justify-center px-8 overflow-hidden"
-      >
+            {/* SEO Content */}
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.6 }}
+              className="text-center space-y-4 max-w-xl"
+            >
+              <h1 className="text-3xl font-bold text-gray-900 leading-tight">
+                Advanced Lactate Testing & Training Analysis
+              </h1>
+              <p className="text-base text-gray-700 leading-relaxed">
+                LaChart is a comprehensive platform for endurance athletes and coaches to analyze lactate threshold tests, 
+                track training progress, and optimize performance through data-driven insights.
+              </p>
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Lactate Testing</h3>
+                  <p className="text-xs text-gray-600">
+                    Perform accurate lactate threshold tests and analyze results with advanced curve fitting algorithms.
+                  </p>
+                </div>
+                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Training Zones</h3>
+                  <p className="text-xs text-gray-600">
+                    Calculate personalized training zones based on your lactate thresholds for optimal training intensity.
+                  </p>
+                </div>
+                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Strava Integration</h3>
+                  <p className="text-xs text-gray-600">
+                    Seamlessly sync your training data from Strava for comprehensive performance tracking.
+                  </p>
+                </div>
+                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Progress Tracking</h3>
+                  <p className="text-xs text-gray-600">
+                    Monitor your training progress over time with detailed analytics and visualizations.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </motion.div>
+
+        {/* Right side - Form */}
+        <motion.div 
+          initial={{ x: 100, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="w-full lg:w-1/2 flex items-center justify-center px-8 overflow-y-auto"
+        >
         <motion.div 
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -359,7 +416,7 @@ const SignUpPage = () => {
             >
               <div className="flex items-center">
                 <input
-                  id="role"
+                  id="role-athlete"
                   name="role"
                   type="radio"
                   value="athlete"
@@ -367,14 +424,14 @@ const SignUpPage = () => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-gray-300 rounded"
                 />
-                <label htmlFor="role" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="role-athlete" className="ml-2 block text-sm text-gray-900">
                   Athlete
                 </label>
               </div>
       
               <div className="flex items-center">
                 <input
-                  id="role"
+                  id="role-coach"
                   name="role"
                   type="radio"
                   value="coach"
@@ -382,7 +439,7 @@ const SignUpPage = () => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-gray-300 rounded"
                 />
-                <label htmlFor="role" className="ml-2 block text-sm text-gray-900">
+                <label htmlFor="role-coach" className="ml-2 block text-sm text-gray-900">
                   Coach
                 </label>
               </div>
@@ -487,6 +544,7 @@ const SignUpPage = () => {
           </motion.p>
         </motion.div>
       </motion.div>
+      </div>
 
       {/* Terms Modal */}
       <AnimatePresence>
@@ -583,6 +641,112 @@ const SignUpPage = () => {
           navigate('/dashboard', { replace: true });
         }}
       />
+
+      {/* Footer */}
+      <motion.footer 
+        className="bg-white py-12 border-t mt-auto"
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <a href="/" className="flex items-center gap-2">
+                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
+              </a>
+              <p className="mt-4 text-gray-600">
+                Advanced lactate testing and analysis for athletes and coaches.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Quick Links</h3>
+              <ul className="mt-4 space-y-4">
+                <li>
+                  <a href="/lactate-curve-calculator" className="text-base text-gray-600 hover:text-primary">
+                    Try Demo
+                  </a>
+                </li>
+                <li>
+                  <a href="/lactate-guide" className="text-base text-gray-600 hover:text-primary">
+                    Lactate Guide
+                  </a>
+                </li>
+                <li>
+                  <a href="/login" className="text-base text-gray-600 hover:text-primary">
+                    Login
+                  </a>
+                </li>
+                <li>
+                  <a href="/signup" className="text-base text-gray-600 hover:text-primary">
+                    Register
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">Contact</h3>
+              <ul className="mt-4 space-y-4">
+                <li className="flex items-center">
+                  <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <a href="mailto:lachart@lachart.net" className="ml-2 text-gray-600 hover:text-primary">
+                    lachart@lachart.net
+                  </a>
+                </li>
+                <li className="flex items-center">
+                  <svg className="h-6 w-6 text-primary" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7.75 2h8.5A5.75 5.75 0 0 1 22 7.75v8.5A5.75 5.75 0 0 1 16.25 22h-8.5A5.75 5.75 0 0 1 2 16.25v-8.5A5.75 5.75 0 0 1 7.75 2Zm0 1.5A4.25 4.25 0 0 0 3.5 7.75v8.5A4.25 4.25 0 0 0 7.75 20.5h8.5A4.25 4.25 0 0 0 20.5 16.25v-8.5A4.25 4.25 0 0 0 16.25 3.5h-8.5Zm8.75 2a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 1.5A3.5 3.5 0 1 0 12 15a3.5 3.5 0 0 0 0-7Z" />
+                  </svg>
+                  <a
+                    href="https://www.instagram.com/lachartapp/?igsh=MXUwZWF3MnU2OXE0dg%3D%3D"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-gray-600 hover:text-primary"
+                  >
+                    @lachartapp on Instagram
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-8 border-t border-gray-200 pt-8 text-center space-y-3">
+            <p className="text-base text-gray-400">
+              &copy; {new Date().getFullYear()} LaChart. All rights reserved.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+              <a
+                href="https://lachart.net/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary transition-colors"
+              >
+                Privacy Policy
+              </a>
+              <span className="text-gray-300">•</span>
+              <a
+                href="/terms"
+                className="hover:text-primary transition-colors"
+              >
+                Terms of Use
+              </a>
+            </div>
+            <p className="text-sm text-gray-500">
+              Need help or have questions?{" "}
+              <a
+                href="mailto:lachart@lachart.net"
+                className="text-primary hover:text-primary-dark font-medium"
+              >
+                Contact us
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      </motion.footer>
     </motion.div>
   );
 };

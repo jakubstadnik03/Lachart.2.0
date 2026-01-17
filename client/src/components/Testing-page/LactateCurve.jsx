@@ -13,6 +13,7 @@ import {
 import { HelpCircle, Info } from 'lucide-react';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
+import { useAuth } from '../../context/AuthProvider';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -103,6 +104,7 @@ const convertSecondsToSpeed = (seconds, unitSystem) => {
 
 
 const LactateCurve = ({ mockData, demoMode = false }) => {
+  const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showGlossary, setShowGlossary] = useState(false);
   
@@ -115,8 +117,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  // Get unit system and input mode from mockData or default to metric/pace
-  const unitSystem = mockData?.unitSystem || 'metric';
+  // Get unit system and input mode from user profile, mockData, or default to metric/pace
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {
