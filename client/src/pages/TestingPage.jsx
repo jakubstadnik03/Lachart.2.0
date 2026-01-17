@@ -10,7 +10,8 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
-import { listExternalActivities } from '../services/api';
+import { listExternalActivities, getStravaActivityDetail } from '../services/api';
+import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -34,8 +35,6 @@ const TestingPage = () => {
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
-  // Page-level loading starts as false; individual blocks/components show their own spinners.
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
@@ -43,6 +42,8 @@ const TestingPage = () => {
   const [bikePowerMetrics, setBikePowerMetrics] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(true);
+  const [hrTestPlan, setHrTestPlan] = useState(null);
+  const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const navigate = useNavigate();
   
   // Get testId from URL
@@ -55,9 +56,8 @@ const TestingPage = () => {
     { id: "swim", name: "Swimming" },
   ];
 
-  const loadTests = async (targetId) => {
+  const loadTests = React.useCallback(async (targetId) => {
     try {
-      setLoading(true);
       setError(null);
       // For tester role, use any ID (backend will return all tests)
       const testId = user?.role === 'tester' ? user._id : targetId;
@@ -66,10 +66,8 @@ const TestingPage = () => {
     } catch (err) {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [user]);
 
   // Synchronizace selectedAthleteId s URL parametrem
   useEffect(() => {
@@ -90,7 +88,7 @@ const TestingPage = () => {
 
     const targetId = selectedAthleteId || user._id;
     loadTests(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests]);
   
   // Listen for URL changes (including testId parameter)
   useEffect(() => {
@@ -143,6 +141,115 @@ const TestingPage = () => {
 
     loadAdvisor();
   }, [user, isAuthenticated, selectedAthleteId]);
+
+  // Load HR-first test plan from Strava activities
+  useEffect(() => {
+    const loadHRTestPlan = async () => {
+      if (!isAuthenticated || !user || !externalActivities || externalActivities.length === 0) {
+        setHrTestPlan(null);
+        return;
+      }
+
+      try {
+        setHrTestPlanLoading(true);
+
+        // Filter activities with HR data and get recent ones (last 42-90 days)
+        const now = Date.now();
+        const cutoff42 = now - (42 * 24 * 60 * 60 * 1000);
+        const cutoff90 = now - (90 * 24 * 60 * 60 * 1000);
+
+        const recentActivities = externalActivities.filter(act => {
+          const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
+          return actDate >= cutoff42;
+        });
+
+        // If not enough activities, expand to 90 days
+        const activitiesToUse = recentActivities.length >= 8 
+          ? recentActivities 
+          : externalActivities.filter(act => {
+              const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
+              return actDate >= cutoff90;
+            });
+
+        // Filter activities that likely have HR (Strava activities with HR average or HR zones)
+        const activitiesWithHR = activitiesToUse.filter(act => 
+          act.averageHeartRate || 
+          act.heartRateZones || 
+          (act.stravaId && act.sport && (act.sport.toLowerCase().includes('run') || act.sport.toLowerCase().includes('ride')))
+        ).slice(0, 30); // Limit to 30 most recent to avoid rate limiting
+
+        if (activitiesWithHR.length === 0) {
+          setHrTestPlan(null);
+          return;
+        }
+
+        // Load streams for activities (limit to avoid rate limiting)
+        const activitiesWithStreams = [];
+        for (let i = 0; i < Math.min(activitiesWithHR.length, 20); i++) {
+          const act = activitiesWithHR[i];
+          if (!act.stravaId) continue;
+
+          try {
+            const detail = await getStravaActivityDetail(act.stravaId, user.role === 'coach' ? selectedAthleteId : null);
+            if (detail && detail.streams) {
+              // Convert Strava streams format to our format
+              const streams = {
+                time: detail.streams.time?.data || [],
+                heartrate: detail.streams.heartrate?.data || [],
+                watts: detail.streams.watts?.data || [],
+                velocity_smooth: detail.streams.velocity_smooth?.data || [],
+                distance: detail.streams.distance?.data || []
+              };
+
+              activitiesWithStreams.push({
+                id: act.stravaId || act.id || act._id,
+                stravaId: act.stravaId,
+                sport: act.sport || act.type || 'Ride',
+                startDate: act.startDate || act.date || act.start_date,
+                date: act.startDate || act.date || act.start_date,
+                streams
+              });
+            }
+          } catch (e) {
+            // Skip activities that fail to load (rate limit, etc.)
+            console.warn(`Failed to load streams for activity ${act.stravaId}:`, e.message);
+            continue;
+          }
+
+          // Small delay to avoid rate limiting
+          if (i < activitiesWithHR.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
+
+        // Generate HR test plan for both run and bike
+        const runPlan = activitiesWithStreams.length > 0 
+          ? await generateHRTestPlan(activitiesWithStreams, 'run')
+          : null;
+        
+        const bikePlan = activitiesWithStreams.length > 0
+          ? await generateHRTestPlan(activitiesWithStreams, 'bike')
+          : null;
+
+        setHrTestPlan({
+          run: runPlan,
+          bike: bikePlan
+        });
+      } catch (e) {
+        console.warn('Failed to generate HR test plan:', e);
+        setHrTestPlan(null);
+      } finally {
+        setHrTestPlanLoading(false);
+      }
+    };
+
+    // Only load if we have external activities
+    if (externalActivities && externalActivities.length > 0) {
+      loadHRTestPlan();
+    } else {
+      setHrTestPlan(null);
+    }
+  }, [externalActivities, user, isAuthenticated, selectedAthleteId]);
 
   // Persist "recommendations panel" visibility per athlete
   useEffect(() => {
@@ -506,6 +613,72 @@ const TestingPage = () => {
                 </button>
               </div>
             </div>
+
+          {/* HR-First Test Plan */}
+          {hrTestPlanLoading && (
+            <div className="mb-4 text-xs text-gray-500">Analyzing HR data from Strava activities...</div>
+          )}
+          {hrTestPlan && (hrTestPlan.run || hrTestPlan.bike) && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">HR-First Test Plan (from Strava)</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {hrTestPlan.run && hrTestPlan.run.hrMax?.value && (
+                  <div className="text-xs text-blue-800">
+                    <div className="font-semibold mb-1">Running:</div>
+                    <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
+                    {hrTestPlan.run.lt1?.hr?.value && (
+                      <div>LT1: {hrTestPlan.run.lt1.hr.value} bpm ({hrTestPlan.run.lt1.confidence})</div>
+                    )}
+                    {hrTestPlan.run.lt2?.hr?.value && (
+                      <div>LT2: {hrTestPlan.run.lt2.hr.value} bpm ({hrTestPlan.run.lt2.confidence})</div>
+                    )}
+                    {hrTestPlan.run.protocol && (
+                      <div className="mt-2 pt-2 border-t border-blue-300">
+                        <div className="font-semibold">Protocol ({hrTestPlan.run.protocol.stageDurationMin} min stages):</div>
+                        {hrTestPlan.run.protocol.stages.slice(0, 5).map(stage => (
+                          <div key={stage.stage} className="text-[10px]">
+                            Stage {stage.stage}: HR {stage.targetHR} bpm
+                            {stage.suggestedPace && ` → ${stage.suggestedPace}`}
+                            {stage.suggestedPower && ` → ${stage.suggestedPower}W`}
+                          </div>
+                        ))}
+                        {hrTestPlan.run.protocol.stages.length > 5 && (
+                          <div className="text-[10px] text-blue-600">+ {hrTestPlan.run.protocol.stages.length - 5} more stages</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {hrTestPlan.bike && hrTestPlan.bike.hrMax?.value && (
+                  <div className="text-xs text-blue-800">
+                    <div className="font-semibold mb-1">Cycling:</div>
+                    <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
+                    {hrTestPlan.bike.lt1?.hr?.value && (
+                      <div>LT1: {hrTestPlan.bike.lt1.hr.value} bpm ({hrTestPlan.bike.lt1.confidence})</div>
+                    )}
+                    {hrTestPlan.bike.lt2?.hr?.value && (
+                      <div>LT2: {hrTestPlan.bike.lt2.hr.value} bpm ({hrTestPlan.bike.lt2.confidence})</div>
+                    )}
+                    {hrTestPlan.bike.protocol && (
+                      <div className="mt-2 pt-2 border-t border-blue-300">
+                        <div className="font-semibold">Protocol ({hrTestPlan.bike.protocol.stageDurationMin} min stages):</div>
+                        {hrTestPlan.bike.protocol.stages.slice(0, 5).map(stage => (
+                          <div key={stage.stage} className="text-[10px]">
+                            Stage {stage.stage}: HR {stage.targetHR} bpm
+                            {stage.suggestedPace && ` → ${stage.suggestedPace}`}
+                            {stage.suggestedPower && ` → ${stage.suggestedPower}W`}
+                          </div>
+                        ))}
+                        {hrTestPlan.bike.protocol.stages.length > 5 && (
+                          <div className="text-[10px] text-blue-600">+ {hrTestPlan.bike.protocol.stages.length - 5} more stages</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 mt-3 sm:mt-4">
             {/* Bike */}

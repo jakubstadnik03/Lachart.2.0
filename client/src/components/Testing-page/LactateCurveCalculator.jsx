@@ -393,36 +393,49 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     
     if (isNaN(baseLaNum) || baseLaNum <= 0) return null;
     
-    // Place base lactate before the slowest measurement with a small gap
-    // For pace sports: use the slowest pace (highest value) and go slightly slower
-    // For bike: use the lowest power and go slightly lower
+    // Place base lactate proportionally before the slowest measurement
+    // This ensures the polynomial regression can properly calculate the curve
+    // For pace sports: use the slowest pace (highest value) and go proportionally slower
+    // For bike: use the lowest power and go proportionally lower
     let baseX;
     if (isPaceSport) {
       if (inputMode === 'pace') {
         // In pace mode: xVals are in seconds, highest = slowest
         const maxPace = Math.max(...xValsMeasured); // Slowest pace (highest seconds)
-        // Use smaller gap - approximately 15-20 seconds slower, or 3-5% if that's less
-        // This ensures base lactate is close to the first measurement point
-        const paceRange = Math.max(...xValsMeasured) - Math.min(...xValsMeasured);
-        const gapSeconds = Math.min(20, paceRange * 0.05); // Max 20 seconds or 5% of range
-        const basePace = maxPace + gapSeconds;
+        const minPace = Math.min(...xValsMeasured); // Fastest pace (lowest seconds)
+        const paceRange = maxPace - minPace;
+        
+        // Place base lactate proportionally: 10-15% of the range before the slowest point
+        // This ensures it's proportional to the data spread for better curve calculation
+        const proportionalGap = paceRange * 0.12; // 12% of the range
+        const basePace = maxPace + proportionalGap;
         baseX = basePace;
       } else {
         // In speed mode: xVals are already in km/h (converted from pace)
-        // We need to find the slowest pace from valid data, then convert to speed
+        // We need to find the slowest and fastest pace from valid data, then convert to speed
         const slowestPace = Math.max(...validResults.map(r => {
           const power = r.power?.toString().replace(',', '.');
           return Number(power);
         })); // Slowest pace in seconds
+        const fastestPace = Math.min(...validResults.map(r => {
+          const power = r.power?.toString().replace(',', '.');
+          return Number(power);
+        })); // Fastest pace in seconds
+        
         const slowestSpeed = convertPaceToSpeed(slowestPace, unitSystem); // Convert to km/h
-        baseX = Math.max(0.1, slowestSpeed * 0.9); // 10% slower than slowest, but at least 0.1 km/h
+        const fastestSpeed = convertPaceToSpeed(fastestPace, unitSystem); // Convert to km/h
+        const speedRange = slowestSpeed - fastestSpeed;
+        
+        // Place base lactate proportionally: 12% of the speed range before the slowest
+        const proportionalGap = speedRange * 0.12;
+        baseX = Math.max(0.1, slowestSpeed + proportionalGap);
         
         // Validate: for running, speed should be reasonable (max ~30 km/h for elite, ~20 km/h for normal)
         // For swimming, max ~8 km/h
         const maxReasonableSpeed = isSwimming ? 10 : 30;
         if (baseX > maxReasonableSpeed) {
-          // If calculated speed is too high, use a reasonable default
-          baseX = slowestSpeed * 0.95; // Just slightly slower than slowest
+          // If calculated speed is too high, use a smaller proportional gap
+          baseX = slowestSpeed + (speedRange * 0.08); // 8% instead of 12%
           if (baseX > maxReasonableSpeed) {
             // If still too high, don't show base lactate point
             return null;
@@ -432,7 +445,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     } else {
       // For bike: lowest power = slowest
       const minPower = Math.min(...xValsMeasured);
-      baseX = Math.max(0, minPower * 0.9); // 10% lower than lowest, but at least 0
+      const maxPower = Math.max(...xValsMeasured);
+      const powerRange = maxPower - minPower;
+      
+      // Place base lactate proportionally: 12% of the power range before the lowest
+      const proportionalGap = powerRange * 0.12;
+      baseX = Math.max(0, minPower - proportionalGap);
     }
     
     return {
