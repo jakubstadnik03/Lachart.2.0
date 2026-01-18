@@ -1988,7 +1988,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
-        const imageUrl = `${clientUrl}/images/lachart_training.png`;
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
         const userName = targetUser.name || 'there';
         const userRole = targetUser.role === 'coach' ? 'coach' : 'athlete';
@@ -2006,7 +2006,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             <p>Every answer helps me improve the app in the right direction.</p>
             <p>If you'd like, I'm happy to reach out personally and show you what I'm working on now.</p>
             <p style="margin-top: 30px;">
-                <img src="${imageUrl}" alt="LaChart Training" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
             </p>
             <p style="margin-top: 20px;"><strong>LaChart Features:</strong></p>
             <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
@@ -2028,7 +2028,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
                 <li>Tell me if you're a coach (I'm building features specifically for coaches)</li>
             </ul>
             <p style="margin-top: 30px;">Thanks again!</p>
-            <p><strong>Jakub</strong><br/>LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+            <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
         `;
 
         const transporter = nodemailer.createTransport({
@@ -2051,7 +2051,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
                 content: emailContent,
                 buttonText: 'Open LaChart',
                 buttonUrl: clientUrl,
-                footerText: 'This is a personal message from the LaChart team.'
+                footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
             })
         });
 
@@ -2080,7 +2080,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
-        const imageUrl = `${clientUrl}/images/lachart_training.png`;
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
         const transporter = nodemailer.createTransport({
             service: 'gmail',
@@ -2114,7 +2114,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     <p>Every answer helps me improve the app in the right direction.</p>
                     <p>If you'd like, I'm happy to reach out personally and show you what I'm working on now.</p>
                     <p style="margin-top: 30px;">
-                        <img src="${imageUrl}" alt="LaChart Training" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
                     </p>
                     <p style="margin-top: 20px;"><strong>LaChart Features:</strong></p>
                     <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
@@ -2136,7 +2136,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                         <li>Tell me if you're a coach (I'm building features specifically for coaches)</li>
                     </ul>
                     <p style="margin-top: 30px;">Thanks again!</p>
-                    <p><strong>Jakub</strong><br/>LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
                 `;
 
                 await transporter.sendMail({
@@ -2151,7 +2151,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                         content: emailContent,
                         buttonText: 'Open LaChart',
                         buttonUrl: clientUrl,
-                        footerText: 'This is a personal message from the LaChart team.'
+                        footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
                     })
                 });
 
