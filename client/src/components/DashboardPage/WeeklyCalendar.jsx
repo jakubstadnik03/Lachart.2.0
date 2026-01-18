@@ -81,7 +81,7 @@ function categoryLabel(category) {
   return labels[category] || 'Uncategorized';
 }
 
-const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null }) => {
+const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
   const { user } = useAuth();
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -155,7 +155,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     }
   }, [activities]);
 
-  // Use cached activities if current activities are empty
+  // Use activities prop directly (don't use cache if activities are provided)
+  // Cache is only used as fallback when activities prop is empty
   const effectiveActivities = activities && activities.length > 0 ? activities : cachedActivities;
 
   // Debug logging removed to keep console clean in dev
@@ -370,7 +371,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
             avgCadence: detail.detail.average_cadence || null,
             maxCadence: detail.detail.max_cadence || null,
             sport: activity.sport || detail.detail.type || 'cycling',
-            title: detail.detail.name || activity.title || '',
+            // Use linked training title if available, otherwise use activity title, otherwise use Strava name
+            title: activity.linkedTrainingTitle || activity.title || detail.detail.name || '',
+            linkedTrainingTitle: activity.linkedTrainingTitle || null,
             category: detail.category || activity.category || ''
           };
           setTrainingDetail(trainingData);
@@ -642,6 +645,18 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               // Reload FIT training detail
                               const detail = await getFitTraining(trainingDetail._id);
                               setTrainingDetail({ ...detail, type: 'fit' });
+                              // Update selectedTraining to reflect the new title
+                              setSelectedTraining(prev => prev ? { ...prev, title: title, titleManual: title } : null);
+                              // Notify parent component about the update
+                              if (onActivityUpdate) {
+                                onActivityUpdate({
+                                  type: 'fit',
+                                  _id: trainingDetail._id,
+                                  id: `fit-${trainingDetail._id}`,
+                                  title: title,
+                                  titleManual: title
+                                });
+                              }
                             } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                               await updateStravaActivity(trainingDetail.id, { title });
                               // Reload Strava activity detail
@@ -683,7 +698,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     avgCadence: detail.detail.average_cadence || null,
                                     maxCadence: detail.detail.max_cadence || null,
                                     sport: trainingDetail.sport || detail.detail.type || 'cycling',
-                                    title: detail.detail.name || title || '',
+                                    // Preserve linked training title if it exists, otherwise use saved title or Strava name
+                                    title: selectedTraining?.linkedTrainingTitle || title || detail.detail.name || '',
+                                    linkedTrainingTitle: selectedTraining?.linkedTrainingTitle || null,
                                     category: detail.category || trainingDetail.category || ''
                                   });
                                 } else {
@@ -691,6 +708,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 }
                               } else {
                                 setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
+                              }
+                              // Update selectedTraining to reflect the new title
+                              setSelectedTraining(prev => prev ? { ...prev, title: title, titleManual: title, name: title } : null);
+                              // Notify parent component about the update
+                              if (onActivityUpdate) {
+                                onActivityUpdate({
+                                  type: 'strava',
+                                  id: trainingDetail.id,
+                                  stravaId: trainingDetail.id,
+                                  title: title,
+                                  titleManual: title,
+                                  name: title
+                                });
                               }
                             }
                             setIsEditingTitle(false);
@@ -727,7 +757,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           setIsEditingTitle(true);
                         }}
                       >
-                        {trainingDetail?.title || trainingDetail?.name || selectedTraining?.title || selectedTraining?.name || 'Training Details'}
+                        {trainingDetail?.linkedTrainingTitle || trainingDetail?.title || trainingDetail?.name || selectedTraining?.linkedTrainingTitle || selectedTraining?.title || selectedTraining?.name || 'Training Details'}
                       </h4>
                       <button
                         onClick={() => {
@@ -770,6 +800,15 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 // Reload FIT training detail
                                 const detail = await getFitTraining(trainingDetail._id);
                                 setTrainingDetail({ ...detail, type: 'fit' });
+                                // Notify parent component about the update
+                                if (onActivityUpdate) {
+                                  onActivityUpdate({
+                                    type: 'fit',
+                                    _id: trainingDetail._id,
+                                    id: `fit-${trainingDetail._id}`,
+                                    category: category
+                                  });
+                                }
                               } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                                 await updateStravaActivity(trainingDetail.id, { category });
                                 // Reload Strava activity detail
@@ -811,7 +850,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                       avgCadence: detail.detail.average_cadence || null,
                                       maxCadence: detail.detail.max_cadence || null,
                                       sport: trainingDetail.sport || detail.detail.type || 'cycling',
-                                      title: detail.detail.name || trainingDetail.title || '',
+                                      // Preserve linked training title if it exists, otherwise use trainingDetail title or Strava name
+                                      title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
+                                      linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
                                       category: detail.category || category || ''
                                     });
                                   } else {
@@ -820,6 +861,15 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 } else {
                                   setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
                                 }
+                              }
+                              // Notify parent component about the update
+                              if (onActivityUpdate) {
+                                onActivityUpdate({
+                                  type: 'strava',
+                                  id: trainingDetail.id,
+                                  stravaId: trainingDetail.id,
+                                  category: category
+                                });
                               }
                               setIsEditingCategory(false);
                             } catch (error) {
@@ -944,7 +994,9 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 avgCadence: detail.detail.average_cadence || null,
                                 maxCadence: detail.detail.max_cadence || null,
                                 sport: trainingDetail.sport || detail.detail.type || 'cycling',
-                                title: detail.detail.name || trainingDetail.title || '',
+                                // Preserve linked training title if it exists, otherwise use trainingDetail title or Strava name
+                                title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
+                                linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
                                 category: detail.category || trainingDetail.category || ''
                               });
                             } else {

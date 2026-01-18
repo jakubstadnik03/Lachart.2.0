@@ -24,16 +24,18 @@ export function useTrainer(options = {}) {
       adapterRef.current = createTrainerClient(options);
     }
 
+    // Only cleanup on actual unmount, not on dependency changes
+    // We use a ref to track if this is a real unmount
     return () => {
+      // Don't disconnect on cleanup - let the connection persist
+      // The user should manually disconnect, or it will disconnect when the page closes
+      // This prevents disconnection during re-renders or dependency changes
       if (unsubscribeTelemetryRef.current) {
         unsubscribeTelemetryRef.current();
         unsubscribeTelemetryRef.current = null;
       }
-      if (adapterRef.current) {
-        adapterRef.current.disconnect().catch(e => {
-          logger.error('Error disconnecting on cleanup:', e);
-        });
-      }
+      // Note: We intentionally don't call disconnect() here to prevent
+      // disconnection during component re-renders or dependency changes
     };
   }, [options]);
 
@@ -45,10 +47,12 @@ export function useTrainer(options = {}) {
       setTelemetry(t);
       // Only update status if we actually had a connection before
       // Don't reset status during scan, when already disconnected, or if no device was connected
-      if (!t.connected && connectedDevice && (status === 'ready' || status === 'controlled' || status === 'erg_active' || status === 'connecting')) {
-        setStatus('disconnected');
-        setConnectedDevice(null);
-        setCapabilities(null);
+      // Also don't reset if status indicates we're still connected (ready, controlled, erg_active)
+      if (!t.connected && connectedDevice && 
+          (status === 'ready' || status === 'controlled' || status === 'erg_active' || status === 'connecting')) {
+        // Only disconnect if we're sure the device is actually disconnected
+        // Don't disconnect just because telemetry says connected: false (could be temporary)
+        // Wait for actual disconnection event
       }
       // Don't change status if we're scanning, already disconnected, or never had a device connected
     });

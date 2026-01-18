@@ -18,6 +18,8 @@ import {
   CPS_MEASUREMENT_UUID_STRING,
   CPS_CONTROL_POINT_UUID_STRING,
   CSC_MEASUREMENT_UUID_STRING,
+  FTMS_OPCODE_REQUEST_CONTROL,
+  FTMS_OPCODE_SET_TARGET_POWER,
 } from './ftmsUuids.ts';
 import { parseIndoorBikeData } from './ftmsParser.ts';
 import {
@@ -50,7 +52,7 @@ export class FTMSAdapter implements TrainerAdapter {
   private reconnectAttempts: number = 0;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private useFTMS: boolean = false; // Track which service we're using
-  private cscPreviousValues: { wheelRevolutions: number; lastWheelTime: number; crankRevolutions: number; lastCrankTime: number; timestamp: number } | null = null;
+  private cscPreviousValues: { wheelRevolutions: number | null; lastWheelTime: number | null; crankRevolutions: number | null; lastCrankTime: number | null; timestamp: number } | null = null;
 
   async scan(options?: ScanOptions): Promise<DeviceInfo[]> {
     if (!navigator.bluetooth) {
@@ -181,8 +183,13 @@ export class FTMSAdapter implements TrainerAdapter {
       this.device = device;
 
       // Handle disconnection
-      device.addEventListener('gattserverdisconnected', () => {
-        logger.warn('Device disconnected');
+      device.addEventListener('gattserverdisconnected', (event) => {
+        logger.warn('Device disconnected', { 
+          deviceId: device.id, 
+          deviceName: device.name,
+          state: this.state,
+          gattConnected: device.gatt?.connected 
+        });
         this.handleDisconnection();
       });
 
@@ -224,6 +231,11 @@ export class FTMSAdapter implements TrainerAdapter {
 
         this.state = 'ready';
         logger.info('FTMS adapter connected and ready');
+        
+        // Send initial telemetry update to indicate connection
+        this.telemetryCallbacks.forEach(cb => {
+          cb({ ts: Date.now(), connected: true });
+        });
 
         // Request control
         await this.requestControl();
@@ -238,12 +250,28 @@ export class FTMSAdapter implements TrainerAdapter {
           
           // Get Power Measurement characteristic
           this.powerMeasurementChar = await this.powerService.getCharacteristic(CPS_MEASUREMENT_UUID_STRING);
-          await this.powerMeasurementChar.startNotifications();
+          logger.info('Power Measurement characteristic obtained');
+          
+          // Add event listener before starting notifications
           this.powerMeasurementChar.addEventListener('characteristicvaluechanged', (event: any) => {
             const value = event.target.value as DataView;
+            logger.debug('Power measurement event received, byteLength:', value.byteLength);
             this.handlePowerMeasurement(value);
           });
+          
+          await this.powerMeasurementChar.startNotifications();
           logger.info('Power Measurement notifications started');
+          
+          // Verify notifications are active
+          const properties = this.powerMeasurementChar.properties;
+          logger.info('Power Measurement properties:', {
+            broadcast: properties.broadcast,
+            read: properties.read,
+            write: properties.write,
+            writeWithoutResponse: properties.writeWithoutResponse,
+            notify: properties.notify,
+            indicate: properties.indicate
+          });
 
           // Try to get FE-C Control Point
           try {
@@ -269,6 +297,11 @@ export class FTMSAdapter implements TrainerAdapter {
 
           this.state = 'ready';
           logger.info('Cycling Power Service adapter connected and ready');
+          
+          // Send initial telemetry update to indicate connection
+          this.telemetryCallbacks.forEach(cb => {
+            cb({ ts: Date.now(), connected: true });
+          });
         } catch (cpsError: any) {
           // Try CSC Service as last resort
           logger.warn('Cycling Power Service not available, trying CSC Service:', cpsError.message);
@@ -310,6 +343,11 @@ export class FTMSAdapter implements TrainerAdapter {
 
             this.state = 'ready';
             logger.info('CSC Service adapter connected' + (this.cscControlPointChar ? ' (with FE-C control)' : ' (read-only)'));
+            
+            // Send initial telemetry update to indicate connection
+            this.telemetryCallbacks.forEach(cb => {
+              cb({ ts: Date.now(), connected: true });
+            });
           } catch (cscError: any) {
             logger.error('No supported services found (FTMS, CPS, or CSC)');
             throw new Error('Device does not support FTMS, Cycling Power Service, or CSC Service');
@@ -324,11 +362,24 @@ export class FTMSAdapter implements TrainerAdapter {
   }
 
   async disconnect(): Promise<void> {
+    // If already disconnected, just return (idempotent)
+    if (this.state === 'disconnected' && !this.device) {
+      logger.debug('disconnect() called but already disconnected');
+      return;
+    }
+
+    logger.info('disconnect() called', { 
+      state: this.state, 
+      deviceId: this.device?.id,
+      gattConnected: this.device?.gatt?.connected
+    });
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
 
+    // Stop FTMS notifications
     if (this.indoorBikeDataChar) {
       try {
         await this.indoorBikeDataChar.stopNotifications();
@@ -347,6 +398,26 @@ export class FTMSAdapter implements TrainerAdapter {
       this.controlPointChar = null;
     }
 
+    // Stop FE-C (CPS) notifications
+    if (this.powerMeasurementChar) {
+      try {
+        await this.powerMeasurementChar.stopNotifications();
+      } catch (e) {
+        // Ignore
+      }
+      this.powerMeasurementChar = null;
+    }
+
+    // Stop FE-C (CSC) notifications
+    if (this.cscMeasurementChar) {
+      try {
+        await this.cscMeasurementChar.stopNotifications();
+      } catch (e) {
+        // Ignore
+      }
+      this.cscMeasurementChar = null;
+    }
+
     if (this.device?.gatt?.connected) {
       this.device.gatt.disconnect();
     }
@@ -356,6 +427,8 @@ export class FTMSAdapter implements TrainerAdapter {
     // this.scannedDevice = null;
     this.server = null;
     this.service = null;
+    this.powerService = null;
+    this.cscService = null;
     this.state = 'disconnected';
     this.controlRequested = false;
     this.reconnectAttempts = 0;
@@ -423,34 +496,93 @@ export class FTMSAdapter implements TrainerAdapter {
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
       } else if (this.cpsControlPointChar) {
         // Use FE-C control via Cycling Power Service
-        // FE-C protocol: Set Target Power (opcode 0x31, value in watts)
+        // FE-C protocol for Tacx trainers:
+        // 1. Set Training Mode to ERGO (opcode 0x05, value 0x04)
+        // 2. Set Target Power (opcode 0x01, power in 0.1W units)
+        
+        // Step 1: Set ERGO mode
+        try {
+          const setErgoMode = new Uint8Array([
+            0x05,        // Opcode: Set Training Mode
+            0x00,        // Reserved
+            0x00,        // Reserved
+            0x00,        // Reserved
+            0x04,        // Training Mode: 0x04 = ERGO mode
+            0x00         // Reserved
+          ]);
+          await this.cpsControlPointChar.writeValueWithResponse(setErgoMode);
+          await new Promise(resolve => setTimeout(resolve, 200));
+          logger.debug('Set training mode to ERGO (FE-C via CPS)');
+        } catch (e) {
+          logger.warn('Set training mode skipped or failed, continuing...', e);
+        }
+
+        // Step 2: Set Target Power
+        // FE-C Set Target Power: Opcode 0x01, power in 0.1W units (little-endian)
+        const powerInTenths = Math.round(clampedWatts * 10);
+        const powerLow = powerInTenths & 0xFF;
+        const powerHigh = (powerInTenths >> 8) & 0xFF;
+        
         const fecCommand = new Uint8Array([
-          0x31, // Opcode: Set Target Power
-          clampedWatts & 0xFF, // Power low byte
-          (clampedWatts >> 8) & 0xFF, // Power high byte
-          0x00, 0x00, 0x00 // Reserved
+          0x01,        // Opcode: Set Target Power (ERGO mode)
+          0x00,        // Reserved
+          0x00,        // Reserved
+          0x00,        // Reserved
+          powerLow,    // Power low byte (0.1W units)
+          powerHigh    // Power high byte (0.1W units)
         ]);
         
+        logger.info(`Sending FE-C command: Set Target Power ${clampedWatts}W (${powerInTenths} x 0.1W)`);
+        logger.debug('FE-C command bytes:', Array.from(fecCommand).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+        
         await this.cpsControlPointChar.writeValueWithResponse(fecCommand);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         this.state = 'erg_active';
-        logger.info(`ERG power set to ${clampedWatts}W (FE-C via CPS)`);
+        logger.info(`✅ ERG power set to ${clampedWatts}W (FE-C via CPS, ${powerInTenths} x 0.1W)`);
       } else if (this.cscControlPointChar) {
         // Use FE-C control via CSC Service
-        // FE-C protocol: Set Target Power (opcode 0x31, value in watts)
+        // FE-C protocol for Tacx trainers:
+        // 1. Set Training Mode to ERGO (opcode 0x05, value 0x04)
+        // 2. Set Target Power (opcode 0x01, power in 0.1W units)
+        
+        // Step 1: Set ERGO mode
+        try {
+          const setErgoMode = new Uint8Array([
+            0x05,        // Opcode: Set Training Mode
+            0x00,        // Reserved
+            0x00,        // Reserved
+            0x00,        // Reserved
+            0x04,        // Training Mode: 0x04 = ERGO mode
+            0x00         // Reserved
+          ]);
+          await this.cscControlPointChar.writeValueWithResponse(setErgoMode);
+          await new Promise(resolve => setTimeout(resolve, 200));
+          logger.debug('Set training mode to ERGO (FE-C via CSC)');
+        } catch (e) {
+          logger.warn('Set training mode skipped or failed, continuing...', e);
+        }
+
+        // Step 2: Set Target Power
+        // FE-C Set Target Power: Opcode 0x01, power in 0.1W units (little-endian)
+        const powerInTenths = Math.round(clampedWatts * 10);
+        const powerLow = powerInTenths & 0xFF;
+        const powerHigh = (powerInTenths >> 8) & 0xFF;
+        
         const fecCommand = new Uint8Array([
-          0x31, // Opcode: Set Target Power
-          clampedWatts & 0xFF, // Power low byte
-          (clampedWatts >> 8) & 0xFF, // Power high byte
-          0x00, 0x00, 0x00 // Reserved
+          0x01,        // Opcode: Set Target Power (ERGO mode)
+          0x00,        // Reserved
+          0x00,        // Reserved
+          0x00,        // Reserved
+          powerLow,    // Power low byte (0.1W units)
+          powerHigh    // Power high byte (0.1W units)
         ]);
         
         await this.cscControlPointChar.writeValueWithResponse(fecCommand);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         this.state = 'erg_active';
-        logger.info(`ERG power set to ${clampedWatts}W (FE-C via CSC)`);
+        logger.info(`ERG power set to ${clampedWatts}W (FE-C via CSC, ${powerInTenths} x 0.1W)`);
       } else {
         throw new Error('No control point available for ERG mode');
       }
@@ -503,20 +635,30 @@ export class FTMSAdapter implements TrainerAdapter {
   }
 
   async start(): Promise<void> {
-    if (!this.controlPointChar) {
-      throw new Error('Control Point not available');
+    // For FTMS, send start command
+    if (this.useFTMS && this.controlPointChar) {
+      logger.info('Starting trainer (FTMS)...');
+
+      try {
+        const command = buildStartOrResumeCommand();
+        await this.controlPointChar.writeValueWithResponse(command);
+        logger.info('Trainer started');
+        return;
+      } catch (error: any) {
+        logger.error('Failed to start trainer:', error);
+        throw new Error(`Failed to start trainer: ${error.message}`);
+      }
     }
 
-    logger.info('Starting trainer...');
-
-    try {
-      const command = buildStartOrResumeCommand();
-      await this.controlPointChar.writeValueWithResponse(command);
-      logger.info('Trainer started');
-    } catch (error: any) {
-      logger.error('Failed to start trainer:', error);
-      throw new Error(`Failed to start trainer: ${error.message}`);
+    // For FE-C (CPS or CSC), start command is typically not needed
+    // The trainer starts automatically when target power is set
+    if (this.cpsControlPointChar || this.cscControlPointChar) {
+      logger.info('FE-C trainer - start command not required (trainer starts when power is set)');
+      return;
     }
+
+    // No control point available
+    throw new Error('Control Point not available');
   }
 
   private async readCapabilities(): Promise<void> {
@@ -617,7 +759,7 @@ export class FTMSAdapter implements TrainerAdapter {
     // Parse Cycling Power Service Measurement
     // Format: [Flags (2 bytes), Instantaneous Power (2 bytes, signed), ...]
     if (value.byteLength < 4) {
-      logger.warn('Power measurement data too short');
+      logger.warn('Power measurement data too short:', value.byteLength);
       return;
     }
 
@@ -627,6 +769,9 @@ export class FTMSAdapter implements TrainerAdapter {
     let power: number | undefined = undefined;
     if (powerPresent && value.byteLength >= 4) {
       power = value.getInt16(2, true); // Signed 16-bit, watts
+      logger.debug('Power measurement received:', power, 'W');
+    } else {
+      logger.debug('Power measurement received but power not present, flags:', flags.toString(16));
     }
 
     const telemetry: Telemetry = {
@@ -639,6 +784,7 @@ export class FTMSAdapter implements TrainerAdapter {
     };
 
     // Notify all subscribers
+    logger.debug('Sending telemetry to', this.telemetryCallbacks.size, 'subscribers');
     this.telemetryCallbacks.forEach(cb => {
       try {
         cb(telemetry);
@@ -762,35 +908,49 @@ export class FTMSAdapter implements TrainerAdapter {
   }
 
   private handleControlResponse(value: DataView): void {
-    const response = parseControlResponse(value);
-    if (!response) return;
+    try {
+      const response = parseControlResponse(value);
+      if (!response) return;
 
-    logger.debug('Control response:', response);
+      logger.debug('Control response:', response);
 
-    if (response.opcode === FTMS_OPCODE_REQUEST_CONTROL) {
-      if (response.success) {
-        this.controlRequested = true;
-        this.state = 'controlled';
-        logger.info('Control granted');
-      } else {
-        this.controlRequested = false;
-        const errorMsg = getResponseErrorMessage(response);
-        logger.error('Control not granted:', errorMsg);
-        throw new Error(errorMsg);
+      if (response.opcode === FTMS_OPCODE_REQUEST_CONTROL) {
+        if (response.success) {
+          this.controlRequested = true;
+          this.state = 'controlled';
+          logger.info('Control granted');
+        } else {
+          this.controlRequested = false;
+          const errorMsg = getResponseErrorMessage(response);
+          logger.error('Control not granted:', errorMsg);
+          // Don't throw - just log the error to prevent disconnection
+        }
+      } else if (response.opcode === FTMS_OPCODE_SET_TARGET_POWER) {
+        if (response.success) {
+          this.state = 'erg_active';
+          logger.info('Target power set successfully');
+        } else {
+          const errorMsg = getResponseErrorMessage(response);
+          logger.error('Failed to set target power:', errorMsg);
+          // Don't throw - just log the error to prevent disconnection
+        }
       }
-    } else if (response.opcode === FTMS_OPCODE_SET_TARGET_POWER) {
-      if (response.success) {
-        this.state = 'erg_active';
-        logger.info('Target power set successfully');
-      } else {
-        const errorMsg = getResponseErrorMessage(response);
-        logger.error('Failed to set target power:', errorMsg);
-        throw new Error(errorMsg);
-      }
+    } catch (error: any) {
+      logger.error('Error handling control response:', error);
+      // Don't rethrow - errors in event handlers can cause disconnections
     }
   }
 
   private handleDisconnection(): void {
+    const previousState = this.state;
+    
+    // Don't handle disconnection if we're in the middle of connecting
+    if (previousState === 'connecting') {
+      logger.warn('Disconnection event received during connection - ignoring');
+      this.state = 'error';
+      return;
+    }
+
     this.state = 'disconnected';
     this.controlRequested = false;
     
@@ -799,7 +959,7 @@ export class FTMSAdapter implements TrainerAdapter {
       cb({ ts: Date.now(), connected: false });
     });
 
-    // Attempt reconnection with backoff
+    // Only attempt reconnection if we were actually connected (not during initial connection)
     if (this.device && this.reconnectAttempts < 5) {
       const delay = calculateBackoffDelay(this.reconnectAttempts);
       logger.info(`Attempting reconnection in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);

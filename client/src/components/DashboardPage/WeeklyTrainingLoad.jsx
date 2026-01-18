@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from 'recharts';
+import { Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from 'recharts';
 import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { getWeeklyTrainingLoad } from '../../services/api';
 import TrainingGlossary from './TrainingGlossary';
@@ -132,6 +132,7 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Weekly Training Load</h3>
         <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">{timeRange}</span>
           <button
             onClick={() => setShowSettings(true)}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -259,19 +260,23 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
                 return [value, name];
               }}
             />
+            {/* Optimal Load as Area (behind bars) */}
+            <Area 
+              type="monotone" 
+              dataKey="optimalLoad" 
+              fill="#86efac" 
+              fillOpacity={0.3}
+              stroke="#22c55e" 
+              strokeWidth={1}
+              strokeDasharray="5 5"
+              name="Optimal Load"
+            />
+            {/* Training Load as Bars (in front) */}
             <Bar 
               dataKey="trainingLoad" 
               fill="#ef4444" 
               name="Training Load"
               radius={[4, 4, 0, 0]}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="optimalLoad" 
-              stroke="#22c55e" 
-              strokeWidth={2}
-              name="Optimal Load"
-              dot={false}
             />
             <Legend 
               wrapperStyle={{ paddingTop: '20px' }}

@@ -3,7 +3,7 @@
  * Simple UI for connecting to trainers and controlling ERG mode
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTrainer } from './useTrainer';
 
 export function TrainerConnectModal({ isOpen, onClose, options }) {
@@ -24,6 +24,16 @@ export function TrainerConnectModal({ isOpen, onClose, options }) {
 
   const [targetWatts, setTargetWatts] = useState(100);
   const [isScanning, setIsScanning] = useState(false);
+
+  // Auto-close modal when connection is established
+  useEffect(() => {
+    if (isOpen && (status === 'controlled' || status === 'ready' || status === 'erg_active') && connectedDevice) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, status, connectedDevice, onClose]);
 
   if (!isOpen) return null;
 

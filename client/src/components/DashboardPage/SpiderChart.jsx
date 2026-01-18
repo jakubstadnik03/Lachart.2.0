@@ -315,10 +315,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           data: [
             100, 100, 100, 100, 100
           ],
-          borderColor: '#2596be',
-          backgroundColor: 'rgba(37, 150, 190, 0.2)',
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.2)',
           borderWidth: 2,
-          pointBackgroundColor: '#2596be',
+          pointBackgroundColor: '#60a5fa',
           pointRadius: 4,
           fill: true,
           __kind: 'alltime'
@@ -360,10 +360,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           data: [
             100, 100, 100, 100, 100
           ],
-          borderColor: '#2596be',
-          backgroundColor: 'rgba(37, 150, 190, 0.2)',
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.2)',
       borderWidth: 2,
-          pointBackgroundColor: '#2596be',
+          pointBackgroundColor: '#60a5fa',
       pointRadius: 4,
           fill: true,
           __kind: 'alltime'
@@ -441,6 +441,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           }
       },
       tooltip: {
+        mode: 'index',
+        intersect: false,
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         titleColor: '#111827',
           titleFont: { weight: 'bold', size: 13 },
@@ -452,17 +454,18 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           cornerRadius: 8,
         displayColors: true,
         callbacks: {
-            title: (context) => {
-              if (!context || !context[0]) return '';
+            title: (tooltipItems) => {
+              if (!tooltipItems || !tooltipItems[0]) return '';
               const fullLabels = ['Sprint - 5s', 'Attack - 1min', 'VO2 Max - 5min', 'Threshold - 20min', 'Endurance - 60min'];
-              return fullLabels[context[0].dataIndex] || '';
+              return fullLabels[tooltipItems[0].dataIndex] || '';
             },
-          label: (context) => {
-              if (!context || !context.dataset) return '';
-              const label = context.dataset.label || '';
-              const kind = context.dataset.__kind;
-              const monthKey = context.dataset.__monthKey;
-              const index = context.dataIndex;
+          label: (tooltipItem) => {
+              // Show individual dataset label with value
+              if (!tooltipItem || !tooltipItem.dataset) return '';
+              const label = tooltipItem.dataset.label || '';
+              const kind = tooltipItem.dataset.__kind;
+              const monthKey = tooltipItem.dataset.__monthKey;
+              const index = tooltipItem.dataIndex;
               const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
               const k = keys[index];
               const allTimeValue = Number(allTimeBest?.[k] || 0);
@@ -473,15 +476,36 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               else if (kind === 'month') raw = Number(monthlyMetrics?.[monthKey]?.[k] || 0);
               else raw = Number(powerMetrics?.compare?.[k] || 0);
 
-              const pct = allTimeValue > 0 ? Math.round((raw / allTimeValue) * 100) : 0;
-              if (kind === 'alltime') return `${label}: ${Math.round(raw)}W (100%)`;
-              return `${label}: ${Math.round(raw)}W (${pct}% of All Time)`;
+              return `${label}: ${Math.round(raw)}W`;
+            },
+            afterBody: (tooltipItems) => {
+              // Always show percentage comparison if compare period is available
+              if (!tooltipItems || !tooltipItems[0]) return [];
+              const index = tooltipItems[0].dataIndex;
+              const keys = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+              const k = keys[index];
+              const allTimeValue = Number(allTimeBest?.[k] || 0);
+              
+              // Only show percentage if we have a compare period (not alltime or monthly)
+              if (comparePeriod !== 'alltime' && comparePeriod !== 'monthly') {
+                const compareValue = Number(powerMetrics?.compare?.[k] || 0);
+                if (compareValue > 0 && allTimeValue > 0) {
+                  const pct = Math.round((compareValue / allTimeValue) * 100);
+                  return [`${pct}% of All Time`];
+                }
+              }
+              
+              return [];
+            },
+            filter: (tooltipItem) => {
+              // Always show all datasets in tooltip (both All Time and compare period)
+              return true;
             }
           }
         }
       }
     };
-  }, [powerMetrics, allTimeBest, monthlyMetrics]);
+  }, [powerMetrics, allTimeBest, monthlyMetrics, comparePeriod, availableMonths]);
 
   // Table data
   const tableData = [

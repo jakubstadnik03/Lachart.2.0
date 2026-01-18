@@ -98,7 +98,12 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{device.icon}</span>
                   <div>
-                    <div className="font-semibold text-gray-900">{device.name}</div>
+                    <div className="font-semibold text-gray-900">
+                      {device.name}
+                      {isConnected && deviceState?.name && (
+                        <span className="text-emerald-600 text-sm ml-2">({deviceState.name})</span>
+                      )}
+                    </div>
                     <div className="text-sm text-gray-600">{device.description}</div>
                   </div>
                 </div>

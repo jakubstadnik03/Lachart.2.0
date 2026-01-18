@@ -901,6 +901,8 @@ const FitAnalysisPage = () => {
   
   // Export to Training state
   const [showTrainingForm, setShowTrainingForm] = useState(false);
+  const [showDurationTypeModal, setShowDurationTypeModal] = useState(false);
+  const [preferredDurationType, setPreferredDurationType] = useState('auto'); // 'auto', 'time', 'distance'
   const [trainingFormData, setTrainingFormData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   
@@ -1058,6 +1060,10 @@ const FitAnalysisPage = () => {
       
       console.log('After deduplication:', uniqueLaps.length);
       
+      // Check if there's a linked training for this Strava activity (if regularTrainings is available)
+      const linkedTraining = (regularTrainings || []).find(t => String(t?.sourceStravaActivityId) === String(id));
+      const linkedTitle = linkedTraining?.title || overrideTitle;
+      
       // Merge titleManual, description, and category into detail object
       const detailWithMeta = {
         ...data.detail,
@@ -1069,8 +1075,9 @@ const FitAnalysisPage = () => {
       };
 
       // Allow overriding title from Training model (without mutating Strava activity in DB)
-      if (overrideTitle && typeof overrideTitle === 'string' && overrideTitle.trim()) {
-        detailWithMeta.titleManual = overrideTitle.trim();
+      if (linkedTitle && typeof linkedTitle === 'string' && linkedTitle.trim()) {
+        detailWithMeta.titleManual = linkedTitle.trim();
+        detailWithMeta.linkedTrainingTitle = linkedTitle.trim(); // Store linked training title separately
       }
       
       // Ensure streams data is properly set
@@ -1111,7 +1118,7 @@ const FitAnalysisPage = () => {
       setSelectedStrava(null);
       setSelectedStravaStreams(null);
     }
-  }, [selectedAthleteId, user?.role, addNotification]);
+  }, [selectedAthleteId, user?.role, addNotification, regularTrainings]);
 
   const loadExternalActivities = useCallback(async () => {
     try {
@@ -1935,7 +1942,7 @@ const FitAnalysisPage = () => {
   };
 
   // Convert Strava laps to Training format
-  const convertLapsToTrainingFormat = (laps, isRecoveryMap = new Map()) => {
+  const convertLapsToTrainingFormat = (laps, isRecoveryMap = new Map(), durationTypePreference = 'auto') => {
     // Determine sport type
     const sportType = selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
     const isRun = sportType.toLowerCase().includes('run');
@@ -1973,8 +1980,20 @@ const FitAnalysisPage = () => {
       // Format distance if available (convert meters to km for display, or keep as meters for swim)
       let distanceValue = '';
       let useDistance = false;
-      if (distance && distance > 0) {
-        useDistance = true;
+      
+      // Determine if we should use distance based on preference
+      if (durationTypePreference === 'distance') {
+        // Force distance if available
+        useDistance = distance && distance > 0;
+      } else if (durationTypePreference === 'time') {
+        // Force time
+        useDistance = false;
+      } else {
+        // Auto: use distance if available
+        useDistance = distance && distance > 0;
+      }
+      
+      if (useDistance && distance && distance > 0) {
         if (isSwim) {
           // For swim, show in meters (e.g., "400m", "50m")
           if (distance >= 1000) {
@@ -2146,10 +2165,30 @@ const FitAnalysisPage = () => {
     return false;
   };
 
-  // Handle export to training - directly show TrainingForm with smart selection
+  // Handle export to training - show duration type selection modal first
   const handleExportToTraining = () => {
     if (!selectedStrava || !selectedStrava.laps || selectedStrava.laps.length === 0) {
       alert('No intervals available to export');
+      return;
+    }
+
+    // Check if we have distance data available
+    const uniqueLaps = deduplicateStravaLaps(selectedStrava.laps || []);
+    const hasDistance = uniqueLaps.some(lap => lap.distance && lap.distance > 0);
+    
+    // If no distance data, skip modal and use time directly
+    if (!hasDistance) {
+      performExportToTraining('time');
+      return;
+    }
+    
+    // Show modal to choose duration type
+    setShowDurationTypeModal(true);
+  };
+
+  // Perform the actual export with selected duration type
+  const performExportToTraining = (durationType = 'auto') => {
+    if (!selectedStrava || !selectedStrava.laps || selectedStrava.laps.length === 0) {
       return;
     }
 
@@ -2170,8 +2209,8 @@ const FitAnalysisPage = () => {
       isRecoveryMap.set(index, isRecoveryInterval(lap, index, sportType, uniqueLaps));
     });
     
-    // Convert all laps to training format (including recovery)
-    const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap);
+    // Convert all laps to training format (including recovery) with duration type preference
+    const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap, durationType);
     
     // Check if we have at least some work intervals
     const workIntervals = results.filter(r => !r.isRecovery);
@@ -2208,6 +2247,8 @@ const FitAnalysisPage = () => {
     
     setTrainingFormData(formData);
     setShowTrainingForm(true);
+    setShowDurationTypeModal(false);
+    setPreferredDurationType('auto'); // Reset for next time
   };
 
   // Handle training form submission
@@ -3471,10 +3512,37 @@ const FitAnalysisPage = () => {
             const handleSaveTitle = async () => {
               try {
                 setSaving(true);
-                await updateStravaActivity(selectedStrava.id, { title: title.trim() || null });
+                const newTitle = title.trim();
+                await updateStravaActivity(selectedStrava.id, { title: newTitle || null });
                 setIsEditingTitle(false);
                 await loadStravaDetail(selectedStrava.id);
-                await loadExternalActivities(); // Reload to update calendar
+                
+                // Update externalActivities immediately to reflect the change in CalendarView
+                setExternalActivities(prev => prev.map(a => {
+                  if (String(a.stravaId || a.id) === String(selectedStrava.id)) {
+                    return {
+                      ...a,
+                      titleManual: newTitle,
+                      name: newTitle,
+                      title: newTitle
+                    };
+                  }
+                  return a;
+                }));
+                
+                await loadExternalActivities(); // Reload to update calendar (will override the immediate update with fresh data)
+                
+                // Dispatch event to notify other components (e.g., WeeklyCalendar) about the update
+                window.dispatchEvent(new CustomEvent('activityUpdated', {
+                  detail: {
+                    type: 'strava',
+                    id: selectedStrava.id,
+                    stravaId: selectedStrava.id,
+                    title: newTitle,
+                    titleManual: newTitle,
+                    name: newTitle
+                  }
+                }));
                 // Show export dialog after saving title (with small delay to ensure data is loaded)
                 if (onExportToTraining) {
                   setTimeout(() => {
@@ -3510,6 +3578,15 @@ const FitAnalysisPage = () => {
                 setIsEditingCategory(false);
                 await loadStravaDetail(selectedStrava.id);
                 await loadExternalActivities(); // Reload to update calendar
+                // Dispatch event to notify other components (e.g., WeeklyCalendar) about the update
+                window.dispatchEvent(new CustomEvent('activityUpdated', {
+                  detail: {
+                    type: 'strava',
+                    id: selectedStrava.id,
+                    stravaId: selectedStrava.id,
+                    category: category
+                  }
+                }));
               } catch (error) {
                 console.error('Error saving category:', error);
                 alert('Error saving category');
@@ -3518,7 +3595,8 @@ const FitAnalysisPage = () => {
               }
             };
 
-            const displayTitle = selectedStrava?.titleManual || selectedStrava?.name || 'Untitled Activity';
+            // Use linked training title if available, otherwise use titleManual or name
+            const displayTitle = selectedStrava?.linkedTrainingTitle || selectedStrava?.titleManual || selectedStrava?.name || 'Untitled Activity';
                     
                     return (
               <>
@@ -3767,24 +3845,87 @@ const FitAnalysisPage = () => {
               )}
               
               {/* Header Stats + Toggles */}
-              <div className={`grid grid-cols-2 ${isMobile ? 'gap-1' : 'sm:grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2 md:gap-3 lg:gap-4'}`}>
-                <div className={`backdrop-blur-md ${isMobile ? 'p-1' : 'p-1.5 sm:p-2 md:p-3 lg:p-4'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                  <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Duration</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDuration(selectedStrava.elapsed_time)}</div>
-                </div>
-                <div className={`backdrop-blur-md ${isMobile ? 'p-1' : 'p-1.5 sm:p-2 md:p-3 lg:p-4'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                  <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Distance</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDistance(selectedStrava.distance, user)}</div>
-              </div>
-                <div className={`bg-red/10 backdrop-blur-md ${isMobile ? 'p-1' : 'p-1.5 sm:p-2 md:p-3 lg:p-4'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-red/20 shadow-sm`}>
-                  <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Heart Rate</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-red`}>{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
-                </div>
-                <div className={`backdrop-blur-md ${isMobile ? 'p-1' : 'p-1.5 sm:p-2 md:p-3 lg:p-4'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                  <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Power</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary-dark`}>{selectedStrava.average_watts ? `${Math.round(selectedStrava.average_watts)} W` : '-'}</div>
-                </div>
-              </div>
+              {(() => {
+                // Calculate pace for running activities
+                const formatPace = (speedMps) => {
+                  if (!speedMps || speedMps <= 0) return null;
+                  const paceSeconds = Math.round(1000 / speedMps); // seconds per km
+                  const minutes = Math.floor(paceSeconds / 60);
+                  const seconds = paceSeconds % 60;
+                  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                };
+                
+                const avgPace = isStravaRun && stravaAvgSpeed ? formatPace(stravaAvgSpeed) : null;
+                const maxPace = isStravaRun && selectedStrava.max_speed ? formatPace(selectedStrava.max_speed) : null;
+                const maxHR = selectedStrava.max_heartrate ? Math.round(selectedStrava.max_heartrate) : null;
+                const elevation = stravaElevationGain ? Math.round(stravaElevationGain) : null;
+                
+                // For running: show Duration, Distance, Avg Pace (with Max below), Avg HR (with Max below), Elevation (if available)
+                // For others: show Duration, Distance, Avg HR (with Max below if available), Avg Power (if available)
+                if (isStravaRun) {
+                  return (
+                    <div className={`flex flex-nowrap overflow-x-auto ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3 lg:gap-4'}`}>
+                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Duration</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDuration(selectedStrava.elapsed_time)}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      </div>
+                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Distance</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDistance(selectedStrava.distance, user)}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      </div>
+                      {avgPace && (
+                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Pace</div>
+                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary-dark`}>{avgPace} /km</div>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
+                        </div>
+                      )}
+                      <div className={`bg-red/10 backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-red/20 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Heart Rate</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-red`}>{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
+                      </div>
+                      {elevation && elevation > 0 && (
+                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Elevation</div>
+                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>+{elevation} m</div>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                } else {
+                  // For non-running activities: Duration, Distance, Avg HR (with Max below if available), Avg Power (if available)
+                  return (
+                    <div className={`flex flex-nowrap overflow-x-auto ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3 lg:gap-4'}`}>
+                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Duration</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDuration(selectedStrava.elapsed_time)}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      </div>
+                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Distance</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDistance(selectedStrava.distance, user)}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      </div>
+                      <div className={`bg-red/10 backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-red/20 shadow-sm`}>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Heart Rate</div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-red`}>{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
+                      </div>
+                      {selectedStrava.average_watts && (
+                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Power</div>
+                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary-dark`}>{Math.round(selectedStrava.average_watts)} W</div>
+                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+              })()}
 
               {/* Detailed Statistics */}
               {selectedStrava && (
@@ -4222,6 +4363,79 @@ const FitAnalysisPage = () => {
         )}
 
           </div>
+
+      {/* Duration Type Selection Modal */}
+      {showDurationTypeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Select Duration Type</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Choose how you want to record interval duration in the training form:
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="durationType"
+                  value="time"
+                  checked={preferredDurationType === 'time'}
+                  onChange={(e) => setPreferredDurationType(e.target.value)}
+                  className="mr-3"
+                />
+                <div>
+                  <div className="font-medium">Time (MM:SS)</div>
+                  <div className="text-sm text-gray-500">Use elapsed time for each interval</div>
+                </div>
+              </label>
+              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="durationType"
+                  value="distance"
+                  checked={preferredDurationType === 'distance'}
+                  onChange={(e) => setPreferredDurationType(e.target.value)}
+                  className="mr-3"
+                />
+                <div>
+                  <div className="font-medium">Distance (km/m)</div>
+                  <div className="text-sm text-gray-500">Use distance covered for each interval</div>
+                </div>
+              </label>
+              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="durationType"
+                  value="auto"
+                  checked={preferredDurationType === 'auto'}
+                  onChange={(e) => setPreferredDurationType(e.target.value)}
+                  className="mr-3"
+                />
+                <div>
+                  <div className="font-medium">Auto (Recommended)</div>
+                  <div className="text-sm text-gray-500">Use distance if available, otherwise use time</div>
+                </div>
+              </label>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowDurationTypeModal(false);
+                  setPreferredDurationType('auto');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => performExportToTraining(preferredDurationType)}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Training Form Modal - Direct export with smart selection */}
       {showTrainingForm && trainingFormData && (

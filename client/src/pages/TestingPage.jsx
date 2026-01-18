@@ -685,10 +685,18 @@ const TestingPage = () => {
                     <div className="font-semibold mb-1">Running:</div>
                     <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
                     {hrTestPlan.run.lt1?.hr?.value && (
-                      <div>LT1: {hrTestPlan.run.lt1.hr.value} bpm ({hrTestPlan.run.lt1.confidence})</div>
+                      <div>
+                        LT1: {hrTestPlan.run.lt1.hr.value} bpm ({hrTestPlan.run.lt1.confidence})
+                        {hrTestPlan.run.lt1.pace && ` • Pace: ${hrTestPlan.run.lt1.pace}`}
+                        {hrTestPlan.run.lt1.power && ` • Power: ${hrTestPlan.run.lt1.power}W`}
+                      </div>
                     )}
                     {hrTestPlan.run.lt2?.hr?.value && (
-                      <div>LT2: {hrTestPlan.run.lt2.hr.value} bpm ({hrTestPlan.run.lt2.confidence})</div>
+                      <div>
+                        LT2: {hrTestPlan.run.lt2.hr.value} bpm ({hrTestPlan.run.lt2.confidence})
+                        {hrTestPlan.run.lt2.pace && ` • Pace: ${hrTestPlan.run.lt2.pace}`}
+                        {hrTestPlan.run.lt2.power && ` • Power: ${hrTestPlan.run.lt2.power}W`}
+                      </div>
                     )}
                     {hrTestPlan.run.protocol && (
                       <div className="mt-2 pt-2 border-t border-blue-300">
@@ -712,10 +720,18 @@ const TestingPage = () => {
                     <div className="font-semibold mb-1">Cycling:</div>
                     <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
                     {hrTestPlan.bike.lt1?.hr?.value && (
-                      <div>LT1: {hrTestPlan.bike.lt1.hr.value} bpm ({hrTestPlan.bike.lt1.confidence})</div>
+                      <div>
+                        LT1: {hrTestPlan.bike.lt1.hr.value} bpm ({hrTestPlan.bike.lt1.confidence})
+                        {hrTestPlan.bike.lt1.pace && ` • Pace: ${hrTestPlan.bike.lt1.pace}`}
+                        {hrTestPlan.bike.lt1.power && ` • Power: ${hrTestPlan.bike.lt1.power}W`}
+                      </div>
                     )}
                     {hrTestPlan.bike.lt2?.hr?.value && (
-                      <div>LT2: {hrTestPlan.bike.lt2.hr.value} bpm ({hrTestPlan.bike.lt2.confidence})</div>
+                      <div>
+                        LT2: {hrTestPlan.bike.lt2.hr.value} bpm ({hrTestPlan.bike.lt2.confidence})
+                        {hrTestPlan.bike.lt2.pace && ` • Pace: ${hrTestPlan.bike.lt2.pace}`}
+                        {hrTestPlan.bike.lt2.power && ` • Power: ${hrTestPlan.bike.lt2.power}W`}
+                      </div>
                     )}
                     {hrTestPlan.bike.protocol && (
                       <div className="mt-2 pt-2 border-t border-blue-300">

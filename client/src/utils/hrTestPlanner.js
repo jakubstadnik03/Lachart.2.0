@@ -264,10 +264,33 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
 
       if (drift <= driftThreshold) {
         const meanHR = (meanHR1 + meanHR2) / 2;
+        
+        // Calculate average pace/power for this segment
+        let pace = null;
+        let power = null;
+        
+        if (hasPower) {
+          const powerValues = segment.map(p => p.power).filter(p => p && p > 0);
+          if (powerValues.length > 0) {
+            power = Math.round(powerValues.reduce((a, b) => a + b, 0) / powerValues.length);
+          }
+        } else if (hasPace) {
+          const velocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
+          if (velocityValues.length > 0) {
+            const avgVelocity = velocityValues.reduce((a, b) => a + b, 0) / velocityValues.length; // m/s
+            const paceSecPerKm = Math.round(1000 / avgVelocity);
+            const mins = Math.floor(paceSecPerKm / 60);
+            const secs = paceSecPerKm % 60;
+            pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+          }
+        }
+        
         candidates.push({
           meanHR: Math.round(meanHR),
           drift: drift.toFixed(1),
           duration: segment.length * 5 / 60, // minutes
+          pace,
+          power,
           activityId: act.id || act.stravaId || act._id,
           date: act.startDate || act.date || act.start_date
         });
@@ -301,7 +324,7 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     confidence = 'med';
   }
 
-  return {
+  const result = {
     hr: {
       value: bestCandidate.meanHR,
       min: Math.round(minHR),
@@ -310,6 +333,14 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     confidence,
     evidence: candidates.slice(0, 5)
   };
+  
+  // Add pace/power from best candidate if available
+  if (bestCandidate) {
+    if (bestCandidate.pace) result.pace = bestCandidate.pace;
+    if (bestCandidate.power) result.power = bestCandidate.power;
+  }
+  
+  return result;
 };
 
 // Estimate LT2 (LTHR) from sustained hard segments
@@ -399,11 +430,30 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
         }
       }
 
+      // Calculate pace/power for this segment
+      let pace = null;
+      let power = null;
+      
+      if (intensity) {
+        if (sport === 'run') {
+          // intensity is velocity in m/s
+          const paceSecPerKm = Math.round(1000 / intensity);
+          const mins = Math.floor(paceSecPerKm / 60);
+          const secs = paceSecPerKm % 60;
+          pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+        } else if (sport === 'bike' || sport === 'ride') {
+          // intensity is power in W
+          power = Math.round(intensity);
+        }
+      }
+      
       candidates.push({
         lthr: Math.round(meanLTHR),
         duration: segment.length * 5 / 60,
         slope: slopeBpmPerMin.toFixed(2),
         intensity,
+        pace,
+        power,
         activityId: act.id || act.stravaId || act._id,
         date: act.startDate || act.date || act.start_date
       });
@@ -437,7 +487,7 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     confidence = 'med';
   }
 
-  return {
+  const result = {
     hr: {
       value: bestCandidate.lthr,
       min: Math.max(bestCandidate.lthr - range, 0),
@@ -446,10 +496,18 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     confidence,
     evidence: candidates.slice(0, 5)
   };
+  
+  // Add pace/power from best candidate if available
+  if (bestCandidate) {
+    if (bestCandidate.pace) result.pace = bestCandidate.pace;
+    if (bestCandidate.power) result.power = bestCandidate.power;
+  }
+  
+  return result;
 };
 
 // Fit HR -> intensity model (piecewise linear)
-const fitHRIntensityModel = (activities, sport) => {
+export const fitHRIntensityModel = (activities, sport) => {
   const segments = [];
   
   activities.forEach(act => {
@@ -672,6 +730,9 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
 
   // Estimate LT2
   const lt2 = estimateLT2(activitiesWithHR, hrMax, sport);
+
+  // Pace/power for LT1 and LT2 are already calculated in estimateLT1 and estimateLT2
+  // from the actual segments where they were found, so we don't need to use the model
 
   // Generate protocol
   const protocol = generateHRProtocol(hrMax, lt1, lt2, sport, activitiesWithHR);

@@ -115,7 +115,7 @@ const LactateTestingPage = () => {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showProtocolEdit, setShowProtocolEdit] = useState(false);
   const [mockDataMode, setMockDataMode] = useState(false); // Mock data mode for testing
-  const [useNewTrainerSystem, setUseNewTrainerSystem] = useState(false); // Toggle between old and new trainer system
+  // Always use new trainer system - old system removed
 
   // Previous Lactate Sessions
   const [previousSessions, setPreviousSessions] = useState([]);
@@ -143,14 +143,39 @@ const LactateTestingPage = () => {
     phaseRef.current = phase;
   }, [phase]);
 
-  // Integrate new trainer system telemetry
+  // Update bikeTrainer device state when trainer connects/disconnects
   useEffect(() => {
-    if (!trainer.telemetry || !useNewTrainerSystem) return;
+    if (trainer.connectedDevice && trainer.status !== 'disconnected') {
+      // Update bikeTrainer to show as connected immediately
+      setDevices(prev => ({
+        ...prev,
+        bikeTrainer: {
+          connected: true,
+          name: trainer.connectedDevice.name, // Store trainer name
+          data: prev.bikeTrainer?.data || {
+            power: null,
+            cadence: null,
+            speed: null,
+          }
+        }
+      }));
+    } else if (trainer.status === 'disconnected' || !trainer.connectedDevice) {
+      // Disconnect bikeTrainer when trainer disconnects
+      setDevices(prev => ({
+        ...prev,
+        bikeTrainer: { connected: false, data: null, name: null }
+      }));
+    }
+  }, [trainer.connectedDevice, trainer.status]);
+
+  // Integrate trainer system telemetry
+  useEffect(() => {
+    if (!trainer.telemetry) return;
 
     const telemetry = trainer.telemetry;
     const currentPhase = phaseRef.current;
     
-    // Update bikeTrainer device state
+    // Update bikeTrainer device state with telemetry data
     if (trainer.connectedDevice && trainer.status !== 'disconnected') {
       setDevices(prev => ({
         ...prev,
@@ -188,18 +213,12 @@ const LactateTestingPage = () => {
         liveDataRef.current = updated;
         return updated;
       });
-    } else if (trainer.status === 'disconnected' && useNewTrainerSystem) {
-      // Disconnect bikeTrainer when trainer disconnects
-      setDevices(prev => ({
-        ...prev,
-        bikeTrainer: { connected: false, data: null }
-      }));
     }
-  }, [trainer.telemetry, trainer.connectedDevice, trainer.status, useNewTrainerSystem]);
+  }, [trainer.telemetry, trainer.connectedDevice, trainer.status]);
 
   // Auto-request control and start when trainer connects
   useEffect(() => {
-    if (trainer.status === 'ready' && trainer.requestControl && trainer.start && useNewTrainerSystem) {
+    if (trainer.status === 'ready' && trainer.requestControl && trainer.start) {
       const setupTrainer = async () => {
         try {
           await trainer.requestControl();
@@ -213,7 +232,7 @@ const LactateTestingPage = () => {
       setupTrainer();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainer.status, useNewTrainerSystem]);
+  }, [trainer.status]);
 
   // Initialize protocol steps
   useEffect(() => {
@@ -554,14 +573,9 @@ const LactateTestingPage = () => {
           if (devices.bikeTrainer?.connected) {
             setTimeout(async () => {
               try {
-                if (useNewTrainerSystem && trainer.setErgWatts && trainer.status === 'controlled') {
+                if (trainer.setErgWatts && trainer.status === 'controlled') {
                   await trainer.setErgWatts(0);
-                  console.log('✅ Power set to 0W during recovery (new system)');
-                } else if (!useNewTrainerSystem && deviceConnectivity.isDeviceConnected('bikeTrainer')) {
-                  if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
-                    await deviceConnectivity.setPower('bikeTrainer', 0);
-                    console.log('✅ Power set to 0W during recovery (old system)');
-                  }
+                  console.log('✅ Power set to 0W during recovery');
                 }
               } catch (err) {
                 console.error('Failed to set power to 0 during recovery:', err);
@@ -602,7 +616,7 @@ const LactateTestingPage = () => {
         return prev + 1;
       });
     }, 1000);
-  }, [currentStep, protocol.steps, protocol.recoveryDuration, devices.bikeTrainer?.connected, addNotification, trainer, useNewTrainerSystem]);
+  }, [currentStep, protocol.steps, protocol.recoveryDuration, devices.bikeTrainer?.connected, addNotification, trainer]);
 
   // Start test
   const handleStartTest = () => {
@@ -715,28 +729,12 @@ const LactateTestingPage = () => {
       // Wait a bit for connection to stabilize, then set power
       setTimeout(async () => {
         try {
-          if (useNewTrainerSystem && trainer.setErgWatts && trainer.status === 'controlled') {
+          if (trainer.setErgWatts && trainer.status === 'controlled') {
             await trainer.setErgWatts(firstStep.targetPower);
-            console.log(`✅ Initial power set to ${firstStep.targetPower}W on trainer (new system)`);
+            console.log(`✅ Initial power set to ${firstStep.targetPower}W on trainer`);
             setTimeout(() => {
               addNotification(`Initial power set to ${firstStep.targetPower}W`, 'info');
             }, 0);
-          } else if (!useNewTrainerSystem) {
-            // Double-check connection before setting power
-            if (!deviceConnectivity.isDeviceConnected('bikeTrainer')) {
-              console.warn('Trainer not connected, skipping power set');
-              return;
-            }
-            
-            if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
-              await deviceConnectivity.setPower('bikeTrainer', firstStep.targetPower);
-              console.log(`✅ Initial power set to ${firstStep.targetPower}W on trainer (old system)`);
-              setTimeout(() => {
-                addNotification(`Initial power set to ${firstStep.targetPower}W`, 'info');
-              }, 0);
-            } else {
-              console.warn('Trainer does not support ERGO mode');
-            }
           }
         } catch (err) {
           console.error('Failed to set initial power on trainer:', err);
@@ -894,14 +892,9 @@ const LactateTestingPage = () => {
     if (devices.bikeTrainer?.connected) {
       setTimeout(async () => {
         try {
-          if (useNewTrainerSystem && trainer.setErgWatts && trainer.status === 'controlled') {
+          if (trainer.setErgWatts && trainer.status === 'controlled') {
             await trainer.setErgWatts(0);
-            console.log('✅ Power set to 0W during recovery (new system)');
-          } else if (!useNewTrainerSystem && deviceConnectivity.isDeviceConnected('bikeTrainer')) {
-            if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
-              await deviceConnectivity.setPower('bikeTrainer', 0);
-              console.log('✅ Power set to 0W during recovery (old system)');
-            }
+            console.log('✅ Power set to 0W during recovery');
           }
         } catch (err) {
           console.error('Failed to set power to 0 during recovery:', err);
@@ -1011,10 +1004,10 @@ const LactateTestingPage = () => {
                 // Wait a bit longer to ensure previous commands are processed
                 setTimeout(async () => {
                   try {
-                    if (useNewTrainerSystem && trainer.setErgWatts && trainer.status === 'controlled') {
+                    if (trainer.setErgWatts && trainer.status === 'controlled') {
                       await trainer.setErgWatts(nextStepData.targetPower);
-                      console.log(`✅ Power set to ${nextStepData.targetPower}W for step ${newStep + 1} (new system)`);
-                    } else if (!useNewTrainerSystem) {
+                      console.log(`✅ Power set to ${nextStepData.targetPower}W for step ${newStep + 1}`);
+                    } else {
                       // Double-check connection before setting power
                       if (!deviceConnectivity.isDeviceConnected('bikeTrainer')) {
                         console.warn('Trainer not connected, skipping power set');
@@ -1052,7 +1045,7 @@ const LactateTestingPage = () => {
     setTimeout(() => {
       addNotification('Starting interval in 3 seconds...', 'info');
     }, 0);
-  }, [testState, phase, currentStep, protocol.steps, devices.bikeTrainer?.connected, addNotification, startIntervalTimer, trainer, useNewTrainerSystem]);
+  }, [testState, phase, currentStep, protocol.steps, devices.bikeTrainer?.connected, addNotification, startIntervalTimer, trainer]);
   
   // Store handleStartInterval in ref
   useEffect(() => {
@@ -1603,57 +1596,56 @@ const LactateTestingPage = () => {
 
         {/* Device Connection Panel & Interval Protocol - Top, Collapsible */}
         <div className="mb-6 space-y-4">
-          {/* Trainer System Toggle & Mock Data Mode */}
+          {/* Trainer Connection & Mock Data Mode */}
           <div className="bg-white/80 backdrop-blur rounded-xl border border-gray-200 p-3 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={useNewTrainerSystem}
-                    onChange={(e) => {
-                      setUseNewTrainerSystem(e.target.checked);
-                      if (e.target.checked) {
-                        addNotification('New trainer system enabled. Use "Connect Trainer" button to connect.', 'info');
-                      } else {
-                        // Disconnect new trainer system
-                        if (trainer.connectedDevice) {
-                          trainer.disconnect();
-                        }
-                      }
-                    }}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <span>🚴 Use New Trainer System (FTMS/Companion)</span>
-                </label>
+              <div className="flex items-center gap-3">
+                {(trainer.connectedDevice || (trainer.status !== 'disconnected' && trainer.status !== 'error')) ? (
+                  <>
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-sm font-medium text-gray-700">
+                      🚴 Trainer: <span className="font-semibold text-green-600">
+                        {trainer.connectedDevice?.name || 'Connected'}
+                      </span>
+                    </span>
+                    {trainer.telemetry && (
+                      <span className="text-xs text-gray-500">
+                        {trainer.telemetry.power !== undefined && `${Math.round(trainer.telemetry.power)}W`}
+                        {trainer.telemetry.cadence !== undefined && ` • ${Math.round(trainer.telemetry.cadence)}rpm`}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                    <span className="text-sm font-medium text-gray-700">🚴 Trainer: Not Connected</span>
+                  </>
+                )}
               </div>
-              {useNewTrainerSystem && (
-                <button
-                  onClick={() => setShowTrainerModal(true)}
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium"
-                >
-                  {trainer.connectedDevice ? 'Trainer Connected' : 'Connect Trainer'}
-                </button>
-              )}
+              <button
+                onClick={() => setShowTrainerModal(true)}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium"
+              >
+                {trainer.connectedDevice ? 'Manage Trainer' : 'Connect Trainer'}
+              </button>
             </div>
-            {!useNewTrainerSystem && (
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={mockDataMode}
-                    onChange={(e) => {
-                      setMockDataMode(e.target.checked);
-                      if (e.target.checked) {
-                        setTimeout(() => {
-                          addNotification('Mock data mode enabled. Connect bike trainer to use mock data.', 'info');
-                        }, 0);
-                        startMockDeviceStream('bikeTrainer');
-                        startMockDeviceStream('heartRate');
-                        startMockDeviceStream('moxy');
-                        startMockDeviceStream('coreTemp');
-                        startMockDeviceStream('vo2master');
-                      } else {
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={mockDataMode}
+                  onChange={(e) => {
+                    setMockDataMode(e.target.checked);
+                    if (e.target.checked) {
+                      setTimeout(() => {
+                        addNotification('Mock data mode enabled. Connect bike trainer to use mock data.', 'info');
+                      }, 0);
+                      startMockDeviceStream('bikeTrainer');
+                      startMockDeviceStream('heartRate');
+                      startMockDeviceStream('moxy');
+                      startMockDeviceStream('coreTemp');
+                      startMockDeviceStream('vo2master');
+                    } else {
                       stopAllMockDeviceStreams();
                       setDevices(prev => ({
                         ...prev,
@@ -1663,14 +1655,13 @@ const LactateTestingPage = () => {
                         coreTemp: { connected: false, data: null },
                         vo2master: { connected: false, data: null }
                       }));
-                      }
-                    }}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <span>🔧 Mock Data Mode (for testing without real trainer)</span>
-                </label>
-              </div>
-            )}
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span>🔧 Mock Data Mode (for testing without real trainer)</span>
+              </label>
+            </div>
           </div>
           
           <DeviceConnectionPanel
@@ -1678,8 +1669,8 @@ const LactateTestingPage = () => {
             onDeviceConnect={async (deviceType) => {
                 console.log('Connecting to device:', deviceType);
                 
-                // Skip bikeTrainer if using new trainer system
-                if (deviceType === 'bikeTrainer' && useNewTrainerSystem) {
+                // Always use trainer modal for bikeTrainer
+                if (deviceType === 'bikeTrainer') {
                   setShowTrainerModal(true);
                   return;
                 }
@@ -1723,8 +1714,14 @@ const LactateTestingPage = () => {
                       addNotification(`${deviceType} connected successfully`, 'success');
                     }, 0);
                     
-                    // For bikeTrainer, try to enable ERGO mode and set initial power
-                    if (deviceType === 'bikeTrainer' && !useNewTrainerSystem) {
+                    // For bikeTrainer, connection is handled via trainer modal
+                    if (deviceType === 'bikeTrainer') {
+                      // This should not happen as bikeTrainer is redirected to trainer modal
+                      return;
+                    }
+                    
+                    // Old code for other devices (kept for reference but bikeTrainer is handled separately)
+                    if (false && deviceType === 'bikeTrainer') {
                       // Give it a moment to establish connection, then try to set ERGO mode
                       setTimeout(async () => {
                         try {
@@ -1786,8 +1783,8 @@ const LactateTestingPage = () => {
               }}
               onDeviceDisconnect={async (deviceType) => {
                 try {
-                  // Handle new trainer system disconnect
-                  if (deviceType === 'bikeTrainer' && useNewTrainerSystem && trainer.connectedDevice) {
+                  // Handle trainer system disconnect
+                  if (deviceType === 'bikeTrainer' && trainer.connectedDevice) {
                     await trainer.disconnect();
                     setTimeout(() => {
                       addNotification('Trainer disconnected', 'success');

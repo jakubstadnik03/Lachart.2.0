@@ -46,6 +46,7 @@ const DashboardPage = () => {
     return null;
   });
   const [trainings, setTrainings] = useState([]);
+  const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   // eslint-disable-next-line no-unused-vars
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -202,6 +203,38 @@ const DashboardPage = () => {
     }
   }, [setLoading]);
 
+  // Load regular trainings from /training route
+  const loadRegularTrainings = useCallback(async (targetId) => {
+    try {
+      // For athlete, use their own ID
+      // For coach, use targetId (must be selected, don't use coach's own ID)
+      const athleteId = user?.role === 'athlete' ? user._id : targetId;
+      
+      // If coach but no athlete selected, don't load trainings
+      if (user?.role === 'coach' && !athleteId) {
+        setRegularTrainings([]);
+        return;
+      }
+      
+      if (!athleteId) {
+        return; // Skip if no athleteId
+      }
+      
+      const response = await api.get(`/user/athlete/${athleteId}/trainings`);
+      if (response && response.data) {
+        setRegularTrainings(response.data);
+      }
+    } catch (error) {
+      // Handle rate limit errors gracefully
+      if (error.response?.status === 429) {
+        console.warn('Rate limit exceeded when loading regular trainings. Please wait a moment.');
+        // Don't show error to user, just log it
+        return;
+      }
+      console.error('Error loading regular trainings:', error);
+    }
+  }, [user?.role, user?._id]);
+
   // Load training calendar data (FIT files and Strava activities) with localStorage caching
   const loadCalendarData = useCallback(async (targetId) => {
     try {
@@ -255,6 +288,15 @@ const DashboardPage = () => {
         })
       ]);
 
+      // Merge Training-model entries that are linked to a Strava activity into a single calendar item:
+      // show the Training title, but keep all Strava-derived metrics and open Strava detail on click.
+      // Use regularTrainings from state (loaded in parallel)
+      const trainingByStravaId = new Map();
+      (regularTrainings || []).forEach(t => {
+        const sid = t?.sourceStravaActivityId;
+        if (sid) trainingByStravaId.set(String(sid), t);
+      });
+
       // Combine and format data for calendar
       const combined = [
         ...(fitData || []).map(t => ({
@@ -270,21 +312,44 @@ const DashboardPage = () => {
           totalTime: t.totalElapsedTime || t.totalTimerTime,
           distance: t.totalDistance
         })),
-        ...(stravaData || []).map(a => ({
-          ...a,
-          type: 'strava',
-          date: a.startDate,
-          title: a.titleManual || a.name || 'Untitled Activity',
-          sport: a.sport,
-          stravaId: a.stravaId || a.id, // Ensure stravaId is set
-          id: a.stravaId || a.id, // Also set id for compatibility
-          avgPower: a.averagePower || a.average_watts,
-          maxPower: a.maxPower || a.max_watts,
-          avgHeartRate: a.averageHeartRate || a.average_heartrate,
-          maxHeartRate: a.maxHeartRate || a.max_heartrate,
-          totalTime: a.movingTime || a.elapsedTime,
-          distance: a.distance
-        }))
+        // Only show regular trainings that are NOT linked to a Strava activity (linked ones will be merged into the Strava item below)
+        ...regularTrainings
+          .filter(t => !t?.sourceStravaActivityId)
+          .map(t => ({ 
+            ...t,
+            id: `regular-${t._id}`, 
+            type: 'regular',
+            date: t.date || t.timestamp, 
+            title: t.title || 'Untitled Training', 
+            sport: t.sport,
+            category: t.category || null,
+            distance: t.totalDistance || t.distance,
+            totalTime: t.totalElapsedTime || t.totalTimerTime || t.duration,
+            tss: t.tss || t.totalTSS,
+            avgPower: t.avgPower || t.averagePower || null,
+            avgSpeed: t.avgSpeed || t.averageSpeed || null
+          })),
+        ...(stravaData || []).map(a => {
+          const stravaId = a.stravaId || a.id;
+          // If there's a linked Training-model entry, use its title (but keep Strava data)
+          const linkedTraining = trainingByStravaId.get(String(stravaId));
+          return {
+            ...a,
+            type: 'strava',
+            date: a.startDate,
+            title: linkedTraining?.title || a.titleManual || a.name || 'Untitled Activity',
+            linkedTrainingTitle: linkedTraining?.title || null,
+            sport: a.sport,
+            stravaId: stravaId, // Ensure stravaId is set (raw ID)
+            id: `strava-${stravaId}`, // Use prefixed ID to match FitAnalysisPage format
+            avgPower: a.averagePower || a.average_watts,
+            maxPower: a.maxPower || a.max_watts,
+            avgHeartRate: a.averageHeartRate || a.average_heartrate,
+            maxHeartRate: a.maxHeartRate || a.max_heartrate,
+            totalTime: a.movingTime || a.elapsedTime,
+            distance: a.distance
+          };
+        })
       ];
 
       // Cache the combined data
@@ -352,7 +417,120 @@ const DashboardPage = () => {
       
       return [];
     }
-  }, []);
+  }, [regularTrainings]);
+
+  // Listen for activity updates from other pages (e.g., FitAnalysisPage)
+  useEffect(() => {
+    const handleActivityUpdate = (event) => {
+      const updatedActivity = event.detail;
+      console.log('[DashboardPage] Received activityUpdated event:', updatedActivity);
+      // Track if we found and updated the activity
+      let found = false;
+      // Update the activity in calendarData
+      setCalendarData(prev => {
+        const updated = prev.map(act => {
+          // Match by type and id
+          if (updatedActivity.type === 'fit' && act.type === 'fit' && act._id === updatedActivity._id) {
+            found = true;
+            // For FIT trainings, update title from titleManual or title
+            const newTitle = updatedActivity.title || updatedActivity.titleManual || act.title;
+            return { 
+              ...act, 
+              ...updatedActivity,
+              title: newTitle,
+              titleManual: updatedActivity.titleManual || updatedActivity.title || act.titleManual
+            };
+          } else if (updatedActivity.type === 'strava' && act.type === 'strava') {
+            // Match by stravaId or id (handle both string and number comparisons)
+            // In DashboardPage, id is `strava-${stravaId}`, stravaId is raw ID
+            // In FitAnalysisPage event, id can be raw ID or `strava-${id}`
+            const actStravaId = String(act.stravaId || '');
+            const actId = String(act.id || '');
+            const updatedStravaId = String(updatedActivity.stravaId || updatedActivity.id || '');
+            const updatedId = String(updatedActivity.id || '');
+            
+            // Remove 'strava-' prefix if present for comparison
+            const actIdClean = actId.replace(/^strava-/, '');
+            const updatedIdClean = updatedId.replace(/^strava-/, '');
+            
+            // Match if:
+            // 1. Raw stravaIds match
+            // 2. act.id (with prefix) matches updatedId (with or without prefix)
+            // 3. act.stravaId matches updatedId (with or without prefix)
+            const matches = (actStravaId && updatedStravaId && actStravaId === updatedStravaId) ||
+                          (actIdClean && updatedIdClean && actIdClean === updatedIdClean) ||
+                          (actStravaId && updatedIdClean && actStravaId === updatedIdClean) ||
+                          (actId && updatedId && actId === updatedId) ||
+                          (actIdClean && updatedStravaId && actIdClean === updatedStravaId);
+            
+            if (matches) {
+              found = true;
+              // For Strava activities, update title from titleManual, name, or title
+              const newTitle = updatedActivity.title || updatedActivity.titleManual || updatedActivity.name || act.title;
+              console.log('[DashboardPage] Updating Strava activity:', {
+                actId: act.id,
+                actStravaId: act.stravaId,
+                actIdClean: actIdClean,
+                updatedId: updatedActivity.id,
+                updatedStravaId: updatedStravaId,
+                updatedIdClean: updatedIdClean,
+                oldTitle: act.title,
+                newTitle: newTitle,
+                matches: matches
+              });
+              return { 
+                ...act, 
+                ...updatedActivity,
+                title: newTitle,
+                titleManual: updatedActivity.titleManual || updatedActivity.title || updatedActivity.name || act.titleManual,
+                name: updatedActivity.name || updatedActivity.title || updatedActivity.titleManual || act.name
+              };
+            }
+          }
+          return act;
+        });
+        console.log('[DashboardPage] Updated calendarData after activity update:', {
+          found: found,
+          totalActivities: updated.length,
+          sampleActivity: updated.length > 0 ? updated[0] : null
+        });
+        // Return new array to ensure React detects the change
+        return [...updated];
+      });
+      // Invalidate cache to force reload on next refresh
+      const targetId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user?._id;
+      const cacheKey = `calendarData_${targetId}`;
+      const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
+      localStorage.removeItem(cacheKey);
+      localStorage.removeItem(cacheTimestampKey);
+      
+      // Don't reload immediately - the state update above should be enough
+      // Only reload if we didn't find the activity (to ensure we have the latest data)
+      if (targetId && !found) {
+        console.log('[DashboardPage] Activity not found in calendarData, reloading...');
+        setTimeout(() => {
+          loadCalendarData(targetId);
+        }, 100);
+      } else if (found) {
+        console.log('[DashboardPage] Activity found and updated, no reload needed');
+      }
+    };
+
+    window.addEventListener('activityUpdated', handleActivityUpdate);
+    return () => window.removeEventListener('activityUpdated', handleActivityUpdate);
+  }, [selectedAthleteId, user?._id, user?.role, loadCalendarData]);
+
+  // Reload calendar data when regularTrainings change (to update linked titles)
+  useEffect(() => {
+    if (regularTrainings.length > 0 && selectedAthleteId) {
+      // Only reload if we have regularTrainings and an athlete selected
+      // This ensures calendar data gets updated with linked training titles
+      const targetId = user?.role === 'athlete' ? user._id : selectedAthleteId;
+      if (targetId) {
+        loadCalendarData(targetId);
+      }
+    }
+  }, [regularTrainings, selectedAthleteId, user?._id, user?.role, loadCalendarData]);
 
   // Sync selectedAthleteId with URL parameter when it changes
   useEffect(() => {
@@ -448,12 +626,15 @@ const DashboardPage = () => {
         lastLoadTimeRef.current = now;
         hasLoadedOnceRef.current = true;
         
-        // Load all data in parallel for better performance
+        // Load regular trainings first (needed for calendar data linking)
+        await loadRegularTrainings(targetAthleteId);
+        
+        // Load all other data in parallel for better performance
         const [trainingsData, athleteData] = await Promise.all([
           loadTrainings(targetAthleteId),
           loadAthlete(targetAthleteId),
           loadTests(targetAthleteId), // loadTests already sets tests state internally
-          loadCalendarData(targetAthleteId) // loadCalendarData already sets calendar state internally
+          loadCalendarData(targetAthleteId) // loadCalendarData already sets calendar state internally (uses regularTrainings from state)
         ]);
 
         if (trainingsData) {
@@ -662,6 +843,28 @@ const DashboardPage = () => {
             onSelectActivity={(activity) => {
               // Handle activity selection
               console.log('Selected activity:', activity);
+            }}
+            onActivityUpdate={(updatedActivity) => {
+              // Update the activity in calendarData
+              setCalendarData(prev => {
+                const updated = prev.map(act => {
+                  // Match by type and id
+                  if (updatedActivity.type === 'fit' && act.type === 'fit' && act._id === updatedActivity._id) {
+                    return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || act.title };
+                  } else if (updatedActivity.type === 'strava' && act.type === 'strava' && 
+                             (act.id === updatedActivity.id || act.stravaId === updatedActivity.stravaId || act.stravaId === updatedActivity.id)) {
+                    return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || updatedActivity.name || act.title };
+                  }
+                  return act;
+                });
+                console.log('[DashboardPage] Updated calendarData after activity update:', updatedActivity);
+                return updated;
+              });
+              // Also invalidate cache to force reload on next refresh
+              const cacheKey = `calendarData_${selectedAthleteId}`;
+              const cacheTimestampKey = `calendarData_timestamp_${selectedAthleteId}`;
+              localStorage.removeItem(cacheKey);
+              localStorage.removeItem(cacheTimestampKey);
             }}
           />
         </motion.div>

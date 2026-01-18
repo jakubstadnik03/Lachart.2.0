@@ -28,24 +28,26 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
   const [pendingPayload, setPendingPayload] = useState(null);
   const [modalError, setModalError] = useState('');
   const [userFTP, setUserFTP] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
 
-  // Load user FTP from profile
+  // Load user profile for FTP and threshold pace
   useEffect(() => {
-    const loadUserFTP = async () => {
+    const loadUserProfile = async () => {
       try {
         const response = await api.get('/user/profile');
         const profileData = response.data;
+        setUserProfile(profileData);
         // Get FTP from power zones (LTP2) or zone5 min (which is typically FTP)
         const ftp = profileData.powerZones?.cycling?.lt2 || 
                    profileData.powerZones?.cycling?.zone5?.min || 
                    null;
         setUserFTP(ftp);
       } catch (error) {
-        console.error('Error loading user FTP:', error);
+        console.error('Error loading user profile:', error);
       }
     };
     if (training) {
-      loadUserFTP();
+      loadUserProfile();
     }
   }, [training]);
 
@@ -355,9 +357,45 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
 
   // Calculate metrics (must be before early return)
   const calculateTSS = useMemo(() => {
-    if (!training?.avgPower) return null;
-    const seconds = training.totalElapsedTime || training.totalTimerTime || 0;
+    const seconds = training?.totalElapsedTime || training?.totalTimerTime || 0;
     if (seconds === 0) return null;
+    
+    const sport = training?.sport || '';
+    const isRun = sport && (sport.toLowerCase().includes('run') || sport.toLowerCase() === 'running');
+    const isSwim = sport && (sport.toLowerCase().includes('swim') || sport.toLowerCase() === 'swimming');
+    
+    // For running: calculate TSS from pace
+    if (isRun && training?.avgSpeed && training.avgSpeed > 0) {
+      const avgPaceSeconds = Math.round(1000 / training.avgSpeed); // seconds per km
+      const thresholdPace = userProfile?.powerZones?.running?.lt2 || userProfile?.runningZones?.lt2 || null;
+      let referencePace = thresholdPace;
+      // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+      if (!referencePace || referencePace <= 0) {
+        referencePace = avgPaceSeconds;
+      }
+      // Running TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+      const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
+      const tss = Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
+      return { value: tss, estimated: !thresholdPace };
+    }
+    
+    // For swimming: calculate TSS from pace
+    if (isSwim && training?.avgSpeed && training.avgSpeed > 0) {
+      const avgPaceSeconds = Math.round(100 / training.avgSpeed); // seconds per 100m
+      const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null;
+      let referencePace = thresholdSwimPace;
+      // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
+      if (!referencePace || referencePace <= 0) {
+        referencePace = avgPaceSeconds;
+      }
+      // Swimming TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
+      const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
+      const tss = Math.round((seconds * Math.pow(intensityRatio, 2)) / 3600 * 100);
+      return { value: tss, estimated: !thresholdSwimPace };
+    }
+    
+    // For cycling: calculate TSS from power
+    if (!training?.avgPower) return null;
     
     // If FTP is available, calculate proper TSS
     if (userFTP && userFTP > 0) {
@@ -374,7 +412,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
     const np = training.avgPower;
     const tss = (seconds * Math.pow(np, 2)) / (Math.pow(estimatedFTP, 2) * 3600) * 100;
     return { value: Math.round(tss), estimated: true };
-  }, [userFTP, training?.avgPower, training?.totalElapsedTime, training?.totalTimerTime]);
+  }, [userFTP, userProfile, training?.avgPower, training?.avgSpeed, training?.totalElapsedTime, training?.totalTimerTime, training?.sport]);
 
   const calculateIF = useMemo(() => {
     if (!training?.avgPower) return null;
@@ -387,8 +425,29 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
 
   const totalTime = training?.totalElapsedTime || training?.totalTimerTime || 0;
   const avgCadence = training?.avgCadence || null;
+  const maxCadence = training?.maxCadence || null;
   const maxPower = training?.maxPower || null;
   const maxHeartRate = training?.maxHeartRate || null;
+  const maxSpeed = training?.maxSpeed || null;
+  
+  // Determine sport type
+  const sport = training?.sport || '';
+  const isRun = sport && (sport.toLowerCase().includes('run') || sport.toLowerCase() === 'running');
+  // eslint-disable-next-line no-unused-vars
+  const isSwim = sport && (sport.toLowerCase().includes('swim') || sport.toLowerCase() === 'swimming');
+  
+  // Convert speed (m/s) to pace (MM:SS/km) for running
+  const formatPaceFromSpeed = (speedMps) => {
+    if (!speedMps || speedMps <= 0) return null;
+    // Convert m/s to seconds per km
+    const paceSeconds = Math.round(1000 / speedMps);
+    const minutes = Math.floor(paceSeconds / 60);
+    const seconds = paceSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  const avgPace = training?.avgSpeed ? formatPaceFromSpeed(training.avgSpeed) : null;
+  const maxPace = maxSpeed ? formatPaceFromSpeed(maxSpeed) : null;
 
   const initiateSave = (payload) => {
     if (!training) return;
@@ -756,10 +815,11 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
               Cadence
             </div>
             <div className="mt-2 text-base font-semibold text-gray-900">{Math.round(avgCadence)} rpm</div>
-            <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
+            <div className="mt-0.5 text-xs text-gray-500">{maxCadence ? `Max ${Math.round(maxCadence)} rpm` : '\u00A0'}</div>
           </div>
         )}
 
+        {/* Show TSS for all sports (including run and swim) */}
         {calculateTSS !== null && (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
@@ -778,7 +838,19 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         )}
 
-        {training.avgSpeed && (
+        {/* Show Pace for running, Speed for other sports */}
+        {isRun && avgPace ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-greenos/10 text-greenos">
+                <MapPinIcon className="h-4 w-4" />
+              </span>
+              Avg Pace
+            </div>
+            <div className="mt-2 text-base font-semibold text-gray-900">{avgPace} /km</div>
+            <div className="mt-0.5 text-xs text-gray-500">{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
+          </div>
+        ) : training.avgSpeed && !isRun ? (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-greenos/10 text-greenos">
@@ -789,7 +861,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
             <div className="mt-2 text-base font-semibold text-gray-900">{formatSpeedForUser(training.avgSpeed, user)}</div>
             <div className="mt-0.5 text-xs text-gray-500">&nbsp;</div>
           </div>
-        )}
+        ) : null}
 
         {training.totalAscent && training.totalAscent > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
