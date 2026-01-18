@@ -1080,9 +1080,9 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           setVisibleTrainingIndex(0);
                         }}
                       >
-                        {[3, 6, 9, 12].map((count) => (
+                        {[1, 3, 6, 9, 12].map((count) => (
                           <option key={count} value={count}>
-                            {count} trainings
+                            {count} {count === 1 ? 'training' : 'trainings'}
                           </option>
                         ))}
                       </select>

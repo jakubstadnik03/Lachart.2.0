@@ -550,7 +550,17 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       <select
                         value={selectedMonth || ''}
                         onChange={(e) => setSelectedMonth(e.target.value || null)}
-                        className="px-2 py-0.5 text-xs border border-white/20 rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text"
+                        className="px-2 py-0.5 text-xs border border-white/20 rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text appearance-none cursor-pointer"
+                        style={{
+                          WebkitAppearance: 'none',
+                          MozAppearance: 'none',
+                          appearance: 'none',
+                          backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 0.5rem center',
+                          backgroundSize: '1em',
+                          paddingRight: '1.75rem'
+                        }}
                       >
                         {availableMonths.map((m) => (
                           <option key={m.monthKey} value={m.monthKey}>
@@ -730,7 +740,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
                             }`}
                           >
-                            Power (Run)
+                            Pace (Run)
                           </button>
                         )}
                         {(month.bikeHrZones || (month.hrZones && month.heartRateZones)) && (

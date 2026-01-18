@@ -2199,8 +2199,8 @@ async function analyzeTrainingsByMonth(req, res) {
             monthlyAnalysis[monthKey].swimmingZoneTimes[zone].paceCount += timeIncrement;
           }
         }
-        else if (timeStream[i]) {
-          // Track time even without power/speed
+        else if (timeStream[i] && !isStravaSwimming) {
+          // Track time even without power/speed (but not for swimming - swimming only counts active time)
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
         }
