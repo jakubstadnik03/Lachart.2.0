@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -18,6 +18,8 @@ const AdminDashboard = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
+  const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
+  const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
   const [chartTimeRange, setChartTimeRange] = useState(30); // days
   const [chartGroupBy, setChartGroupBy] = useState('day'); // 'day' or 'week'
@@ -74,6 +76,38 @@ const AdminDashboard = () => {
       console.error('Reactivation email error:', err);
     } finally {
       setEmailLoadingUserId(null);
+    }
+  };
+
+  const handleSendThankYouEmail = async (targetUser) => {
+    try {
+      setThankYouEmailLoadingUserId(targetUser._id);
+      await sendThankYouEmail(targetUser._id);
+      addNotification(`Thank you email sent to ${targetUser.email}`, 'success');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send thank you email';
+      addNotification(message, 'error');
+      console.error('Thank you email error:', err);
+    } finally {
+      setThankYouEmailLoadingUserId(null);
+    }
+  };
+
+  const handleSendThankYouEmailToAll = async () => {
+    if (!window.confirm(`Are you sure you want to send thank you emails to ALL ${users.length} users? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      setSendingToAll(true);
+      await sendThankYouEmailToAll();
+      addNotification(`Thank you emails sent to all ${users.length} users`, 'success');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send thank you emails to all users';
+      addNotification(message, 'error');
+      console.error('Thank you email to all error:', err);
+    } finally {
+      setSendingToAll(false);
     }
   };
 
@@ -486,14 +520,27 @@ const AdminDashboard = () => {
                       <h3 className="text-sm sm:text-lg font-semibold text-gray-900">User Management</h3>
                       <p className="text-xs sm:text-sm text-gray-600">Manage user accounts and permissions</p>
                     </div>
-                    <div className="flex-1 sm:flex-initial sm:max-w-xs">
-                      <input
-                        type="text"
-                        placeholder="Search by email or name..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                      />
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                      <button
+                        onClick={handleSendThankYouEmailToAll}
+                        disabled={sendingToAll || users.length === 0}
+                        className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                          sendingToAll || users.length === 0
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {sendingToAll ? 'Sending...' : `Send to All (${users.length})`}
+                      </button>
+                      <div className="flex-1 sm:flex-initial sm:max-w-xs">
+                        <input
+                          type="text"
+                          placeholder="Search by email or name..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
@@ -646,7 +693,7 @@ const AdminDashboard = () => {
                           Tests include athletes + own
                         </div>
                       )}
-                      <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="mt-2 flex flex-col gap-2">
                         <button
                           type="button"
                           disabled={emailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
@@ -658,6 +705,18 @@ const AdminDashboard = () => {
                           } ${emailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
                         >
                           {emailLoadingUserId === user._id ? 'Sending…' : 'Send reactivation email'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={thankYouEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                          onClick={() => handleSendThankYouEmail(user)}
+                          className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
+                            user.notifications?.emailNotifications === false
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                              : 'border-green-600 text-green-600 hover:bg-green-50'
+                          } ${thankYouEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
                         </button>
                       </div>
                     </div>
@@ -819,6 +878,18 @@ const AdminDashboard = () => {
                               } ${emailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
                             >
                               {emailLoadingUserId === user._id ? 'Sending…' : 'Send reactivation email'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={thankYouEmailLoadingUserId === user._id || user.notifications?.emailNotifications === false}
+                              onClick={() => handleSendThankYouEmail(user)}
+                              className={`block text-xs ${
+                                user.notifications?.emailNotifications === false
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-green-600 hover:text-green-700'
+                              } ${thankYouEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                            >
+                              {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
                             </button>
                           </td>
                         </tr>

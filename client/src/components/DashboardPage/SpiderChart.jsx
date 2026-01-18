@@ -505,7 +505,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         }
       }
     };
-  }, [powerMetrics, allTimeBest, monthlyMetrics, comparePeriod, availableMonths]);
+  }, [powerMetrics, allTimeBest, monthlyMetrics, comparePeriod]);
 
   // Table data
   const tableData = [

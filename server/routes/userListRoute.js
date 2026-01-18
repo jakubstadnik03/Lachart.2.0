@@ -1963,6 +1963,225 @@ router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, r
     }
 });
 
+// Send thank you email to a specific user (admin only)
+router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { userId } = req.params;
+        const targetUser = await userDao.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!targetUser.email) {
+            return res.status(400).json({ error: "User has no email address configured" });
+        }
+
+        // Respect global emailNotifications preference
+        if (targetUser.notifications && targetUser.notifications.emailNotifications === false) {
+            return res.status(400).json({ error: "Email notifications are disabled for this user" });
+        }
+
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const imageUrl = `${clientUrl}/images/lachart_training.png`;
+
+        const userName = targetUser.name || 'there';
+        const userRole = targetUser.role === 'coach' ? 'coach' : 'athlete';
+
+        const emailContent = `
+            <p>Hi ${userName},</p>
+            <p>I wanted to personally thank you for using <strong>LaChart</strong> 🙏</p>
+            <p>Right now, it's a completely free project and I really care about making it truly useful in practice.</p>
+            <p>I'd love to ask you a few questions – just one sentence each is fine:</p>
+            <ol style="margin: 20px 0; padding-left: 20px;">
+                <li style="margin-bottom: 10px;">What was the most difficult or unclear thing when you first used it?</li>
+                <li style="margin-bottom: 10px;">What did you miss most after generating your lactate curve?</li>
+                <li style="margin-bottom: 10px;">Do you use LaChart more as an athlete or as a coach?</li>
+            </ol>
+            <p>Every answer helps me improve the app in the right direction.</p>
+            <p>If you'd like, I'm happy to reach out personally and show you what I'm working on now.</p>
+            <p style="margin-top: 30px;">
+                <img src="${imageUrl}" alt="LaChart Training" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+            </p>
+            <p style="margin-top: 20px;"><strong>LaChart Features:</strong></p>
+            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                <li>📊 Advanced lactate testing and analysis</li>
+                <li>📈 Training load monitoring and TSS calculation</li>
+                <li>🎯 Personalized training zones based on your tests</li>
+                <li>📱 Strava integration for automatic activity tracking</li>
+                <li>👥 Coach-athlete collaboration tools</li>
+                <li>📧 Weekly training reports</li>
+                <li>🔬 Power metrics and performance analytics</li>
+                <li>📅 Training calendar and planning</li>
+                <li>🏃 Multi-sport support (cycling, running, swimming)</li>
+                <li>💪 Training protocol recommendations</li>
+            </ul>
+            <p style="margin-top: 20px;">If you find LaChart useful, I'd be incredibly grateful if you could:</p>
+            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                <li>Share it with other athletes or coaches who might benefit</li>
+                <li>Let me know your thoughts and feedback</li>
+                <li>Tell me if you're a coach (I'm building features specifically for coaches)</li>
+            </ul>
+            <p style="margin-top: 30px;">Thanks again!</p>
+            <p><strong>Jakub</strong><br/>LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+        `;
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        await transporter.sendMail({
+            from: {
+                name: 'Jakub - LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: targetUser.email,
+            subject: 'Thank you for using LaChart 🙏',
+            html: generateEmailTemplate({
+                title: 'Thank you for using LaChart!',
+                content: emailContent,
+                buttonText: 'Open LaChart',
+                buttonUrl: clientUrl,
+                footerText: 'This is a personal message from the LaChart team.'
+            })
+        });
+
+        res.status(200).json({ ok: true, message: "Thank you email sent" });
+    } catch (error) {
+        console.error("Error sending thank you email:", error);
+        res.status(500).json({ error: "Failed to send thank you email" });
+    }
+});
+
+// Send thank you email to all users (admin only)
+router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        // Get all active users with email notifications enabled
+        const allUsers = await userDao.findAll();
+        const eligibleUsers = allUsers.filter(user => 
+            user.email && 
+            (!user.notifications || user.notifications.emailNotifications !== false) &&
+            user.isActive !== false
+        );
+
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const imageUrl = `${clientUrl}/images/lachart_training.png`;
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        let successCount = 0;
+        let failCount = 0;
+        const errors = [];
+
+        // Send emails in batches to avoid rate limiting
+        for (let i = 0; i < eligibleUsers.length; i++) {
+            const user = eligibleUsers[i];
+            try {
+                const userName = user.name || 'there';
+                const userRole = user.role === 'coach' ? 'coach' : 'athlete';
+
+                const emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I wanted to personally thank you for using <strong>LaChart</strong> 🙏</p>
+                    <p>Right now, it's a completely free project and I really care about making it truly useful in practice.</p>
+                    <p>I'd love to ask you a few questions – just one sentence each is fine:</p>
+                    <ol style="margin: 20px 0; padding-left: 20px;">
+                        <li style="margin-bottom: 10px;">What was the most difficult or unclear thing when you first used it?</li>
+                        <li style="margin-bottom: 10px;">What did you miss most after generating your lactate curve?</li>
+                        <li style="margin-bottom: 10px;">Do you use LaChart more as an athlete or as a coach?</li>
+                    </ol>
+                    <p>Every answer helps me improve the app in the right direction.</p>
+                    <p>If you'd like, I'm happy to reach out personally and show you what I'm working on now.</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Training" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <p style="margin-top: 20px;"><strong>LaChart Features:</strong></p>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>📊 Advanced lactate testing and analysis</li>
+                        <li>📈 Training load monitoring and TSS calculation</li>
+                        <li>🎯 Personalized training zones based on your tests</li>
+                        <li>📱 Strava integration for automatic activity tracking</li>
+                        <li>👥 Coach-athlete collaboration tools</li>
+                        <li>📧 Weekly training reports</li>
+                        <li>🔬 Power metrics and performance analytics</li>
+                        <li>📅 Training calendar and planning</li>
+                        <li>🏃 Multi-sport support (cycling, running, swimming)</li>
+                        <li>💪 Training protocol recommendations</li>
+                    </ul>
+                    <p style="margin-top: 20px;">If you find LaChart useful, I'd be incredibly grateful if you could:</p>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li>Share it with other athletes or coaches who might benefit</li>
+                        <li>Let me know your thoughts and feedback</li>
+                        <li>Tell me if you're a coach (I'm building features specifically for coaches)</li>
+                    </ul>
+                    <p style="margin-top: 30px;">Thanks again!</p>
+                    <p><strong>Jakub</strong><br/>LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+
+                await transporter.sendMail({
+                    from: {
+                        name: 'Jakub - LaChart',
+                        address: process.env.EMAIL_USER
+                    },
+                    to: user.email,
+                    subject: 'Thank you for using LaChart 🙏',
+                    html: generateEmailTemplate({
+                        title: 'Thank you for using LaChart!',
+                        content: emailContent,
+                        buttonText: 'Open LaChart',
+                        buttonUrl: clientUrl,
+                        footerText: 'This is a personal message from the LaChart team.'
+                    })
+                });
+
+                successCount++;
+                
+                // Small delay to avoid rate limiting
+                if (i < eligibleUsers.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } catch (error) {
+                failCount++;
+                errors.push({ email: user.email, error: error.message });
+                console.error(`Error sending email to ${user.email}:`, error);
+            }
+        }
+
+        res.status(200).json({ 
+            ok: true, 
+            message: `Thank you emails sent: ${successCount} successful, ${failCount} failed`,
+            successCount,
+            failCount,
+            total: eligibleUsers.length,
+            errors: errors.length > 0 ? errors : undefined
+        });
+    } catch (error) {
+        console.error("Error sending thank you emails to all users:", error);
+        res.status(500).json({ error: "Failed to send thank you emails" });
+    }
+});
+
 // Update user (admin only)
 router.put("/admin/users/:userId", verifyToken, async (req, res) => {
     try {

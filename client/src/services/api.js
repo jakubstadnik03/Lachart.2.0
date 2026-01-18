@@ -539,6 +539,28 @@ export const sendReactivationEmail = async (userId) => {
   }
 };
 
+// Send thank you email to a specific user (admin only)
+export const sendThankYouEmail = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/send-thank-you-email/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending thank you email:', error);
+    throw error;
+  }
+};
+
+// Send thank you email to all users (admin only)
+export const sendThankYouEmailToAll = async () => {
+  try {
+    const response = await api.post(`/user/admin/send-thank-you-email/all`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending thank you emails to all users:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);

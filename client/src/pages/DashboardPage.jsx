@@ -334,20 +334,20 @@ const DashboardPage = () => {
           // If there's a linked Training-model entry, use its title (but keep Strava data)
           const linkedTraining = trainingByStravaId.get(String(stravaId));
           return {
-            ...a,
-            type: 'strava',
-            date: a.startDate,
+          ...a,
+          type: 'strava',
+          date: a.startDate,
             title: linkedTraining?.title || a.titleManual || a.name || 'Untitled Activity',
             linkedTrainingTitle: linkedTraining?.title || null,
-            sport: a.sport,
+          sport: a.sport,
             stravaId: stravaId, // Ensure stravaId is set (raw ID)
             id: `strava-${stravaId}`, // Use prefixed ID to match FitAnalysisPage format
-            avgPower: a.averagePower || a.average_watts,
-            maxPower: a.maxPower || a.max_watts,
-            avgHeartRate: a.averageHeartRate || a.average_heartrate,
-            maxHeartRate: a.maxHeartRate || a.max_heartrate,
-            totalTime: a.movingTime || a.elapsedTime,
-            distance: a.distance
+          avgPower: a.averagePower || a.average_watts,
+          maxPower: a.maxPower || a.max_watts,
+          avgHeartRate: a.averageHeartRate || a.average_heartrate,
+          maxHeartRate: a.maxHeartRate || a.max_heartrate,
+          totalTime: a.movingTime || a.elapsedTime,
+          distance: a.distance
           };
         })
       ];
@@ -650,7 +650,7 @@ const DashboardPage = () => {
     };
 
     loadData();
-  }, [user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData]);
+  }, [user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
