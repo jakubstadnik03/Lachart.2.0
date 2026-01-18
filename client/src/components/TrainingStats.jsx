@@ -568,23 +568,7 @@ const TrainingComparison = ({ training, formatDate }) => {
   }, [training.results, useDistance, totalValue]);
   
   // Debug: Log all bar positions and widths (always log when component renders)
-  if (barPositions.length > 0) {
-    console.log('=== TrainingStats Bar Positions ===');
-    console.log('Training:', training.title || 'Untitled');
-    console.log('Total Value:', totalValue, useDistance ? '(distance)' : '(duration)');
-    console.log('Results count:', training.results?.length || 0);
-    console.log('Bar Positions:', barPositions.map((pos, idx) => ({
-      interval: idx + 1,
-      value: pos.value,
-      widthPercent: pos.widthPercent.toFixed(2) + '%',
-      leftPercent: pos.leftPercent.toFixed(2) + '%',
-      originalDuration: training.results[idx]?.duration,
-      originalDistance: training.results[idx]?.distance,
-      parsedDuration: pos.durationValue,
-      parsedDistance: pos.distanceValue
-    })));
-    console.log('===================================');
-  }
+ 
   
   return (
     <motion.div
@@ -670,7 +654,6 @@ const VerticalBar = ({
   const lactateHeight = maxLactate > 0 ? (result.lactate / maxLactate) * 100 : 0;
   
   // Debug: Log width and left for this bar
-  console.log(`Bar ${index + 1}: width=${width.toFixed(2)}%, left=${left.toFixed(2)}%`);
   
   // Use actual width, but ensure minimum 0.1% for visibility
   const actualWidth = Math.max(0.1, width);

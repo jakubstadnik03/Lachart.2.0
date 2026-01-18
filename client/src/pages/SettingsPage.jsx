@@ -1430,8 +1430,8 @@ const SettingsPage = () => {
                         />
                       ) : (
                         <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-orange-500 rounded-lg`}>
-                          <span className="text-white font-bold text-sm">S</span>
-                        </div>
+                        <span className="text-white font-bold text-sm">S</span>
+                      </div>
                       )}
                     <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Strava</h4>
                     </div>

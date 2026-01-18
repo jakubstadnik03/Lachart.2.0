@@ -1185,27 +1185,39 @@ class DeviceConnectivityService {
 
         // Step 2: Set Training Mode to ERGO (0x04 = ERGO mode)
         // Opcode 0x05 = Set Training Mode
-        // Always set ERGO mode before setting power to ensure trainer is in correct mode
-        // Set ERGO mode every time (don't check flag) to ensure trainer is in correct mode
-        try {
-          const setErgoMode = new Uint8Array([
-            0x05,        // Opcode: Set Training Mode
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x04,        // Training Mode: 0x04 = ERGO mode
-            0x00         // Reserved
-          ]);
-          console.log('[FE-C] Sending Set Training Mode to ERGO command...');
-          console.log('[FE-C] Command bytes:', Array.from(setErgoMode).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-          await controlPoint.writeValue(setErgoMode);
-          await new Promise(resolve => setTimeout(resolve, 500)); // Wait longer for response
-          connection.ergoModeSet = true;
-          console.log('✅ Set training mode to ERGO');
-        } catch (e) {
-          // Setting training mode might not be needed - continue
-          console.warn('⚠️ Set training mode skipped or failed:', e.message);
-          connection.ergoModeSet = true; // Mark as attempted
+        // Always set ERGO mode before setting power - some trainers need this every time
+        // Only skip if it was set very recently (within 500ms) to avoid overwhelming the trainer
+        const now = Date.now();
+        const lastErgoSetTime = connection.lastErgoSetTime || 0;
+        const timeSinceLastErgo = now - lastErgoSetTime;
+        
+        // Always set ERGO mode before power command (unless it was set very recently)
+        // Some trainers need ERGO mode to be set before each power change
+        if (timeSinceLastErgo > 500) {
+          try {
+            const setErgoMode = new Uint8Array([
+              0x05,        // Opcode: Set Training Mode
+              0x00,        // Reserved
+              0x00,        // Reserved
+              0x00,        // Reserved
+              0x04,        // Training Mode: 0x04 = ERGO mode
+              0x00         // Reserved
+            ]);
+            console.log('[FE-C] Sending Set Training Mode to ERGO command...');
+            console.log('[FE-C] Command bytes:', Array.from(setErgoMode).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+            await controlPoint.writeValue(setErgoMode);
+            await new Promise(resolve => setTimeout(resolve, 800)); // Wait longer for trainer to process
+            connection.ergoModeSet = true;
+            connection.lastErgoSetTime = now;
+            console.log('✅ Set training mode to ERGO');
+          } catch (e) {
+            // Setting training mode might not be needed - continue
+            console.warn('⚠️ Set training mode skipped or failed:', e.message);
+            connection.ergoModeSet = true; // Mark as attempted
+            connection.lastErgoSetTime = now;
+          }
+        } else {
+          console.log('[FE-C] ⏭️ Skipping ERGO mode set (already set', Math.round(timeSinceLastErgo), 'ms ago)');
         }
 
         // Step 3: Set Target Power
@@ -1225,6 +1237,18 @@ class DeviceConnectivityService {
           powerHigh    // Power high byte (0.1W units)
         ]);
 
+        // Check if we're trying to set the same power that's already set (within 5W tolerance)
+        // This prevents unnecessary commands when power hasn't changed
+        const currentTargetPower = connection.targetPower;
+        const powerDifference = currentTargetPower ? Math.abs(currentTargetPower - powerWatts) : Infinity;
+        const timeSinceLastPowerSet = Date.now() - (connection.lastPowerSetTime || 0);
+        
+        // If power is the same (within 5W) and was set recently (within 1 second), skip
+        if (powerDifference < 5 && timeSinceLastPowerSet < 1000) {
+          console.log(`[FE-C] ⏭️ Skipping power set (already at ${currentTargetPower}W, requested ${powerWatts}W, difference: ${powerDifference.toFixed(1)}W)`);
+          return true;
+        }
+        
         // Store target power for verification
         connection.targetPower = powerWatts;
         connection.lastPowerSetTime = Date.now();
@@ -1235,14 +1259,16 @@ class DeviceConnectivityService {
         console.log('[FE-C] Power bytes: Low=', '0x' + powerLow.toString(16).padStart(2, '0'), 'High=', '0x' + powerHigh.toString(16).padStart(2, '0'));
         
         await controlPoint.writeValue(command);
-        await new Promise(resolve => setTimeout(resolve, 600)); // Wait longer for command to process
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for command to process (1 second)
         
         // Step 4: Re-confirm ERGO mode after setting power (some trainers need this)
+        // Wait a bit longer and then reconfirm ERGO mode to ensure trainer stays in ERGO mode
         try {
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 300));
           const reconfirmErgo = new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]);
           await controlPoint.writeValue(reconfirmErgo);
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 500));
+          connection.lastErgoSetTime = Date.now();
           console.log('[FE-C] ✅ Re-confirmed ERGO mode after setting power');
         } catch (e) {
           console.warn('[FE-C] ⚠️ Re-confirm ERGO mode failed (non-critical):', e.message);

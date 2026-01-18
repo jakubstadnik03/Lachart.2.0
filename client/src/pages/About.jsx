@@ -177,6 +177,53 @@ const About = () => {
   // Sticky header state
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Generate random icon positions (only once) - ensure no overlapping
+  const backgroundIcons = React.useMemo(() => {
+    const icons = [];
+    const minDistance = 15; // Minimum distance between icon centers in percentage
+    const maxAttempts = 1000; // Maximum attempts to place an icon
+    
+    for (let i = 0; i < 40; i++) {
+      const iconNumber = (i % 9) + 1;
+      let placed = false;
+      let attempts = 0;
+      
+      while (!placed && attempts < maxAttempts) {
+        attempts++;
+        
+        // Generate random position
+        const top = Math.random() * 100;
+        const left = Math.random() * 100;
+        const size = 50 + Math.random() * 80; // 50-130px
+        
+        // Check if this position is far enough from all existing icons
+        const tooClose = icons.some(existingIcon => {
+          const distance = Math.sqrt(
+            Math.pow(top - existingIcon.top, 2) + 
+            Math.pow(left - existingIcon.left, 2)
+          );
+          // Consider the size of both icons
+          const minRequiredDistance = minDistance + (size / 100) + (existingIcon.size / 100);
+          return distance < minRequiredDistance;
+        });
+        
+        if (!tooClose) {
+          icons.push({
+            iconPath: `/icon/icon${iconNumber}.svg`,
+            top: top,
+            left: left,
+            rotate: -30 + Math.random() * 60, // -30° to +30° rotation (slight tilt, never upside down)
+            size: size,
+            opacity: 0.6 + Math.random() * 0.4 // 0.6-1.0 opacity
+          });
+          placed = true;
+        }
+      }
+    }
+    
+    return icons;
+  }, []);
 
   // Cookie consent effect
   useEffect(() => {
@@ -487,6 +534,12 @@ const About = () => {
               <button onClick={() => scrollToSection('contact')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Contact</button>
             </div>
 
+            {/* Login and Sign Up Buttons */}
+            <div className="hidden lg:flex items-center gap-4 ml-4">
+              <a href="/login" className="text-primary font-semibold hover:text-primary-dark transition-colors text-sm">Login</a>
+              <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors text-sm">Register</a>
+            </div>
+
             {/* Mobile Menu Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -516,6 +569,10 @@ const About = () => {
                 <button onClick={() => scrollToSection('how-to-use')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">How to Use</button>
                 <button onClick={() => scrollToSection('faq')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">FAQ</button>
                 <button onClick={() => scrollToSection('contact')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Contact</button>
+                <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-gray-200">
+                  <a href="/login" className="px-3 py-2 text-sm font-medium text-primary hover:text-primary-dark text-left">Login</a>
+                  <a href="/signup" className="px-3 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary-dark text-center">Register</a>
+                </div>
               </div>
             </div>
           )}
@@ -530,6 +587,26 @@ const About = () => {
             backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
             backgroundSize: '40px 40px'
           }}></div>
+        </div>
+        
+        {/* Random Icons Background - only within hero section */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 1 }}>
+          {backgroundIcons.map((icon, index) => (
+            <img
+              key={index}
+              src={icon.iconPath}
+              alt=""
+              className="absolute"
+              style={{
+                top: `${icon.top}%`,
+                left: `${icon.left}%`,
+                transform: `rotate(${icon.rotate}deg) translate(-50%, -50%)`,
+                width: `${icon.size}px`,
+                height: `${icon.size}px`,
+                opacity: icon.opacity * 0.1,
+              }}
+            />
+          ))}
         </div>
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -575,7 +652,7 @@ const About = () => {
           </div>
         
         {/* Decorative bottom wave */}
-        <div className="absolute bottom-0 left-0 w-full">
+        <div className="absolute bottom-0 left-0 w-full z-10">
           <svg className="w-full h-16 text-white" fill="currentColor" viewBox="0 0 1200 120" preserveAspectRatio="none">
             <path d="M0,0 C300,120 900,0 1200,120 L1200,120 L0,120 Z"></path>
           </svg>

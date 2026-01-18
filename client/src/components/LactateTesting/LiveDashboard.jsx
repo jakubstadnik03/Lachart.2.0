@@ -162,8 +162,9 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
     [useMinutes]
   );
   
-  // Build metric cards
+  // Build metric cards - use Set to track added labels and avoid duplicates
   const metricCards = [];
+  const addedLabels = new Set();
   
   if (hasBikeTrainer && hasPower) {
     metricCards.push({
@@ -173,7 +174,8 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
       icon: BoltIcon,
       color: 'blue'
     });
-  } else if (hasBikeTrainer && hasSpeed) {
+    addedLabels.add('Power');
+  } else if (hasBikeTrainer && hasSpeed && !addedLabels.has('Speed')) {
     metricCards.push({
       label: 'Speed',
       value: `${(liveData.speed || 0).toFixed(1)}`,
@@ -181,6 +183,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
       icon: BoltIcon,
       color: 'blue'
     });
+    addedLabels.add('Speed');
   }
   
   if (hasHeartRate) {
@@ -191,9 +194,10 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
       icon: HeartIcon,
       color: 'red'
     });
+    addedLabels.add('Heart Rate');
   }
 
-  if (hasBikeTrainer && (hasValidData(liveData.cadence) || historicalData.some(d => hasValidData(d.cadence)))) {
+  if (hasBikeTrainer && hasCadence) {
     metricCards.push({
       label: 'Cadence',
       value: `${(liveData.cadence || 0).toFixed(0)}`,
@@ -201,9 +205,11 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
       icon: ChartBarIcon,
       color: 'green'
     });
+    addedLabels.add('Cadence');
   }
 
-  if (hasBikeTrainer && (hasValidData(liveData.speed) || historicalData.some(d => hasValidData(d.speed)))) {
+  // Add Speed as additional metric if it's available and not already added
+  if (hasBikeTrainer && hasSpeed && !addedLabels.has('Speed')) {
     metricCards.push({
       label: 'Speed',
       value: `${(liveData.speed || 0).toFixed(1)}`,
@@ -211,6 +217,7 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
       icon: WifiIcon,
       color: 'purple'
     });
+    addedLabels.add('Speed');
   }
 
   // Additional metrics
