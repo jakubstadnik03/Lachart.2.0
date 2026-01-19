@@ -2019,7 +2019,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
                 <li>🔬 Power metrics and performance analytics</li>
                 <li>📅 Training calendar and planning</li>
                 <li>🏃 Multi-sport support (cycling, running, swimming)</li>
-                <li>💪 Training protocol recommendations</li>
+                <li>💪 Testing protocol recommendations</li>
             </ul>
             <p style="margin-top: 20px;">If you find LaChart useful, I'd be incredibly grateful if you could:</p>
             <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">

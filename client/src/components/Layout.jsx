@@ -33,10 +33,13 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const menuProps = useMemo(() => ({ isMenuOpen, setIsMenuOpen }), [isMenuOpen, setIsMenuOpen]);
   const headerProps = useMemo(() => ({ isMenuOpen, setIsMenuOpen }), [isMenuOpen, setIsMenuOpen]);
 
-  // Ensure menu is open when component mounts
+  // Ensure menu is open when component mounts (only on desktop, not on mobile)
   useEffect(() => {
-    if (user) {
+    if (user && window.innerWidth >= 768) {
       setIsMenuOpen(true);
+    } else if (user && window.innerWidth < 768) {
+      // On mobile, keep menu closed by default
+      setIsMenuOpen(false);
     }
   }, [user, setIsMenuOpen]);
 

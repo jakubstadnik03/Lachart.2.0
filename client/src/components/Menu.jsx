@@ -55,7 +55,11 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   useEffect(() => {
     // Close menu on mobile when pathname changes
     if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
-      setIsMenuOpen(false);
+      // Use setTimeout to ensure menu closes after navigation
+      const timer = setTimeout(() => {
+        setIsMenuOpen(false);
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [location.pathname, setIsMenuOpen]);
 
@@ -81,8 +85,9 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     effectiveAthleteId = currentAthleteIdFromUrl || null;
   }
 
-  const handleMenuItemClick = () => {
-    if (window.innerWidth < 768) {
+  const handleMenuItemClick = (e) => {
+    // Close menu immediately on mobile when clicking any link
+    if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
       setIsMenuOpen(false);
     }
   };
