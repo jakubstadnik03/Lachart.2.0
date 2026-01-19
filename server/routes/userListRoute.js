@@ -2072,15 +2072,43 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
 
         // Get all active users with email notifications enabled
         const allUsers = await userDao.findAll();
+        if (!Array.isArray(allUsers)) {
+            console.error("userDao.findAll() did not return an array:", allUsers);
+            return res.status(500).json({ error: "Failed to fetch users" });
+        }
+
         const eligibleUsers = allUsers.filter(user => 
+            user && 
             user.email && 
+            typeof user.email === 'string' &&
+            user.email.trim() !== '' &&
             (!user.notifications || user.notifications.emailNotifications !== false) &&
             user.isActive !== false
         );
 
+        if (eligibleUsers.length === 0) {
+            return res.status(200).json({ 
+                ok: true, 
+                message: "No eligible users found",
+                successCount: 0,
+                failCount: 0,
+                total: 0
+            });
+        }
+
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
+        if (!clientUrl) {
+            console.error("getClientUrl() returned undefined or null");
+            return res.status(500).json({ error: "Failed to get client URL" });
+        }
+
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            console.error("Email credentials not configured");
+            return res.status(500).json({ error: "Email service not configured" });
+        }
 
         const transporter = nodemailer.createTransport({
             service: 'gmail',
@@ -2098,6 +2126,13 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
         for (let i = 0; i < eligibleUsers.length; i++) {
             const user = eligibleUsers[i];
             try {
+                if (!user || !user.email) {
+                    console.warn(`Skipping user at index ${i}: missing email`);
+                    failCount++;
+                    errors.push({ email: user?.email || 'unknown', error: 'Missing email address' });
+                    continue;
+                }
+
                 const userName = user.name || 'there';
                 const userRole = user.role === 'coach' ? 'coach' : 'athlete';
 
@@ -2139,20 +2174,30 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
                 `;
 
+                if (typeof generateEmailTemplate !== 'function') {
+                    throw new Error('generateEmailTemplate is not a function');
+                }
+
+                const emailHtml = generateEmailTemplate({
+                    title: 'Thank you for using LaChart!',
+                    content: emailContent,
+                    buttonText: 'Open LaChart',
+                    buttonUrl: clientUrl,
+                    footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
+                });
+
+                if (!emailHtml || typeof emailHtml !== 'string') {
+                    throw new Error('generateEmailTemplate did not return valid HTML');
+                }
+
                 await transporter.sendMail({
                     from: {
                         name: 'Jakub - LaChart',
                         address: process.env.EMAIL_USER
                     },
-                    to: user.email,
+                    to: user.email.trim().toLowerCase(),
                     subject: 'Thank you for using LaChart 🙏',
-                    html: generateEmailTemplate({
-                        title: 'Thank you for using LaChart!',
-                        content: emailContent,
-                        buttonText: 'Open LaChart',
-                        buttonUrl: clientUrl,
-                        footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
-                    })
+                    html: emailHtml
                 });
 
                 successCount++;
@@ -2163,8 +2208,9 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                 }
             } catch (error) {
                 failCount++;
-                errors.push({ email: user.email, error: error.message });
-                console.error(`Error sending email to ${user.email}:`, error);
+                const errorMessage = error?.message || String(error) || 'Unknown error';
+                errors.push({ email: user?.email || 'unknown', error: errorMessage });
+                console.error(`Error sending email to ${user?.email || 'unknown'}:`, error);
             }
         }
 
