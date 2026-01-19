@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LineChart, Line } from 'recharts';
-import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ChevronDownIcon, EllipsisHorizontalIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { getFormFitnessData, getTodayMetrics } from '../../services/api';
 import TrainingGlossary from './TrainingGlossary';
 
@@ -566,21 +566,9 @@ const FormFitnessChart = ({ athleteId }) => {
                     <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
                     <div className="mt-2 select-none">
                       <ResponsiveContainer width="100%" height={56}>
-                        <LineChart
-                          data={zoomedData}
-                          onMouseDown={handleZoomMouseDown}
-                          onMouseMove={handleZoomMouseMove}
-                          onMouseUp={handleZoomMouseUp}
-                          onDoubleClick={handleZoomReset}
-                          onTouchStart={handleZoomMouseDown}
-                          onTouchMove={handleZoomMouseMove}
-                          onTouchEnd={handleZoomMouseUp}
-                        >
+                        <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
-                          {selectionX1 && selectionX2 && (
-                            <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                          )}
                           <Line type="monotone" dataKey="Fitness" name="Fitness" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -608,21 +596,9 @@ const FormFitnessChart = ({ athleteId }) => {
                     <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
                     <div className="mt-2 select-none">
                       <ResponsiveContainer width="100%" height={56}>
-                        <LineChart
-                          data={zoomedData}
-                          onMouseDown={handleZoomMouseDown}
-                          onMouseMove={handleZoomMouseMove}
-                          onMouseUp={handleZoomMouseUp}
-                          onDoubleClick={handleZoomReset}
-                          onTouchStart={handleZoomMouseDown}
-                          onTouchMove={handleZoomMouseMove}
-                          onTouchEnd={handleZoomMouseUp}
-                        >
+                        <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
-                          {selectionX1 && selectionX2 && (
-                            <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                          )}
                           <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
                           <Line type="monotone" dataKey="Form" name="Form" stroke="#f97316" strokeWidth={2} dot={false} isAnimationActive={false} />
                         </LineChart>
@@ -651,21 +627,9 @@ const FormFitnessChart = ({ athleteId }) => {
                     <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
                     <div className="mt-2 select-none">
                       <ResponsiveContainer width="100%" height={56}>
-                        <LineChart
-                          data={zoomedData}
-                          onMouseDown={handleZoomMouseDown}
-                          onMouseMove={handleZoomMouseMove}
-                          onMouseUp={handleZoomMouseUp}
-                          onDoubleClick={handleZoomReset}
-                          onTouchStart={handleZoomMouseDown}
-                          onTouchMove={handleZoomMouseMove}
-                          onTouchEnd={handleZoomMouseUp}
-                        >
+                        <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
-                          {selectionX1 && selectionX2 && (
-                            <ReferenceArea x1={selectionX1} x2={selectionX2} strokeOpacity={0.1} />
-                          )}
                           <Line type="monotone" dataKey="Fatigue" name="Fatigue" stroke="#db2777" strokeWidth={2} dot={false} isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
@@ -802,7 +766,17 @@ const FormFitnessChart = ({ athleteId }) => {
           </div>
         )}
 
-        <div className="h-56 sm:h-80 select-none">
+        <div className="h-56 sm:h-80 select-none relative">
+          {zoomRange && (
+            <button
+              onClick={handleZoomReset}
+              className="absolute top-2 right-2 z-10 p-1.5 bg-white hover:bg-gray-50 rounded-full shadow-md border border-gray-200 transition-colors"
+              aria-label="Reset zoom"
+              title="Reset zoom"
+            >
+              <ArrowPathIcon className="w-4 h-4 text-gray-600" />
+            </button>
+          )}
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={zoomedData}
