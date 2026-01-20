@@ -206,6 +206,12 @@ const userSchema = new mongoose.Schema({
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },
+  // Thank you email tracking
+  thankYouEmail: {
+    sent: { type: Boolean, default: false },
+    sentCount: { type: Number, default: 0 },
+    lastSent: { type: Date, default: null }
+  },
   // Mobile push notification tokens (Expo)
   expoPushTokens: {
     type: [String],

@@ -1817,6 +1817,11 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     weeklyReports: true,
                     achievementAlerts: true
                 },
+                thankYouEmail: user.thankYouEmail || {
+                    sent: false,
+                    sentCount: 0,
+                    lastSent: null
+                },
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount
             };
@@ -2055,6 +2060,16 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             })
         });
 
+        // Update tracking information
+        const updateData = {
+            thankYouEmail: {
+                sent: true,
+                sentCount: (targetUser.thankYouEmail?.sentCount || 0) + 1,
+                lastSent: new Date()
+            }
+        };
+        await userDao.updateUser(userId, updateData);
+
         res.status(200).json({ ok: true, message: "Thank you email sent" });
     } catch (error) {
         console.error("Error sending thank you email:", error);
@@ -2199,6 +2214,16 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     subject: 'Thank you for using LaChart 🙏',
                     html: emailHtml
                 });
+
+                // Update tracking information
+                const updateData = {
+                    thankYouEmail: {
+                        sent: true,
+                        sentCount: (user.thankYouEmail?.sentCount || 0) + 1,
+                        lastSent: new Date()
+                    }
+                };
+                await userDao.updateUser(user._id, updateData);
 
                 successCount++;
                 

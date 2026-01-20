@@ -84,6 +84,7 @@ const AdminDashboard = () => {
       setThankYouEmailLoadingUserId(targetUser._id);
       await sendThankYouEmail(targetUser._id);
       addNotification(`Thank you email sent to ${targetUser.email}`, 'success');
+      fetchData(); // Refresh data to show updated tracking info
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send thank you email';
       addNotification(message, 'error');
@@ -102,6 +103,7 @@ const AdminDashboard = () => {
       setSendingToAll(true);
       await sendThankYouEmailToAll();
       addNotification(`Thank you emails sent to all ${users.length} users`, 'success');
+      fetchData(); // Refresh data to show updated tracking info
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send thank you emails to all users';
       addNotification(message, 'error');
@@ -676,6 +678,28 @@ const AdminDashboard = () => {
                         </div>
                       </div>
 
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        <div className="text-xs text-gray-500 text-center mb-1">Thank You Email</div>
+                        <div className="text-xs font-medium text-center">
+                          {user.thankYouEmail?.sent ? (
+                            <>
+                              <span className="inline-flex px-2 py-0.5 rounded-full font-semibold bg-green-100 text-green-800">
+                                ✓ Sent ({user.thankYouEmail.sentCount || 0}x)
+                              </span>
+                              {user.thankYouEmail.lastSent && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {new Date(user.thankYouEmail.lastSent).toLocaleDateString()}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="inline-flex px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600">
+                              Not sent
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="mt-2 flex items-center justify-center gap-2 text-xs">
                         <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold ${
                           user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
@@ -740,6 +764,7 @@ const AdminDashboard = () => {
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thank You Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Status</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -747,7 +772,7 @@ const AdminDashboard = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="10" className="px-4 lg:px-6 py-8 text-center text-gray-500">
+                          <td colSpan="11" className="px-4 lg:px-6 py-8 text-center text-gray-500">
                             {searchQuery ? `No users found matching "${searchQuery}"` : 'No users found'}
                           </td>
                         </tr>
@@ -851,6 +876,26 @@ const AdminDashboard = () => {
                               }`}>
                                 Weekly: {user.notifications?.weeklyReports === false ? 'OFF' : 'ON'}
                               </span>
+                            </div>
+                          </td>
+                          <td className="px-4 lg:px-6 py-4 text-sm">
+                            <div className="flex flex-col gap-1">
+                              {user.thankYouEmail?.sent ? (
+                                <>
+                                  <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit bg-green-100 text-green-800">
+                                    ✓ Sent ({user.thankYouEmail.sentCount || 0}x)
+                                  </span>
+                                  {user.thankYouEmail.lastSent && (
+                                    <span className="text-xs text-gray-500">
+                                      {new Date(user.thankYouEmail.lastSent).toLocaleDateString()} {new Date(user.thankYouEmail.lastSent).toLocaleTimeString()}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit bg-gray-100 text-gray-600">
+                                  Not sent
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 lg:px-6 py-4 hidden lg:table-cell">
