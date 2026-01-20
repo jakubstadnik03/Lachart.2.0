@@ -2937,7 +2937,8 @@ async function getPowerMetrics(req, res) {
         stravaTrainingsProcessed.push({
           records: records,
           timestamp: activityStartTime,
-          sport: activity.sport || 'Ride'
+          sport: activity.sport || 'Ride',
+          stravaId: activity.stravaId ? activity.stravaId.toString() : null
         });
         
         // Longer delay to avoid rate limiting (1 second between requests)
@@ -3003,7 +3004,11 @@ async function getPowerMetrics(req, res) {
         return {
           ...metrics,
           timestamp: training.timestamp,
-          date: new Date(training.timestamp)
+          date: new Date(training.timestamp),
+          // Store training ID and type for navigation
+          trainingId: training._id ? training._id.toString() : null,
+          trainingType: training._id ? 'fit' : (training.stravaId ? 'strava' : null),
+          stravaId: training.stravaId ? training.stravaId.toString() : null
         };
       });
     
@@ -3024,10 +3029,17 @@ async function getPowerMetrics(req, res) {
       })));
     }
     
-    // Calculate max values more safely (handle empty arrays)
+    // Calculate max values more safely (handle empty arrays) with training ID
     const getMaxValue = (key) => {
-      const values = allMetrics.map(m => m[key] || 0).filter(v => v > 0);
-      return values.length > 0 ? Math.max(...values) : 0;
+      const values = allMetrics.map(m => ({ value: m[key] || 0, metric: m })).filter(v => v.value > 0);
+      if (values.length === 0) return { value: 0, trainingId: null, trainingType: null, stravaId: null };
+      const max = values.reduce((best, current) => current.value > best.value ? current : best);
+      return {
+        value: max.value,
+        trainingId: max.metric.trainingId,
+        trainingType: max.metric.trainingType,
+        stravaId: max.metric.stravaId
+      };
     };
     
     const allTime = {
@@ -3060,10 +3072,17 @@ async function getPowerMetrics(req, res) {
       compareMetrics = allMetrics.filter(m => m.timestamp >= compareDate);
     }
     
-    // Calculate compare period max values more safely
+    // Calculate compare period max values more safely with training ID
     const getCompareMaxValue = (key) => {
-      const values = compareMetrics.map(m => m[key] || 0).filter(v => v > 0);
-      return values.length > 0 ? Math.max(...values) : 0;
+      const values = compareMetrics.map(m => ({ value: m[key] || 0, metric: m })).filter(v => v.value > 0);
+      if (values.length === 0) return { value: 0, trainingId: null, trainingType: null, stravaId: null };
+      const max = values.reduce((best, current) => current.value > best.value ? current : best);
+      return {
+        value: max.value,
+        trainingId: max.metric.trainingId,
+        trainingType: max.metric.trainingType,
+        stravaId: max.metric.stravaId
+      };
     };
     
     const compare = compareMetrics.length > 0 ? {
@@ -3072,25 +3091,43 @@ async function getPowerMetrics(req, res) {
       vo2max5min: getCompareMaxValue('vo2max5min'),
       threshold20min: getCompareMaxValue('threshold20min'),
       endurance60min: getCompareMaxValue('endurance60min')
-    } : { sprint5s: 0, attack1min: 0, vo2max5min: 0, threshold20min: 0, endurance60min: 0 };
+    } : { 
+      sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+      attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+      vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+      threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+      endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
+    };
     
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[Power Metrics] Compare period (${comparePeriod}):`, compare);
       console.log(`[Power Metrics] Compare metrics count: ${compareMetrics.length}, date range: ${compareDate > 0 ? new Date(compareDate).toISOString() : 'all time'} to ${new Date(now).toISOString()}`);
     }
     
-    // Find personal records
+    // Find personal records with training ID
     const findMaxWithDate = (key) => {
       let maxValue = 0;
       let maxDate = null;
+      let trainingId = null;
+      let trainingType = null;
+      let stravaId = null;
       allMetrics.forEach(m => {
         const value = m[key] || 0;
         if (value > maxValue) {
           maxValue = value;
           maxDate = m.date;
+          trainingId = m.trainingId;
+          trainingType = m.trainingType;
+          stravaId = m.stravaId;
         }
       });
-      return { value: maxValue, date: maxDate };
+      return { 
+        value: maxValue, 
+        date: maxDate,
+        trainingId: trainingId,
+        trainingType: trainingType,
+        stravaId: stravaId
+      };
     };
     
     const personalRecords = {
@@ -3121,7 +3158,7 @@ async function getPowerMetrics(req, res) {
       if (previousMetrics.length === 0) return null;
       
       const previousMax = Math.max(...previousMetrics.map(m => m[key]), 0);
-      const currentMax = compare[key];
+      const currentMax = typeof compare[key] === 'object' ? compare[key].value : compare[key];
       const improvement = currentMax - previousMax;
       
       return {
@@ -3173,6 +3210,7 @@ async function getPowerMetrics(req, res) {
       });
     }
     
+    // Return response with both old format (for backward compatibility) and new format (with training IDs)
     const result = {
       allTime,
       compare,

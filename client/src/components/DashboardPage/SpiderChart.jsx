@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { Radar } from "react-chartjs-2";
+import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import api from "../../services/api";
 import {
@@ -17,6 +18,7 @@ import {
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
 export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [] }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -280,7 +282,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
 
     keys.forEach((k) => {
       const prVal = Number(pr?.[k]?.value || 0);
-      const allTimeVal = Number(allTime?.[k] || 0);
+      const allTimeVal = typeof allTime?.[k] === 'object' ? Number(allTime[k]?.value || 0) : Number(allTime?.[k] || 0);
       best[k] = Math.max(allTimeVal, prVal, 0);
     });
 
@@ -297,7 +299,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     
     const normalize = (value, intervalKey) => {
       const max = Number(allTimeBest?.[intervalKey] || 0);
-      const v = Number(value || 0);
+      const v = typeof value === 'object' ? Number(value?.value || 0) : Number(value || 0);
       return max > 0 ? (v / max) * 100 : 0;
     };
     
@@ -371,11 +373,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         ...(comparePeriod !== 'alltime' && comparePeriod !== 'monthly' ? [{
           label: comparePeriod === '90days' ? 'Past 90 days' : 'Past 30 days',
           data: [
-            normalize(powerMetrics.compare.sprint5s, 'sprint5s'),
-            normalize(powerMetrics.compare.attack1min, 'attack1min'),
-            normalize(powerMetrics.compare.vo2max5min, 'vo2max5min'),
-            normalize(powerMetrics.compare.threshold20min, 'threshold20min'),
-            normalize(powerMetrics.compare.endurance60min, 'endurance60min')
+            normalize(powerMetrics.compare?.sprint5s, 'sprint5s'),
+            normalize(powerMetrics.compare?.attack1min, 'attack1min'),
+            normalize(powerMetrics.compare?.vo2max5min, 'vo2max5min'),
+            normalize(powerMetrics.compare?.threshold20min, 'threshold20min'),
+            normalize(powerMetrics.compare?.endurance60min, 'endurance60min')
           ],
           borderColor: 'rgba(239, 68, 68, 0.8)',
           backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -472,9 +474,14 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
 
               let raw = 0;
               if (kind === 'alltime') raw = allTimeValue;
-              else if (kind === 'compare') raw = Number(powerMetrics?.compare?.[k] || 0);
-              else if (kind === 'month') raw = Number(monthlyMetrics?.[monthKey]?.[k] || 0);
-              else raw = Number(powerMetrics?.compare?.[k] || 0);
+              else if (kind === 'compare') {
+                const compareMetric = powerMetrics?.compare?.[k];
+                raw = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
+              } else if (kind === 'month') raw = Number(monthlyMetrics?.[monthKey]?.[k] || 0);
+              else {
+                const compareMetric = powerMetrics?.compare?.[k];
+                raw = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
+              }
 
               return `${label}: ${Math.round(raw)}W`;
             },
@@ -488,7 +495,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               
               // Only show percentage if we have a compare period (not alltime or monthly)
               if (comparePeriod !== 'alltime' && comparePeriod !== 'monthly') {
-                const compareValue = Number(powerMetrics?.compare?.[k] || 0);
+                const compareMetric = powerMetrics?.compare?.[k];
+                const compareValue = typeof compareMetric === 'object' ? Number(compareMetric?.value || 0) : Number(compareMetric || 0);
                 if (compareValue > 0 && allTimeValue > 0) {
                   const pct = Math.round((compareValue / allTimeValue) * 100);
                   return [`${pct}% of All Time`];
@@ -507,51 +515,118 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     };
   }, [powerMetrics, allTimeBest, monthlyMetrics, comparePeriod]);
 
+  // Helper to get value from metric (handles both old number format and new object format)
+  const getMetricValue = (metric) => {
+    if (typeof metric === 'object' && metric !== null) {
+      return metric.value || 0;
+    }
+    return Number(metric || 0);
+  };
+
+  // Helper to get training ID from metric
+  const getMetricTrainingId = (metric) => {
+    if (typeof metric === 'object' && metric !== null) {
+      return metric.trainingId || null;
+    }
+    return null;
+  };
+
+  // Helper to get training type from metric
+  const getMetricTrainingType = (metric) => {
+    if (typeof metric === 'object' && metric !== null) {
+      return metric.trainingType || null;
+    }
+    return null;
+  };
+
+  // Helper to get strava ID from metric
+  const getMetricStravaId = (metric) => {
+    if (typeof metric === 'object' && metric !== null) {
+      return metric.stravaId || null;
+    }
+    return null;
+  };
+
   // Table data
   const tableData = [
     {
       label: '5s',
       name: 'Sprint',
-      compareValue: powerMetrics.compare.sprint5s,
+      key: 'sprint5s',
+      compareValue: getMetricValue(powerMetrics.compare.sprint5s),
       allTimeValue: allTimeBest.sprint5s,
+      compareTrainingId: getMetricTrainingId(powerMetrics.compare.sprint5s),
+      compareTrainingType: getMetricTrainingType(powerMetrics.compare.sprint5s),
+      compareStravaId: getMetricStravaId(powerMetrics.compare.sprint5s),
+      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.sprint5s),
+      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.sprint5s),
+      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.sprint5s),
       percentage: allTimeBest.sprint5s > 0 
-        ? Math.round((powerMetrics.compare.sprint5s / allTimeBest.sprint5s) * 100)
+        ? Math.round((getMetricValue(powerMetrics.compare.sprint5s) / allTimeBest.sprint5s) * 100)
         : 0
     },
     {
       label: '1min',
       name: 'Attack',
-      compareValue: powerMetrics.compare.attack1min,
+      key: 'attack1min',
+      compareValue: getMetricValue(powerMetrics.compare.attack1min),
       allTimeValue: allTimeBest.attack1min,
+      compareTrainingId: getMetricTrainingId(powerMetrics.compare.attack1min),
+      compareTrainingType: getMetricTrainingType(powerMetrics.compare.attack1min),
+      compareStravaId: getMetricStravaId(powerMetrics.compare.attack1min),
+      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.attack1min),
+      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.attack1min),
+      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.attack1min),
       percentage: allTimeBest.attack1min > 0
-        ? Math.round((powerMetrics.compare.attack1min / allTimeBest.attack1min) * 100)
+        ? Math.round((getMetricValue(powerMetrics.compare.attack1min) / allTimeBest.attack1min) * 100)
         : 0
     },
     {
       label: '5min',
       name: 'VO2 Max',
-      compareValue: powerMetrics.compare.vo2max5min,
+      key: 'vo2max5min',
+      compareValue: getMetricValue(powerMetrics.compare.vo2max5min),
       allTimeValue: allTimeBest.vo2max5min,
+      compareTrainingId: getMetricTrainingId(powerMetrics.compare.vo2max5min),
+      compareTrainingType: getMetricTrainingType(powerMetrics.compare.vo2max5min),
+      compareStravaId: getMetricStravaId(powerMetrics.compare.vo2max5min),
+      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.vo2max5min),
+      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.vo2max5min),
+      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.vo2max5min),
       percentage: allTimeBest.vo2max5min > 0
-        ? Math.round((powerMetrics.compare.vo2max5min / allTimeBest.vo2max5min) * 100)
+        ? Math.round((getMetricValue(powerMetrics.compare.vo2max5min) / allTimeBest.vo2max5min) * 100)
         : 0
     },
     {
       label: '20min',
       name: 'Threshold',
-      compareValue: powerMetrics.compare.threshold20min,
+      key: 'threshold20min',
+      compareValue: getMetricValue(powerMetrics.compare.threshold20min),
       allTimeValue: allTimeBest.threshold20min,
+      compareTrainingId: getMetricTrainingId(powerMetrics.compare.threshold20min),
+      compareTrainingType: getMetricTrainingType(powerMetrics.compare.threshold20min),
+      compareStravaId: getMetricStravaId(powerMetrics.compare.threshold20min),
+      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.threshold20min),
+      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.threshold20min),
+      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.threshold20min),
       percentage: allTimeBest.threshold20min > 0
-        ? Math.round((powerMetrics.compare.threshold20min / allTimeBest.threshold20min) * 100)
+        ? Math.round((getMetricValue(powerMetrics.compare.threshold20min) / allTimeBest.threshold20min) * 100)
         : 0
     },
     {
       label: '60min',
       name: 'Endurance',
-      compareValue: powerMetrics.compare.endurance60min,
+      key: 'endurance60min',
+      compareValue: getMetricValue(powerMetrics.compare.endurance60min),
       allTimeValue: allTimeBest.endurance60min,
+      compareTrainingId: getMetricTrainingId(powerMetrics.compare.endurance60min),
+      compareTrainingType: getMetricTrainingType(powerMetrics.compare.endurance60min),
+      compareStravaId: getMetricStravaId(powerMetrics.compare.endurance60min),
+      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.endurance60min),
+      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.endurance60min),
+      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.endurance60min),
       percentage: allTimeBest.endurance60min > 0
-        ? Math.round((powerMetrics.compare.endurance60min / allTimeBest.endurance60min) * 100)
+        ? Math.round((getMetricValue(powerMetrics.compare.endurance60min) / allTimeBest.endurance60min) * 100)
         : 0
     }
   ];
@@ -708,18 +783,70 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                       const improvement = row.improvement;
                       const pr = row.pr;
                       
+                      // Helper to navigate to training
+                      const handleTrainingClick = (trainingId, trainingType, stravaId) => {
+                        if (!trainingId && !stravaId) return;
+                        
+                        if (stravaId) {
+                          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                        } else if (trainingType === 'fit' && trainingId) {
+                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}`);
+                        } else if (trainingType === 'strava' && trainingId) {
+                          navigate(`/training-calendar/${encodeURIComponent(`strava-${trainingId}`)}`);
+                        } else if (trainingId) {
+                          // Default to fit training
+                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}`);
+                        }
+                      };
+                      
                       return (
                         <tr key={index} className="border-b border-white/10">
                           <td className="py-2 px-2 text-gray-700 font-medium">{row.label} ({row.name})</td>
                           {comparePeriod !== 'alltime' && (
                             <>
-                              <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.compareValue} W</td>
-                              <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.allTimeValue} W</td>
+                              <td className="text-right py-2 px-2">
+                                {(row.compareTrainingId || row.compareStravaId) ? (
+                                  <button
+                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId)}
+                                    className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
+                                    title="Click to view training"
+                                  >
+                                    {row.compareValue} W
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-900 font-semibold">{row.compareValue} W</span>
+                                )}
+                              </td>
+                              <td className="text-right py-2 px-2">
+                                {(row.allTimeTrainingId || row.allTimeStravaId) ? (
+                                  <button
+                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId)}
+                                    className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
+                                    title="Click to view training"
+                                  >
+                                    {row.allTimeValue} W
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-900 font-semibold">{row.allTimeValue} W</span>
+                                )}
+                              </td>
                               <td className="text-right py-2 px-2 text-gray-600">{row.percentage}%</td>
                             </>
                           )}
                           {comparePeriod === 'alltime' && (
-                            <td className="text-right py-2 px-2 text-gray-900 font-semibold">{row.allTimeValue} W</td>
+                            <td className="text-right py-2 px-2">
+                              {(row.allTimeTrainingId || row.allTimeStravaId) ? (
+                                <button
+                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId)}
+                                  className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
+                                  title="Click to view training"
+                                >
+                                  {row.allTimeValue} W
+                                </button>
+                              ) : (
+                                <span className="text-gray-900 font-semibold">{row.allTimeValue} W</span>
+                              )}
+                            </td>
                           )}
                           <td className="py-2 px-2 text-gray-600">
                             <div className="space-y-1">
