@@ -784,18 +784,20 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                       const pr = row.pr;
                       
                       // Helper to navigate to training
-                      const handleTrainingClick = (trainingId, trainingType, stravaId) => {
+                      const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey) => {
                         if (!trainingId && !stravaId) return;
                         
+                        const metricParam = metricKey ? `?highlightMetric=${encodeURIComponent(metricKey)}` : '';
+                        
                         if (stravaId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
                         } else if (trainingType === 'fit' && trainingId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}`);
+                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
                         } else if (trainingType === 'strava' && trainingId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`strava-${trainingId}`)}`);
+                          navigate(`/training-calendar/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
                         } else if (trainingId) {
                           // Default to fit training
-                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}`);
+                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
                         }
                       };
                       
@@ -807,7 +809,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                               <td className="text-right py-2 px-2">
                                 {(row.compareTrainingId || row.compareStravaId) ? (
                                   <button
-                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId)}
+                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId, row.key)}
                                     className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                     title="Click to view training"
                                   >
@@ -820,7 +822,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                               <td className="text-right py-2 px-2">
                                 {(row.allTimeTrainingId || row.allTimeStravaId) ? (
                                   <button
-                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId)}
+                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key)}
                                     className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                     title="Click to view training"
                                   >
@@ -837,7 +839,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                             <td className="text-right py-2 px-2">
                               {(row.allTimeTrainingId || row.allTimeStravaId) ? (
                                 <button
-                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId)}
+                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key)}
                                   className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                   title="Click to view training"
                                 >

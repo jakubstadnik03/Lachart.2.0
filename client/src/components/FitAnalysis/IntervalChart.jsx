@@ -7,11 +7,11 @@ import { formatDistance } from '../../utils/unitsConverter';
 // 20:00/km threshold => 1200 seconds per km.
 const RUN_PAUSE_PACE_SECONDS = 20 * 60;
 
-const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
+const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null, selectedLapNumber = null, onSelectLapNumber = null, highlightMetric = null }) => {
   const { user: authUser } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hoveredBar, setHoveredBar] = useState(null);
-  const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile
+  const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile / external highlight
   const chartContainerRef = useRef(null);
   const barRefs = useRef({});
   const lastTouchAtRef = useRef(0);
@@ -312,6 +312,67 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     return { bars, maxValue, minValue, totalDistance, groups };
   }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem]);
 
+  // Auto-highlight best bar when coming from Power Radar / SpiderChart
+  useEffect(() => {
+    if (!highlightMetric || !chartData || !chartData.bars || chartData.bars.length === 0) return;
+
+    const { bars } = chartData;
+    let bestIndex = null;
+    let bestScore = -Infinity;
+
+    bars.forEach((bar, index) => {
+      const lap = bar.lap || {};
+      const avgWatts = Number(lap.average_watts || lap.avgPower || 0);
+      const durationSec = Number(lap.elapsed_time || lap.moving_time || lap.totalElapsedTime || 0);
+
+      if (!avgWatts || avgWatts <= 0) return;
+
+      // Base score = avg power
+      let score = avgWatts;
+
+      // Lightly weight by duration depending on metric key
+      if (highlightMetric === 'sprint5s') {
+        // prefer short sprints
+        const durPenalty = durationSec > 30 ? durationSec / 30 : 1;
+        score = avgWatts / durPenalty;
+      } else if (highlightMetric === 'attack1min') {
+        const target = 60;
+        const diff = Math.abs(durationSec - target);
+        const durFactor = Math.max(0.5, 1 - diff / 60);
+        score = avgWatts * durFactor;
+      } else if (highlightMetric === 'vo2max5min') {
+        const target = 300;
+        const diff = Math.abs(durationSec - target);
+        const durFactor = Math.max(0.5, 1 - diff / 180);
+        score = avgWatts * durFactor;
+      } else if (highlightMetric === 'threshold20min') {
+        const target = 1200;
+        const diff = Math.abs(durationSec - target);
+        const durFactor = Math.max(0.5, 1 - diff / 600);
+        score = avgWatts * durFactor;
+      } else if (highlightMetric === 'endurance60min') {
+        const target = 3600;
+        const diff = Math.abs(durationSec - target);
+        const durFactor = Math.max(0.5, 1 - diff / 1200);
+        score = avgWatts * durFactor;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+
+    if (bestIndex !== null) {
+      setClickedBarIndex(bestIndex);
+      const bestBar = chartData.bars[bestIndex];
+      setHoveredBar({ bar: bestBar, index: bestIndex, widthPercent: chartData.totalDistance > 0 ? (bestBar.distance / chartData.totalDistance * 100) : 0 });
+      if (onSelectLapNumber && bestBar?.lapNumber) {
+        onSelectLapNumber(bestBar.lapNumber);
+      }
+    }
+  }, [highlightMetric, chartData, onSelectLapNumber]);
+
   // If parent selects a lap (e.g., click in LapsTable), highlight it here
   useEffect(() => {
     if (!selectedLapNumber) return;
@@ -494,7 +555,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const { labels: yAxisLabels, adjustedMinValue, adjustedMaxValue, reversed } = getYAxisLabels();
 
   return (
-    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow-hidden`}>
+    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow`}>
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-2 mb-2 sm:mb-4`}>
         <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold text-gray-900`}>Activity Intervals</h3>
         <div className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'flex-wrap' : ''}`}>
@@ -742,11 +803,15 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         {/* Tooltip positioned above the bar */}
         {(hoveredBar || clickedBarIndex !== null) && (() => {
           // Use clicked bar if available, otherwise use hovered bar
-          const activeBar = clickedBarIndex !== null 
-            ? { bar: bars[clickedBarIndex], index: clickedBarIndex, widthPercent: bars[clickedBarIndex] ? (bars[clickedBarIndex].distance / totalDistance * 100) : 0 }
-            : hoveredBar;
+          let activeBar = null;
+          if (clickedBarIndex !== null && Array.isArray(chartData?.bars) && chartData.bars[clickedBarIndex]) {
+            const bar = chartData.bars[clickedBarIndex];
+            activeBar = { bar, index: clickedBarIndex, widthPercent: chartData.totalDistance > 0 ? (bar.distance / chartData.totalDistance * 100) : 0 };
+          } else {
+            activeBar = hoveredBar;
+          }
           
-          if (!activeBar) return null;
+          if (!activeBar || !activeBar.bar) return null;
           const bar = activeBar.bar;
           // Calculate speed based on unit system
           const speedMps = bar.lap.average_speed || (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) || 0;

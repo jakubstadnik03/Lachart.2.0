@@ -71,7 +71,7 @@ const formatPace = (seconds, unitSystem, isSwim = false) => {
 };
 
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null }) => {
   const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
@@ -89,6 +89,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
   const [zoomRange, setZoomRange] = useState({ min: 0, max: 1 }); // 0-1 range of distance to show
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [highlightWindow, setHighlightWindow] = useState(null); // { startDistance, endDistance }
+  const [highlightSummary, setHighlightSummary] = useState(null); // aggregated metrics for highlighted window
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   
@@ -240,6 +242,156 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
       minAltitude
     };
   }, [chartData, smoothing]);
+
+  // When coming from Power Radar (highlightMetric), auto-zoom to the best window and keep tooltip there
+  useEffect(() => {
+    if (!highlightMetric || !processedData || !processedData.points || processedData.points.length === 0) {
+      setHighlightWindow(null);
+      setHighlightSummary(null);
+      return;
+    }
+    if (!processedData.maxPower || processedData.maxPower <= 0) {
+      setHighlightWindow(null);
+      setHighlightSummary(null);
+      return;
+    }
+
+    // Map metric key to target duration in seconds
+    const metricDurations = {
+      sprint5s: 5,
+      attack1min: 60,
+      vo2max5min: 300,
+      threshold20min: 1200,
+      endurance60min: 3600,
+    };
+    const targetDuration = metricDurations[highlightMetric];
+    if (!targetDuration) return;
+
+    const points = processedData.points;
+    if (points.length < 2) return;
+
+    // Sliding window on distance/time series to find best average power over targetDuration
+    let best = { avg: 0, startIndex: 0, endIndex: 0 };
+    let sum = 0;
+    let count = 0;
+    let start = 0;
+
+    for (let end = 0; end < points.length; end++) {
+      const pEnd = points[end];
+      const power = pEnd.power || 0;
+      const tEnd = pEnd.time;
+
+      sum += power;
+      count++;
+
+      while (start < end && (tEnd - points[start].time) > targetDuration) {
+        sum -= (points[start].power || 0);
+        count--;
+        start++;
+      }
+
+      if (count > 0) {
+        const windowDuration = tEnd - points[start].time;
+        if (windowDuration >= targetDuration * 0.8) {
+          const avg = sum / count;
+          if (avg > best.avg) {
+            best = { avg, startIndex: start, endIndex: end };
+          }
+        }
+      }
+    }
+
+    if (best.endIndex <= best.startIndex) return;
+
+    const startPoint = points[best.startIndex];
+    const endPoint = points[best.endIndex];
+    const maxDistance = processedData.maxDistance || endPoint.distance || 0;
+    if (!maxDistance) {
+      setHighlightWindow(null);
+      setHighlightSummary(null);
+      return;
+    }
+
+    // Compute zoom range around this window with a bit of padding
+    const startRatio = Math.max(0, (startPoint.distance / maxDistance) - 0.05);
+    const endRatio = Math.min(1, (endPoint.distance / maxDistance) + 0.05);
+    if (endRatio <= startRatio) return;
+
+    setZoomRange({ min: startRatio, max: endRatio });
+
+    // Store window distances for visual highlight
+    setHighlightWindow({
+      startDistance: startPoint.distance,
+      endDistance: endPoint.distance
+    });
+
+    // Compute summary metrics inside this window (avg power, HR, cadence, speed, duration, distance)
+    let sumPower = 0;
+    let countPower = 0;
+    let sumHr = 0;
+    let countHr = 0;
+    let sumCadence = 0;
+    let countCadence = 0;
+    let sumSpeed = 0;
+    let countSpeed = 0;
+
+    for (let i = best.startIndex; i <= best.endIndex; i++) {
+      const p = points[i];
+      const pPower = Number(p.power || 0);
+      const pHr = Number(p.heartRate || 0);
+      const pCad = p.cadence != null ? Number(p.cadence) : null;
+      const pSpeed = Number(p.speed || 0);
+
+      if (pPower > 0) {
+        sumPower += pPower;
+        countPower++;
+      }
+      if (pHr > 0) {
+        sumHr += pHr;
+        countHr++;
+      }
+      if (pCad != null) {
+        sumCadence += pCad;
+        countCadence++;
+      }
+      if (pSpeed > 0) {
+        sumSpeed += pSpeed;
+        countSpeed++;
+      }
+    }
+
+    const durationSec = endPoint.time - startPoint.time;
+    const distanceKm = Math.max(0, endPoint.distance - startPoint.distance);
+
+    const avgPower = countPower > 0 ? sumPower / countPower : null;
+    const avgHr = countHr > 0 ? sumHr / countHr : null;
+    const avgCadence = countCadence > 0 ? sumCadence / countCadence : null;
+    const avgSpeedKmh = countSpeed > 0 ? sumSpeed / countSpeed : null;
+
+    // Human-friendly label for the metric
+    const metricLabels = {
+      sprint5s: 'Best 5s sprint window',
+      attack1min: 'Best 1min attack window',
+      vo2max5min: 'Best 5min VO₂max window',
+      threshold20min: 'Best 20min threshold window',
+      endurance60min: 'Best 60min endurance window'
+    };
+
+    setHighlightSummary({
+      label: metricLabels[highlightMetric] || 'Highlighted window',
+      durationSec,
+      distanceKm,
+      avgPower,
+      avgHr,
+      avgCadence,
+      avgSpeedKmh
+    });
+
+    // Also set hoveredPoint so tooltip immediately shows at window end
+    const midIndex = Math.round((best.startIndex + best.endIndex) / 2);
+    const midPoint = points[midIndex] || endPoint;
+    setHoveredPoint(midPoint);
+  }, [highlightMetric, processedData]);
 
   // Check if training has elevation data and set showElevation default
   useEffect(() => {
@@ -724,7 +876,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
   }
 
   return (
-    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-4'} shadow-lg overflow-hidden`}>
+    <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-4'} shadow-lg `}>
       {/* Header with Legend and Smoothness Control */}
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} mb-2 sm:mb-4 flex-wrap gap-2 sm:gap-4`}>
         {/* Legend with toggle buttons */}
@@ -814,6 +966,58 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
           )}
         </div>
       </div>
+
+      {/* Highlighted window summary (from Power Radar) */}
+      {highlightSummary && (
+        <div className={`mb-2 sm:mb-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2 ${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-700 flex flex-wrap gap-x-4 gap-y-1`}>
+          <span className="font-semibold text-blue-800">
+            {highlightSummary.label}
+          </span>
+          <span>
+            Duration: <span className="font-medium">{formatDuration(highlightSummary.durationSec)}</span>
+          </span>
+          <span>
+            Distance:{' '}
+            <span className="font-medium">
+              {formatDistance((highlightSummary.distanceKm || 0) * 1000, unitSystem).formatted}
+            </span>
+          </span>
+          {highlightSummary.avgPower && (
+            <span>
+              Avg Power:{' '}
+              <span className="font-medium text-purple-700">
+                {Math.round(highlightSummary.avgPower)} W
+              </span>
+            </span>
+          )}
+          {highlightSummary.avgHr && (
+            <span>
+              Avg HR:{' '}
+              <span className="font-medium text-red-600">
+                {Math.round(highlightSummary.avgHr)} bpm
+              </span>
+            </span>
+          )}
+          {highlightSummary.avgSpeedKmh && (
+            <span>
+              Avg Speed:{' '}
+              <span className="font-medium text-teal-700">
+                {unitSystem === 'imperial'
+                  ? `${(highlightSummary.avgSpeedKmh * 0.621371).toFixed(1)} mph`
+                  : `${highlightSummary.avgSpeedKmh.toFixed(1)} km/h`}
+              </span>
+            </span>
+          )}
+          {highlightSummary.avgCadence != null && (
+            <span>
+              Avg Cadence:{' '}
+              <span className="font-medium">
+                {Math.round(highlightSummary.avgCadence)} rpm
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Chart */}
       <div
@@ -910,6 +1114,24 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user }) => {
               />
             );
           })}
+
+          {/* Highlighted window band (if available) */}
+          {highlightWindow && processedData && (() => {
+            const xStart = xScale(highlightWindow.startDistance);
+            const xEnd = xScale(highlightWindow.endDistance);
+            if (xStart == null || xEnd == null) return null;
+            const x = Math.min(xStart, xEnd);
+            const width = Math.abs(xEnd - xStart);
+            return (
+              <rect
+                x={x}
+                y={padding.top}
+                width={width}
+                height={graphHeight}
+                fill="rgba(191, 219, 254, 0.35)" // blue-200 with some transparency
+              />
+            );
+          })()}
 
           {/* X-axis grid lines with zoom support */}
           {Array.from({ length: 11 }).map((_, i) => {

@@ -422,7 +422,7 @@ api.get = (url, config = {}) => {
     .then((resp) => {
       // Only cache successful responses (status 200-299)
       if (resp && resp.status >= 200 && resp.status < 300) {
-      __getCache.set(key, { expiresAt: now + ttl, response: resp });
+        __getCache.set(key, { expiresAt: now + ttl, response: resp });
       }
       // Track timing for monitoring
       if (resp.config) {

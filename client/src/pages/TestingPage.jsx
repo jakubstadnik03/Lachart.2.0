@@ -640,13 +640,13 @@ const TestingPage = () => {
 
       {/* Lactate Test Advisor */}
       {showRecommendations && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          transition={{ delay: 0.2 }}
-          className="w-full mb-3 sm:mb-6"
-        >
+        transition={{ delay: 0.2 }}
+        className="w-full mb-3 sm:mb-6"
+      >
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4 md:p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -853,7 +853,7 @@ const TestingPage = () => {
           </div>
           </div>
         </motion.div>
-      )}
+        )}
 
       <AnimatePresence>
         {showNewTesting && (

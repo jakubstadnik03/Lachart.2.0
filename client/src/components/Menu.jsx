@@ -57,7 +57,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
       // Use setTimeout to ensure menu closes after navigation
       const timer = setTimeout(() => {
-        setIsMenuOpen(false);
+      setIsMenuOpen(false);
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -170,7 +170,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       // AuthProvider.logout už řeší volání API i přesměrování
       await logout();
       if (typeof setIsMenuOpen === 'function') {
-        setIsMenuOpen(false);
+      setIsMenuOpen(false);
       }
     } catch (error) {
       console.error('Logout error:', error);
@@ -335,8 +335,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               ].map((item) => (
                 <li
                   key={item.name}
-                >
-                  <NavLink
+              >
+                <NavLink
                     to={item.path}
                     onClick={handleMenuItemClick}
                     className={({ isActive }) => {
@@ -363,14 +363,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                           : 'text-gray-700 hover:bg-gray-100'
                       }`;
                     }}
-                  >
-                    <img
+                >
+                  <img
                       src={item.icon}
                       alt={item.name}
-                      className="w-5 h-5 mr-3"
-                    />
+                    className="w-5 h-5 mr-3"
+                  />
                     {item.name}
-                  </NavLink>
+                </NavLink>
                 </li>
               ))}
             </ul>

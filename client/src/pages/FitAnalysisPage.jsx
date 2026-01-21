@@ -756,6 +756,7 @@ const FitAnalysisPage = () => {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [highlightMetric, setHighlightMetric] = useState(null);
   
   // Detect mobile
   useEffect(() => {
@@ -765,6 +766,13 @@ const FitAnalysisPage = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Read highlightMetric from query string (e.g. coming from Power Radar / SpiderChart)
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const metric = searchParams.get('highlightMetric');
+    setHighlightMetric(metric || null);
+  }, [location.search]);
 
   // Reset selected lap when training changes
   useEffect(() => {
@@ -2643,6 +2651,8 @@ const FitAnalysisPage = () => {
                           onLeave={() => {
                             // Optional: handle leave events
                           }}
+                          user={user}
+                          highlightMetric={highlightMetric}
                         />
                         </div>
                       </div>
@@ -3411,6 +3421,7 @@ const FitAnalysisPage = () => {
                         user={user}
                         selectedLapNumber={selectedLapNumber}
                         onSelectLapNumber={setSelectedLapNumber}
+                        highlightMetric={highlightMetric}
                       />
                     </div>
                   )}
@@ -4048,6 +4059,8 @@ const FitAnalysisPage = () => {
                         onLeave={() => {
                           // Optional: handle leave events
                         }}
+                        user={user}
+                        highlightMetric={highlightMetric}
                       />
                       </div>
                     </div>
@@ -4230,6 +4243,7 @@ const FitAnalysisPage = () => {
                           sport={selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || 'cycling'}
                           records={trainingRecords || []}
                           user={user}
+                          highlightMetric={highlightMetric}
                       />
                       </div>
                     ) : null}

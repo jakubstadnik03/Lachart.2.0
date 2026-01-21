@@ -10,7 +10,7 @@ class TrainingDao {
   async findByAthleteId(athleteId) {
     try {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Finding trainings for athlete:', athleteId);
+      console.log('Finding trainings for athlete:', athleteId);
       }
       // Convert ObjectId to string since athleteId is stored as String in the schema
       const athleteIdStr = athleteId instanceof mongoose.Types.ObjectId ? athleteId.toString() : String(athleteId);
@@ -18,7 +18,7 @@ class TrainingDao {
         .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
         .lean();
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Found trainings:', trainings.length);
+      console.log('Found trainings:', trainings.length);
       }
       return trainings;
     } catch (error) {
@@ -30,7 +30,7 @@ class TrainingDao {
   async findByAthleteIds(athleteIds) {
     try {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Finding trainings for athletes:', athleteIds);
+      console.log('Finding trainings for athletes:', athleteIds);
       }
       
       // If no athlete IDs provided, return empty array
@@ -47,7 +47,7 @@ class TrainingDao {
         .select('athleteId sport title date duration intensity results category specifics comments unitSystem inputMode sourceFitTrainingId sourceStravaActivityId')
         .lean();
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Found trainings:', trainings.length);
+      console.log('Found trainings:', trainings.length);
       }
       return trainings;
     } catch (error) {
@@ -59,21 +59,21 @@ class TrainingDao {
   async createTraining(trainingData) {
     try {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Creating training with data:', JSON.stringify(trainingData, null, 2));
+      console.log('Creating training with data:', JSON.stringify(trainingData, null, 2));
       }
       
       // Validace dat
       this.validateTrainingData(trainingData);
       
       if (process.env.NODE_ENV !== 'production') {
-        console.log('After validation:', JSON.stringify(trainingData, null, 2));
+      console.log('After validation:', JSON.stringify(trainingData, null, 2));
       }
       
       const training = new this.Training(trainingData);
       const savedTraining = await training.save();
       
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Saved training:', JSON.stringify(savedTraining, null, 2));
+      console.log('Saved training:', JSON.stringify(savedTraining, null, 2));
       }
       
       return savedTraining;
@@ -116,13 +116,13 @@ class TrainingDao {
   async findByTitle(title, userId) {
     try {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Finding trainings with title:', title, 'for user:', userId);
+      console.log('Finding trainings with title:', title, 'for user:', userId);
       }
       
       // Normalize the search title by removing spaces and special characters
       const normalizedSearchTitle = title.replace(/[\s-:]/g, '').toLowerCase();
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Normalized search title:', normalizedSearchTitle);
+      console.log('Normalized search title:', normalizedSearchTitle);
       }
       
       // Convert ObjectId to string since athleteId is stored as String in the schema
@@ -135,26 +135,26 @@ class TrainingDao {
       .lean();
       
       if (process.env.NODE_ENV !== 'production') {
-        console.log('All trainings found:', trainings.length);
-        console.log('Training titles:', trainings.map(t => t.title));
+      console.log('All trainings found:', trainings.length);
+      console.log('Training titles:', trainings.map(t => t.title));
       }
       
       // Filter trainings by comparing normalized titles
       const filteredTrainings = trainings.filter(training => {
         const normalizedTrainingTitle = training.title.replace(/[\s-:]/g, '').toLowerCase();
         if (process.env.NODE_ENV !== 'production') {
-          console.log('Comparing:', {
-            original: training.title,
-            normalized: normalizedTrainingTitle,
-            searchTitle: normalizedSearchTitle,
-            matches: normalizedTrainingTitle === normalizedSearchTitle
-          });
+        console.log('Comparing:', {
+          original: training.title,
+          normalized: normalizedTrainingTitle,
+          searchTitle: normalizedSearchTitle,
+          matches: normalizedTrainingTitle === normalizedSearchTitle
+        });
         }
         return normalizedTrainingTitle === normalizedSearchTitle;
       });
       
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Filtered trainings:', filteredTrainings.length);
+      console.log('Filtered trainings:', filteredTrainings.length);
       }
       return filteredTrainings;
     } catch (error) {
