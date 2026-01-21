@@ -351,122 +351,23 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
 
 // POST /api/integrations/strava/auto-sync (automatic sync for new activities only)
 router.post('/strava/auto-sync', verifyToken, async (req, res) => {
-  let imported = 0;
-  let updated = 0;
-  
   try {
     const user = await User.findById(req.user.userId);
     if (!user || !user.strava?.accessToken) {
       return res.status(400).json({ error: 'Strava not connected' });
     }
 
-    // Check if auto-sync is enabled
-    if (!user.strava?.autoSync) {
-      return res.json({ imported: 0, updated: 0, message: 'Auto-sync is disabled' });
+    // Use the service function
+    const { syncStravaForUser } = require('../services/stravaAutoSyncService');
+    const result = await syncStravaForUser(user);
+    
+    if (result.error && result.error !== 'Auto-sync is disabled') {
+      return res.status(401).json({ error: result.error });
     }
     
-    const token = await getValidStravaToken(user);
-    if (!token) {
-      return res.status(401).json({ error: 'Invalid Strava token' });
-    }
-    
-    // Use lastSyncDate if available, otherwise sync last 7 days
-    let since = null;
-    if (user.strava?.lastSyncDate) {
-      since = user.strava.lastSyncDate;
-    } else {
-      // First time sync - only get last 7 days to avoid long sync
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      since = sevenDaysAgo;
-    }
-    
-    const per_page = 100;
-    let page = 1;
-    const maxPages = 10; // Limit to 10 pages for auto-sync (1000 activities max)
-    
-    const params = { per_page };
-    if (since) {
-      params.after = new Date(since).getTime() / 1000;
-    }
-    
-    const delayBetweenRequests = 2000;
-    
-    console.log(`Starting Strava auto-sync for user ${user._id}, since: ${since}`);
-    
-    while (page <= maxPages) {
-      try {
-        const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { ...params, page },
-          timeout: 30000
-        });
-        
-        const arr = resp.data || [];
-        
-        if (arr.length === 0) {
-          break;
-        }
-        
-        for (const a of arr) {
-          try {
-            const doc = {
-              userId: user._id.toString(),
-              stravaId: a.id,
-              name: a.name || 'Untitled Activity',
-              sport: a.sport_type || a.type || 'Ride',
-              startDate: new Date(a.start_date_local || a.start_date),
-              elapsedTime: a.elapsed_time || 0,
-              movingTime: a.moving_time || 0,
-              distance: a.distance || 0,
-              averageSpeed: a.average_speed || null,
-              averageHeartRate: a.average_heartrate || null,
-              averagePower: a.average_watts || null,
-              raw: a
-            };
-            
-            const resUp = await StravaActivity.updateOne(
-              { userId: user._id, stravaId: a.id },
-              { $set: doc },
-              { upsert: true }
-            );
-            
-            if (resUp.upsertedCount > 0) imported += 1;
-            else if (resUp.modifiedCount > 0) updated += 1;
-          } catch (dbErr) {
-            console.error(`Error saving activity ${a.id}:`, dbErr.message);
-          }
-        }
-        
-        if (arr.length < per_page) {
-          break;
-        }
-        
-        page += 1;
-        if (page <= maxPages) {
-          await delay(delayBetweenRequests);
-        }
-      } catch (pageErr) {
-        if (pageErr.response?.status === 429) {
-          console.log('Rate limit hit during auto-sync, stopping');
-          break;
-        }
-        throw pageErr;
-      }
-    }
-    
-    // Update last sync date
-    if (imported > 0 || updated > 0) {
-      await User.findByIdAndUpdate(user._id, {
-        'strava.lastSyncDate': new Date()
-      });
-    }
-    
-    console.log(`Auto-sync completed: ${imported} imported, ${updated} updated`);
-    res.json({ imported, updated });
+    res.json({ imported: result.imported, updated: result.updated, message: result.message });
   } catch (error) {
     console.error('Strava auto-sync error:', error);
-    // Don't return error for auto-sync - just log it
     res.json({ imported: 0, updated: 0, error: error.message });
   }
 });

@@ -164,6 +164,7 @@ const lactateSessionRoutes = require("./routes/lactateSessionRoutes");
 const integrationsRoutes = require("./routes/integrationsRoutes");
 const workoutClusteringRoutes = require("./routes/workoutClusteringRoutes");
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
+const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 
 // Routes
 app.use("/test", testRoutes);
@@ -178,6 +179,9 @@ app.use("/api/workout-clustering", workoutClusteringRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();
+
+// Strava auto-sync scheduler (periodic sync for all users with auto-sync enabled)
+startStravaAutoSyncScheduler();
 
 // Simple trainer test API (demo - no auth required)
 // In-memory storage for demo purposes
