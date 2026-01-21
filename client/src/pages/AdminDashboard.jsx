@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -19,10 +19,15 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
+  const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
   const [chartTimeRange, setChartTimeRange] = useState(30); // days
   const [chartGroupBy, setChartGroupBy] = useState('day'); // 'day' or 'week'
+  const [marketingEmailType, setMarketingEmailType] = useState('thankYou'); // 'thankYou', 'reactivation', or 'featureAnnouncement'
+  const [marketingFilter, setMarketingFilter] = useState('all'); // 'all', 'notSent', 'sent', 'recommended'
+  const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
+  const [bulkSending, setBulkSending] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -91,6 +96,21 @@ const AdminDashboard = () => {
       console.error('Thank you email error:', err);
     } finally {
       setThankYouEmailLoadingUserId(null);
+    }
+  };
+
+  const handleSendFeatureAnnouncementEmail = async (targetUser) => {
+    try {
+      setFeatureAnnouncementEmailLoadingUserId(targetUser._id);
+      await sendFeatureAnnouncementEmail(targetUser._id);
+      addNotification(`Feature announcement email sent to ${targetUser.email}`, 'success');
+      fetchData(); // Refresh data to show updated tracking info
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send feature announcement email';
+      addNotification(message, 'error');
+      console.error('Feature announcement email error:', err);
+    } finally {
+      setFeatureAnnouncementEmailLoadingUserId(null);
     }
   };
 
@@ -207,6 +227,223 @@ const AdminDashboard = () => {
     return filtered.slice(0, usersLimit);
   }, [users, searchQuery, usersLimit]);
 
+  // Marketing users with recommendations
+  const marketingUsers = useMemo(() => {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    return users
+      .filter(user => {
+        // Only include users with email and email notifications enabled
+        if (!user.email) return false;
+        if (user.notifications?.emailNotifications === false) return false;
+        return true;
+      })
+      .map(user => {
+        const lastLogin = user.lastLogin ? new Date(user.lastLogin) : null;
+        const daysSinceLogin = lastLogin ? Math.floor((now - lastLogin) / (1000 * 60 * 60 * 24)) : null;
+        
+        // Add activity indicators (needed for feature announcement scoring)
+        const hasTests = (user.testCount || 0) > 0;
+        const hasTrainings = (user.trainingCount || 0) > 0;
+        const isActive = hasTests || hasTrainings;
+        
+        // For thank you email
+        const thankYouSent = user.thankYouEmail?.sent || false;
+        const thankYouLastSent = user.thankYouEmail?.lastSent ? new Date(user.thankYouEmail.lastSent) : null;
+        const daysSinceThankYou = thankYouLastSent ? Math.floor((now - thankYouLastSent) / (1000 * 60 * 60 * 24)) : null;
+        
+        // Calculate recommendation score for thank you email
+        let thankYouScore = 0;
+        let thankYouReason = '';
+        if (!thankYouSent) {
+          thankYouScore = 100; // Highest priority - never sent
+          thankYouReason = 'Never sent';
+        } else if (daysSinceThankYou && daysSinceThankYou > 90) {
+          thankYouScore = 80; // High priority - sent long time ago
+          thankYouReason = `Sent ${daysSinceThankYou} days ago`;
+        } else if (daysSinceThankYou && daysSinceThankYou > 30) {
+          thankYouScore = 50; // Medium priority
+          thankYouReason = `Sent ${daysSinceThankYou} days ago`;
+        } else {
+          thankYouScore = 10; // Low priority - recently sent
+          thankYouReason = `Sent ${daysSinceThankYou} days ago`;
+        }
+
+        // For feature announcement email
+        const featureAnnouncementSent = user.featureAnnouncementEmail?.sent || false;
+        const featureAnnouncementLastSent = user.featureAnnouncementEmail?.lastSent ? new Date(user.featureAnnouncementEmail.lastSent) : null;
+        const daysSinceFeatureAnnouncement = featureAnnouncementLastSent ? Math.floor((now - featureAnnouncementLastSent) / (1000 * 60 * 60 * 24)) : null;
+        
+        // Calculate recommendation score for feature announcement email
+        // Priority: active users who haven't received it recently
+        let featureAnnouncementScore = 0;
+        let featureAnnouncementReason = '';
+        if (!featureAnnouncementSent) {
+          // Never sent - high priority for active users
+          featureAnnouncementScore = isActive ? 90 : 60;
+          featureAnnouncementReason = isActive ? 'Never sent (active user)' : 'Never sent';
+        } else if (daysSinceFeatureAnnouncement && daysSinceFeatureAnnouncement > 60) {
+          // Sent more than 60 days ago - good time for update
+          featureAnnouncementScore = isActive ? 80 : 50;
+          featureAnnouncementReason = `Sent ${daysSinceFeatureAnnouncement} days ago`;
+        } else if (daysSinceFeatureAnnouncement && daysSinceFeatureAnnouncement > 30) {
+          // Sent 30-60 days ago - medium priority
+          featureAnnouncementScore = isActive ? 60 : 40;
+          featureAnnouncementReason = `Sent ${daysSinceFeatureAnnouncement} days ago`;
+        } else {
+          // Recently sent - low priority
+          featureAnnouncementScore = 20;
+          featureAnnouncementReason = `Sent ${daysSinceFeatureAnnouncement} days ago`;
+        }
+
+        // Calculate recommendation score for reactivation email
+        let reactivationScore = 0;
+        let reactivationReason = '';
+        if (!lastLogin) {
+          reactivationScore = 100; // Highest priority - never logged in
+          reactivationReason = 'Never logged in';
+        } else if (lastLogin < ninetyDaysAgo) {
+          reactivationScore = 90; // Very high priority - inactive for 90+ days
+          reactivationReason = `Inactive ${daysSinceLogin} days`;
+        } else if (lastLogin < thirtyDaysAgo) {
+          reactivationScore = 70; // High priority - inactive for 30+ days
+          reactivationReason = `Inactive ${daysSinceLogin} days`;
+        } else {
+          reactivationScore = 20; // Low priority - recently active
+          reactivationReason = `Active ${daysSinceLogin} days ago`;
+        }
+
+        return {
+          ...user,
+          daysSinceLogin,
+          thankYouSent,
+          thankYouLastSent,
+          daysSinceThankYou,
+          thankYouScore,
+          thankYouReason,
+          reactivationScore,
+          reactivationReason,
+          featureAnnouncementSent,
+          featureAnnouncementLastSent,
+          daysSinceFeatureAnnouncement,
+          featureAnnouncementScore,
+          featureAnnouncementReason,
+          hasTests,
+          hasTrainings,
+          isActive
+        };
+      })
+      .sort((a, b) => {
+        // Sort by recommendation score (highest first)
+        if (marketingEmailType === 'thankYou') {
+          return b.thankYouScore - a.thankYouScore;
+        } else if (marketingEmailType === 'reactivation') {
+          return b.reactivationScore - a.reactivationScore;
+        } else {
+          return b.featureAnnouncementScore - a.featureAnnouncementScore;
+        }
+      });
+  }, [users, marketingEmailType]);
+
+  // Filter marketing users based on selected filter
+  const filteredMarketingUsers = useMemo(() => {
+    let filtered = marketingUsers;
+
+    if (marketingFilter === 'notSent') {
+      if (marketingEmailType === 'thankYou') {
+        filtered = filtered.filter(u => !u.thankYouSent);
+      } else if (marketingEmailType === 'reactivation') {
+        // For reactivation, show users who haven't logged in recently
+        filtered = filtered.filter(u => !u.lastLogin || new Date(u.lastLogin) < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+      } else {
+        // For feature announcement
+        filtered = filtered.filter(u => !u.featureAnnouncementSent);
+      }
+    } else if (marketingFilter === 'sent') {
+      if (marketingEmailType === 'thankYou') {
+        filtered = filtered.filter(u => u.thankYouSent);
+      } else if (marketingEmailType === 'reactivation') {
+        // For reactivation, show users who have logged in recently
+        filtered = filtered.filter(u => u.lastLogin && new Date(u.lastLogin) >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+      } else {
+        // For feature announcement
+        filtered = filtered.filter(u => u.featureAnnouncementSent);
+      }
+    } else if (marketingFilter === 'recommended') {
+      if (marketingEmailType === 'thankYou') {
+        filtered = filtered.filter(u => u.thankYouScore >= 50);
+      } else if (marketingEmailType === 'reactivation') {
+        filtered = filtered.filter(u => u.reactivationScore >= 50);
+      } else {
+        filtered = filtered.filter(u => u.featureAnnouncementScore >= 50);
+      }
+    }
+
+    return filtered;
+  }, [marketingUsers, marketingFilter, marketingEmailType]);
+
+  const handleBulkSend = async () => {
+    if (selectedUsersForBulk.length === 0) {
+      addNotification('Please select at least one user', 'warning');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to send ${marketingEmailType === 'thankYou' ? 'thank you' : 'reactivation'} emails to ${selectedUsersForBulk.length} users?`)) {
+      return;
+    }
+
+    setBulkSending(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < selectedUsersForBulk.length; i++) {
+      const userId = selectedUsersForBulk[i];
+      try {
+        if (marketingEmailType === 'thankYou') {
+          await sendThankYouEmail(userId);
+        } else if (marketingEmailType === 'reactivation') {
+          await sendReactivationEmail(userId);
+        } else {
+          await sendFeatureAnnouncementEmail(userId);
+        }
+        successCount++;
+        
+        // Add small delay between emails to avoid overwhelming the server
+        if (i < selectedUsersForBulk.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+        }
+      } catch (err) {
+        console.error(`Failed to send email to user ${userId}:`, err);
+        failCount++;
+      }
+    }
+
+    setBulkSending(false);
+    setSelectedUsersForBulk([]);
+    addNotification(`Sent ${successCount} emails successfully${failCount > 0 ? `, ${failCount} failed` : ''}`, successCount > 0 ? 'success' : 'error');
+    fetchData(); // Refresh data
+  };
+
+  const toggleUserSelection = (userId) => {
+    setSelectedUsersForBulk(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedUsersForBulk(filteredMarketingUsers.map(u => u._id));
+  };
+
+  const clearSelection = () => {
+    setSelectedUsersForBulk([]);
+  };
+
   if (loading) return null;
   if (!user?.admin) {
     return <div className="text-center mt-12 text-xl text-red-500 font-bold">You are not authorized.</div>;
@@ -244,6 +481,7 @@ const AdminDashboard = () => {
   const tabs = [
     { id: 'overview', name: 'Overview', icon: '📊' },
     { id: 'users', name: 'Users', icon: '👥' },
+    { id: 'marketing', name: 'Marketing', icon: '📧' },
     { id: 'analytics', name: 'Analytics', icon: '📈' }
   ];
 
@@ -943,6 +1181,347 @@ const AdminDashboard = () => {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'marketing' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4 sm:space-y-6"
+          >
+            {/* Marketing Controls */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">Email Marketing</h3>
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1">Manage and send marketing emails to users</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600">Email Type:</label>
+                    <select
+                      value={marketingEmailType}
+                      onChange={(e) => {
+                        setMarketingEmailType(e.target.value);
+                        setSelectedUsersForBulk([]);
+                      }}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="thankYou">Thank You Email</option>
+                      <option value="reactivation">Reactivation Email</option>
+                      <option value="featureAnnouncement">Feature Announcement</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600">Filter:</label>
+                    <select
+                      value={marketingFilter}
+                      onChange={(e) => {
+                        setMarketingFilter(e.target.value);
+                        setSelectedUsersForBulk([]);
+                      }}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="all">All Users</option>
+                      <option value="notSent">Not Sent</option>
+                      <option value="sent">Already Sent</option>
+                      <option value="recommended">Recommended</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bulk Actions */}
+            {selectedUsersForBulk.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm sm:text-base font-semibold text-blue-900">
+                      {selectedUsersForBulk.length} user{selectedUsersForBulk.length !== 1 ? 's' : ''} selected
+                    </h4>
+                    <p className="text-xs sm:text-sm text-blue-700 mt-1">
+                      Ready to send {marketingEmailType === 'thankYou' ? 'thank you' : 'reactivation'} emails
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={selectAllFiltered}
+                      className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-md text-xs sm:text-sm hover:bg-blue-200 transition-colors"
+                    >
+                      Select All ({filteredMarketingUsers.length})
+                    </button>
+                    <button
+                      onClick={clearSelection}
+                      className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md text-xs sm:text-sm hover:bg-gray-200 transition-colors"
+                    >
+                      Clear Selection
+                    </button>
+                    <button
+                      onClick={handleBulkSend}
+                      disabled={bulkSending}
+                      className={`px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                        bulkSending
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {bulkSending ? `Sending... (${selectedUsersForBulk.length})` : `Send to ${selectedUsersForBulk.length} Users`}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Statistics */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="text-xs sm:text-sm font-medium text-gray-600">Total Eligible</div>
+                <div className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{marketingUsers.length}</div>
+                <div className="text-xs text-gray-500 mt-1">Users with email enabled</div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="text-xs sm:text-sm font-medium text-gray-600">
+                  {marketingEmailType === 'thankYou' ? 'Thank You Sent' : 
+                   marketingEmailType === 'reactivation' ? 'Needs Reactivation' : 
+                   'Feature Announcement Sent'}
+                </div>
+                <div className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">
+                  {marketingEmailType === 'thankYou' 
+                    ? marketingUsers.filter(u => u.thankYouSent).length
+                    : marketingEmailType === 'reactivation'
+                    ? marketingUsers.filter(u => !u.lastLogin || new Date(u.lastLogin) < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).length
+                    : marketingUsers.filter(u => u.featureAnnouncementSent).length
+                  }
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {marketingEmailType === 'thankYou' ? 'Already sent' : 
+                   marketingEmailType === 'reactivation' ? 'Inactive 30+ days' :
+                   'Already sent'}
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <div className="text-xs sm:text-sm font-medium text-gray-600">Recommended</div>
+                <div className="text-2xl sm:text-3xl font-bold text-primary mt-1">
+                  {marketingEmailType === 'thankYou'
+                    ? marketingUsers.filter(u => u.thankYouScore >= 50).length
+                    : marketingEmailType === 'reactivation'
+                    ? marketingUsers.filter(u => u.reactivationScore >= 50).length
+                    : marketingUsers.filter(u => u.featureAnnouncementScore >= 50).length
+                  }
+                </div>
+                <div className="text-xs text-gray-500 mt-1">High priority candidates</div>
+              </div>
+            </div>
+
+            {/* Users Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                  {marketingEmailType === 'thankYou' ? 'Thank You Email' : 
+                   marketingEmailType === 'reactivation' ? 'Reactivation Email' :
+                   'Feature Announcement Email'} Recipients
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsersForBulk.length === filteredMarketingUsers.length && filteredMarketingUsers.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              selectAllFiltered();
+                            } else {
+                              clearSelection();
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activity</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recommendation</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredMarketingUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                          No users found matching the selected criteria
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMarketingUsers.map((user) => {
+                        const isSelected = selectedUsersForBulk.includes(user._id);
+                        const score = marketingEmailType === 'thankYou' ? user.thankYouScore : 
+                                     marketingEmailType === 'reactivation' ? user.reactivationScore :
+                                     user.featureAnnouncementScore;
+                        const reason = marketingEmailType === 'thankYou' ? user.thankYouReason : 
+                                     marketingEmailType === 'reactivation' ? user.reactivationReason :
+                                     user.featureAnnouncementReason;
+                        
+                        return (
+                          <tr key={user._id} className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                            <td className="px-4 py-4">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleUserSelection(user._id)}
+                                className="rounded border-gray-300 text-primary focus:ring-primary"
+                              />
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0 h-10 w-10">
+                                  <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+                                    <span className="text-white font-medium text-sm">
+                                      {user.name?.[0]}{user.surname?.[0]}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="ml-4 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 truncate">
+                                    {user.name} {user.surname}
+                                  </div>
+                                  <div className="text-sm text-gray-500 truncate">{user.email}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {user.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-sm text-gray-900">
+                              {user.lastLogin ? (
+                                <div>
+                                  <div className="font-medium">
+                                    {new Date(user.lastLogin).toLocaleDateString()}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {user.daysSinceLogin !== null ? `${user.daysSinceLogin} days ago` : ''}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">Never</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4 text-sm">
+                              <div className="flex flex-col gap-1">
+                                <div className="text-xs text-gray-600">
+                                  Tests: <span className="font-medium">{user.testCount || 0}</span>
+                                </div>
+                                <div className="text-xs text-gray-600">
+                                  Trainings: <span className="font-medium">{user.trainingCount || 0}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-sm">
+                              {marketingEmailType === 'thankYou' ? (
+                                user.thankYouSent ? (
+                                  <div>
+                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                      ✓ Sent ({user.thankYouEmail?.sentCount || 0}x)
+                                    </span>
+                                    {user.thankYouLastSent && (
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {new Date(user.thankYouLastSent).toLocaleDateString()}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
+                                    Not sent
+                                  </span>
+                                )
+                              ) : marketingEmailType === 'featureAnnouncement' ? (
+                                user.featureAnnouncementSent ? (
+                                  <div>
+                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                      ✓ Sent ({user.featureAnnouncementEmail?.sentCount || 0}x)
+                                    </span>
+                                    {user.featureAnnouncementLastSent && (
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {new Date(user.featureAnnouncementLastSent).toLocaleDateString()}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
+                                    Not sent
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-xs text-gray-600">N/A</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex flex-col gap-1">
+                                <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
+                                  score >= 80 ? 'bg-red-100 text-red-800' :
+                                  score >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {score >= 80 ? '🔴 High' : score >= 50 ? '🟡 Medium' : '⚪ Low'}
+                                </div>
+                                <div className="text-xs text-gray-500">{reason}</div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-sm font-medium">
+                              <button
+                                type="button"
+                                disabled={
+                                  (marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
+                                   marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                   emailLoadingUserId) === user._id
+                                }
+                                onClick={() => {
+                                  if (marketingEmailType === 'thankYou') {
+                                    handleSendThankYouEmail(user);
+                                  } else if (marketingEmailType === 'reactivation') {
+                                    handleSendReactivationEmail(user);
+                                  } else {
+                                    handleSendFeatureAnnouncementEmail(user);
+                                  }
+                                }}
+                                className={`text-xs ${
+                                  (marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
+                                   marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                   emailLoadingUserId) === user._id
+                                    ? 'text-gray-400 cursor-wait'
+                                    : marketingEmailType === 'thankYou'
+                                    ? 'text-green-600 hover:text-green-700'
+                                    : marketingEmailType === 'featureAnnouncement'
+                                    ? 'text-blue-600 hover:text-blue-700'
+                                    : 'text-emerald-600 hover:text-emerald-700'
+                                }`}
+                              >
+                                {(marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
+                                  marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                  emailLoadingUserId) === user._id
+                                  ? 'Sending…'
+                                  : 'Send Now'
+                                }
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </motion.div>

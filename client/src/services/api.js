@@ -561,6 +561,17 @@ export const sendThankYouEmailToAll = async () => {
   }
 };
 
+// Send feature announcement email to a specific user (admin only)
+export const sendFeatureAnnouncementEmail = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/send-feature-announcement-email/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending feature announcement email:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);

@@ -157,10 +157,13 @@ export default function TrainingTable({
   };
 
   // Combine trainings and calendarData (Strava + FIT activities)
+  // and deduplicate so that:
+  // - we prefer entries that have a category set
+  // - the same session (stejný title/sport/den) se neukazuje 2× (např. Strava + Training)
   const allActivities = useMemo(() => {
     const combined = [];
     
-    // Add FIT trainings
+    // Add FIT trainings (Training/FIT model)
     trainings.forEach(t => {
       combined.push({
         ...t,
@@ -187,8 +190,43 @@ export default function TrainingTable({
         category: act.category
       });
     });
+
+    // Group by (normalizedTitle + sport + day) to detect duplicates
+    const groups = new Map();
+
+    combined.forEach(item => {
+      const rawTitle = (item.title || item.name || '').trim();
+      const normalizedTitle = rawTitle.toLowerCase();
+      const sportKey = normalizeSport(item.sport) || '';
+      const d = item.date || item.startDate || item.timestamp;
+      const dateObj = d ? new Date(d) : null;
+      const dayKey = dateObj && !Number.isNaN(dateObj.getTime())
+        ? dateObj.toISOString().slice(0, 10)
+        : 'unknown-day';
+
+      const key = `${normalizedTitle}|${sportKey}|${dayKey}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(item);
+    });
+
+    const deduped = [];
+
+    groups.forEach(items => {
+      // Prefer items that have a category
+      const withCategory = items.filter(i => !!i.category);
+
+      if (withCategory.length > 0) {
+        // Show only trainings with category for this key
+        withCategory.forEach(i => deduped.push(i));
+      } else {
+        // If none has category, keep only one representative (first)
+        deduped.push(items[0]);
+      }
+    });
     
-    return combined;
+    return deduped;
   }, [trainings, calendarData]);
   
   // Get available sports from all activities (normalized)

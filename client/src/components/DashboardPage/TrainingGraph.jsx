@@ -35,24 +35,58 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
   };
 
-  // Funkce pro formátování vzdálenosti
+  // Funkce pro formátování vzdálenosti - rozpozná jestli je hodnota v metrech nebo km
   const formatDistance = (distance) => {
-    if (!distance) return null;
+    if (!distance && distance !== 0) return null;
+    
+    let numDistance;
+    let isInMeters = false;
+    
     if (typeof distance === 'string') {
-      // Pokud už obsahuje jednotky, vrať to tak jak je
-      if (distance.includes('km') || distance.includes('m')) {
-        return distance;
+      const cleanValue = distance.trim().toLowerCase();
+      
+      // Pokud už obsahuje jednotky, použij je
+      if (cleanValue.includes('km')) {
+        const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
+        if (kmMatch) {
+          numDistance = parseFloat(kmMatch[1]);
+          isInMeters = false;
+        }
+      } else if (cleanValue.includes('m') && !cleanValue.includes('km')) {
+        const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
+        if (mMatch) {
+          numDistance = parseFloat(mMatch[1]);
+          isInMeters = true;
+        }
+      } else {
+        // Odstraň jednotky a zkus extrahovat číslo
+        const cleaned = cleanValue.replace(/km|m| /gi, '').trim();
+        numDistance = parseFloat(cleaned);
+        // Pokud je celé číslo > 100 bez desetinné čárky, pravděpodobně je to v metrech
+        if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0 && !cleanValue.includes('.')) {
+          isInMeters = true;
+        }
+      }
+    } else {
+      numDistance = parseFloat(distance);
+      // Pokud je číslo > 100 a je to celé číslo, pravděpodobně je to v metrech
+      if (!isNaN(numDistance) && numDistance > 100 && numDistance % 1 === 0) {
+        isInMeters = true;
       }
     }
-    const numDistance = parseFloat(distance);
-    if (!isNaN(numDistance)) {
-      // Pokud je menší než 1 km, zobraz v metrech
-      if (numDistance < 1) {
-        return `${Math.round(numDistance * 1000)}m`;
-      }
-      return `${numDistance.toFixed(2)}km`;
+    
+    if (isNaN(numDistance)) return null;
+    
+    // Pokud je hodnota v metrech, převeď na km pro rozhodování
+    const distanceInKm = isInMeters ? numDistance / 1000 : numDistance;
+    
+    // Pokud je menší než 1 km, zobraz v metrech
+    if (distanceInKm < 1) {
+      const meters = isInMeters ? Math.round(numDistance) : Math.round(distanceInKm * 1000);
+      return `${meters} m`;
     }
-    return null;
+    // Jinak zobraz v km s 2 desetinnými místy
+    return `${distanceInKm.toFixed(2)} km`;
   };
 
   // Funkce pro formátování délky intervalu (čas)

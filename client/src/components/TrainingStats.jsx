@@ -635,6 +635,19 @@ const TrainingComparison = ({ training, formatDate }) => {
   );
 };
 
+// Helper function to format distance - show in meters if less than 1 km
+const formatDistance = (distanceKm) => {
+  if (!distanceKm && distanceKm !== 0) return '-';
+  const distance = parseFloat(distanceKm);
+  if (isNaN(distance)) return '-';
+  if (distance < 1) {
+    // Convert to meters and round
+    const meters = Math.round(distance * 1000);
+    return `${meters} m`;
+  }
+  return `${distance.toFixed(2)} km`;
+};
+
 // Vertical Bar Component
 const VerticalBar = ({ 
   result, 
@@ -711,6 +724,9 @@ const VerticalBar = ({
             <p><span className="font-semibold">HR:</span> {result.heartRate || '-'}</p>
             <p><span className="font-semibold">Lactate:</span> {result.lactate || '-'}</p>
             <p><span className="font-semibold">Duration:</span> {formatDuration(result.duration)}</p>
+            {result.distance && (
+              <p><span className="font-semibold">Distance:</span> {formatDistance(result.distance)}</p>
+            )}
           </div>
         )}
       </div>
