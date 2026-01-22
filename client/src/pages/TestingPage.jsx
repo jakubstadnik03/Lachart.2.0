@@ -50,7 +50,6 @@ const TestingPage = () => {
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
-  const [stravaConnected, setStravaConnected] = useState(false);
   const navigate = useNavigate();
   
   // Get testId from URL
@@ -105,7 +104,6 @@ const TestingPage = () => {
       try {
         const status = await getIntegrationStatus();
         const isConnected = Boolean(status.stravaConnected);
-        setStravaConnected(isConnected);
         
         // Show modal if not connected and user hasn't dismissed it (or dismissal expired)
         if (!isConnected) {
@@ -139,7 +137,6 @@ const TestingPage = () => {
     const handleUserUpdate = (event) => {
       const updatedUser = event.detail;
       if (updatedUser?.strava) {
-        setStravaConnected(true);
         setShowStravaModal(false);
       }
     };
