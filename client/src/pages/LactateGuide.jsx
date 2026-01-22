@@ -782,7 +782,7 @@ const LactateGuide = () => {
             <p className="text-sm text-gray-500">
               Need help or have questions?{" "}
               <a
-                href="mailto:lachart@lachart.net"
+                href="/about#contact"
                 className="text-primary hover:text-primary-dark font-medium"
               >
                 Contact us

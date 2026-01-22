@@ -206,8 +206,8 @@ const Terms = () => {
           <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.7 }} className="bg-white rounded-2xl shadow p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-3">15. Contact Information</h2>
             <p className="text-gray-700">
-              If you have any questions about these Terms, please contact us at{' '}
-              <a href="mailto:lachart@lachart.net" className="text-primary underline">lachart@lachart.net</a>.
+              If you have any questions about these Terms, please{' '}
+              <a href="/about#contact" className="text-primary underline hover:text-primary-dark">contact us</a>.
             </p>
           </motion.section>
         </div>
@@ -306,7 +306,7 @@ const Terms = () => {
             <p className="text-sm text-gray-500">
               Need help or have questions?{" "}
               <a
-                href="mailto:lachart@lachart.net"
+                href="/about#contact"
                 className="text-primary hover:text-primary-dark font-medium"
               >
                 Contact us

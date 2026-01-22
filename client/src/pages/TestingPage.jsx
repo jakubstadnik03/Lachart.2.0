@@ -11,11 +11,12 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
-import { listExternalActivities, getStravaActivityDetail } from '../services/api';
+import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus } from '../services/api';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
+import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -48,6 +49,8 @@ const TestingPage = () => {
   const [hrTestPlan, setHrTestPlan] = useState(null);
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
+  const [showStravaModal, setShowStravaModal] = useState(false);
+  const [stravaConnected, setStravaConnected] = useState(false);
   const navigate = useNavigate();
   
   // Get testId from URL
@@ -93,6 +96,67 @@ const TestingPage = () => {
     const targetId = selectedAthleteId || user._id;
     loadTests(targetId);
   }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests]);
+
+  // Check Strava connection status and show modal if not connected
+  useEffect(() => {
+    const checkStravaConnection = async () => {
+      if (!isAuthenticated || !user) return;
+      
+      try {
+        const status = await getIntegrationStatus();
+        const isConnected = Boolean(status.stravaConnected);
+        setStravaConnected(isConnected);
+        
+        // Show modal if not connected and user hasn't dismissed it (or dismissal expired)
+        if (!isConnected) {
+          const dismissedKey = `strava_modal_dismissed_${user._id}`;
+          const dismissedExpiry = localStorage.getItem(dismissedKey);
+          
+          // Check if dismissal has expired (7 days)
+          const shouldShow = !dismissedExpiry || (Date.now() > parseInt(dismissedExpiry, 10));
+          
+          if (shouldShow) {
+            // Small delay to let page load first
+            setTimeout(() => {
+              setShowStravaModal(true);
+            }, 1000);
+          }
+        } else {
+          // If connected, clear any dismissal flag
+          const dismissedKey = `strava_modal_dismissed_${user._id}`;
+          localStorage.removeItem(dismissedKey);
+        }
+      } catch (e) {
+        console.warn('Failed to check Strava connection status:', e);
+      }
+    };
+
+    checkStravaConnection();
+  }, [user, isAuthenticated]);
+
+  // Listen for Strava connection updates (e.g., after connecting)
+  useEffect(() => {
+    const handleUserUpdate = (event) => {
+      const updatedUser = event.detail;
+      if (updatedUser?.strava) {
+        setStravaConnected(true);
+        setShowStravaModal(false);
+      }
+    };
+
+    window.addEventListener('userUpdated', handleUserUpdate);
+    return () => window.removeEventListener('userUpdated', handleUserUpdate);
+  }, []);
+
+  const handleStravaModalClose = () => {
+    setShowStravaModal(false);
+    // Remember that user dismissed the modal (for 7 days)
+    if (user?._id) {
+      const dismissedKey = `strava_modal_dismissed_${user._id}`;
+      const expiry = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days
+      localStorage.setItem(dismissedKey, expiry.toString());
+    }
+  };
   
   // Listen for URL changes (including testId parameter)
   useEffect(() => {
@@ -902,6 +966,12 @@ const TestingPage = () => {
           onAthleteCreated={handleAthleteCreated}
         />
       )}
+
+      {/* Strava Integration Modal */}
+      <StravaIntegrationModal
+        isOpen={showStravaModal}
+        onClose={handleStravaModalClose}
+      />
     </motion.div>
   );
 };
