@@ -1417,7 +1417,15 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
 router.put('/strava/activities/:id', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
     const stravaId = parseInt(req.params.id);
+    if (isNaN(stravaId)) {
+      return res.status(400).json({ error: 'Invalid Strava activity ID' });
+    }
+    
     const { title, description, category } = req.body;
 
     const activity = await StravaActivity.findOne({
@@ -1433,17 +1441,25 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     
     // Update title if provided
     if (title !== undefined) {
-      activity.titleManual = title || null;
+      activity.titleManual = (title && typeof title === 'string' && title.trim()) ? title.trim() : null;
     }
 
     // Update description if provided
     if (description !== undefined) {
-      activity.description = description || null;
+      activity.description = (description && typeof description === 'string' && description.trim()) ? description.trim() : null;
     }
 
     // Update category if provided
+    // Ensure category is either a valid enum value or null (empty string becomes null)
     if (category !== undefined) {
-      activity.category = category || null;
+      const validCategories = ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery'];
+      if (category === null || category === '' || category === undefined) {
+        activity.category = null;
+      } else if (validCategories.includes(category)) {
+        activity.category = category;
+      } else {
+        return res.status(400).json({ error: `Invalid category. Must be one of: ${validCategories.join(', ')} or null` });
+      }
     }
 
     await activity.save();

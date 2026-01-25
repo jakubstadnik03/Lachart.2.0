@@ -810,7 +810,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   });
                                 }
                               } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                                await updateStravaActivity(trainingDetail.id, { category });
+                                await updateStravaActivity(trainingDetail.id, { category: category || null });
                                 // Reload Strava activity detail
                                 const detail = await getStravaActivityDetail(trainingDetail.id);
                                 // Convert Strava detail to training format
@@ -853,7 +853,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                       // Preserve linked training title if it exists, otherwise use trainingDetail title or Strava name
                                       title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
                                       linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
-                                      category: detail.category || category || ''
+                                      category: detail.category || category || null
                                     });
                                   } else {
                                     setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
@@ -871,6 +871,15 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   category: category
                                 });
                               }
+                              // Dispatch event to notify other components (e.g., CalendarView) about the update
+                              window.dispatchEvent(new CustomEvent('activityUpdated', {
+                                detail: {
+                                  type: 'strava',
+                                  id: trainingDetail.id,
+                                  stravaId: trainingDetail.id,
+                                  category: category
+                                }
+                              }));
                               setIsEditingCategory(false);
                             } catch (error) {
                               console.error('Error saving category:', error);

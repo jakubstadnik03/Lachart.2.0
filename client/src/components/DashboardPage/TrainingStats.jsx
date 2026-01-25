@@ -1257,13 +1257,13 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       });
 
                       // Debug: Log widths
-                      console.log('=== DashboardPage TrainingStats Bar Widths ===');
-                      console.log('Training:', training.title || 'Untitled');
-                      console.log('Total Value:', totalValue, useDistance ? '(distance in meters)' : '(duration in seconds)');
-                      console.log('Total Distance:', totalDistance, 'meters');
-                      console.log('Total Duration:', totalDuration, 'seconds');
-                      console.log('Use Distance:', useDistance);
-                      console.log('Results count:', training.results?.length || 0);
+                     // console.log('=== DashboardPage TrainingStats Bar Widths ===');
+                      //console.log('Training:', training.title || 'Untitled');
+                     // console.log('Total Value:', totalValue, useDistance ? '(distance in meters)' : '(duration in seconds)');
+                      //console.log('Total Distance:', totalDistance, 'meters');
+                      //console.log('Total Duration:', totalDuration, 'seconds');
+                      //console.log('Use Distance:', useDistance);
+                      //console.log('Results count:', training.results?.length || 0);
                       console.log('Interval Widths:', intervalPositions.map((pos, idx) => {
                         const result = training.results[idx];
                         const dist = result?.distance || (result?.durationType === 'distance' ? result?.duration : null);

@@ -47,7 +47,6 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   );
   
   // Debug log
-  console.log('IntervalChart - sport:', sport, 'isRun:', isRun, 'isSwim:', isSwim, 'records length:', records?.length);
 
   // Create kilometer intervals for running if no laps or if laps don't have distance-based intervals
   const processedLaps = useMemo(() => {
