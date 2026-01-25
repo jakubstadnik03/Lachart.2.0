@@ -28,6 +28,39 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Convert pace string (M:SS) or seconds to speed (km/h or mph)
+  const convertPaceToSpeed = (paceValue, unitSystem) => {
+    if (!paceValue) return 0;
+    
+    // Parse pace string (M:SS) to seconds
+    let seconds;
+    if (typeof paceValue === 'string' && paceValue.includes(':')) {
+      const parts = paceValue.split(':');
+      if (parts.length === 2) {
+        seconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      } else {
+        seconds = parseFloat(paceValue);
+      }
+    } else if (typeof paceValue === 'string') {
+      seconds = parseFloat(paceValue);
+    } else {
+      seconds = paceValue;
+    }
+    
+    if (isNaN(seconds) || seconds <= 0) return 0;
+    
+    // Convert seconds per km to speed
+    if (unitSystem === 'imperial') {
+      // Convert pace (seconds per km) to speed (mph)
+      // First convert to km/h, then to mph
+      const kmh = 3600 / seconds;
+      return kmh * 0.621371; // Convert km/h to mph
+    } else {
+      // Convert pace (seconds per km) to speed (km/h)
+      return 3600 / seconds;
+    }
+  };
+
   // Helper function to interpolate lactate value for a given power/pace using polynomial regression
   const getLactateForPower = (powerValue, results, sport) => {
     if (!results || results.length === 0) return null;
@@ -640,11 +673,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                         <span className={
                           `w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full mr-1 sm:mr-2 md:mr-3 inline-block border border-white/70 shadow ` +
                           [
-                            'bg-[#9AECDB]/60', // 1 glass green
-                            'bg-[#48DBFB]/60', // 2 glass blue
-                            'bg-[#f3e6ff]/60', // 3 glass pastel violet
-                            'bg-[#fde2cf]/60', // 4 glass peach
-                            'bg-[#ffb6b9]/60', // 5 glass pink
+                            'bg-[#22c55e]/60', // 1 Bright Green - Recovery (matches LactateCurveCalculator)
+                            'bg-[#3b82f6]/60', // 2 Blue - Aerobic (matches LactateCurveCalculator)
+                            'bg-[#fbbf24]/60', // 3 Amber/Yellow - Tempo (matches LactateCurveCalculator)
+                            'bg-[#ef4444]/60', // 4 Red - Threshold (matches LactateCurveCalculator)
+                            'bg-[#8b5cf6]/60', // 5 Purple - VO2max (matches LactateCurveCalculator)
                           ][zoneNumber - 1] || 'bg-gray-200/60'
                         } />
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-900 tracking-wide drop-shadow-[0_0.5px_2px_rgba(0,0,20,0.06)]">
@@ -669,7 +702,18 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                           <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight break-words">
                             {powerZone[zoneKey] ? 
                               (inputMode === 'speed' ? 
-                                `${powerZone[zoneKey].min}-${powerZone[zoneKey].max}${unitSystem === 'imperial' ? 'mph' : 'km/h'}` :
+                                (() => {
+                                  // Convert pace to speed
+                                  // Note: For pace zones, min is slower (higher seconds), max is faster (lower seconds)
+                                  // For speed display: min should be slower (lower speed), max should be faster (higher speed)
+                                  // So: slower pace (zone.min, higher seconds) -> lower speed
+                                  //     faster pace (zone.max, lower seconds) -> higher speed
+                                  const minSpeed = convertPaceToSpeed(powerZone[zoneKey].min, unitSystem); // Slower pace (higher seconds) = lower speed
+                                  const maxSpeed = convertPaceToSpeed(powerZone[zoneKey].max, unitSystem); // Faster pace (lower seconds) = higher speed
+                                  const speedUnit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+                                  // Display: slower speed first, then faster speed (e.g., "10.0–15.0 km/h")
+                                  return `${minSpeed.toFixed(1)}–${maxSpeed.toFixed(1)} ${speedUnit}`;
+                                })() :
                                 (powerZone[zoneKey].max && powerZone[zoneKey].min) ?
                                   `${powerZone[zoneKey].min}–${powerZone[zoneKey].max}` :
                                   powerZone[zoneKey].min ?

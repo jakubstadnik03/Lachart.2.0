@@ -28,6 +28,7 @@ ChartJS.register(
     ChartLegend
   );
 
+
 const colorMap = {
     'Measured data': '#000000',  
     'Polynomial Fit': '#2196F3',  // Blue for polynomial curve
@@ -62,7 +63,7 @@ const colorMap = {
     { color: 'bg-amber-300', label: 'LTP2', dsLabel: 'LTP2' },
     { color: 'bg-slate-400', label: 'LTRatio', dsLabel: 'LTRatio' }
   ];
-  const Legend = ({ chartRef }) => {
+  const Legend = ({ chartRef, zonesVisible, setZonesVisible }) => {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
     const [hideAllActive, setHideAllActive] = useState(false);
     const [previousHiddenState, setPreviousHiddenState] = useState({});
@@ -142,28 +143,36 @@ const colorMap = {
       if (!chart) return;
     
       chart.data.datasets.forEach((ds) => {
-       
+        // Skip zone datasets - they shouldn't be affected by hover
+        if (ds.zoneKey) return;
+        
+        const originalColor = colorMap[ds.label];
+        if (!originalColor) return; // Skip if no color defined
+        
         if (ds.label === dsLabel) {
-          ds.pointRadius = 8;
-          ds.backgroundOpacity = '80'
-          if (ds.label === "Polynomial Fit"){
-            ds.pointRadius = 4;
-            ds.borderColor = '#2196F3';
+          // Highlight the hovered dataset
+          if (ds.label === "Polynomial Fit") {
+            ds.borderColor = 'rgba(33,150,243)';
             ds.pointRadius = 0;
-            ds.borderColor = 'rgba(33,150,243)'
-        }
-
+          } else {
+            ds.pointRadius = 8;
+            ds.borderColor = originalColor;
+            ds.backgroundColor = originalColor;
+          }
         } else {
-          ds.pointRadius = 6;
-
-          ds.borderColor = colorMap[ds.label] + '30'; // 25% opacity
-          ds.backgroundColor = colorMap[ds.label] + '30'; // 25% opacity
-          if (ds.label === "Polynomial Fit"){
-            ds.pointRadius = 4;
-            ds.borderColor = '#2196F3';
+          // Dim other datasets
+          if (ds.label === "Polynomial Fit") {
+            ds.borderColor = 'rgba(33,150,243,0.1)';
             ds.pointRadius = 0;
-            ds.borderColor = 'rgba(33,150,243,0.1)'
-        }
+          } else {
+            // Convert hex to rgba with 30% opacity
+            const r = parseInt(originalColor.slice(1, 3), 16);
+            const g = parseInt(originalColor.slice(3, 5), 16);
+            const b = parseInt(originalColor.slice(5, 7), 16);
+            ds.borderColor = `rgba(${r}, ${g}, ${b}, 0.3)`;
+            ds.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.3)`;
+            ds.pointRadius = 6;
+          }
         }
       });
     
@@ -175,14 +184,36 @@ const colorMap = {
       if (!chart) return;
     
       chart.data.datasets.forEach((ds) => {
-        ds.borderColor = colorMap[ds.label]; // Původní barva
-        ds.backgroundColor = colorMap[ds.label];
-        if (ds.label === "Polynomial Fit"){
-          ds.borderColor = 'rgba(33,150,243)'
-      }
+        // Skip zone datasets
+        if (ds.zoneKey) return;
+        
+        const originalColor = colorMap[ds.label];
+        if (!originalColor) return; // Skip if no color defined
+        
+        // Restore original colors
+        if (ds.label === "Polynomial Fit") {
+          ds.borderColor = 'rgba(33,150,243)';
+          ds.pointRadius = 0;
+        } else {
+          ds.borderColor = originalColor;
+          ds.backgroundColor = originalColor;
+          // Restore original point radius based on dataset type
+          if (ds.label === 'Measured data') {
+            ds.pointRadius = 5;
+          } else {
+            ds.pointRadius = 6;
+          }
+        }
       });
     
       chart.update();
+    };
+
+    const handleToggleZones = () => {
+      const newValue = !zonesVisible;
+      setZonesVisible(newValue);
+      
+      // Update will be handled by parent component's setZonesVisible
     };
     
   
@@ -198,6 +229,18 @@ const colorMap = {
           <div className="flex items-center gap-2 min-w-[100px]">
             <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-gray-400" />
             <div className="whitespace-nowrap">Hide all</div>
+          </div>
+        </div>
+        <div
+          className={`cursor-pointer flex items-center ${
+            !zonesVisible ? 'line-through text-gray-400' : ''
+          }`}
+          onClick={handleToggleZones}
+          title="Hide/show training zones"
+        >
+          <div className="flex items-center gap-2 min-w-[100px]">
+            <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-gradient-to-r from-green-400 via-blue-400 via-yellow-400 via-red-400 to-purple-400" />
+            <div className="whitespace-nowrap">Hide zones</div>
           </div>
         </div>
         {legendItems.map((item, index) => (
@@ -253,6 +296,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [emailTo, setEmailTo] = useState('');
   const [zoneOverride, setZoneOverride] = useState(null);
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
+  const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
+  const zonesVisibleRef = useRef(true); // Ref for plugin access
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
@@ -261,6 +306,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
+  
+  // Determine if axis should be reversed (for pace mode in pace sports)
+  // Must be defined early because it's used in zoneDatasets calculation
+  const isReverse = Boolean(isPaceSport && inputMode === 'pace');
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -315,6 +364,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   const thresholds = calculateThresholds(mockData);
   const results = mockData.results;
+  
+  // Calculate training zones for visualization
+  const zones = calculateZonesFromTest(mockData);
   
   // Filter out invalid results first
   const validResults = results.filter(r => {
@@ -753,7 +805,222 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     })
     .filter(dataset => dataset !== null); // Odstranit null hodnoty
 
+  // Calculate X axis range first (needed for zone rendering)
+  const allXValuesForZones = [
+    ...xVals,
+    ...(baseLactatePoint ? [baseLactatePoint.x] : []),
+    ...(polyPoints.length > 0 ? polyPoints.map(p => p.x) : []),
+    ...thresholdDatasets
+      .filter(ds => ds !== null)
+      .flatMap(ds => ds.data.map(d => d.x))
+  ].filter(x => !isNaN(x) && isFinite(x));
+  
+  const minXForZones = allXValuesForZones.length > 0 ? Math.min(...allXValuesForZones) : 0;
+  const maxXForZones = allXValuesForZones.length > 0 ? Math.max(...allXValuesForZones) : 100;
+  const xRangeForZones = maxXForZones - minXForZones;
+
+  // Create zone datasets for colored background areas
+  const zoneDatasets = (() => {
+    if (!zones || !thresholds['LTP1'] || !thresholds['LTP2']) {
+      return [];
+    }
+    
+    const zoneColors = {
+      zone1: 'rgba(34, 197, 94, 0.3)',   // Bright Green - Recovery
+      zone2: 'rgba(59, 130, 246, 0.3)',  // Blue - Aerobic
+      zone3: 'rgba(251, 191, 36, 0.3)',  // Amber/Yellow - Tempo
+      zone4: 'rgba(239, 68, 68, 0.3)',   // Red - Threshold
+      zone5: 'rgba(139, 92, 246, 0.3)',   // Purple - VO2max
+    };
+    
+    const zoneNames = {
+      zone1: 'Zone 1 - Recovery',
+      zone2: 'Zone 2 - Aerobic',
+      zone3: 'Zone 3 - Tempo',
+      zone4: 'Zone 4 - Threshold',
+      zone5: 'Zone 5 - VO2max',
+    };
+    
+    const zoneDatasets = [];
+    
+    if (isPaceSport) {
+      // For pace sports, zones are in pace (seconds)
+      const paceZones = zones.pace;
+      if (paceZones) {
+        const zoneKeys = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+        let previousBoundary = null;
+        
+        zoneKeys.forEach((zoneKey, index) => {
+          const zone = paceZones[zoneKey];
+          if (!zone || !zone.min || !zone.max) return;
+          
+          // Convert pace strings back to numbers if needed
+          let minPace, maxPace;
+          if (inputMode === 'pace') {
+            // Pace mode: zones are in pace (seconds or M:SS format)
+            minPace = typeof zone.min === 'string' 
+              ? (() => {
+                  const parts = zone.min.split(':');
+                  if (parts.length === 2) {
+                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                  }
+                  return parseFloat(zone.min);
+                })()
+              : zone.min;
+            maxPace = typeof zone.max === 'string'
+              ? (() => {
+                  const parts = zone.max.split(':');
+                  if (parts.length === 2) {
+                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                  }
+                  return parseFloat(zone.max);
+                })()
+              : zone.max;
+          } else {
+            // Speed mode: zones are stored in pace, but need to be converted to speed (km/h or mph)
+            // First parse pace from string format (M:SS) to seconds
+            let minPaceSeconds = typeof zone.min === 'string' 
+              ? (() => {
+                  const parts = zone.min.split(':');
+                  if (parts.length === 2) {
+                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                  }
+                  return parseFloat(zone.min);
+                })()
+              : zone.min;
+            let maxPaceSeconds = typeof zone.max === 'string'
+              ? (() => {
+                  const parts = zone.max.split(':');
+                  if (parts.length === 2) {
+                    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                  }
+                  return parseFloat(zone.max);
+                })()
+              : zone.max;
+            
+            // Convert pace (seconds) to speed (km/h or mph)
+            // For pace zones: min is slower (higher seconds), max is faster (lower seconds)
+            // For speed: min should be slower (lower speed), max should be faster (higher speed)
+            // So: slower pace (zone.min, higher seconds) -> lower speed
+            //     faster pace (zone.max, lower seconds) -> higher speed
+            minPace = convertPaceToSpeed(minPaceSeconds, unitSystem); // Slower pace (higher seconds) = lower speed
+            maxPace = convertPaceToSpeed(maxPaceSeconds, unitSystem); // Faster pace (lower seconds) = higher speed
+          }
+          
+          if (isNaN(minPace) || isNaN(maxPace)) return;
+          
+          // For reverse axis (pace mode): zones go from fast (low value, right side) to slow (high value, left side)
+          // Zone 1 is fastest (lowest pace value), Zone 5 is slowest (highest pace value)
+          // For normal axis (speed mode): zones go from slow (low value, left side) to fast (high value, right side)
+          // Zone 1 is slowest (lowest speed), Zone 5 is fastest (highest speed)
+          
+          let zoneMinX, zoneMaxX;
+          
+          if (isReverse) {
+            // Reverse axis (pace mode): Zone 1 (slowest) starts from left side, Zone 5 (fastest) ends at right side
+            // For pace zones: minPace = slower (higher seconds), maxPace = faster (lower seconds)
+            // With reverse axis: left = slower (higher seconds = minPace), right = faster (lower seconds = maxPace)
+            // Zone 1 (slowest) should be on left (starts at minPace), Zone 5 (fastest) should be on right (ends at maxPace)
+            // Same logic as speed mode but with reverse axis
+            if (zoneKey === 'zone1') {
+              // Zone 1 starts from the left edge (slowest pace, highest value = minPace)
+              zoneMinX = maxXForZones + (xRangeForZones * 0.1);
+            } else {
+              // Other zones start where previous zone ended
+              zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
+            }
+            // Zone ends at maxPace (going from slow to fast: minPace -> maxPace)
+            zoneMaxX = maxPace;
+            previousBoundary = maxPace;
+          } else {
+            // Normal axis (speed mode): Zone 1 (slowest) starts from left side (minX), Zone 5 (fastest) ends at right side (maxX)
+            // minPace = lower speed (slower), maxPace = higher speed (faster)
+            if (zoneKey === 'zone1') {
+              // Zone 1 starts from the left edge (slowest speed, lowest value)
+              zoneMinX = Math.max(0, minXForZones - (xRangeForZones * 0.1));
+            } else {
+              // Other zones start where previous zone ended
+              zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
+            }
+            // Zone ends at maxPace (faster speed, higher value, right side)
+            zoneMaxX = maxPace;
+            previousBoundary = maxPace;
+          }
+          
+          // Store zone boundaries for plugin rendering
+          zoneDatasets.push({
+            label: zoneNames[zoneKey],
+            data: [
+              { x: zoneMinX, y: 0 },
+              { x: zoneMaxX, y: 0 },
+            ],
+            backgroundColor: zoneColors[zoneKey],
+            borderColor: 'transparent',
+            borderWidth: 0,
+            pointRadius: 0,
+            showLine: false,
+            order: -1 - index, // Render zones behind other data
+            zoneKey: zoneKey,
+            zoneInfo: {
+              name: zoneNames[zoneKey],
+              power: { min: zone.min, max: zone.max },
+              heartRate: zones.heartRate?.[zoneKey] || null,
+            },
+            minX: zoneMinX,
+            maxX: zoneMaxX,
+          });
+        });
+      }
+    } else {
+      // For bike, zones are in power (watts)
+      const powerZones = zones.power;
+      if (powerZones) {
+        const zoneKeys = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+        let previousMax = null;
+        
+        zoneKeys.forEach((zoneKey, index) => {
+          const zone = powerZones[zoneKey];
+          if (!zone || zone.min === undefined || zone.max === undefined) return;
+          
+          // For Zone 1, start from the beginning of the graph
+          // For other zones, start where previous zone ended (no gaps)
+          const actualMinX = (zoneKey === 'zone1') 
+            ? Math.max(0, minXForZones - (xRangeForZones * 0.1)) 
+            : (previousMax !== null ? previousMax : zone.min);
+          
+          previousMax = zone.max;
+          
+          // Store zone boundaries for plugin rendering
+          zoneDatasets.push({
+            label: zoneNames[zoneKey],
+            data: [
+              { x: actualMinX, y: 0 },
+              { x: zone.max, y: 0 },
+            ],
+            backgroundColor: zoneColors[zoneKey],
+            borderColor: 'transparent',
+            borderWidth: 0,
+            pointRadius: 0,
+            showLine: false,
+            order: -1 - index, // Render zones behind other data
+            zoneKey: zoneKey,
+            zoneInfo: {
+              name: zoneNames[zoneKey],
+              power: { min: zone.min, max: zone.max },
+              heartRate: zones.heartRate?.[zoneKey] || null,
+            },
+            minX: actualMinX,
+            maxX: zone.max,
+          });
+        });
+      }
+    }
+    
+    return zoneDatasets;
+  })();
+
   const allDatasets = [
+    ...zoneDatasets,
     ...thresholdDatasets,
     measuredDataSet,
     ...(polyDataSet ? [polyDataSet] : [])
@@ -780,7 +1047,120 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const padding = xRange * 0.1; // 10% padding on each side
 
   const data = { datasets: allDatasets };
-  const isReverse = Boolean(isPaceSport && inputMode === 'pace');
+  
+  // Helper function to parse pace string (M:SS) to seconds
+  const parsePaceToSeconds = (paceStr) => {
+    if (typeof paceStr !== 'string') return paceStr;
+    const parts = paceStr.split(':');
+    if (parts.length !== 2) return null;
+    const minutes = parseInt(parts[0], 10);
+    const seconds = parseInt(parts[1], 10);
+    if (isNaN(minutes) || isNaN(seconds)) return null;
+    return minutes * 60 + seconds;
+  };
+  
+  // Helper function to get zone info for a given x value
+  const getZoneForX = (xValue) => {
+    if (!zones) return null;
+    
+    if (isPaceSport) {
+      const paceZones = zones.pace;
+      if (!paceZones) return null;
+      
+      for (const [zoneKey, zone] of Object.entries(paceZones)) {
+        if (!zone || !zone.min || !zone.max) continue;
+        
+        let minValue, maxValue;
+        if (inputMode === 'pace') {
+          // Pace mode: parse pace strings to seconds
+          minValue = typeof zone.min === 'string' ? parsePaceToSeconds(zone.min) : zone.min;
+          maxValue = typeof zone.max === 'string' ? parsePaceToSeconds(zone.max) : zone.max;
+          
+          // For pace: check if xValue is between min and max (considering reverse axis)
+          const inZone = isReverse 
+            ? (xValue <= minValue && xValue >= maxValue)
+            : (xValue >= minValue && xValue <= maxValue);
+          
+          if (inZone) {
+            return {
+              key: zoneKey,
+              name: {
+                zone1: 'Zone 1 - Recovery',
+                zone2: 'Zone 2 - Aerobic',
+                zone3: 'Zone 3 - Tempo',
+                zone4: 'Zone 4 - Threshold',
+                zone5: 'Zone 5 - VO2max',
+              }[zoneKey],
+              power: zone,
+              heartRate: zones.heartRate?.[zoneKey] || null,
+            };
+          }
+        } else {
+          // Speed mode: convert pace to speed
+          // Zone.min is slower pace (higher seconds) -> lower speed
+          // Zone.max is faster pace (lower seconds) -> higher speed
+          const minPaceSeconds = typeof zone.min === 'string' 
+            ? parsePaceToSeconds(zone.min) 
+            : zone.min;
+          const maxPaceSeconds = typeof zone.max === 'string' 
+            ? parsePaceToSeconds(zone.max) 
+            : zone.max;
+          
+          if (isNaN(minPaceSeconds) || isNaN(maxPaceSeconds)) continue;
+          
+          // Convert to speed: slower pace (higher seconds) = lower speed, faster pace (lower seconds) = higher speed
+          // zone.min is slower pace (higher seconds) -> lower speed
+          // zone.max is faster pace (lower seconds) -> higher speed
+          minValue = convertPaceToSpeed(minPaceSeconds, unitSystem); // Slower pace (higher seconds) -> lower speed
+          maxValue = convertPaceToSpeed(maxPaceSeconds, unitSystem); // Faster pace (lower seconds) -> higher speed
+          
+          // For speed mode (normal axis): check if xValue is between min (slower) and max (faster)
+          // Zone 1: slowest (lowest speed), Zone 5: fastest (highest speed)
+          if (xValue >= minValue && xValue <= maxValue) {
+            return {
+              key: zoneKey,
+              name: {
+                zone1: 'Zone 1 - Recovery',
+                zone2: 'Zone 2 - Aerobic',
+                zone3: 'Zone 3 - Tempo',
+                zone4: 'Zone 4 - Threshold',
+                zone5: 'Zone 5 - VO2max',
+              }[zoneKey],
+              power: {
+                min: minValue.toFixed(1),
+                max: maxValue.toFixed(1)
+              },
+              heartRate: zones.heartRate?.[zoneKey] || null,
+            };
+          }
+        }
+      }
+    } else {
+      const powerZones = zones.power;
+      if (!powerZones) return null;
+      
+      for (const [zoneKey, zone] of Object.entries(powerZones)) {
+        if (!zone || zone.min === undefined || zone.max === undefined) continue;
+        
+        if (xValue >= zone.min && xValue <= zone.max) {
+          return {
+            key: zoneKey,
+            name: {
+              zone1: 'Zone 1 - Recovery',
+              zone2: 'Zone 2 - Aerobic',
+              zone3: 'Zone 3 - Tempo',
+              zone4: 'Zone 4 - Threshold',
+              zone5: 'Zone 5 - VO2max',
+            }[zoneKey],
+            power: zone,
+            heartRate: zones.heartRate?.[zoneKey] || null,
+          };
+        }
+      }
+    }
+    
+    return null;
+  };
   
   const options = {
     responsive: true,
@@ -875,11 +1255,56 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         boxHeight: 8,
         usePointStyle: true,
         callbacks: {
+          title: (items) => {
+            // Check if hovering over a zone
+            if (items.length > 0) {
+              const firstItem = items[0];
+              const xVal = firstItem.parsed.x;
+              const zone = getZoneForX(xVal);
+              
+              if (zone) {
+                return zone.name;
+              }
+            }
+            return '';
+          },
           label: (ctx) => {
             const label = ctx.dataset.label;
             const xVal = ctx.parsed.x;
             const yVal = ctx.parsed.y;
             const point = ctx.raw;
+            
+            // Check if hovering over a zone dataset (colored background)
+            const zone = getZoneForX(xVal);
+            if (zone && ctx.dataset.zoneKey) {
+              // Show zone information when hovering over zone background
+              const labels = [];
+              
+              if (isPaceSport) {
+                if (inputMode === 'pace') {
+                  const minPace = typeof zone.power.min === 'string' ? zone.power.min : formatSecondsToMMSS(zone.power.min);
+                  const maxPace = typeof zone.power.max === 'string' ? zone.power.max : formatSecondsToMMSS(zone.power.max);
+                  const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
+                  labels.push(`Pace: ${minPace}${unit} - ${maxPace}${unit}`);
+                } else {
+                  // Speed mode: zone.power already contains converted speed values (min = slower, max = faster)
+                  const minSpeed = typeof zone.power.min === 'string' ? zone.power.min : parseFloat(zone.power.min).toFixed(1);
+                  const maxSpeed = typeof zone.power.max === 'string' ? zone.power.max : parseFloat(zone.power.max).toFixed(1);
+                  const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+                  labels.push(`Speed: ${minSpeed}${unit} - ${maxSpeed}${unit}`);
+                }
+              } else {
+                labels.push(`Power: ${zone.power.min}W - ${zone.power.max}W`);
+              }
+              
+              if (zone.heartRate) {
+                labels.push(`HR: ${zone.heartRate.min} - ${zone.heartRate.max} bpm`);
+              }
+              
+              return labels;
+            }
+            
+            // If hovering over data point, show normal tooltip (zone info will be in afterBody)
             
             // Check if this is the base lactate point
             if (point && point.label === 'Base Lactate') {
@@ -905,6 +1330,29 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               pointStyle: 'circle',
               rotation: 0
             };
+          },
+          afterBody: (items) => {
+            // Add zone info if hovering over a zone but not a zone dataset
+            if (items.length > 0) {
+              const firstItem = items[0];
+              const xVal = firstItem.parsed.x;
+              const zone = getZoneForX(xVal);
+              
+              if (zone && !firstItem.dataset.zoneKey) {
+                // Show zone info below the main tooltip
+                return [
+                  '',
+                  `Zone: ${zone.name}`,
+                  isPaceSport 
+                    ? (inputMode === 'pace' 
+                        ? `Pace: ${typeof zone.power.min === 'string' ? zone.power.min : formatSecondsToMMSS(zone.power.min)} - ${typeof zone.power.max === 'string' ? zone.power.max : formatSecondsToMMSS(zone.power.max)}`
+                        : `Speed: ${typeof zone.power.min === 'string' ? zone.power.min : parseFloat(zone.power.min).toFixed(1)} - ${typeof zone.power.max === 'string' ? zone.power.max : parseFloat(zone.power.max).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`)
+                    : `Power: ${zone.power.min}W - ${zone.power.max}W`,
+                  zone.heartRate ? `HR: ${zone.heartRate.min} - ${zone.heartRate.max} bpm` : null,
+                ].filter(Boolean);
+              }
+            }
+            return [];
           }
         }
       },
@@ -1001,13 +1449,75 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         
         <div className="flex flex-col lg:flex-row gap-4">
           <div className={showDataTable ? "flex-1 min-w-0" : "w-full"} style={{ height: '400px', minHeight: '300px' }}>
-            <Line ref={chartRef} data={data} options={options} />
+            <Line 
+              ref={chartRef} 
+              data={data} 
+              options={options}
+              plugins={[{
+                id: 'zonePlugin',
+                beforeDraw: (chart) => {
+                  // Only draw zones if they are visible
+                  if (!zonesVisibleRef.current) return;
+                  
+                  const ctx = chart.ctx;
+                  const chartArea = chart.chartArea;
+                  const xScale = chart.scales.x;
+                  
+                  // Find zone datasets
+                  const zoneDatasets = chart.data.datasets.filter(ds => ds.zoneKey);
+                  
+                  zoneDatasets.forEach((dataset) => {
+                    if (!dataset.zoneKey) return;
+                    
+                    ctx.save();
+                    ctx.fillStyle = dataset.backgroundColor;
+                    
+                    // Get zone boundaries
+                    const minX = dataset.minX !== undefined ? dataset.minX : (dataset.data?.[0]?.x);
+                    const maxX = dataset.maxX !== undefined ? dataset.maxX : (dataset.data?.[1]?.x);
+                    
+                    if (minX === undefined || maxX === undefined) {
+                      ctx.restore();
+                      return;
+                    }
+                    
+                    // Convert values to pixel positions
+                    // Chart.js handles reverse axis automatically in getPixelForValue
+                    const x1 = xScale.getPixelForValue(minX);
+                    const x2 = xScale.getPixelForValue(maxX);
+                    const y1 = chartArea.top;
+                    const y2 = chartArea.bottom;
+                    
+                    // Ensure x1 < x2 for proper rectangle drawing
+                    // (Chart.js reverse axis may return x1 > x2, so we need to handle that)
+                    const leftX = Math.min(x1, x2);
+                    const rightX = Math.max(x1, x2);
+                    const width = rightX - leftX;
+                    
+                    // Draw rectangle
+                    ctx.fillRect(leftX, y1, width, y2 - y1);
+                    ctx.restore();
+                  });
+                }
+              }]}
+            />
           </div>
           
           {showDataTable && (
             <>
               <div className="w-full lg:w-[80px] shrink-0">
-                <Legend chartRef={chartRef} />
+                <Legend 
+                  chartRef={chartRef} 
+                  zonesVisible={zonesVisible} 
+                  setZonesVisible={(value) => {
+                    setZonesVisible(value);
+                    zonesVisibleRef.current = value;
+                    // Force chart update
+                    if (chartRef.current) {
+                      chartRef.current.update();
+                    }
+                  }} 
+                />
               </div>
               
               <div className="w-full lg:w-[400px] shrink-0">
