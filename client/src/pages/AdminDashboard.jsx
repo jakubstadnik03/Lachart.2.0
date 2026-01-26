@@ -702,6 +702,46 @@ const AdminDashboard = () => {
                 <div className="text-center p-3 bg-red-50 rounded-lg">
                   <p className="text-xl sm:text-2xl font-bold text-red-600">{lastLoginStats.never}</p>
                   <p className="text-xs sm:text-sm text-gray-600 mt-1">Never</p>
+                  {lastLoginStats.never > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const neverLoggedInUsers = users.filter(u => !u.lastLogin && u.email && u.notifications?.emailNotifications !== false);
+                        if (neverLoggedInUsers.length === 0) {
+                          addNotification('No users available for reactivation email (no email or email notifications disabled)', 'warning');
+                          return;
+                        }
+                        if (!window.confirm(`Send reactivation email to ${neverLoggedInUsers.length} user(s) who never logged in?`)) {
+                          return;
+                        }
+                        setSendingToAll(true);
+                        let successCount = 0;
+                        let failCount = 0;
+                        for (const targetUser of neverLoggedInUsers) {
+                          try {
+                            await sendReactivationEmail(targetUser._id);
+                            successCount++;
+                            // Small delay between emails
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                          } catch (err) {
+                            console.error(`Failed to send reactivation email to ${targetUser.email}:`, err);
+                            failCount++;
+                          }
+                        }
+                        setSendingToAll(false);
+                        addNotification(`Sent ${successCount} reactivation email(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, successCount > 0 ? 'success' : 'error');
+                        fetchData(); // Refresh data
+                      }}
+                      disabled={sendingToAll || lastLoginStats.never === 0}
+                      className={`mt-2 px-2 sm:px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                        sendingToAll || lastLoginStats.never === 0
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-red-600 text-white hover:bg-red-700'
+                      }`}
+                    >
+                      {sendingToAll ? 'Sending...' : 'Send reactivation email'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

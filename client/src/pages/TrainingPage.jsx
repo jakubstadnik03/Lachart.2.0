@@ -280,20 +280,28 @@ const TrainingPage = () => {
         </motion.h1>
         <div className="flex items-center gap-3">
           {/* Category Filter */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="all">All categories</option>
-            <option value="endurance">Endurance</option>
-            <option value="tempo">Tempo</option>
-            <option value="threshold">Threshold</option>
-            <option value="vo2max">VO2max</option>
-            <option value="anaerobic">Anaerobic</option>
-            <option value="recovery">Recovery</option>
-            <option value="uncategorized">Bez kategorie</option>
-          </select>
+          <div className="relative">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-4 py-2 pr-8 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+              style={{ WebkitAppearance: 'none', appearance: 'none' }}
+            >
+              <option value="all">All categories</option>
+              <option value="endurance">Endurance</option>
+              <option value="tempo">Tempo</option>
+              <option value="threshold">Threshold</option>
+              <option value="vo2max">VO2max</option>
+              <option value="anaerobic">Anaerobic</option>
+              <option value="recovery">Recovery</option>
+              <option value="uncategorized">Bez kategorie</option>
+            </select>
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         <motion.button
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}

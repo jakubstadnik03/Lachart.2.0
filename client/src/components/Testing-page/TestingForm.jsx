@@ -1112,23 +1112,31 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
           <div className="relative">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Sport</label>
-        <select 
-              ref={el => inputRefs.current['sport'] = el}
-          value={formData.sport} 
-              onChange={(e) => {
-                logClick('Sport Select Change', { value: e.target.value });
-                handleFormDataChange('sport', e.target.value);
-              }}
-              className={`w-full p-1 border rounded-lg text-sm ${
-                currentTutorialStep === 1 ? 'ring-2 ring-primary border-primary' : ''
-              }`}
-              disabled={!isNewTest && !isEditMode}
-            >
-              <option value="">Sport *</option>
-          <option value="run">Run</option>
-          <option value="bike">Bike</option>
-          <option value="swim">Swim</option>
-        </select>
+            <div className="relative">
+              <select 
+                ref={el => inputRefs.current['sport'] = el}
+                value={formData.sport} 
+                onChange={(e) => {
+                  logClick('Sport Select Change', { value: e.target.value });
+                  handleFormDataChange('sport', e.target.value);
+                }}
+                className={`w-full p-1 pr-7 border rounded-lg text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
+                  currentTutorialStep === 1 ? 'ring-2 ring-primary border-primary' : ''
+                } ${(!isNewTest && !isEditMode) ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                disabled={!isNewTest && !isEditMode}
+              >
+                <option value="">Sport *</option>
+                <option value="run">Run</option>
+                <option value="bike">Bike</option>
+                <option value="swim">Swim</option>
+              </select>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
 
