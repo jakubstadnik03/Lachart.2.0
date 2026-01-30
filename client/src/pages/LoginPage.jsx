@@ -174,9 +174,12 @@ const LoginPage = () => {
         } else {
           errorMessage = error.response.data.message || "Login failed";
         }
-      } else if (error.request) {
+      } else if (error.request || error.code === "ERR_NETWORK") {
         console.log("No response received:", error.request);
-        errorMessage = "No response from server. Please check your internet connection.";
+        errorMessage =
+          "Server unreachable. Check your connection. " +
+          "If the app is hosted (e.g. Render), the server may be starting up—try again in a minute. " +
+          "For local development, run the backend and set REACT_APP_API_URL=http://localhost:8000 in .env.development.";
       } else {
         console.log("Error setting up request:", error.message);
         errorMessage = "Error setting up login request.";

@@ -752,8 +752,9 @@ const TrainingGraph = ({
             tooltip={tooltip} 
             datasets={selectedTrainingData.results.map(r => ({
               ...r,
-              // Keep original power value for tooltip formatting
-              power: r.power
+              power: r.power,
+              // Prefer moving time (exclude stopped time) for duration in tooltip
+              duration: r.moving_time ?? r.totalTimerTime ?? r.duration ?? r.durationSeconds
             }))} 
             sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
           />

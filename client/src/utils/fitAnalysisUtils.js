@@ -15,78 +15,46 @@ export const formatDuration = (seconds) => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 
-export const formatDistance = (distance, user = null) => {
-  if (!distance && distance !== 0) return '0 m';
-  
-  // Rozpoznání, zda hodnota přichází v metrech nebo kilometrech
-  let distanceInMeters;
-  
+/**
+ * Normalize distance to meters. API (FIT, Strava) typically sends meters.
+ * Heuristic: >= 1000 → meters; 0 < value < 1 → km; 1–99 integer → km (e.g. 10 km); 100–999 integer → meters (e.g. 400 m); decimals 1–999 → km.
+ */
+function distanceToMeters(distance) {
+  if (distance == null || (typeof distance !== 'number' && typeof distance !== 'string')) return 0;
   if (typeof distance === 'string') {
-    const cleanValue = distance.trim().toLowerCase();
-    
-    // Pokud už obsahuje jednotky, použij je
-    if (cleanValue.includes('km')) {
-      const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
-      if (kmMatch) {
-        distanceInMeters = parseFloat(kmMatch[1]) * 1000;
-      } else {
-        distanceInMeters = parseFloat(cleanValue.replace(/km|m| /gi, '').trim());
-        // Pokud je celé číslo > 100 bez desetinné čárky, pravděpodobně je to v metrech
-        if (!isNaN(distanceInMeters) && distanceInMeters > 100 && distanceInMeters % 1 === 0 && !cleanValue.includes('.')) {
-          // Už je v metrech
-        } else {
-          // Předpokládáme km
-          distanceInMeters = distanceInMeters * 1000;
-        }
-      }
-    } else if (cleanValue.includes('m') && !cleanValue.includes('km')) {
-      const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
-      if (mMatch) {
-        distanceInMeters = parseFloat(mMatch[1]);
-      } else {
-        distanceInMeters = parseFloat(cleanValue.replace(/km|m| /gi, '').trim());
-        // Pokud je celé číslo > 100 bez desetinné čárky, pravděpodobně je to v metrech
-        if (isNaN(distanceInMeters) || !(distanceInMeters > 100 && distanceInMeters % 1 === 0 && !cleanValue.includes('.'))) {
-          // Předpokládáme km
-          distanceInMeters = distanceInMeters * 1000;
-        }
-      }
-    } else {
-      const numValue = parseFloat(cleanValue);
-      if (!isNaN(numValue)) {
-        // Pokud je celé číslo > 100 bez desetinné čárky, pravděpodobně je to v metrech
-        if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
-          distanceInMeters = numValue;
-        } else {
-          // Předpokládáme km
-          distanceInMeters = numValue * 1000;
-        }
-      } else {
-        distanceInMeters = 0;
-      }
-    }
-  } else {
-    const numValue = parseFloat(distance);
-    if (isNaN(numValue)) {
-      distanceInMeters = 0;
-    } else {
-      // Pokud je číslo > 100 a je to celé číslo, pravděpodobně je to v metrech
-      if (numValue > 100 && numValue % 1 === 0) {
-        distanceInMeters = numValue;
-      } else {
-        // Předpokládáme km (např. 0.900, 1.5, atd.)
-        distanceInMeters = numValue * 1000;
-      }
-    }
+    const clean = distance.trim().toLowerCase();
+    const kmMatch = clean.match(/^([\d.]+)\s*km$/);
+    if (kmMatch) return parseFloat(kmMatch[1]) * 1000;
+    const mMatch = clean.match(/^([\d.]+)\s*m$/);
+    if (mMatch && !clean.includes('km')) return parseFloat(mMatch[1]);
+    distance = parseFloat(clean.replace(/[^\d.-]/g, ''));
+    if (isNaN(distance)) return 0;
   }
-  
+  const num = Number(distance);
+  if (isNaN(num)) return 0;
+  if (num >= 1000) return num; // clearly meters (e.g. 10432)
+  if (num > 0 && num < 1) return num * 1000; // km (e.g. 0.5 → 500 m)
+  if (num >= 1 && num < 1000) {
+    if (Number.isInteger(num)) {
+      if (num <= 99) return num * 1000; // 10 → 10 km, 21 → 21 km
+      return num; // 100–999 → meters (100 m, 400 m, 800 m)
+    }
+    return num * 1000; // 10.5, 21.1 → km
+  }
+  return num;
+}
+
+export const formatDistance = (distance, user = null) => {
+  const distanceInMeters = distanceToMeters(distance);
+  if (distanceInMeters === 0) return '0 m';
+
   if (user) {
     const units = getUserUnits(user);
     return formatDistanceWithUnits(distanceInMeters, units.distance).formatted;
   }
-  // Fallback to metric
   if (distanceInMeters >= 1000) {
-    return `${(distanceInMeters / 1000).toFixed(2)} km`;
+    const km = distanceInMeters / 1000;
+    return km % 1 === 0 ? `${km} km` : `${km.toFixed(2)} km`;
   }
   return `${Math.round(distanceInMeters)} m`;
 };

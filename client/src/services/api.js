@@ -4,6 +4,7 @@ import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: 60000, // 60s – allows hosted server (e.g. Render) cold start to respond
   headers: {
     'Content-Type': 'application/json'
   }

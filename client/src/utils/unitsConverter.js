@@ -54,12 +54,13 @@ export const formatDistance = (meters, unitSystem = 'metric') => {
     }
     return { value: miles, unit: 'mi', formatted: `${miles.toFixed(2)} mi` };
   } else {
-    // Metric
+    // Metric: whole km without decimals (e.g. "5 km"), otherwise "X.XX km"
     const km = meters / 1000;
     if (km < 1) {
       return { value: meters, unit: 'm', formatted: `${Math.round(meters)} m` };
     }
-    return { value: km, unit: 'km', formatted: `${km.toFixed(2)} km` };
+    const formatted = km % 1 === 0 ? `${km} km` : `${km.toFixed(2)} km`;
+    return { value: km, unit: 'km', formatted };
   }
 };
 

@@ -385,7 +385,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
 
       const entry = acc[key];
       const sport = (act.sport || '').toLowerCase();
-      const duration = Number(act.totalElapsedTime || act.elapsedTime || act.movingTime || act.duration || 0);
+      const duration = Number(act.totalTimerTime || act.moving_time || act.movingTime || act.totalElapsedTime || act.elapsedTime || act.duration || 0);
       const distance = Number(act.distance || 0);
       
       // Calculate TSS for this activity

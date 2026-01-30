@@ -6,6 +6,8 @@ import { formatDistance } from '../../utils/unitsConverter';
 // Treat very slow "running pace" as pause so it doesn't squash the Y axis (e.g. pauses between intervals).
 // 20:00/km threshold => 1200 seconds per km.
 const RUN_PAUSE_PACE_SECONDS = 20 * 60;
+// Minimum speed to count as "moving" (m/s) – below this, time is not counted (stopped/pause).
+const MOVING_SPEED_THRESHOLD_MPS = 0.14; // ~0.5 km/h
 
 const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null, selectedLapNumber = null, onSelectLapNumber = null, highlightMetric = null }) => {
   const { user: authUser } = useAuth();
@@ -66,13 +68,39 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     // If we have laps but they're not km intervals, still create km intervals from records
     // (This ensures km intervals are always shown for running)
     
+    // Helper: get speed in m/s for a record (record.speed may be m/s or km/h)
+    const speedMps = (r) => {
+      const s = r.speed || 0;
+      if (s <= 0) return 0;
+      return s > 10 ? s / 3.6 : s; // If speed > 10 assume km/h
+    };
+    // Compute moving time (seconds) from consecutive records – only count intervals where speed > threshold
+    const movingTimeFromRecords = (recs) => {
+      if (!recs || recs.length < 2) return 0;
+      let moving = 0;
+      for (let i = 1; i < recs.length; i++) {
+        const prev = recs[i - 1];
+        const curr = recs[i];
+        const prevTs = prev.timestamp ? new Date(prev.timestamp).getTime() : 0;
+        const currTs = curr.timestamp ? new Date(curr.timestamp).getTime() : 0;
+        const dt = (currTs - prevTs) / 1000;
+        if (dt <= 0) continue;
+        const currSpeed = speedMps(curr);
+        const prevSpeed = speedMps(prev);
+        if (currSpeed >= MOVING_SPEED_THRESHOLD_MPS || prevSpeed >= MOVING_SPEED_THRESHOLD_MPS) {
+          moving += dt;
+        }
+      }
+      return moving;
+    };
+    // Filter to records where we're moving (for averages – exclude stopped time from pace/speed)
+    const movingRecords = (recs) => recs.filter(r => speedMps(r) >= MOVING_SPEED_THRESHOLD_MPS);
+
     // Create km intervals from records
     const kmLaps = [];
     let currentKmRecords = [];
     let kmNumber = 1;
     let lastKmDistance = 0;
-    
-    const startTime = records[0]?.timestamp ? new Date(records[0].timestamp).getTime() : Date.now();
     
     records.forEach((record, i) => {
       // Get distance in meters
@@ -81,30 +109,25 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       if (distance >= kmNumber * 1000 && distance > lastKmDistance) {
         // We've reached a new km
         if (currentKmRecords.length > 0) {
-          // Calculate stats for this km
-          const speeds = currentKmRecords.map(r => {
-            // Convert speed to km/h if needed
+          const movingTimeSec = movingTimeFromRecords(currentKmRecords);
+          const movingRecs = movingRecords(currentKmRecords);
+          // Stats only from moving records so pace/speed don't include stopped time
+          const speeds = movingRecs.map(r => {
             const s = r.speed || 0;
-            return s > 0 ? (s > 10 ? s : s * 3.6) : 0; // If speed < 10, assume it's m/s
+            return s > 0 ? (s > 10 ? s : s * 3.6) : 0;
           }).filter(v => v > 0);
-          const heartRates = currentKmRecords.map(r => r.heartRate).filter(v => v && v > 0);
-          const cadences = currentKmRecords.map(r => r.cadence).filter(v => v && v > 0);
+          const heartRates = movingRecs.map(r => r.heartRate).filter(v => v && v > 0);
+          const cadences = movingRecs.map(r => r.cadence).filter(v => v && v > 0);
           
           const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
           const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : 0;
           const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
           
-          const firstRecord = currentKmRecords[0];
-          const lastRecord = currentKmRecords[currentKmRecords.length - 1];
-          const firstTime = firstRecord.timestamp ? new Date(firstRecord.timestamp).getTime() : startTime;
-          const lastTime = lastRecord.timestamp ? new Date(lastRecord.timestamp).getTime() : startTime;
-          const elapsedTime = (lastTime - firstTime) / 1000;
-          
           kmLaps.push({
             distance: kmNumber * 1000, // meters
-            elapsed_time: elapsedTime,
-            moving_time: elapsedTime,
-            average_speed: avgSpeed / 3.6, // Convert km/h to m/s for consistency
+            elapsed_time: movingTimeSec,
+            moving_time: movingTimeSec,
+            average_speed: avgSpeed / 3.6,
             avgSpeed: avgSpeed,
             average_heartrate: avgHeartRate,
             avgHeartRate: avgHeartRate,
@@ -127,26 +150,23 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       const lastRecord = currentKmRecords[currentKmRecords.length - 1];
       const lastDistance = lastRecord.distance || 0;
       if (lastDistance >= (kmNumber - 1) * 1000 + 500) {
-        const speeds = currentKmRecords.map(r => {
+        const movingTimeSec = movingTimeFromRecords(currentKmRecords);
+        const movingRecs = movingRecords(currentKmRecords);
+        const speeds = movingRecs.map(r => {
           const s = r.speed || 0;
           return s > 0 ? (s > 10 ? s : s * 3.6) : 0;
         }).filter(v => v > 0);
-        const heartRates = currentKmRecords.map(r => r.heartRate).filter(v => v && v > 0);
-        const cadences = currentKmRecords.map(r => r.cadence).filter(v => v && v > 0);
+        const heartRates = movingRecs.map(r => r.heartRate).filter(v => v && v > 0);
+        const cadences = movingRecs.map(r => r.cadence).filter(v => v && v > 0);
         
         const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
         const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : 0;
         const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
         
-        const firstRecord = currentKmRecords[0];
-        const firstTime = firstRecord.timestamp ? new Date(firstRecord.timestamp).getTime() : startTime;
-        const lastTime = lastRecord.timestamp ? new Date(lastRecord.timestamp).getTime() : startTime;
-        const elapsedTime = (lastTime - firstTime) / 1000;
-        
         kmLaps.push({
           distance: lastDistance,
-          elapsed_time: elapsedTime,
-          moving_time: elapsedTime,
+          elapsed_time: movingTimeSec,
+          moving_time: movingTimeSec,
           average_speed: avgSpeed / 3.6,
           avgSpeed: avgSpeed,
           average_heartrate: avgHeartRate,
@@ -322,7 +342,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     bars.forEach((bar, index) => {
       const lap = bar.lap || {};
       const avgWatts = Number(lap.average_watts || lap.avgPower || 0);
-      const durationSec = Number(lap.elapsed_time || lap.moving_time || lap.totalElapsedTime || 0);
+      const durationSec = Number(lap.moving_time || lap.totalTimerTime || lap.total_timer_time || lap.elapsed_time || lap.totalElapsedTime || 0);
 
       if (!avgWatts || avgWatts <= 0) return;
 
@@ -489,20 +509,22 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const getYAxisLabels = () => {
     const { maxValue, minValue } = chartData;
     
-    // For pace: set top value to be 10% smaller than the minimum pace (90% of minValue), bottom to be 10% larger (110% of maxValue)
-    // For cadence: normal orientation (min at bottom, max at top) with 20% padding
-    // For other metrics: set bottom value to be 20% less than the minimum value (80% of minValue)
+    // Pace (run + swim): top = fastest, bottom = proportional (5/3). Same for run (min/km) and swim (s/100m). Pause/slow don't stretch axis.
+    // Cadence: normal orientation (min at bottom, max at top) with 20% padding
+    // Other metrics (cycling power/speed/hr, etc.): min/max from data, pause values excluded from axis via filter(v > 0)
     let adjustedMinValue, adjustedMaxValue;
     if ((isRun || isSwim) && selectedMetric === 'pace') {
-      adjustedMinValue = minValue * 0.9; // Top: 10% smaller than fastest pace (smallest value)
-      adjustedMaxValue = maxValue * 1.1; // Bottom: 10% larger than slowest pace
+      adjustedMinValue = minValue * 0.9; // Top: 10% faster than fastest
+      // Bottom: (5/3)*fastest — run e.g. 3:00/km → 5:00/km; swim e.g. 1:20/100m → 2:13/100m; never 20:00 or slow outliers
+      adjustedMaxValue = minValue * (5 / 3);
     } else if (selectedMetric === 'cadence') {
       // For cadence: normal orientation - min at bottom, max at top
       adjustedMinValue = minValue * 0.8; // Bottom: 20% smaller than minimum
       adjustedMaxValue = maxValue * 1.2; // Top: 20% larger than maximum
     } else {
-      adjustedMinValue = minValue * 0.8; // Other metrics: 20% smaller
-      adjustedMaxValue = maxValue;
+      // Cycling (power, speed, hr): proportional axis — min at least 20% of max so axis isn't stretched to 0 by coasting/pause
+      adjustedMinValue = Math.max(minValue * 0.8, maxValue * 0.2);
+      adjustedMaxValue = maxValue * 1.1;
     }
     
     const range = adjustedMaxValue - adjustedMinValue;
@@ -528,16 +550,16 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     return { labels, adjustedMinValue, adjustedMaxValue: maxValue, reversed: false };
   };
 
-  // Calculate total time for X-axis labels (must be before early return)
+  // Calculate total time for X-axis labels – use moving time only (exclude stopped time)
   const totalTime = useMemo(() => {
     if (!processedLaps || processedLaps.length === 0) return 0;
     return processedLaps.reduce((sum, lap) => sum + (
-      lap.elapsed_time ||
       lap.moving_time ||
-      lap.totalElapsedTime ||
-      lap.total_elapsed_time ||
       lap.totalTimerTime ||
       lap.total_timer_time ||
+      lap.elapsed_time ||
+      lap.totalElapsedTime ||
+      lap.total_elapsed_time ||
       0
     ), 0);
   }, [processedLaps]);
@@ -552,6 +574,9 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
 
   const { bars, maxValue, minValue, totalDistance, groups } = chartData;
   const { labels: yAxisLabels, adjustedMinValue, adjustedMaxValue, reversed } = getYAxisLabels();
+  const isPaceAxis = (isRun || isSwim) && selectedMetric === 'pace';
+  const yAxisWidth = isPaceAxis ? (isMobile ? 'w-14' : 'w-20') : (isMobile ? 'w-8' : 'w-12');
+  const chartLeftMargin = isPaceAxis ? (isMobile ? 'ml-14' : 'ml-20') : (isMobile ? 'ml-10' : 'ml-14');
 
   return (
     <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow`}>
@@ -618,7 +643,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
 
       <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px' }}>
         {/* Y-axis labels - for pace: fastest (min) at top, slowest (max) at bottom; for cadence: min at bottom, max at top */}
-        <div className={`absolute left-0 top-0 bottom-12 ${isMobile ? 'w-8' : 'w-12'} flex flex-col justify-between ${isMobile ? 'pr-1' : 'pr-2'} z-10`}>
+        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} flex flex-col justify-between ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-1 pt-0.5`}>
           {yAxisLabels.map((label, i) => {
             // For cadence and other normal metrics: reverse the order (first label at bottom, last at top)
             // For pace (reversed): first label at top, last at bottom
@@ -626,28 +651,35 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               ? yAxisLabels.length - 1 - i  // Normal: reverse the array order (min at bottom, max at top)
               : i; // Reversed (pace): keep original order (min at top, max at bottom)
             const labelValue = yAxisLabels[displayIndex];
+            const isPaceTop = (isRun || isSwim) && selectedMetric === 'pace' && reversed && displayIndex === 0;
+            const isPaceBottom = (isRun || isSwim) && selectedMetric === 'pace' && reversed && displayIndex === yAxisLabels.length - 1;
             
             // Format pace as MM:SS
             let displayLabel = labelValue;
             if (selectedMetric === 'pace' && labelValue > 0) {
               const minutes = Math.floor(labelValue / 60);
-              const seconds = labelValue % 60;
+              const seconds = Math.round(labelValue % 60);
               displayLabel = `${minutes}:${String(seconds).padStart(2, '0')}`;
             }
             
             return (
             <div
               key={i}
-              className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right`}
+              className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right shrink-0 ${isPaceBottom ? 'mb-0.5' : ''} ${isPaceTop ? 'mt-0.5' : ''}`}
             >
                 {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}
+                {(isPaceTop || isPaceBottom) && (
+                  <div className="text-[10px] text-gray-500 font-medium mt-0.5 whitespace-nowrap">
+                    {isPaceTop ? 'Faster' : 'Slower'}
+                  </div>
+                )}
             </div>
             );
           })}
         </div>
 
         {/* Chart area */}
-        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
+        <div className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
           {/* Grid lines */}
           <div className="absolute inset-0">
             {yAxisLabels.map((_, i) => (
@@ -721,8 +753,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               
               // Tooltip title
               const tooltipTitle = (isRun || isSwim)
-                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nPace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
-                : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
+                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nPace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
+                : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
               
               return (
                 <div
@@ -892,7 +924,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             // Fallback calculation if refs are not available
             const cumulativeWidth = bars.slice(0, activeBar.index).reduce((sum, b) => sum + (b.distance / totalDistance * 100), 0);
             const barCenterPercent = cumulativeWidth + (activeBar.widthPercent / 2);
-            const chartAreaLeftMargin = isMobile ? 40 : 56;
+            const chartAreaLeftMargin = isMobile ? (isPaceAxis ? 56 : 40) : (isPaceAxis ? 80 : 56);
             const containerWidth = containerElement?.offsetWidth || 800;
             const chartAreaWidthPercent = 100 - ((chartAreaLeftMargin * 2) / containerWidth * 100);
             const relativeX = (chartAreaLeftMargin / containerWidth * 100) + (barCenterPercent * chartAreaWidthPercent / 100);
@@ -960,7 +992,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                           Distance: {bar.distance > 0 ? formatDistance(bar.distance, unitSystem).formatted : '-'}
                         </div>
                         <div className="text-gray-600">
-                          Moving Time: {formatDuration(bar.lap.elapsed_time || bar.lap.moving_time || bar.lap.totalElapsedTime || 0)}
+                          Moving Time: {formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}
                         </div>
                         {(isRun || isSwim) ? (
                           <>
@@ -996,7 +1028,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           })()}
 
         {/* X-axis labels - show cumulative distance/time instead of individual intervals */}
-        <div className={`${isMobile ? 'ml-10' : 'ml-14'} ${isMobile ? 'mr-2' : 'mr-4'} mt-2 flex items-center justify-between`}>
+        <div className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} mt-2 flex items-center justify-between`}>
           {/* Show only start, middle, and end labels with cumulative values */}
           {bars.length > 0 && (
             <>

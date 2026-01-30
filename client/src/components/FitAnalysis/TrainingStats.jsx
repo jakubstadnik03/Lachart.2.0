@@ -105,11 +105,13 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
   }, [isEditingTitle]);
 
   const getLapDurationSeconds = (lap = {}) => {
+    // Prefer moving time (exclude stopped time) so stats reflect only time when moving
     const candidates = [
-      lap.totalElapsedTime,
-      lap.total_elapsed_time,
+      lap.moving_time,
       lap.totalTimerTime,
       lap.total_timer_time,
+      lap.totalElapsedTime,
+      lap.total_elapsed_time,
       lap.elapsed_time,
       lap.duration
     ];
@@ -357,7 +359,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
 
   // Calculate metrics (must be before early return)
   const calculateTSS = useMemo(() => {
-    const seconds = training?.totalElapsedTime || training?.totalTimerTime || 0;
+    const seconds = training?.totalTimerTime || training?.moving_time || training?.totalElapsedTime || 0;
     if (seconds === 0) return null;
     
     const sport = training?.sport || '';
@@ -394,41 +396,41 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
       return { value: tss, estimated: !thresholdSwimPace };
     }
     
-    // For cycling: calculate TSS from power
-    if (!training?.avgPower) return null;
+    // For cycling: calculate TSS from power (use NP when available)
+    const npOrAvg = training?.normalizedPower ?? training?.avgPower;
+    if (!npOrAvg) return null;
     
     // If FTP is available, calculate proper TSS
     if (userFTP && userFTP > 0) {
-      // Simplified TSS calculation: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
-      // Using avgPower as NP approximation
-      const np = training.avgPower;
-      const tss = (seconds * Math.pow(np, 2)) / (Math.pow(userFTP, 2) * 3600) * 100;
+      // TSS formula: TSS = (seconds * NP^2) / (FTP^2 * 3600) * 100
+      const tss = (seconds * Math.pow(npOrAvg, 2)) / (Math.pow(userFTP, 2) * 3600) * 100;
       return Math.round(tss);
     }
     
     // Fallback: estimate TSS using a default FTP estimate (e.g., 250W)
-    // This allows TSS to be displayed even without user FTP
-    const estimatedFTP = 250; // Default estimate
-    const np = training.avgPower;
-    const tss = (seconds * Math.pow(np, 2)) / (Math.pow(estimatedFTP, 2) * 3600) * 100;
+    const estimatedFTP = 250;
+    const tss = (seconds * Math.pow(npOrAvg, 2)) / (Math.pow(estimatedFTP, 2) * 3600) * 100;
     return { value: Math.round(tss), estimated: true };
-  }, [userFTP, userProfile, training?.avgPower, training?.avgSpeed, training?.totalElapsedTime, training?.totalTimerTime, training?.sport]);
+  }, [userFTP, userProfile, training?.normalizedPower, training?.avgPower, training?.avgSpeed, training?.totalTimerTime, training?.moving_time, training?.totalElapsedTime, training?.sport]);
 
   const calculateIF = useMemo(() => {
-    if (!training?.avgPower) return null;
-    const ftp = userFTP || 250; // Use estimated FTP if not available
+    const npOrAvg = training?.normalizedPower ?? training?.avgPower;
+    if (!npOrAvg) return null;
+    const ftp = userFTP || 250;
     // Intensity Factor = NP / FTP
-    const np = training.avgPower;
-    const ifValue = np / ftp;
+    const ifValue = npOrAvg / ftp;
     return ifValue.toFixed(2);
-  }, [userFTP, training?.avgPower]);
+  }, [userFTP, training?.normalizedPower, training?.avgPower]);
 
-  const totalTime = training?.totalElapsedTime || training?.totalTimerTime || 0;
+  const totalTime = training?.totalTimerTime || training?.moving_time || training?.totalElapsedTime || 0;
   const avgCadence = training?.avgCadence || null;
   const maxCadence = training?.maxCadence || null;
   const maxPower = training?.maxPower || null;
   const maxHeartRate = training?.maxHeartRate || null;
   const maxSpeed = training?.maxSpeed || null;
+  // Use NP when available (backend may send normalizedPower); otherwise avgPower. Label accordingly.
+  const displayPower = training?.normalizedPower ?? training?.avgPower ?? null;
+  const isNormalizedPower = training?.normalizedPower != null && training.normalizedPower > 0;
   
   // Determine sport type
   const sport = training?.sport || '';
@@ -792,16 +794,16 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         </div>
 
-        {/* Only show Avg Power if power data is available */}
-        {training.avgPower && training.avgPower > 0 && (
+        {/* Power: show NP when available, otherwise Avg Power */}
+        {displayPower != null && displayPower > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600">
                 <BoltIcon className="h-4 w-4" />
               </span>
-              Avg Power
+              {isNormalizedPower ? 'NP' : 'Avg Power'}
             </div>
-            <div className="mt-2 text-base font-semibold text-gray-900">{Math.round(training.avgPower)} W</div>
+            <div className="mt-2 text-base font-semibold text-gray-900">{Math.round(displayPower)} W</div>
             <div className="mt-0.5 text-xs text-gray-500">{maxPower ? `Max ${Math.round(maxPower)} W` : '\u00A0'}</div>
           </div>
         )}

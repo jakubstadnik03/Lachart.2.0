@@ -26,7 +26,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           console.warn(`LapsTable: Duplicate lap by startTime at index ${index}:`, {
             index,
             startTime,
-            elapsedTime: lap.totalElapsedTime || lap.elapsed_time,
+            elapsedTime: lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time,
             distance: lap.totalDistance || lap.distance,
             power: lap.avgPower || lap.average_watts
           });
@@ -50,7 +50,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
       }
       
       // Strategy 3: Use combination of properties (without index to detect true duplicates)
-      const elapsedTime = lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0;
+      const elapsedTime = lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.total_elapsed_time || lap.elapsed_time || 0;
       const distance = lap.totalDistance || lap.total_distance || lap.distance || 0;
       const power = lap.avgPower || lap.avg_power || lap.average_watts || 0;
       const hr = lap.avgHeartRate || lap.avg_heart_rate || lap.average_heartrate || 0;
@@ -139,7 +139,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 className={`transition-colors hover:bg-white/60 cursor-pointer ${lap.lactate ? 'bg-primary/10' : ''} ${isSelected ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}
               >
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.totalElapsedTime)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time)}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance, user)}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">
                   {isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user)}
