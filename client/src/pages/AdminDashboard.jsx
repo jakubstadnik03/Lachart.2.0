@@ -93,7 +93,8 @@ const AdminDashboard = () => {
       const data = err?.response?.data;
       const message = data?.reason ? `${data.error || 'Failed to send thank you email'}: ${data.reason}` : (data?.error || 'Failed to send thank you email');
       addNotification(message, 'error');
-      console.error('Thank you email error:', err);
+      if (data) console.error('Thank you email error:', data);
+      else console.error('Thank you email error:', err);
     } finally {
       setThankYouEmailLoadingUserId(null);
     }

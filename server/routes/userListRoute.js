@@ -2080,12 +2080,11 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         res.status(200).json({ ok: true, message: "Thank you email sent" });
     } catch (error) {
         console.error("Error sending thank you email:", error);
-        const message = error.response?.body?.message || error.message || "Send failed.";
-        const isAuthError = message.includes('Invalid login') || message.includes('EAUTH') || (error.code && String(error.code).includes('EAUTH'));
-        res.status(500).json({
-            error: isAuthError ? "Email credentials invalid. Check EMAIL_USER and EMAIL_APP_PASSWORD (use Gmail App Password)." : "Failed to send thank you email",
-            reason: process.env.NODE_ENV === 'development' ? message : undefined
-        });
+        const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
+        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send thank you email";
+        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        res.status(500).json({ error: errorTitle, reason });
     }
 });
 
