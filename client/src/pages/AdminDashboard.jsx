@@ -90,7 +90,8 @@ const AdminDashboard = () => {
       await sendThankYouEmail(targetUser._id);
       addNotification(`Thank you email sent to ${targetUser.email}`, 'success');
     } catch (err) {
-      const message = err?.response?.data?.error || 'Failed to send thank you email';
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed to send thank you email'}: ${data.reason}` : (data?.error || 'Failed to send thank you email');
       addNotification(message, 'error');
       console.error('Thank you email error:', err);
     } finally {
@@ -122,7 +123,8 @@ const AdminDashboard = () => {
       await sendThankYouEmailToAll();
       addNotification(`Thank you emails sent to all ${users.length} users`, 'success');
     } catch (err) {
-      const message = err?.response?.data?.error || 'Failed to send thank you emails to all users';
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed to send thank you emails'}: ${data.reason}` : (data?.error || 'Failed to send thank you emails to all users');
       addNotification(message, 'error');
       console.error('Thank you email to all error:', err);
     } finally {

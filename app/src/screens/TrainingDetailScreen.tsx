@@ -89,7 +89,7 @@ export function TrainingDetailScreen({ route, navigation }: Props) {
     if (sourceType === 'fit') {
       const t = data || {};
       const distance = t?.totalDistance ?? t?.distance ?? null;
-      const duration = t?.totalElapsedTime ?? t?.totalTimerTime ?? t?.duration ?? null;
+      const duration = t?.totalTimerTime ?? t?.moving_time ?? t?.totalElapsedTime ?? t?.duration ?? null;
       const avgHr = t?.avgHeartRate ?? t?.averageHeartRate ?? null;
       const avgPower = t?.avgPower ?? t?.averagePower ?? null;
       const avgSpeed = t?.avgSpeed ?? t?.averageSpeed ?? null;
@@ -108,7 +108,7 @@ export function TrainingDetailScreen({ route, navigation }: Props) {
 
     // regular training
     const tr = data || {};
-    const duration = tr?.totalElapsedTime ?? tr?.duration ?? null;
+    const duration = tr?.totalTimerTime ?? tr?.moving_time ?? tr?.totalElapsedTime ?? tr?.duration ?? null;
     const distance = tr?.totalDistance ?? tr?.distance ?? null;
     return [
       { label: 'Duration', value: duration != null ? formatDuration(duration) : '-' },

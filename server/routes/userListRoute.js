@@ -1976,6 +1976,13 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
         const { userId } = req.params;
         const targetUser = await userDao.findById(userId);
         if (!targetUser) {
@@ -2073,7 +2080,12 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         res.status(200).json({ ok: true, message: "Thank you email sent" });
     } catch (error) {
         console.error("Error sending thank you email:", error);
-        res.status(500).json({ error: "Failed to send thank you email" });
+        const message = error.response?.body?.message || error.message || "Send failed.";
+        const isAuthError = message.includes('Invalid login') || message.includes('EAUTH') || (error.code && String(error.code).includes('EAUTH'));
+        res.status(500).json({
+            error: isAuthError ? "Email credentials invalid. Check EMAIL_USER and EMAIL_APP_PASSWORD (use Gmail App Password)." : "Failed to send thank you email",
+            reason: process.env.NODE_ENV === 'development' ? message : undefined
+        });
     }
 });
 
@@ -2121,8 +2133,10 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
         if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
-            console.error("Email credentials not configured");
-            return res.status(500).json({ error: "Email service not configured" });
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
         }
 
         const transporter = nodemailer.createTransport({

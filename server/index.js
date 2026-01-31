@@ -15,10 +15,13 @@ const PORT = process.env.PORT || 8000;
 // ✅ CORS configuration – allow local, Vercel preview, and production domain
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
   'https://lachart-bc.vercel.app',
   'https://lachart.net',
   'https://www.lachart.net'
 ];
+
+const allowLocalhostInProduction = process.env.ALLOW_LOCALHOST_ORIGIN === 'true';
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -32,16 +35,21 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Log the blocked origin for debugging
-    console.log('CORS blocked origin:', origin);
-    console.log('Allowed origins:', allowedOrigins);
-    
     // For development, allow localhost with any port
     if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
       return callback(null, true);
     }
     
-      callback(new Error('Not allowed by CORS'));
+    // Optional: allow any localhost in production (e.g. when testing against hosted API from local UI)
+    if (allowLocalhostInProduction && origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    
+    // Log the blocked origin for debugging
+    console.log('CORS blocked origin:', origin);
+    console.log('Allowed origins:', allowedOrigins);
+    
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true, // This is critical - must be true for withCredentials requests
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -67,8 +75,9 @@ app.use(helmet({
 // Ensure CORS headers are set correctly after Helmet
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || 
-      (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')))) {
+  if (origin && (allowedOrigins.includes(origin) ||
+      (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) ||
+      (allowLocalhostInProduction && origin.startsWith('http://localhost:')))) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
