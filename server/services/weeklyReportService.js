@@ -511,145 +511,121 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
 
   const trainingStatus = summary.trainingStatus?.statusText || '—';
   const statusAccent = summary.trainingStatus?.accent || '#767EB5';
+  const statusSubtitle = {
+    Productive: 'Trénink jde správným směrem.',
+    Maintaining: 'Stabilní zátěž – v pořádku.',
+    Recovery: 'Nižší zátěž – odpočinek nebo lehčí týden.',
+    Overreaching: 'Vysoká zátěž – zvaž odpočinek.',
+    Detraining: 'Žádné aktivity – přidej trénink.'
+  }[trainingStatus] || '';
 
+  const deltaTotalTss = calcDelta(totals.totalTSS || 0, prev.totalTSS || 0);
   const deltaTotalSeconds = calcDelta(totals.totalSeconds || 0, prev.totalSeconds || 0);
   const deltaTotalDistance = calcDelta(totals.totalDistanceMeters || 0, prev.totalDistanceMeters || 0);
-  const deltaTotalTss = calcDelta(totals.totalTSS || 0, prev.totalTSS || 0);
 
   const sportCard = (core) => {
     const cur = totals.bySport?.[core] || { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
     const p = prev.bySport?.[core] || { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
     const ds = calcDelta(cur.seconds, p.seconds);
     const dd = calcDelta(cur.distanceMeters, p.distanceMeters);
-
     const timeDelta = deltaBadgeHtml({ diffLabel: `${ds.diff >= 0 ? '+' : '−'}${formatSecondsDelta(ds.diff)}`, pct: ds.pct });
     const distDelta = deltaBadgeHtml({ diffLabel: `${dd.diff >= 0 ? '+' : '−'}${formatKmDelta(dd.diff)}`, pct: dd.pct });
-
     return `
-      <div style="border: 1px solid #eef2f7; border-radius: 12px; padding: 14px; background: #ffffff;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px;">
-          <div style="font-weight: 800; color:#111827; font-size: 14px;">${escapeHtml(formatCoreSportLabel(core))}</div>
-          <div style="color:#6b7280; font-size: 12px;">${escapeHtml(String(cur.count || 0))} sessions</div>
+      <div style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px; background: #ffffff;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 10px;">
+          <div style="font-weight: 800; color:#111827; font-size: 18px;">${escapeHtml(formatCoreSportLabel(core))}</div>
+          <div style="color:#6b7280; font-size: 15px;">${escapeHtml(String(cur.count || 0))} tréninků</div>
         </div>
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
           <div>
-            <div style="color:#6b7280; font-size: 12px;">Time</div>
-            <div style="font-weight: 800; color:#111827; font-size: 16px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
+            <div style="color:#6b7280; font-size: 15px;">Čas</div>
+            <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
           </div>
-          <div style="text-align:right;">
-            ${timeDelta}
-          </div>
+          <div style="text-align:right;">${timeDelta}</div>
         </div>
-        <div style="height: 8px;"></div>
+        <div style="height: 10px;"></div>
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
           <div>
-            <div style="color:#6b7280; font-size: 12px;">Distance</div>
-            <div style="font-weight: 800; color:#111827; font-size: 16px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
+            <div style="color:#6b7280; font-size: 15px;">Vzdálenost</div>
+            <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
           </div>
-          <div style="text-align:right;">
-            ${distDelta}
-          </div>
+          <div style="text-align:right;">${distDelta}</div>
         </div>
       </div>
     `.trim();
   };
 
-  const activityRows = summary.activities
+  const maxTrainingsToList = 5;
+  const activitiesToShow = (summary.activities || []).slice(0, maxTrainingsToList);
+
+  const activityRows = activitiesToShow
     .map(a => {
       const d = a.startDate ? new Date(a.startDate) : null;
       const dateLabel = d && !Number.isNaN(d.getTime())
         ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
         : '';
-      const distKm = metersToKm(a.distanceMeters);
-      const category = formatCategoryLabel(a.category);
       const coreSport = a.coreSport || normalizeSportToCore(a.sport);
 
-      const sourcePillBg = a.sourceLabel === 'STRAVA' ? '#e0f2fe' : (a.sourceLabel === 'FIT' ? '#ede9fe' : '#f3f4f6');
-      const sourcePillColor = a.sourceLabel === 'STRAVA' ? '#0369a1' : (a.sourceLabel === 'FIT' ? '#6d28d9' : '#111827');
-
       const nameHtml = `
-        <a href="${escapeHtml(a.linkUrl || clientUrl)}" style="color:#111827; text-decoration:none; font-weight: 700;">
+        <a href="${escapeHtml(a.linkUrl || clientUrl)}" style="color:#111827; text-decoration:none; font-weight: 700; font-size: 16px;">
           ${escapeHtml(a.name)}
         </a>
       `.trim();
 
       return `
         <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; vertical-align: top;">
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
-              <span style="display:inline-block; padding: 2px 8px; border-radius: 999px; background:${sourcePillBg}; color:${sourcePillColor}; font-weight:800; font-size:11px; letter-spacing: 0.2px;">
-                ${escapeHtml(a.sourceLabel || '—')}
-              </span>
-              <span style="color:#6b7280; font-size:12px;">${escapeHtml(dateLabel)}</span>
-            </div>
-            <div style="margin-top: 4px; font-size: 14px;">${nameHtml}</div>
-            <div style="margin-top: 3px; color: #6b7280; font-size: 12px;">
-              ${escapeHtml(formatCoreSportLabel(coreSport))} • Category: ${escapeHtml(category)}
-            </div>
+          <td style="padding: 14px 0; border-bottom: 1px solid #eef2f7; vertical-align: top;">
+            <div style="color:#6b7280; font-size: 15px;">${escapeHtml(dateLabel)} · ${escapeHtml(formatCoreSportLabel(coreSport))}</div>
+            <div style="margin-top: 4px;">${nameHtml}</div>
           </td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
+          <td style="padding: 14px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 17px; font-weight: 700; white-space: nowrap; vertical-align: top;">
             ${escapeHtml(formatSecondsToHMS(a.seconds))}
-          </td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
-            ${a.distanceMeters ? `${distKm.toFixed(1)} km` : '—'}
-          </td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 14px; white-space: nowrap; vertical-align: top;">
-            ${a.tss ? String(Math.round(a.tss)) : '—'}
           </td>
         </tr>
       `;
     })
     .join('');
 
-  const metricsRow = (label, value, accentColor = '#111827') => `
-    <tr>
-      <td style="padding: 10px 0; color: #6b7280; font-size: 13px;">${label}</td>
-      <td style="padding: 10px 0; text-align: right; color: ${accentColor}; font-size: 16px; font-weight: 700; white-space: nowrap;">${value}</td>
-    </tr>
-  `;
-
   return `
-    <p style="margin: 0 0 14px;">Hi <strong>${userName}</strong>, here’s a summary of your last week.</p>
-    <p style="margin: 0 0 18px; color: #6b7280; font-size: 14px;">${weekStartLabel} – ${weekEndLabel}</p>
+    <p style="margin: 0 0 16px; font-size: 18px;">Ahoj <strong>${userName}</strong>, shrnutí minulého týdne.</p>
+    <p style="margin: 0 0 22px; color: #6b7280; font-size: 16px;">${weekStartLabel} – ${weekEndLabel}</p>
 
-    <div style="border: 1px solid #eef2f7; border-radius: 10px; padding: 18px; background: #ffffff;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 10px;">
-        <div style="color:#6b7280; font-size: 13px;">Training Status</div>
-        <div style="font-weight:700; color:${statusAccent}; font-size: 16px;">${trainingStatus}</div>
+    <div style="border: 2px solid ${statusAccent}; border-radius: 14px; padding: 22px; background: #ffffff;">
+      <div style="text-align: center; margin-bottom: 8px;">
+        <div style="font-weight: 800; color: ${statusAccent}; font-size: 24px;">${trainingStatus}</div>
+        ${statusSubtitle ? `<div style="color: #6b7280; font-size: 16px; margin-top: 6px;">${escapeHtml(statusSubtitle)}</div>` : ''}
       </div>
-      <table role="presentation" style="width: 100%; border-collapse: collapse;">
-        ${metricsRow('Fitness', summary.formValue === null ? '—' : String(summary.formValue), '#111827')}
-        ${metricsRow('TSS', `${String(Math.round(totals.totalTSS || 0))} ${deltaBadgeHtml({ diffLabel: `${deltaTotalTss.diff >= 0 ? '+' : '−'}${Math.abs(Math.round(deltaTotalTss.diff))}`, pct: deltaTotalTss.pct })}`)}
-        ${metricsRow('Duration', duration)}
-        ${metricsRow('Distance', `${km.toFixed(1)} km`)}
-        ${metricsRow('Vs last week (time)', deltaBadgeHtml({ diffLabel: `${deltaTotalSeconds.diff >= 0 ? '+' : '−'}${formatSecondsDelta(deltaTotalSeconds.diff)}`, pct: deltaTotalSeconds.pct }))}
-        ${metricsRow('Vs last week (distance)', deltaBadgeHtml({ diffLabel: `${deltaTotalDistance.diff >= 0 ? '+' : '−'}${formatKmDelta(deltaTotalDistance.diff)}`, pct: deltaTotalDistance.pct }))}
-        ${metricsRow('Avg HR', totals.avgHr ? `${totals.avgHr}` : '—')}
-        ${metricsRow('Avg Power', totals.avgPower ? `${totals.avgPower} W` : '—')}
-      </table>
+      <div style="display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; margin-top: 16px;">
+        <div style="text-align: center;">
+          <div style="color: #6b7280; font-size: 15px;">Form</div>
+          <div style="font-weight: 800; color: #111827; font-size: 20px;">${summary.formValue === null ? '—' : String(summary.formValue)}</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="color: #6b7280; font-size: 15px;">TSS</div>
+          <div style="font-size: 20px; font-weight: 800;">${String(Math.round(totals.totalTSS || 0))} ${deltaBadgeHtml({ diffLabel: `${deltaTotalTss.diff >= 0 ? '+' : '−'}${Math.abs(Math.round(deltaTotalTss.diff))}`, pct: deltaTotalTss.pct })}</div>
+        </div>
+      </div>
     </div>
 
-    <div style="height: 18px;"></div>
+    <div style="height: 22px;"></div>
 
-    <h3 style="margin: 0 0 10px; color: #111827; font-size: 18px;">Weekly Breakdown</h3>
-    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Týden podle sportu</h3>
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
       ${sportCard('run')}
       ${sportCard('bike')}
       ${sportCard('swim')}
     </div>
 
-    <div style="height: 18px;"></div>
+    <div style="height: 22px;"></div>
 
-    <h3 style="margin: 0 0 10px; color: #111827; font-size: 18px;">Trainings (${summary.activities.length})</h3>
+    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Tréninky (max ${maxTrainingsToList})</h3>
     <table role="presentation" style="width: 100%; border-collapse: collapse;">
       <tr>
-        <th style="text-align:left; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Training</th>
-        <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Duration</th>
-        <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">Distance</th>
-        <th style="text-align:right; padding: 0 0 8px; color:#6b7280; font-size:12px; font-weight:600;">TSS</th>
+        <th style="text-align:left; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Trénink</th>
+        <th style="text-align:right; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Čas</th>
       </tr>
       ${activityRows || `
-        <tr><td colspan="4" style="padding: 14px 0; color:#6b7280;">No trainings found for this week.</td></tr>
+        <tr><td colspan="2" style="padding: 16px 0; color:#6b7280; font-size: 16px;">Pro tento týden nejsou žádné tréninky.</td></tr>
       `}
     </table>
   `.trim();

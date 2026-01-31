@@ -91,7 +91,12 @@ const AdminDashboard = () => {
       addNotification(`Thank you email sent to ${targetUser.email}`, 'success');
     } catch (err) {
       const data = err?.response?.data;
-      const message = data?.reason ? `${data.error || 'Failed to send thank you email'}: ${data.reason}` : (data?.error || 'Failed to send thank you email');
+      let message;
+      if (err?.code === 'ERR_NETWORK') {
+        message = 'Network error – backend unreachable. If using Render: wait ~30s (cold start) and try again, or set ALLOW_LOCALHOST_ORIGIN=true on the server.';
+      } else {
+        message = data?.reason ? `${data.error || 'Failed to send thank you email'}: ${data.reason}` : (data?.error || 'Failed to send thank you email');
+      }
       addNotification(message, 'error');
       if (data) console.error('Thank you email error:', data);
       else console.error('Thank you email error:', err);
