@@ -1471,10 +1471,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return 'N/A';
   };
   
-  export default DataTable;
-  export { calculateThresholds };
-  
-  export const calculatePolynomialRegression = (results) => {
+  const calculatePolynomialRegression = (results) => {
     const xVals = results.map(r => r.power);
     const yVals = results.map(r => r.lactate);
     
@@ -1512,4 +1509,86 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
     return polyPoints;
   };
+
+  /** Polynomial regression for HR vs lactate (x = heartRate bpm, y = lactate). Uses only results with valid heartRate. */
+  const calculatePolynomialRegressionHR = (results) => {
+    if (!results || !Array.isArray(results)) return [];
+    const valid = results.filter(r => {
+      const hr = r.heartRate;
+      if (hr == null || hr === '') return false;
+      const lactate = r.lactate;
+      if (lactate == null || lactate === '') return false;
+      const hrNum = Number(String(hr).replace(',', '.'));
+      const laNum = Number(String(lactate).replace(',', '.'));
+      return !isNaN(hrNum) && hrNum >= 40 && hrNum <= 220 && !isNaN(laNum);
+    });
+    if (valid.length < 4) return [];
+    const xVals = valid.map(r => Number(String(r.heartRate).replace(',', '.')));
+    const yVals = valid.map(r => Number(String(r.lactate).replace(',', '.')));
+    const n = xVals.length;
+    const X = [];
+    const Y = [];
+    for (let i = 0; i < n; i++) {
+      X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+      Y.push(yVals[i]);
+    }
+    const XT = math.transpose(X);
+    const XTX = math.multiply(XT, X);
+    const XTY = math.multiply(XT, Y);
+    const coefficients = math.lusolve(XTX, XTY).flat();
+    const polyRegression = (x) =>
+      coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
+    const minX = Math.min(...xVals);
+    const maxX = Math.max(...xVals);
+    const step = (maxX - minX) / 100 || 1;
+    const polyPoints = [];
+    for (let x = minX; x <= maxX; x += step) {
+      const y = polyRegression(x);
+      if (!isNaN(y) && isFinite(y) && y >= 0) polyPoints.push({ x, y });
+    }
+    return polyPoints;
+  };
+
+  /** Polynomial regression for lactate (x) -> HR (y). For chart with X = lactate, Y = heart rate (tepy). */
+  const calculatePolynomialRegressionLactateToHR = (results) => {
+    if (!results || !Array.isArray(results)) return [];
+    const valid = results.filter(r => {
+      const hr = r.heartRate;
+      if (hr == null || hr === '') return false;
+      const lactate = r.lactate;
+      if (lactate == null || lactate === '') return false;
+      const hrNum = Number(String(hr).replace(',', '.'));
+      const laNum = Number(String(lactate).replace(',', '.'));
+      return !isNaN(hrNum) && hrNum >= 40 && hrNum <= 220 && !isNaN(laNum);
+    });
+    if (valid.length < 4) return [];
+    const xVals = valid.map(r => Number(String(r.lactate).replace(',', '.')));
+    const yVals = valid.map(r => Number(String(r.heartRate).replace(',', '.')));
+    const n = xVals.length;
+    const X = [];
+    const Y = [];
+    for (let i = 0; i < n; i++) {
+      X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+      Y.push(yVals[i]);
+    }
+    const XT = math.transpose(X);
+    const XTX = math.multiply(XT, X);
+    const XTY = math.multiply(XT, Y);
+    const coefficients = math.lusolve(XTX, XTY).flat();
+    const polyRegression = (x) =>
+      coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
+    const minX = Math.min(...xVals);
+    const maxX = Math.max(...xVals);
+    const step = (maxX - minX) / 100 || 0.01;
+    const polyPoints = [];
+    for (let x = minX; x <= maxX; x += step) {
+      const y = polyRegression(x);
+      if (!isNaN(y) && isFinite(y) && y >= 0 && y <= 250) polyPoints.push({ x, y });
+    }
+    return polyPoints;
+  };
+
+  export default DataTable;
+  export { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionHR, calculatePolynomialRegressionLactateToHR };
+
   

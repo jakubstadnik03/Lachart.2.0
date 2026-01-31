@@ -13,7 +13,7 @@ import {
   Legend as ChartLegend,
 } from 'chart.js';
 import * as math from 'mathjs'; // Import mathjs for matrix operations
-import DataTable, { calculateThresholds } from './DataTable';
+import DataTable, { calculateThresholds, calculatePolynomialRegressionLactateToHR } from './DataTable';
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
@@ -298,6 +298,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
+  const [chartView, setChartView] = useState('power'); // 'power' = power/pace vs lactate, 'hr' = heart rate vs lactate
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
@@ -394,6 +395,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     if (lactateNum < 0) return false;
     
     return true;
+  });
+
+  // Points that have both heart rate and lactate (for HR vs lactate view)
+  const validResultsWithHR = validResults.filter(r => {
+    const hr = r.heartRate;
+    if (hr === undefined || hr === null || hr === '') return false;
+    const hrNum = Number(String(hr).replace(',', '.'));
+    return !isNaN(hrNum) && hrNum >= 40 && hrNum <= 220;
   });
   
   if (validResults.length < 2) {
@@ -1377,11 +1386,123 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     },
   };
 
+  // Heart rate vs lactate view: X = lactate (mmol/L), Y = tepy (heart rate bpm), červená křivka
+  const hasEnoughHRData = validResultsWithHR.length >= 2;
+  const hrMeasuredPoints = hasEnoughHRData
+    ? [...validResultsWithHR]
+        .map(r => ({
+          x: Number(String(r.lactate).replace(',', '.')),
+          y: Number(String(r.heartRate).replace(',', '.'))
+        }))
+        .sort((a, b) => a.x - b.x)
+    : [];
+  const hrPolyPoints = hasEnoughHRData ? calculatePolynomialRegressionLactateToHR(validResultsWithHR) : [];
+  const hrMeasuredDataSet = hasEnoughHRData
+    ? {
+        label: 'Measured data',
+        data: hrMeasuredPoints,
+        showLine: false,
+        pointBackgroundColor: '#fef2f2',
+        pointBorderColor: '#dc2626',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+      }
+    : null;
+  const hrPolyDataSet = hasEnoughHRData && hrPolyPoints.length > 0
+    ? {
+        label: 'Polynomial Fit',
+        data: hrPolyPoints,
+        borderColor: '#dc2626',
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        borderWidth: 2,
+        showLine: true,
+      }
+    : null;
+  const hrThresholdDatasets = hasEnoughHRData && thresholds?.heartRates && thresholds?.lactates
+    ? (['LTP1', 'LTP2', 'IAT', 'Log-log']).filter(key => {
+        const hr = thresholds.heartRates[key];
+        const la = thresholds.lactates[key];
+        return hr != null && !isNaN(Number(hr)) && la != null && !isNaN(Number(la));
+      }).map(key => ({
+        label: key,
+        data: [{ x: Number(thresholds.lactates[key]), y: Number(thresholds.heartRates[key]) }],
+        borderColor: colorMap[key] || '#dc2626',
+        backgroundColor: colorMap[key] || '#dc2626',
+        pointRadius: 6,
+        showLine: false,
+      }))
+    : [];
+  const hrChartData = hasEnoughHRData
+    ? { datasets: [hrMeasuredDataSet, hrPolyDataSet, ...hrThresholdDatasets].filter(Boolean) }
+    : { datasets: [] };
+  const hrXValues = hrMeasuredPoints.map(p => p.x).concat(hrThresholdDatasets.flatMap(ds => ds.data.map(d => d.x)));
+  const hrYValues = hrMeasuredPoints.map(p => p.y).concat(hrThresholdDatasets.flatMap(ds => ds.data.map(d => d.y)));
+  const hrMinX = hrXValues.length ? Math.min(...hrXValues) : 0;
+  const hrMaxX = hrXValues.length ? Math.max(...hrXValues) : 4;
+  const hrMinY = hrYValues.length ? Math.min(...hrYValues) : 80;
+  const hrMaxY = hrYValues.length ? Math.max(...hrYValues) : 180;
+  const hrXPadding = (hrMaxX - hrMinX) * 0.1 || 0.2;
+  const hrYPadding = (hrMaxY - hrMinY) * 0.1 || 10;
+  const hrChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        type: 'linear',
+        min: Math.max(0, hrMinX - hrXPadding),
+        max: hrMaxX + hrXPadding,
+        title: { display: true, text: 'Lactate (mmol/L)' },
+        border: { dash: [6, 6] },
+        grid: { color: 'rgba(0, 0, 0, 0.15)', borderDash: [4, 4], drawTicks: true },
+      },
+      y: {
+        type: 'linear',
+        min: Math.max(0, hrMinY - hrYPadding),
+        max: Math.min(250, hrMaxY + hrYPadding),
+        title: { display: true, text: 'Heart rate (bpm) / Tepy' },
+        border: { dash: [6, 6] },
+        grid: { color: 'rgba(0, 0, 0, 0.15)', borderDash: [4, 4], drawTicks: true },
+        ticks: { callback: (value) => `${Math.round(value)}` }
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        mode: 'nearest',
+        intersect: true,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        titleColor: '#111827',
+        bodyColor: '#111827',
+        borderColor: '#F3F4F6',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 12,
+        displayColors: true,
+        callbacks: {
+          label: (ctx) => {
+            const x = ctx.parsed.x;
+            const y = ctx.parsed.y;
+            return ctx.dataset.label === 'Measured data'
+              ? `Lactate: ${x.toFixed(2)} mmol/L | HR: ${Math.round(y)} bpm`
+              : `${ctx.dataset.label}: Lactate ${x.toFixed(2)} mmol/L | HR ${Math.round(y)} bpm`;
+          },
+        },
+      },
+    },
+    elements: { point: { radius: 5, hoverRadius: 8, hitRadius: 8 } },
+  };
+
+  const finalData = chartView === 'hr' && hasEnoughHRData ? hrChartData : data;
+  const finalOptions = chartView === 'hr' && hasEnoughHRData ? hrChartOptions : options;
+  const showHRViewPlaceholder = chartView === 'hr' && !hasEnoughHRData;
+
   return (
     <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5 relative">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg sm:text-xl font-bold">
               Lactate Curve
               {trainingTitle && (
@@ -1391,6 +1512,28 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               )}
               <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
             </h2>
+            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50" role="group">
+              <button
+                type="button"
+                onClick={() => setChartView('power')}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  chartView === 'power' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Power or pace vs lactate"
+              >
+                Power/pace vs lactate
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartView('hr')}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  chartView === 'hr' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Heart rate vs lactate"
+              >
+                Heart rate vs lactate
+              </button>
+            </div>
             <button
               onClick={() => setShowGlossary(true)}
               className="p-1 hover:bg-gray-100 rounded-full transition-colors"
@@ -1449,10 +1592,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         
         <div className="flex flex-col lg:flex-row gap-4">
           <div className={showDataTable ? "flex-1 min-w-0" : "w-full"} style={{ height: '400px', minHeight: '300px' }}>
+            {showHRViewPlaceholder ? (
+              <div className="h-full flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-center p-6">
+                <div>
+                  <p className="text-gray-600 font-medium">No heart rate data for this test</p>
+                  <p className="text-sm text-gray-500 mt-1">Add heart rate (bpm) to at least 2 steps to see Heart rate vs lactate.</p>
+                </div>
+              </div>
+            ) : (
             <Line 
               ref={chartRef} 
-              data={data} 
-              options={options}
+              data={finalData} 
+              options={finalOptions}
               plugins={[{
                 id: 'zonePlugin',
                 beforeDraw: (chart) => {
@@ -1501,25 +1652,24 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 }
               }]}
             />
+            )}
           </div>
           
           {showDataTable && (
             <>
-              <div className="w-full lg:w-[80px] shrink-0">
-                <Legend 
-                  chartRef={chartRef} 
-                  zonesVisible={zonesVisible} 
-                  setZonesVisible={(value) => {
-                    setZonesVisible(value);
-                    zonesVisibleRef.current = value;
-                    // Force chart update
-                    if (chartRef.current) {
-                      chartRef.current.update();
-                    }
-                  }} 
-                />
-              </div>
-              
+              {chartView === 'power' && (
+                <div className="w-full lg:w-[80px] shrink-0">
+                  <Legend 
+                    chartRef={chartRef} 
+                    zonesVisible={zonesVisible} 
+                    setZonesVisible={(value) => {
+                      setZonesVisible(value);
+                      zonesVisibleRef.current = value;
+                      if (chartRef.current) chartRef.current.update();
+                    }} 
+                  />
+                </div>
+              )}
               <div className="w-full lg:w-[400px] shrink-0">
                 <DataTable mockData={mockData} />
               </div>

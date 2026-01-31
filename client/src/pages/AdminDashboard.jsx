@@ -89,7 +89,6 @@ const AdminDashboard = () => {
       setThankYouEmailLoadingUserId(targetUser._id);
       await sendThankYouEmail(targetUser._id);
       addNotification(`Thank you email sent to ${targetUser.email}`, 'success');
-      fetchData(); // Refresh data to show updated tracking info
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send thank you email';
       addNotification(message, 'error');
@@ -104,7 +103,6 @@ const AdminDashboard = () => {
       setFeatureAnnouncementEmailLoadingUserId(targetUser._id);
       await sendFeatureAnnouncementEmail(targetUser._id);
       addNotification(`Feature announcement email sent to ${targetUser.email}`, 'success');
-      fetchData(); // Refresh data to show updated tracking info
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send feature announcement email';
       addNotification(message, 'error');
@@ -123,7 +121,6 @@ const AdminDashboard = () => {
       setSendingToAll(true);
       await sendThankYouEmailToAll();
       addNotification(`Thank you emails sent to all ${users.length} users`, 'success');
-      fetchData(); // Refresh data to show updated tracking info
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send thank you emails to all users';
       addNotification(message, 'error');
@@ -423,7 +420,6 @@ const AdminDashboard = () => {
     setBulkSending(false);
     setSelectedUsersForBulk([]);
     addNotification(`Sent ${successCount} emails successfully${failCount > 0 ? `, ${failCount} failed` : ''}`, successCount > 0 ? 'success' : 'error');
-    fetchData(); // Refresh data
   };
 
   const toggleUserSelection = (userId) => {
@@ -730,7 +726,6 @@ const AdminDashboard = () => {
                         }
                         setSendingToAll(false);
                         addNotification(`Sent ${successCount} reactivation email(s)${failCount > 0 ? `, ${failCount} failed` : ''}`, successCount > 0 ? 'success' : 'error');
-                        fetchData(); // Refresh data
                       }}
                       disabled={sendingToAll || lastLoginStats.never === 0}
                       className={`mt-2 px-2 sm:px-3 py-1 text-xs font-medium rounded-md transition-colors ${
