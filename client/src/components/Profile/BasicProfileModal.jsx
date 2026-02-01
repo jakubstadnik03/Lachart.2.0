@@ -17,7 +17,6 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         sport: userData.sport || '',
         specialization: userData.specialization || '',
         bio: userData.bio || '',
-        units: userData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
       };
       setFormData(initialFormData);
     }
@@ -70,7 +69,6 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
     const dataToSubmit = {
       ...formData,
       dateOfBirth: parseDateForSubmit(formData.dateOfBirth),
-      units: formData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
     };
 
     onSubmit(dataToSubmit);
@@ -183,114 +181,6 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none"
               placeholder="Tell us about yourself..."
             />
-          </div>
-        </div>
-
-        {/* Units Preferences Section */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Units Preferences</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Distance</label>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="distance"
-                    value="metric"
-                    checked={formData.units?.distance === 'metric'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, distance: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Metric (km, m)</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="distance"
-                    value="imperial"
-                    checked={formData.units?.distance === 'imperial'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, distance: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Imperial (miles, feet)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Weight</label>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="weight"
-                    value="kg"
-                    checked={formData.units?.weight === 'kg'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, weight: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Kilograms (kg)</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="weight"
-                    value="lbs"
-                    checked={formData.units?.weight === 'lbs'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, weight: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Pounds (lbs)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Temperature</label>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="temperature"
-                    value="celsius"
-                    checked={formData.units?.temperature === 'celsius'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, temperature: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Celsius (°C)</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="temperature"
-                    value="fahrenheit"
-                    checked={formData.units?.temperature === 'fahrenheit'}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      units: { ...prev.units, temperature: e.target.value }
-                    }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-600">Fahrenheit (°F)</span>
-                </label>
-              </div>
-            </div>
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
 import BasicProfileModal from "./Profile/BasicProfileModal";
+import UnitsPreferencesModal from "./Profile/UnitsPreferencesModal";
 import TrainingZonesModal from "./Profile/TrainingZonesModal";
 import StravaConnectModal from "./Onboarding/StravaConnectModal";
 import api from "../services/api";
@@ -23,6 +24,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
+  const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
@@ -287,15 +289,15 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             try {
               const response = await api.put('/user/edit-profile', formData);
               if (response.data) {
-                // Dispatch user update event to update global state
                 window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
-                // Close basic profile modal and show training zones modal if missing
                 setShowBasicProfileModal(false);
-                const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
-                if (hasNoZones) {
-                  setShowTrainingZonesModal(true);
-                } else if (!response.data.strava?.athleteId) {
-                  setShowStravaModal(true);
+                const unitsAlreadyDone = localStorage.getItem(`unitsPreferencesModalDone_${response.data._id}`) === 'true';
+                if (unitsAlreadyDone) {
+                  const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
+                  if (hasNoZones) setShowTrainingZonesModal(true);
+                  else if (!response.data.strava?.athleteId) setShowStravaModal(true);
+                } else {
+                  setShowUnitsPreferencesModal(true);
                 }
                 addNotification('Profile updated successfully', 'success');
               }
@@ -308,7 +310,45 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
       )}
 
-      {/* Training Zones Modal - second step */}
+      {/* Units Preferences Modal - after basic profile (only once per user) */}
+      {user && (
+        <UnitsPreferencesModal
+          isOpen={showUnitsPreferencesModal}
+          onClose={() => {
+            localStorage.setItem(`unitsPreferencesModalDone_${user._id}`, 'true');
+            setShowUnitsPreferencesModal(false);
+            const hasNoZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
+            if (hasNoZones) {
+              setShowTrainingZonesModal(true);
+            } else if (!user.strava?.athleteId) {
+              setShowStravaModal(true);
+            }
+          }}
+          onSubmit={async (formData) => {
+            try {
+              const response = await api.put('/user/edit-profile', formData);
+              if (response.data) {
+                localStorage.setItem(`unitsPreferencesModalDone_${response.data._id}`, 'true');
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                setShowUnitsPreferencesModal(false);
+                const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
+                if (hasNoZones) {
+                  setShowTrainingZonesModal(true);
+                } else if (!response.data.strava?.athleteId) {
+                  setShowStravaModal(true);
+                }
+                addNotification('Units saved', 'success');
+              }
+            } catch (error) {
+              console.error('Error updating units:', error);
+              addNotification('Error updating units', 'error');
+            }
+          }}
+          userData={user}
+        />
+      )}
+
+      {/* Training Zones Modal - after units */}
       {user && (
         <TrainingZonesModal
           isOpen={showTrainingZonesModal}

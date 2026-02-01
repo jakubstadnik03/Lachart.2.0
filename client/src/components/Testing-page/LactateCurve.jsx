@@ -315,20 +315,23 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               const label = context.dataset.label;
               const value = context.parsed.y;
               const power = powerData[context.dataIndex];
-              
+              const isHeartRate = context.dataset.yAxisID === 'y1';
+              const valueUnit = isHeartRate ? 'bpm' : 'mmol/L';
+              const valueStr = isHeartRate ? Math.round(value) : value.toFixed(2);
+
               if (mockData.sport === 'bike') {
-                return `${label}: ${value.toFixed(2)} mmol/L | ${power}W`;
+                return `${label}: ${valueStr} ${valueUnit} | ${power}W`;
               } else if (mockData.sport === 'run' || mockData.sport === 'swim') {
                 if (inputMode === 'pace') {
                   const pace = convertSecondsToPace(power);
-                  return `${label}: ${value.toFixed(2)} mmol/L | ${pace}`;
+                  return `${label}: ${valueStr} ${valueUnit} | ${pace}`;
                 } else {
                   const speed = convertSecondsToSpeed(power, unitSystem);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
-                  return `${label}: ${value.toFixed(2)} mmol/L | ${speed.toFixed(1)} ${unit}`;
+                  return `${label}: ${valueStr} ${valueUnit} | ${speed.toFixed(1)} ${unit}`;
                 }
               } else {
-                return `${label}: ${value.toFixed(2)} mmol/L | ${power}`;
+                return `${label}: ${valueStr} ${valueUnit} | ${power}`;
               }
             }
           }

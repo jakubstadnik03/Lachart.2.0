@@ -10,6 +10,7 @@ import { API_ENDPOINTS } from '../config/api.config';
 import { trackEvent, trackConversionFunnel } from '../utils/analytics';
 import { logUserLogin } from '../utils/eventLogger';
 import BasicProfileModal from '../components/Profile/BasicProfileModal';
+import UnitsPreferencesModal from '../components/Profile/UnitsPreferencesModal';
 import TrainingZonesModal from '../components/Profile/TrainingZonesModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 
@@ -22,6 +23,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
+  const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
@@ -53,7 +55,7 @@ const LoginPage = () => {
 
   useEffect(() => {
     // Don't navigate if modals are showing (profile incomplete)
-    if (isAuthenticated && !showBasicProfileModal && !showTrainingZonesModal && !showStravaModal) {
+    if (isAuthenticated && !showBasicProfileModal && !showUnitsPreferencesModal && !showTrainingZonesModal && !showStravaModal) {
       const pendingInvitationToken = localStorage.getItem('pendingInvitationToken');
       console.log("Checking for pending invitation token:", pendingInvitationToken);
       
@@ -65,7 +67,7 @@ const LoginPage = () => {
         navigate(from, { replace: true });
       }
     }
-  }, [isAuthenticated, navigate, from, showBasicProfileModal, showTrainingZonesModal, showStravaModal]);
+  }, [isAuthenticated, navigate, from, showBasicProfileModal, showUnitsPreferencesModal, showTrainingZonesModal, showStravaModal]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -632,17 +634,16 @@ const LoginPage = () => {
             try {
               const response = await api.put('/user/edit-profile', formData);
               if (response.data) {
-                // Update user in state
                 setLoggedInUser(response.data);
-                // Dispatch user update event to update global state
                 window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
-                // Close basic profile modal and show training zones modal if missing
                 setShowBasicProfileModal(false);
-                const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
-                if (hasNoZones) {
-                  setShowTrainingZonesModal(true);
-                } else if (!response.data.strava?.athleteId) {
-                  setShowStravaModal(true);
+                const unitsAlreadyDone = localStorage.getItem(`unitsPreferencesModalDone_${response.data._id}`) === 'true';
+                if (unitsAlreadyDone) {
+                  const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
+                  if (hasNoZones) setShowTrainingZonesModal(true);
+                  else if (!response.data.strava?.athleteId) setShowStravaModal(true);
+                } else {
+                  setShowUnitsPreferencesModal(true);
                 }
                 addNotification('Profile updated successfully', 'success');
               }
@@ -655,7 +656,46 @@ const LoginPage = () => {
         />
       )}
 
-      {/* Training Zones Modal - second step */}
+      {/* Units Preferences Modal - after basic profile (only once per user) */}
+      {loggedInUser && (
+        <UnitsPreferencesModal
+          isOpen={showUnitsPreferencesModal}
+          onClose={() => {
+            localStorage.setItem(`unitsPreferencesModalDone_${loggedInUser._id}`, 'true');
+            setShowUnitsPreferencesModal(false);
+            const hasNoZones = !loggedInUser.powerZones?.cycling?.lt1 && !loggedInUser.powerZones?.running?.lt1 && !loggedInUser.powerZones?.swimming?.lt1;
+            if (hasNoZones) {
+              setShowTrainingZonesModal(true);
+            } else if (!loggedInUser.strava?.athleteId) {
+              setShowStravaModal(true);
+            }
+          }}
+          onSubmit={async (formData) => {
+            try {
+              const response = await api.put('/user/edit-profile', formData);
+              if (response.data) {
+                localStorage.setItem(`unitsPreferencesModalDone_${response.data._id}`, 'true');
+                setLoggedInUser(response.data);
+                window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                setShowUnitsPreferencesModal(false);
+                const hasNoZones = !response.data.powerZones?.cycling?.lt1 && !response.data.powerZones?.running?.lt1 && !response.data.powerZones?.swimming?.lt1;
+                if (hasNoZones) {
+                  setShowTrainingZonesModal(true);
+                } else if (!response.data.strava?.athleteId) {
+                  setShowStravaModal(true);
+                }
+                addNotification('Units saved', 'success');
+              }
+            } catch (error) {
+              console.error('Error updating units:', error);
+              addNotification('Error updating units', 'error');
+            }
+          }}
+          userData={loggedInUser}
+        />
+      )}
+
+      {/* Training Zones Modal - after units */}
       {loggedInUser && (
         <TrainingZonesModal
           isOpen={showTrainingZonesModal}
