@@ -1810,6 +1810,7 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     athleteId: user.strava.athleteId,
                     lastSyncDate: user.strava.lastSyncDate
                 } : null,
+                units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' },
                 isActive: user.isActive !== false, // Default to true if not set
                 notifications: user.notifications || {
                     emailNotifications: true,
@@ -1822,6 +1823,7 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     sentCount: 0,
                     lastSent: null
                 },
+                featureAnnouncementEmail: user.featureAnnouncementEmail || { sent: false, sentCount: 0, lastSent: null },
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount
             };

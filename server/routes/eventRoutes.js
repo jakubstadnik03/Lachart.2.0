@@ -99,17 +99,17 @@ router.get('/stats', async (req, res) => {
       { $sort: { count: -1 } }
     ]);
 
-    // Daily stats for last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+    // Daily stats: use requested date range or default last 30 days
+    const rangeStart = matchFilter.timestamp?.$gte || (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      return d;
+    })();
+    const rangeEnd = matchFilter.timestamp?.$lte || new Date();
+    const dailyMatch = { timestamp: { $gte: rangeStart, $lte: rangeEnd } };
+
     const dailyStats = await Event.aggregate([
-      { 
-        $match: { 
-          timestamp: { $gte: thirtyDaysAgo },
-          ...matchFilter
-        } 
-      },
+      { $match: dailyMatch },
       {
         $group: {
           _id: {

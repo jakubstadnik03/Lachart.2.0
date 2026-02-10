@@ -236,6 +236,13 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       return isNaN(value) || !isFinite(value) ? 0 : value;
     });
 
+    // Dynamically determine heart rate axis limits based on entered values
+    const nonZeroHeartRates = heartRateData.filter((v) => v > 0);
+    const minHeartRate =
+      nonZeroHeartRates.length > 0 ? Math.min(...nonZeroHeartRates) : 0;
+    const maxHeartRate =
+      nonZeroHeartRates.length > 0 ? Math.max(...nonZeroHeartRates) : 0;
+
     const datasets = [
       {
         label: "Lactate (mmol/L)",
@@ -352,8 +359,9 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         },
         y1: {
           title: { display: true, text: "Heart Rate (BPM)" },
-          min: 100,
-          max: Math.max(...heartRateData) + 10,
+          // Start slightly below the minimum entered HR, but never below 0
+          min: Math.max(0, Math.floor(minHeartRate - 10)),
+          max: maxHeartRate > 0 ? Math.ceil(maxHeartRate + 10) : 200,
           position: "right",
           ticks: { display: true },
           grid: {

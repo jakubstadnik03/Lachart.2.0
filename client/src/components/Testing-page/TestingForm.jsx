@@ -1111,8 +1111,13 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
 
           <div className="relative">
-            <label className="block text-xs font-medium text-gray-700 mb-0.5">Sport</label>
-            <div className="relative">
+            <label className="block text-xs font-medium text-gray-700 mb-0.5">
+              Sport
+              {!formData.sport && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
+            </label>
+            <div className="relative group">
               <select 
                 ref={el => inputRefs.current['sport'] = el}
                 value={formData.sport} 
@@ -1122,7 +1127,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 }}
                 className={`w-full p-1 pr-7 border rounded-lg text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary ${
                   currentTutorialStep === 1 ? 'ring-2 ring-primary border-primary' : ''
-                } ${(!isNewTest && !isEditMode) ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                } ${(!isNewTest && !isEditMode) ? 'bg-gray-50 cursor-not-allowed' : ''} ${
+                  !formData.sport ? 'border-red-300 bg-red-50' : ''
+                }`}
                 style={{ WebkitAppearance: 'none', appearance: 'none' }}
                 disabled={!isNewTest && !isEditMode}
               >
@@ -1136,6 +1143,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
+              {!formData.sport && (
+                <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
+                  <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">
+                    <div className="space-y-1">
+                      <p>⚠️ <strong>Sport is required</strong></p>
+                      <p>Please select a sport for this test</p>
+                    </div>
+                    <div className="absolute -top-1 left-4 w-2 h-2 bg-red-600 transform rotate-45"></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

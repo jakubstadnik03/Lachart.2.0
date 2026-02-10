@@ -155,12 +155,13 @@ const AdminDashboard = () => {
     return { last24h, last7d, last30d, never };
   }, [users]);
 
-  // Prepare login chart data
+  // Prepare login, tests, and registrations chart data
   const loginChartData = useMemo(() => {
     if (!eventStats?.daily) return [];
     
     const loginEvents = eventStats.daily.filter(e => e._id.type === 'login');
     const testEvents = eventStats.daily.filter(e => e._id.type === 'test_created');
+    const registerEvents = eventStats.daily.filter(e => e._id.type === 'register');
     
     // Group by date
     const dateMap = new Map();
@@ -168,7 +169,7 @@ const AdminDashboard = () => {
     loginEvents.forEach(e => {
       const date = e._id.date;
       if (!dateMap.has(date)) {
-        dateMap.set(date, { date, logins: 0, tests: 0 });
+        dateMap.set(date, { date, logins: 0, tests: 0, registrations: 0 });
       }
       dateMap.get(date).logins = e.count;
     });
@@ -176,9 +177,17 @@ const AdminDashboard = () => {
     testEvents.forEach(e => {
       const date = e._id.date;
       if (!dateMap.has(date)) {
-        dateMap.set(date, { date, logins: 0, tests: 0 });
+        dateMap.set(date, { date, logins: 0, tests: 0, registrations: 0 });
       }
       dateMap.get(date).tests = e.count;
+    });
+
+    registerEvents.forEach(e => {
+      const date = e._id.date;
+      if (!dateMap.has(date)) {
+        dateMap.set(date, { date, logins: 0, tests: 0, registrations: 0 });
+      }
+      dateMap.get(date).registrations = e.count;
     });
     
     let data = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -193,10 +202,11 @@ const AdminDashboard = () => {
         const weekKey = weekStart.toISOString().split('T')[0];
         
         if (!weekMap.has(weekKey)) {
-          weekMap.set(weekKey, { date: weekKey, logins: 0, tests: 0 });
+          weekMap.set(weekKey, { date: weekKey, logins: 0, tests: 0, registrations: 0 });
         }
         weekMap.get(weekKey).logins += item.logins;
         weekMap.get(weekKey).tests += item.tests;
+        weekMap.get(weekKey).registrations += (item.registrations || 0);
       });
       data = Array.from(weekMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     }
@@ -1643,6 +1653,14 @@ const AdminDashboard = () => {
                       name="Tests Created"
                       dot={{ r: 4 }}
                     />
+                    <Line 
+                      type="monotone" 
+                      dataKey="registrations" 
+                      stroke="#ffc658" 
+                      strokeWidth={2}
+                      name="Registered Users"
+                      dot={{ r: 4 }}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -1693,6 +1711,31 @@ const AdminDashboard = () => {
                     <Tooltip />
                     <Legend />
                     <Bar dataKey="tests" fill="#82ca9d" name="Tests Created" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-center py-8 text-gray-500">No data available for the selected time range</div>
+              )}
+            </div>
+
+            {/* Registered Users Bar Chart */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Registered Users Over Time</h3>
+              {loginChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={loginChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="dateLabel" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="registrations" fill="#ffc658" name="Registered Users" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (

@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus } from '../services/api';
+import { logTestCreated } from '../utils/eventLogger';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
@@ -565,6 +566,11 @@ const TestingPage = () => {
       const testId = response.data._id;
       setTests(prev => [...prev, response.data]);
       setShowNewTesting(false);
+      try {
+        await logTestCreated(processedTest.sport || 'bike', (processedTest.results || []).length, user?._id);
+      } catch (e) {
+        // non-blocking
+      }
 
       // If coach created test for an athlete, offer to send email
       if (user?.role === 'coach' && selectedAthleteId && selectedAthleteId !== user._id) {

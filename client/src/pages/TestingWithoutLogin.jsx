@@ -21,7 +21,7 @@ import { useAuth } from '../context/AuthProvider';
 import { saveUserToStorage } from '../utils/userStorage';
 import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
-import { logUserRegistration } from '../utils/eventLogger';
+import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 
 // Animation variants
@@ -550,6 +550,9 @@ const LactateCurveCalculatorPage = () => {
                                 athleteId: savedTest.data.athleteId
                             });
                             addNotification('Test saved to your account!', 'success');
+                            try {
+                              await logTestCreated(testToSave.sport || 'bike', (testToSave.results || []).length, userId);
+                            } catch (e) { /* non-blocking */ }
                         } else {
                             console.warn('Test save response missing ID:', savedTest);
                             addNotification('Test may not have been saved correctly', 'warning');
@@ -753,6 +756,9 @@ const LactateCurveCalculatorPage = () => {
                                 athleteId: savedTest.data.athleteId
                             });
                             addNotification('Test saved to your account!', 'success');
+                            try {
+                              await logTestCreated(testToSave.sport || 'bike', (testToSave.results || []).length, userId);
+                            } catch (e) { /* non-blocking */ }
                         } else {
                             console.warn('Test save response missing ID:', savedTest);
                             addNotification('Test may not have been saved correctly', 'warning');
