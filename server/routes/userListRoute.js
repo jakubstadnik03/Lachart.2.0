@@ -2310,6 +2310,63 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
     }
 });
 
+// Delete user (admin only) – deletes the user and all associated data
+router.delete("/admin/users/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const targetUserId = req.params.userId;
+        if (targetUserId === req.user.userId || targetUserId === currentUser._id?.toString()) {
+            return res.status(400).json({ error: "You cannot delete your own account from here." });
+        }
+
+        const user = await userDao.findById(targetUserId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const userIdString = targetUserId.toString();
+        const userId = targetUserId;
+        const Training = require("../models/training");
+
+        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: userIdString });
+        const trainingsDeleted = await Training.deleteMany({ athleteId: userIdString });
+        const testsDeleted = await Test.deleteMany({ athleteId: userIdString });
+        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: userIdString });
+        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: userId });
+        const eventsDeleted = await Event.deleteMany({ userId: userId });
+
+        if (user.coachId) {
+            await userDao.removeAthleteFromCoach(user.coachId, userId);
+        }
+        if (user.athletes && user.athletes.length > 0) {
+            for (const athleteId of user.athletes) {
+                await userDao.updateUser(athleteId, { coachId: null });
+            }
+        }
+
+        await userDao.deleteById(targetUserId);
+
+        res.status(200).json({
+            message: "User and all associated data deleted successfully",
+            deletedData: {
+                fitTrainings: fitTrainingsDeleted.deletedCount,
+                trainings: trainingsDeleted.deletedCount,
+                tests: testsDeleted.deletedCount,
+                lactateSessions: lactateSessionsDeleted.deletedCount,
+                stravaActivities: stravaActivitiesDeleted.deletedCount,
+                events: eventsDeleted.deletedCount
+            }
+        });
+    } catch (error) {
+        console.error("Error deleting user (admin):", error);
+        res.status(500).json({ error: "Failed to delete user: " + error.message });
+    }
+});
+
 // Delete user account and all associated data
 router.delete("/delete-account", verifyToken, async (req, res) => {
     try {

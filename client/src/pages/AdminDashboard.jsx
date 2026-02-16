@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const AdminDashboard = () => {
-  const { user, loading } = useAuth();
+  const { user: currentUser, loading } = useAuth();
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
@@ -28,6 +28,7 @@ const AdminDashboard = () => {
   const [marketingFilter, setMarketingFilter] = useState('all'); // 'all', 'notSent', 'sent', 'recommended'
   const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
   const [bulkSending, setBulkSending] = useState(false);
+  const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -67,6 +68,28 @@ const AdminDashboard = () => {
     } catch (err) {
       addNotification('Failed to update user', 'error');
       console.error('Update error:', err);
+    }
+  };
+
+  const handleDeleteUser = async (targetUser) => {
+    const isSelf = currentUser?.id === targetUser._id || currentUser?._id === targetUser._id;
+    if (isSelf) {
+      addNotification('You cannot delete your own account here.', 'error');
+      return;
+    }
+    const confirmMsg = `Delete user "${targetUser.name || ''} ${targetUser.surname || ''}". ${targetUser.email}\n\nThis will permanently delete the account and all associated data (trainings, tests, Strava activities, etc.). This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      setDeleteLoadingUserId(targetUser._id);
+      await deleteUserAdmin(targetUser._id);
+      addNotification(`User ${targetUser.email} deleted`, 'success');
+      fetchData();
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Failed to delete user';
+      addNotification(msg, 'error');
+      console.error('Delete user error:', err);
+    } finally {
+      setDeleteLoadingUserId(null);
     }
   };
 
@@ -459,7 +482,7 @@ const AdminDashboard = () => {
   };
 
   if (loading) return null;
-  if (!user?.admin) {
+  if (!currentUser?.admin) {
     return <div className="text-center mt-12 text-xl text-red-500 font-bold">You are not authorized.</div>;
   }
 
@@ -1033,6 +1056,18 @@ const AdminDashboard = () => {
                         >
                           {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
                         </button>
+                        <button
+                          type="button"
+                          disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
+                          onClick={() => handleDeleteUser(user)}
+                          className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
+                            currentUser?.id === user._id || currentUser?._id === user._id
+                              ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                              : 'border-red-600 text-red-600 hover:bg-red-50'
+                          } ${deleteLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                        >
+                          {deleteLoadingUserId === user._id ? 'Deleting…' : 'Delete user'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1226,6 +1261,19 @@ const AdminDashboard = () => {
                               } ${thankYouEmailLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
                             >
                               {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
+                              onClick={() => handleDeleteUser(user)}
+                              className={`block text-xs mt-1 ${
+                                currentUser?.id === user._id || currentUser?._id === user._id
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-red-600 hover:text-red-700'
+                              } ${deleteLoadingUserId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                              title={currentUser?.id === user._id || currentUser?._id === user._id ? 'Cannot delete your own account' : 'Permanently delete this user'}
+                            >
+                              {deleteLoadingUserId === user._id ? 'Deleting…' : 'Delete user'}
                             </button>
                           </td>
                         </tr>

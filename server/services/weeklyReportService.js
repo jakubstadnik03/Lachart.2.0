@@ -512,11 +512,11 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
   const trainingStatus = summary.trainingStatus?.statusText || '—';
   const statusAccent = summary.trainingStatus?.accent || '#767EB5';
   const statusSubtitle = {
-    Productive: 'Trénink jde správným směrem.',
-    Maintaining: 'Stabilní zátěž – v pořádku.',
-    Recovery: 'Nižší zátěž – odpočinek nebo lehčí týden.',
-    Overreaching: 'Vysoká zátěž – zvaž odpočinek.',
-    Detraining: 'Žádné aktivity – přidej trénink.'
+    Productive: 'Training is on the right track.',
+    Maintaining: 'Stable load – all good.',
+    Recovery: 'Lower load – rest or lighter week.',
+    Overreaching: 'High load – consider rest.',
+    Detraining: 'No activities – add training.'
   }[trainingStatus] || '';
 
   const deltaTotalTss = calcDelta(totals.totalTSS || 0, prev.totalTSS || 0);
@@ -534,11 +534,11 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
       <div style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px; background: #ffffff;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 10px;">
           <div style="font-weight: 800; color:#111827; font-size: 18px;">${escapeHtml(formatCoreSportLabel(core))}</div>
-          <div style="color:#6b7280; font-size: 15px;">${escapeHtml(String(cur.count || 0))} tréninků</div>
+          <div style="color:#6b7280; font-size: 15px;">${escapeHtml(String(cur.count || 0))} ${cur.count === 1 ? 'session' : 'sessions'}</div>
         </div>
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
           <div>
-            <div style="color:#6b7280; font-size: 15px;">Čas</div>
+            <div style="color:#6b7280; font-size: 15px;">Time</div>
             <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
           </div>
           <div style="text-align:right;">${timeDelta}</div>
@@ -546,7 +546,7 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
         <div style="height: 10px;"></div>
         <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
           <div>
-            <div style="color:#6b7280; font-size: 15px;">Vzdálenost</div>
+            <div style="color:#6b7280; font-size: 15px;">Distance</div>
             <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
           </div>
           <div style="text-align:right;">${distDelta}</div>
@@ -587,7 +587,7 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
     .join('');
 
   return `
-    <p style="margin: 0 0 16px; font-size: 18px;">Ahoj <strong>${userName}</strong>, shrnutí minulého týdne.</p>
+    <p style="margin: 0 0 16px; font-size: 18px;">Hi <strong>${userName}</strong>, here's your weekly summary.</p>
     <p style="margin: 0 0 22px; color: #6b7280; font-size: 16px;">${weekStartLabel} – ${weekEndLabel}</p>
 
     <div style="border: 2px solid ${statusAccent}; border-radius: 14px; padding: 22px; background: #ffffff;">
@@ -609,7 +609,7 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
 
     <div style="height: 22px;"></div>
 
-    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Týden podle sportu</h3>
+    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Week by Sport</h3>
     <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
       ${sportCard('run')}
       ${sportCard('bike')}
@@ -618,14 +618,14 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
 
     <div style="height: 22px;"></div>
 
-    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Tréninky (max ${maxTrainingsToList})</h3>
+    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Sessions (max ${maxTrainingsToList})</h3>
     <table role="presentation" style="width: 100%; border-collapse: collapse;">
       <tr>
-        <th style="text-align:left; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Trénink</th>
-        <th style="text-align:right; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Čas</th>
+        <th style="text-align:left; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Session</th>
+        <th style="text-align:right; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Time</th>
       </tr>
       ${activityRows || `
-        <tr><td colspan="2" style="padding: 16px 0; color:#6b7280; font-size: 16px;">Pro tento týden nejsou žádné tréninky.</td></tr>
+        <tr><td colspan="2" style="padding: 16px 0; color:#6b7280; font-size: 16px;">No sessions for this week.</td></tr>
       `}
     </table>
   `.trim();
@@ -645,6 +645,8 @@ async function sendWeeklyReportEmailToUser(user, weekStart, weekEnd, { force = f
   if (!user?.email) return { sent: false, reason: 'no_email' };
   if (!user?.notifications?.emailNotifications) return { sent: false, reason: 'email_notifications_disabled' };
   if (!user?.notifications?.weeklyReports) return { sent: false, reason: 'weekly_reports_disabled' };
+  // Only send to users with Strava connected
+  if (!user?.strava?.athleteId && !user?.strava?.accessToken) return { sent: false, reason: 'strava_not_connected' };
 
   const alreadySent = user.notifications?.weeklyReportsLastSentWeekStart
     ? new Date(user.notifications.weeklyReportsLastSentWeekStart).toISOString().split('T')[0] === weekStart.toISOString().split('T')[0]
@@ -696,7 +698,11 @@ async function sendWeeklyReportsForWeek({ weekStart, weekEnd, force = false } = 
     email: { $ne: null },
     isActive: { $ne: false },
     'notifications.emailNotifications': true,
-    'notifications.weeklyReports': true
+    'notifications.weeklyReports': true,
+    $or: [
+      { 'strava.athleteId': { $ne: null } },
+      { 'strava.accessToken': { $ne: null } }
+    ]
   }).select('name email strava powerZones ftp notifications isActive');
 
   const results = {

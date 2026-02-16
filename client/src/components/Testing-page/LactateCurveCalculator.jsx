@@ -523,20 +523,62 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ? [baseLactatePoint.y, ...yValsMeasured]
     : yValsMeasured;
 
-  // Sort valid results by pace (slowest to fastest) for running and swimming
+  // Sort by intensity: slowest first (pace desc, power asc)
   const sortedResults = isPaceSport 
     ? [...validResults].sort((a, b) => {
         const aPower = Number(a.power?.toString().replace(',', '.'));
         const bPower = Number(b.power?.toString().replace(',', '.'));
-        return bPower - aPower; // Sort descending (slowest to fastest)
+        return bPower - aPower; // Descending (slowest to fastest)
       })
-    : validResults;
+    : [...validResults].sort((a, b) => {
+        const aPower = Number(a.power?.toString().replace(',', '.'));
+        const bPower = Number(b.power?.toString().replace(',', '.'));
+        return aPower - bPower; // Ascending (low to high power)
+      });
+
+  // Body seřazené podle intenzity (slowest->fastest) s x,y pro regresi
+  const sortedPoints = sortedResults.map(r => {
+    const power = r.power?.toString().replace(',', '.');
+    const lactate = r.lactate?.toString().replace(',', '.');
+    const xRaw = Number(power);
+    const x = isPaceSport
+      ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
+      : xRaw;
+    return { x, y: Number(lactate) };
+  });
+
+  // Detekce poklesu laktátu na začátku: pokud laktát nejdřív roste a pak klesne,
+  // křivku fitujeme jen na body po poklesu (stejná logika jako LTP1)
+  let pointsForCurve = sortedPoints;
+  const firstThirdForDrop = Math.max(1, Math.floor(sortedPoints.length / 3));
+  let minLaIdx = 0;
+  let minLa = sortedPoints[0]?.y ?? Infinity;
+  for (let i = 1; i < firstThirdForDrop; i++) {
+    if (sortedPoints[i].y < minLa) {
+      minLa = sortedPoints[i].y;
+      minLaIdx = i;
+    }
+  }
+  const dropMagnitude = sortedPoints[0]?.y != null && minLaIdx > 0
+    ? sortedPoints[0].y - minLa
+    : 0;
+  if (dropMagnitude >= 0.2 && minLaIdx < sortedPoints.length - 1) {
+    pointsForCurve = sortedPoints.slice(minLaIdx + 1);
+  }
+
+  // Pro regresi: při poklesu nepřidávat base lactate (jinak by to táhlo křivku nahoru)
+  const xValsForCurve = pointsForCurve === sortedPoints && baseLactatePoint
+    ? [baseLactatePoint.x, ...pointsForCurve.map(p => p.x)]
+    : pointsForCurve.map(p => p.x);
+  const yValsForCurve = pointsForCurve === sortedPoints && baseLactatePoint
+    ? [baseLactatePoint.y, ...pointsForCurve.map(p => p.y)]
+    : pointsForCurve.map(p => p.y);
 
   // Polynomial Regression (degree 4)
-  // Degree 4 allows for more flexible curve that can better fit the data points
+  // Fituje se na body po poklesu (pokud byl detekován), aby křivka neřešila počáteční nárůst a pád
   const polyRegression = (() => {
     try {
-      const n = xVals.length;
+      const n = xValsForCurve.length;
       if (n < 5) {
         // If not enough points for degree 4, use lower degree
         const degree = Math.min(n - 1, 3);
@@ -549,16 +591,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const Y = [];
 
         for (let i = 0; i < n; i++) {
-          if (isNaN(xVals[i]) || isNaN(yVals[i])) {
-            console.warn('Invalid data point found:', { x: xVals[i], y: yVals[i] });
+          if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
+            console.warn('Invalid data point found:', { x: xValsForCurve[i], y: yValsForCurve[i] });
             return null;
           }
           const row = [1];
           for (let d = 1; d <= degree; d++) {
-            row.push(Math.pow(xVals[i], d));
+            row.push(Math.pow(xValsForCurve[i], d));
           }
           X.push(row);
-          Y.push(yVals[i]);
+          Y.push(yValsForCurve[i]);
         }
 
         try {
@@ -581,7 +623,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       }
 
       // Check for invalid or duplicate values
-      const uniqueXVals = new Set(xVals);
+      const uniqueXVals = new Set(xValsForCurve);
       if (uniqueXVals.size < 5) {
         console.warn('Not enough unique x values for degree 4 polynomial, using lower degree');
         // Fallback to lower degree
@@ -590,15 +632,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const Y = [];
 
         for (let i = 0; i < n; i++) {
-          if (isNaN(xVals[i]) || isNaN(yVals[i])) {
+          if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
             continue;
           }
           const row = [1];
           for (let d = 1; d <= degree; d++) {
-            row.push(Math.pow(xVals[i], d));
+            row.push(Math.pow(xValsForCurve[i], d));
           }
           X.push(row);
-          Y.push(yVals[i]);
+          Y.push(yValsForCurve[i]);
         }
 
         try {
@@ -624,13 +666,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       const Y = [];
 
       for (let i = 0; i < n; i++) {
-        if (isNaN(xVals[i]) || isNaN(yVals[i])) {
-          console.warn('Invalid data point found:', { x: xVals[i], y: yVals[i] });
+        if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
+          console.warn('Invalid data point found:', { x: xValsForCurve[i], y: yValsForCurve[i] });
           return null;
         }
         // Use degree 4 polynomial
-        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3), Math.pow(xVals[i], 4)]);
-        Y.push(yVals[i]);
+        X.push([1, xValsForCurve[i], Math.pow(xValsForCurve[i], 2), Math.pow(xValsForCurve[i], 3), Math.pow(xValsForCurve[i], 4)]);
+        Y.push(yValsForCurve[i]);
       }
 
       try {
@@ -655,39 +697,34 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   })();
 
-  // Generate points for polynomial curve
-  // Curve includes base lactate in calculation, so it should pass through or near base lactate
-  // Curve can increase or decrease naturally to match the data
+  // Generate points for polynomial curve – vždy od začátku do konce (celý rozsah dat)
   const polyPoints = [];
   if (polyRegression) {
-    // Determine the range for the curve - includes base lactate if available
-    // For pace sports in pace mode: from slowest (highest) to fastest (lowest)
-    // For pace sports in speed mode: from slowest (lowest) to fastest (highest)
-    // For bike: from lowest to highest
+    const rangeVals = xVals.length > 0 ? xVals : xValsForCurve;
     let startX, endX;
     if (isPaceSport && inputMode === 'pace') {
-      // Pace mode: highest = slowest, lowest = fastest
-      endX = Math.min(...xVals); // Fastest
-      startX = Math.max(...xVals); // Slowest (includes base lactate if available)
+      endX = Math.min(...rangeVals);
+      startX = Math.max(...rangeVals);
     } else {
-      // Speed mode or bike: lowest = slowest, highest = fastest
-      startX = Math.min(...xVals); // Slowest (includes base lactate if available)
-      endX = Math.max(...xVals); // Fastest
+      startX = Math.min(...rangeVals);
+      endX = Math.max(...rangeVals);
     }
+
+    // Rozsah, na kterém byl fit (při poklesu je to jen část dat)
+    const fitMinX = xValsForCurve.length > 0 ? Math.min(...xValsForCurve) : startX;
+    const fitMaxX = xValsForCurve.length > 0 ? Math.max(...xValsForCurve) : endX;
     
     const step = Math.abs(endX - startX) / 300; // More points for smoother curve
     
-    // Generate curve points from start to end (only actual measurements, not base lactate)
-    const direction = startX < endX ? 1 : -1; // Determine direction
+    const direction = startX < endX ? 1 : -1;
     for (let x = startX; direction * x <= direction * endX; x += direction * step) {
       try {
-        let y = polyRegression(x);
+        // Při extrapolaci vlevo (mimo oblast fitu) nepoužívat polynom → nedává 0, ale hodnotu na hranici fitu
+        const isLeftOfFit = isPaceSport && inputMode === 'pace' ? (x > fitMaxX) : (x < fitMinX);
+        const xEval = isLeftOfFit ? (isPaceSport && inputMode === 'pace' ? fitMaxX : fitMinX) : x;
+        let y = polyRegression(xEval);
         
-        // Only ensure y is never negative (allow decreasing curve to match data)
-        if (y < 0) {
-          y = 0;
-        }
-        
+        if (y < 0) y = 0;
         if (!isNaN(y) && isFinite(y)) {
           polyPoints.push({ x, y });
         }

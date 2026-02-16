@@ -583,6 +583,16 @@ export const updateUserAdmin = async (userId, userData) => {
   }
 };
 
+export const deleteUserAdmin = async (userId) => {
+  try {
+    const response = await api.delete(`/user/admin/users/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    throw error;
+  }
+};
+
 // Lactate testing session endpoints
 // Lactate Session API
 export const createLactateSession = (sessionData) => api.post('/api/lactate-session', sessionData);
