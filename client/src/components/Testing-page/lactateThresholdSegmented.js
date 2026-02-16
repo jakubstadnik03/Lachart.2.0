@@ -8,9 +8,10 @@ import * as math from 'mathjs';
 
 const MIN_POINTS = 5;
 const MIN_LT2_LT1_GAP_W = 30;
-const OUTLIER_MEDIAN_RATIO = 0.25; // odhad >25% od mediánu = vyhodit
-const OBLA_MMOL = 2.0; // LT1 baseline metoda: target OBLA 2.0 mmol/L
-const OBLA_LT2_MMOL = 3.5; // LT2: OBLA 3.5 mmol/L jako jeden z kandidátů v ensemble
+// Finální hodnota = průměr všech platných kandidátů (segmentovaná, OBLA, D-max)
+const OBLA_MMOL = 2.0; // LT1 baseline: target OBLA 2.0 mmol/L
+const LT1_MAX_LACTATE_MMOL = 2.5; // pokud by laktát v LT1 byl > 2.5, použít OBLA 2.0
+const OBLA_LT2_MMOL = 4.0; // LT2: OBLA 4.0 mmol/L
 const BOOTSTRAP_ITERATIONS = 200;
 
 // --- 1) Předzpracování ---
@@ -77,6 +78,20 @@ function linearInterpolationPower(power, lactate, targetLactate) {
   }
   if (targetLactate <= lactate[0]) return power[0];
   if (targetLactate >= lactate[lactate.length - 1]) return power[power.length - 1];
+  return null;
+}
+
+/** Laktát v daném výkonu P (lineární interpolace z křivky power–lactate). */
+function lactateAtPower(power, lactate, P) {
+  for (let i = 0; i < power.length - 1; i++) {
+    const p0 = power[i];
+    const p1 = power[i + 1];
+    if (P >= Math.min(p0, p1) && P <= Math.max(p0, p1) && p0 !== p1) {
+      return lactate[i] + (lactate[i + 1] - lactate[i]) * (P - p0) / (p1 - p0);
+    }
+  }
+  if (P <= power[0]) return lactate[0];
+  if (P >= power[power.length - 1]) return lactate[lactate.length - 1];
   return null;
 }
 
@@ -207,8 +222,8 @@ export function dmaxLT2(power, lactate) {
 }
 
 /**
- * OBLA 3.5: výkon při laktátu 3.5 mmol/L (lineární interpolace).
- * Jeden z kandidátů pro LT2 v ensemble.
+ * OBLA pro LT2: výkon při laktátu OBLA_LT2_MMOL (4.0 mmol/L) – lineární interpolace.
+ * Fallback pro LT2 když segmentovaná regrese nebo D-max neplatné.
  */
 export function obla35LT2(power, lactate) {
   return linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
@@ -226,18 +241,19 @@ function isValidSegmented(LT1_seg, LT2_seg, power) {
   return true;
 }
 
+function mean(arr) {
+  if (!arr || arr.length === 0) return null;
+  const a = arr.filter((x) => x != null && Number.isFinite(x));
+  if (a.length === 0) return null;
+  return a.reduce((s, x) => s + x, 0) / a.length;
+}
+
 function median(arr) {
   if (!arr || arr.length === 0) return null;
   const a = [...arr].filter((x) => x != null && Number.isFinite(x)).sort((x, y) => x - y);
   if (a.length === 0) return null;
   const m = Math.floor(a.length / 2);
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-}
-
-function filterOutliers(values, maxRatioFromMedian) {
-  const m = median(values);
-  if (m == null) return values;
-  return values.filter((v) => v != null && Number.isFinite(v) && Math.abs(v - m) <= maxRatioFromMedian * Math.abs(m));
 }
 
 /**
@@ -279,40 +295,34 @@ export function computeLactateThresholds(points, options = {}) {
     result.metrics.method = 'fallback';
     const lt1Base = baselineLT1(power, lactate);
     const lt2Dmax = dmaxLT2(power, lactate);
-    const lt2Obla35Fallback = obla35LT2(power, lactate);
+    const lt2Obla = obla35LT2(power, lactate);
     result.LT1 = lt1Base;
-    const lt2Candidates = [lt2Dmax, lt2Obla35Fallback].filter((x) => x != null);
-    result.LT2 = lt2Candidates.length ? median(lt2Candidates) : lt2Dmax;
+    result.LT2 = mean([lt2Dmax, lt2Obla].filter((x) => x != null));
     return result;
   }
 
   const seg = segmentedRegression(power, lactate);
   const lt1Base = baselineLT1(power, lactate);
   const lt2Dmax = dmaxLT2(power, lactate);
-  const lt2Obla35 = obla35LT2(power, lactate);
+  const lt2Obla = obla35LT2(power, lactate);
 
-  let LT1_seg = seg.LT1;
-  let LT2_seg = seg.LT2;
+  const LT1_seg = seg.LT1;
+  const LT2_seg = seg.LT2;
   const segValid = isValidSegmented(LT1_seg, LT2_seg, power);
 
-  const LT1_candidates = [];
+  const LT1_candidates = [lt1Base];
   if (segValid && LT1_seg != null) LT1_candidates.push(LT1_seg);
-  if (lt1Base != null) LT1_candidates.push(lt1Base);
 
-  const LT2_candidates = [];
+  const LT2_candidates = [lt2Dmax, lt2Obla].filter((x) => x != null);
   if (segValid && LT2_seg != null) LT2_candidates.push(LT2_seg);
-  if (lt2Dmax != null) LT2_candidates.push(lt2Dmax);
-  if (lt2Obla35 != null) LT2_candidates.push(lt2Obla35);
 
-  const validLT1 = filterOutliers(LT1_candidates, OUTLIER_MEDIAN_RATIO);
-  const validLT2 = filterOutliers(LT2_candidates, OUTLIER_MEDIAN_RATIO);
+  result.LT1 = mean(LT1_candidates.filter((x) => x != null && Number.isFinite(x)));
+  result.LT2 = mean(LT2_candidates.filter((x) => x != null && Number.isFinite(x)));
 
-  result.LT1 = median(validLT1);
-  result.LT2 = median(validLT2);
-
-  // Lineární křivka: pokud segmentovaná regrese nedává rozumný rozdíl, LT2 může být nejasné
-  if (validLT2.length === 0 || (segValid && LT2_seg - LT1_seg < MIN_LT2_LT1_GAP_W)) {
-    result.LT2 = lt2Dmax ?? result.LT2;
+  // LT1 nesmí být nad 2.5 mmol/L – jinak použít OBLA 2.0
+  const lactateAtLt1 = result.LT1 != null ? lactateAtPower(power, lactate, result.LT1) : null;
+  if (lactateAtLt1 != null && lactateAtLt1 > LT1_MAX_LACTATE_MMOL && lt1Base != null) {
+    result.LT1 = lt1Base;
   }
 
   if (bootstrap && result.LT1 != null && result.LT2 != null && n >= 6) {
@@ -327,13 +337,11 @@ export function computeLactateThresholds(points, options = {}) {
       const p = uniq.map((u) => u.power);
       const l = isotonicRegression(p, uniq.map((u) => u.lactate));
       const s = segmentedRegression(p, l);
-      const b1 = baselineLT1(p, l);
-      const d2 = dmaxLT2(p, l);
-      const o35 = obla35LT2(p, l);
-      const c1 = [s.LT1, b1].filter((x) => x != null);
-      const c2 = [s.LT2, d2, o35].filter((x) => x != null);
-      if (c1.length) lt1Samples.push(median(c1));
-      if (c2.length) lt2Samples.push(median(c2));
+      const segOk = isValidSegmented(s.LT1, s.LT2, p);
+      const lt1 = segOk && s.LT1 != null ? s.LT1 : baselineLT1(p, l);
+      const lt2 = segOk && s.LT2 != null ? s.LT2 : (dmaxLT2(p, l) ?? obla35LT2(p, l));
+      if (lt1 != null) lt1Samples.push(lt1);
+      if (lt2 != null) lt2Samples.push(lt2);
     }
     if (lt1Samples.length >= 10) {
       lt1Samples.sort((a, b) => a - b);
