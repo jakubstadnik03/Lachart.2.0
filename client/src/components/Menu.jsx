@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 
 const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
   // FIRST: all hooks
@@ -184,23 +185,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       return '/images/triathlete-avatar.jpg';
     }
 
-    // If user has an avatar (e.g., from Strava), use it
-    if (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
-      return user.avatar;
-    }
-
-    if (user.role === 'coach') {
-      return '/images/coach-avatar.webp';
-    }
-    
-    const sportAvatars = {
-      triathlon: '/images/triathlete-avatar.jpg',
-      running: '/images/runner-avatar.jpg',
-      cycling: '/images/cyclist-avatar.webp',
-      swimming: '/images/swimmer-avatar.jpg'
-    };
-
-    return user.avatar || sportAvatars[user.sport?.toLowerCase()] || '/images/triathlete-avatar.jpg';
+    // Use the new utility function
+    return getAvatarBySportAndGender(user);
   };
 
   // Definice položek menu s dynamickými cestami pro trenéra

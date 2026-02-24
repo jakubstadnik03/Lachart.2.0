@@ -17,7 +17,8 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
     height: '',
     weight: '',
     sport: '',
-    specialization: ''
+    specialization: '',
+    gender: 'male'
   });
 
   const handleAthleteInputChange = (e) => {
@@ -42,13 +43,33 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
       
       addNotification('Athlete created successfully!', 'success');
       
-      // Reset form
-      handleClose();
+      // Inform all AthleteSelector components to reload list FIRST
+      // Use setTimeout to ensure event listeners are ready
+      setTimeout(() => {
+        try {
+          const event = new CustomEvent('athleteListUpdated', { 
+            detail: { athlete, athleteId },
+            bubbles: true 
+          });
+          console.log('Dispatching athleteListUpdated event', event);
+          window.dispatchEvent(event);
+        } catch (e) {
+          console.warn('Failed to dispatch athleteListUpdated event', e);
+        }
+      }, 10);
       
-      // Notify parent component
-      if (onAthleteCreated) {
-        onAthleteCreated(athleteId, athlete);
-      }
+      // Then notify parent component (so it can select athlete and open test form)
+      // Delay to ensure AthleteSelector has updated its list before selecting
+      setTimeout(() => {
+        if (onAthleteCreated) {
+          onAthleteCreated(athleteId, athlete);
+        }
+      }, 200);
+      
+      // Then reset form and close modal (small delay to ensure callback completes)
+      setTimeout(() => {
+        handleClose();
+      }, 150);
     } catch (error) {
       console.error('Error creating athlete:', error);
       addNotification(
@@ -71,7 +92,8 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
       height: '',
       weight: '',
       sport: '',
-      specialization: ''
+      specialization: '',
+      gender: 'male'
     });
     onClose();
   };
@@ -222,6 +244,20 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
                     <option value="bike">Cycling</option>
                     <option value="swim">Swimming</option>
                     <option value="triathlon">Triathlon</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    name="gender"
+                    value={athleteData.gender}
+                    onChange={handleAthleteInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
                   </select>
                 </div>
                 <div>

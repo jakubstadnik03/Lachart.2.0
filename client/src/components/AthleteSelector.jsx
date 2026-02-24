@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 
@@ -9,20 +9,49 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
   const location = useLocation();
   const currentPath = location.pathname.split('/')[1]; // Získá 'dashboard', 'training', nebo 'testing'
 
+  const loadAthletes = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/user/coach/athletes');
+      setAthletes(response.data);
+    } catch (error) {
+      console.error('Error loading athletes:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadAthletes = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get('/user/coach/athletes');
-        setAthletes(response.data);
-      } catch (error) {
-        console.error('Error loading athletes:', error);
-      } finally {
-        setLoading(false);
+    loadAthletes();
+  }, [loadAthletes]);
+
+  useEffect(() => {
+    const handleAthleteListUpdated = (event) => {
+      console.log('Athlete list updated event received', event.detail);
+      const { athlete, athleteId } = event.detail || {};
+      
+      // If we have the athlete data, add it directly to the list
+      if (athlete && athleteId) {
+        setAthletes(prev => {
+          // Check if athlete already exists
+          const exists = prev.some(a => a._id === athleteId);
+          if (exists) {
+            return prev;
+          }
+          // Add new athlete to the list
+          return [...prev, athlete];
+        });
+      } else {
+        // Fallback: reload the entire list
+        loadAthletes();
       }
     };
-    loadAthletes();
-  }, []);
+
+    window.addEventListener('athleteListUpdated', handleAthleteListUpdated);
+    return () => {
+      window.removeEventListener('athleteListUpdated', handleAthleteListUpdated);
+    };
+  }, [loadAthletes]);
 
   const handleAthleteChange = (e) => {
     const newAthleteId = e.target.value;

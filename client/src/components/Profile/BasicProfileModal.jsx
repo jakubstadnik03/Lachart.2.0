@@ -16,6 +16,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
         weight: userData.weight || '',
         sport: userData.sport || '',
         specialization: userData.specialization || '',
+        gender: userData.gender || 'male',
         bio: userData.bio || '',
       };
       setFormData(initialFormData);
@@ -158,6 +159,18 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               <option value="cycling">Cycling</option>
               <option value="running">Running</option>
               <option value="swimming">Swimming</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-700">Gender</label>
+            <select
+              value={formData.gender || 'male'}
+              onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
+              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
             </select>
           </div>
 

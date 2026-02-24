@@ -10,6 +10,7 @@ import api from '../services/api';
 import { motion } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useNotification } from '../context/NotificationContext';
+import { getAthleteAvatar } from '../utils/avatarUtils';
 
 export default function AthleteProfile() {
   const { athleteId } = useParams();
@@ -35,6 +36,7 @@ export default function AthleteProfile() {
     height: '',
     sport: '',
     specialization: '',
+    gender: 'male',
     notes: '',
   });
   const { addNotification } = useNotification();
@@ -105,6 +107,7 @@ export default function AthleteProfile() {
       height: athlete.height || '',
       sport: athlete.sport || '',
       specialization: athlete.specialization || '',
+      gender: athlete.gender || 'male',
       notes: athlete.notes || '',
     });
     setIsModalOpen(true);
@@ -144,6 +147,7 @@ export default function AthleteProfile() {
       height: '',
       sport: '',
       specialization: '',
+      gender: 'male',
       notes: '',
     });
   };
@@ -160,21 +164,6 @@ export default function AthleteProfile() {
     return `${day}.${month}.${year}`;
   };
 
-  const getAvatarBySport = (sport) => {
-    const sportLower = sport?.toLowerCase() || '';
-    switch (sportLower) {
-      case 'triathlon':
-        return '/images/triathlete-avatar.jpg';
-      case 'running':
-        return '/images/runner-avatar.jpg';
-      case 'cycling':
-        return '/images/cyclist-avatar.webp';
-      case 'swimming':
-        return '/images/swimmer-avatar.jpg';
-      default:
-        return '/images/triathlete-avatar.jpg';
-    }
-  };
 
   if (loading) {
     return (
@@ -281,7 +270,7 @@ export default function AthleteProfile() {
                     <div className="flex justify-center -mt-12 sm:-mt-16">
                       <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
                         <img
-                          src={getAvatarBySport(athlete.sport)}
+                          src={getAthleteAvatar(athlete)}
                           alt="Profile"
                           className="w-full h-full object-cover"
                         />
@@ -447,9 +436,9 @@ export default function AthleteProfile() {
                     Profile Image
                   </label>
                   <div className="w-full aspect-square bg-gray-200 rounded-full overflow-hidden flex items-center justify-center">
-                    {formData.sport && getAvatarBySport(formData.sport) ? (
+                    {formData.sport || formData.gender ? (
                       <img
-                        src={getAvatarBySport(formData.sport)}
+                        src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })}
                         alt="Profile"
                         className="w-full h-full object-cover"
                       />
@@ -495,12 +484,11 @@ export default function AthleteProfile() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Date of Birth<span className="text-orange-500">*</span>
+                      Date of Birth
                     </label>
                     <input
                       type="date"
                       name="dateOfBirth"
-                      required
                       value={formData.dateOfBirth ? formData.dateOfBirth.split('.').reverse().join('-') : ''}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
@@ -515,12 +503,11 @@ export default function AthleteProfile() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email<span className="text-orange-500">*</span>
+                      Email
                     </label>
                     <input
                       type="email"
                       name="email"
-                      required
                       value={formData.email}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
@@ -530,12 +517,11 @@ export default function AthleteProfile() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone<span className="text-orange-500">*</span>
+                      Phone
                     </label>
                     <input
                       type="tel"
                       name="phone"
-                      required
                       value={formData.phone}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
@@ -604,6 +590,21 @@ export default function AthleteProfile() {
                       <option value="cycling">Cycling</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    name="gender"
+                    value={formData.gender}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
                 </div>
 
                 <div>

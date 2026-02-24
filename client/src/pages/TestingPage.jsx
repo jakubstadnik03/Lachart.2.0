@@ -946,6 +946,7 @@ const TestingPage = () => {
         className="w-full min-w-0"
       >
         <PreviousTestingComponent 
+          key={selectedAthleteId || user?._id} // Reset component when athlete changes
           selectedSport={selectedSport}
           tests={tests}
           setTests={setTests}

@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 
 export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) => {
   const dropdownRef = useRef(null);
@@ -42,23 +43,8 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
       return '/images/triathlete-avatar.jpg';
     }
 
-    // If user has an avatar (e.g., from Strava), use it first
-    if (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
-      return user.avatar;
-    }
-
-    if (user.role === 'coach') {
-      return '/images/coach-avatar.webp';
-    }
-    
-    const sportAvatars = {
-      triathlon: '/images/triathlete-avatar.jpg',
-      running: '/images/runner-avatar.jpg',
-      cycling: '/images/cyclist-avatar.webp',
-      swimming: '/images/swimmer-avatar.jpg'
-    };
-
-    return user.avatar || sportAvatars[user.sport?.toLowerCase()] || '/images/triathlete-avatar.jpg';
+    // Use the new utility function
+    return getAvatarBySportAndGender(user);
   };
 
   return (

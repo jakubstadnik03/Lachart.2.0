@@ -457,9 +457,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const minPace = Math.min(...xValsMeasured); // Fastest pace (lowest seconds)
         const paceRange = maxPace - minPace;
         
-        // Place base lactate proportionally: 10-15% of the range before the slowest point
-        // This ensures it's proportional to the data spread for better curve calculation
-        const proportionalGap = paceRange * 0.12; // 12% of the range
+        // Place base lactate closer to the slowest point - smaller gap for better visual
+        const proportionalGap = paceRange * 0.05; // 5% of the range - smaller gap
         const basePace = maxPace + proportionalGap;
         baseX = basePace;
       } else {
@@ -478,16 +477,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const fastestSpeed = convertPaceToSpeed(fastestPace, unitSystem); // Convert to km/h
         const speedRange = slowestSpeed - fastestSpeed;
         
-        // Place base lactate proportionally: 12% of the speed range before the slowest
-        const proportionalGap = speedRange * 0.12;
+        // Place base lactate closer to the slowest point - smaller gap
+        const proportionalGap = speedRange * 0.05; // 5% of the range - smaller gap
         baseX = Math.max(0.1, slowestSpeed + proportionalGap);
         
         // Validate: for running, speed should be reasonable (max ~30 km/h for elite, ~20 km/h for normal)
         // For swimming, max ~8 km/h
         const maxReasonableSpeed = isSwimming ? 10 : 30;
         if (baseX > maxReasonableSpeed) {
-          // If calculated speed is too high, use a smaller proportional gap
-          baseX = slowestSpeed + (speedRange * 0.08); // 8% instead of 12%
+          // If calculated speed is too high, use an even smaller proportional gap
+          baseX = slowestSpeed + (speedRange * 0.03); // 3% instead
           if (baseX > maxReasonableSpeed) {
             // If still too high, don't show base lactate point
             return null;
@@ -500,8 +499,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       const maxPower = Math.max(...xValsMeasured);
       const powerRange = maxPower - minPower;
       
-      // Place base lactate proportionally: 12% of the power range before the lowest
-      const proportionalGap = powerRange * 0.12;
+      // Place base lactate closer to the lowest point - smaller gap
+      const proportionalGap = powerRange * 0.05; // 5% of the range - smaller gap
       baseX = Math.max(0, minPower - proportionalGap);
     }
     
@@ -549,6 +548,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   // Detekce poklesu laktátu na začátku: pokud laktát nejdřív roste a pak klesne,
   // křivku fitujeme jen na body po poklesu (stejná logika jako LTP1)
+  // Upraveno: používáme všechny body, pokud pokles není příliš výrazný, aby křivka plynule procházela všemi body
   let pointsForCurve = sortedPoints;
   const firstThirdForDrop = Math.max(1, Math.floor(sortedPoints.length / 3));
   let minLaIdx = 0;
@@ -562,7 +562,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const dropMagnitude = sortedPoints[0]?.y != null && minLaIdx > 0
     ? sortedPoints[0].y - minLa
     : 0;
-  if (dropMagnitude >= 0.2 && minLaIdx < sortedPoints.length - 1) {
+  // Použijeme všechny body, pokud pokles není příliš výrazný (> 0.5 mmol/L)
+  // nebo pokud máme málo bodů (< 5), aby křivka plynule procházela všemi body
+  if (dropMagnitude >= 0.5 && minLaIdx < sortedPoints.length - 1 && sortedPoints.length >= 5) {
     pointsForCurve = sortedPoints.slice(minLaIdx + 1);
   }
 
@@ -697,39 +699,49 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   })();
 
-  // Generate points for polynomial curve – vždy od začátku do konce (celý rozsah dat)
+  // Generate points for polynomial curve – přesně od prvního do posledního měřeného bodu
   const polyPoints = [];
   if (polyRegression) {
-    const rangeVals = xVals.length > 0 ? xVals : xValsForCurve;
-    let startX, endX;
-    if (isPaceSport && inputMode === 'pace') {
-      endX = Math.min(...rangeVals);
-      startX = Math.max(...rangeVals);
+    // Použijeme skutečné měřené body pro určení rozsahu křivky (ne xVals, které mohou obsahovat base lactate)
+    // Musíme použít body před jejich seřazením, abychom měli správný první a poslední bod
+    const measuredXValues = validResults.map(r => {
+      const power = r.power?.toString().replace(',', '.');
+      const v = Number(power);
+      if (!isPaceSport) return v;
+      if (inputMode === 'pace') return v; // seconds
+      return convertPaceToSpeed(v, unitSystem); // speed mode
+    });
+    
+    if (measuredXValues.length === 0) {
+      console.warn('[LactateCurveCalculator] No measured X values for curve range');
     } else {
-      startX = Math.min(...rangeVals);
-      endX = Math.max(...rangeVals);
-    }
-
-    // Rozsah, na kterém byl fit (při poklesu je to jen část dat)
-    const fitMinX = xValsForCurve.length > 0 ? Math.min(...xValsForCurve) : startX;
-    const fitMaxX = xValsForCurve.length > 0 ? Math.max(...xValsForCurve) : endX;
-    
-    const step = Math.abs(endX - startX) / 300; // More points for smoother curve
-    
-    const direction = startX < endX ? 1 : -1;
-    for (let x = startX; direction * x <= direction * endX; x += direction * step) {
-      try {
-        // Při extrapolaci vlevo (mimo oblast fitu) nepoužívat polynom → nedává 0, ale hodnotu na hranici fitu
-        const isLeftOfFit = isPaceSport && inputMode === 'pace' ? (x > fitMaxX) : (x < fitMinX);
-        const xEval = isLeftOfFit ? (isPaceSport && inputMode === 'pace' ? fitMaxX : fitMinX) : x;
-        let y = polyRegression(xEval);
-        
-        if (y < 0) y = 0;
-        if (!isNaN(y) && isFinite(y)) {
-          polyPoints.push({ x, y });
+      let startX, endX;
+      if (isPaceSport && inputMode === 'pace') {
+        // Pro pace: nejpomalejší (nejvyšší hodnota) = první bod, nejrychlejší (nejnižší hodnota) = poslední bod
+        endX = Math.min(...measuredXValues); // Nejrychlejší (poslední bod)
+        startX = Math.max(...measuredXValues); // Nejpomalejší (první bod)
+      } else {
+        // Pro speed nebo bike: nejpomalejší (nejnižší hodnota) = první bod, nejrychlejší (nejvyšší hodnota) = poslední bod
+        startX = Math.min(...measuredXValues); // První bod
+        endX = Math.max(...measuredXValues); // Poslední bod
+      }
+      
+      const step = Math.abs(endX - startX) / 300; // More points for smoother curve
+      
+      const direction = startX < endX ? 1 : -1;
+      for (let x = startX; direction * x <= direction * endX; x += direction * step) {
+        try {
+          // Použijeme polynom pro celý rozsah mezi prvním a posledním bodem
+          let y = polyRegression(x);
+          
+          // Omezíme pouze záporné hodnoty
+          if (y < 0) y = 0;
+          if (!isNaN(y) && isFinite(y)) {
+            polyPoints.push({ x, y });
+          }
+        } catch (error) {
+          console.warn('Error calculating polynomial point:', error);
         }
-      } catch (error) {
-        console.warn('Error calculating polynomial point:', error);
       }
     }
   }
@@ -1246,6 +1258,34 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           drawTicks: true,
         },
         ticks: {
+          // Calculate step size for more ticks
+          stepSize: (() => {
+            const range = maxX - minX;
+            if (isPaceSport && inputMode === 'pace') {
+              // For pace: aim for ~8-12 ticks, step should be nice round seconds (15s, 30s, 1min, etc.)
+              const idealStep = range / 10;
+              // Round to nice values: 15s, 30s, 60s, 90s, 120s, etc.
+              if (idealStep <= 20) return 15;
+              if (idealStep <= 40) return 30;
+              if (idealStep <= 75) return 60;
+              if (idealStep <= 105) return 90;
+              return Math.round(idealStep / 30) * 30; // Round to nearest 30 seconds
+            } else if (isPaceSport && inputMode === 'speed') {
+              // For speed: aim for ~8-12 ticks, step should be nice values (0.5, 1, 2 km/h)
+              const idealStep = range / 10;
+              if (idealStep <= 0.75) return 0.5;
+              if (idealStep <= 1.5) return 1;
+              return Math.round(idealStep);
+            } else {
+              // For power: aim for ~8-12 ticks, step should be nice values (10W, 20W, 50W, etc.)
+              const idealStep = range / 10;
+              if (idealStep <= 15) return 10;
+              if (idealStep <= 30) return 20;
+              if (idealStep <= 60) return 50;
+              return Math.round(idealStep / 50) * 50; // Round to nearest 50W
+            }
+          })(),
+          maxTicksLimit: 15, // Maximum number of ticks
           callback: function(value) {
             // Show "Base Lactate" for base lactate point position
             if (baseLactatePoint && Math.abs(value - baseLactatePoint.x) < 0.01) {
@@ -1253,17 +1293,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             }
             if (isPaceSport) {
               if (inputMode === 'pace') {
-                // value is already pace seconds
-                const minutes = Math.floor(value / 60);
-                const seconds = Math.floor(value % 60);
+                // value is already pace seconds - round to whole seconds for cleaner display
+                const totalSeconds = Math.round(value);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
                 return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
               } else {
-                // Speed mode - show speed values
+                // Speed mode - show speed values rounded to 1 decimal
                 const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
                 return `${value.toFixed(1)}${unit}`;
               }
             }
+            // For power: always round to whole watts
             return `${Math.round(value)}W`;
           }
         }

@@ -50,6 +50,117 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Verify email endpoint
+router.get("/verify-email/:token", async (req, res) => {
+    try {
+        const { token } = req.params;
+        
+        if (!token) {
+            return res.status(400).json({ error: "Verification token is required" });
+        }
+
+        // Find user by verification token
+        const user = await User.findOne({ 
+            emailVerificationToken: token,
+            emailVerificationTokenExpires: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(404).json({ 
+                error: "Invalid or expired verification token",
+                message: "The verification link is invalid or has expired. Please request a new verification email."
+            });
+        }
+
+        if (user.emailVerified) {
+            return res.status(400).json({ 
+                error: "Email already verified",
+                message: "This email address has already been verified."
+            });
+        }
+
+        // Update user to mark email as verified
+        await User.findByIdAndUpdate(user._id, {
+            emailVerified: true,
+            emailVerificationToken: null,
+            emailVerificationTokenExpires: null
+        });
+
+        res.status(200).json({ 
+            success: true,
+            message: "Email successfully verified",
+            user: {
+                _id: user._id,
+                email: user.email,
+                name: user.name,
+                surname: user.surname
+            }
+        });
+    } catch (error) {
+        console.error("Error verifying email:", error);
+        res.status(500).json({ error: "Failed to verify email", details: error.message });
+    }
+});
+
+// Resend verification email endpoint
+router.post("/resend-verification-email", async (req, res) => {
+    try {
+        const { email } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ error: "Email is required" });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase() });
+
+        if (!user) {
+            // Don't reveal if user exists for security
+            return res.status(200).json({ 
+                message: "If an account with this email exists, a verification email has been sent."
+            });
+        }
+
+        if (user.emailVerified) {
+            return res.status(400).json({ 
+                error: "Email already verified",
+                message: "This email address has already been verified."
+            });
+        }
+
+        // Generate new verification token
+        const crypto = require("crypto");
+        const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+        const emailVerificationTokenExpires = new Date();
+        emailVerificationTokenExpires.setHours(emailVerificationTokenExpires.getHours() + 24); // 24 hours
+
+        // Update user with new token
+        await User.findByIdAndUpdate(user._id, {
+            emailVerificationToken: emailVerificationToken,
+            emailVerificationTokenExpires: emailVerificationTokenExpires
+        });
+
+        // Send verification email
+        const { sendEmailVerificationEmail } = require("../services/emailVerificationService");
+        const emailResult = await sendEmailVerificationEmail(user, emailVerificationToken);
+
+        if (!emailResult.sent) {
+            console.error("Failed to send verification email:", emailResult.reason);
+            return res.status(500).json({ 
+                error: "Failed to send verification email",
+                reason: emailResult.reason
+            });
+        }
+
+        res.status(200).json({ 
+            success: true,
+            message: "Verification email sent successfully"
+        });
+    } catch (error) {
+        console.error("Error resending verification email:", error);
+        res.status(500).json({ error: "Failed to resend verification email", details: error.message });
+    }
+});
+
 // Register Expo push token for the logged-in user (mobile app)
 router.post("/push-token", verifyToken, async (req, res) => {
     try {
@@ -154,7 +265,8 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             height, 
             weight, 
             sport, 
-            specialization 
+            specialization,
+            gender
         } = req.body;
         
         // Validate required fields
@@ -199,6 +311,7 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             weight: weight ? Number(weight) : undefined,
             sport,
             specialization,
+            gender: gender || 'male',
             coachId: coach._id,
             isRegistrationComplete: false,
             registrationToken: crypto.randomBytes(32).toString('hex'),
@@ -390,6 +503,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             weight,
             sport,
             specialization,
+            gender,
             bio
         } = req.body;
 
@@ -404,6 +518,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (weight) updateData.weight = Number(weight);
         if (sport) updateData.sport = sport;
         if (specialization) updateData.specialization = specialization;
+        if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
         if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
         if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
@@ -435,6 +550,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             weight: updatedUser.weight,
             sport: updatedUser.sport,
             specialization: updatedUser.specialization,
+            gender: updatedUser.gender || 'male',
             bio: updatedUser.bio,
             avatar: updatedUser.avatar,
             coachId: updatedUser.coachId,
@@ -477,6 +593,7 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
             weight,
             sport,
             specialization,
+            gender,
             bio
         } = req.body;
 
@@ -506,6 +623,7 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         if (weight) updateData.weight = Number(weight);
         if (sport) updateData.sport = sport;
         if (specialization) updateData.specialization = specialization;
+        if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
 
         console.log('Coach updating athlete profile:', { coachId, athleteId, updateData });
@@ -526,6 +644,7 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
             weight: updatedAthlete.weight,
             sport: updatedAthlete.sport,
             specialization: updatedAthlete.specialization,
+            gender: updatedAthlete.gender || 'male',
             bio: updatedAthlete.bio
         };
 
@@ -1703,6 +1822,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
             }
             
             // Count trainings and tests for coaches (sum of all their athletes' data)
+            let athletesList = [];
+            let athletesWithPasswordCount = 0;
             if (user.role === 'coach') {
                 try {
                     console.log(`[Admin Users] Counting data for coach ${user._id} (${user.name} ${user.surname})`);
@@ -1710,8 +1831,25 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     const athletes = await userDao.findAthletesByCoachId(user._id);
                     console.log(`[Admin Users] Found ${athletes.length} athletes for coach ${user.name}:`, athletes.map(a => `${a.name} ${a.surname} (${a._id})`));
                     
-                    // Count trainings and tests for all athletes
+                    // Filter athletes with password (have access to their profile)
+                    athletesList = athletes.map(athlete => ({
+                        _id: athlete._id,
+                        name: athlete.name,
+                        surname: athlete.surname,
+                        email: athlete.email,
+                        sport: athlete.sport,
+                        hasPassword: !!(athlete.password && athlete.password.trim() !== ''),
+                        lastLogin: athlete.lastLogin,
+                        createdAt: athlete.createdAt
+                    }));
+                    athletesWithPasswordCount = athletesList.filter(a => a.hasPassword).length;
+                    
+                    // Count trainings and tests for all athletes (only those with password)
                     for (const athlete of athletes) {
+                        // Skip athletes without password
+                        if (!athlete.password || athlete.password.trim() === '') {
+                            continue;
+                        }
                         try {
                             const athleteIdStr = String(athlete._id);
                             const trainings = await trainingDao.findByAthleteId(athleteIdStr);
@@ -1825,7 +1963,9 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 },
                 featureAnnouncementEmail: user.featureAnnouncementEmail || { sent: false, sentCount: 0, lastSent: null },
                 trainingCount: finalTrainingCount,
-                testCount: finalTestCount
+                testCount: finalTestCount,
+                athletes: user.role === 'coach' ? athletesList : undefined,
+                athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined
             };
         }));
 

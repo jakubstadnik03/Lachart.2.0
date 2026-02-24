@@ -52,7 +52,10 @@ export const AuthProvider = ({ children }) => {
           key === 'profileModalLastShown' ||
           key === 'lactateCurve_lastTest' ||
           key.startsWith('global_selectedAthleteId') ||
-          key.startsWith('testing_recommendations_open_')
+          key.startsWith('testing_recommendations_open_') ||
+          key === 'lachart:lastTestId' ||
+          key.startsWith('lachart:lastTestId:') ||
+          key.startsWith('strava_modal_dismissed_')
         ) {
           keysToRemove.push(key);
         }

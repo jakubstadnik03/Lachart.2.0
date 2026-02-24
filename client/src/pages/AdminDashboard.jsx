@@ -1027,9 +1027,37 @@ const AdminDashboard = () => {
                         )}
                       </div>
                       {user.role === 'coach' && (
-                        <div className="text-xs text-gray-400 mt-1.5 text-center">
-                          Tests include athletes + own
-                        </div>
+                        <>
+                          <div className="mt-2 pt-2 border-t border-gray-100">
+                            <div className="text-xs text-gray-500 text-center mb-1">Athletes</div>
+                            <div className="text-base font-semibold text-indigo-600 text-center">
+                              {user.athletesCount !== undefined ? user.athletesCount : 0}
+                            </div>
+                            {user.athletes && user.athletes.length > 0 && (
+                              <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                                {user.athletes.filter(a => a.hasPassword).map((athlete) => (
+                                  <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded">
+                                    <div className="font-medium">{athlete.name} {athlete.surname}</div>
+                                    {athlete.email && (
+                                      <div className="text-gray-500 text-[10px] truncate">{athlete.email}</div>
+                                    )}
+                                    {athlete.sport && (
+                                      <div className="text-gray-500 text-[10px] capitalize">{athlete.sport}</div>
+                                    )}
+                                  </div>
+                                ))}
+                                {user.athletes.filter(a => !a.hasPassword).length > 0 && (
+                                  <div className="text-[10px] text-gray-400 italic text-center pt-1">
+                                    +{user.athletes.filter(a => !a.hasPassword).length} without password
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1.5 text-center">
+                            Tests include athletes + own
+                          </div>
+                        </>
                       )}
                       <div className="mt-2 flex flex-col gap-2">
                         <button
@@ -1136,7 +1164,42 @@ const AdminDashboard = () => {
                             </span>
                           </td>
                           <td className="px-4 lg:px-6 py-4 text-sm text-gray-900 capitalize">
-                            {user.sport || 'Not specified'}
+                            <div>{user.sport || 'Not specified'}</div>
+                            {user.role === 'coach' && user.athletesCount !== undefined && (
+                              <div className="mt-1">
+                                <div className="text-xs font-semibold text-indigo-600">
+                                  Athletes: {user.athletesCount}
+                                </div>
+                                {user.athletes && user.athletes.length > 0 && (
+                                  <details className="mt-1">
+                                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                                      View athletes ({user.athletes.filter(a => a.hasPassword).length})
+                                    </summary>
+                                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                                      {user.athletes.filter(a => a.hasPassword).map((athlete) => (
+                                        <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded border border-gray-200">
+                                          <div className="font-medium">{athlete.name} {athlete.surname}</div>
+                                          {athlete.email && (
+                                            <div className="text-gray-500 text-[10px] truncate">{athlete.email}</div>
+                                          )}
+                                          {athlete.sport && (
+                                            <div className="text-gray-500 text-[10px] capitalize">Sport: {athlete.sport}</div>
+                                          )}
+                                          {athlete.lastLogin && (
+                                            <div className="text-gray-500 text-[10px]">Last login: {new Date(athlete.lastLogin).toLocaleDateString()}</div>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {user.athletes.filter(a => !a.hasPassword).length > 0 && (
+                                        <div className="text-[10px] text-gray-400 italic text-center pt-1">
+                                          +{user.athletes.filter(a => !a.hasPassword).length} without password (not counted)
+                                        </div>
+                                      )}
+                                    </div>
+                                  </details>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
                             <div className="flex items-center">

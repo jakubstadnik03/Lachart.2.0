@@ -26,6 +26,8 @@ const AthleteProfile = lazy(() => import('./components/AthleteProfile'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const CompleteRegistrationPage = lazy(() => import('./pages/CompleteRegistrationPage'));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
+const ResendVerificationPage = lazy(() => import('./pages/ResendVerificationPage'));
 const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage'));
 const TrainingDetailPage = lazy(() => import('./pages/TrainingDetailPage'));
 const TrainingHistory = lazy(() => import('./components/TrainingHistory'));
@@ -94,6 +96,8 @@ function AppRoutes() {
     const isPublicRoute = publicRoutes.some(route => 
       location.pathname === route || 
       location.pathname.startsWith('/reset-password/') ||
+      location.pathname.startsWith('/verify-email/') ||
+      location.pathname === '/resend-verification' ||
       location.pathname.startsWith('/complete-registration/') ||
       location.pathname.startsWith('/accept-invitation/') ||
       location.pathname.startsWith('/accept-coach-invitation/')
@@ -124,6 +128,8 @@ function AppRoutes() {
         <Route path="/training-zones-calculator" element={<TrainingZonesCalculatorPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
+        <Route path="/resend-verification" element={<ResendVerificationPage />} />
         <Route path="/complete-registration/:token" element={<CompleteRegistrationPage />} />
         <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
         <Route path="/accept-coach-invitation/:token" element={<AcceptCoachInvitation />} />

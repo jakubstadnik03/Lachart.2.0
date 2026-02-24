@@ -7,6 +7,7 @@ import SportsSelector from "../components/Header/SportsSelector";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
 import { updateUserProfile } from '../services/api';
+import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { 
   PencilIcon, 
   KeyIcon,
@@ -233,10 +234,8 @@ const ProfilePage = () => {
       const profileData = profileResponse.data;
       console.log('Profile data:', profileData);
 
-      // Určení avataru podle role
-      const defaultAvatar = profileData.role === 'coach' 
-        ? '/images/coach-avatar.webp'  // Avatar pro trenéra
-        : '/images/triathlete-avatar.jpg';  // Avatar pro atleta
+      // Use the new utility function to get avatar
+      const avatar = getAvatarBySportAndGender(profileData);
 
       setUserInfo({
         name: `${profileData.name} ${profileData.surname}`,
@@ -251,9 +250,10 @@ const ProfilePage = () => {
         sport: profileData.sport || 'Not set',
         specialization: profileData.specialization || 'Not set',
         title: profileData.role === 'coach' ? 'Coach' : profileData.specialization || 'Not set',
-        avatar: profileData.avatar || defaultAvatar,  // Použití defaultního avataru podle role
+        avatar: avatar,
         _id: profileData._id,
         role: profileData.role,
+        gender: profileData.gender || 'male',
         powerZones: profileData.powerZones, // Include power zones
         heartRateZones: profileData.heartRateZones, // Include heart rate zones
         units: profileData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Include units
@@ -360,7 +360,8 @@ const ProfilePage = () => {
         sport: updatedUser.sport || '',
         specialization: updatedUser.specialization || '',
         title: updatedUser.specialization || '',
-        avatar: updatedUser.avatar || '/images/triathlete-avatar.jpg',
+        avatar: getAvatarBySportAndGender(updatedUser),
+        gender: updatedUser.gender || 'male',
         powerZones: updatedUser.powerZones || userInfo.powerZones, // Keep power zones
         heartRateZones: updatedUser.heartRateZones || userInfo.heartRateZones, // Keep heart rate zones
         units: updatedUser.units || userInfo.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Keep units

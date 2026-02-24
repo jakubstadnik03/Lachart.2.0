@@ -60,6 +60,11 @@ const userSchema = new mongoose.Schema({
   weight: Number,
   sport: String,
   specialization: String,
+  gender: {
+    type: String,
+    enum: ['male', 'female'],
+    default: 'male'
+  },
   bio: String,
   avatar: {
     type: String,
@@ -211,6 +216,19 @@ const userSchema = new mongoose.Schema({
     sent: { type: Boolean, default: false },
     sentCount: { type: Number, default: 0 },
     lastSent: { type: Date, default: null }
+  },
+  // Email verification
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailVerificationToken: {
+    type: String,
+    default: null
+  },
+  emailVerificationTokenExpires: {
+    type: Date,
+    default: null
   },
   // Mobile push notification tokens (Expo)
   expoPushTokens: {

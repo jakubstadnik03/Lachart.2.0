@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
+import { getAthleteAvatar } from '../utils/avatarUtils';
 
 const AthletesPage = () => {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ const AthletesPage = () => {
     height: '',
     sport: '',
     specialization: '',
+    gender: 'male',
     notes: '',
   });
   const { addNotification } = useNotification();
@@ -75,21 +77,6 @@ const AthletesPage = () => {
     );
   }
 
-  const getAvatarBySport = (sport) => {
-    const sportLower = sport?.toLowerCase() || '';
-    switch (sportLower) {
-      case 'triathlon':
-        return '/images/triathlete-avatar.jpg';
-      case 'running':
-        return '/images/runner-avatar.jpg';
-      case 'cycling':
-        return '/images/cyclist-avatar.webp';
-      case 'swimming':
-        return '/images/swimmer-avatar.jpg';
-      default:
-        return null;
-    }
-  };
 
   const handleViewProfile = (athleteId) => {
     navigate(`/athlete/${athleteId}`);
@@ -134,6 +121,7 @@ const AthletesPage = () => {
       height: athlete.height || '',
       sport: athlete.sport || '',
       specialization: athlete.specialization || '',
+      gender: athlete.gender || 'male',
       notes: athlete.notes || '',
     });
     setIsModalOpen(true);
@@ -217,7 +205,8 @@ const AthletesPage = () => {
             height: formData.height ? Number(formData.height) : null,
             weight: formData.weight ? Number(formData.weight) : null,
             sport: formData.sport,
-            specialization: formData.specialization
+            specialization: formData.specialization,
+            gender: formData.gender || 'male'
           });
           
           // Přidání nového atleta do seznamu
@@ -282,6 +271,7 @@ const AthletesPage = () => {
       height: '',
       sport: '',
       specialization: '',
+      gender: 'male',
       notes: '',
     });
   };
@@ -438,7 +428,7 @@ const AthletesPage = () => {
                       <div className="flex justify-center -mt-12 sm:-mt-16">
                         <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gray-200 border-4 border-white overflow-hidden relative z-10">
                           <img
-                            src={getAvatarBySport(athlete.sport)}
+                            src={getAthleteAvatar(athlete)}
                             alt={`${athlete.name}'s avatar`}
                             className="w-full h-full object-cover"
                           />
@@ -517,9 +507,9 @@ const AthletesPage = () => {
                     Profile Image
                   </label>
                   <div className="w-full aspect-square bg-gray-200 rounded-full overflow-hidden flex items-center justify-center">
-                    {formData.sport && getAvatarBySport(formData.sport) ? (
+                    {formData.sport || formData.gender ? (
                       <img
-                        src={getAvatarBySport(formData.sport)}
+                        src={getAthleteAvatar({ sport: formData.sport, gender: formData.gender || 'male' })}
                         alt="Profile"
                         className="w-full h-full object-cover"
                       />
@@ -671,6 +661,21 @@ const AthletesPage = () => {
                       <option value="cycling">Cycling</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    name="gender"
+                    value={formData.gender}
+                    onChange={handleInputChange}
+                    className="w-full p-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
                 </div>
 
                 <div>

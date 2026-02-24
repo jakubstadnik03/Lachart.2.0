@@ -1,7 +1,7 @@
 const UserDao = require("../../dao/userDao");
 const bcrypt = require("bcryptjs");
-const nodemailer = require("nodemailer");
-const { generateEmailTemplate, getClientUrl } = require("../../utils/emailTemplate");
+const crypto = require("crypto");
+const { sendEmailVerificationEmail } = require("../../services/emailVerificationService");
 
 class RegisterAbl {
     constructor() {
@@ -40,6 +40,11 @@ class RegisterAbl {
             const hashedPassword = await bcrypt.hash(password, salt);
             console.log("Generated hash:", hashedPassword);
 
+            // Generate email verification token
+            const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+            const emailVerificationTokenExpires = new Date();
+            emailVerificationTokenExpires.setHours(emailVerificationTokenExpires.getHours() + 24); // 24 hours
+
             // Vytvoření nového uživatele
             const userData = {
                 email: email.toLowerCase(),
@@ -47,7 +52,10 @@ class RegisterAbl {
                 name,
                 surname,
                 role: role || 'athlete',
-                athletes: role === 'coach' ? [] : undefined
+                athletes: role === 'coach' ? [] : undefined,
+                emailVerified: false,
+                emailVerificationToken: emailVerificationToken,
+                emailVerificationTokenExpires: emailVerificationTokenExpires
             };
 
             console.log("Creating new user with hash:", hashedPassword);
@@ -58,41 +66,16 @@ class RegisterAbl {
             const savedUser = await this.userDao.findByEmail(email);
             console.log("Saved user password hash length:", savedUser.password.length);
 
-            // Po úspěšné registraci pošleme potvrzovací e‑mail (best effort, neblokuje registraci)
+            // Po úspěšné registraci pošleme verifikační e‑mail (best effort, neblokuje registraci)
             try {
                 if (savedUser?.email) {
-                    const transporter = nodemailer.createTransport({
-                        service: 'gmail',
-                        auth: {
-                            user: process.env.EMAIL_USER,
-                            pass: process.env.EMAIL_APP_PASSWORD
-                        }
-                    });
-
-                    const clientUrl = getClientUrl();
-                    const emailContent = `
-                        <p>Dear <strong>${savedUser.name} ${savedUser.surname}</strong>,</p>
-                        <p>thank you for creating your LaChart account.</p>
-                        <p>You can now log in and start working with lactate tests, training analysis and your calendar.</p>
-                    `;
-
-                    await transporter.sendMail({
-                        from: {
-                            name: "LaChart",
-                            address: process.env.EMAIL_USER
-                        },
-                        to: savedUser.email,
-                        subject: "Welcome to LaChart – your registration is complete",
-                        html: generateEmailTemplate({
-                            title: "Registration confirmed",
-                            content: emailContent,
-                            buttonText: "Log in to LaChart",
-                            buttonUrl: `${clientUrl}/login`
-                        })
-                    });
+                    const emailResult = await sendEmailVerificationEmail(savedUser, emailVerificationToken);
+                    if (!emailResult.sent) {
+                        console.warn("Email verification email not sent:", emailResult.reason);
+                    }
                 }
             } catch (emailError) {
-                console.error("Registration confirmation email error:", emailError);
+                console.error("Email verification email error:", emailError);
                 // Nevracíme chybu uživateli – registrace proběhla, jen se nepovedlo odeslat e‑mail
             }
 
