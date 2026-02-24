@@ -1831,37 +1831,47 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     const athletes = await userDao.findAthletesByCoachId(user._id);
                     console.log(`[Admin Users] Found ${athletes.length} athletes for coach ${user.name}:`, athletes.map(a => `${a.name} ${a.surname} (${a._id})`));
                     
-                    // Filter athletes with password (have access to their profile)
-                    athletesList = athletes.map(athlete => ({
-                        _id: athlete._id,
-                        name: athlete.name,
-                        surname: athlete.surname,
-                        email: athlete.email,
-                        sport: athlete.sport,
-                        hasPassword: !!(athlete.password && athlete.password.trim() !== ''),
-                        lastLogin: athlete.lastLogin,
-                        createdAt: athlete.createdAt
-                    }));
-                    athletesWithPasswordCount = athletesList.filter(a => a.hasPassword).length;
+                    // Filter athletes with password and count their tests/trainings
+                    athletesList = [];
+                    athletesWithPasswordCount = 0;
                     
                     // Count trainings and tests for all athletes (only those with password)
                     for (const athlete of athletes) {
-                        // Skip athletes without password
-                        if (!athlete.password || athlete.password.trim() === '') {
-                            continue;
+                        const hasPassword = !!(athlete.password && athlete.password.trim() !== '');
+                        
+                        let athleteTrainingCount = 0;
+                        let athleteTestCount = 0;
+                        
+                        // Only count tests/trainings for athletes with password
+                        if (hasPassword) {
+                            try {
+                                const athleteIdStr = String(athlete._id);
+                                const trainings = await trainingDao.findByAthleteId(athleteIdStr);
+                                const tests = await Test.find({ athleteId: athleteIdStr });
+                                athleteTrainingCount = trainings.length;
+                                athleteTestCount = tests.length;
+                                trainingCount += athleteTrainingCount;
+                                testCount += athleteTestCount;
+                                console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
+                            } catch (error) {
+                                console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
+                            }
+                            athletesWithPasswordCount++;
                         }
-                        try {
-                            const athleteIdStr = String(athlete._id);
-                            const trainings = await trainingDao.findByAthleteId(athleteIdStr);
-                            const tests = await Test.find({ athleteId: athleteIdStr });
-                            const athleteTrainingCount = trainings.length;
-                            const athleteTestCount = tests.length;
-                            trainingCount += athleteTrainingCount;
-                            testCount += athleteTestCount;
-                            console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
-                        } catch (error) {
-                            console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
-                        }
+                        
+                        // Add athlete to list with counts
+                        athletesList.push({
+                            _id: athlete._id,
+                            name: athlete.name,
+                            surname: athlete.surname,
+                            email: athlete.email,
+                            sport: athlete.sport,
+                            hasPassword: hasPassword,
+                            lastLogin: athlete.lastLogin,
+                            createdAt: athlete.createdAt,
+                            trainingCount: athleteTrainingCount,
+                            testCount: athleteTestCount
+                        });
                     }
                     
                     // Also count coach's own data (coaches can also be athletes)

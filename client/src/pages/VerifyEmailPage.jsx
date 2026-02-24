@@ -48,12 +48,6 @@ const VerifyEmailPage = () => {
     }
   }, [token, navigate]);
 
-  const handleResendEmail = async () => {
-    // We need email to resend, but we don't have it from the token
-    // So we'll redirect to a page where user can enter their email
-    navigate('/resend-verification');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#EEF2FF]">

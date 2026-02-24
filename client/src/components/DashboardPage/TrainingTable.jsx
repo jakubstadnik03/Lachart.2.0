@@ -190,7 +190,7 @@ export default function TrainingTable({
         category: act.category
       });
     });
-
+    
     // Group by (normalizedTitle + sport + day) to detect duplicates
     const groups = new Map();
 

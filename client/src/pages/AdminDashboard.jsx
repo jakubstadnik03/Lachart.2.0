@@ -1034,24 +1034,33 @@ const AdminDashboard = () => {
                               {user.athletesCount !== undefined ? user.athletesCount : 0}
                             </div>
                             {user.athletes && user.athletes.length > 0 && (
-                              <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                                {user.athletes.filter(a => a.hasPassword).map((athlete) => (
-                                  <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded">
-                                    <div className="font-medium">{athlete.name} {athlete.surname}</div>
-                                    {athlete.email && (
-                                      <div className="text-gray-500 text-[10px] truncate">{athlete.email}</div>
-                                    )}
-                                    {athlete.sport && (
-                                      <div className="text-gray-500 text-[10px] capitalize">{athlete.sport}</div>
-                                    )}
-                                  </div>
-                                ))}
-                                {user.athletes.filter(a => !a.hasPassword).length > 0 && (
-                                  <div className="text-[10px] text-gray-400 italic text-center pt-1">
-                                    +{user.athletes.filter(a => !a.hasPassword).length} without password
-                                  </div>
-                                )}
-                              </div>
+                              <details className="mt-1">
+                                <summary className="text-xs text-gray-500 text-center cursor-pointer hover:text-gray-700">
+                                  View athletes ({user.athletes.filter(a => a.hasPassword).length})
+                                </summary>
+                                <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                                  {user.athletes.filter(a => a.hasPassword).map((athlete) => (
+                                    <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded">
+                                      <div className="font-medium">{athlete.name} {athlete.surname}</div>
+                                      {athlete.email && (
+                                        <div className="text-gray-500 text-[10px] truncate">{athlete.email}</div>
+                                      )}
+                                      {athlete.sport && (
+                                        <div className="text-gray-500 text-[10px] capitalize">{athlete.sport}</div>
+                                      )}
+                                      <div className="flex gap-2 mt-1 text-[10px]">
+                                        <span className="text-blue-600 font-semibold">Trainings: {athlete.trainingCount || 0}</span>
+                                        <span className="text-purple-600 font-semibold">Tests: {athlete.testCount || 0}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {user.athletes.filter(a => !a.hasPassword).length > 0 && (
+                                    <div className="text-[10px] text-gray-400 italic text-center pt-1">
+                                      +{user.athletes.filter(a => !a.hasPassword).length} without password
+                                    </div>
+                                  )}
+                                </div>
+                              </details>
                             )}
                           </div>
                           <div className="text-xs text-gray-400 mt-1.5 text-center">
@@ -1185,8 +1194,12 @@ const AdminDashboard = () => {
                                           {athlete.sport && (
                                             <div className="text-gray-500 text-[10px] capitalize">Sport: {athlete.sport}</div>
                                           )}
+                                          <div className="flex gap-3 mt-1 text-[10px]">
+                                            <span className="text-blue-600 font-semibold">Trainings: {athlete.trainingCount || 0}</span>
+                                            <span className="text-purple-600 font-semibold">Tests: {athlete.testCount || 0}</span>
+                                          </div>
                                           {athlete.lastLogin && (
-                                            <div className="text-gray-500 text-[10px]">Last login: {new Date(athlete.lastLogin).toLocaleDateString()}</div>
+                                            <div className="text-gray-500 text-[10px] mt-1">Last login: {new Date(athlete.lastLogin).toLocaleDateString()}</div>
                                           )}
                                         </div>
                                       ))}
