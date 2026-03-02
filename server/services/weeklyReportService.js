@@ -506,8 +506,11 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
 
   const totals = summary.totals || {};
   const prev = summary.previousTotals || {};
-  const km = metersToKm(totals.totalDistanceMeters || 0);
-  const duration = formatSecondsToHMS(totals.totalSeconds || 0);
+  const bySport = totals.bySport || {};
+  // Zobrazit jen Run / Bike / Swim, které mají alespoň 1 aktivitu (count > 0 nebo seconds > 0)
+  const activeSports = ['run', 'bike', 'swim'].filter(
+    (core) => (bySport[core]?.count || 0) > 0 || (bySport[core]?.seconds || 0) > 0
+  );
 
   const trainingStatus = summary.trainingStatus?.statusText || '—';
   const statusAccent = summary.trainingStatus?.accent || '#767EB5';
@@ -520,8 +523,6 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
   }[trainingStatus] || '';
 
   const deltaTotalTss = calcDelta(totals.totalTSS || 0, prev.totalTSS || 0);
-  const deltaTotalSeconds = calcDelta(totals.totalSeconds || 0, prev.totalSeconds || 0);
-  const deltaTotalDistance = calcDelta(totals.totalDistanceMeters || 0, prev.totalDistanceMeters || 0);
 
   const sportCard = (core) => {
     const cur = totals.bySport?.[core] || { seconds: 0, distanceMeters: 0, tss: 0, count: 0 };
@@ -531,29 +532,43 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
     const timeDelta = deltaBadgeHtml({ diffLabel: `${ds.diff >= 0 ? '+' : '−'}${formatSecondsDelta(ds.diff)}`, pct: ds.pct });
     const distDelta = deltaBadgeHtml({ diffLabel: `${dd.diff >= 0 ? '+' : '−'}${formatKmDelta(dd.diff)}`, pct: dd.pct });
     return `
-      <div style="border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px; background: #ffffff;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 10px;">
-          <div style="font-weight: 800; color:#111827; font-size: 18px;">${escapeHtml(formatCoreSportLabel(core))}</div>
-          <div style="color:#6b7280; font-size: 15px;">${escapeHtml(String(cur.count || 0))} ${cur.count === 1 ? 'session' : 'sessions'}</div>
-        </div>
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
-          <div>
-            <div style="color:#6b7280; font-size: 15px;">Time</div>
-            <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
-          </div>
-          <div style="text-align:right;">${timeDelta}</div>
-        </div>
-        <div style="height: 10px;"></div>
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 10px;">
-          <div>
-            <div style="color:#6b7280; font-size: 15px;">Distance</div>
-            <div style="font-weight: 800; color:#111827; font-size: 20px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
-          </div>
-          <div style="text-align:right;">${distDelta}</div>
-        </div>
-      </div>
+      <table role="presentation" style="width:100%; max-width:100%; border-collapse:collapse; border:1px solid #e5e7eb; border-radius:14px; background:#ffffff;" class="sport-card">
+        <tr><td style="padding:14px 12px; border-radius:14px;">
+          <table role="presentation" style="width:100%; border-collapse:collapse;">
+            <tr>
+              <td style="font-weight:800; color:#111827; font-size:16px;">${escapeHtml(formatCoreSportLabel(core))}</td>
+              <td style="text-align:right; color:#6b7280; font-size:14px;">${escapeHtml(String(cur.count || 0))} ${cur.count === 1 ? 'session' : 'sessions'}</td>
+            </tr>
+            <tr><td colspan="2" style="height:8px;"></td></tr>
+            <tr>
+              <td>
+                <div style="color:#6b7280; font-size:14px;">Time</div>
+                <div style="font-weight:800; color:#111827; font-size:18px;">${escapeHtml(formatSecondsToHMS(cur.seconds || 0))}</div>
+              </td>
+              <td style="text-align:right; vertical-align:top;">${timeDelta}</td>
+            </tr>
+            <tr><td colspan="2" style="height:8px;"></td></tr>
+            <tr>
+              <td>
+                <div style="color:#6b7280; font-size:14px;">Distance</div>
+                <div style="font-weight:800; color:#111827; font-size:18px;">${escapeHtml(`${metersToKm(cur.distanceMeters || 0).toFixed(1)} km`)}</div>
+              </td>
+              <td style="text-align:right; vertical-align:top;">${distDelta}</td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
     `.trim();
   };
+
+  const sportCardsHtml = activeSports.length
+    ? activeSports
+        .map(
+          (core) =>
+            `<td class="sport-cell" style="padding:0 6px 12px 0; vertical-align:top; width:${100 / activeSports.length}%; max-width:100%;">${sportCard(core)}</td>`
+        )
+        .join('')
+    : '';
 
   const maxTrainingsToList = 5;
   const activitiesToShow = (summary.activities || []).slice(0, maxTrainingsToList);
@@ -567,18 +582,18 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
       const coreSport = a.coreSport || normalizeSportToCore(a.sport);
 
       const nameHtml = `
-        <a href="${escapeHtml(a.linkUrl || clientUrl)}" style="color:#111827; text-decoration:none; font-weight: 700; font-size: 16px;">
+        <a href="${escapeHtml(a.linkUrl || clientUrl)}" style="color:#111827; text-decoration:none; font-weight:700; font-size:15px;">
           ${escapeHtml(a.name)}
         </a>
       `.trim();
 
       return `
         <tr>
-          <td style="padding: 14px 0; border-bottom: 1px solid #eef2f7; vertical-align: top;">
-            <div style="color:#6b7280; font-size: 15px;">${escapeHtml(dateLabel)} · ${escapeHtml(formatCoreSportLabel(coreSport))}</div>
-            <div style="margin-top: 4px;">${nameHtml}</div>
+          <td style="padding:12px 0; border-bottom:1px solid #eef2f7; vertical-align:top;">
+            <div style="color:#6b7280; font-size:14px;">${escapeHtml(dateLabel)} · ${escapeHtml(formatCoreSportLabel(coreSport))}</div>
+            <div style="margin-top:4px;">${nameHtml}</div>
           </td>
-          <td style="padding: 14px 0; border-bottom: 1px solid #eef2f7; text-align: right; color: #111827; font-size: 17px; font-weight: 700; white-space: nowrap; vertical-align: top;">
+          <td style="padding:12px 0; border-bottom:1px solid #eef2f7; text-align:right; color:#111827; font-size:16px; font-weight:700; white-space:nowrap; vertical-align:top;">
             ${escapeHtml(formatSecondsToHMS(a.seconds))}
           </td>
         </tr>
@@ -586,48 +601,62 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
     })
     .join('');
 
+  const weekBySportSection =
+    activeSports.length > 0
+      ? `
+    <div style="height:18px;"></div>
+    <h3 style="margin:0 0 10px; color:#111827; font-size:18px;">Week by Sport</h3>
+    <table role="presentation" class="sport-grid" style="width:100%; max-width:100%; border-collapse:collapse;">
+      <tr>${sportCardsHtml}</tr>
+    </table>
+  `
+      : '';
+
   return `
-    <p style="margin: 0 0 16px; font-size: 18px;">Hi <strong>${userName}</strong>, here's your weekly summary.</p>
-    <p style="margin: 0 0 22px; color: #6b7280; font-size: 16px;">${weekStartLabel} – ${weekEndLabel}</p>
+<style type="text/css">
+  .email-wrap { max-width: 100% !important; width: 100% !important; box-sizing: border-box !important; }
+  .email-block { max-width: 100% !important; box-sizing: border-box !important; }
+  @media only screen and (max-width: 480px) {
+    .sport-cell { display: block !important; width: 100% !important; padding: 0 0 12px 0 !important; }
+    .sport-grid .sport-cell { padding-right: 0 !important; }
+  }
+</style>
+    <div class="email-wrap">
+    <p style="margin:0 0 14px; font-size:17px;">Hi <strong>${userName}</strong>, here's your weekly summary.</p>
+    <p style="margin:0 0 18px; color:#6b7280; font-size:15px;">${weekStartLabel} – ${weekEndLabel}</p>
 
-    <div style="border: 2px solid ${statusAccent}; border-radius: 14px; padding: 22px; background: #ffffff;">
-      <div style="text-align: center; margin-bottom: 8px;">
-        <div style="font-weight: 800; color: ${statusAccent}; font-size: 24px;">${trainingStatus}</div>
-        ${statusSubtitle ? `<div style="color: #6b7280; font-size: 16px; margin-top: 6px;">${escapeHtml(statusSubtitle)}</div>` : ''}
+    <div class="email-block" style="border:2px solid ${statusAccent}; border-radius:12px; padding:18px; background:#ffffff; max-width:100%;">
+      <div style="text-align:center; margin-bottom:6px;">
+        <div style="font-weight:800; color:${statusAccent}; font-size:22px;">${trainingStatus}</div>
+        ${statusSubtitle ? `<div style="color:#6b7280; font-size:15px; margin-top:4px;">${escapeHtml(statusSubtitle)}</div>` : ''}
       </div>
-      <div style="display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; margin-top: 16px;">
-        <div style="text-align: center;">
-          <div style="color: #6b7280; font-size: 15px;">Form</div>
-          <div style="font-weight: 800; color: #111827; font-size: 20px;">${summary.formValue === null ? '—' : String(summary.formValue)}</div>
-        </div>
-        <div style="text-align: center;">
-          <div style="color: #6b7280; font-size: 15px;">TSS</div>
-          <div style="font-size: 20px; font-weight: 800;">${String(Math.round(totals.totalTSS || 0))} ${deltaBadgeHtml({ diffLabel: `${deltaTotalTss.diff >= 0 ? '+' : '−'}${Math.abs(Math.round(deltaTotalTss.diff))}`, pct: deltaTotalTss.pct })}</div>
-        </div>
-      </div>
+      <table role="presentation" style="width:100%; border-collapse:collapse;">
+        <tr>
+          <td style="text-align:center; padding:8px 12px 0;">
+            <div style="color:#6b7280; font-size:14px;">Form</div>
+            <div style="font-weight:800; color:#111827; font-size:18px;">${summary.formValue === null ? '—' : String(summary.formValue)}</div>
+          </td>
+          <td style="text-align:center; padding:8px 12px 0;">
+            <div style="color:#6b7280; font-size:14px;">TSS</div>
+            <div style="font-size:18px; font-weight:800;">${String(Math.round(totals.totalTSS || 0))} ${deltaBadgeHtml({ diffLabel: `${deltaTotalTss.diff >= 0 ? '+' : '−'}${Math.abs(Math.round(deltaTotalTss.diff))}`, pct: deltaTotalTss.pct })}</div>
+          </td>
+        </tr>
+      </table>
     </div>
+    ${weekBySportSection}
+    <div style="height:18px;"></div>
 
-    <div style="height: 22px;"></div>
-
-    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Week by Sport</h3>
-    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
-      ${sportCard('run')}
-      ${sportCard('bike')}
-      ${sportCard('swim')}
-    </div>
-
-    <div style="height: 22px;"></div>
-
-    <h3 style="margin: 0 0 12px; color: #111827; font-size: 20px;">Sessions (max ${maxTrainingsToList})</h3>
-    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <h3 style="margin:0 0 10px; color:#111827; font-size:18px;">Sessions (max ${maxTrainingsToList})</h3>
+    <table role="presentation" class="email-block" style="width:100%; max-width:100%; border-collapse:collapse;">
       <tr>
-        <th style="text-align:left; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Session</th>
-        <th style="text-align:right; padding: 0 0 10px; color:#6b7280; font-size: 15px; font-weight:600;">Time</th>
+        <th style="text-align:left; padding:0 0 8px; color:#6b7280; font-size:14px; font-weight:600;">Session</th>
+        <th style="text-align:right; padding:0 0 8px; color:#6b7280; font-size:14px; font-weight:600;">Time</th>
       </tr>
       ${activityRows || `
-        <tr><td colspan="2" style="padding: 16px 0; color:#6b7280; font-size: 16px;">No sessions for this week.</td></tr>
+        <tr><td colspan="2" style="padding:14px 0; color:#6b7280; font-size:15px;">No sessions for this week.</td></tr>
       `}
     </table>
+    </div>
   `.trim();
 }
 

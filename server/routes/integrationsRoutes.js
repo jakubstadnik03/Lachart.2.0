@@ -35,18 +35,32 @@ const activitiesCacheMiddleware = (req, res, next) => {
   next();
 };
 
+// Produkční API URL pro Strava redirect (callback musí směřovat na backend)
+const getStravaRedirectBase = () => {
+  if (process.env.STRAVA_REDIRECT_URI) return process.env.STRAVA_REDIRECT_URI;
+  const backend = process.env.BACKEND_URL || process.env.API_URL || process.env.RENDER_EXTERNAL_URL;
+  if (backend) {
+    const base = backend.replace(/\/$/, '');
+    return `${base}/api/integrations/strava/callback`;
+  }
+  if (process.env.NODE_ENV === 'production') return 'https://lachart.onrender.com/api/integrations/strava/callback';
+  return null;
+};
+
 // GET /api/integrations/strava/auth-url
 router.get('/strava/auth-url', (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID || 'STRAVA_CLIENT_ID';
   
-  // Determine redirect URI - use env var if set, otherwise construct from request
-  let redirectUri = process.env.STRAVA_REDIRECT_URI;
-  
+  let redirectUri = getStravaRedirectBase();
   if (!redirectUri) {
-    // Construct redirect URI from request
     const protocol = req.protocol || 'https';
-    const host = req.get('host') || process.env.BACKEND_URL || 'localhost:8000';
-    redirectUri = `${protocol}://${host}/api/integrations/strava/callback`;
+    const host = req.get('host') || 'localhost:8000';
+    const isTunnel = /\.rtfd|\.ngrok|\.loca\.lt|\.trycloudflare\.com/i.test(host);
+    if (isTunnel) {
+      redirectUri = 'https://lachart.onrender.com/api/integrations/strava/callback';
+    } else {
+      redirectUri = `${protocol}://${host}/api/integrations/strava/callback`;
+    }
   }
   
   const scope = 'activity:read_all,profile:read_all,read_all';

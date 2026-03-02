@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const registerAbl = require("../abl/user-abl/register-abl");
 const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
+const { blacklistToken } = require("../middleware/authManager");
 const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
@@ -884,12 +885,9 @@ router.get("/profile", verifyToken, async (req, res) => {
 // Logout endpoint
 router.post("/logout", verifyToken, async (req, res) => {
     try {
-        // Get token from header
-        const token = req.headers.authorization.split(' ')[1];
-        
-        // Here you can add token to blacklist if you implement blacklist
-        // await blacklistToken(token);
-        
+        const authHeader = req.headers.authorization;
+        const token = authHeader && typeof authHeader === 'string' ? authHeader.split(' ')[1] : null;
+        if (token) blacklistToken(token);
         res.status(200).json({ message: "Logout successful" });
     } catch (error) {
         console.error("Logout error:", error);

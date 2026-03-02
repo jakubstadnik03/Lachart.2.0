@@ -14,5 +14,21 @@ export function setAuthToken(token: string | null) {
   }
 }
 
+let onUnauthorized: (() => void) | null = null;
+export function setOnUnauthorized(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && onUnauthorized) {
+      setAuthToken(null);
+      onUnauthorized();
+    }
+    return Promise.reject(error);
+  }
+);
+
 
 

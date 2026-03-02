@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { http, setAuthToken } from '../api/http';
+import { http, setAuthToken, setOnUnauthorized } from '../api/http';
 import type { AuthUser, LoginResponse } from './types';
 import { registerForPushNotificationsAsync } from '../push/registerForPushNotifications';
 
@@ -56,6 +56,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
+      // Před přihlášením vždy vyčistit starý token a storage, aby se k requestu
+      // nepřipojil předchozí účet a aby se po přihlášení neobnovil starý uživatel
+      setAuthToken(null);
+      setToken(null);
+      setUser(null);
+      await persistAuth(null, null);
+
       const resp = await http.post<LoginResponse>('/user/login', { email, password });
       const nextToken = resp.data?.token;
       const nextUser = resp.data?.user;
@@ -77,6 +84,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     await persistAuth(null, null);
   }, []);
+
+  const clearAuthOnUnauthorized = useCallback(async () => {
+    setAuthToken(null);
+    setToken(null);
+    setUser(null);
+    await persistAuth(null, null);
+  }, []);
+
+  useEffect(() => {
+    setOnUnauthorized(clearAuthOnUnauthorized);
+    return () => setOnUnauthorized(null);
+  }, [clearAuthOnUnauthorized]);
 
   useEffect(() => {
     const boot = async () => {

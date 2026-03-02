@@ -213,7 +213,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     }
   };
   
-  /** Sestaví polynomický fit a první derivaci z výsledků (stejná logika jako křivka: drop detection, body po poklesu). */
+  /** Sestaví polynomický fit a první derivaci z výsledků. Pro běh/plavání stejná logika jako v grafu: jen body s rostoucím laktátem (slow→fast). */
   const buildPolynomialFit = (sortedResults, baseLactate, sport = 'bike') => {
     if (!sortedResults || sortedResults.length < 3) return null;
     const isPaceSport = sport === 'run' || sport === 'swim';
@@ -225,22 +225,16 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     const minP = Math.min(...points.map((p) => p.power));
     const maxP = Math.max(...points.map((p) => p.power));
     const range = maxP - minP || 1;
-    let pointsForCurve = points;
-    const firstThird = Math.max(1, Math.floor(points.length / 3));
-    let minLaIdx = 0;
-    let minLa = points[0].lactate;
-    for (let i = 1; i < firstThird; i++) {
-      if (points[i].lactate < minLa) {
-        minLa = points[i].lactate;
-        minLaIdx = i;
-      }
+    // Pro běh/plavání: do fitu jen body tvořící neklesající laktát (slow→fast), aby křivka nedělala nesmysly
+    const TOL = 0.05;
+    const increasing = [];
+    for (let i = 0; i < points.length; i++) {
+      const lastLa = increasing.length ? increasing[increasing.length - 1].lactate : -Infinity;
+      if (points[i].lactate >= lastLa - TOL) increasing.push(points[i]);
     }
-    const dropMagnitude = minLaIdx > 0 ? points[0].lactate - minLa : 0;
-    let postDropStartX = null; // hranice: LTP1 musí být až odtud (kde to znovu začne růst)
-    if (dropMagnitude >= 0.2 && minLaIdx < points.length - 1) {
-      pointsForCurve = points.slice(minLaIdx + 1);
-      postDropStartX = pointsForCurve[0].power;
-    }
+    let pointsForCurve = increasing.length >= 2 ? increasing : points;
+    let postDropStartX = null;
+    if (pointsForCurve.length > 0) postDropStartX = pointsForCurve[0].power;
     const baseLaNum = baseLactate != null ? Number(baseLactate) : null;
     const xVals = [];
     const yVals = [];
@@ -286,23 +280,59 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     }
   };
 
+  /**
+   * Najde x (power/pace) na křivce polyFn, kde laktát = targetLactate.
+   * Vrací dopočítanou hodnotu z křivky (ne z měřeného bodu).
+   * @param {Function} polyFn - polynomická funkce lactate = polyFn(x)
+   * @param {number} xMin - minimum x (fit rozsah)
+   * @param {number} xMax - maximum x
+   * @param {number} targetLactate - cílový laktát (mmol/L)
+   * @param {boolean} isPaceSport - run/swim (pro výběr správného řešení při více průsečících)
+   * @param {boolean} forLTP1 - true = hledáme LTP1 (nízká intenzita), false = LTP2 (vysoká intenzita)
+   * @returns {number|null} x kde polyFn(x) ≈ targetLactate, nebo null
+   */
+  const findXForLactate = (polyFn, xMin, xMax, targetLactate, isPaceSport, forLTP1) => {
+    const steps = 400;
+    const dx = (xMax - xMin) / (steps - 1);
+    const crossings = [];
+    for (let i = 0; i < steps - 1; i++) {
+      const x0 = xMin + i * dx;
+      const x1 = xMin + (i + 1) * dx;
+      const y0 = polyFn(x0);
+      const y1 = polyFn(x1);
+      if ((y0 <= targetLactate && y1 >= targetLactate) || (y0 >= targetLactate && y1 <= targetLactate)) {
+        const t = Math.abs(y1 - y0) < 1e-9 ? 0.5 : (targetLactate - y0) / (y1 - y0);
+        const xCross = x0 + t * (x1 - x0);
+        crossings.push(xCross);
+      }
+    }
+    if (crossings.length === 0) return null;
+    if (forLTP1) {
+      return isPaceSport ? Math.max(...crossings) : Math.min(...crossings);
+    }
+    return isPaceSport ? Math.min(...crossings) : Math.max(...crossings);
+  };
+
   /** Z polynomu spočítá LTP1 (kde křivka začne růst – vždy až po poklesu) a LTP2 (maximum první derivace). */
   const findLTPFromPolynomial = (polyFit, sortedResults, isPaceSport) => {
     if (!polyFit || !sortedResults || sortedResults.length < 2) return null;
     const { polyFn, derivFn, fitMinX, fitMaxX, postDropStartX } = polyFit;
     const steps = 200;
     const dx = (fitMaxX - fitMinX) / (steps - 1);
-    let maxDeriv = -Infinity;
+    // LTP2 = bod nejprudšího nárůstu laktátu. Bike: x = power, lactate roste s x → max derivace.
+    // Běh/plavání: x = pace (s), lactate klesá s x (rychlejší = menší x = vyšší lactate) → derivace je záporná, hledáme minimum (nejzápornější).
+    let bestDeriv = isPaceSport ? Infinity : -Infinity;
     let ltp2X = fitMinX;
     for (let i = 0; i < steps; i++) {
       const x = fitMinX + i * dx;
       const d = derivFn(x);
-      if (d > maxDeriv) {
-        maxDeriv = d;
+      const isBetter = isPaceSport ? (d < bestDeriv) : (d > bestDeriv);
+      if (isBetter) {
+        bestDeriv = d;
         ltp2X = x;
       }
     }
-    const thresholdDeriv = Math.max(maxDeriv * 0.12, 0.008);
+    const thresholdDeriv = Math.max(Math.abs(bestDeriv) * 0.12, 0.008);
     // LTP1 = první x (od nízké intenzity) kde křivka začne růst – a vždy AŽ po poklesu (postDropStartX)
     const searchMin = postDropStartX != null && !isPaceSport ? Math.max(fitMinX, postDropStartX) : fitMinX;
     const searchMax = postDropStartX != null && isPaceSport ? Math.min(fitMaxX, postDropStartX) : fitMaxX;
@@ -453,8 +483,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       if (fromPoly) {
         const { ltp1Power, ltp2Power, ltp1Lactate, ltp2Lactate, ltp1HR, ltp2HR } = fromPoly;
         const validOrder = isPaceSport ? ltp2Power < ltp1Power : ltp2Power > ltp1Power;
-        const ltp1Reasonable = ltp1Lactate >= 0 && ltp1Lactate <= 4 && ltp1Power > 0;
-        const ltp2Reasonable = ltp2Lactate >= 1.5 && ltp2Lactate <= 8 && ltp2Power > 0;
+        const ltp1Reasonable = ltp1Lactate >= 0 && ltp1Lactate <= 5 && ltp1Power > 0;
+        const ltp2Reasonable = ltp2Lactate >= 1.0 && ltp2Lactate <= 10 && ltp2Power > 0;
         if (validOrder && ltp1Reasonable && ltp2Reasonable) {
           return {
             ltp1: ltp1Power,
@@ -1026,6 +1056,46 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             ltp1Point = bestPair.ltp1;
             ltp2Point = bestPair.ltp2;
           }
+        }
+      }
+    }
+
+    // Dopočítat power/pace a lactate z polynomické křivky (ne z měřeného bodu), pokud máme fit
+    if (polyFit && ltp1Point && ltp2Point) {
+      const { polyFn, fitMinX, fitMaxX } = polyFit;
+      const xLTP1 = findXForLactate(polyFn, fitMinX, fitMaxX, ltp1Point.lactate, isPaceSport, true);
+      const xLTP2 = findXForLactate(polyFn, fitMinX, fitMaxX, ltp2Point.lactate, isPaceSport, false);
+      const interpolateHR = (x) => {
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const a = Number(sortedResults[i].power);
+          const b = Number(sortedResults[i + 1].power);
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          if (x >= lo && x <= hi && a !== b) {
+            const hrA = sortedResults[i].heartRate != null ? Number(sortedResults[i].heartRate) : null;
+            const hrB = sortedResults[i + 1].heartRate != null ? Number(sortedResults[i + 1].heartRate) : null;
+            if (hrA != null && hrB != null) return hrA + (hrB - hrA) * (x - a) / (b - a);
+            return hrA ?? hrB;
+          }
+        }
+        const nearest = sortedResults.reduce((best, r) =>
+          Math.abs(Number(r.power) - x) < Math.abs(Number(best.power) - x) ? r : best
+        );
+        return nearest.heartRate != null ? Number(nearest.heartRate) : null;
+      };
+      if (xLTP1 != null && xLTP2 != null) {
+        const validOrder = isPaceSport ? xLTP2 < xLTP1 : xLTP2 > xLTP1;
+        if (validOrder) {
+          ltp1Point = {
+            power: xLTP1,
+            lactate: Math.max(0, polyFn(xLTP1)),
+            heartRate: interpolateHR(xLTP1)
+          };
+          ltp2Point = {
+            power: xLTP2,
+            lactate: Math.max(0, polyFn(xLTP2)),
+            heartRate: interpolateHR(xLTP2)
+          };
         }
       }
     }

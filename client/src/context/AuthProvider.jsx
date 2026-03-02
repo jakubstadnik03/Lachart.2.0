@@ -146,6 +146,16 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, [removeToken, navigate, location.pathname]);
 
+  // Při 401 (neplatný/odhlášený token) sjednotit stav a přesměrovat na login
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      removeToken();
+      navigate('/login', { replace: true });
+    };
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [removeToken, navigate]);
+
   // Listen for user updates (e.g., from SettingsPage after auto-sync change)
   useEffect(() => {
     const handleUserUpdate = (event) => {

@@ -251,14 +251,24 @@ if (typeof window !== 'undefined') {
 // Add request interceptor to include auth token and track calls
 api.interceptors.request.use(
   (config) => {
-    const token = getAuthToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (!config) return config;
+    config.headers = config.headers || {};
+    // U login/register nikdy neposílat starý token – jinak by mohl server nebo cache
+    // vrátit data předchozího účtu
+    const url = String(config.baseURL || '') + String(config.url || '');
+    const isAuthEndpoint = /\/user\/(login|register)(\?|$|\/)/.test(url);
+    if (!isAuthEndpoint) {
+      const token = getAuthToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } else {
+      delete config.headers.Authorization;
     }
-    
+
     // Track API call start time
     config.__startTime = Date.now();
-    
+
     return config;
   },
   (error) => Promise.reject(error)
@@ -356,11 +366,12 @@ api.interceptors.response.use(
       console.error('API Error:', error);
     }
     if (error.response?.status === 401) {
-      // Remove both token keys for consistency
       localStorage.removeItem('authToken');
       localStorage.removeItem('token');
-      // Don't automatically remove token on 401 - let AuthProvider handle it
-      // This prevents race conditions where multiple requests fail simultaneously
+      if (api.defaults?.headers?.common) delete api.defaults.headers.common.Authorization;
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
     }
     return Promise.reject(error);
   }

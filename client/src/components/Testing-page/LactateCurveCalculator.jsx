@@ -546,33 +546,27 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return { x, y: Number(lactate) };
   });
 
-  // Detekce poklesu laktátu na začátku: pokud laktát nejdřív roste a pak klesne,
-  // křivku fitujeme jen na body po poklesu (stejná logika jako LTP1)
-  // Upraveno: používáme všechny body, pokud pokles není příliš výrazný, aby křivka plynule procházela všemi body
-  let pointsForCurve = sortedPoints;
-  const firstThirdForDrop = Math.max(1, Math.floor(sortedPoints.length / 3));
-  let minLaIdx = 0;
-  let minLa = sortedPoints[0]?.y ?? Infinity;
-  for (let i = 1; i < firstThirdForDrop; i++) {
-    if (sortedPoints[i].y < minLa) {
-      minLa = sortedPoints[i].y;
-      minLaIdx = i;
+  // Do fitu zahrnout jen body tvořící rostoucí (nebo neklesající) posloupnost laktátu
+  // (slowest → fastest: lactate by měl růst). Body "mimo" (pokles) se do křivky nepočítají.
+  const TOLERANCE_MMOL = 0.05; // malá tolerance na šum měření
+  const increasingPoints = [];
+  for (let i = 0; i < sortedPoints.length; i++) {
+    const pt = sortedPoints[i];
+    const lastY = increasingPoints.length ? increasingPoints[increasingPoints.length - 1].y : -Infinity;
+    if (pt.y >= lastY - TOLERANCE_MMOL) {
+      increasingPoints.push(pt);
     }
   }
-  const dropMagnitude = sortedPoints[0]?.y != null && minLaIdx > 0
-    ? sortedPoints[0].y - minLa
-    : 0;
-  // Použijeme všechny body, pokud pokles není příliš výrazný (> 0.5 mmol/L)
-  // nebo pokud máme málo bodů (< 5), aby křivka plynule procházela všemi body
-  if (dropMagnitude >= 0.5 && minLaIdx < sortedPoints.length - 1 && sortedPoints.length >= 5) {
-    pointsForCurve = sortedPoints.slice(minLaIdx + 1);
-  }
+  // Pokud by nám zůstaly méně než 2 body, použijeme všechny (aby se graf nezlomil)
+  let pointsForCurve = increasingPoints.length >= 2 ? increasingPoints : sortedPoints;
 
-  // Pro regresi: při poklesu nepřidávat base lactate (jinak by to táhlo křivku nahoru)
-  const xValsForCurve = pointsForCurve === sortedPoints && baseLactatePoint
+  // Base lactate do fitu jen když neporuší rostoucí trend (base.y <= první bod)
+  const firstCurveY = pointsForCurve[0]?.y ?? Infinity;
+  const includeBaseInFit = baseLactatePoint && baseLactatePoint.y <= firstCurveY + TOLERANCE_MMOL;
+  const xValsForCurve = includeBaseInFit
     ? [baseLactatePoint.x, ...pointsForCurve.map(p => p.x)]
     : pointsForCurve.map(p => p.x);
-  const yValsForCurve = pointsForCurve === sortedPoints && baseLactatePoint
+  const yValsForCurve = includeBaseInFit
     ? [baseLactatePoint.y, ...pointsForCurve.map(p => p.y)]
     : pointsForCurve.map(p => p.y);
 
@@ -729,13 +723,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       const step = Math.abs(endX - startX) / 300; // More points for smoother curve
       
       const direction = startX < endX ? 1 : -1;
+      let prevY = -Infinity; // křivka má být vždy rostoucí (v směru od pomalého k rychlému)
       for (let x = startX; direction * x <= direction * endX; x += direction * step) {
         try {
-          // Použijeme polynom pro celý rozsah mezi prvním a posledním bodem
           let y = polyRegression(x);
-          
-          // Omezíme pouze záporné hodnoty
           if (y < 0) y = 0;
+          // Vynutit rostoucí křivku: žádný pokles oproti předchozímu bodu
+          if (prevY !== -Infinity && y < prevY) y = prevY;
+          prevY = y;
           if (!isNaN(y) && isFinite(y)) {
             polyPoints.push({ x, y });
           }
