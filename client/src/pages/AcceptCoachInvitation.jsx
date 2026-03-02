@@ -13,11 +13,11 @@ const AcceptCoachInvitation = () => {
     const [error, setError] = useState(null);
     const [coachInfo, setCoachInfo] = useState(null);
 
-    // Fallback: pokud token není v useParams, zkusit jej získat z localStorage
+    // Fallback: if token is not in URL params, try to get it from localStorage
     if (!token) {
         token = localStorage.getItem('pendingInvitationToken');
         if (!token) {
-            setError('Chybí token pozvánky');
+            setError('Missing invitation token');
             setLoading(false);
         }
     }
@@ -36,7 +36,7 @@ const AcceptCoachInvitation = () => {
         // If authenticated, try to get token from URL params or localStorage
         const invitationToken = token || localStorage.getItem('pendingInvitationToken');
         if (!invitationToken) {
-            setError('Chybí token pozvánky');
+            setError('Missing invitation token');
             setLoading(false);
             return;
         }
@@ -45,7 +45,7 @@ const AcceptCoachInvitation = () => {
             try {
                 const authToken = localStorage.getItem('token');
                 if (!authToken) {
-                    throw new Error('Chybí autorizační token');
+                    throw new Error('Missing authorization token');
                 }
 
                 console.log('Verifying invitation with token:', invitationToken);
@@ -70,11 +70,11 @@ const AcceptCoachInvitation = () => {
                     const contentType = response.headers.get('content-type');
                     if (contentType && contentType.includes('application/json')) {
                         const errorData = await response.json();
-                        throw new Error(errorData.error || 'Chyba při ověřování pozvánky');
+                        throw new Error(errorData.error || 'Error verifying invitation');
                     } else {
                         const text = await response.text();
                         console.error('Server response:', text);
-                        throw new Error('Chyba při ověřování pozvánky - server vrátil neplatnou odpověď');
+                        throw new Error('Error verifying invitation - server returned an invalid response');
                     }
                 }
 
@@ -82,7 +82,7 @@ const AcceptCoachInvitation = () => {
                 if (!contentType || !contentType.includes('application/json')) {
                     const text = await response.text();
                     console.error('Server response:', text);
-                    throw new Error('Chyba při ověřování pozvánky - server vrátil neplatnou odpověď');
+                    throw new Error('Error verifying invitation - server returned an invalid response');
                 }
 
                 const data = await response.json();
@@ -101,7 +101,7 @@ const AcceptCoachInvitation = () => {
         if (invitationToken) {
             verifyInvitation();
         } else {
-            setError('Chybí token pozvánky');
+            setError('Missing invitation token');
             setLoading(false);
         }
     }, [token, isAuthenticated, navigate]);
@@ -111,12 +111,12 @@ const AcceptCoachInvitation = () => {
             setLoading(true);
             const authToken = localStorage.getItem('token');
             if (!authToken) {
-                throw new Error('Chybí autorizační token');
+                throw new Error('Missing authorization token');
             }
 
             const invitationToken = token || localStorage.getItem('pendingInvitationToken');
             if (!invitationToken) {
-                throw new Error('Chybí token pozvánky');
+                throw new Error('Missing invitation token');
             }
 
             const acceptUrl = API_ENDPOINTS.ACCEPT_COACH_INVITATION(invitationToken);
@@ -135,15 +135,15 @@ const AcceptCoachInvitation = () => {
                 const contentType = response.headers.get('content-type');
                 if (contentType && contentType.includes('application/json')) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error || 'Chyba při přijímání pozvánky');
+                    throw new Error(errorData.error || 'Error accepting invitation');
                 } else {
                     const text = await response.text();
                     console.error('Server response:', text);
-                    throw new Error('Chyba při přijímání pozvánky - server vrátil neplatnou odpověď');
+                    throw new Error('Error accepting invitation - server returned an invalid response');
                 }
             }
 
-            addNotification('Pozvánka byla úspěšně přijata', 'success');
+            addNotification('Invitation accepted successfully', 'success');
             navigate('/dashboard');
         } catch (error) {
             console.error('Error accepting invitation:', error);

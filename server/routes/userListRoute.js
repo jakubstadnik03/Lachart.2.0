@@ -1617,15 +1617,30 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
             }
         });
 
+        // Branded confirmation email to athlete when coach accepts the invitation
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+
+        const acceptedContent = `
+            <p>Hi ${athlete.name},</p>
+            <p>Your coach <strong>${coach.name} ${coach.surname}</strong> has accepted your invitation in LaChart.</p>
+            <p>Your coach is now connected to your account and can see your lactate tests, training zones and progress over time.</p>
+        `;
+
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: athlete.email,
+            from: {
+                name: 'LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: athlete.email.toLowerCase(),
             subject: 'Coach Accepted Your Invitation',
-            html: `
-                <h2>Invitation Accepted</h2>
-                <p>Coach ${coach.name} ${coach.surname} has accepted your invitation.</p>
-                <p>Your coach is now set in the system.</p>
-            `
+            html: generateEmailTemplate({
+                title: 'Invitation Accepted',
+                content: acceptedContent,
+                loginButtonText: 'Open LaChart',
+                loginButtonUrl: clientUrl,
+                footerText: 'You can manage your coach connection any time from your LaChart profile.'
+            })
         });
 
         console.log('Invitation accepted successfully');
@@ -1651,10 +1666,10 @@ router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res
         // Najdi coacha podle tokenu
         const coach = await userDao.findByInvitationToken(token);
         if (!coach) {
-            return res.status(404).json({ error: 'Pozvánka nebyla nalezena' });
+            return res.status(404).json({ error: 'Invitation not found' });
         }
         if (coach.invitationTokenExpires < new Date()) {
-            return res.status(400).json({ error: 'Pozvánka vypršela' });
+            return res.status(400).json({ error: 'Invitation has expired' });
         }
         // Vrať informace o coachovi
         res.json({
@@ -1666,7 +1681,7 @@ router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res
         });
     } catch (error) {
         console.error('Error verifying coach invitation:', error);
-        res.status(500).json({ error: 'Chyba při ověřování pozvánky' });
+        res.status(500).json({ error: 'Error verifying invitation' });
     }
 });
 

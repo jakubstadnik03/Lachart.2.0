@@ -608,7 +608,14 @@ const TestingPage = () => {
   };
 
   const handleAthleteCreated = (athleteId, athleteData) => {
-    // Select the newly created athlete
+    // Persist newly created athlete as global selection (Dashboard / Training / Testing)
+    try {
+      localStorage.setItem('global_selectedAthleteId', athleteId);
+    } catch {
+      // ignore storage errors
+    }
+
+    // Select the newly created athlete in Testing page
     setSelectedAthleteId(athleteId);
     navigate(`/testing/${athleteId}`, { replace: true });
     

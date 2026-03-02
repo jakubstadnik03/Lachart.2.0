@@ -14,7 +14,7 @@ const AcceptInvitationPage = () => {
         await api.get(`/user/verify-invitation-token/${token}`);
         setLoading(false);
       } catch (error) {
-        setError(error.response?.data?.error || 'Neplatná nebo expirovaná pozvánka');
+        setError(error.response?.data?.error || 'Invalid or expired invitation');
         setLoading(false);
       }
     };
@@ -25,10 +25,10 @@ const AcceptInvitationPage = () => {
   const handleAcceptInvitation = async () => {
     try {
       await api.post(`/user/accept-invitation/${token}`);
-      alert('Pozvánka byla úspěšně přijata!');
+      alert('Invitation accepted successfully!');
       navigate('/dashboard');
     } catch (error) {
-      setError(error.response?.data?.error || 'Chyba při přijímání pozvánky');
+      setError(error.response?.data?.error || 'Error accepting invitation');
     }
   };
 
@@ -37,7 +37,7 @@ const AcceptInvitationPage = () => {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Načítání...</p>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );

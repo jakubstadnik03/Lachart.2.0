@@ -296,12 +296,12 @@ const AthletesPage = () => {
       const response = await api.post('/user/coach/invite-athlete', { email: inviteEmail });
       if (response.data.athlete) {
         setAthletes([...athletes, response.data.athlete]);
-        alert('Atlet byl úspěšně přidán do týmu a byla mu odeslána pozvánka');
+        alert('Athlete was added to your team and an invitation email was sent.');
         setIsInviteModalOpen(false);
         setInviteEmail('');
       }
     } catch (error) {
-      setInviteError(error.response?.data?.error || 'Chyba při přidávání atleta');
+      setInviteError(error.response?.data?.error || 'Error adding athlete');
     }
   };
 

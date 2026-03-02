@@ -412,7 +412,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           >
             <h2 className="text-sm font-bold pt-4 text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Athletes</h2>
             {loadingAthletes ? (
-              <div className="text-sm text-gray-500 pb-2">Načítání atletů...</div>
+              <div className="text-sm text-gray-500 pb-2">Loading athletes...</div>
             ) : athletes.length > 0 ? (
               <ul className="space-y-2 pb-2">
                 {athletes.map((athlete) => (
