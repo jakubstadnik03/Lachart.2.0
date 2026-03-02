@@ -289,6 +289,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     return best;
   }, [powerMetrics, allTimeRef]);
 
+  // Use allTimeRef for All Time column when available so value and link match true all-time
+  const allTimeSource = allTimeRef || powerMetrics;
+
   // Prepare chart data
   const chartData = useMemo(() => {
     if (!powerMetrics || !powerMetrics.allTime || typeof powerMetrics.allTime !== 'object') {
@@ -558,9 +561,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       compareTrainingId: getMetricTrainingId(powerMetrics.compare.sprint5s),
       compareTrainingType: getMetricTrainingType(powerMetrics.compare.sprint5s),
       compareStravaId: getMetricStravaId(powerMetrics.compare.sprint5s),
-      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.sprint5s),
-      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.sprint5s),
-      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.sprint5s),
+      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.sprint5s),
+      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.sprint5s),
+      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.sprint5s),
       percentage: allTimeBest.sprint5s > 0 
         ? Math.round((getMetricValue(powerMetrics.compare.sprint5s) / allTimeBest.sprint5s) * 100)
         : 0
@@ -574,9 +577,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       compareTrainingId: getMetricTrainingId(powerMetrics.compare.attack1min),
       compareTrainingType: getMetricTrainingType(powerMetrics.compare.attack1min),
       compareStravaId: getMetricStravaId(powerMetrics.compare.attack1min),
-      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.attack1min),
-      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.attack1min),
-      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.attack1min),
+      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.attack1min),
+      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.attack1min),
+      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.attack1min),
       percentage: allTimeBest.attack1min > 0
         ? Math.round((getMetricValue(powerMetrics.compare.attack1min) / allTimeBest.attack1min) * 100)
         : 0
@@ -590,9 +593,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       compareTrainingId: getMetricTrainingId(powerMetrics.compare.vo2max5min),
       compareTrainingType: getMetricTrainingType(powerMetrics.compare.vo2max5min),
       compareStravaId: getMetricStravaId(powerMetrics.compare.vo2max5min),
-      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.vo2max5min),
-      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.vo2max5min),
-      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.vo2max5min),
+      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.vo2max5min),
+      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.vo2max5min),
+      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.vo2max5min),
       percentage: allTimeBest.vo2max5min > 0
         ? Math.round((getMetricValue(powerMetrics.compare.vo2max5min) / allTimeBest.vo2max5min) * 100)
         : 0
@@ -606,9 +609,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       compareTrainingId: getMetricTrainingId(powerMetrics.compare.threshold20min),
       compareTrainingType: getMetricTrainingType(powerMetrics.compare.threshold20min),
       compareStravaId: getMetricStravaId(powerMetrics.compare.threshold20min),
-      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.threshold20min),
-      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.threshold20min),
-      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.threshold20min),
+      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.threshold20min),
+      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.threshold20min),
+      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.threshold20min),
       percentage: allTimeBest.threshold20min > 0
         ? Math.round((getMetricValue(powerMetrics.compare.threshold20min) / allTimeBest.threshold20min) * 100)
         : 0
@@ -622,9 +625,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
       compareTrainingId: getMetricTrainingId(powerMetrics.compare.endurance60min),
       compareTrainingType: getMetricTrainingType(powerMetrics.compare.endurance60min),
       compareStravaId: getMetricStravaId(powerMetrics.compare.endurance60min),
-      allTimeTrainingId: getMetricTrainingId(powerMetrics.allTime?.endurance60min),
-      allTimeTrainingType: getMetricTrainingType(powerMetrics.allTime?.endurance60min),
-      allTimeStravaId: getMetricStravaId(powerMetrics.allTime?.endurance60min),
+      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.endurance60min),
+      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.endurance60min),
+      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.endurance60min),
       percentage: allTimeBest.endurance60min > 0
         ? Math.round((getMetricValue(powerMetrics.compare.endurance60min) / allTimeBest.endurance60min) * 100)
         : 0

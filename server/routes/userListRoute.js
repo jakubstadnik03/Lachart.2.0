@@ -1269,27 +1269,55 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
             }
         });
 
+        // Use unified branded template for coach/athlete notifications
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+
         if (coach?.email) {
+            const coachContent = `
+                <p>Hi ${coach.name},</p>
+                <p>Athlete <strong>${athlete.name} ${athlete.surname}</strong> has left your team in LaChart.</p>
+                <p>You can still see their past tests and workouts that were already shared, but you will no longer receive new data from this athlete.</p>
+            `;
+
             await transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: coach.email,
+                from: {
+                    name: 'LaChart',
+                    address: process.env.EMAIL_USER
+                },
+                to: coach.email.toLowerCase(),
                 subject: 'Athlete Left Team',
-                html: `
-                    <h2>Athlete Left Team</h2>
-                    <p>Athlete ${athlete.name} ${athlete.surname} has left your team.</p>
-                `
+                html: generateEmailTemplate({
+                    title: 'Athlete Left Your Team',
+                    content: coachContent,
+                    loginButtonText: 'Open LaChart',
+                    loginButtonUrl: clientUrl,
+                    footerText: 'You can invite athletes to your team any time from your LaChart coach dashboard.'
+                })
             });
         }
 
         if (athlete?.email) {
+            const athleteContent = `
+                <p>Hi ${athlete.name},</p>
+                <p>You have successfully removed your coach${coach ? ` <strong>${coach.name} ${coach.surname}</strong>` : ''} in LaChart.</p>
+                <p>Your tests, training data and thresholds stay safely stored in your account. You can continue using LaChart on your own or connect with another coach at any time.</p>
+            `;
+
             await transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: athlete.email,
-                subject: 'Coach Removed',
-                html: `
-                    <h2>Coach Removed</h2>
-                    <p>You have successfully removed your coach${coach ? ` ${coach.name} ${coach.surname}` : ''}.</p>
-                `
+                from: {
+                    name: 'LaChart',
+                    address: process.env.EMAIL_USER
+                },
+                to: athlete.email.toLowerCase(),
+                subject: 'Coach Removed from Your LaChart Account',
+                html: generateEmailTemplate({
+                    title: 'Coach Removed',
+                    content: athleteContent,
+                    loginButtonText: 'Go to LaChart',
+                    loginButtonUrl: clientUrl,
+                    footerText: 'You can add or change your coach in LaChart whenever you need. Your data always stays under your control.'
+                })
             });
         }
 

@@ -2823,19 +2823,16 @@ async function getPowerMetrics(req, res) {
     // Process Strava activities - process in batches to avoid rate limiting.
     // NOTE: Strava streams require API calls. We cannot realistically scan "all time" for accounts with lots of rides.
     // We therefore select a capped subset of activities designed to maximize chance of finding peaks.
-    const isAllTime = comparePeriod === 'alltime';
-    // cap must be low enough to avoid Strava 429; selection below tries to be "high-signal"
-    const MAX_STRAVA_ACTIVITIES = isAllTime ? 60 : 35;
+    // All-time max must be computed from the same full pool regardless of comparePeriod.
+    // We always select from full history (up to 60 activities); compare-period values are derived by filtering by date.
     const nowMs = Date.now();
     const compareStartMs =
       comparePeriod === '90days' ? nowMs - (90 * 24 * 60 * 60 * 1000) :
       comparePeriod === '30days' ? nowMs - (30 * 24 * 60 * 60 * 1000) :
       0;
-    
-    let stravaActivitiesToProcess = [];
-    const stravaPool = (compareStartMs > 0 && !isAllTime)
-      ? stravaActivitiesWithPower.filter(a => a.startDate && new Date(a.startDate).getTime() >= compareStartMs)
-      : stravaActivitiesWithPower;
+
+    const MAX_STRAVA_ACTIVITIES = 60;
+    const stravaPool = stravaActivitiesWithPower;
 
     const getWeighted = (a) => Number(a?.raw?.weighted_average_watts || a?.raw?.weightedAverageWatts || 0);
     const getMaxWatts = (a) => Number(a?.raw?.max_watts || a?.raw?.maxWatts || 0);
@@ -2867,23 +2864,15 @@ async function getPowerMetrics(req, res) {
         .slice(0, n);
     };
 
-    if (isAllTime) {
-      // For "all time": don't just use avg power; 5-min peaks often live in interval sessions with mediocre avg.
-      // Use a blend of predictors + recency + duration.
-      const eligible = stravaPool.filter(a => getTime(a) >= 5 * 60); // must be long enough for 5min
-      const picks = uniqByStravaId([
-        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => Math.max(getWeighted(a), getAvg(a))), // best predictor for sustained power
-        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getMaxWatts(a) || (getAvg(a) * 1.3)), // sprinty rides can also contain hard 5min
-        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getTime(a)), // long rides can contain best 20/60min
-        ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => getDateMs(a)) // recency
-      ]);
-
-      stravaActivitiesToProcess = picks.slice(0, MAX_STRAVA_ACTIVITIES);
-    } else {
-      // For compare periods, prefer higher weighted/avg power (and then newer)
-      const eligible = stravaPool.filter(a => getTime(a) >= 60); // basic sanity
-      stravaActivitiesToProcess = topN(eligible, MAX_STRAVA_ACTIVITIES, (a) => Math.max(getWeighted(a), getAvg(a)));
-    }
+    // Single selection from full history so allTime is correct; compare is filtered from same metrics by date below.
+    const eligible = stravaPool.filter(a => getTime(a) >= 5 * 60);
+    const picks = uniqByStravaId([
+      ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => Math.max(getWeighted(a), getAvg(a))),
+      ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getMaxWatts(a) || (getAvg(a) * 1.3)),
+      ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.2), (a) => getTime(a)),
+      ...topN(eligible, Math.ceil(MAX_STRAVA_ACTIVITIES * 0.35), (a) => getDateMs(a))
+    ]);
+    const stravaActivitiesToProcess = picks.slice(0, MAX_STRAVA_ACTIVITIES);
 
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[Power Metrics] Processing ${stravaActivitiesToProcess.length}/${stravaPool.length} Strava activities (cap ${MAX_STRAVA_ACTIVITIES})...`);

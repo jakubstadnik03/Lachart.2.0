@@ -7,7 +7,7 @@ import { API_ENDPOINTS } from '../config/api.config';
 const AcceptCoachInvitation = () => {
     let { token } = useParams();
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
     const { addNotification } = useNotification();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -169,17 +169,34 @@ const AcceptCoachInvitation = () => {
     }
 
     if (error) {
+        const isUnauthorizedError = error?.toLowerCase().includes('not authorized');
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <div className="text-center">
-                    <h2 className="text-2xl font-bold text-red-600 mb-4">Error</h2>
-                    <p className="text-gray-600 mb-4">{error}</p>
-                    <button
-                        onClick={() => navigate('/dashboard')}
-                        className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
-                    >
-                        Back to Dashboard
-                    </button>
+                <div className="text-center max-w-md mx-auto p-6 bg-white rounded-lg shadow">
+                    <h2 className="text-2xl font-bold text-red-600 mb-3">Error</h2>
+                    <p className="text-gray-700 mb-4">{error}</p>
+                    {isUnauthorizedError && (
+                        <p className="text-sm text-gray-500 mb-6">
+                            This invitation can only be accepted by the coach account it was sent to.
+                            If you are logged in as a different user, please switch account and try again.
+                        </p>
+                    )}
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        {isUnauthorizedError && (
+                            <button
+                                onClick={() => logout()}
+                                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                            >
+                                Switch Account
+                            </button>
+                        )}
+                        <button
+                            onClick={() => navigate('/dashboard')}
+                            className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
+                        >
+                            Back to Dashboard
+                        </button>
+                    </div>
                 </div>
             </div>
         );

@@ -27,7 +27,7 @@ const StravaIntegrationModal = ({ isOpen, onClose }) => {
             <img src="/icon/strava.png" alt="Strava" className="w-6 h-6" />
           </div>
           <p className="text-sm text-gray-600">
-            By connecting your Strava account, LaChart can analyze your training data and provide personalized lactate test recommendations.
+            By connecting your Strava account, LaChart can analyze your running and cycling data and provide personalized lactate test recommendations for both sports.
           </p>
         </div>
 
@@ -39,19 +39,19 @@ const StravaIntegrationModal = ({ isOpen, onClose }) => {
           <ul className="text-sm text-blue-800 space-y-2.5">
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold mt-0.5">•</span>
-              <span><strong>HR-First Test Plan:</strong> Automatic calculation of recommended lactate test protocol based on your recent Strava activities with heart rate data</span>
+              <span><strong>HR-First Test Plan:</strong> Recommended lactate test protocol from your recent Strava activities (running and cycling) with heart rate data</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold mt-0.5">•</span>
-              <span><strong>Personalized Thresholds:</strong> Estimated LT1 and LT2 heart rate zones from your training history</span>
+              <span><strong>Running:</strong> Start/end pace (min/km), stage length, and estimated duration—or sync Strava runs to auto-estimate threshold pace</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold mt-0.5">•</span>
-              <span><strong>Test Protocol Steps:</strong> Detailed stage-by-stage recommendations with target heart rate, pace, and power for each test stage</span>
+              <span><strong>Cycling:</strong> Start/end power (W), step size, and stage-by-stage targets from your profile or Strava power data</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold mt-0.5">•</span>
-              <span><strong>Performance Tracking:</strong> Compare your test results with your training data to track improvements over time</span>
+              <span><strong>LT1/LT2 estimates:</strong> Heart rate and pace/power zones from training history; compare with test results over time</span>
             </li>
           </ul>
         </div>
@@ -60,9 +60,9 @@ const StravaIntegrationModal = ({ isOpen, onClose }) => {
           <h4 className="text-sm font-semibold text-gray-900 mb-2">How it works:</h4>
           <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
             <li>Connect your Strava account (one-time setup)</li>
-            <li>LaChart analyzes your recent activities with heart rate data</li>
-            <li>Get personalized test recommendations with specific HR zones and pacing</li>
-            <li>Follow the recommended protocol during your lactate test</li>
+            <li>LaChart analyzes your recent runs and rides (with HR and, for bike, power)</li>
+            <li>Get protocol recommendations: for run — pace range and duration; for bike — power range and stages</li>
+            <li>Use the suggested protocol when doing your lactate test</li>
           </ol>
         </div>
 

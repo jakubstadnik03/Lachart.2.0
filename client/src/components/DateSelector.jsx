@@ -17,16 +17,14 @@ function useWindowWidth() {
   return windowWidth;
 }
 
-function DateButton({ date, isSelected, onClick }) {
+function DateButton({ test, date, isSelected, onClick, disambiguate }) {
   const windowWidth = useWindowWidth();
 
   const formatDate = () => {
     const dateObj = new Date(date);
     if (windowWidth < 640) {
-      // Mobile: "Jan 15"
       return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } else {
-      // Desktop: "Jan 15, 2024"
       return dateObj.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
@@ -35,15 +33,21 @@ function DateButton({ date, isSelected, onClick }) {
     }
   };
 
+  const title = (test?.title || test?.name || '').toString().trim();
+  const label = disambiguate && title
+    ? `${formatDate()} · ${title.length > 12 ? title.slice(0, 12) + '…' : title}`
+    : formatDate();
+
   return (
     <button
       onClick={onClick}
-      aria-label={`Select date ${date}`}
+      aria-label={test?._id ? `Select test ${title || date}` : `Select date ${date}`}
       aria-pressed={isSelected}
+      title={test?._id ? `ID: ${test._id}` : undefined}
       className={`px-2 sm:px-3 py-1.5 sm:py-2 my-auto rounded-md transition-colors whitespace-nowrap text-xs sm:text-sm touch-manipulation min-w-[60px] sm:min-w-[90px] text-center flex-shrink-0
         ${isSelected ? "bg-zinc-50 font-semibold shadow-sm ring-1 ring-zinc-300" : "hover:bg-zinc-50 focus:bg-zinc-50 active:bg-zinc-50"}`}
     >
-      {formatDate()}
+      {label}
     </button>
   );
 }
@@ -131,8 +135,18 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
     onSelectTest(testId);
   };
 
-  // Sort tests by date (newest first) and get visible tests for mobile pagination
-  const sortedTests = [...(tests || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Sort tests by date (newest first), then by _id for stable order when same date
+  const sortedTests = [...(tests || [])].sort((a, b) => {
+    const d = new Date(b.date) - new Date(a.date);
+    if (d !== 0) return d;
+    return (b._id || '').localeCompare(a._id || '');
+  });
+  const dateCounts = sortedTests.reduce((acc, t) => {
+    const key = (t.date && new Date(t.date).toISOString?.()) || String(t.date);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const disambiguate = Object.values(dateCounts).some((c) => c > 1);
   let visibleTests = sortedTests;
   if(isMobile && sortedTests.length > PAGE_SIZE) {
     const start = page * PAGE_SIZE;
@@ -217,9 +231,11 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
               {visibleTests.map((test) => (
                 <div key={test._id} className="snap-start flex-shrink-0">
                   <DateButton
+                    test={test}
                     date={test.date}
                     isSelected={test._id === selectedId}
                     onClick={() => handleTestSelect(test._id)}
+                    disambiguate={disambiguate}
                   />
                 </div>
               ))}

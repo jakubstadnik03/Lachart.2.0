@@ -226,10 +226,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       return isNaN(value) || !isFinite(value) ? 0 : value;
     });
 
-    const lactateData = validResults.map((result) => {
+    const rawLactate = validResults.map((result) => {
       const value = Number(result.lactate.toString().replace(',', '.'));
       return isNaN(value) || !isFinite(value) ? 0 : value;
     });
+    // V grafu zobrazit všechny naměřené hodnoty – nic se nevynechává, žádné body se nenahrazují nulami/mezery.
+    const lactateData = rawLactate;
     const heartRateData = validResults.map((result) => {
       if (!result.heartRate) return 0;
       const value = Number(result.heartRate.toString().replace(',', '.'));
@@ -253,6 +255,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointRadius: 5,
         pointHoverRadius: 8,
         pointBackgroundColor: "#3F8CFE",
+        spanGaps: false,
       },
       {
         label: "Heart Rate (BPM)",
@@ -348,7 +351,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         y: {
           title: { display: true, text: "Lactate (mmol/L)" },
           min: 0,
-          max: Math.ceil(Math.max(...lactateData) + 1),
+          max: Math.ceil((Math.max(...lactateData.filter((v) => v != null)) || 0) + 1),
           ticks: { display: true },
           border: { dash: [6, 6] },
           grid: {

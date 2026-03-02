@@ -72,7 +72,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // Use existing user data first to avoid blocking page load
           const isBasicProfileIncomplete = !user.dateOfBirth || !user.height || !user.weight || !user.sport;
           const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
-      const isStravaNotConnected = !user.strava?.athleteId;
+          const isStravaNotConnected = !user.strava?.athleteId;
+          const unitsAlreadyDone = localStorage.getItem(`unitsPreferencesModalDone_${user._id}`) === 'true';
+          const needsUnitsPreferences = !unitsAlreadyDone;
       
           // Check if we've already shown the modal (use localStorage for persistence)
           // Only show once per day to avoid annoying users
@@ -81,9 +83,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           const oneDayAgo = now - (24 * 60 * 60 * 1000); // 24 hours
           
           // Only show modal if:
-          // 1. Something is incomplete
+          // 1. Something is incomplete (basic profile, units, zones, Strava)
           // 2. We haven't shown it in the last 24 hours
-          if ((isBasicProfileIncomplete || hasNoTrainingZones || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
+          if ((isBasicProfileIncomplete || needsUnitsPreferences || hasNoTrainingZones || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
             // Delay before showing modal (3 seconds after login)
             setTimeout(() => {
               // Only fetch fresh data if we need to show modal (single API call instead of multiple)
@@ -92,18 +94,23 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const stillBasicIncomplete = !finalUser.dateOfBirth || !finalUser.height || !finalUser.weight || !finalUser.sport;
                 const stillNoZones = !finalUser.powerZones?.cycling?.lt1 && !finalUser.powerZones?.running?.lt1 && !finalUser.powerZones?.swimming?.lt1;
                 const stillNotConnected = !finalUser.strava?.athleteId;
+                const finalUnitsDone = localStorage.getItem(`unitsPreferencesModalDone_${finalUser._id}`) === 'true';
+                const stillNeedsUnits = !finalUnitsDone;
                 
                 // Show modals progressively
                 if (stillBasicIncomplete) {
                   setShowBasicProfileModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
+                } else if (stillNeedsUnits) {
+                  setShowUnitsPreferencesModal(true);
+                  localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNoZones) {
                   setShowTrainingZonesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNotConnected) {
-          setShowStravaModal(true);
+                  setShowStravaModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
-      }
+                }
               }).catch(() => {
                 // If final check fails, don't show modal
               });

@@ -547,7 +547,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       return { labels, adjustedMinValue, adjustedMaxValue, reversed: false };
     }
     
-    return { labels, adjustedMinValue, adjustedMaxValue: maxValue, reversed: false };
+    // Power, speed, HR: use same adjustedMaxValue for both axis labels and bar height so bars align with Y scale
+    return { labels, adjustedMinValue, adjustedMaxValue, reversed: false };
   };
 
   // Calculate total time for X-axis labels – use moving time only (exclude stopped time)

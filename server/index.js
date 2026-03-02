@@ -25,33 +25,24 @@ const allowLocalhostInProduction = process.env.ALLOW_LOCALHOST_ORIGIN === 'true'
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman) – no Origin header = no CORS restriction in browser
     if (!origin) {
       return callback(null, true);
     }
-    
-    // Check if origin is in allowed list
+    // Důležité: při credentials: true musí být v odpovědi konkrétní origin, ne * – proto předáváme origin
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+      return callback(null, origin);
     }
-    
-    // For development, allow localhost with any port
     if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
-      return callback(null, true);
+      return callback(null, origin);
     }
-    
-    // Optional: allow any localhost in production (e.g. when testing against hosted API from local UI)
     if (allowLocalhostInProduction && origin.startsWith('http://localhost:')) {
-      return callback(null, true);
+      return callback(null, origin);
     }
-    
-    // Log the blocked origin for debugging
     console.log('CORS blocked origin:', origin);
-    console.log('Allowed origins:', allowedOrigins);
-    
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: true, // This is critical - must be true for withCredentials requests
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Length', 'Content-Type'],

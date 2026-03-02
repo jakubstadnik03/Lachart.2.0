@@ -474,6 +474,9 @@ const TestingPage = () => {
     const runStep = 15; // sec/km
     const runStageMin = 3;
     const runRestMin = 1;
+    const runStages = runStart != null && runEnd != null && runStart > runEnd
+      ? Math.max(1, Math.round((runStart - runEnd) / runStep) + 1)
+      : null;
 
     // Freshness + drift
     const lastBikeTest = latestBySport.bike;
@@ -512,6 +515,7 @@ const TestingPage = () => {
         stepSecPerKm: runStep,
         stageMin: runStageMin,
         restMin: runRestMin,
+        stages: runStages,
         lastTest: lastRunTest,
         lastTestDays: runTestDays,
         lt2FromLastTest: runLt2FromTest,
@@ -865,9 +869,15 @@ const TestingPage = () => {
               <div className="mt-2 text-xs sm:text-sm text-gray-700 space-y-1">
                 <div>
                   <span className="font-semibold">Protocol:</span>{' '}
-                  {advisor.run.startPaceSecPerKm && advisor.run.endPaceSecPerKm
-                    ? `${formatPace(advisor.run.startPaceSecPerKm)}→${formatPace(advisor.run.endPaceSecPerKm)} (-${advisor.run.stepSecPerKm}s), ${advisor.run.stageMin}min stage + ${advisor.run.restMin}min rest`
-                    : 'Set threshold pace in profile or sync Strava runs to estimate.'}
+                  {advisor.run.startPaceSecPerKm != null && advisor.run.endPaceSecPerKm != null
+                    ? `${formatPace(advisor.run.startPaceSecPerKm)}→${formatPace(advisor.run.endPaceSecPerKm)} (-${advisor.run.stepSecPerKm}s/km), ${advisor.run.stageMin}min stage + ${advisor.run.restMin}min rest`
+                    : 'Set threshold pace in profile or sync Strava runs to get recommended start/end pace.'}
+                </div>
+                <div>
+                  <span className="font-semibold">Duration:</span>{' '}
+                  {advisor.run.stages
+                    ? `${advisor.run.stages} stages (~${advisor.run.stages * (advisor.run.stageMin + advisor.run.restMin)} min incl. rests)`
+                    : '—'}
                 </div>
                 <div>
                   <span className="font-semibold">Hint:</span> Keep lactate sampling consistent (same minute of each stage) + short standing rest.
