@@ -80,23 +80,53 @@ export const preprocessStreams = (streams, resampleInterval = 5) => {
 };
 
 // Estimate HRmax from hard segments
-export const estimateHRmax = (activities, days = 42) => {
+export const estimateHRmax = (activities, days = 42, sport = null) => {
   const now = Date.now();
   const cutoffDate = now - (days * 24 * 60 * 60 * 1000);
   
   // Filter activities from last N days
-  const recentActivities = activities.filter(act => {
+  let recentActivities = activities.filter(act => {
     const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
     return actDate >= cutoffDate;
   });
+  
+  // Filter by sport if specified
+  if (sport) {
+    recentActivities = recentActivities.filter(act => {
+      const actSport = (act.sport || act.type || '').toLowerCase();
+      if (sport === 'run') {
+        return actSport.includes('run') || actSport === 'running';
+      }
+      if (sport === 'bike' || sport === 'ride') {
+        return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+      }
+      return true;
+    });
+  }
 
   if (recentActivities.length < 3) {
     // Expand to 90 days if not enough data
     const cutoff90 = now - (90 * 24 * 60 * 60 * 1000);
-    return estimateHRmax(activities.filter(act => {
+    let expandedActivities = activities.filter(act => {
       const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
       return actDate >= cutoff90;
-    }), 90);
+    });
+    
+    // Filter by sport if specified
+    if (sport) {
+      expandedActivities = expandedActivities.filter(act => {
+        const actSport = (act.sport || act.type || '').toLowerCase();
+        if (sport === 'run') {
+          return actSport.includes('run') || actSport === 'running';
+        }
+        if (sport === 'bike' || sport === 'ride') {
+          return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+        }
+        return true;
+      });
+    }
+    
+    return estimateHRmax(expandedActivities, 90, sport);
   }
 
   const allHRValues = [];
@@ -188,8 +218,12 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     // Filter by sport if available
   }).filter(act => {
     const actSport = (act.sport || act.type || '').toLowerCase();
-    if (sport === 'run') return actSport.includes('run');
-    if (sport === 'bike' || sport === 'ride') return actSport.includes('ride') || actSport.includes('bike');
+    if (sport === 'run') {
+      return actSport.includes('run') || actSport === 'running';
+    }
+    if (sport === 'bike' || sport === 'ride') {
+      return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+    }
     return true;
   });
 
@@ -353,8 +387,12 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     return actDate >= cutoffDate;
   }).filter(act => {
     const actSport = (act.sport || act.type || '').toLowerCase();
-    if (sport === 'run') return actSport.includes('run');
-    if (sport === 'bike' || sport === 'ride') return actSport.includes('ride') || actSport.includes('bike');
+    if (sport === 'run') {
+      return actSport.includes('run') || actSport === 'running';
+    }
+    if (sport === 'bike' || sport === 'ride') {
+      return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+    }
     return true;
   });
 
@@ -709,9 +747,23 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
   }
 
   // Filter activities with HR streams
-  const activitiesWithHR = activities.filter(act => 
+  let activitiesWithHR = activities.filter(act => 
     act.streams?.heartrate || act.streams?.hr
   );
+  
+  // Filter by sport if specified
+  if (sport) {
+    activitiesWithHR = activitiesWithHR.filter(act => {
+      const actSport = (act.sport || act.type || '').toLowerCase();
+      if (sport === 'run') {
+        return actSport.includes('run') || actSport === 'running';
+      }
+      if (sport === 'bike' || sport === 'ride') {
+        return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+      }
+      return true;
+    });
+  }
 
   if (activitiesWithHR.length === 0) {
     return {
@@ -722,8 +774,8 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
     };
   }
 
-  // Estimate HRmax
-  const hrMax = estimateHRmax(activitiesWithHR);
+  // Estimate HRmax (with sport filtering)
+  const hrMax = estimateHRmax(activitiesWithHR, 42, sport);
 
   // Estimate LT1
   const lt1 = estimateLT1(activitiesWithHR, hrMax, sport);

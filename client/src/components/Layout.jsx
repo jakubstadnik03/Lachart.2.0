@@ -49,13 +49,30 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // Only for athletes, not coaches
   // Show modals progressively: Basic Profile -> Training Zones -> Strava
   useEffect(() => {
-    if (!user || hasCheckedProfile || location.pathname === '/lactate-guide') {
+    if (!user || location.pathname === '/lactate-guide') {
+      return;
+    }
+
+    // Reset hasCheckedProfile when user changes
+    if (hasCheckedProfile && user._id) {
+      // Check if this is a different user
+      const lastCheckedUserId = localStorage.getItem('lastCheckedUserId');
+      if (lastCheckedUserId !== user._id) {
+        setHasCheckedProfile(false);
+        localStorage.setItem('lastCheckedUserId', user._id);
+      }
+    }
+
+    if (hasCheckedProfile) {
       return;
     }
 
     // Only show onboarding modals for athletes, not coaches
     if (user.role === 'coach' || user.role === 'admin') {
       setHasCheckedProfile(true);
+      if (user._id) {
+        localStorage.setItem('lastCheckedUserId', user._id);
+      }
       return;
     }
 
@@ -74,6 +91,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           const hasNoTrainingZones = !user.powerZones?.cycling?.lt1 && !user.powerZones?.running?.lt1 && !user.powerZones?.swimming?.lt1;
           const isStravaNotConnected = !user.strava?.athleteId;
           const unitsAlreadyDone = localStorage.getItem(`unitsPreferencesModalDone_${user._id}`) === 'true';
+          // IMPORTANT: If Units Preferences was already dismissed, never show it again
           const needsUnitsPreferences = !unitsAlreadyDone;
       
           // Check if we've already shown the modal (use localStorage for persistence)
@@ -85,6 +103,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           // Only show modal if:
           // 1. Something is incomplete (basic profile, units, zones, Strava)
           // 2. We haven't shown it in the last 24 hours
+          // IMPORTANT: Units Preferences modal should NEVER show if it was already dismissed
           if ((isBasicProfileIncomplete || needsUnitsPreferences || hasNoTrainingZones || isStravaNotConnected) && (!lastShown || parseInt(lastShown) < oneDayAgo)) {
             // Delay before showing modal (3 seconds after login)
             setTimeout(() => {
@@ -98,10 +117,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
                 const stillNeedsUnits = !finalUnitsDone;
                 
                 // Show modals progressively
+                // IMPORTANT: If Units Preferences was already dismissed, never show it again
                 if (stillBasicIncomplete) {
                   setShowBasicProfileModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNeedsUnits) {
+                  // Only show if not already dismissed (stillNeedsUnits already checks this)
                   setShowUnitsPreferencesModal(true);
                   localStorage.setItem('profileModalLastShown', now.toString());
                 } else if (stillNoZones) {
@@ -124,6 +145,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       
       verifyUserData();
       setHasCheckedProfile(true);
+      if (user._id) {
+        localStorage.setItem('lastCheckedUserId', user._id);
+      }
     };
 
     // If user data is already complete, check immediately

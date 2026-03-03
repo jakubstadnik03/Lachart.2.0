@@ -18,6 +18,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
+import PopulationInsights from '../components/Testing-page/PopulationInsights';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -267,10 +268,16 @@ const TestingPage = () => {
                 distance: detail.streams.distance?.data || []
               };
 
+              // Get sport from detail object first, then fallback to act
+              const sportFromDetail = detail.detail?.sport || detail.detail?.type || detail.sport || detail.type;
+              const sportFromAct = act.sport || act.type;
+              const finalSport = sportFromDetail || sportFromAct || 'Ride';
+
               activitiesWithStreams.push({
                 id: act.stravaId || act.id || act._id,
                 stravaId: act.stravaId,
-                sport: act.sport || act.type || 'Ride',
+                sport: finalSport,
+                type: finalSport, // Also set type for compatibility
                 startDate: act.startDate || act.date || act.start_date,
                 date: act.startDate || act.date || act.start_date,
                 streams
@@ -758,22 +765,24 @@ const TestingPage = () => {
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
               <h3 className="text-sm font-semibold text-blue-900 mb-2">HR-First Test Plan (from Strava)</h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {hrTestPlan.run && hrTestPlan.run.hrMax?.value && (
+                {hrTestPlan.run && (hrTestPlan.run.hrMax?.value || hrTestPlan.run.lt1?.hr?.value || hrTestPlan.run.lt2?.hr?.value) && (
                   <div className="text-xs text-blue-800">
                     <div className="font-semibold mb-1">Running:</div>
-                    <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
+                    {hrTestPlan.run.hrMax?.value && (
+                      <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
+                    )}
                     {hrTestPlan.run.lt1?.hr?.value && (
                       <div>
                         LT1: {hrTestPlan.run.lt1.hr.value} bpm ({hrTestPlan.run.lt1.confidence})
                         {hrTestPlan.run.lt1.pace && ` • Pace: ${hrTestPlan.run.lt1.pace}`}
-                        {hrTestPlan.run.lt1.power && ` • Power: ${hrTestPlan.run.lt1.power}W`}
+                        {hrTestPlan.run.lt1.power && !hrTestPlan.run.lt1.pace && ` • Power: ${hrTestPlan.run.lt1.power}W`}
                       </div>
                     )}
                     {hrTestPlan.run.lt2?.hr?.value && (
                       <div>
                         LT2: {hrTestPlan.run.lt2.hr.value} bpm ({hrTestPlan.run.lt2.confidence})
                         {hrTestPlan.run.lt2.pace && ` • Pace: ${hrTestPlan.run.lt2.pace}`}
-                        {hrTestPlan.run.lt2.power && ` • Power: ${hrTestPlan.run.lt2.power}W`}
+                        {hrTestPlan.run.lt2.power && !hrTestPlan.run.lt2.pace && ` • Power: ${hrTestPlan.run.lt2.power}W`}
                       </div>
                     )}
                     {hrTestPlan.run.protocol && (
@@ -783,7 +792,7 @@ const TestingPage = () => {
                           <div key={stage.stage} className="text-[10px]">
                             Stage {stage.stage}: HR {stage.targetHR} bpm
                             {stage.suggestedPace && ` → ${stage.suggestedPace}`}
-                            {stage.suggestedPower && ` → ${stage.suggestedPower}W`}
+                            {stage.suggestedPower && !stage.suggestedPace && ` → ${stage.suggestedPower}W`}
                           </div>
                         ))}
                         {hrTestPlan.run.protocol.stages.length > 5 && (
@@ -793,22 +802,24 @@ const TestingPage = () => {
                     )}
                   </div>
                 )}
-                {hrTestPlan.bike && hrTestPlan.bike.hrMax?.value && (
+                {hrTestPlan.bike && (hrTestPlan.bike.hrMax?.value || hrTestPlan.bike.lt1?.hr?.value || hrTestPlan.bike.lt2?.hr?.value) && (
                   <div className="text-xs text-blue-800">
                     <div className="font-semibold mb-1">Cycling:</div>
-                    <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
+                    {hrTestPlan.bike.hrMax?.value && (
+                      <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
+                    )}
                     {hrTestPlan.bike.lt1?.hr?.value && (
                       <div>
                         LT1: {hrTestPlan.bike.lt1.hr.value} bpm ({hrTestPlan.bike.lt1.confidence})
-                        {hrTestPlan.bike.lt1.pace && ` • Pace: ${hrTestPlan.bike.lt1.pace}`}
                         {hrTestPlan.bike.lt1.power && ` • Power: ${hrTestPlan.bike.lt1.power}W`}
+                        {hrTestPlan.bike.lt1.pace && !hrTestPlan.bike.lt1.power && ` • Pace: ${hrTestPlan.bike.lt1.pace}`}
                       </div>
                     )}
                     {hrTestPlan.bike.lt2?.hr?.value && (
                       <div>
                         LT2: {hrTestPlan.bike.lt2.hr.value} bpm ({hrTestPlan.bike.lt2.confidence})
-                        {hrTestPlan.bike.lt2.pace && ` • Pace: ${hrTestPlan.bike.lt2.pace}`}
                         {hrTestPlan.bike.lt2.power && ` • Power: ${hrTestPlan.bike.lt2.power}W`}
+                        {hrTestPlan.bike.lt2.pace && !hrTestPlan.bike.lt2.power && ` • Pace: ${hrTestPlan.bike.lt2.pace}`}
                       </div>
                     )}
                     {hrTestPlan.bike.protocol && (
@@ -817,8 +828,8 @@ const TestingPage = () => {
                         {hrTestPlan.bike.protocol.stages.slice(0, 5).map(stage => (
                           <div key={stage.stage} className="text-[10px]">
                             Stage {stage.stage}: HR {stage.targetHR} bpm
-                            {stage.suggestedPace && ` → ${stage.suggestedPace}`}
                             {stage.suggestedPower && ` → ${stage.suggestedPower}W`}
+                            {stage.suggestedPace && !stage.suggestedPower && ` → ${stage.suggestedPace}`}
                           </div>
                         ))}
                         {hrTestPlan.bike.protocol.stages.length > 5 && (
@@ -938,6 +949,35 @@ const TestingPage = () => {
           </div>
         </motion.div>
         )}
+
+      {/* Population Insights - Always visible */}
+      {athleteProfile && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="w-full mb-3 sm:mb-6"
+        >
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4 md:p-6">
+            <h2 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-4">
+              Population Comparison
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-500 mb-4">
+              Compare your performance metrics with the population. Select gender and metric to see where you rank.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+              <PopulationInsights 
+                athleteProfile={athleteProfile} 
+                selectedSport="bike"
+              />
+              <PopulationInsights 
+                athleteProfile={athleteProfile} 
+                selectedSport="run"
+              />
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {showNewTesting && (
