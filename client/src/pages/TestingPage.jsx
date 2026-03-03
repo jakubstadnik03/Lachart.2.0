@@ -77,7 +77,7 @@ const TestingPage = () => {
     }
   }, [user]);
 
-  // Synchronizace selectedAthleteId s URL parametrem
+  // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
     if (athleteId) {
       setSelectedAthleteId(athleteId);
@@ -85,7 +85,33 @@ const TestingPage = () => {
       // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
       setSelectedAthleteId(user._id);
     }
-  }, [athleteId, user, selectedAthleteId]);
+    
+    // Validate selected athlete - if profile fails to load, reset to safe state
+    const validateAthlete = async () => {
+      if (!user || !selectedAthleteId || selectedAthleteId === user._id || !isAuthenticated) return;
+      
+      try {
+        // Try to load athlete profile - if it fails, athlete might be deleted/problematic
+        if (user.role === 'coach') {
+          await api.get(`/user/athlete/${selectedAthleteId}/profile`);
+        }
+      } catch (error) {
+        console.warn('Selected athlete validation failed, resetting:', error);
+        // Clear problematic athlete selection
+        try {
+          localStorage.removeItem('global_selectedAthleteId');
+          localStorage.removeItem(`testing_recommendations_open_${selectedAthleteId}`);
+        } catch {}
+        setSelectedAthleteId(user._id);
+        navigate('/testing', { replace: true });
+        addNotification('Athlete data could not be loaded. Reset to your profile.', 'warning');
+      }
+    };
+    
+    if (isAuthenticated && user) {
+      validateAthlete();
+    }
+  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification]);
 
   // Načtení dat při prvním načtení stránky nebo změně atleta
   useEffect(() => {
@@ -176,40 +202,70 @@ const TestingPage = () => {
       if (!isAuthenticated || !user) return;
       const targetId = selectedAthleteId || user._id;
       if (!targetId) return;
+      
       try {
         setAdvisorLoading(true);
 
-        // 1) Athlete profile (zones + units)
-        if (user.role === 'coach' && String(targetId) !== String(user._id)) {
-          const { data } = await api.get(`/user/athlete/${targetId}/profile`);
-          setAthleteProfile(data);
-        } else {
-          const { data } = await api.get('/user/profile');
-          setAthleteProfile(data);
+        // 1) Athlete profile (zones + units) - with error handling
+        try {
+          if (user.role === 'coach' && String(targetId) !== String(user._id)) {
+            const { data } = await api.get(`/user/athlete/${targetId}/profile`);
+            setAthleteProfile(data);
+          } else {
+            const { data } = await api.get('/user/profile');
+            setAthleteProfile(data);
+          }
+        } catch (profileError) {
+          console.error('Failed to load athlete profile:', profileError);
+          // If athlete profile fails to load, clear selection to prevent freeze
+          if (user.role === 'coach' && targetId !== user._id) {
+            console.warn('Clearing problematic athlete selection');
+            try {
+              localStorage.removeItem('global_selectedAthleteId');
+              localStorage.removeItem(`testing_recommendations_open_${targetId}`);
+            } catch {}
+            setSelectedAthleteId(user._id);
+            navigate('/testing', { replace: true });
+            addNotification('Failed to load athlete data. Please try again.', 'error');
+            return;
+          }
+          setAthleteProfile(null);
         }
 
-        // 2) External activities (Strava/Garmin normalized list)
-        const acts = await listExternalActivities(user.role === 'coach' ? { athleteId: targetId } : {});
-        setExternalActivities(Array.isArray(acts) ? acts : []);
+        // 2) External activities (Strava/Garmin normalized list) - with error handling
+        try {
+          const acts = await listExternalActivities(user.role === 'coach' ? { athleteId: targetId } : {});
+          setExternalActivities(Array.isArray(acts) ? acts : []);
+        } catch (activitiesError) {
+          console.error('Failed to load external activities:', activitiesError);
+          setExternalActivities([]);
+        }
 
-        // 3) Bike power metrics (includes Strava streams when possible)
-        const params = new URLSearchParams();
-        if (user.role === 'coach') params.set('athleteId', targetId);
-        params.set('comparePeriod', '90days');
-        const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
-        setBikePowerMetrics(resp.data || null);
+        // 3) Bike power metrics (includes Strava streams when possible) - with error handling
+        try {
+          const params = new URLSearchParams();
+          if (user.role === 'coach') params.set('athleteId', targetId);
+          params.set('comparePeriod', '90days');
+          const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
+          setBikePowerMetrics(resp.data || null);
+        } catch (metricsError) {
+          console.error('Failed to load power metrics:', metricsError);
+          setBikePowerMetrics(null);
+        }
       } catch (e) {
-        console.warn('Failed to load testing advisor data:', e);
+        console.error('Failed to load testing advisor data:', e);
         setBikePowerMetrics(null);
+        setAthleteProfile(null);
+        setExternalActivities([]);
       } finally {
         setAdvisorLoading(false);
       }
     };
 
     loadAdvisor();
-  }, [user, isAuthenticated, selectedAthleteId]);
+  }, [user, isAuthenticated, selectedAthleteId, navigate, addNotification]);
 
-  // Load HR-first test plan from Strava activities
+  // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
     const loadHRTestPlan = async () => {
       if (!isAuthenticated || !user || !externalActivities || externalActivities.length === 0) {
@@ -271,7 +327,15 @@ const TestingPage = () => {
               // Get sport from detail object first, then fallback to act
               const sportFromDetail = detail.detail?.sport || detail.detail?.type || detail.sport || detail.type;
               const sportFromAct = act.sport || act.type;
-              const finalSport = sportFromDetail || sportFromAct || 'Ride';
+              let finalSport = sportFromDetail || sportFromAct || 'Ride';
+              
+              // Normalize sport names for better matching
+              const sportLower = finalSport.toLowerCase();
+              if (sportLower.includes('run') || sportLower === 'running') {
+                finalSport = 'Run';
+              } else if (sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycling') || sportLower === 'virtualride') {
+                finalSport = 'Ride';
+              }
 
               activitiesWithStreams.push({
                 id: act.stravaId || act.id || act._id,
@@ -295,21 +359,32 @@ const TestingPage = () => {
           }
         }
 
-        // Generate HR test plan for both run and bike
-        const runPlan = activitiesWithStreams.length > 0 
-          ? await generateHRTestPlan(activitiesWithStreams, 'run')
-          : null;
+        // Generate HR test plan for both run and bike - with individual error handling
+        let runPlan = null;
+        let bikePlan = null;
         
-        const bikePlan = activitiesWithStreams.length > 0
-          ? await generateHRTestPlan(activitiesWithStreams, 'bike')
-          : null;
+        if (activitiesWithStreams.length > 0) {
+          try {
+            runPlan = await generateHRTestPlan(activitiesWithStreams, 'run');
+          } catch (runError) {
+            console.warn('Failed to generate run HR test plan:', runError);
+            runPlan = null;
+          }
+          
+          try {
+            bikePlan = await generateHRTestPlan(activitiesWithStreams, 'bike');
+          } catch (bikeError) {
+            console.warn('Failed to generate bike HR test plan:', bikeError);
+            bikePlan = null;
+          }
+        }
 
         setHrTestPlan({
           run: runPlan,
           bike: bikePlan
         });
       } catch (e) {
-        console.warn('Failed to generate HR test plan:', e);
+        console.error('Failed to generate HR test plan:', e);
         setHrTestPlan(null);
       } finally {
         setHrTestPlanLoading(false);
@@ -379,47 +454,53 @@ const TestingPage = () => {
   };
 
   // Simple LT2 estimate from test: interpolate power/pace at 4.0 mmol/L if possible
+  // Wrapped in try/catch to prevent freeze on problematic test data
   const estimateLt2FromTest = (test) => {
-    if (!test?.results || test.results.length < 3) return null;
-    const sport = test.sport;
-    const isPaceSport = sport === 'run' || sport === 'swim';
-    const baseLactate = Number(test.baseLactate || 1.0);
-    const targetLac = 4.0;
+    try {
+      if (!test?.results || test.results.length < 3) return null;
+      const sport = test.sport;
+      const isPaceSport = sport === 'run' || sport === 'swim';
+      const baseLactate = Number(test.baseLactate || 1.0);
+      const targetLac = 4.0;
 
-    const pts = test.results
-      .map(r => ({
-        x: Number(String(r.power ?? '').replace(',', '.')),
-        y: Number(String(r.lactate ?? '').replace(',', '.')),
-        hr: Number(String(r.heartRate ?? '').replace(',', '.'))
-      }))
-      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+      const pts = test.results
+        .map(r => ({
+          x: Number(String(r.power ?? '').replace(',', '.')),
+          y: Number(String(r.lactate ?? '').replace(',', '.')),
+          hr: Number(String(r.heartRate ?? '').replace(',', '.'))
+        }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
 
-    if (pts.length < 3) return null;
+      if (pts.length < 3) return null;
 
-    // sort: bike ascending power; run/swim descending pace-seconds (slow->fast in seconds means higher seconds is slower)
-    pts.sort((a, b) => isPaceSport ? (b.x - a.x) : (a.x - b.x));
+      // sort: bike ascending power; run/swim descending pace-seconds (slow->fast in seconds means higher seconds is slower)
+      pts.sort((a, b) => isPaceSport ? (b.x - a.x) : (a.x - b.x));
 
-    // Find segment crossing target lactate
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      if ((a.y <= targetLac && b.y >= targetLac) || (a.y >= targetLac && b.y <= targetLac)) {
-        const t = (targetLac - a.y) / (b.y - a.y || 1);
-        const x = a.x + t * (b.x - a.x);
-        const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr)) ? (a.hr + t * (b.hr - a.hr)) : null;
-        return { x, hr, lac: targetLac };
+      // Find segment crossing target lactate
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if ((a.y <= targetLac && b.y >= targetLac) || (a.y >= targetLac && b.y <= targetLac)) {
+          const t = (targetLac - a.y) / (b.y - a.y || 1);
+          const x = a.x + t * (b.x - a.x);
+          const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr)) ? (a.hr + t * (b.hr - a.hr)) : null;
+          return { x, hr, lac: targetLac };
+        }
       }
+
+      // Fallback: D-max-ish fallback: use point where lactate is ~ base*3 (classic), otherwise max x
+      const target2 = baseLactate * 3.0;
+      const closest = pts.reduce((best, p) => {
+        const d = Math.abs(p.y - target2);
+        if (!best || d < best.d) return { p, d };
+        return best;
+      }, null);
+      if (closest?.p) return { x: closest.p.x, hr: closest.p.hr, lac: closest.p.y };
+
+      return { x: pts[pts.length - 1].x, hr: pts[pts.length - 1].hr, lac: pts[pts.length - 1].y };
+    } catch (error) {
+      console.error('Error estimating LT2 from test:', error, test);
+      return null; // Return null instead of crashing
     }
-
-    // Fallback: D-max-ish fallback: use point where lactate is ~ base*3 (classic), otherwise max x
-    const target2 = baseLactate * 3.0;
-    const closest = pts.reduce((best, p) => {
-      const d = Math.abs(p.y - target2);
-      if (!best || d < best.d) return { p, d };
-      return best;
-    }, null);
-    if (closest?.p) return { x: closest.p.x, hr: closest.p.hr, lac: closest.p.y };
-
-    return { x: pts[pts.length - 1].x, hr: pts[pts.length - 1].hr, lac: pts[pts.length - 1].y };
   };
 
   const latestBySport = useMemo(() => {
@@ -461,89 +542,145 @@ const TestingPage = () => {
   }, [bikePowerMetrics]);
 
   const advisor = useMemo(() => {
-    const zones = athleteProfile?.powerZones || {};
+    try {
+      const zones = athleteProfile?.powerZones || {};
 
-    // Bike recommendation
-    const bikeLt2 = zones?.cycling?.lt2 || null;
-    const bikeFtp = bikeFtpEstimate || bikeLt2 || null;
-    const bikeStart = bikeFtp ? Math.max(80, Math.round((bikeFtp * 0.55) / 10) * 10) : null;
-    const bikeEnd = bikeFtp ? Math.round((bikeFtp * 1.15) / 10) * 10 : null;
-    const bikeStep = 25;
-    const bikeStageMin = 4;
-    const bikeRestMin = 1;
-    const bikeStages = bikeStart && bikeEnd ? Math.max(1, Math.round((bikeEnd - bikeStart) / bikeStep) + 1) : null;
+      // Bike recommendation
+      const bikeLt2 = zones?.cycling?.lt2 || null;
+      const bikeFtp = bikeFtpEstimate || bikeLt2 || null;
+      const bikeStart = bikeFtp ? Math.max(80, Math.round((bikeFtp * 0.55) / 10) * 10) : null;
+      const bikeEnd = bikeFtp ? Math.round((bikeFtp * 1.15) / 10) * 10 : null;
+      const bikeStep = 25;
+      const bikeStageMin = 4;
+      const bikeRestMin = 1;
+      const bikeStages = bikeStart && bikeEnd ? Math.max(1, Math.round((bikeEnd - bikeStart) / bikeStep) + 1) : null;
 
-    // Run recommendation
-    const runLt2 = zones?.running?.lt2 || null; // seconds per km
-    const runThr = runLt2 || runRecentPerf?.estThresholdPaceSecPerKm || null;
-    const runStart = runThr ? (runThr + 75) : null;
-    const runEnd = runThr ? Math.max(120, runThr - 20) : null;
-    const runStep = 15; // sec/km
-    const runStageMin = 3;
-    const runRestMin = 1;
-    const runStages = runStart != null && runEnd != null && runStart > runEnd
-      ? Math.max(1, Math.round((runStart - runEnd) / runStep) + 1)
-      : null;
+      // Run recommendation
+      const runLt2 = zones?.running?.lt2 || null; // seconds per km
+      const runThr = runLt2 || runRecentPerf?.estThresholdPaceSecPerKm || null;
+      const runStart = runThr ? (runThr + 75) : null;
+      const runEnd = runThr ? Math.max(120, runThr - 20) : null;
+      const runStep = 15; // sec/km
+      const runStageMin = 3;
+      const runRestMin = 1;
+      const runStages = runStart != null && runEnd != null && runStart > runEnd
+        ? Math.max(1, Math.round((runStart - runEnd) / runStep) + 1)
+        : null;
 
-    // Freshness + drift
-    const lastBikeTest = latestBySport.bike;
-    const lastRunTest = latestBySport.run;
-    const bikeTestDays = daysSince(lastBikeTest?.date);
-    const runTestDays = daysSince(lastRunTest?.date);
-    const bikeLt2FromTest = estimateLt2FromTest(lastBikeTest)?.x || null;
-    const runLt2FromTest = estimateLt2FromTest(lastRunTest)?.x || null;
-
-    const bikeZoneShift = (bikeLt2 && bikeLt2FromTest)
-      ? (Math.abs(bikeLt2 - bikeLt2FromTest) / bikeLt2) > 0.05
-      : (bikeLt2 && bikeFtpEstimate) ? (Math.abs(bikeLt2 - bikeFtpEstimate) / bikeLt2) > 0.05 : false;
-
-    const runZoneShift = (runLt2 && runLt2FromTest)
-      ? (Math.abs(runLt2 - runLt2FromTest) / runLt2) > 0.05
-      : (runLt2 && runRecentPerf?.estThresholdPaceSecPerKm) ? (Math.abs(runLt2 - runRecentPerf.estThresholdPaceSecPerKm) / runLt2) > 0.05 : false;
-
-    return {
-      bike: {
-        ftp: bikeFtp,
-        start: bikeStart,
-        end: bikeEnd,
-        step: bikeStep,
-        stageMin: bikeStageMin,
-        restMin: bikeRestMin,
-        stages: bikeStages,
-        lastTest: lastBikeTest,
-        lastTestDays: bikeTestDays,
-        lt2FromLastTest: bikeLt2FromTest,
-        zoneShift: bikeZoneShift
-      },
-      run: {
-        thresholdPaceSecPerKm: runThr,
-        startPaceSecPerKm: runStart,
-        endPaceSecPerKm: runEnd,
-        stepSecPerKm: runStep,
-        stageMin: runStageMin,
-        restMin: runRestMin,
-        stages: runStages,
-        lastTest: lastRunTest,
-        lastTestDays: runTestDays,
-        lt2FromLastTest: runLt2FromTest,
-        zoneShift: runZoneShift
+      // Freshness + drift - with error handling
+      const lastBikeTest = latestBySport.bike;
+      const lastRunTest = latestBySport.run;
+      const bikeTestDays = daysSince(lastBikeTest?.date);
+      const runTestDays = daysSince(lastRunTest?.date);
+      
+      let bikeLt2FromTest = null;
+      let runLt2FromTest = null;
+      
+      try {
+        bikeLt2FromTest = estimateLt2FromTest(lastBikeTest)?.x || null;
+      } catch (e) {
+        console.warn('Error estimating bike LT2 from test:', e);
       }
-    };
+      
+      try {
+        runLt2FromTest = estimateLt2FromTest(lastRunTest)?.x || null;
+      } catch (e) {
+        console.warn('Error estimating run LT2 from test:', e);
+      }
+
+      const bikeZoneShift = (bikeLt2 && bikeLt2FromTest)
+        ? (Math.abs(bikeLt2 - bikeLt2FromTest) / bikeLt2) > 0.05
+        : (bikeLt2 && bikeFtpEstimate) ? (Math.abs(bikeLt2 - bikeFtpEstimate) / bikeLt2) > 0.05 : false;
+
+      const runZoneShift = (runLt2 && runLt2FromTest)
+        ? (Math.abs(runLt2 - runLt2FromTest) / runLt2) > 0.05
+        : (runLt2 && runRecentPerf?.estThresholdPaceSecPerKm) ? (Math.abs(runLt2 - runRecentPerf.estThresholdPaceSecPerKm) / runLt2) > 0.05 : false;
+
+      return {
+        bike: {
+          ftp: bikeFtp,
+          start: bikeStart,
+          end: bikeEnd,
+          step: bikeStep,
+          stageMin: bikeStageMin,
+          restMin: bikeRestMin,
+          stages: bikeStages,
+          lastTest: lastBikeTest,
+          lastTestDays: bikeTestDays,
+          lt2FromLastTest: bikeLt2FromTest,
+          zoneShift: bikeZoneShift
+        },
+        run: {
+          thresholdPaceSecPerKm: runThr,
+          startPaceSecPerKm: runStart,
+          endPaceSecPerKm: runEnd,
+          stepSecPerKm: runStep,
+          stageMin: runStageMin,
+          restMin: runRestMin,
+          stages: runStages,
+          lastTest: lastRunTest,
+          lastTestDays: runTestDays,
+          lt2FromLastTest: runLt2FromTest,
+          zoneShift: runZoneShift
+        }
+      };
+    } catch (error) {
+      console.error('Error calculating advisor:', error);
+      // Return safe default values instead of crashing
+      return {
+        bike: {
+          ftp: null,
+          start: null,
+          end: null,
+          step: 25,
+          stageMin: 4,
+          restMin: 1,
+          stages: null,
+          lastTest: null,
+          lastTestDays: null,
+          lt2FromLastTest: null,
+          zoneShift: false
+        },
+        run: {
+          thresholdPaceSecPerKm: null,
+          startPaceSecPerKm: null,
+          endPaceSecPerKm: null,
+          stepSecPerKm: 15,
+          stageMin: 3,
+          restMin: 1,
+          stages: null,
+          lastTest: null,
+          lastTestDays: null,
+          lt2FromLastTest: null,
+          zoneShift: false
+        }
+      };
+    }
   }, [athleteProfile, latestBySport, bikeFtpEstimate, runRecentPerf]);
 
   const lt2History = useMemo(() => {
-    const bySport = { bike: [], run: [] };
-    (tests || []).forEach(t => {
-      const s = t?.sport;
-      if (s !== 'bike' && s !== 'run') return;
-      const d = t.date || t.createdAt;
-      const lt2 = estimateLt2FromTest(t)?.x;
-      if (!lt2) return;
-      bySport[s].push({ date: d, lt2 });
-    });
-    bySport.bike.sort((a, b) => new Date(a.date) - new Date(b.date));
-    bySport.run.sort((a, b) => new Date(a.date) - new Date(b.date));
-    return bySport;
+    try {
+      const bySport = { bike: [], run: [] };
+      (tests || []).forEach(t => {
+        try {
+          const s = t?.sport;
+          if (s !== 'bike' && s !== 'run') return;
+          const d = t.date || t.createdAt;
+          const lt2 = estimateLt2FromTest(t)?.x;
+          if (!lt2) return;
+          bySport[s].push({ date: d, lt2 });
+        } catch (testError) {
+          console.warn('Error processing test for LT2 history:', testError, t);
+          // Skip problematic test, continue with others
+        }
+      });
+      bySport.bike.sort((a, b) => new Date(a.date) - new Date(b.date));
+      bySport.run.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return bySport;
+    } catch (error) {
+      console.error('Error calculating LT2 history:', error);
+      return { bike: [], run: [] };
+    }
   }, [tests]);
 
   // Posluchač pro změnu atleta z menu
@@ -765,9 +902,12 @@ const TestingPage = () => {
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
               <h3 className="text-sm font-semibold text-blue-900 mb-2">HR-First Test Plan (from Strava)</h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {hrTestPlan.run && (hrTestPlan.run.hrMax?.value || hrTestPlan.run.lt1?.hr?.value || hrTestPlan.run.lt2?.hr?.value) && (
+                {hrTestPlan.run && (
                   <div className="text-xs text-blue-800">
                     <div className="font-semibold mb-1">Running:</div>
+                    {(!hrTestPlan.run.hrMax?.value && !hrTestPlan.run.lt1?.hr?.value && !hrTestPlan.run.lt2?.hr?.value) && (
+                      <div className="text-blue-600 italic">No HR data available for running activities</div>
+                    )}
                     {hrTestPlan.run.hrMax?.value && (
                       <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
                     )}
@@ -802,9 +942,12 @@ const TestingPage = () => {
                     )}
                   </div>
                 )}
-                {hrTestPlan.bike && (hrTestPlan.bike.hrMax?.value || hrTestPlan.bike.lt1?.hr?.value || hrTestPlan.bike.lt2?.hr?.value) && (
+                {hrTestPlan.bike && (
                   <div className="text-xs text-blue-800">
                     <div className="font-semibold mb-1">Cycling:</div>
+                    {(!hrTestPlan.bike.hrMax?.value && !hrTestPlan.bike.lt1?.hr?.value && !hrTestPlan.bike.lt2?.hr?.value) && (
+                      <div className="text-blue-600 italic">No HR data available for cycling activities</div>
+                    )}
                     {hrTestPlan.bike.hrMax?.value && (
                       <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
                     )}
@@ -950,31 +1093,19 @@ const TestingPage = () => {
         </motion.div>
         )}
 
-      {/* Population Insights - Always visible */}
-      {athleteProfile && (
+      {/* Population Insights - Below LT2 charts, for selected sport */}
+      {athleteProfile && selectedSport !== 'all' && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          transition={{ delay: 0.4 }}
           className="w-full mb-3 sm:mb-6"
         >
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4 md:p-6">
-            <h2 className="text-sm sm:text-base md:text-lg font-semibold text-gray-900 mb-4">
-              Population Comparison
-            </h2>
-            <p className="text-xs sm:text-sm text-gray-500 mb-4">
-              Compare your performance metrics with the population. Select gender and metric to see where you rank.
-            </p>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-              <PopulationInsights 
-                athleteProfile={athleteProfile} 
-                selectedSport="bike"
-              />
-              <PopulationInsights 
-                athleteProfile={athleteProfile} 
-                selectedSport="run"
-              />
-            </div>
+            <PopulationInsights 
+              athleteProfile={athleteProfile} 
+              selectedSport={selectedSport}
+            />
           </div>
         </motion.div>
       )}

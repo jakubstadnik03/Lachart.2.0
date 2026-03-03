@@ -454,6 +454,11 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
       
       const meanLTHR = lastHR.reduce((a, b) => a + b, 0) / lastHR.length;
       
+      // Ensure segment is "hard" enough - HR should be at least 75% of HRmax estimate
+      if (hrMaxEst?.value && meanLTHR < hrMaxEst.value * 0.75) {
+        continue; // Skip segments that are too easy
+      }
+      
       // Also check intensity if available
       let intensity = null;
       if (segment.some(p => p.power)) {
@@ -508,6 +513,16 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
 
   // Sort by LTHR (descending) and pick best
   candidates.sort((a, b) => b.lthr - a.lthr);
+  
+  // If no candidates found, return null (will be handled by caller)
+  if (candidates.length === 0) {
+    return {
+      hr: { value: null, min: null, max: null },
+      confidence: 'low',
+      evidence: []
+    };
+  }
+  
   const bestCandidate = candidates[0];
   
   // Range: ±(3-6 bpm) depending on stability
@@ -781,7 +796,41 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
   const lt1 = estimateLT1(activitiesWithHR, hrMax, sport);
 
   // Estimate LT2
-  const lt2 = estimateLT2(activitiesWithHR, hrMax, sport);
+  let lt2 = estimateLT2(activitiesWithHR, hrMax, sport);
+  
+  // Ensure LT2 is higher than LT1 (minimum 8-12 bpm difference)
+  if (lt1?.hr?.value) {
+    const minLT2HR = lt1.hr.value + (sport === 'run' ? 10 : 8); // Run: +10 bpm, Bike: +8 bpm
+    const maxLT2HR = hrMax?.value ? Math.round(hrMax.value * 0.92) : null; // Typically LT2 is ~85-92% of HRmax
+    
+    if (!lt2?.hr?.value) {
+      // If LT2 not found, estimate from LT1 and HRmax
+      const estimatedLT2 = maxLT2HR ? Math.min(maxLT2HR, minLT2HR + 5) : minLT2HR;
+      lt2 = {
+        hr: {
+          value: estimatedLT2,
+          min: Math.max(estimatedLT2 - 5, lt1.hr.value + 5),
+          max: Math.min(estimatedLT2 + 5, hrMax?.value || 220)
+        },
+        confidence: 'low',
+        evidence: []
+      };
+    } else if (lt2.hr.value <= lt1.hr.value) {
+      // If LT2 is too low or equal to LT1, adjust it
+      const adjustedValue = maxLT2HR ? Math.min(maxLT2HR, minLT2HR + 5) : minLT2HR;
+      lt2.hr.value = adjustedValue;
+      lt2.hr.min = Math.max(lt2.hr.min || adjustedValue - 3, lt1.hr.value + 5);
+      lt2.hr.max = Math.min(lt2.hr.max || adjustedValue + 3, hrMax?.value || 220);
+      lt2.confidence = 'low'; // Lower confidence if adjusted
+    } else if (lt2.hr.value < minLT2HR) {
+      // If LT2 is only slightly above LT1, adjust it
+      const adjustedValue = maxLT2HR ? Math.min(maxLT2HR, minLT2HR + 5) : minLT2HR;
+      if (adjustedValue > lt2.hr.value) {
+        lt2.hr.value = adjustedValue;
+        lt2.confidence = lt2.confidence === 'high' ? 'med' : 'low';
+      }
+    }
+  }
 
   // Pace/power for LT1 and LT2 are already calculated in estimateLT1 and estimateLT2
   // from the actual segments where they were found, so we don't need to use the model

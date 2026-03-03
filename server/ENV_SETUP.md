@@ -28,6 +28,20 @@ STRAVA_REDIRECT_URI=http://localhost:8000/api/integrations/strava/callback
 # 2. Get approved as a business developer
 # 3. Configure OAuth credentials (similar to Strava)
 # 4. Update integration to use official API endpoints
+
+# Subscription System (PREPARED BUT INACTIVE)
+# Set SUBSCRIPTION_ENABLED=true to enable subscription checks
+# When false, all users have access to all features
+SUBSCRIPTION_ENABLED=false
+
+# Stripe Configuration (only needed if SUBSCRIPTION_ENABLED=true)
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_PRICE_ID_PRO=price_...
+# STRIPE_PRICE_ID_COACH=price_...
+# STRIPE_PRICE_ID_TEAM=price_...
+# STRIPE_PRICE_ID_ENTERPRISE=price_...
+# FRONTEND_URL=http://localhost:3000
 ```
 
 Notes:

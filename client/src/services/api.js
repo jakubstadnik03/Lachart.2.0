@@ -604,6 +604,25 @@ export const deleteUserAdmin = async (userId) => {
   }
 };
 
+// Delete athlete with all tests (for problematic athletes causing freeze)
+export const deleteAthleteWithTests = async (athleteId) => {
+  try {
+    const response = await api.delete(`/user/admin/athlete/${athleteId}/delete-with-tests`);
+    // Clear localStorage if response indicates it
+    if (response.data?.clearLocalStorage) {
+      try {
+        localStorage.removeItem('global_selectedAthleteId');
+        localStorage.removeItem(`testing_recommendations_open_${athleteId}`);
+        localStorage.removeItem(`lachart:lastTestId:${athleteId}`);
+      } catch {}
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting athlete with tests:', error);
+    throw error;
+  }
+};
+
 // Lactate testing session endpoints
 // Lactate Session API
 export const createLactateSession = (sessionData) => api.post('/api/lactate-session', sessionData);

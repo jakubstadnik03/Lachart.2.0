@@ -2501,6 +2501,71 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
     }
 });
 
+// Delete athlete with all tests (admin or coach) - safer deletion for problematic athletes
+router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        // Allow admin or coach (if athlete belongs to coach)
+        const isAdmin = currentUser.admin;
+        const athleteId = req.params.athleteId;
+        
+        const athlete = await userDao.findById(athleteId);
+        if (!athlete) {
+            return res.status(404).json({ error: "Athlete not found" });
+        }
+
+        // Check permissions
+        if (!isAdmin && (currentUser.role !== 'coach' || athlete.coachId?.toString() !== currentUser._id.toString())) {
+            return res.status(403).json({ error: "Access denied. You can only delete your own athletes." });
+        }
+
+        // Prevent self-deletion
+        if (athleteId === currentUser._id.toString()) {
+            return res.status(400).json({ error: "You cannot delete your own account using this endpoint." });
+        }
+
+        const athleteIdString = athleteId.toString();
+        const Training = require("../models/training");
+
+        // Delete all associated data
+        const fitTrainingsDeleted = await FitTraining.deleteMany({ athleteId: athleteIdString });
+        const trainingsDeleted = await Training.deleteMany({ athleteId: athleteIdString });
+        const testsDeleted = await Test.deleteMany({ athleteId: athleteIdString });
+        const lactateSessionsDeleted = await LactateSession.deleteMany({ athleteId: athleteIdString });
+        const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: athleteId });
+        const eventsDeleted = await Event.deleteMany({ userId: athleteId });
+
+        // Remove from coach's athletes list
+        if (athlete.coachId) {
+            await userDao.removeAthleteFromCoach(athlete.coachId, athleteId);
+        }
+
+        // Delete athlete account
+        await userDao.deleteById(athleteId);
+
+        res.status(200).json({
+            message: "Athlete and all associated data deleted successfully",
+            deletedData: {
+                fitTrainings: fitTrainingsDeleted.deletedCount,
+                trainings: trainingsDeleted.deletedCount,
+                tests: testsDeleted.deletedCount,
+                lactateSessions: lactateSessionsDeleted.deletedCount,
+                stravaActivities: stravaActivitiesDeleted.deletedCount,
+                events: eventsDeleted.deletedCount
+            },
+            athleteId: athleteId,
+            clearLocalStorage: true
+        });
+    } catch (error) {
+        console.error("Error deleting athlete with tests:", error);
+        res.status(500).json({ error: "Failed to delete athlete: " + error.message });
+    }
+});
+
 // Delete user (admin only) – deletes the user and all associated data
 router.delete("/admin/users/:userId", verifyToken, async (req, res) => {
     try {

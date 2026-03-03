@@ -163,6 +163,7 @@ const fitUploadRoute = require("./routes/fitUploadRoute");
 const lactateSessionRoutes = require("./routes/lactateSessionRoutes");
 const integrationsRoutes = require("./routes/integrationsRoutes");
 const workoutClusteringRoutes = require("./routes/workoutClusteringRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 
@@ -176,6 +177,7 @@ app.use("/api/fit", fitUploadRoute);
 app.use("/api/lactate-session", lactateSessionRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/workout-clustering", workoutClusteringRoutes);
+app.use("/api/subscription", subscriptionRoutes);
 
 // Weekly Strava summary emails (Mondays) - controlled by env
 startWeeklyReportsScheduler();

@@ -904,6 +904,7 @@ const DashboardPage = () => {
             selectedSport={selectedSport}
             setSelectedSport={setSelectedSport}
             calendarData={calendarData}
+            athleteId={selectedAthleteId}
           />
         </motion.div>
 

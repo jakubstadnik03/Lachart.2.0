@@ -234,6 +234,12 @@ const userSchema = new mongoose.Schema({
   expoPushTokens: {
     type: [String],
     default: []
+  },
+  // Subscription reference (populated when needed)
+  subscriptionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subscription',
+    default: null
   }
 }, {
   timestamps: true

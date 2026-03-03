@@ -4,6 +4,7 @@ import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import api from "../../services/api";
+import { useAuth } from "../../context/AuthProvider";
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -17,10 +18,14 @@ import {
 // Register Chart.js plugins once
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [] }) {
+export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [], athleteId = null }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Determine target athlete ID for API calls
+  const targetAthleteId = user?.role === 'coach' && athleteId ? athleteId : null;
 
   // Load comparePeriod from localStorage or default to '90days'
   const [comparePeriod, setComparePeriod] = useState(() => {
@@ -108,7 +113,12 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           }
         }
 
-        const resp = await api.get(`/api/fit/power-metrics?comparePeriod=alltime`);
+        const paramsAllTime = new URLSearchParams();
+        paramsAllTime.append('comparePeriod', 'alltime');
+        if (targetAthleteId) {
+          paramsAllTime.append('athleteId', targetAthleteId);
+        }
+        const resp = await api.get(`/api/fit/power-metrics?${paramsAllTime.toString()}`);
         const metrics = resp.data;
         if (metrics?.allTime && typeof metrics.allTime === 'object') {
           setAllTimeRef(metrics);
@@ -125,7 +135,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     };
 
     loadAllTimeRef();
-  }, []);
+  }, [targetAthleteId]);
   
   // Load power metrics from backend or cache
   useEffect(() => {
@@ -191,6 +201,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         if (selectedMonths.length > 0) {
           selectedMonths.forEach(month => params.append('selectedMonths', month));
         }
+        if (targetAthleteId) {
+          params.append('athleteId', targetAthleteId);
+        }
         
         const response = await api.get(`/api/fit/power-metrics?${params.toString()}`);
         const metrics = response.data;
@@ -249,7 +262,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     };
     
     loadPowerMetrics();
-  }, [comparePeriod, selectedMonths]);
+  }, [comparePeriod, selectedMonths, targetAthleteId]);
 
   // Get available months from powerMetrics.monthlyMetrics
   const availableMonths = useMemo(() => {
@@ -790,17 +803,20 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                       const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey) => {
                         if (!trainingId && !stravaId) return;
                         
+                        // Build URL with athleteId if coach is viewing athlete
+                        // Format: /training-calendar/:athleteId/:activityId?highlightMetric=...
+                        const athleteParam = targetAthleteId ? `/${targetAthleteId}` : '';
                         const metricParam = metricKey ? `?highlightMetric=${encodeURIComponent(metricKey)}` : '';
                         
                         if (stravaId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
+                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
                         } else if (trainingType === 'fit' && trainingId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
                         } else if (trainingType === 'strava' && trainingId) {
-                          navigate(`/training-calendar/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
+                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
                         } else if (trainingId) {
                           // Default to fit training
-                          navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
                         }
                       };
                       

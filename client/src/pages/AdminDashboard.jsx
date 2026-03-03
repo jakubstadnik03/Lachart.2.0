@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -29,6 +29,7 @@ const AdminDashboard = () => {
   const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
+  const [deleteAthleteLoadingId, setDeleteAthleteLoadingId] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -90,6 +91,31 @@ const AdminDashboard = () => {
       console.error('Delete user error:', err);
     } finally {
       setDeleteLoadingUserId(null);
+    }
+  };
+
+  const handleDeleteAthleteWithTests = async (athlete) => {
+    const isSelf = currentUser?.id === athlete._id || currentUser?._id === athlete._id;
+    if (isSelf) {
+      addNotification('You cannot delete your own account here.', 'error');
+      return;
+    }
+    
+    const testCount = athlete.testCount || 0;
+    const confirmMsg = `Delete athlete "${athlete.name || ''} ${athlete.surname || ''}" (${athlete.email})?\n\nThis will permanently delete:\n- Athlete account\n- All ${testCount} tests\n- All trainings\n- All Strava activities\n- All other associated data\n\nThis is useful for problematic athletes causing freeze issues. This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+    
+    try {
+      setDeleteAthleteLoadingId(athlete._id);
+      const result = await deleteAthleteWithTests(athlete._id);
+      addNotification(`Athlete ${athlete.email} and all data deleted successfully (${result.deletedData?.tests || 0} tests, ${result.deletedData?.trainings || 0} trainings)`, 'success');
+      fetchData();
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Failed to delete athlete';
+      addNotification(msg, 'error');
+      console.error('Delete athlete error:', err);
+    } finally {
+      setDeleteAthleteLoadingId(null);
     }
   };
 
@@ -1093,6 +1119,21 @@ const AdminDashboard = () => {
                         >
                           {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
                         </button>
+                        {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
+                          <button
+                            type="button"
+                            disabled={deleteAthleteLoadingId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
+                            onClick={() => handleDeleteAthleteWithTests(user)}
+                            className={`w-full border text-xs font-medium py-1.5 rounded-md flex items-center justify-center ${
+                              currentUser?.id === user._id || currentUser?._id === user._id
+                                ? 'border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50'
+                                : 'border-orange-600 text-orange-600 hover:bg-orange-50'
+                            } ${deleteAthleteLoadingId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                            title="Delete athlete with all tests (for problematic athletes causing freeze)"
+                          >
+                            {deleteAthleteLoadingId === user._id ? 'Deleting…' : 'Delete athlete'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
@@ -1338,6 +1379,21 @@ const AdminDashboard = () => {
                             >
                               {thankYouEmailLoadingUserId === user._id ? 'Sending…' : 'Send thank you email'}
                             </button>
+                            {(user.role === 'athlete' || (user.athletes && user.athletes.length > 0)) && (
+                              <button
+                                type="button"
+                                disabled={deleteAthleteLoadingId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
+                                onClick={() => handleDeleteAthleteWithTests(user)}
+                                className={`block text-xs mt-1 ${
+                                  currentUser?.id === user._id || currentUser?._id === user._id
+                                    ? 'text-gray-400 cursor-not-allowed'
+                                    : 'text-orange-600 hover:text-orange-700'
+                                } ${deleteAthleteLoadingId === user._id ? 'opacity-60 cursor-wait' : ''}`}
+                                title={currentUser?.id === user._id || currentUser?._id === user._id ? 'Cannot delete your own account' : 'Delete athlete with all tests (for problematic athletes)'}
+                              >
+                                {deleteAthleteLoadingId === user._id ? 'Deleting…' : 'Delete athlete'}
+                              </button>
+                            )}
                             <button
                               type="button"
                               disabled={deleteLoadingUserId === user._id || currentUser?.id === user._id || currentUser?._id === user._id}
