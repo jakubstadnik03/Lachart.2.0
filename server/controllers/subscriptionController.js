@@ -1,9 +1,12 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+// Initialize Stripe only if subscription system is enabled
+const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE_SECRET_KEY
+  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+  : null;
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 
 // Available subscription plans (exported for use in middleware)
-exports.PLANS = {
+const PLANS = {
   free: {
     id: 'free',
     name: 'Free',
@@ -141,7 +144,7 @@ exports.getCurrentSubscription = async (req, res) => {
  */
 exports.createCheckoutSession = async (req, res) => {
   // Check if subscription system is enabled
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') {
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true' || !stripe) {
     return res.status(503).json({ 
       error: 'Subscription system not enabled',
       message: 'Subscription system is prepared but currently inactive. Contact administrator.'
@@ -163,6 +166,13 @@ exports.createCheckoutSession = async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ 
+        error: 'Stripe not configured',
+        message: 'Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.'
+      });
     }
 
     // Get or create Stripe customer
@@ -227,7 +237,7 @@ exports.createCheckoutSession = async (req, res) => {
  */
 exports.handleWebhook = async (req, res) => {
   // Check if subscription system is enabled
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') {
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true' || !stripe) {
     console.log('[Webhook] Subscription system not enabled, ignoring webhook');
     return res.json({ received: true, ignored: true });
   }
@@ -277,6 +287,11 @@ exports.handleWebhook = async (req, res) => {
 };
 
 async function handleCheckoutCompleted(session) {
+  if (!stripe) {
+    console.error('Stripe not configured, cannot handle checkout');
+    return;
+  }
+
   const userId = session.metadata?.userId;
   const planId = session.metadata?.planId;
 
@@ -328,6 +343,11 @@ async function handleCheckoutCompleted(session) {
 }
 
 async function handleSubscriptionUpdate(stripeSubscription) {
+  if (!stripe) {
+    console.error('Stripe not configured, cannot handle subscription update');
+    return;
+  }
+
   const subscription = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
   
   if (!subscription) {
@@ -387,7 +407,7 @@ exports.cancelSubscription = async (req, res) => {
 
     const subscription = user.subscriptionId;
     
-    if (subscription.stripeSubscriptionId) {
+    if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         cancel_at_period_end: true
       });
@@ -416,7 +436,7 @@ exports.reactivateSubscription = async (req, res) => {
 
     const subscription = user.subscriptionId;
     
-    if (subscription.stripeSubscriptionId) {
+    if (subscription.stripeSubscriptionId && stripe) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         cancel_at_period_end: false
       });
@@ -437,6 +457,13 @@ exports.reactivateSubscription = async (req, res) => {
  */
 exports.getPortalUrl = async (req, res) => {
   try {
+    if (!stripe) {
+      return res.status(503).json({ 
+        error: 'Stripe not configured',
+        message: 'Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables.'
+      });
+    }
+
     const user = await User.findById(req.user.userId).populate('subscriptionId');
     
     if (!user || !user.subscriptionId?.stripeCustomerId) {
