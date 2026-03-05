@@ -12,8 +12,7 @@ import {
   Tooltip,
   Legend as ChartLegend,
 } from 'chart.js';
-import * as math from 'mathjs'; // Import mathjs for matrix operations
-import DataTable, { calculateThresholds, calculatePolynomialRegressionLactateToHR } from './DataTable';
+import DataTable, { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionLactateToHR } from './DataTable';
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
@@ -41,8 +40,8 @@ const colorMap = {
     'Bsln + 0.5': '#0d9488',    
     'Bsln + 1.0': '#c026d3',    
     'Bsln + 1.5': '#99f6e4',    
-    'LTP1': '#bef264',          // lime-300
-    'LTP2': '#fcd34d',          // amber-300
+    'LTP1': '#16a34a',          // green-600 - tmavší zelená
+    'LTP2': '#dc2626',          // red-600 - červená
     'LTRatio': '#94a3b8'        
   };
 
@@ -59,14 +58,14 @@ const colorMap = {
     { color: 'bg-teal-600', label: 'Bsln + 0.5', dsLabel: 'Bsln + 0.5' },
     { color: 'bg-fuchsia-500', label: 'Bsln + 1.0', dsLabel: 'Bsln + 1.0' },
     { color: 'bg-teal-200', label: 'Bsln + 1.5', dsLabel: 'Bsln + 1.5' },
-    { color: 'bg-lime-300', label: 'LTP1', dsLabel: 'LTP1' },
-    { color: 'bg-amber-300', label: 'LTP2', dsLabel: 'LTP2' },
-    { color: 'bg-slate-400', label: 'LTRatio', dsLabel: 'LTRatio' }
+    { color: 'bg-green-600', label: 'LTP1', dsLabel: 'LTP1' },
+    { color: 'bg-red-600', label: 'LTP2', dsLabel: 'LTP2' }
   ];
-  const Legend = ({ chartRef, zonesVisible, setZonesVisible }) => {
+  const Legend = ({ chartRef, zonesVisible, setZonesVisible, ltpLinesVisibleRef }) => {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
     const [hideAllActive, setHideAllActive] = useState(false);
     const [previousHiddenState, setPreviousHiddenState] = useState({});
+    const [ltpLinesVisible, setLtpLinesVisible] = useState(true);
   
     React.useEffect(() => {
       const chart = chartRef?.current;
@@ -216,6 +215,26 @@ const colorMap = {
       // Update will be handled by parent component's setZonesVisible
     };
     
+    const handleToggleLtpLines = () => {
+      const chart = chartRef?.current;
+      if (!chart) return;
+      
+      const newValue = !ltpLinesVisible;
+      setLtpLinesVisible(newValue);
+      if (ltpLinesVisibleRef) {
+        ltpLinesVisibleRef.current = newValue;
+      }
+      
+      // Hide/show LTP1_line and LTP2_line datasets
+      chart.data.datasets.forEach((ds, index) => {
+        if (ds.label === 'LTP1_line' || ds.label === 'LTP2_line') {
+          chart.setDatasetVisibility(index, newValue);
+        }
+      });
+      
+      chart.update();
+    };
+    
   
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-2 text-xs font-semibold text-black w-full lg:w-[100px]">
@@ -243,6 +262,18 @@ const colorMap = {
             <div className="whitespace-nowrap">Hide zones</div>
           </div>
         </div>
+        <div
+          className={`cursor-pointer flex items-center ${
+            !ltpLinesVisible ? 'line-through text-gray-400' : ''
+          }`}
+          onClick={handleToggleLtpLines}
+          title="Hide/show LT1 and LT2 lines"
+        >
+          <div className="flex items-center gap-2 min-w-[100px]">
+            <div className="flex-shrink-0 w-2.5 h-2.5 border-2 border-green-600 border-dashed bg-transparent" />
+            <div className="whitespace-nowrap">Hide LT lines</div>
+          </div>
+        </div>
         {legendItems.map((item, index) => (
           <div
             key={index}
@@ -252,6 +283,119 @@ const colorMap = {
             onClick={() => handleToggle(item.dsLabel)}
             onMouseEnter={() => handleMouseEnter(item.dsLabel)}
             onMouseLeave={handleMouseLeave}
+            title="Click to toggle"
+          >
+            <div className="flex items-center gap-2 min-w-[100px]">
+              <div className={`flex-shrink-0 w-2.5 h-2.5 rounded-full ${item.color}`} />
+              <div className="whitespace-nowrap">{item.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Legend component for HR view
+  const HRLegend = ({ chartRef }) => {
+    const [hiddenDatasets, setHiddenDatasets] = useState({});
+    const [hideAllActive, setHideAllActive] = useState(false);
+    const [previousHiddenState, setPreviousHiddenState] = useState({});
+  
+    React.useEffect(() => {
+      const chart = chartRef?.current;
+      if (chart) {
+        const initialHiddenState = {};
+        chart.data.datasets.forEach((ds) => {
+          initialHiddenState[ds.label] = false;
+        });
+        setHiddenDatasets(initialHiddenState);
+      }
+    }, [chartRef]);
+  
+    const handleToggle = (dsLabel) => {
+      const chart = chartRef?.current;
+      if (!chart) return;
+  
+      const datasetIndex = chart.data.datasets.findIndex(ds => ds.label === dsLabel);
+      if (datasetIndex === -1) return;
+  
+      const isVisible = chart.isDatasetVisible(datasetIndex);
+      chart.setDatasetVisibility(datasetIndex, !isVisible);
+      chart.update();
+  
+      setHiddenDatasets(prev => ({ ...prev, [dsLabel]: isVisible }));
+      
+      if (hideAllActive) {
+        setHideAllActive(false);
+      }
+    };
+  
+    const handleHideAll = () => {
+      const chart = chartRef?.current;
+      if (!chart) return;
+  
+      if (hideAllActive) {
+        chart.data.datasets.forEach((ds, index) => {
+          const wasHidden = previousHiddenState[ds.label] || false;
+          chart.setDatasetVisibility(index, !wasHidden);
+        });
+        setHiddenDatasets(previousHiddenState);
+        setHideAllActive(false);
+      } else {
+        const currentState = {};
+        chart.data.datasets.forEach((ds, index) => {
+          currentState[ds.label] = !chart.isDatasetVisible(index);
+        });
+        setPreviousHiddenState(currentState);
+        
+        const newHiddenState = {};
+        chart.data.datasets.forEach((ds, index) => {
+          if (ds.label === 'Measured data' || ds.label === 'Polynomial Fit') {
+            chart.setDatasetVisibility(index, true);
+            newHiddenState[ds.label] = false;
+          } else {
+            chart.setDatasetVisibility(index, false);
+            newHiddenState[ds.label] = true;
+          }
+        });
+        
+        setHiddenDatasets(newHiddenState);
+        setHideAllActive(true);
+      }
+      
+      chart.update();
+    };
+  
+    const hrLegendItems = [
+      { color: 'border border-red-600 border-solid bg-red-50', label: 'Data points', dsLabel: 'Measured data' },
+      { color: 'bg-red-600', label: 'Polynomial Fit', dsLabel: 'Polynomial Fit' },
+      { color: 'bg-green-600', label: 'LTP1', dsLabel: 'LTP1' },
+      { color: 'bg-red-600', label: 'LTP2', dsLabel: 'LTP2' },
+      { color: 'bg-blue-500', label: 'IAT', dsLabel: 'IAT' },
+      { color: 'bg-zinc-700', label: 'Log-log', dsLabel: 'Log-log' }
+    ];
+  
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-2 text-xs font-semibold text-black w-full lg:w-[100px]">
+        <div
+          className={`cursor-pointer flex items-center ${
+            hideAllActive ? 'line-through text-gray-400' : ''
+          }`}
+          onClick={handleHideAll}
+          title="Hide all except measured data and polynomial fit"
+        >
+          <div className="flex items-center gap-2 min-w-[100px]">
+            <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-gray-400" />
+            <div className="whitespace-nowrap">Hide all</div>
+          </div>
+        </div>
+        {hrLegendItems.map((item, index) => (
+          <div
+            key={index}
+            className={`cursor-pointer flex items-center ${
+              hiddenDatasets[item.dsLabel] ? 'line-through text-gray-400' : ''
+            }`}
+            onClick={() => handleToggle(item.dsLabel)}
             title="Click to toggle"
           >
             <div className="flex items-center gap-2 min-w-[100px]">
@@ -298,6 +442,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
+  const ltpLinesVisibleRef = useRef(true); // Ref for plugin access to ltpLinesVisible state
   const [chartView, setChartView] = useState('power'); // 'power' = power/pace vs lactate, 'hr' = heart rate vs lactate
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
@@ -558,188 +703,24 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   }
   // Pokud by nám zůstaly méně než 2 body, použijeme všechny (aby se graf nezlomil)
-  let pointsForCurve = increasingPoints.length >= 2 ? increasingPoints : sortedPoints;
+  // Note: increasingPoints and sortedPoints are calculated but not used - polynomial regression uses mockData.results directly
 
-  // Base lactate do fitu jen když neporuší rostoucí trend (base.y <= první bod)
-  const firstCurveY = pointsForCurve[0]?.y ?? Infinity;
-  const includeBaseInFit = baseLactatePoint && baseLactatePoint.y <= firstCurveY + TOLERANCE_MMOL;
-  const xValsForCurve = includeBaseInFit
-    ? [baseLactatePoint.x, ...pointsForCurve.map(p => p.x)]
-    : pointsForCurve.map(p => p.x);
-  const yValsForCurve = includeBaseInFit
-    ? [baseLactatePoint.y, ...pointsForCurve.map(p => p.y)]
-    : pointsForCurve.map(p => p.y);
-
-  // Polynomial Regression (degree 4)
-  // Fituje se na body po poklesu (pokud byl detekován), aby křivka neřešila počáteční nárůst a pád
-  const polyRegression = (() => {
-    try {
-      const n = xValsForCurve.length;
-      if (n < 5) {
-        // If not enough points for degree 4, use lower degree
-        const degree = Math.min(n - 1, 3);
-        if (degree < 2) {
-        console.warn('Not enough data points for polynomial regression');
-        return null;
-        }
-
-        const X = [];
-        const Y = [];
-
-        for (let i = 0; i < n; i++) {
-          if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
-            console.warn('Invalid data point found:', { x: xValsForCurve[i], y: yValsForCurve[i] });
-            return null;
-          }
-          const row = [1];
-          for (let d = 1; d <= degree; d++) {
-            row.push(Math.pow(xValsForCurve[i], d));
-          }
-          X.push(row);
-          Y.push(yValsForCurve[i]);
-        }
-
-        try {
-          const XT = math.transpose(X);
-          const XTX = math.multiply(XT, X);
-          const XTY = math.multiply(XT, Y);
-          const coefficients = math.lusolve(XTX, XTY).flat();
-
-          return (x) => {
-            let result = coefficients[0];
-            for (let d = 1; d <= degree; d++) {
-              result += coefficients[d] * Math.pow(x, d);
-            }
-            return result;
-          };
-        } catch (error) {
-          console.warn('Error in polynomial regression calculation:', error);
-          return null;
-        }
-      }
-
-      // Check for invalid or duplicate values
-      const uniqueXVals = new Set(xValsForCurve);
-      if (uniqueXVals.size < 5) {
-        console.warn('Not enough unique x values for degree 4 polynomial, using lower degree');
-        // Fallback to lower degree
-        const degree = Math.min(uniqueXVals.size - 1, 3);
-        const X = [];
-        const Y = [];
-
-        for (let i = 0; i < n; i++) {
-          if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
-            continue;
-          }
-          const row = [1];
-          for (let d = 1; d <= degree; d++) {
-            row.push(Math.pow(xValsForCurve[i], d));
-          }
-          X.push(row);
-          Y.push(yValsForCurve[i]);
-        }
-
-        try {
-          const XT = math.transpose(X);
-          const XTX = math.multiply(XT, X);
-          const XTY = math.multiply(XT, Y);
-          const coefficients = math.lusolve(XTX, XTY).flat();
-
-          return (x) => {
-            let result = coefficients[0];
-            for (let d = 1; d <= degree; d++) {
-              result += coefficients[d] * Math.pow(x, d);
-            }
-            return result;
-          };
-        } catch (error) {
-          console.warn('Error in polynomial regression calculation:', error);
-        return null;
-        }
-      }
-
-      const X = [];
-      const Y = [];
-
-      for (let i = 0; i < n; i++) {
-        if (isNaN(xValsForCurve[i]) || isNaN(yValsForCurve[i])) {
-          console.warn('Invalid data point found:', { x: xValsForCurve[i], y: yValsForCurve[i] });
-          return null;
-        }
-        // Use degree 4 polynomial
-        X.push([1, xValsForCurve[i], Math.pow(xValsForCurve[i], 2), Math.pow(xValsForCurve[i], 3), Math.pow(xValsForCurve[i], 4)]);
-        Y.push(yValsForCurve[i]);
-      }
-
-      try {
-        const XT = math.transpose(X);
-        const XTX = math.multiply(XT, X);
-        const XTY = math.multiply(XT, Y);
-        const coefficients = math.lusolve(XTX, XTY).flat();
-
-        return (x) =>
-          coefficients[0] +
-          coefficients[1] * x +
-          coefficients[2] * Math.pow(x, 2) +
-          coefficients[3] * Math.pow(x, 3) +
-          coefficients[4] * Math.pow(x, 4);
-      } catch (error) {
-        console.warn('Error in polynomial regression calculation:', error);
-        return null;
-      }
-    } catch (error) {
-      console.warn('Error in polynomial regression setup:', error);
-      return null;
+  // Generate polynomial curve using the same method as TestComparison.jsx
+  // Use original results directly (same as TestComparison.jsx uses test.results)
+  // This is critical - we must use the original results without any filtering or conversion
+  // Use mockData.results directly, just like TestComparison.jsx uses test.results
+  const polyPointsRaw = calculatePolynomialRegression(mockData.results || []);
+  
+  // Convert polyPoints to the correct coordinate system (pace/speed/power based on inputMode)
+  const polyPoints = polyPointsRaw.map(point => {
+    if (isPaceSport && inputMode === 'speed') {
+      // Convert from pace (seconds) to speed (km/h or mph)
+      const speed = convertPaceToSpeed(point.x, unitSystem);
+      return { x: speed, y: point.y };
     }
-  })();
-
-  // Generate points for polynomial curve – přesně od prvního do posledního měřeného bodu
-  const polyPoints = [];
-  if (polyRegression) {
-    // Použijeme skutečné měřené body pro určení rozsahu křivky (ne xVals, které mohou obsahovat base lactate)
-    // Musíme použít body před jejich seřazením, abychom měli správný první a poslední bod
-    const measuredXValues = validResults.map(r => {
-      const power = r.power?.toString().replace(',', '.');
-      const v = Number(power);
-      if (!isPaceSport) return v;
-      if (inputMode === 'pace') return v; // seconds
-      return convertPaceToSpeed(v, unitSystem); // speed mode
-    });
-    
-    if (measuredXValues.length === 0) {
-      console.warn('[LactateCurveCalculator] No measured X values for curve range');
-    } else {
-      let startX, endX;
-      if (isPaceSport && inputMode === 'pace') {
-        // Pro pace: nejpomalejší (nejvyšší hodnota) = první bod, nejrychlejší (nejnižší hodnota) = poslední bod
-        endX = Math.min(...measuredXValues); // Nejrychlejší (poslední bod)
-        startX = Math.max(...measuredXValues); // Nejpomalejší (první bod)
-      } else {
-        // Pro speed nebo bike: nejpomalejší (nejnižší hodnota) = první bod, nejrychlejší (nejvyšší hodnota) = poslední bod
-        startX = Math.min(...measuredXValues); // První bod
-        endX = Math.max(...measuredXValues); // Poslední bod
-      }
-      
-      const step = Math.abs(endX - startX) / 300; // More points for smoother curve
-      
-      const direction = startX < endX ? 1 : -1;
-      let prevY = -Infinity; // křivka má být vždy rostoucí (v směru od pomalého k rychlému)
-      for (let x = startX; direction * x <= direction * endX; x += direction * step) {
-        try {
-          let y = polyRegression(x);
-          if (y < 0) y = 0;
-          // Vynutit rostoucí křivku: žádný pokles oproti předchozímu bodu
-          if (prevY !== -Infinity && y < prevY) y = prevY;
-          prevY = y;
-          if (!isNaN(y) && isFinite(y)) {
-            polyPoints.push({ x, y });
-          }
-        } catch (error) {
-          console.warn('Error calculating polynomial point:', error);
-        }
-      }
-    }
-  }
+    // For pace mode or bike, x is already correct (seconds for pace, watts for bike)
+    return point;
+  });
 
   const measuredDataPoints = sortedResults
     .map(r => {
@@ -820,14 +801,66 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     showLine: true,
   } : null;
 
+  // Helper function to find X value from displayed curve for a given lactate value
+  // Uses polyPointsRaw (original units) and converts to display units
+  const findXFromCurve = (targetLactate, curvePointsRaw) => {
+    if (!curvePointsRaw || curvePointsRaw.length === 0) return null;
+    
+    // Find the point on the curve closest to target lactate
+    let closestPoint = curvePointsRaw[0];
+    let minDiff = Math.abs(closestPoint.y - targetLactate);
+    
+    for (const point of curvePointsRaw) {
+      const diff = Math.abs(point.y - targetLactate);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestPoint = point;
+      }
+    }
+    
+    // If we have points on both sides, interpolate
+    const index = curvePointsRaw.findIndex(p => p.y >= targetLactate);
+    if (index > 0 && index < curvePointsRaw.length) {
+      const prev = curvePointsRaw[index - 1];
+      const next = curvePointsRaw[index];
+      if (prev.y !== next.y) {
+        const ratio = (targetLactate - prev.y) / (next.y - prev.y);
+        const interpolatedX = prev.x + (next.x - prev.x) * ratio;
+        // Convert to display units
+        if (isPaceSport && inputMode === 'speed') {
+          return convertPaceToSpeed(interpolatedX, unitSystem);
+        }
+        return interpolatedX;
+      }
+    }
+    
+    // Convert to display units
+    if (isPaceSport && inputMode === 'speed') {
+      return convertPaceToSpeed(closestPoint.x, unitSystem);
+    }
+    return closestPoint.x;
+  };
+
   const thresholdDatasets = Object.keys(thresholds)
     .filter(key => !['heartRates', 'lactates', 'LTRatio'].includes(key)) // LTRatio je poměr, ne hodnota power/pace, takže ho nezobrazovat v grafu
     .map(key => {
-      // Zkontrolovat, že máme validní hodnoty pro x a y
-      let xValue = isPaceSport
-        ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
-        : thresholds[key];
       const yValue = thresholds.lactates[key];
+      
+      // Pokud jsou hodnoty nevalidní (NaN, null, undefined), přeskočit tento threshold
+      if (yValue == null || isNaN(yValue)) {
+        return null;
+      }
+      
+      // Find X value from the displayed curve (polyPointsRaw) for this lactate value
+      // This ensures thresholds match the displayed curve
+      let xValueFromCurve = findXFromCurve(yValue, polyPointsRaw);
+      
+      // Fallback to original threshold value if curve doesn't have enough points
+      let xValue = xValueFromCurve != null 
+        ? xValueFromCurve
+        : (isPaceSport
+            ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
+            : thresholds[key]);
       
       // Validate x value - filter out unrealistic values for speed mode
       if (isPaceSport && inputMode === 'speed') {
@@ -838,25 +871,54 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         }
       }
       
-      // Pokud jsou hodnoty nevalidní (NaN, null, undefined), přeskočit tento threshold
-      if (xValue == null || isNaN(xValue) || yValue == null || isNaN(yValue)) {
+      if (xValue == null || isNaN(xValue)) {
         return null;
       }
+      
+      // Special styling for LTP1 and LTP2 to make them more visible
+      const isLTP1 = key === 'LTP1';
+      const isLTP2 = key === 'LTP2';
       
       return {
       label: key,
       data: [{
           x: xValue,
           y: yValue,
-        originalPace: isPaceSport ? thresholds[key] : null
+        originalPace: isPaceSport ? (xValueFromCurve != null ? null : thresholds[key]) : null
       }],
       borderColor: colorMap[key] || '#2196F3',
       backgroundColor: colorMap[key] || '#2196F3',
-      pointRadius: 6,
+      pointRadius: isLTP1 || isLTP2 ? 10 : 6, // Larger points for LTP1 and LTP2
+      pointBorderWidth: isLTP1 || isLTP2 ? 3 : 2, // Thicker border for LTP1 and LTP2
       showLine: false,
       };
     })
     .filter(dataset => dataset !== null); // Odstranit null hodnoty
+
+  // Vytvořit datasets pro čárkované vertikální čáry LT1 a LT2 (přes celý graf)
+  const maxLactateForAxis = Math.ceil(Math.max(...yVals) + 1);
+  const ltpLineDatasets = ['LTP1', 'LTP2']
+    .map((key) => {
+      const thresholdDs = thresholdDatasets.find(ds => ds && ds.label === key);
+      if (!thresholdDs || !thresholdDs.data || !thresholdDs.data.length) return null;
+      const x = thresholdDs.data[0].x;
+      const color = colorMap[key] || '#2196F3';
+      return {
+        label: `${key}_line`,
+        data: [
+          { x, y: 0 },
+          { x, y: maxLactateForAxis }
+        ],
+        borderColor: color,
+        borderDash: [5, 5],
+        borderWidth: 2,
+        pointRadius: 0,
+        showLine: true,
+        // vykreslit za body thresholdů, ale před zónami (zbytek pořadí určí Chart.js)
+        order: -0.5,
+      };
+    })
+    .filter(Boolean);
 
   // Calculate X axis range first (needed for zone rendering)
   const allXValuesForZones = [
@@ -1074,9 +1136,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   const allDatasets = [
     ...zoneDatasets,
+    ...ltpLineDatasets,
     ...thresholdDatasets,
     measuredDataSet,
-    ...(polyDataSet ? [polyDataSet] : [])
+    ...(polyDataSet ? [polyDataSet] : []),
   ];
 
   // Calculate X axis range - need to consider all data points (measured, base lactate, thresholds, polynomial)
@@ -1356,6 +1419,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             const xVal = ctx.parsed.x;
             const yVal = ctx.parsed.y;
             const point = ctx.raw;
+            const isLTP1 = label === 'LTP1';
+            const isLTP2 = label === 'LTP2';
             
             // Check if hovering over a zone dataset (colored background)
             const zone = getZoneForX(xVal);
@@ -1395,18 +1460,23 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               return `Base Lactate: ${yVal.toFixed(2)} mmol/L`;
             }
             
+            // Enhanced display for LTP1 and LTP2
+            let formattedValue;
             if (isPaceSport) {
               if (inputMode === 'pace') {
                 const paceStr = formatSecondsToMMSS(xVal);
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                return `${label}: ${paceStr} ${unit} | ${yVal.toFixed(2)} mmol/L`;
+                formattedValue = `${paceStr}${unit}`;
               } else {
-                // Speed mode - show speed values
                 const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                return `${label}: ${xVal.toFixed(1)}${unit} | ${yVal.toFixed(2)} mmol/L`;
+                formattedValue = `${xVal.toFixed(1)}${unit}`;
               }
+            } else {
+              formattedValue = `${Math.round(xVal)}W`;
             }
-            return `${label}: ${xVal.toFixed(0)} W | ${yVal.toFixed(2)} mmol/L`;
+            
+            const thresholdLabel = isLTP1 ? 'LT1 (Aerobic Threshold)' : isLTP2 ? 'LT2 (Anaerobic Threshold)' : label;
+            return `${thresholdLabel}: ${formattedValue} | ${yVal.toFixed(2)} mmol/L`;
           },
           labelPointStyle: (context) => {
             return {
@@ -1490,7 +1560,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         backgroundColor: 'transparent',
         pointRadius: 0,
         borderWidth: 2,
+        tension: 0.4,
         showLine: true,
+        hitRadius: 10 // Allow hovering over the line
       }
     : null;
   const hrThresholdDatasets = hasEnoughHRData && thresholds?.heartRates && thresholds?.lactates
@@ -1521,6 +1593,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const hrChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'nearest', intersect: false },
+    layout: {
+      padding: {
+        right: 20 // Add padding on right for HR view
+      }
+    },
     scales: {
       x: {
         type: 'linear',
@@ -1545,15 +1623,20 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       tooltip: {
         enabled: true,
         mode: 'nearest',
-        intersect: true,
+        intersect: false,
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         titleColor: '#111827',
+        titleFont: { weight: 'bold', size: 14 },
         bodyColor: '#111827',
+        bodyFont: { size: 13 },
         borderColor: '#F3F4F6',
         borderWidth: 1,
         padding: 12,
         cornerRadius: 12,
         displayColors: true,
+        boxWidth: 8,
+        boxHeight: 8,
+        usePointStyle: true,
         callbacks: {
           label: (ctx) => {
             const x = ctx.parsed.x;
@@ -1565,7 +1648,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         },
       },
     },
-    elements: { point: { radius: 5, hoverRadius: 8, hitRadius: 8 } },
+    elements: { 
+      point: { radius: 5, hoverRadius: 8, hitRadius: 8 },
+      line: {
+        borderWidth: 2,
+        tension: 0.4,
+        hitRadius: 10 // Allow hovering over the line
+      }
+    },
   };
 
   const finalData = chartView === 'hr' && hasEnoughHRData ? hrChartData : data;
@@ -1681,13 +1771,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               plugins={[{
                 id: 'zonePlugin',
                 beforeDraw: (chart) => {
-                  // Only draw zones if they are visible
-                  if (!zonesVisibleRef.current) return;
-                  
                   const ctx = chart.ctx;
                   const chartArea = chart.chartArea;
                   const xScale = chart.scales.x;
                   
+                  // Draw zones if they are visible
+                  if (zonesVisibleRef.current) {
                   // Find zone datasets
                   const zoneDatasets = chart.data.datasets.filter(ds => ds.zoneKey);
                   
@@ -1723,6 +1812,89 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                     ctx.fillRect(leftX, y1, width, y2 - y1);
                     ctx.restore();
                   });
+                  }
+                  
+                  // Draw labels for LTP1 and LTP2 lines only if they are visible (only for power/pace view, not HR view)
+                  if (chartView === 'power' && zonesVisibleRef.current && ltpLinesVisibleRef.current) {
+                    const ltp1Dataset = chart.data.datasets.find(ds => ds.label === 'LTP1');
+                    const ltp2Dataset = chart.data.datasets.find(ds => ds.label === 'LTP2');
+                    
+                    const labels = [];
+                    
+                    // Collect label data
+                    [ltp1Dataset, ltp2Dataset].forEach((dataset, index) => {
+                      if (!dataset || !dataset.data || dataset.data.length === 0) return;
+                      
+                      const point = dataset.data[0];
+                      const xPixel = xScale.getPixelForValue(point.x);
+                      const label = index === 0 ? 'LT1' : 'LT2';
+                      
+                      // Format value for label
+                      let valueText = '';
+                      if (isPaceSport) {
+                        if (inputMode === 'pace') {
+                          const paceStr = formatSecondsToMMSS(point.x);
+                          const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
+                          valueText = `Pace: ${paceStr}${unit}`;
+                        } else {
+                          const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+                          valueText = `Speed: ${point.x.toFixed(1)}${unit}`;
+                        }
+                      } else {
+                        valueText = `Power: ${Math.round(point.x)}W`;
+                      }
+                      const lactateText = `${point.y.toFixed(2)} mmol/L`;
+                      
+                      labels.push({
+                        xPixel,
+                        label,
+                        valueText,
+                        lactateText,
+                        fullLabel: `${label}: ${valueText} | ${lactateText}`
+                      });
+                    });
+                    
+                    // Draw labels with collision detection
+                    if (labels.length > 0) {
+                      ctx.save();
+                      ctx.font = '11px sans-serif'; // Smaller font
+                      ctx.fillStyle = '#000000'; // Black text
+                      ctx.textAlign = 'left'; // Align to left (text will be to the right of line)
+                      ctx.textBaseline = 'middle';
+                      
+                      // Measure text width to detect overlaps
+                      const minSpacing = 150; // Minimum spacing between labels in pixels
+                      const labelHeight = 14; // Height of each label line
+                      
+                      labels.forEach((labelData, index) => {
+                        let labelX = labelData.xPixel + 8; // 8px offset from line
+                        let labelY = chartArea.top + 15; // Near top
+                        
+                        // Check if labels are too close together
+                        if (labels.length === 2 && index === 1) {
+                          const prevLabel = labels[0];
+                          const prevLabelX = prevLabel.xPixel + 8;
+                          
+                          // If labels would overlap, stack them vertically
+                          if (Math.abs(labelData.xPixel - prevLabel.xPixel) < minSpacing) {
+                            // Stack vertically - second label below first
+                            labelY = chartArea.top + 15 + labelHeight;
+                            // Try to align X positions if they're very close
+                            if (Math.abs(labelData.xPixel - prevLabel.xPixel) < 50) {
+                              labelX = prevLabelX; // Align X positions when very close
+                            }
+                          } else {
+                            // Labels are far enough apart, can use same Y
+                            labelY = chartArea.top + 15;
+                          }
+                        }
+                        
+                        ctx.fillText(labelData.fullLabel, labelX, labelY);
+                      });
+                      
+                      ctx.restore();
+                    }
+                  }
                 }
               }]}
             />
@@ -1740,8 +1912,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       setZonesVisible(value);
                       zonesVisibleRef.current = value;
                       if (chartRef.current) chartRef.current.update();
-                    }} 
+                    }}
+                    ltpLinesVisibleRef={ltpLinesVisibleRef}
                   />
+                </div>
+              )}
+              {chartView === 'hr' && hasEnoughHRData && (
+                <div className="w-full lg:w-[100px] shrink-0">
+                  <HRLegend chartRef={chartRef} />
                 </div>
               )}
               <div className="w-full lg:w-[400px] shrink-0">

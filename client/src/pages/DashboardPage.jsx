@@ -8,7 +8,8 @@ import SpiderChart from "../components/DashboardPage/SpiderChart";
 import FormFitnessChart from "../components/DashboardPage/FormFitnessChart";
 import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
-import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities } from '../services/api';
+import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl } from '../services/api';
+import { useNotification } from '../context/NotificationContext';
 import AthleteSelector from "../components/AthleteSelector";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import TestComparison from "../components/Testing-page/TestComparison";
@@ -31,6 +32,9 @@ import { motion } from 'framer-motion';
 const DashboardPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
+  const { addNotification } = useNotification();
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [showStravaBanner, setShowStravaBanner] = useState(false);
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
     if (user?.role === 'coach') {
@@ -72,8 +76,53 @@ const DashboardPage = () => {
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
   const navigate = useNavigate();
-  //const { addNotification } = useNotification();
   const [selectedTests, setSelectedTests] = useState([]);
+  
+  // Check Strava connection status
+  useEffect(() => {
+    const checkStravaConnection = async () => {
+      if (!user || user.role === 'coach') return; // Only show for athletes
+      
+      try {
+        const status = await getIntegrationStatus();
+        const isConnected = Boolean(status.stravaConnected);
+        setStravaConnected(isConnected);
+        
+        // Show banner if not connected and user hasn't dismissed it recently
+        if (!isConnected) {
+          const dismissedKey = `strava_banner_dismissed_${user._id}`;
+          const dismissedTimestamp = localStorage.getItem(dismissedKey);
+          const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          
+          if (!dismissedTimestamp || parseInt(dismissedTimestamp) < oneWeekAgo) {
+            setShowStravaBanner(true);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to check Strava connection:', error);
+      }
+    };
+    
+    checkStravaConnection();
+  }, [user]);
+  
+  const handleConnectStrava = async () => {
+    try {
+      const url = await getStravaAuthUrl();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Strava connect error:', error);
+      addNotification('Failed to start Strava connection', 'error');
+    }
+  };
+  
+  const handleDismissBanner = () => {
+    if (user) {
+      const dismissedKey = `strava_banner_dismissed_${user._id}`;
+      localStorage.setItem(dismissedKey, Date.now().toString());
+      setShowStravaBanner(false);
+    }
+  };
   
   // Training calendar data (FIT files and Strava activities)
   const [calendarData, setCalendarData] = useState([]); // Combined data from calendar
@@ -805,6 +854,62 @@ const DashboardPage = () => {
           />
         </motion.div>
       )}
+      
+      {/* Strava Connection Banner */}
+      {showStravaBanner && !stravaConnected && user?.role === 'athlete' && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 bg-gradient-to-r from-orange-50 to-orange-100 border-2 border-orange-300 rounded-xl p-4 sm:p-6 shadow-lg"
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-orange-200 rounded-full flex items-center justify-center flex-shrink-0">
+                  <img src="/icon/strava.png" alt="Strava" className="w-6 h-6" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">Connect Strava to Unlock More Features</h3>
+              </div>
+              <p className="text-sm sm:text-base text-gray-700 mb-3">
+                Connect your Strava account to automatically sync your training activities and get personalized insights!
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-600 font-bold">✓</span>
+                  <span>Auto-import all your activities</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-600 font-bold">✓</span>
+                  <span>Smart test recommendations</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-600 font-bold">✓</span>
+                  <span>Track progress over time</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-600 font-bold">✓</span>
+                  <span>Sync profile picture</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleConnectStrava}
+                className="px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors shadow-md hover:shadow-lg whitespace-nowrap"
+              >
+                Connect Strava
+              </button>
+              <button
+                onClick={handleDismissBanner}
+                className="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 border border-gray-300 transition-colors whitespace-nowrap"
+              >
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+      
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {/* Form & Fitness Chart */}
         <motion.div 

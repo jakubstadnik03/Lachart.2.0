@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -17,9 +17,12 @@ const AdminDashboard = () => {
   const [error, setError] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [stravaFilter, setStravaFilter] = useState('all'); // 'all', 'connected', 'notConnected'
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
+  const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'improvements', 'tips', 'community'
+  const [stravaReminderEmailLoadingUserId, setStravaReminderEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
   const [chartTimeRange, setChartTimeRange] = useState(30); // days
@@ -154,17 +157,38 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleSendFeatureAnnouncementEmail = async (targetUser) => {
+  const handleSendFeatureAnnouncementEmail = async (targetUser, emailType = null) => {
     try {
       setFeatureAnnouncementEmailLoadingUserId(targetUser._id);
-      await sendFeatureAnnouncementEmail(targetUser._id);
-      addNotification(`Feature announcement email sent to ${targetUser.email}`, 'success');
+      const typeToSend = emailType || featureAnnouncementEmailType;
+      await sendFeatureAnnouncementEmail(targetUser._id, typeToSend);
+      const emailTypeNames = {
+        'newFeatures': 'New Features',
+        'improvements': 'Improvements',
+        'tips': 'Tips',
+        'community': 'Community'
+      };
+      addNotification(`${emailTypeNames[typeToSend] || 'Feature announcement'} email sent to ${targetUser.email}`, 'success');
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send feature announcement email';
       addNotification(message, 'error');
       console.error('Feature announcement email error:', err);
     } finally {
       setFeatureAnnouncementEmailLoadingUserId(null);
+    }
+  };
+
+  const handleSendStravaReminderEmail = async (targetUser) => {
+    try {
+      setStravaReminderEmailLoadingUserId(targetUser._id);
+      await sendStravaReminderEmail(targetUser._id);
+      addNotification(`Strava reminder email sent to ${targetUser.email}`, 'success');
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to send Strava reminder email';
+      addNotification(message, 'error');
+      console.error('Strava reminder email error:', err);
+    } finally {
+      setStravaReminderEmailLoadingUserId(null);
     }
   };
 
@@ -470,7 +494,7 @@ const AdminDashboard = () => {
         } else if (marketingEmailType === 'reactivation') {
           await sendReactivationEmail(userId);
         } else {
-          await sendFeatureAnnouncementEmail(userId);
+          await sendFeatureAnnouncementEmail(userId, featureAnnouncementEmailType);
         }
         successCount++;
         
@@ -883,6 +907,18 @@ const AdminDashboard = () => {
                           className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         />
                       </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Strava:</label>
+                        <select
+                          value={stravaFilter}
+                          onChange={(e) => setStravaFilter(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        >
+                          <option value="all">All</option>
+                          <option value="connected">Connected</option>
+                          <option value="notConnected">Not Connected</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
@@ -900,6 +936,42 @@ const AdminDashboard = () => {
                         <option value={users.length}>All ({users.length})</option>
                       </select>
                     </div>
+                    {stravaFilter === 'notConnected' && (
+                      <button
+                        onClick={async () => {
+                          const notConnectedUsers = filteredUsers.filter(u => !u.stravaConnected && u.email);
+                          if (notConnectedUsers.length === 0) {
+                            addNotification('No users without Strava connection found', 'warning');
+                            return;
+                          }
+                          if (!window.confirm(`Send Strava reminder emails to ${notConnectedUsers.length} users?`)) {
+                            return;
+                          }
+                          setBulkSending(true);
+                          let successCount = 0;
+                          let failCount = 0;
+                          for (const user of notConnectedUsers) {
+                            try {
+                              await sendStravaReminderEmail(user._id);
+                              successCount++;
+                              await new Promise(resolve => setTimeout(resolve, 500));
+                            } catch (err) {
+                              failCount++;
+                            }
+                          }
+                          setBulkSending(false);
+                          addNotification(`Strava reminder emails sent: ${successCount} successful, ${failCount} failed`, successCount > 0 ? 'success' : 'error');
+                        }}
+                        disabled={bulkSending}
+                        className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                          bulkSending
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-orange-600 text-white hover:bg-orange-700'
+                        }`}
+                      >
+                        {bulkSending ? 'Sending...' : `Send Reminders to All (${filteredUsers.filter(u => !u.stravaConnected && u.email).length})`}
+                      </button>
+                    )}
                     <div className="text-xs text-gray-500">
                       Showing {filteredUsers.length} of {users.filter(u => {
                         if (!searchQuery.trim()) return true;
@@ -1089,9 +1161,9 @@ const AdminDashboard = () => {
                               </details>
                             )}
                           </div>
-                          <div className="text-xs text-gray-400 mt-1.5 text-center">
-                            Tests include athletes + own
-                          </div>
+                        <div className="text-xs text-gray-400 mt-1.5 text-center">
+                          Tests include athletes + own
+                        </div>
                         </>
                       )}
                       <div className="mt-2 flex flex-col gap-2">
@@ -1183,7 +1255,7 @@ const AdminDashboard = () => {
                       ) : (
                         filteredUsers.map((user) => (
                         <tr key={user._id} className="hover:bg-gray-50">
-                          <td className="px-4 lg:px-6 py-4">
+                          <td className="p-2">
                             <div className="flex items-center">
                               <div className="flex-shrink-0 h-10 w-10">
                                 <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
@@ -1203,7 +1275,7 @@ const AdminDashboard = () => {
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 lg:px-6 py-4">
+                          <td className="p-2">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                               user.role === 'admin' ? 'bg-red-100 text-red-800' :
                               user.role === 'coach' ? 'bg-purple-100 text-purple-800' :
@@ -1255,29 +1327,31 @@ const AdminDashboard = () => {
                               </div>
                             )}
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                          <td className="p-2 text-sm text-gray-900">
                             <div className="flex items-center">
                               <span className="text-base lg:text-lg font-semibold text-blue-600">{user.trainingCount || 0}</span>
                               <span className="ml-1 text-xs text-gray-500">trainings</span>
                             </div>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                          <td className="p-2 text-sm text-gray-900">
+                            <div className="flex flex-col">
                             <div className="flex items-center">
                               <span className="text-base lg:text-lg font-semibold text-purple-600">
                                 {user.testCount !== undefined && user.testCount !== null ? user.testCount : 0}
                               </span>
                               <span className="ml-1 text-xs text-gray-500">tests</span>
+                              </div>
                               {user.role === 'coach' && (
-                                <span className="ml-2 text-xs text-gray-400 hidden xl:inline">(athletes + own)</span>
+                                <span className="text-xs text-gray-400 mt-0.5">(athletes + own)</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                          <td className="p-2 text-sm text-gray-900">
                             <span className="text-base lg:text-lg font-semibold text-gray-900">
                               {user.loginCount !== undefined && user.loginCount !== null ? user.loginCount : 0}
                             </span>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm text-gray-900">
+                          <td className="p-2 text-sm text-gray-900">
                             {user.lastLogin ? (
                               <div>
                                 <div className="text-sm font-medium">
@@ -1291,19 +1365,35 @@ const AdminDashboard = () => {
                               <span className="text-gray-400 italic">Never</span>
                             )}
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          <td className="p-2 text-sm">
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
                               user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
                             }`}>
                               {user.stravaConnected ? 'Connected' : '—'}
                             </span>
                             {user.stravaConnected && user.strava?.lastSyncDate && (
-                              <div className="text-xs text-gray-400 mt-1">
+                                <div className="text-xs text-gray-400">
                                 Sync: {new Date(user.strava.lastSyncDate).toLocaleDateString()}
                               </div>
                             )}
+                              {!user.stravaConnected && user.email && (
+                                <button
+                                  onClick={() => handleSendStravaReminderEmail(user)}
+                                  disabled={stravaReminderEmailLoadingUserId === user._id}
+                                  className={`text-xs px-2 py-1 rounded ${
+                                    stravaReminderEmailLoadingUserId === user._id
+                                      ? 'text-gray-400 cursor-wait'
+                                      : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
+                                  } transition-colors`}
+                                  title="Send Strava connection reminder email"
+                                >
+                                  {stravaReminderEmailLoadingUserId === user._id ? 'Sending...' : 'Send reminder'}
+                                </button>
+                              )}
+                            </div>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm">
+                          <td className="p-2 text-sm">
                             <div className="flex flex-col gap-1">
                               <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
                                 user.notifications?.emailNotifications === false
@@ -1321,7 +1411,7 @@ const AdminDashboard = () => {
                               </span>
                             </div>
                           </td>
-                          <td className="px-4 lg:px-6 py-4 text-sm">
+                          <td className="p-2 text-sm">
                             <div className="flex flex-col gap-1">
                               {user.thankYouEmail?.sent ? (
                                 <>
@@ -1447,6 +1537,18 @@ const AdminDashboard = () => {
                       <option value="reactivation">Reactivation Email</option>
                       <option value="featureAnnouncement">Feature Announcement</option>
                     </select>
+                    {marketingEmailType === 'featureAnnouncement' && (
+                      <select
+                        value={featureAnnouncementEmailType}
+                        onChange={(e) => setFeatureAnnouncementEmailType(e.target.value)}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="newFeatures">New Features</option>
+                        <option value="improvements">Improvements</option>
+                        <option value="tips">Tips</option>
+                        <option value="community">Community</option>
+                      </select>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="text-sm text-gray-600">Filter:</label>

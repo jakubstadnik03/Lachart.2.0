@@ -7,6 +7,7 @@ import { TrainingProvider } from './context/TrainingContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Analytics } from "@vercel/analytics/react"
+import { SpeedInsights } from "@vercel/speed-insights/react"
 import { useLocation } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import './App.css';
@@ -216,6 +217,7 @@ function App() {
               {isProd && initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
               {isProd && <Analytics />}
+              {isProd && <SpeedInsights />}
               <BuyMeACoffeeWidget />
             </TrainingProvider>
           </AuthProvider>

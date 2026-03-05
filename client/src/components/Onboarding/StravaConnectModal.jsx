@@ -40,14 +40,48 @@ const StravaConnectModal = ({ isOpen, onClose, onSkip }) => {
           </p>
         </div>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="text-sm font-semibold text-blue-900 mb-2">Benefits of connecting:</h4>
-          <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-            <li>Automatically import your training activities</li>
-            <li>Track your progress over time</li>
-            <li>Analyze your performance data</li>
-            <li>Sync your profile picture</li>
+        <div className="bg-gradient-to-r from-orange-50 to-orange-100 border-2 border-orange-300 rounded-xl p-5">
+          <h4 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <span className="text-orange-600">✨</span> Unlock Powerful Features:
+          </h4>
+          <ul className="text-sm text-gray-800 space-y-2">
+            <li className="flex items-start gap-2">
+              <span className="text-orange-600 font-bold mt-0.5">✓</span>
+              <div>
+                <strong>Auto-import activities:</strong> All your runs, rides, and swims automatically synced
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-orange-600 font-bold mt-0.5">✓</span>
+              <div>
+                <strong>Smart test recommendations:</strong> Get personalized lactate test protocols based on your Strava data
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-orange-600 font-bold mt-0.5">✓</span>
+              <div>
+                <strong>Track progress:</strong> See your performance trends and improvements over time
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-orange-600 font-bold mt-0.5">✓</span>
+              <div>
+                <strong>Training load analysis:</strong> Monitor TSS, form, and fitness automatically
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-orange-600 font-bold mt-0.5">✓</span>
+              <div>
+                <strong>Profile sync:</strong> Automatically update your profile picture from Strava
+              </div>
+            </li>
           </ul>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-sm text-blue-800">
+            <strong>💡 Pro tip:</strong> Connecting Strava takes just 30 seconds and unlocks powerful features that make your training analysis much more comprehensive!
+          </p>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-4">

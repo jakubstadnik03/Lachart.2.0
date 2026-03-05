@@ -1,8 +1,28 @@
 import React, { useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 import { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionLactateToHR } from './DataTable';
 import { convertPowerToPace } from '../../utils/paceConverter';
 import { calculateZonesFromTest } from './zoneCalculator';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
@@ -64,8 +84,8 @@ const TestComparison = ({ tests = [] }) => {
     'Bsln + 0.5': '#0d9488',
     'Bsln + 1.0': '#c026d3',
     'Bsln + 1.5': '#99f6e4',
-    'LTP1': '#bef264',
-    'LTP2': '#fcd34d',
+    'LTP1': '#16a34a',  // green-600 - tmavší zelená
+    'LTP2': '#dc2626',  // red-600 - červená
     'LTRatio': '#94a3b8'
   };
 
@@ -123,7 +143,8 @@ const TestComparison = ({ tests = [] }) => {
       borderWidth: 2,
       tension: 0.4,
       showLine: true,
-      order: testIndex * 3 + 1
+      order: testIndex * 3 + 1,
+      hitRadius: 10 // Allow hovering over the line
     };
 
     const thresholdDatasets = Object.entries(test.thresholds)
@@ -181,7 +202,8 @@ const TestComparison = ({ tests = [] }) => {
       borderWidth: 2,
       tension: 0.4,
       showLine: true,
-      order: testIndex * 3 + 1
+      order: testIndex * 3 + 1,
+      hitRadius: 10 // Allow hovering over the line
     };
 
     const thresholdDatasets = (test.thresholds?.heartRates && test.thresholds?.lactates)
@@ -256,7 +278,7 @@ const TestComparison = ({ tests = [] }) => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: { mode: 'point', intersect: true },
+    interaction: { mode: 'nearest', intersect: false },
     scales: {
       y: {
         beginAtZero: showHeartRateGraph ? false : true,
@@ -291,16 +313,22 @@ const TestComparison = ({ tests = [] }) => {
     },
     plugins: {
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        titleColor: '#000',
-        bodyColor: '#000',
-        borderColor: '#ddd',
+        enabled: true,
+        mode: 'nearest',
+        intersect: false,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        titleColor: '#111827',
+        titleFont: { weight: 'bold', size: 14 },
+        bodyColor: '#111827',
+        bodyFont: { size: 13 },
+        borderColor: '#F3F4F6',
         borderWidth: 1,
-        padding: 10,
-        displayColors: false,
-        titleAlign: 'center',
-        bodyAlign: 'center',
-        position: 'nearest',
+        padding: 12,
+        cornerRadius: 12,
+        displayColors: true,
+        boxWidth: 8,
+        boxHeight: 8,
+        usePointStyle: true,
         callbacks: {
           title: function(tooltipItems) {
             const item = tooltipItems[0];
@@ -312,28 +340,28 @@ const TestComparison = ({ tests = [] }) => {
             const testIndex = point.testIndex;
             const currentTest = testsWithThresholds[testIndex];
             const datasetLabel = context.dataset.label.split(' - ')[1];
+
             if (showHeartRateGraph) {
               const lactateStr = `${point.x.toFixed(1)} mmol/L`;
               const hrStr = `${Math.round(point.y)} bpm`;
               if (datasetLabel === 'Data points' || datasetLabel === 'Polynomial Fit') {
-                return [datasetLabel, `Lactate: ${lactateStr}`, `HR: ${hrStr}`];
+                return `Lactate: ${lactateStr} | HR: ${hrStr}`;
               }
-              return [datasetLabel, `Lactate: ${lactateStr}`, `HR: ${hrStr}`];
+              return `${datasetLabel}: Lactate ${lactateStr} | HR ${hrStr}`;
             }
-            const xValue = sport === 'bike' ? `${Math.round(point.x)}W` : convertPowerToPace(point.x, sport);
+
+            const xValue = sport === 'bike' ? `${Math.round(point.x)} W` : convertPowerToPace(point.x, sport);
+
             if (datasetLabel === 'Data points' || datasetLabel === 'Polynomial Fit') {
-              return [datasetLabel, `Power: ${xValue}`, `Lactate: ${point.y.toFixed(1)} mmol/L`];
+              return `${datasetLabel}: ${sport === 'bike' ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L`;
             }
+
             if (datasetLabel === 'LTRatio') {
-              return [datasetLabel, `Ratio: ${currentTest.thresholds.LTRatio || 'N/A'}`];
+              return `${datasetLabel}: Ratio ${currentTest.thresholds.LTRatio || 'N/A'}`;
             }
+
             const hr = currentTest.thresholds.heartRates[datasetLabel];
-            return [
-              datasetLabel,
-              `Power: ${xValue}`,
-              `Lactate: ${point.y.toFixed(1)} mmol/L`,
-              `HR: ${hr ? Math.round(hr) : 'N/A'} bpm`
-            ];
+            return `${datasetLabel}: ${sport === 'bike' ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L | HR ${hr ? Math.round(hr) : 'N/A'} bpm`;
           }
         }
       },
@@ -376,7 +404,82 @@ const TestComparison = ({ tests = [] }) => {
           <Line 
             ref={chartRef}
             options={options} 
-            data={{ datasets: displayDatasets }} 
+            data={{ datasets: displayDatasets }}
+            plugins={[{
+              id: 'ltpLinesPlugin',
+              beforeDraw: (chart) => {
+                if (showHeartRateGraph) return; // Only draw for power/pace view
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const xScale = chart.scales.x;
+                
+                // Find LTP1 and LTP2 datasets for each test
+                testsWithThresholds.forEach((test, testIndex) => {
+                  const ltp1 = test.thresholds['LTP1'];
+                  const ltp2 = test.thresholds['LTP2'];
+                  const ltp1Lactate = test.thresholds.lactates?.['LTP1'];
+                  const ltp2Lactate = test.thresholds.lactates?.['LTP2'];
+                  
+                  if (!ltp1 || !ltp2) return;
+                  
+                  const opacity = validTests.length === 1 ? 1 : 0.3 + ((0.7 * (validTests.length - 1 - testIndex)) / (validTests.length - 1));
+                  
+                  [{
+                    value: ltp1,
+                    lactate: ltp1Lactate,
+                    label: 'LT1',
+                    color: `rgba(22, 163, 74, ${opacity})` // green-600 - tmavší zelená
+                  }, {
+                    value: ltp2,
+                    lactate: ltp2Lactate,
+                    label: 'LT2',
+                    color: `rgba(220, 38, 38, ${opacity})` // red-600 - červená
+                  }].forEach((ltp) => {
+                    if (!ltp.value) return;
+                    
+                    const xPixel = xScale.getPixelForValue(ltp.value);
+                    
+                    ctx.save();
+                    
+                    // Draw vertical dashed line
+                    ctx.strokeStyle = ltp.color;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(xPixel, chartArea.top);
+                    ctx.lineTo(xPixel, chartArea.bottom);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    // Format value for label
+                    let valueText = '';
+                    if (sport === 'bike') {
+                      valueText = `Power: ${Math.round(ltp.value)}W`;
+                    } else {
+                      valueText = convertPowerToPace(ltp.value, sport);
+                    }
+                    const lactateText = ltp.lactate ? `${ltp.lactate.toFixed(2)} mmol/L` : '';
+                    
+                    // Draw label next to the line (on the right side), smaller and black
+                    ctx.font = '11px sans-serif'; // Smaller font
+                    ctx.fillStyle = '#000000'; // Black text
+                    ctx.textAlign = 'left'; // Align to left (text will be to the right of line)
+                    ctx.textBaseline = 'middle';
+                    
+                    // Position label to the right of the line with small offset
+                    const labelX = xPixel + 8; // 8px offset from line
+                    const labelY = chartArea.top + 15 + (testIndex * 30); // Near top, offset for each test
+                    
+                    // Draw label text (single line format)
+                    const fullLabel = `${ltp.label}: ${valueText}${lactateText ? ' | ' + lactateText : ''}`;
+                    ctx.fillText(fullLabel, labelX, labelY);
+                    
+                    ctx.restore();
+                  });
+                });
+              }
+            }]}
           />
         )}
       </div>

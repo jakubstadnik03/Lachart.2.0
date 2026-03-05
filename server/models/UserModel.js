@@ -217,6 +217,21 @@ const userSchema = new mongoose.Schema({
     sentCount: { type: Number, default: 0 },
     lastSent: { type: Date, default: null }
   },
+  reactivationEmail: {
+    sent: { type: Boolean, default: false },
+    sentCount: { type: Number, default: 0 },
+    lastSent: { type: Date, default: null }
+  },
+  featureAnnouncementEmail: {
+    sent: { type: Boolean, default: false },
+    sentCount: { type: Number, default: 0 },
+    lastSent: { type: Date, default: null }
+  },
+  stravaReminderEmail: {
+    sent: { type: Boolean, default: false },
+    sentCount: { type: Number, default: 0 },
+    lastSent: { type: Date, default: null }
+  },
   // Email verification
   emailVerified: {
     type: Boolean,

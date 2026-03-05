@@ -40,7 +40,7 @@ const corsOptions = {
       return callback(null, origin);
     }
     console.log('CORS blocked origin:', origin);
-    callback(new Error('Not allowed by CORS'));
+      callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -66,7 +66,7 @@ app.use(helmet({
 // Ensure CORS headers are set correctly after Helmet
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) ||
+  if (origin && (allowedOrigins.includes(origin) || 
       (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) ||
       (allowLocalhostInProduction && origin.startsWith('http://localhost:')))) {
     res.header('Access-Control-Allow-Origin', origin);

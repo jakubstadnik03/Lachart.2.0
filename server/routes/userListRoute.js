@@ -1885,18 +1885,18 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                         
                         // Only count tests/trainings for athletes with password
                         if (hasPassword) {
-                            try {
-                                const athleteIdStr = String(athlete._id);
-                                const trainings = await trainingDao.findByAthleteId(athleteIdStr);
-                                const tests = await Test.find({ athleteId: athleteIdStr });
+                        try {
+                            const athleteIdStr = String(athlete._id);
+                            const trainings = await trainingDao.findByAthleteId(athleteIdStr);
+                            const tests = await Test.find({ athleteId: athleteIdStr });
                                 athleteTrainingCount = trainings.length;
                                 athleteTestCount = tests.length;
-                                trainingCount += athleteTrainingCount;
-                                testCount += athleteTestCount;
-                                console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
-                            } catch (error) {
-                                console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
-                            }
+                            trainingCount += athleteTrainingCount;
+                            testCount += athleteTestCount;
+                            console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
+                        } catch (error) {
+                            console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
+                        }
                             athletesWithPasswordCount++;
                         }
                         
@@ -2456,6 +2456,311 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
     } catch (error) {
         console.error("Error sending thank you emails to all users:", error);
         res.status(500).json({ error: "Failed to send thank you emails" });
+    }
+});
+
+// Send feature announcement email to a specific user (admin only)
+router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
+        const { userId } = req.params;
+        const { emailType = 'newFeatures' } = req.body; // 'newFeatures', 'improvements', 'tips', 'community'
+        
+        const targetUser = await userDao.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!targetUser.email) {
+            return res.status(400).json({ error: "User has no email address configured" });
+        }
+
+        // Respect global emailNotifications preference
+        if (targetUser.notifications && targetUser.notifications.emailNotifications === false) {
+            return res.status(400).json({ error: "Email notifications are disabled for this user" });
+        }
+
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+
+        const userName = targetUser.name || 'there';
+        const userRole = targetUser.role === 'coach' ? 'coach' : 'athlete';
+
+        // Different email templates based on emailType
+        let emailContent = '';
+        let subject = '';
+        let title = '';
+
+        switch (emailType) {
+            case 'newFeatures':
+                title = 'New Features in LaChart 🚀';
+                subject = 'New Features in LaChart 🚀';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I'm excited to share some new features I've added to <strong>LaChart</strong>!</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <h3 style="margin-top: 30px; color: #767EB5;">✨ What's New:</h3>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Population Insights:</strong> Compare your lactate thresholds with population data and see where you rank</li>
+                        <li><strong>HR-First Test Planning:</strong> Get personalized test recommendations based on your Strava activities</li>
+                        <li><strong>Enhanced Test Comparison:</strong> Compare multiple tests side-by-side with improved visualizations</li>
+                        <li><strong>Better Lactate Curves:</strong> Improved polynomial regression for more accurate threshold detection</li>
+                        <li><strong>Training Zones:</strong> More precise zone calculations based on your latest tests</li>
+                    </ul>
+                    <p style="margin-top: 20px;">These features are designed to make your training analysis even more powerful and insightful.</p>
+                    <p style="margin-top: 20px;">I'd love to hear your feedback on these new features!</p>
+                    <p style="margin-top: 30px;">Thanks for being part of the LaChart community!</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            case 'improvements':
+                title = 'LaChart Improvements & Updates 📈';
+                subject = 'LaChart Improvements & Updates 📈';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I've been working hard to improve <strong>LaChart</strong> based on feedback from users like you!</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <h3 style="margin-top: 30px; color: #767EB5;">🔧 Recent Improvements:</h3>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Faster Performance:</strong> Optimized data loading and caching for smoother experience</li>
+                        <li><strong>Better Accuracy:</strong> Improved threshold calculations for more reliable results</li>
+                        <li><strong>Enhanced UI:</strong> Cleaner interface and better mobile experience</li>
+                        <li><strong>Bug Fixes:</strong> Fixed issues with test comparison and curve generation</li>
+                        <li><strong>Data Export:</strong> Improved export functionality for your test data</li>
+                    </ul>
+                    <p style="margin-top: 20px;">Your experience should be noticeably better now. Let me know if you notice any issues or have suggestions!</p>
+                    <p style="margin-top: 30px;">Thanks for using LaChart!</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            case 'tips':
+                title = 'Tips for Getting the Most Out of LaChart 💡';
+                subject = 'Tips for Getting the Most Out of LaChart 💡';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I wanted to share some tips to help you get the most out of <strong>LaChart</strong>!</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <h3 style="margin-top: 30px; color: #767EB5;">💡 Pro Tips:</h3>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Regular Testing:</strong> Test every 4-6 weeks to track your progress accurately</li>
+                        <li><strong>Base Lactate:</strong> Always measure baseline lactate before starting your test</li>
+                        <li><strong>Compare Tests:</strong> Use the test comparison feature to see improvements over time</li>
+                        <li><strong>Training Zones:</strong> Update your zones after each new test for optimal training</li>
+                        <li><strong>Strava Integration:</strong> Connect Strava for automatic activity tracking and analysis</li>
+                        <li><strong>Population Insights:</strong> Use population comparison to see how you stack up</li>
+                    </ul>
+                    <p style="margin-top: 20px;">${userRole === 'coach' ? 'As a coach, you can manage multiple athletes and track their progress over time. Use the comparison features to show your athletes their improvements!' : 'If you\'re working with a coach, share your test results with them for personalized training guidance.'}</p>
+                    <p style="margin-top: 30px;">Have questions? Just reply to this email - I'm happy to help!</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            case 'community':
+                title = 'Join the LaChart Community 🌟';
+                subject = 'Join the LaChart Community 🌟';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I'm building <strong>LaChart</strong> with the goal of creating the best lactate testing tool for athletes and coaches.</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <h3 style="margin-top: 30px; color: #767EB5;">🌟 How You Can Help:</h3>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Share Feedback:</strong> Tell me what features you'd like to see or what's confusing</li>
+                        <li><strong>Spread the Word:</strong> Share LaChart with other athletes and coaches</li>
+                        <li><strong>Report Issues:</strong> Let me know if you encounter any bugs or problems</li>
+                        <li><strong>Feature Requests:</strong> Have an idea? I'd love to hear it!</li>
+                    </ul>
+                    <p style="margin-top: 20px;">LaChart is completely free and will stay that way. Your feedback helps me prioritize what to build next.</p>
+                    <p style="margin-top: 20px;">${userRole === 'coach' ? 'As a coach, you have unique insights into what tools would be most valuable. I\'d especially love to hear from you!' : 'Your experience as an athlete helps me understand what features matter most.'}</p>
+                    <p style="margin-top: 30px;">Thanks for being part of this journey!</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            default:
+                title = 'Update from LaChart 📧';
+                subject = 'Update from LaChart 📧';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I wanted to reach out and share some updates about <strong>LaChart</strong>!</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <p style="margin-top: 20px;">I'm constantly working to improve LaChart and add features that make your training analysis more powerful.</p>
+                    <p style="margin-top: 20px;">If you have any feedback, questions, or suggestions, I'd love to hear from you!</p>
+                    <p style="margin-top: 30px;">Thanks for using LaChart!</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+        }
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        await transporter.sendMail({
+            from: {
+                name: 'Jakub - LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: targetUser.email,
+            subject: subject,
+            html: generateEmailTemplate({
+                title: title,
+                content: emailContent,
+                buttonText: 'Open LaChart',
+                buttonUrl: clientUrl,
+                footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
+            })
+        });
+
+        // Update tracking information
+        const updateData = {
+            featureAnnouncementEmail: {
+                sent: true,
+                sentCount: (targetUser.featureAnnouncementEmail?.sentCount || 0) + 1,
+                lastSent: new Date(),
+                lastType: emailType
+            }
+        };
+        await userDao.updateUser(userId, updateData);
+
+        res.status(200).json({ ok: true, message: "Feature announcement email sent", emailType });
+    } catch (error) {
+        console.error("Error sending feature announcement email:", error);
+        const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
+        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send feature announcement email";
+        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        res.status(500).json({ error: errorTitle, reason });
+    }
+});
+
+// Send Strava connection reminder email to a specific user (admin only)
+router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
+        const { userId } = req.params;
+        const targetUser = await userDao.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (!targetUser.email) {
+            return res.status(400).json({ error: "User has no email address configured" });
+        }
+
+        // Check if already connected
+        if (targetUser.strava?.athleteId) {
+            return res.status(400).json({ error: "User already has Strava connected" });
+        }
+
+        // Respect global emailNotifications preference
+        if (targetUser.notifications && targetUser.notifications.emailNotifications === false) {
+            return res.status(400).json({ error: "Email notifications are disabled for this user" });
+        }
+
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+        const stravaAuthUrl = `${clientUrl}/api/integrations/strava/auth-url`;
+
+        const userName = targetUser.name || 'there';
+
+        const emailContent = `
+            <p>Hi ${userName},</p>
+            <p>I noticed you haven't connected your Strava account yet. Connecting Strava unlocks powerful features that make LaChart much more useful!</p>
+            <p style="margin-top: 30px;">
+                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+            </p>
+            <h3 style="margin-top: 30px; color: #767EB5;">🚀 What You're Missing:</h3>
+            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                <li><strong>Automatic Activity Import:</strong> All your runs, rides, and swims automatically synced to LaChart</li>
+                <li><strong>Smart Test Recommendations:</strong> Get personalized lactate test protocols based on your Strava data</li>
+                <li><strong>Progress Tracking:</strong> See your performance trends and improvements over time</li>
+                <li><strong>Training Load Analysis:</strong> Monitor TSS, form, and fitness automatically</li>
+                <li><strong>HR-First Test Planning:</strong> Get test recommendations based on your Strava heart rate data</li>
+                <li><strong>Profile Sync:</strong> Automatically update your profile picture from Strava</li>
+            </ul>
+            <p style="margin-top: 20px;">Connecting takes just 30 seconds and it's completely free!</p>
+            <p style="margin-top: 20px;">If you have any questions or need help, just reply to this email.</p>
+            <p style="margin-top: 30px;">Thanks!</p>
+            <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+        `;
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_APP_PASSWORD
+            }
+        });
+
+        await transporter.sendMail({
+            from: {
+                name: 'Jakub - LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: targetUser.email,
+            subject: 'Connect Strava to Unlock More Features 🚀',
+            html: generateEmailTemplate({
+                title: 'Connect Strava to Unlock More Features',
+                content: emailContent,
+                buttonText: 'Connect Strava Now',
+                buttonUrl: `${clientUrl}/settings`,
+                footerText: 'From the creator Jakub Stádník. Connecting Strava takes just 30 seconds and unlocks powerful features!'
+            })
+        });
+
+        // Update tracking information
+        const updateData = {
+            stravaReminderEmail: {
+                sent: true,
+                sentCount: (targetUser.stravaReminderEmail?.sentCount || 0) + 1,
+                lastSent: new Date()
+            }
+        };
+        await userDao.updateUser(userId, updateData);
+
+        res.status(200).json({ ok: true, message: "Strava reminder email sent" });
+    } catch (error) {
+        console.error("Error sending Strava reminder email:", error);
+        const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
+        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send Strava reminder email";
+        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        res.status(500).json({ error: errorTitle, reason });
     }
 });
 

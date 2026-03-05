@@ -223,8 +223,15 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-medium truncate`}>{test.description}</h3>
-                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
+                    {test.title && (
+                      <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-medium truncate`}>{test.title}</h3>
+                    )}
+                    {test.description && (
+                      <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 ${test.title ? 'mt-0.5' : ''} truncate`}>
+                        {test.description}
+                      </p>
+                    )}
+                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500 ${(test.title || test.description) ? 'mt-0.5' : ''}`}>
                       {test.sport} • {new Date(test.date).toLocaleDateString()}
                     </p>
                   </div>

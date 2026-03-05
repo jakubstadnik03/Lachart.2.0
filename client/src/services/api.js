@@ -574,12 +574,24 @@ export const sendThankYouEmailToAll = async () => {
 };
 
 // Send feature announcement email to a specific user (admin only)
-export const sendFeatureAnnouncementEmail = async (userId) => {
+export const sendFeatureAnnouncementEmail = async (userId, emailType = 'newFeatures') => {
   try {
-    const response = await api.post(`/user/admin/send-feature-announcement-email/${userId}`);
+    const response = await api.post(`/user/admin/send-feature-announcement-email/${userId}`, {
+      emailType
+    });
     return response.data;
   } catch (error) {
     console.error('Error sending feature announcement email:', error);
+    throw error;
+  }
+};
+
+export const sendStravaReminderEmail = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/send-strava-reminder-email/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending Strava reminder email:', error);
     throw error;
   }
 };

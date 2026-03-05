@@ -1391,19 +1391,119 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // Definice cílových laktátů (použít baseLactate pokud je definováno, jinak použít výchozí hodnoty)
     const effectiveBaseLactate = baseLactate || 1.0; // Fallback na 1.0 pokud není definováno
     
-    // Nejdřív použít D-max body pro LTP1 a LTP2 (mají prioritu před interpolací)
-    if (ltp1 && ltp1Point) {
-      thresholds['LTP1'] = ltp1;
-      thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
-      thresholds.lactates['LTP1'] = ltp1Point.lactate || null;
-      // Debug logging removed
-    }
+    // Použít stejnou polynomiální křivku jako v grafu pro výpočet LTP1 a LTP2
+    // Toto zajistí konzistenci mezi grafem a tabulkou
+    // Použít calculatePolynomialRegression stejně jako v LactateCurveCalculator.jsx
+    const polyPointsRaw = calculatePolynomialRegression(results);
     
-    if (ltp2 && ltp2Point) {
-      thresholds['LTP2'] = ltp2;
-      thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
-      thresholds.lactates['LTP2'] = ltp2Point.lactate || null;
-      // Debug logging removed
+    // Helper function to find X value from polynomial curve for a given lactate value
+    // Stejná jako v LactateCurveCalculator.jsx
+    const findXFromCurve = (targetLactate, curvePoints) => {
+      if (!curvePoints || curvePoints.length === 0) return null;
+      
+      // Find the point on the curve closest to target lactate
+      let closestPoint = curvePoints[0];
+      let minDiff = Math.abs(closestPoint.y - targetLactate);
+      
+      for (const point of curvePoints) {
+        const diff = Math.abs(point.y - targetLactate);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestPoint = point;
+        }
+      }
+      
+      // If we have points on both sides, interpolate
+      const index = curvePoints.findIndex(p => p.y >= targetLactate);
+      if (index > 0 && index < curvePoints.length) {
+        const prev = curvePoints[index - 1];
+        const next = curvePoints[index];
+        if (prev.y !== next.y) {
+          const ratio = (targetLactate - prev.y) / (next.y - prev.y);
+          const interpolatedX = prev.x + (next.x - prev.x) * ratio;
+          return interpolatedX;
+        }
+      }
+      
+      return closestPoint.x;
+    };
+    
+    // Pokud máme LTP body, použít stejnou metodu jako v grafu
+    if (ltp1Point && ltp1Point.lactate != null && ltp2Point && ltp2Point.lactate != null) {
+      const ltp1Lactate = ltp1Point.lactate;
+      const ltp2Lactate = ltp2Point.lactate;
+      
+      // Najít X hodnoty z polynomiální křivky pro lactate hodnoty (stejně jako v grafu)
+      const ltp1XFromCurve = findXFromCurve(ltp1Lactate, polyPointsRaw);
+      const ltp2XFromCurve = findXFromCurve(ltp2Lactate, polyPointsRaw);
+      
+      // Interpolace HR pro nové X hodnoty
+      const interpolateHR = (x) => {
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const a = Number(sortedResults[i].power);
+          const b = Number(sortedResults[i + 1].power);
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          if (x >= lo && x <= hi && a !== b) {
+            const hrA = sortedResults[i].heartRate != null ? Number(sortedResults[i].heartRate) : null;
+            const hrB = sortedResults[i + 1].heartRate != null ? Number(sortedResults[i + 1].heartRate) : null;
+            if (hrA != null && hrB != null) return hrA + (hrB - hrA) * (x - a) / (b - a);
+            return hrA ?? hrB;
+          }
+        }
+        const nearest = sortedResults.reduce((best, r) =>
+          Math.abs(Number(r.power) - x) < Math.abs(Number(best.power) - x) ? r : best
+        );
+        return nearest.heartRate != null ? Number(nearest.heartRate) : null;
+      };
+      
+      // Použít hodnoty z křivky pokud jsou k dispozici
+      if (ltp1XFromCurve != null && !isNaN(ltp1XFromCurve) && ltp2XFromCurve != null && !isNaN(ltp2XFromCurve)) {
+        const isPaceSport = sport === 'run' || sport === 'swim';
+        const validOrder = isPaceSport ? ltp2XFromCurve < ltp1XFromCurve : ltp2XFromCurve > ltp1XFromCurve;
+        
+        if (validOrder) {
+          // Použít hodnoty z polynomiální křivky (stejně jako v grafu)
+          thresholds['LTP1'] = ltp1XFromCurve;
+          thresholds.heartRates['LTP1'] = interpolateHR(ltp1XFromCurve);
+          thresholds.lactates['LTP1'] = ltp1Lactate;
+          
+          thresholds['LTP2'] = ltp2XFromCurve;
+          thresholds.heartRates['LTP2'] = interpolateHR(ltp2XFromCurve);
+          thresholds.lactates['LTP2'] = ltp2Lactate;
+        } else {
+          // Pokud pořadí není validní, použít fallback na D-max hodnoty
+          thresholds['LTP1'] = ltp1;
+          thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+          thresholds.lactates['LTP1'] = ltp1Lactate;
+          
+          thresholds['LTP2'] = ltp2;
+          thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+          thresholds.lactates['LTP2'] = ltp2Lactate;
+        }
+      } else {
+        // Fallback na D-max hodnoty pokud křivka nefunguje
+        thresholds['LTP1'] = ltp1;
+        thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+        thresholds.lactates['LTP1'] = ltp1Lactate;
+        
+        thresholds['LTP2'] = ltp2;
+        thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+        thresholds.lactates['LTP2'] = ltp2Lactate;
+      }
+    } else {
+      // Fallback na D-max hodnoty pokud nemáme body
+      if (ltp1Point && ltp1Point.lactate != null) {
+        thresholds['LTP1'] = ltp1;
+        thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+        thresholds.lactates['LTP1'] = ltp1Point.lactate;
+      }
+      
+      if (ltp2Point && ltp2Point.lactate != null) {
+        thresholds['LTP2'] = ltp2;
+        thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+        thresholds.lactates['LTP2'] = ltp2Point.lactate;
+      }
     }
     
     const targets = [
@@ -1846,7 +1946,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
   
   const DataTable = ({ mockData }) => {
-    const [showInfoBox, setShowInfoBox] = useState(true);
+    const [showInfoBox, setShowInfoBox] = useState(false);
     
     // Get user from context for unitSystem
     let user = null;
@@ -1935,41 +2035,58 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       <TooltipProvider>
         <div className="flex flex-col items-start w-full max-w-[400px] text-sm gap-3">
           {/* Info box about threshold interpretation */}
-          {(thresholds['LTP1'] || thresholds['LTP2']) && showInfoBox && (
-            <div className="w-full bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs relative">
-              <button
-                onClick={() => setShowInfoBox(false)}
-                className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 transition-colors"
-                aria-label="Close info box"
-                title="Close"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <div className="font-semibold text-blue-900 mb-1 flex items-center gap-1 pr-6">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Understanding Threshold Values
-              </div>
-              <div className="text-blue-800 space-y-1">
-                <p>
-                  <strong>LTP1 and LTP2 are calculated estimates</strong> using the D-max method. 
-                  Results may vary based on test protocol, data quality, and individual physiology.
-                </p>
-                <p>
-                  <strong>Practical guidance:</strong> If LTP2 seems too low but OBLA 3.5 shows a 
-                  faster pace that feels more appropriate for your training, consider using OBLA 3.5 
-                  for interval training zones. Fixed thresholds (OBLA 2.0, 2.5, 3.0, 3.5) often 
-                  provide more consistent and practical guidance.
-                </p>
-                <p>
-                  <strong>Always compare</strong> multiple methods and use the value that best 
-                  matches your perceived effort and training goals.
-                </p>
-              </div>
-            </div>
+          {(thresholds['LTP1'] || thresholds['LTP2']) && (
+            <>
+              {!showInfoBox && (
+                <button
+                  onClick={() => setShowInfoBox(true)}
+                  className="w-full bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700 hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+                  aria-label="Show info about threshold values"
+                  title="Show info"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-semibold">Understanding Threshold Values</span>
+                </button>
+              )}
+              {showInfoBox && (
+                <div className="w-full bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs relative">
+                  <button
+                    onClick={() => setShowInfoBox(false)}
+                    className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 transition-colors"
+                    aria-label="Close info box"
+                    title="Close"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="font-semibold text-blue-900 mb-1 flex items-center gap-1 pr-6">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Understanding Threshold Values
+                  </div>
+                  <div className="text-blue-800 space-y-1">
+                    <p>
+                      <strong>LTP1 and LTP2 are calculated estimates</strong> using the D-max method. 
+                      Results may vary based on test protocol, data quality, and individual physiology.
+                    </p>
+                    <p>
+                      <strong>Practical guidance:</strong> If LTP2 seems too low but OBLA 3.5 shows a 
+                      faster pace that feels more appropriate for your training, consider using OBLA 3.5 
+                      for interval training zones. Fixed thresholds (OBLA 2.0, 2.5, 3.0, 3.5) often 
+                      provide more consistent and practical guidance.
+                    </p>
+                    <p>
+                      <strong>Always compare</strong> multiple methods and use the value that best 
+                      matches your perceived effort and training goals.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
           
           <div className="flex justify-between items-start w-full">
