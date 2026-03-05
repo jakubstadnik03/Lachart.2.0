@@ -92,33 +92,49 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
   const hasMore = sortedTests.length > testsPerPage;
 
   const handleTestSelect = (test) => {
-    console.log('Test clicked:', test);
-    console.log('Current selected tests:', selectedTests);
-    
-    if (!test || !test._id) {
-      console.log('Invalid test or missing _id');
-      return;
-    }
+    try {
+      console.log('Test clicked:', test);
+      console.log('Current selected tests:', selectedTests);
+      
+      if (!test) {
+        console.error('[TestSelector] Test is null or undefined');
+        return;
+      }
+      
+      if (!test._id) {
+        console.error('[TestSelector] Test missing _id:', test);
+        return;
+      }
 
-    // Check if test is already selected
-    const isSelected = selectedTests.some(t => t._id === test._id);
-    console.log('Is test already selected?', isSelected);
-    
-    if (isSelected) {
-      // Remove test from selection
-      const newSelection = selectedTests.filter(t => t._id !== test._id);
-      console.log('Removing test, new selection:', newSelection);
-      onTestSelect(newSelection);
-    } else {
-      // Check if we can add this test (same sport)
-      if (selectedTests.length === 0 || selectedTests[0].sport === test.sport) {
-        const newSelection = [...selectedTests, test];
-        console.log('Adding test, new selection:', newSelection);
+      // Validate test structure
+      if (typeof test._id !== 'string' && typeof test._id !== 'object') {
+        console.error('[TestSelector] Invalid test._id type:', typeof test._id, test);
+        return;
+      }
+
+      // Check if test is already selected
+      const isSelected = selectedTests.some(t => t && t._id && t._id === test._id);
+      console.log('Is test already selected?', isSelected);
+      
+      if (isSelected) {
+        // Remove test from selection
+        const newSelection = selectedTests.filter(t => t && t._id && t._id !== test._id);
+        console.log('Removing test, new selection:', newSelection);
         onTestSelect(newSelection);
       } else {
-        console.log('Cannot add test - different sport');
-        alert('You can only compare tests of the same sport type');
+        // Check if we can add this test (same sport)
+        if (selectedTests.length === 0 || (selectedTests[0] && selectedTests[0].sport === test.sport)) {
+          const newSelection = [...selectedTests, test];
+          console.log('Adding test, new selection:', newSelection);
+          onTestSelect(newSelection);
+        } else {
+          console.log('Cannot add test - different sport');
+          alert('You can only compare tests of the same sport type');
+        }
       }
+    } catch (error) {
+      console.error('[TestSelector] Error in handleTestSelect:', error, test);
+      // Don't crash the app, just log the error
     }
   };
 
@@ -200,11 +216,19 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
       ) : (
         <>
         <div className={`${isMobile ? 'space-y-2' : 'space-y-4'}`}>
-            {displayedTests.map((test) => {
+            {displayedTests.map((test, index) => {
+              // Ensure unique key - use index as fallback if _id is missing or duplicate
+              const uniqueKey = test && test._id ? `${test._id}_${index}` : `test_${index}`;
+              
+              if (!test) {
+                console.warn(`[TestSelector] Test at index ${index} is null or undefined, skipping`);
+                return null;
+              }
+              
               const maxValue = getMaxValue(test);
               return (
             <div 
-              key={test._id} 
+              key={uniqueKey} 
               onClick={() => handleTestSelect(test)}
               className={`border ${isMobile ? 'rounded-md p-2' : 'rounded-lg p-4'} cursor-pointer transition-colors
                 ${selectedTests.some(t => t._id === test._id)

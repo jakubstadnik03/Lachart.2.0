@@ -307,6 +307,16 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
     if (crossings.length === 0) return null;
+    
+    // When lactate decreases and then increases again, there can be multiple crossings
+    // For LTP1: if there are multiple crossings and lactate is decreasing, take the second one (after the drop)
+    // For LTP2: take the last crossing (highest intensity)
+    if (crossings.length > 1 && forLTP1) {
+      // Check if lactate is decreasing (curve goes down then up)
+      // Take the second crossing if it exists (after the drop)
+      return isPaceSport ? crossings[1] || crossings[0] : crossings[1] || crossings[0];
+    }
+    
     if (forLTP1) {
       return isPaceSport ? Math.max(...crossings) : Math.min(...crossings);
     }
@@ -403,13 +413,29 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       );
       return nearest.heartRate != null ? Number(nearest.heartRate) : null;
     };
+    // Ensure LT1 lactate is always lower than LT2 lactate
+    // If LT1 has higher lactate than LT2, swap them
+    let finalLtp1X = ltp1X;
+    let finalLtp2X = ltp2X;
+    let finalLtp1Lactate = ltp1Lactate;
+    let finalLtp2Lactate = ltp2Lactate;
+    
+    if (ltp1Lactate > ltp2Lactate) {
+      // Swap LT1 and LT2 if LT1 has higher lactate
+      console.warn('[findLTPFromPolynomial] LT1 lactate higher than LT2, swapping values');
+      finalLtp1X = ltp2X;
+      finalLtp2X = ltp1X;
+      finalLtp1Lactate = ltp2Lactate;
+      finalLtp2Lactate = ltp1Lactate;
+    }
+    
     return {
-      ltp1Power: ltp1X,
-      ltp2Power: ltp2X,
-      ltp1Lactate,
-      ltp2Lactate,
-      ltp1HR: interpolateHR(ltp1X),
-      ltp2HR: interpolateHR(ltp2X)
+      ltp1Power: finalLtp1X,
+      ltp2Power: finalLtp2X,
+      ltp1Lactate: finalLtp1Lactate,
+      ltp2Lactate: finalLtp2Lactate,
+      ltp1HR: interpolateHR(finalLtp1X),
+      ltp2HR: interpolateHR(finalLtp2X)
     };
   };
 
@@ -1353,8 +1379,106 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       };
     }
   
+    // Filter out empty rows - rows where power or lactate is missing, empty, or 0
+    let validResults = results.filter(r => {
+      if (!r) return false;
+      
+      const powerStr = r.power?.toString().trim();
+      const lactateStr = r.lactate?.toString().trim();
+      
+      // Exclude rows where power or lactate is missing, empty, or 0
+      if (!powerStr || powerStr === '' || powerStr === '0' || 
+          !lactateStr || lactateStr === '' || lactateStr === '0' ||
+          r.power === undefined || r.power === null || 
+          r.lactate === undefined || r.lactate === null) {
+        return false;
+      }
+      
+      const powerNum = Number(powerStr.replace(',', '.'));
+      const lactateNum = Number(lactateStr.replace(',', '.'));
+      
+      // Check if values are valid numbers
+      if (isNaN(powerNum) || isNaN(lactateNum)) {
+        return false;
+      }
+      
+      // Check reasonable ranges
+      const isPaceSport = sport === 'run' || sport === 'swim';
+      if (isPaceSport) {
+        if (powerNum <= 0 || powerNum < 60) return false; // Minimum reasonable pace is ~60 seconds
+      } else {
+        if (powerNum <= 0 || powerNum < 50) return false; // Minimum reasonable power is ~50W
+      }
+      
+      if (lactateNum <= 0 || lactateNum > 20) return false; // Lactate should be 0.1-20 mmol/L
+      
+      return true;
+    });
+
+    // Additional validation: detect and filter unrealistic lactate spikes followed by drops
+    // This catches cases like 13.5 mmol/L followed by 6.2 mmol/L (measurement error)
+    if (validResults.length > 2) {
+      const sortedByPower = [...validResults].sort((a, b) => {
+        if (sport === 'run' || sport === 'swim') {
+          return b.power - a.power; // Descending for pace sports
+        }
+        return a.power - b.power; // Ascending for bike
+      });
+
+      const filteredResults = [];
+      for (let i = 0; i < sortedByPower.length; i++) {
+        const current = sortedByPower[i];
+        const currentLactate = Number(current.lactate?.toString().replace(',', '.'));
+        
+        // Check if this is an unrealistic spike (> 10 mmol/L)
+        if (currentLactate > 10) {
+          // Check if next value is significantly lower (drop of more than 3 mmol/L)
+          if (i < sortedByPower.length - 1) {
+            const next = sortedByPower[i + 1];
+            const nextLactate = Number(next.lactate?.toString().replace(',', '.'));
+            const drop = currentLactate - nextLactate;
+            
+            if (drop > 3) {
+              // This is likely a measurement error - skip this high value
+              console.warn(`[DataTable] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (followed by ${nextLactate} mmol/L, drop of ${drop.toFixed(1)} mmol/L)`);
+              continue; // Skip this value
+            }
+          }
+          
+          // Also check if previous value was much lower (spike of more than 5 mmol/L from previous)
+          if (i > 0) {
+            const prev = sortedByPower[i - 1];
+            const prevLactate = Number(prev.lactate?.toString().replace(',', '.'));
+            const spike = currentLactate - prevLactate;
+            
+            if (spike > 5 && prevLactate < 5) {
+              // Unrealistic spike from low value - likely measurement error
+              console.warn(`[DataTable] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (spike of ${spike.toFixed(1)} mmol/L from ${prevLactate} mmol/L)`);
+              continue; // Skip this value
+            }
+          }
+        }
+        
+        filteredResults.push(current);
+      }
+      
+      // Update validResults with filtered results (preserve original order)
+      const filteredIds = new Set(filteredResults.map(r => `${r.power}_${r.lactate}`));
+      validResults = validResults.filter(r => {
+        const id = `${r.power}_${r.lactate}`;
+        return filteredIds.has(id);
+      });
+    }
+  
+    if (validResults.length < 3) {
+      return {
+        heartRates: {},
+        lactates: {}
+      };
+    }
+  
     // Pro běh a plavání necháme hodnoty v sekundách (nebudeme je převádět)
-    const sortedResults = [...results].sort((a, b) => {
+    const sortedResults = [...validResults].sort((a, b) => {
       if (sport === 'run' || sport === 'swim') {
         // Pro běh a plavání řadíme sestupně (nižší čas = lepší výkon)
         return b.power - a.power;
@@ -1394,7 +1518,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // Použít stejnou polynomiální křivku jako v grafu pro výpočet LTP1 a LTP2
     // Toto zajistí konzistenci mezi grafem a tabulkou
     // Použít calculatePolynomialRegression stejně jako v LactateCurveCalculator.jsx
-    const polyPointsRaw = calculatePolynomialRegression(results);
+    // Use filtered validResults (excludes unrealistic spikes)
+    const polyPointsRaw = calculatePolynomialRegression(validResults);
     
     // Helper function to find X value from polynomial curve for a given lactate value
     // Stejná jako v LactateCurveCalculator.jsx
@@ -1461,8 +1586,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       if (ltp1XFromCurve != null && !isNaN(ltp1XFromCurve) && ltp2XFromCurve != null && !isNaN(ltp2XFromCurve)) {
         const isPaceSport = sport === 'run' || sport === 'swim';
         const validOrder = isPaceSport ? ltp2XFromCurve < ltp1XFromCurve : ltp2XFromCurve > ltp1XFromCurve;
+        const validLactateOrder = ltp1Lactate < ltp2Lactate; // LT1 must always have lower lactate than LT2
         
-        if (validOrder) {
+        if (validOrder && validLactateOrder) {
           // Použít hodnoty z polynomiální křivky (stejně jako v grafu)
           thresholds['LTP1'] = ltp1XFromCurve;
           thresholds.heartRates['LTP1'] = interpolateHR(ltp1XFromCurve);
@@ -1473,35 +1599,73 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           thresholds.lactates['LTP2'] = ltp2Lactate;
         } else {
           // Pokud pořadí není validní, použít fallback na D-max hodnoty
-          thresholds['LTP1'] = ltp1;
-          thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
-          thresholds.lactates['LTP1'] = ltp1Lactate;
+          // Ensure LT1 has lower lactate than LT2
+          let finalLtp1 = ltp1;
+          let finalLtp2 = ltp2;
+          let finalLtp1Lactate = ltp1Lactate;
+          let finalLtp2Lactate = ltp2Lactate;
+          let finalLtp1HR = ltp1Point.heartRate || null;
+          let finalLtp2HR = ltp2Point.heartRate || null;
           
-          thresholds['LTP2'] = ltp2;
-          thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
-          thresholds.lactates['LTP2'] = ltp2Lactate;
+          if (ltp1Lactate > ltp2Lactate) {
+            // Swap if LT1 has higher lactate than LT2
+            console.warn('[calculateThresholds] LT1 lactate higher than LT2, swapping values');
+            finalLtp1 = ltp2;
+            finalLtp2 = ltp1;
+            finalLtp1Lactate = ltp2Lactate;
+            finalLtp2Lactate = ltp1Lactate;
+            finalLtp1HR = ltp2Point.heartRate || null;
+            finalLtp2HR = ltp1Point.heartRate || null;
+          }
+          
+          thresholds['LTP1'] = finalLtp1;
+          thresholds.heartRates['LTP1'] = finalLtp1HR;
+          thresholds.lactates['LTP1'] = finalLtp1Lactate;
+          
+          thresholds['LTP2'] = finalLtp2;
+          thresholds.heartRates['LTP2'] = finalLtp2HR;
+          thresholds.lactates['LTP2'] = finalLtp2Lactate;
         }
       } else {
         // Fallback na D-max hodnoty pokud křivka nefunguje
-        thresholds['LTP1'] = ltp1;
-        thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
-        thresholds.lactates['LTP1'] = ltp1Lactate;
+        // Ensure LT1 has lower lactate than LT2
+        let finalLtp1 = ltp1;
+        let finalLtp2 = ltp2;
+        let finalLtp1Lactate = ltp1Lactate;
+        let finalLtp2Lactate = ltp2Lactate;
+        let finalLtp1HR = ltp1Point.heartRate || null;
+        let finalLtp2HR = ltp2Point.heartRate || null;
         
-        thresholds['LTP2'] = ltp2;
-        thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
-        thresholds.lactates['LTP2'] = ltp2Lactate;
+        if (ltp1Lactate > ltp2Lactate) {
+          // Swap if LT1 has higher lactate than LT2
+          console.warn('[calculateThresholds] LT1 lactate higher than LT2, swapping values');
+          finalLtp1 = ltp2;
+          finalLtp2 = ltp1;
+          finalLtp1Lactate = ltp2Lactate;
+          finalLtp2Lactate = ltp1Lactate;
+          finalLtp1HR = ltp2Point.heartRate || null;
+          finalLtp2HR = ltp1Point.heartRate || null;
+        }
+        
+        thresholds['LTP1'] = finalLtp1;
+        thresholds.heartRates['LTP1'] = finalLtp1HR;
+        thresholds.lactates['LTP1'] = finalLtp1Lactate;
+        
+        thresholds['LTP2'] = finalLtp2;
+        thresholds.heartRates['LTP2'] = finalLtp2HR;
+        thresholds.lactates['LTP2'] = finalLtp2Lactate;
       }
     } else {
       // Fallback na D-max hodnoty pokud nemáme body
       if (ltp1Point && ltp1Point.lactate != null) {
-        thresholds['LTP1'] = ltp1;
-        thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+      thresholds['LTP1'] = ltp1;
+      thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
         thresholds.lactates['LTP1'] = ltp1Point.lactate;
-      }
-      
+    }
+    
       if (ltp2Point && ltp2Point.lactate != null) {
-        thresholds['LTP2'] = ltp2;
-        thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+      thresholds['LTP2'] = ltp2;
+      thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
         thresholds.lactates['LTP2'] = ltp2Point.lactate;
       }
     }
@@ -2051,40 +2215,40 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
                 </button>
               )}
               {showInfoBox && (
-                <div className="w-full bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs relative">
-                  <button
-                    onClick={() => setShowInfoBox(false)}
-                    className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 transition-colors"
-                    aria-label="Close info box"
-                    title="Close"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                  <div className="font-semibold text-blue-900 mb-1 flex items-center gap-1 pr-6">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Understanding Threshold Values
-                  </div>
-                  <div className="text-blue-800 space-y-1">
-                    <p>
-                      <strong>LTP1 and LTP2 are calculated estimates</strong> using the D-max method. 
-                      Results may vary based on test protocol, data quality, and individual physiology.
-                    </p>
-                    <p>
-                      <strong>Practical guidance:</strong> If LTP2 seems too low but OBLA 3.5 shows a 
-                      faster pace that feels more appropriate for your training, consider using OBLA 3.5 
-                      for interval training zones. Fixed thresholds (OBLA 2.0, 2.5, 3.0, 3.5) often 
-                      provide more consistent and practical guidance.
-                    </p>
-                    <p>
-                      <strong>Always compare</strong> multiple methods and use the value that best 
-                      matches your perceived effort and training goals.
-                    </p>
-                  </div>
-                </div>
+            <div className="w-full bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs relative">
+              <button
+                onClick={() => setShowInfoBox(false)}
+                className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 transition-colors"
+                aria-label="Close info box"
+                title="Close"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <div className="font-semibold text-blue-900 mb-1 flex items-center gap-1 pr-6">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Understanding Threshold Values
+              </div>
+              <div className="text-blue-800 space-y-1">
+                <p>
+                  <strong>LTP1 and LTP2 are calculated estimates</strong> using the D-max method. 
+                  Results may vary based on test protocol, data quality, and individual physiology.
+                </p>
+                <p>
+                  <strong>Practical guidance:</strong> If LTP2 seems too low but OBLA 3.5 shows a 
+                  faster pace that feels more appropriate for your training, consider using OBLA 3.5 
+                  for interval training zones. Fixed thresholds (OBLA 2.0, 2.5, 3.0, 3.5) often 
+                  provide more consistent and practical guidance.
+                </p>
+                <p>
+                  <strong>Always compare</strong> multiple methods and use the value that best 
+                  matches your perceived effort and training goals.
+                </p>
+              </div>
+            </div>
               )}
             </>
           )}
@@ -2180,7 +2344,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
     const polyPoints = [];
     for (let x = minPower; x <= maxPower; x += step) {
-      polyPoints.push({ x, y: polyRegression(x) });
+      const y = polyRegression(x);
+      // Ensure lactate values are never negative - clamp to 0 minimum
+      polyPoints.push({ x, y: Math.max(0, y) });
     }
 
     return polyPoints;

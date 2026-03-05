@@ -514,33 +514,124 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Calculate training zones for visualization
   const zones = calculateZonesFromTest(mockData);
   
-  // Filter out invalid results first
-  const validResults = results.filter(r => {
-    if (!r || r.power === undefined || r.power === null || r.lactate === undefined || r.lactate === null) {
+  // First, filter out only truly invalid results (empty, missing, zero values)
+  // Keep all valid numeric values for display, even if they might be filtered later for calculations
+  const allResultsForDisplay = results.filter(r => {
+    if (!r) return false;
+    const powerStr = r.power?.toString().trim();
+    const lactateStr = r.lactate?.toString().trim();
+    if (!powerStr || powerStr === '' || powerStr === '0' || 
+        !lactateStr || lactateStr === '' || lactateStr === '0' ||
+        r.power === undefined || r.power === null || 
+        r.lactate === undefined || r.lactate === null) {
       return false;
     }
-    const power = r.power?.toString().replace(',', '.');
-    const lactate = r.lactate?.toString().replace(',', '.');
+    const powerNum = Number(powerStr.replace(',', '.'));
+    const lactateNum = Number(lactateStr.replace(',', '.'));
+    if (isNaN(powerNum) || isNaN(lactateNum)) return false;
+    if (isPaceSport) {
+      if (powerNum <= 0 || powerNum < 60) return false;
+    } else {
+      if (powerNum <= 0 || powerNum < 50) return false;
+    }
+    if (lactateNum <= 0 || lactateNum > 20) return false;
+    return true;
+  });
+
+  // Filter out invalid results first - exclude empty rows and rows with missing/invalid values
+  // This is used for calculations (polynomial regression, thresholds)
+  let validResults = allResultsForDisplay.filter(r => {
+    // Check if row exists
+    if (!r) return false;
+    
+    // Check if power and lactate are present and not empty
+    const powerStr = r.power?.toString().trim();
+    const lactateStr = r.lactate?.toString().trim();
+    
+    if (!powerStr || powerStr === '' || powerStr === '0' || 
+        !lactateStr || lactateStr === '' || lactateStr === '0' ||
+        r.power === undefined || r.power === null || 
+        r.lactate === undefined || r.lactate === null) {
+      return false;
+    }
+    
+    const power = powerStr.replace(',', '.');
+    const lactate = lactateStr.replace(',', '.');
     const powerNum = Number(power);
     const lactateNum = Number(lactate);
     
+    // Check if values are valid numbers
     if (isNaN(powerNum) || isNaN(lactateNum)) {
       return false;
     }
     
     if (isPaceSport) {
-      // For pace sports, power should be positive (seconds)
-      if (powerNum <= 0) return false;
+      // For pace sports, power should be positive (seconds) - minimum reasonable pace is ~60 seconds (1 min/km)
+      if (powerNum <= 0 || powerNum < 60) return false;
     } else {
-      // For bike, power should be positive (watts)
-      if (powerNum <= 0) return false;
+      // For bike, power should be positive (watts) - minimum reasonable power is ~50W
+      if (powerNum <= 0 || powerNum < 50) return false;
     }
     
-    // Lactate should be positive
-    if (lactateNum < 0) return false;
+    // Lactate should be positive and reasonable (0.1 - 20 mmol/L)
+    if (lactateNum <= 0 || lactateNum > 20) return false;
     
     return true;
   });
+
+  // Additional validation: detect and filter unrealistic lactate spikes followed by drops
+  // This catches cases like 13.5 mmol/L followed by 6.2 mmol/L (measurement error)
+  if (validResults.length > 2) {
+    const sortedByPower = [...validResults].sort((a, b) => {
+      const aPower = Number(a.power?.toString().replace(',', '.'));
+      const bPower = Number(b.power?.toString().replace(',', '.'));
+      return isPaceSport ? bPower - aPower : aPower - bPower; // Reverse for pace sports
+    });
+
+    const filteredResults = [];
+    for (let i = 0; i < sortedByPower.length; i++) {
+      const current = sortedByPower[i];
+      const currentLactate = Number(current.lactate?.toString().replace(',', '.'));
+      
+      // Check if this is an unrealistic spike (> 10 mmol/L)
+      if (currentLactate > 10) {
+        // Check if next value is significantly lower (drop of more than 3 mmol/L)
+        if (i < sortedByPower.length - 1) {
+          const next = sortedByPower[i + 1];
+          const nextLactate = Number(next.lactate?.toString().replace(',', '.'));
+          const drop = currentLactate - nextLactate;
+          
+          if (drop > 3) {
+            // This is likely a measurement error - skip this high value
+            console.warn(`[LactateCurveCalculator] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (followed by ${nextLactate} mmol/L, drop of ${drop.toFixed(1)} mmol/L)`);
+            continue; // Skip this value
+          }
+        }
+        
+        // Also check if previous value was much lower (spike of more than 5 mmol/L from previous)
+        if (i > 0) {
+          const prev = sortedByPower[i - 1];
+          const prevLactate = Number(prev.lactate?.toString().replace(',', '.'));
+          const spike = currentLactate - prevLactate;
+          
+          if (spike > 5 && prevLactate < 5) {
+            // Unrealistic spike from low value - likely measurement error
+            console.warn(`[LactateCurveCalculator] Filtering out unrealistic lactate spike: ${currentLactate} mmol/L (spike of ${spike.toFixed(1)} mmol/L from ${prevLactate} mmol/L)`);
+            continue; // Skip this value
+          }
+        }
+      }
+      
+      filteredResults.push(current);
+    }
+    
+    // Update validResults with filtered results (preserve original order)
+    const filteredIds = new Set(filteredResults.map(r => `${r.power}_${r.lactate}`));
+    validResults = validResults.filter(r => {
+      const id = `${r.power}_${r.lactate}`;
+      return filteredIds.has(id);
+    });
+  }
 
   // Points that have both heart rate and lactate (for HR vs lactate view)
   const validResultsWithHR = validResults.filter(r => {
@@ -662,10 +753,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const xVals = baseLactatePoint 
     ? [baseLactatePoint.x, ...xValsMeasured]
     : xValsMeasured;
-  
-  const yVals = baseLactatePoint
-    ? [baseLactatePoint.y, ...yValsMeasured]
-    : yValsMeasured;
 
   // Sort by intensity: slowest first (pace desc, power asc)
   const sortedResults = isPaceSport 
@@ -709,20 +796,36 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Use original results directly (same as TestComparison.jsx uses test.results)
   // This is critical - we must use the original results without any filtering or conversion
   // Use mockData.results directly, just like TestComparison.jsx uses test.results
-  const polyPointsRaw = calculatePolynomialRegression(mockData.results || []);
+  // Use filtered validResults for polynomial regression (excludes unrealistic spikes)
+  const polyPointsRaw = calculatePolynomialRegression(validResults);
   
   // Convert polyPoints to the correct coordinate system (pace/speed/power based on inputMode)
+  // Also ensure lactate values are never negative
   const polyPoints = polyPointsRaw.map(point => {
+    const y = Math.max(0, point.y); // Ensure lactate is never negative
     if (isPaceSport && inputMode === 'speed') {
       // Convert from pace (seconds) to speed (km/h or mph)
       const speed = convertPaceToSpeed(point.x, unitSystem);
-      return { x: speed, y: point.y };
+      return { x: speed, y };
     }
     // For pace mode or bike, x is already correct (seconds for pace, watts for bike)
-    return point;
+    return { x: point.x, y };
   });
 
-  const measuredDataPoints = sortedResults
+  // Create measured data points from ALL results for display (including filtered ones)
+  const allSortedResultsForDisplay = isPaceSport 
+    ? [...allResultsForDisplay].sort((a, b) => {
+        const aPower = Number(a.power?.toString().replace(',', '.'));
+        const bPower = Number(b.power?.toString().replace(',', '.'));
+        return bPower - aPower; // Descending (slowest to fastest)
+      })
+    : [...allResultsForDisplay].sort((a, b) => {
+        const aPower = Number(a.power?.toString().replace(',', '.'));
+        const bPower = Number(b.power?.toString().replace(',', '.'));
+        return aPower - bPower; // Ascending (low to high power)
+      });
+
+  const measuredDataPoints = allSortedResultsForDisplay
     .map(r => {
       const power = r.power?.toString().replace(',', '.');
       const lactate = r.lactate?.toString().replace(',', '.');
@@ -883,7 +986,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       label: key,
       data: [{
           x: xValue,
-          y: yValue,
+          y: Math.max(0, yValue), // Ensure lactate is never negative
         originalPace: isPaceSport ? (xValueFromCurve != null ? null : thresholds[key]) : null
       }],
       borderColor: colorMap[key] || '#2196F3',
@@ -893,10 +996,39 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       showLine: false,
       };
     })
+    .filter(dataset => {
+      if (!dataset) return false;
+      return true;
+    })
     .filter(dataset => dataset !== null); // Odstranit null hodnoty
 
+  // Ensure LT1 has lower lactate than LT2 in threshold datasets
+  const ltp1Dataset = thresholdDatasets.find(ds => ds && ds.label === 'LTP1');
+  const ltp2Dataset = thresholdDatasets.find(ds => ds && ds.label === 'LTP2');
+  if (ltp1Dataset && ltp2Dataset && ltp1Dataset.data[0].y > ltp2Dataset.data[0].y) {
+    console.warn('[LactateCurveCalculator] LT1 lactate higher than LT2, swapping datasets');
+    // Swap the datasets
+    const temp = ltp1Dataset.data[0];
+    ltp1Dataset.data[0] = ltp2Dataset.data[0];
+    ltp2Dataset.data[0] = temp;
+  }
+
   // Vytvořit datasets pro čárkované vertikální čáry LT1 a LT2 (přes celý graf)
-  const maxLactateForAxis = Math.ceil(Math.max(...yVals) + 1);
+  // Use max from valid data points only (not filtered out spikes)
+  const maxLactateForAxis = (() => {
+    const allYValues = [
+      ...yValsMeasured, // Only measured values (already filtered)
+      ...(baseLactatePoint ? [baseLactatePoint.y] : []),
+      ...(polyPoints.length > 0 ? polyPoints.map(p => p.y).filter(y => y >= 0 && y <= 20) : []),
+      ...thresholdDatasets
+        .filter(ds => ds !== null)
+        .flatMap(ds => ds.data.map(d => d.y))
+        .filter(y => y >= 0 && y <= 20)
+    ].filter(y => !isNaN(y) && isFinite(y) && y >= 0);
+    
+    if (allYValues.length === 0) return 15;
+    return Math.ceil(Math.max(...allYValues) * 1.1 + 1);
+  })();
   const ltpLineDatasets = ['LTP1', 'LTP2']
     .map((key) => {
       const thresholdDs = thresholdDatasets.find(ds => ds && ds.label === key);
@@ -1164,6 +1296,25 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   const data = { datasets: allDatasets };
   
+  // Calculate Y axis max from all valid data points (after thresholdDatasets is defined)
+  const maxYValue = (() => {
+    const allYValues = [
+      ...yValsMeasured, // Only measured values (already filtered)
+      ...(baseLactatePoint ? [baseLactatePoint.y] : []),
+      ...(polyPoints.length > 0 ? polyPoints.map(p => p.y).filter(y => y >= 0 && y <= 20) : []), // Only reasonable polynomial values
+      ...thresholdDatasets
+        .filter(ds => ds !== null)
+        .flatMap(ds => ds.data.map(d => d.y))
+        .filter(y => y >= 0 && y <= 20) // Only reasonable threshold values
+    ].filter(y => !isNaN(y) && isFinite(y) && y >= 0);
+    
+    if (allYValues.length === 0) return 15; // Default max
+    
+    const maxY = Math.max(...allYValues);
+    // Add 10% padding, but ensure minimum of 1 mmol/L padding
+    return Math.ceil(maxY * 1.1 + 1);
+  })();
+  
   // Helper function to parse pace string (M:SS) to seconds
   const parsePaceToSeconds = (paceStr) => {
     if (typeof paceStr !== 'string') return paceStr;
@@ -1371,7 +1522,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       y: {
         type: 'linear',
         min: 0,
-        max: Math.ceil(Math.max(...yVals) + 1),
+        max: maxYValue, // Use pre-calculated max from valid data points
         title: { display: true, text: 'Lactate (mmol/L)' },
         border: { dash: [6, 6] },
         grid: {
@@ -1830,8 +1981,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       const label = index === 0 ? 'LT1' : 'LT2';
                       
                       // Format value for label
+                      // Check sport from mockData directly to ensure correct detection
+                      const currentSport = mockData?.sport || '';
+                      const isBikeSport = currentSport === 'bike';
+                      
                       let valueText = '';
-                      if (isPaceSport) {
+                      // Always check bike first - bike should NEVER show pace
+                      // Double-check: if sport is bike OR if point.x is clearly a power value (>= 50), show Power
+                      const isClearlyPower = point.x >= 50 && point.x <= 1000; // Reasonable power range
+                      if (isBikeSport || (!isPaceSport && isClearlyPower)) {
+                        // For bike: always show Power (point.x is already in watts)
+                        valueText = `Power: ${Math.round(point.x)}W`;
+                      } else if (isPaceSport) {
+                        // For run/swim: show Pace or Speed based on inputMode
                         if (inputMode === 'pace') {
                           const paceStr = formatSecondsToMMSS(point.x);
                           const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
@@ -1841,6 +2003,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                           valueText = `Speed: ${point.x.toFixed(1)}${unit}`;
                         }
                       } else {
+                        // Fallback: show Power (for any other sport that uses power)
                         valueText = `Power: ${Math.round(point.x)}W`;
                       }
                       const lactateText = `${point.y.toFixed(2)} mmol/L`;
@@ -1912,7 +2075,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       setZonesVisible(value);
                       zonesVisibleRef.current = value;
                       if (chartRef.current) chartRef.current.update();
-                    }}
+                    }} 
                     ltpLinesVisibleRef={ltpLinesVisibleRef}
                   />
                 </div>

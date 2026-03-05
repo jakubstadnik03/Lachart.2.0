@@ -69,13 +69,50 @@ const TestingPage = () => {
       setError(null);
       // For tester role, use any ID (backend will return all tests)
       const testId = user?.role === 'tester' ? user._id : targetId;
+      console.log('[TestingPage] Loading tests for:', testId);
       const response = await api.get(`/test/list/${testId}`);
-      setTests(response.data);
+      
+      // Validate and deduplicate tests by ID
+      const testsData = Array.isArray(response.data) ? response.data : [];
+      console.log('[TestingPage] Received tests count:', testsData.length);
+      
+      const seenIds = new Set();
+      const uniqueTests = [];
+      const duplicateIds = [];
+      
+      testsData.forEach((test, index) => {
+        if (!test || !test._id) {
+          console.warn(`[TestingPage] Test at index ${index} is missing _id, skipping`);
+          return;
+        }
+        
+        // Normalize ID for comparison (handle both string and ObjectId)
+        const testIdStr = String(test._id);
+        
+        if (seenIds.has(testIdStr)) {
+          console.warn(`[TestingPage] Duplicate test ID found: ${testIdStr}, skipping duplicate`);
+          duplicateIds.push(testIdStr);
+          return;
+        }
+        
+        seenIds.add(testIdStr);
+        uniqueTests.push(test);
+      });
+      
+      if (duplicateIds.length > 0) {
+        console.warn(`[TestingPage] Found ${duplicateIds.length} duplicate test IDs:`, duplicateIds);
+        addNotification(`Warning: Found ${duplicateIds.length} duplicate test(s). Only showing unique tests.`, 'warning');
+      }
+      
+      console.log('[TestingPage] Setting unique tests count:', uniqueTests.length);
+      console.log('[TestingPage] Test IDs:', uniqueTests.map(t => String(t._id)));
+      setTests(uniqueTests);
     } catch (err) {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
+      addNotification('Failed to load tests. Please refresh the page.', 'error');
     }
-  }, [user]);
+  }, [user, addNotification]);
 
   // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
@@ -112,6 +149,85 @@ const TestingPage = () => {
       validateAthlete();
     }
   }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification]);
+
+  // Load test by ID from URL if present (before loading all tests)
+  useEffect(() => {
+    if (!isAuthenticated || !user || !testIdFromUrl) return;
+
+    const loadTestFromUrl = async () => {
+      try {
+        console.log('[TestingPage] Loading test from URL:', testIdFromUrl);
+        const response = await api.get(`/test/${testIdFromUrl}`);
+        const test = response.data;
+        
+        if (!test || !test._id) {
+          console.warn('[TestingPage] Test from URL not found or invalid');
+          addNotification('Test not found', 'error');
+          // Remove testId from URL if test doesn't exist
+          setSearchParams(prev => {
+            const newParams = new URLSearchParams(prev);
+            newParams.delete('testId');
+            return newParams;
+          });
+          return;
+        }
+
+        console.log('[TestingPage] Test loaded:', {
+          _id: test._id,
+          athleteId: test.athleteId,
+          sport: test.sport
+        });
+
+        // Check permissions: test must belong to current user or their athlete
+        const testAthleteId = String(test.athleteId);
+        const currentUserId = String(user._id);
+        const isOwnTest = testAthleteId === currentUserId;
+        const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
+        
+        if (!isOwnTest && !isAthleteTest) {
+          console.warn('[TestingPage] User does not have permission to view this test');
+          addNotification('You do not have permission to view this test', 'error');
+          // Remove testId from URL
+          setSearchParams(prev => {
+            const newParams = new URLSearchParams(prev);
+            newParams.delete('testId');
+            return newParams;
+          });
+          return;
+        }
+
+        // Set selected athlete to test's athlete (if different)
+        if (testAthleteId !== String(selectedAthleteId)) {
+          console.log('[TestingPage] Setting selectedAthleteId to test athlete:', testAthleteId);
+          setSelectedAthleteId(testAthleteId);
+          // Save to localStorage
+          try {
+            localStorage.setItem('global_selectedAthleteId', testAthleteId);
+          } catch (e) {
+            console.warn('Failed to save selectedAthleteId to localStorage:', e);
+          }
+        }
+
+        // Load all tests for this athlete (will trigger loadTests)
+        // The test will be selected by PreviousTestingComponent based on testIdFromUrl
+      } catch (error) {
+        console.error('[TestingPage] Error loading test from URL:', error);
+        if (error.response?.status === 404) {
+          addNotification('Test not found', 'error');
+        } else {
+          addNotification('Failed to load test', 'error');
+        }
+        // Remove testId from URL on error
+        setSearchParams(prev => {
+          const newParams = new URLSearchParams(prev);
+          newParams.delete('testId');
+          return newParams;
+        });
+      }
+    };
+
+    loadTestFromUrl();
+  }, [testIdFromUrl, isAuthenticated, user, selectedAthleteId, addNotification, setSearchParams]);
 
   // Načtení dat při prvním načtení stránky nebo změně atleta
   useEffect(() => {

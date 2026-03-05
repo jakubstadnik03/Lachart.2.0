@@ -18,10 +18,28 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
   const [isInitialized, setIsInitialized] = useState(false);
   const lastRestoredTestIdRef = useRef(null);
 
-  // Filter tests based on selected sport
+  // Filter tests based on selected sport and validate
+  // Remove duplicates and invalid entries
+  // Normalize IDs to strings for consistent comparison
+  const validTests = Array.isArray(tests) 
+    ? tests.filter(test => test && test._id)
+    : [];
+  
+  // Deduplicate by ID (keep first occurrence) - normalize IDs to strings
+  const seenIds = new Set();
+  const uniqueTests = validTests.filter(test => {
+    const testIdStr = String(test._id);
+    if (seenIds.has(testIdStr)) {
+      console.warn(`[PreviousTestingComponent] Duplicate test ID found: ${testIdStr}, skipping duplicate`);
+      return false;
+    }
+    seenIds.add(testIdStr);
+    return true;
+  });
+  
   const filteredTests = selectedSport === 'all' 
-    ? tests 
-    : tests.filter(test => test.sport === selectedSport);
+    ? uniqueTests 
+    : uniqueTests.filter(test => test.sport === selectedSport);
 
   // Reset selected tests when sport changes, but keep initialization state
   // The main useEffect will handle restoring the correct test for the new sport
@@ -36,33 +54,66 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
     // PRIORITY 1: Use testId from URL (highest priority) - check this FIRST, even if tests are loading
     // This ensures URL testId is always respected, even on page refresh
     if (selectedTestId) {
-      // First check in all tests (not filtered by sport), in case sport filter is hiding it
-      const foundInAll = tests.find(t => t._id === selectedTestId);
-      if (foundInAll) {
-        // Check if test has valid results
-        if (foundInAll.results && Array.isArray(foundInAll.results) && foundInAll.results.length > 0) {
-          setCurrentTest(foundInAll);
-          setIsInitialized(true);
-          lastRestoredTestIdRef.current = foundInAll._id;
-          // Save to localStorage for persistence
-          const lastTestKey = `lachart:lastTestId:${selectedSport}`;
-          const generalTestKey = 'lachart:lastTestId';
-          localStorage.setItem(lastTestKey, foundInAll._id);
-          localStorage.setItem(generalTestKey, foundInAll._id);
-          return; // Exit early - URL testId has highest priority
-        }
-      } else {
-        // Test from URL not found in all tests
-        if (tests.length === 0) {
-          // Tests are still loading - wait and don't do anything else
-          // This prevents fallback from running before tests are loaded
+      try {
+        console.log('[PreviousTestingComponent] Processing testId from URL:', selectedTestId);
+        console.log('[PreviousTestingComponent] Tests array length:', tests?.length);
+        console.log('[PreviousTestingComponent] Selected sport:', selectedSport);
+        
+        // First check in all tests (not filtered by sport), in case sport filter is hiding it
+        // Validate tests array and filter out invalid entries
+        const validTests = Array.isArray(tests) ? tests.filter(t => t && t._id) : [];
+        console.log('[PreviousTestingComponent] Valid tests count:', validTests.length);
+        
+        // Try to find test by ID - normalize both to strings for comparison
+        const searchIdStr = String(selectedTestId);
+        const foundInAll = validTests.find(t => String(t._id) === searchIdStr);
+        
+        console.log('[PreviousTestingComponent] Found test:', foundInAll ? 'YES' : 'NO');
+        
+        if (foundInAll) {
+          console.log('[PreviousTestingComponent] Test found:', {
+            _id: foundInAll._id,
+            sport: foundInAll.sport,
+            resultsCount: foundInAll.results?.length || 0,
+            hasResults: !!(foundInAll.results && Array.isArray(foundInAll.results) && foundInAll.results.length > 0)
+          });
+          
+          // Check if test has valid results
+          if (foundInAll.results && Array.isArray(foundInAll.results) && foundInAll.results.length > 0) {
+            console.log('[PreviousTestingComponent] Setting currentTest to found test');
+            setCurrentTest(foundInAll);
+            setIsInitialized(true);
+            lastRestoredTestIdRef.current = foundInAll._id;
+            // Save to localStorage for persistence
+            const lastTestKey = `lachart:lastTestId:${selectedSport}`;
+            const generalTestKey = 'lachart:lastTestId';
+            localStorage.setItem(lastTestKey, foundInAll._id);
+            localStorage.setItem(generalTestKey, foundInAll._id);
+            return; // Exit early - URL testId has highest priority
+          } else {
+            console.warn('[PreviousTestingComponent] Test found but has no valid results:', foundInAll);
+          }
+        } else {
+          // Test from URL not found in all tests
+          console.warn('[PreviousTestingComponent] Test not found in tests array:', selectedTestId);
+          console.log('[PreviousTestingComponent] Available test IDs:', validTests.map(t => t._id));
+          
+          if (tests.length === 0) {
+            // Tests are still loading - wait and don't do anything else
+            // This prevents fallback from running before tests are loaded
+            console.log('[PreviousTestingComponent] Tests are still loading, waiting...');
+            return;
+          }
+          // Tests are loaded but test not found - it might have been deleted
+          // Keep URL as is (don't change it), but don't set currentTest
+          // This way URL stays the same even if test doesn't exist
+          // Don't use fallback if URL has testId - preserve the URL
+          console.warn('[PreviousTestingComponent] Test not found after tests loaded');
           return;
         }
-        // Tests are loaded but test not found - it might have been deleted
-        // Keep URL as is (don't change it), but don't set currentTest
-        // This way URL stays the same even if test doesn't exist
-        // Don't use fallback if URL has testId - preserve the URL
-        return;
+      } catch (error) {
+        console.error('[PreviousTestingComponent] Error handling selectedTestId:', error);
+        // Don't crash, just continue with fallback logic
       }
     }
     
@@ -80,8 +131,8 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
     }
     
     // PRIORITY 2: If we already have a currentTest that matches the restored ID, keep it
-    if (currentTest && lastRestoredTestIdRef.current === currentTest._id && !selectedTestId) {
-      const stillValid = filteredTests.find(t => t._id === currentTest._id);
+    if (currentTest && String(lastRestoredTestIdRef.current) === String(currentTest._id) && !selectedTestId) {
+      const stillValid = filteredTests.find(t => String(t._id) === String(currentTest._id));
       if (stillValid && stillValid.results && Array.isArray(stillValid.results) && stillValid.results.length > 0) {
         // Test is still valid, just update with fresh data
         setCurrentTest(stillValid);
@@ -95,7 +146,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
     const lastTestId = localStorage.getItem(lastTestKey) || localStorage.getItem(generalTestKey);
     
     if (lastTestId) {
-      const found = filteredTests.find(t => t._id === lastTestId);
+      const found = filteredTests.find(t => String(t._id) === String(lastTestId));
       if (found) {
         // Check if test has valid results
         if (found.results && Array.isArray(found.results) && found.results.length > 0) {
@@ -116,7 +167,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
         // If we have tests loaded but test not found, it might be filtered out by sport
         // Check if test exists in all tests (not filtered)
         const allTests = selectedSport === 'all' ? tests : tests;
-        const foundInAll = allTests.find(t => t._id === lastTestId);
+        const foundInAll = allTests.find(t => String(t._id) === String(lastTestId));
         if (foundInAll && foundInAll.sport !== selectedSport && selectedSport !== 'all') {
           // Test exists but for different sport - clear it from storage for this sport
           localStorage.removeItem(lastTestKey);
@@ -132,7 +183,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
     
     // PRIORITY 4: If already initialized and we have a restored test ID, try to keep it
     if (isInitialized && lastRestoredTestIdRef.current && !selectedTestId) {
-      const restoredTest = filteredTests.find(t => t._id === lastRestoredTestIdRef.current);
+      const restoredTest = filteredTests.find(t => String(t._id) === String(lastRestoredTestIdRef.current));
       if (restoredTest && restoredTest.results && Array.isArray(restoredTest.results) && restoredTest.results.length > 0) {
         setCurrentTest(restoredTest);
         return;

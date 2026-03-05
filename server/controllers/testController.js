@@ -28,12 +28,42 @@ const testController = {
     // Get a specific test by ID
     getTestById: async (req, res) => {
         try {
+            const User = require('../models/UserModel');
+            const user = await User.findById(req.user.userId);
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+
             const test = await testAbl.getTestById(req.params.id);
             if (!test) {
                 return res.status(404).json({ error: 'Test not found' });
             }
+
+            // Check permissions: test must belong to current user or their athlete
+            const testAthleteId = String(test.athleteId);
+            const currentUserId = String(user._id);
+            const isOwnTest = testAthleteId === currentUserId;
+            const isTester = user.role === 'tester';
+            
+            // Check if test belongs to one of coach's athletes
+            let isAthleteTest = false;
+            if (user.role === 'coach' && !isOwnTest) {
+                const athlete = await User.findById(testAthleteId);
+                if (athlete && athlete.coachId && String(athlete.coachId) === currentUserId) {
+                    isAthleteTest = true;
+                }
+            }
+            
+            if (!isOwnTest && !isAthleteTest && !isTester) {
+                return res.status(403).json({ error: 'You do not have permission to view this test' });
+            }
+
             res.json(test);
         } catch (error) {
+            console.error('Error in getTestById:', error);
+            if (error.status) {
+                return res.status(error.status).json({ error: error.error || 'Error fetching test' });
+            }
             res.status(500).json({ error: 'Error fetching test' });
         }
     },

@@ -72,14 +72,32 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
 
   useEffect(() => {
     if (tests && tests.length > 0) {
-      // Sort tests by date (newest first)
-      const sortedTests = [...tests].sort((a, b) => new Date(b.date) - new Date(a.date));
-      const latestTest = sortedTests[0];
-      if (!selectedId || !tests.find(t => t._id === selectedId)) {
-        setSelectedId(latestTest._id);
-        onSelectTest(latestTest._id);
+      try {
+        // Validate and deduplicate tests
+        const validTests = Array.isArray(tests) 
+          ? tests.filter(test => test && test._id && typeof test._id === 'string')
+          : [];
+        
+        if (validTests.length === 0) {
+          setSelectedId(null);
+          return;
+        }
+        
+        // Sort tests by date (newest first)
+        const sortedTests = [...validTests].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const latestTest = sortedTests[0];
+        
+        if (latestTest && latestTest._id) {
+          if (!selectedId || !validTests.find(t => t._id === selectedId)) {
+            setSelectedId(latestTest._id);
+            onSelectTest(latestTest._id);
+          }
+        }
+        if (isMobile) setPage(0);
+      } catch (error) {
+        console.error('[DateSelector] Error in useEffect:', error);
+        // Don't crash the app
       }
-      if (isMobile) setPage(0);
     } else {
       setSelectedId(null);
     }
@@ -131,12 +149,45 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
   }, [tests, isMobile]);
 
   const handleTestSelect = (testId) => {
-    setSelectedId(testId);
-    onSelectTest(testId);
+    try {
+      if (!testId) {
+        console.error('[DateSelector] Test ID is null or undefined');
+        return;
+      }
+      
+      // Validate that test exists in tests array
+      const testExists = tests && tests.some(t => t && t._id === testId);
+      if (!testExists) {
+        console.warn('[DateSelector] Test ID not found in tests array:', testId);
+        // Still allow selection in case tests are still loading
+      }
+      
+      setSelectedId(testId);
+      onSelectTest(testId);
+    } catch (error) {
+      console.error('[DateSelector] Error in handleTestSelect:', error, testId);
+      // Don't crash the app, just log the error
+    }
   };
 
+  // Validate and deduplicate tests
+  const validTests = Array.isArray(tests) 
+    ? tests.filter(test => test && test._id && typeof test._id === 'string')
+    : [];
+  
+  // Deduplicate by ID (keep first occurrence)
+  const seenIds = new Set();
+  const uniqueTests = validTests.filter(test => {
+    if (seenIds.has(test._id)) {
+      console.warn(`[DateSelector] Duplicate test ID found: ${test._id}, skipping duplicate`);
+      return false;
+    }
+    seenIds.add(test._id);
+    return true;
+  });
+  
   // Sort tests by date (newest first), then by _id for stable order when same date
-  const sortedTests = [...(tests || [])].sort((a, b) => {
+  const sortedTests = [...uniqueTests].sort((a, b) => {
     const d = new Date(b.date) - new Date(a.date);
     if (d !== 0) return d;
     return (b._id || '').localeCompare(a._id || '');
@@ -228,17 +279,27 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
               className="flex gap-1 sm:gap-1.5 items-center w-full"
               style={{ minHeight: '32px' }}
             >
-              {visibleTests.map((test) => (
-                <div key={test._id} className="snap-start flex-shrink-0">
-                  <DateButton
-                    test={test}
-                    date={test.date}
-                    isSelected={test._id === selectedId}
-                    onClick={() => handleTestSelect(test._id)}
-                    disambiguate={disambiguate}
-                  />
-                </div>
-              ))}
+              {visibleTests.map((test, index) => {
+                if (!test || !test._id) {
+                  console.warn(`[DateSelector] Test at index ${index} is missing _id, skipping`);
+                  return null;
+                }
+                
+                // Ensure unique key - use index as fallback if _id is missing or duplicate
+                const uniqueKey = test._id ? `${test._id}_${index}` : `test_${index}`;
+                
+                return (
+                  <div key={uniqueKey} className="snap-start flex-shrink-0">
+                    <DateButton
+                      test={test}
+                      date={test.date}
+                      isSelected={test._id === selectedId}
+                      onClick={() => handleTestSelect(test._id)}
+                      disambiguate={disambiguate}
+                    />
+                  </div>
+                );
+              })}
             </motion.div>
           )}
         </div>

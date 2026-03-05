@@ -625,33 +625,41 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       comments: formData.comments?.trim() || '',
       unitSystem: finalUnitSystem,
       inputMode: finalInputMode,
-      results: rows.map((row, index) => {
-        // Convert power to seconds for backend
-        const powerInSeconds = convertPowerToSeconds(
-          row.power, 
-          finalInputMode, 
-          finalUnitSystem, 
-          formData.sport
-        );
-        
-        const convertToNumber = (value) => {
-          if (value === '' || value === undefined || value === null) return 0;
-          if (typeof value !== 'string') {
-            const n = Number(value);
-            return isNaN(n) ? 0 : n;
-          }
-          return parseFloat(value.replace(',', '.'));
-        };
-        
-        return {
-          interval: index + 1,
-          power: powerInSeconds,
-          heartRate: convertToNumber(row.heartRate),
-          lactate: convertToNumber(row.lactate),
-          glucose: convertToNumber(row.glucose),
-          RPE: convertToNumber(row.RPE)
-        };
-      })
+      results: rows
+        .map((row, index) => {
+          // Convert power to seconds for backend
+          const powerInSeconds = convertPowerToSeconds(
+            row.power, 
+            finalInputMode, 
+            finalUnitSystem, 
+            formData.sport
+          );
+          
+          const convertToNumber = (value) => {
+            if (value === '' || value === undefined || value === null) return 0;
+            if (typeof value !== 'string') {
+              const n = Number(value);
+              return isNaN(n) ? 0 : n;
+            }
+            return parseFloat(value.replace(',', '.'));
+          };
+          
+          return {
+            interval: index + 1,
+            power: powerInSeconds,
+            heartRate: convertToNumber(row.heartRate),
+            lactate: convertToNumber(row.lactate),
+            glucose: convertToNumber(row.glucose),
+            RPE: convertToNumber(row.RPE)
+          };
+        })
+        .filter(row => {
+          // Filter out empty rows - a row is empty if power is 0 or empty, or lactate is 0 or empty
+          // At minimum, both power and lactate must have valid values
+          const hasPower = row.power !== undefined && row.power !== null && row.power !== 0 && row.power !== '';
+          const hasLactate = row.lactate !== undefined && row.lactate !== null && row.lactate !== 0 && row.lactate !== '';
+          return hasPower && hasLactate;
+        })
     };
     if (onSave) {
       try {
