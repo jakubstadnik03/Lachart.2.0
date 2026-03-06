@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useSearchParams } from 'react-router-dom';
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
@@ -11,7 +10,6 @@ import api from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 
 const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selectedTestId = null }) => {
-  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
@@ -53,7 +51,7 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
   useEffect(() => {
     // PRIORITY 1: Use testId from URL (highest priority) - check this FIRST, even if tests are loading
     // This ensures URL testId is always respected, even on page refresh
-    if (selectedTestId) {
+    if (selectedTestId && !isInitialized) {
       try {
         console.log('[PreviousTestingComponent] Processing testId from URL:', selectedTestId);
         console.log('[PreviousTestingComponent] Tests array length:', tests?.length);
@@ -204,12 +202,6 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
         // Save the selected test
         localStorage.setItem(lastTestKey, mostRecent._id);
         localStorage.setItem(generalTestKey, mostRecent._id);
-        // Only update URL with testId if URL doesn't already have one (to preserve existing URL on refresh)
-        if (!searchParams.get('testId')) {
-          const newParams = new URLSearchParams(searchParams);
-          newParams.set('testId', mostRecent._id);
-          setSearchParams(newParams, { replace: true });
-        }
       } else {
         setCurrentTest(null);
         setIsInitialized(true);
@@ -228,10 +220,6 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, selectedTest._id);
       localStorage.setItem('lachart:lastTestId', selectedTest._id);
-      // Update URL with testId
-      const newParams = new URLSearchParams(searchParams);
-      newParams.set('testId', selectedTest._id);
-      setSearchParams(newParams, { replace: true });
     }
   };
 
@@ -261,10 +249,6 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, response.data._id);
       localStorage.setItem('lachart:lastTestId', response.data._id);
-      // Update URL with testId
-      const newParams = new URLSearchParams(searchParams);
-      newParams.set('testId', response.data._id);
-      setSearchParams(newParams, { replace: true });
       // Update selected tests if they include the updated test
       setSelectedTests(prev => prev.map(t => 
         t._id === updatedTest._id ? response.data : t

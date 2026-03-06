@@ -5,15 +5,16 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
 
+  // Re-sync form when modal opens or userData changes so existing profile values are shown
   useEffect(() => {
-    if (userData) {
+    if (isOpen && userData) {
       const initialFormData = {
         name: userData.name || '',
         dateOfBirth: userData.dateOfBirth ? formatDateForInput(userData.dateOfBirth) : '',
         address: userData.address || '',
         phone: userData.phone || '',
-        height: userData.height || '',
-        weight: userData.weight || '',
+        height: userData.height ?? '',
+        weight: userData.weight ?? '',
         sport: userData.sport || '',
         specialization: userData.specialization || '',
         gender: userData.gender || 'male',
@@ -21,7 +22,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
       };
       setFormData(initialFormData);
     }
-  }, [userData]);
+  }, [userData, isOpen]);
 
   const formatDateForInput = (dateString) => {
     if (!dateString) return '';

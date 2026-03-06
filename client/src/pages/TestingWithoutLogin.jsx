@@ -465,6 +465,7 @@ const LactateCurveCalculatorPage = () => {
 
                 // Get userId from registered user
                 const userId = user?._id || user?.id || null;
+                let savedTestId = null;
 
                 // Save test to user's account
                 if (userId && token) {
@@ -544,6 +545,7 @@ const LactateCurveCalculatorPage = () => {
                         });
                         
                         if (savedTest?.data?._id) {
+                            savedTestId = savedTest.data._id;
                             console.log('Test saved successfully to database:', {
                                 testId: savedTest.data._id,
                                 title: savedTest.data.title,
@@ -570,7 +572,17 @@ const LactateCurveCalculatorPage = () => {
                 }
 
                 // Send email with test results
-                await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`, userId);
+                // Prefer the same email/report generation as in the logged-in app:
+                // if we successfully saved the test, send the official report email for that test ID.
+                if (savedTestId) {
+                    const currentToken = localStorage.getItem('token');
+                    await api.post(`/test/${savedTestId}/send-report-email`, { toEmail: response.email }, {
+                        headers: { 'Authorization': `Bearer ${currentToken}` }
+                    });
+                } else {
+                    // Fallback: demo email (still works even if saving failed)
+                    await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`, userId);
+                }
 
                 addNotification('Test results sent to your email!', 'success');
                 trackDemoUsage('test_email_sent', { 
@@ -669,6 +681,7 @@ const LactateCurveCalculatorPage = () => {
 
             // Get userId from registered user
             const userId = registerResponse?.data?.user?._id || registerResponse?.data?.user?.id || null;
+            let savedTestId = null;
 
             // Save test to user's account
             if (userId && registerResponse?.data?.token) {
@@ -750,6 +763,7 @@ const LactateCurveCalculatorPage = () => {
                         });
                         
                         if (savedTest?.data?._id) {
+                            savedTestId = savedTest.data._id;
                             console.log('Test saved successfully to database:', {
                                 testId: savedTest.data._id,
                                 title: savedTest.data.title,
@@ -776,7 +790,17 @@ const LactateCurveCalculatorPage = () => {
             }
 
             // Send email with test results
-            await sendDemoTestEmail(emailTestData, emailFormData.email, `${emailFormData.name} ${emailFormData.surname}`, userId);
+            // Prefer the same email/report generation as in the logged-in app:
+            // if we successfully saved the test, send the official report email for that test ID.
+            if (savedTestId) {
+                const currentToken = localStorage.getItem('token');
+                await api.post(`/test/${savedTestId}/send-report-email`, { toEmail: emailFormData.email }, {
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
+                });
+            } else {
+                // Fallback: demo email (still works even if saving failed)
+                await sendDemoTestEmail(emailTestData, emailFormData.email, `${emailFormData.name} ${emailFormData.surname}`, userId);
+            }
 
             addNotification('Test results sent to your email!', 'success');
             trackDemoUsage('test_email_sent', { 

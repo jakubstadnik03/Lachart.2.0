@@ -70,39 +70,13 @@ function DateSelector({ tests, onSelectTest, selectedTestId }) {
     }
   }, [selectedTestId]);
 
+  // IMPORTANT:
+  // Do NOT auto-select the latest test here.
+  // Selection is handled by the parent (URL / localStorage / user click) to avoid
+  // fighting user selection and causing "snap back" to the last test.
   useEffect(() => {
-    if (tests && tests.length > 0) {
-      try {
-        // Validate and deduplicate tests
-        const validTests = Array.isArray(tests) 
-          ? tests.filter(test => test && test._id && typeof test._id === 'string')
-          : [];
-        
-        if (validTests.length === 0) {
-          setSelectedId(null);
-          return;
-        }
-        
-        // Sort tests by date (newest first)
-        const sortedTests = [...validTests].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const latestTest = sortedTests[0];
-        
-        if (latestTest && latestTest._id) {
-          if (!selectedId || !validTests.find(t => t._id === selectedId)) {
-            setSelectedId(latestTest._id);
-            onSelectTest(latestTest._id);
-          }
-        }
-        if (isMobile) setPage(0);
-      } catch (error) {
-        console.error('[DateSelector] Error in useEffect:', error);
-        // Don't crash the app
-      }
-    } else {
-      setSelectedId(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tests, isMobile]);
+    if (isMobile) setPage(0);
+  }, [isMobile]);
 
   useEffect(() => {
     const checkScroll = () => {

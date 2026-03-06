@@ -302,7 +302,8 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   const isSelf = String(requester._id) === athleteId;
   const isCoachAllowed = requester.role === 'coach' && (requester.athletes || []).some(a => String(a) === athleteId);
   const isAdmin = requester.role === 'admin' || requester.admin === true;
-  if (!isSelf && !isCoachAllowed && !isAdmin) return { sent: false, reason: 'forbidden' };
+  const isTester = String(requester.role || '').toLowerCase() === 'tester';
+  if (!isSelf && !isCoachAllowed && !isAdmin && !isTester) return { sent: false, reason: 'forbidden' };
 
   const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications');
   if (!athlete) return { sent: false, reason: 'athlete_not_found' };

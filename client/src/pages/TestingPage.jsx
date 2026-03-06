@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import api from '../services/api';
@@ -53,6 +53,8 @@ const TestingPage = () => {
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const navigate = useNavigate();
+  const lastLoadedTestIdFromUrlRef = useRef(null);
+  const lastLoadedTestsForAthleteRef = useRef(null);
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
@@ -153,6 +155,8 @@ const TestingPage = () => {
   // Load test by ID from URL if present (before loading all tests)
   useEffect(() => {
     if (!isAuthenticated || !user || !testIdFromUrl) return;
+    // Guard: avoid reloading the same testId (helps with dev StrictMode + rerenders)
+    if (String(lastLoadedTestIdFromUrlRef.current) === String(testIdFromUrl)) return;
 
     const loadTestFromUrl = async () => {
       try {
@@ -183,9 +187,11 @@ const TestingPage = () => {
         const currentUserId = String(user._id);
         const isOwnTest = testAthleteId === currentUserId;
         const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
+        const role = String(user.role || '').toLowerCase();
+        const isTesterOrAdmin = role === 'tester' || role === 'admin' || user.admin === true;
         
-        if (!isOwnTest && !isAthleteTest) {
-          console.warn('[TestingPage] User does not have permission to view this test');
+        if (!isOwnTest && !isAthleteTest && !isTesterOrAdmin) {
+          // Avoid console spam in loops; notify once and remove testId from URL
           addNotification('You do not have permission to view this test', 'error');
           // Remove testId from URL
           setSearchParams(prev => {
@@ -195,6 +201,9 @@ const TestingPage = () => {
           });
           return;
         }
+
+        // Mark loaded AFTER permission checks (so we still retry if permissions change)
+        lastLoadedTestIdFromUrlRef.current = testIdFromUrl;
 
         // Set selected athlete to test's athlete (if different)
         if (testAthleteId !== String(selectedAthleteId)) {
@@ -237,8 +246,13 @@ const TestingPage = () => {
     }
 
     const targetId = selectedAthleteId || user._id;
+    // Guard: avoid refetching the same athlete's test list repeatedly
+    if (String(lastLoadedTestsForAthleteRef.current) === String(targetId) && Array.isArray(tests) && tests.length > 0) {
+      return;
+    }
+    lastLoadedTestsForAthleteRef.current = targetId;
     loadTests(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests, tests]);
 
   // Check Strava connection status and show modal if not connected
   useEffect(() => {

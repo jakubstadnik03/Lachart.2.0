@@ -525,6 +525,18 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
         if (req.body.units) updateData.units = req.body.units;
         if (req.body.notifications) updateData.notifications = req.body.notifications;
+        if (req.body.onboarding && typeof req.body.onboarding === 'object') {
+            const existing = await userDao.findById(userId);
+            const current = existing?.onboarding
+                ? (typeof existing.onboarding.toObject === 'function' ? existing.onboarding.toObject() : { ...existing.onboarding })
+                : { basicProfileDone: false, unitsDone: false, trainingZonesDone: false };
+            const ob = req.body.onboarding;
+            updateData.onboarding = {
+                basicProfileDone: ob.basicProfileDone === true || current.basicProfileDone === true,
+                unitsDone: ob.unitsDone === true || current.unitsDone === true,
+                trainingZonesDone: ob.trainingZonesDone === true || current.trainingZonesDone === true
+            };
+        }
 
         console.log('Updating user profile:', { userId, updateData });
         console.log('Heart Rate Zones being saved:', JSON.stringify(req.body.heartRateZones, null, 2));
@@ -565,6 +577,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 weeklyReports: true,
                 achievementAlerts: true
             },
+            onboarding: updatedUser.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false },
             strava: updatedUser.strava ? {
                 athleteId: updatedUser.strava.athleteId,
                 autoSync: updatedUser.strava.autoSync !== undefined ? updatedUser.strava.autoSync : false,
@@ -850,6 +863,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             weight: user.weight,
             sport: user.sport,
             specialization: user.specialization,
+            gender: user.gender || 'male',
             bio: user.bio,
             avatar: user.avatar, // Include avatar
             coachId: user.coachId,
@@ -862,6 +876,7 @@ router.get("/profile", verifyToken, async (req, res) => {
               weeklyReports: true,
               achievementAlerts: true
             },
+            onboarding: user.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false },
             strava: user.strava ? {
               athleteId: user.strava.athleteId,
               autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,

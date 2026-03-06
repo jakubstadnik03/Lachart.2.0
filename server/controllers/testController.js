@@ -43,18 +43,20 @@ const testController = {
             const testAthleteId = String(test.athleteId);
             const currentUserId = String(user._id);
             const isOwnTest = testAthleteId === currentUserId;
-            const isTester = user.role === 'tester';
+            const role = String(user.role || '').toLowerCase();
+            const isTester = role === 'tester';
+            const isAdmin = role === 'admin' || user.admin === true;
             
             // Check if test belongs to one of coach's athletes
             let isAthleteTest = false;
-            if (user.role === 'coach' && !isOwnTest) {
+            if (role === 'coach' && !isOwnTest) {
                 const athlete = await User.findById(testAthleteId);
                 if (athlete && athlete.coachId && String(athlete.coachId) === currentUserId) {
                     isAthleteTest = true;
                 }
             }
             
-            if (!isOwnTest && !isAthleteTest && !isTester) {
+            if (!isOwnTest && !isAthleteTest && !isTester && !isAdmin) {
                 return res.status(403).json({ error: 'You do not have permission to view this test' });
             }
 

@@ -75,7 +75,8 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
         const user = await User.findById(req.user.userId);
         
         // If user is tester, return all tests regardless of athleteId
-        if (user && user.role === 'tester') {
+        const role = String(user?.role || '').toLowerCase();
+        if (user && (role === 'tester' || role === 'admin' || user.admin === true)) {
             const allTests = await Test.find({}).sort({ date: -1 });
             return res.status(200).json(allTests);
         }

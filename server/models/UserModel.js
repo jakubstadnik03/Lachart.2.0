@@ -184,6 +184,12 @@ const userSchema = new mongoose.Schema({
       lastUpdated: Date
     }
   },
+  // Onboarding modals dismissed/skipped (persisted in DB so it syncs across devices)
+  onboarding: {
+    basicProfileDone: { type: Boolean, default: false },
+    unitsDone: { type: Boolean, default: false },
+    trainingZonesDone: { type: Boolean, default: false }
+  },
   // User preferences for units
   units: {
     distance: {

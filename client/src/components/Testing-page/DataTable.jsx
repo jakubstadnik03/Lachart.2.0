@@ -1368,6 +1368,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
   
   // Hlavní funkce pro výpočet všech thresholdů
+  const thresholdsDebugEnabled = (() => {
+    if (process.env.NODE_ENV === 'production') return false;
+    try {
+      return localStorage.getItem('lachart:debugThresholds') === '1';
+    } catch {
+      return false;
+    }
+  })();
+  const dbgWarn = (...args) => {
+    if (thresholdsDebugEnabled) console.warn(...args);
+  };
+
   const calculateThresholds = (mockData) => {
     const baseLactate = mockData.baseLactate;
     const { results, sport } = mockData;
@@ -1803,7 +1815,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       
       if (ltp1 > maxReasonablePower || ltp2 > maxReasonablePower || 
           ltp1 < minReasonablePower || ltp2 < minReasonablePower) {
-        console.warn('[calculateThresholds] LTP values are out of reasonable range, skipping LTRatio:', {
+        dbgWarn('[calculateThresholds] LTP values are out of reasonable range, skipping LTRatio:', {
           ltp1,
           ltp2,
           sport,
@@ -1819,7 +1831,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         const relativeDiff = powerDiff / minPower;
         
         if (relativeDiff < 0.03) {
-          console.warn('[calculateThresholds] LTP1 and LTP2 are too close together, skipping LTRatio calculation:', {
+          dbgWarn('[calculateThresholds] LTP1 and LTP2 are too close together, skipping LTRatio calculation:', {
             ltp1,
             ltp2,
             diff: powerDiff,
@@ -1839,7 +1851,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           
           // Kontrola, zda je ratio validní číslo a v rozumném rozsahu
           if (isNaN(ratio) || !isFinite(ratio)) {
-            console.warn('[calculateThresholds] LTRatio is not a valid number, skipping:', {
+            dbgWarn('[calculateThresholds] LTRatio is not a valid number, skipping:', {
               ratio,
               ltp1,
               ltp2
@@ -1848,7 +1860,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             thresholds['LTRatio'] = ratio.toFixed(2);
           } else {
             // Pokud je ratio mimo rozsah, nezobrazit ho vůbec
-            console.warn('[calculateThresholds] LTRatio out of reasonable range, not displaying:', {
+            dbgWarn('[calculateThresholds] LTRatio out of reasonable range, not displaying:', {
               ratio: ratio.toFixed(2),
               ltp1,
               ltp2,
@@ -1861,7 +1873,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         }
       }
     } else {
-      console.warn('[calculateThresholds] Cannot calculate LTRatio - missing LTP values:', {
+      dbgWarn('[calculateThresholds] Cannot calculate LTRatio - missing LTP values:', {
         hasLTP1: !!ltp1,
         hasLTP2: !!ltp2,
         hasLTP1Point: !!ltp1Point,
@@ -1871,7 +1883,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   
     // Debug logging
     if (!thresholds['LTP1'] || !thresholds['LTP2']) {
-      console.warn('[calculateThresholds] Missing LTP values:', {
+      dbgWarn('[calculateThresholds] Missing LTP values:', {
         hasLTP1: !!thresholds['LTP1'],
         hasLTP2: !!thresholds['LTP2'],
         ltp1_dmax: ltp1,
