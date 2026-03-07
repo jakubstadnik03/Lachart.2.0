@@ -442,44 +442,23 @@ const LactateCurveCalculatorPage = () => {
             if (data.token) {
                 trackUserRegistration('google', 'athlete');
                 trackConversionFunnel('signup_complete', { method: 'google', role: 'athlete', source: 'demo_email' });
-                
-                // Log registration event
                 await logUserRegistration('google', data.user?._id);
-                
-                // Save token and user
+
                 const token = data.token;
                 const user = data.user;
-                
+                const userId = user?._id || user?.id || null;
+
+                // Set token for API requests (do NOT call login() yet – it reloads and would skip saving the test)
                 localStorage.setItem('token', token);
                 saveUserToStorage(user);
                 api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-                
-                // Update auth state - wait for it to complete
-                await login(null, null, token, user);
-                
-                // Wait a bit more to ensure auth state is fully updated
-                await new Promise(resolve => setTimeout(resolve, 300));
 
-                // Prepare test data for email
+                // Prepare test data and save to new user's profile BEFORE login
                 const emailTestData = prepareCalculatorData();
-
-                // Get userId from registered user
-                const userId = user?._id || user?.id || null;
                 let savedTestId = null;
 
-                // Save test to user's account
                 if (userId && token) {
                     try {
-                        // Use token directly from data
-                        if (!token) {
-                            throw new Error('No authentication token available');
-                        }
-                        
-                        // Ensure token is in localStorage and headers
-                        localStorage.setItem('token', token);
-                        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-                        
-                        // Ensure date is in proper format (Date object or ISO string)
                         let testDate = emailTestData.date;
                         if (!testDate) {
                             testDate = new Date().toISOString();
@@ -585,19 +564,11 @@ const LactateCurveCalculatorPage = () => {
                 }
 
                 addNotification('Test results sent to your email!', 'success');
-                trackDemoUsage('test_email_sent', { 
-                    sport: testData.sport,
-                    intervals: testData.results.length,
-                    method: 'google'
-                });
-
-                // Close modal
+                trackDemoUsage('test_email_sent', { sport: testData.sport, intervals: testData.results.length, method: 'google' });
                 setShowEmailModal(false);
 
-                // Optionally navigate to dashboard
-                setTimeout(() => {
-                    navigate('/dashboard');
-                }, 2000);
+                // Log in so app reloads and user sees their profile (with the test already saved)
+                await login(null, null, token, user);
             } else {
                 setEmailError('Google authentication failed. Please try again.');
                 trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
@@ -659,44 +630,23 @@ const LactateCurveCalculatorPage = () => {
             trackUserRegistration('email', emailFormData.role);
             trackConversionFunnel('signup_complete', { method: 'email', role: emailFormData.role, source: 'demo_email' });
 
-            // Save token and user
-            if (registerResponse?.data?.token && registerResponse?.data?.user) {
-                const token = registerResponse.data.token;
-                const user = registerResponse.data.user;
-                
-                // Save to localStorage first
+            const token = registerResponse?.data?.token;
+            const user = registerResponse?.data?.user;
+            const userId = user?._id || user?.id || null;
+
+            // Set token for API requests immediately (do NOT call login() yet – it reloads and would skip saving the test)
+            if (token && user) {
                 localStorage.setItem('token', token);
                 saveUserToStorage(user);
                 api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-                
-                // Update auth state - wait for it to complete
-                await login(emailFormData.email, emailFormData.password, token, user);
-                
-                // Wait a bit more to ensure auth state is fully updated
-                await new Promise(resolve => setTimeout(resolve, 300));
             }
 
-            // Prepare test data for email
+            // Prepare test data and save to new user's profile BEFORE login (login triggers reload)
             const emailTestData = prepareCalculatorData();
-
-            // Get userId from registered user
-            const userId = registerResponse?.data?.user?._id || registerResponse?.data?.user?.id || null;
             let savedTestId = null;
 
-            // Save test to user's account
-            if (userId && registerResponse?.data?.token) {
+            if (userId && token) {
                 try {
-                    // Use token directly from registerResponse
-                    const token = registerResponse.data.token;
-                    
-                    // Verify token is available
-                    if (!token) {
-                        throw new Error('No authentication token available');
-                    }
-                    
-                    // Ensure token is in localStorage and headers
-                    localStorage.setItem('token', token);
-                    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
                     // Ensure date is in proper format (Date object or ISO string)
                     let testDate = emailTestData.date;
                     if (!testDate) {
@@ -820,10 +770,10 @@ const LactateCurveCalculatorPage = () => {
                 termsAccepted: false
             });
 
-            // Optionally navigate to dashboard
-            setTimeout(() => {
-                navigate('/dashboard');
-            }, 2000);
+            // Log in so app reloads and user sees their profile (with the test already saved)
+            if (token && user) {
+                await login(emailFormData.email, emailFormData.password, token, user);
+            }
         } catch (error) {
             console.error('Error sending test to email:', error);
             if (error.response?.data?.error?.includes('already exist')) {
