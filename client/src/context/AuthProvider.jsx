@@ -141,6 +141,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only on mount; location.pathname omitted so we don't re-run on route change and overwrite user with stale profile
   }, [removeToken, navigate]);
 
   // Při 401 (neplatný/odhlášený token) sjednotit stav a přesměrovat na login
