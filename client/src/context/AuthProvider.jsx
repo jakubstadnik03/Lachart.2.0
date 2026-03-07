@@ -83,59 +83,56 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
   }, []);
 
+  // Run only once on mount – avoid re-running on pathname change so we never overwrite
+  // the user set by login() with a stale or wrong profile (e.g. previous user after re-login).
   useEffect(() => {
     const checkAuth = async () => {
-      // Check both token keys for compatibility
       const storedToken = localStorage.getItem("token") || localStorage.getItem("authToken");
       const storedUser = localStorage.getItem("user");
-      
+
       if (storedToken) {
+        const tokenAtStart = storedToken;
         try {
-          // Nastavení autorizační hlavičky pro API
           api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
-          
-          // Ověření tokenu pomocí profilového endpointu (no cache for auth check)
           const response = await api.get('/user/profile', { noCache: true });
-          
-          // Aktualizace stavu
+
+          // Ignore response if token changed in the meantime (e.g. user logged out and another logged in).
+          const currentToken = localStorage.getItem("token") || localStorage.getItem("authToken");
+          if (currentToken !== tokenAtStart) {
+            setLoading(false);
+            return;
+          }
+
           setToken(storedToken);
           setUser(response.data);
           setIsAuthenticated(true);
-          // Update localStorage with fresh user data (using optimized storage)
           saveUserToStorage(response.data);
-          
-          // Ensure both token keys are set for compatibility
+
           if (!localStorage.getItem("token")) {
             localStorage.setItem("token", storedToken);
           }
           if (!localStorage.getItem("authToken")) {
             localStorage.setItem("authToken", storedToken);
           }
-          
-          // Restore last route if we're on the home page
+
           if (location.pathname === '/') {
             const lastRoute = localStorage.getItem('lastRoute');
             if (lastRoute && lastRoute !== '/' && lastRoute !== '/login' && lastRoute !== '/signup') {
               navigate(lastRoute, { replace: true });
             }
           }
-          // Auth check successfully completed
           setLoading(false);
         } catch (error) {
-          // Only remove token if it's a 401 (Unauthorized) - not for network errors or other issues
           if (error.response?.status === 401) {
             console.error("Token verification failed (401 Unauthorized):", error);
             removeToken();
             setLoading(false);
           } else {
-            // For other errors (network, timeout, etc.), keep the token but log the error
             console.warn("Token verification failed (non-401 error), keeping token:", error);
-            // Still set loading to false so the app can continue
             setLoading(false);
           }
         }
       } else if (storedUser) {
-        // Pokud máme uloženého uživatele, ale ne token, odstraníme uživatele
         localStorage.removeItem("user");
         setLoading(false);
       } else {
@@ -144,7 +141,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuth();
-  }, [removeToken, navigate, location.pathname]);
+  }, [removeToken, navigate]);
 
   // Při 401 (neplatný/odhlášený token) sjednotit stav a přesměrovat na login
   useEffect(() => {
@@ -198,11 +195,13 @@ export const AuthProvider = ({ children }) => {
             sessionStorage.setItem('welcomed', '1');
           }, 10000); // show after 10 seconds
         }
+        clearApiCache();
+        window.location.reload();
         return Promise.resolve({ success: true });
       } else {
         const response = await api.post("/user/login", { email, password });
         const { token: loginToken, user: loginUser } = response.data;
-        
+
         setToken(loginToken);
         setUser(loginUser);
         saveToken(loginToken);
@@ -214,6 +213,8 @@ export const AuthProvider = ({ children }) => {
             sessionStorage.setItem('welcomed', '1');
           }, 10000); // show after 10 seconds
         }
+        clearApiCache();
+        window.location.reload();
         return Promise.resolve({ success: true });
       }
     } catch (error) {

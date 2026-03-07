@@ -105,27 +105,29 @@ export const estimateHRmax = (activities, days = 42, sport = null) => {
   }
 
   if (recentActivities.length < 3) {
-    // Expand to 90 days if not enough data
+    // Expand to 90 days only once to avoid infinite recursion
+    if (days >= 90) {
+      return {
+        value: null,
+        min: null,
+        max: null,
+        confidence: 'low',
+        evidence: []
+      };
+    }
     const cutoff90 = now - (90 * 24 * 60 * 60 * 1000);
     let expandedActivities = activities.filter(act => {
       const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
       return actDate >= cutoff90;
     });
-    
-    // Filter by sport if specified
     if (sport) {
       expandedActivities = expandedActivities.filter(act => {
         const actSport = (act.sport || act.type || '').toLowerCase();
-        if (sport === 'run') {
-          return actSport.includes('run') || actSport === 'running';
-        }
-        if (sport === 'bike' || sport === 'ride') {
-          return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
-        }
+        if (sport === 'run') return actSport.includes('run') || actSport === 'running';
+        if (sport === 'bike' || sport === 'ride') return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
         return true;
       });
     }
-    
     return estimateHRmax(expandedActivities, 90, sport);
   }
 

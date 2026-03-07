@@ -188,9 +188,9 @@ const TestingPage = () => {
         const isOwnTest = testAthleteId === currentUserId;
         const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
         const role = String(user.role || '').toLowerCase();
-        const isTesterOrAdmin = role === 'tester' || role === 'admin' || user.admin === true;
+        const isTester = role === 'tester'; // jen tester vidí všechny testy; admin/coach/athlete jen svoje (coach i atletů)
         
-        if (!isOwnTest && !isAthleteTest && !isTesterOrAdmin) {
+        if (!isOwnTest && !isAthleteTest && !isTester) {
           // Avoid console spam in loops; notify once and remove testId from URL
           addNotification('You do not have permission to view this test', 'error');
           // Remove testId from URL
@@ -424,23 +424,26 @@ const TestingPage = () => {
               return actDate >= cutoff90;
             });
 
-        // Filter activities that likely have HR (Strava activities with HR average or HR zones)
+        // Filter activities that likely have HR
         const activitiesWithHR = activitiesToUse.filter(act => 
           act.averageHeartRate || 
           act.heartRateZones || 
           (act.stravaId && act.sport && (act.sport.toLowerCase().includes('run') || act.sport.toLowerCase().includes('ride')))
-        ).slice(0, 30); // Limit to 30 most recent to avoid rate limiting
+        ).slice(0, 10); // Fewer activities to avoid Strava 429 rate limit
 
         if (activitiesWithHR.length === 0) {
           setHrTestPlan(null);
           return;
         }
 
-        // Load streams for activities (limit to avoid rate limiting)
+        // Load streams sequentially with delay to avoid 429 (Strava rate limit)
+        const maxToFetch = 6;
+        const delayMs = 600;
         const activitiesWithStreams = [];
-        for (let i = 0; i < Math.min(activitiesWithHR.length, 20); i++) {
+        for (let i = 0; i < Math.min(activitiesWithHR.length, maxToFetch); i++) {
           const act = activitiesWithHR[i];
           if (!act.stravaId) continue;
+          if (i > 0) await new Promise(r => setTimeout(r, delayMs));
 
           try {
             const detail = await getStravaActivityDetail(act.stravaId, user.role === 'coach' ? selectedAthleteId : null);
@@ -478,14 +481,8 @@ const TestingPage = () => {
               });
             }
           } catch (e) {
-            // Skip activities that fail to load (rate limit, etc.)
             console.warn(`Failed to load streams for activity ${act.stravaId}:`, e.message);
             continue;
-          }
-
-          // Small delay to avoid rate limiting
-          if (i < activitiesWithHR.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
           }
         }
 

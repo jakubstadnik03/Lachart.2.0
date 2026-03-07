@@ -45,9 +45,8 @@ const testController = {
             const isOwnTest = testAthleteId === currentUserId;
             const role = String(user.role || '').toLowerCase();
             const isTester = role === 'tester';
-            const isAdmin = role === 'admin' || user.admin === true;
-            
-            // Check if test belongs to one of coach's athletes
+
+            // Coach může vidět i testy svých atletů; admin/athlete jen svoje; tester všechny
             let isAthleteTest = false;
             if (role === 'coach' && !isOwnTest) {
                 const athlete = await User.findById(testAthleteId);
@@ -55,8 +54,8 @@ const testController = {
                     isAthleteTest = true;
                 }
             }
-            
-            if (!isOwnTest && !isAthleteTest && !isTester && !isAdmin) {
+
+            if (!isOwnTest && !isAthleteTest && !isTester) {
                 return res.status(403).json({ error: 'You do not have permission to view this test' });
             }
 
