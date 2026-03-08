@@ -150,7 +150,10 @@ const testController = {
                     result.reason === 'test_not_found' ? 404 :
                     result.reason === 'pdf_not_available' || result.reason === 'pdf_generation_failed' ? 503 :
                     400;
-                return res.status(status).json({ error: result.reason, message: result.message });
+                return res.status(status).json({ error: result.reason, message: result.message || result.reason });
+            }
+            if (!result.pdf || !Buffer.isBuffer(result.pdf)) {
+                return res.status(503).json({ error: 'pdf_generation_failed', message: 'PDF buffer missing' });
             }
             const filename = `lactate-report-${id}.pdf`;
             res.setHeader('Content-Type', 'application/pdf');
@@ -158,7 +161,7 @@ const testController = {
             res.send(result.pdf);
         } catch (error) {
             console.error('[TestController] getTestReportPdf error:', error);
-            return res.status(500).json({ error: 'Failed to generate PDF' });
+            return res.status(503).json({ error: 'pdf_generation_failed', message: 'PDF generation is not available on this server.' });
         }
     },
 
