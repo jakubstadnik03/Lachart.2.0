@@ -286,33 +286,26 @@ function renderFocusBlock(bullets) {
   return items || `<p style="margin:0;color:#6b7280;">No recommendations.</p>`;
 }
 
-async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = null, overrides = null }) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
-    return { sent: false, reason: 'email_not_configured' };
-  }
-
+/**
+ * Build full report HTML for a test (used for email and PDF).
+ * Includes comparison with previous test when available.
+ * @returns {{ html: string, title: string }} or {{ error: true, reason: string }}
+ */
+async function getReportHtml(requesterUserId, testId, overrides = {}) {
   const requester = await User.findById(requesterUserId).select('email role athletes name surname admin');
-  if (!requester) return { sent: false, reason: 'requester_not_found' };
+  if (!requester) return { error: true, reason: 'requester_not_found' };
 
   const test = await Test.findById(testId);
-  if (!test) return { sent: false, reason: 'test_not_found' };
+  if (!test) return { error: true, reason: 'test_not_found' };
 
-  // Access control: self, or coach with athlete in list
   const athleteId = String(test.athleteId);
   const isSelf = String(requester._id) === athleteId;
   const isCoachAllowed = requester.role === 'coach' && (requester.athletes || []).some(a => String(a) === athleteId);
-  const isTester = String(requester.role || '').toLowerCase() === 'tester'; // jen tester může posílat report za kohokoli; admin jen za sebe
-  if (!isSelf && !isCoachAllowed && !isTester) return { sent: false, reason: 'forbidden' };
+  const isTester = String(requester.role || '').toLowerCase() === 'tester';
+  if (!isSelf && !isCoachAllowed && !isTester) return { error: true, reason: 'forbidden' };
 
   const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications');
-  if (!athlete) return { sent: false, reason: 'athlete_not_found' };
-
-  // Respect basic email notification preference if available, unless overrides explicitly ignore it
-  if (!overrides?.ignoreEmailPreferences) {
-    if (athlete.notifications && athlete.notifications.emailNotifications === false) {
-      return { sent: false, reason: 'email_notifications_disabled' };
-    }
-  }
+  if (!athlete) return { error: true, reason: 'athlete_not_found' };
 
   const sport = test.sport;
   const unitSystem = test.unitSystem || 'metric';
@@ -356,7 +349,7 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
     return hasAny ? out : null;
   };
 
-  const overrideZones = sanitizeZones(overrides?.zones);
+  const overrideZones = sanitizeZones(opts.zones);
   const curZones = overrideZones || computedZones;
   const prevThr = prevTest ? calculateThresholds(prevTest) : null;
 
@@ -380,7 +373,8 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   });
 
   const baseTitle = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(test.date)}`;
-  const promoIntro = overrides?.promo
+  const opts = overrides || {};
+  const promoIntro = opts.promo
     ? `
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#f5f3ff;margin-bottom:10px;">
         <div style="font-weight:800;color:#4c1d95;font-size:16px;margin-bottom:4px;">We've prepared your last lactate test</div>
@@ -445,7 +439,7 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
       </div>
 
       ${
-        overrides?.promo
+        opts.promo
           ? `
       <div style="border-radius:16px;overflow:hidden;background:#0f172a;margin-top:4px;">
         <div style="padding:18px 18px 0;display:flex;flex-direction:column;gap:16px;color:#e5e7eb;">
@@ -498,52 +492,52 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
     </div>
   `.trim();
 
-  const transporter = createTransporter();
-  const subject = overrides?.subject || baseTitle;
+  const html = generateEmailTemplate({
+    title: baseTitle,
+    content,
+    buttonText: opts.promo ? 'Open this test in LaChart' : 'Open LaChart',
+    buttonUrl: opts.promo ? testUrl : `${clientUrl}/`,
+    footerText: 'Tip: Repeat the test under similar conditions for best comparisons.'
+  });
+  return { html, title: baseTitle };
+}
 
-  // If requester is coach, send email to both coach and athlete
+async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = null, overrides = null }) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+    return { sent: false, reason: 'email_not_configured' };
+  }
+  const result = await getReportHtml(requesterUserId, testId, overrides || {});
+  if (result.error) return { sent: false, reason: result.reason };
+
+  const User = require('../models/UserModel');
+  const requester = await User.findById(requesterUserId).select('email role athletes');
+  const test = await Test.findById(testId);
+  const athleteId = String(test.athleteId);
+  const athlete = await User.findById(athleteId).select('notifications email');
+  if (!overrides?.ignoreEmailPreferences && athlete?.notifications?.emailNotifications === false) {
+    return { sent: false, reason: 'email_notifications_disabled' };
+  }
+
   const isCoach = requester.role === 'coach';
-  const recipients = new Set(); // Use Set to avoid duplicates
-  
-  // Add primary recipient (toEmail if provided, otherwise requester email)
-  if (toEmail) {
-    recipients.add(toEmail);
-  } else if (requester.email) {
-    recipients.add(requester.email);
-  }
-  
-  // If coach, always also send to athlete (unless athlete email is already in recipients)
-  if (isCoach && athlete.email) {
-    recipients.add(athlete.email);
-  }
-  
-  // Fallback: if no recipients yet, use athlete email
-  if (recipients.size === 0 && athlete.email) {
-    recipients.add(athlete.email);
-  }
-  
-  if (recipients.size === 0) {
-    return { sent: false, reason: 'no_recipient_email' };
-  }
+  const recipients = new Set();
+  if (toEmail) recipients.add(toEmail);
+  else if (requester.email) recipients.add(requester.email);
+  if (isCoach && athlete?.email) recipients.add(athlete.email);
+  if (recipients.size === 0 && athlete?.email) recipients.add(athlete.email);
+  if (recipients.size === 0) return { sent: false, reason: 'no_recipient_email' };
 
-  // Send email to all recipients
+  const transporter = createTransporter();
   await transporter.sendMail({
     from: { name: 'LaChart', address: process.env.EMAIL_USER },
-    to: Array.from(recipients).join(', '), // Multiple recipients separated by comma
-    subject,
-    html: generateEmailTemplate({
-      title: baseTitle,
-      content,
-      buttonText: overrides?.promo ? 'Open this test in LaChart' : 'Open LaChart',
-      buttonUrl: overrides?.promo ? testUrl : `${clientUrl}/`,
-      footerText: 'Tip: Repeat the test under similar conditions for best comparisons.'
-    })
+    to: Array.from(recipients).join(', '),
+    subject: overrides?.subject || result.title,
+    html: result.html
   });
-
   return { sent: true };
 }
 
 module.exports = {
+  getReportHtml,
   sendLactateTestReportEmail
 };
 

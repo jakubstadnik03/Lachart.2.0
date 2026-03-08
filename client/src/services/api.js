@@ -349,22 +349,32 @@ export const getTestingsByAthleteId = async (athleteId) => {
 // Interceptor pro zpracování chyb a tracking
 api.interceptors.response.use(
   (response) => {
-    // Log successful API call
     if (response.config?.__startTime) {
       logApiCall(response.config, response.config.__startTime);
     }
+    // Clear one-time network error flag so future failures are logged again after recovery
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('api_network_error_logged');
     return response;
   },
   (error) => {
-    // Log failed API call
     if (error.config?.__startTime) {
       logApiCall(error.config, error.config.__startTime);
     }
-    
-    // Silently handle 429 (Too Many Requests) errors - don't log them
-    if (error.response?.status !== 429) {
+
+    // Log network/CORS errors only once per session to avoid console spam
+    const isNetworkError = error.code === 'ERR_NETWORK' || error.message === 'Network Error';
+    if (isNetworkError) {
+      const lastLogged = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('api_network_error_logged');
+      if (!lastLogged) {
+        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('api_network_error_logged', '1');
+        console.warn(
+          '[API] Network or CORS error. If running on localhost, set ALLOW_LOCALHOST_ORIGIN=true on the server or use the same origin.'
+        );
+      }
+    } else if (error.response?.status !== 429) {
       console.error('API Error:', error);
     }
+
     if (error.response?.status === 401) {
       localStorage.removeItem('authToken');
       localStorage.removeItem('token');
@@ -405,25 +415,30 @@ function buildGetCacheKey(url, config) {
 }
 
 const __originalGet = api.get.bind(api);
+// In-flight key for GET /user/profile so noCache callers still share one request (prevents spam on remounts)
+const PROFILE_IN_FLIGHT_KEY = '__profile_in_flight__';
 api.get = (url, config = {}) => {
   const noCache = Boolean(config.noCache || config.headers?.['x-no-cache']);
   const responseType = config.responseType;
+  const isProfileGet = typeof url === 'string' && (url === '/user/profile' || url.endsWith('/user/profile'));
   // Skip caching for blobs/streams
   const cacheable = !noCache && (!responseType || responseType === 'json');
-  if (!cacheable) return __originalGet(url, config);
+  if (!cacheable && !isProfileGet) return __originalGet(url, config);
 
-  const key = buildGetCacheKey(url, config);
+  const key = isProfileGet ? PROFILE_IN_FLIGHT_KEY : buildGetCacheKey(url, config);
   const now = Date.now();
   const ttl = Number(config.cacheTtlMs) || 10000; // 10s default (reduced from 30s to improve data freshness)
 
-  const hit = __getCache.get(key);
-  if (hit && hit.expiresAt > now) {
-    // Mark as cached for monitoring
-    const cachedConfig = { ...config, __cached: true };
-    if (ENABLE_API_MONITORING) {
-      logApiCall(cachedConfig, now);
+  // For profile: only use cache if not noCache
+  if (!isProfileGet || !noCache) {
+    const hit = __getCache.get(key);
+    if (hit && hit.expiresAt > now) {
+      const cachedConfig = { ...config, __cached: true };
+      if (ENABLE_API_MONITORING) {
+        logApiCall(cachedConfig, now);
+      }
+      return Promise.resolve(hit.response);
     }
-    return Promise.resolve(hit.response);
   }
 
   const inFlight = __getInFlight.get(key);
@@ -432,8 +447,8 @@ api.get = (url, config = {}) => {
   const requestStartTime = Date.now();
   const p = __originalGet(url, config)
     .then((resp) => {
-      // Only cache successful responses (status 200-299)
-      if (resp && resp.status >= 200 && resp.status < 300) {
+      // Only cache successful responses (status 200-299); skip cache write for profile when noCache
+      if (resp && resp.status >= 200 && resp.status < 300 && (!isProfileGet || !noCache)) {
         __getCache.set(key, { expiresAt: now + ttl, response: resp });
       }
       // Track timing for monitoring

@@ -12,7 +12,7 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// ✅ CORS configuration – allow local, Vercel preview, and production domain
+// ✅ CORS configuration – allow local (both 3000 and 3001), Vercel preview, and production domain
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
@@ -21,26 +21,26 @@ const allowedOrigins = [
   'https://www.lachart.net'
 ];
 
+// On Render: set ALLOW_LOCALHOST_ORIGIN=true to allow localhost (any port) for local dev against prod API
 const allowLocalhostInProduction = process.env.ALLOW_LOCALHOST_ORIGIN === 'true';
+const isLocalhostOrigin = (o) => o && (o.startsWith('http://localhost:') || o.startsWith('http://127.0.0.1:'));
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman) – no Origin header = no CORS restriction in browser
     if (!origin) {
       return callback(null, true);
     }
-    // Důležité: při credentials: true musí být v odpovědi konkrétní origin, ne * – proto předáváme origin
     if (allowedOrigins.includes(origin)) {
       return callback(null, origin);
     }
-    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
+    if (process.env.NODE_ENV !== 'production' && isLocalhostOrigin(origin)) {
       return callback(null, origin);
     }
-    if (allowLocalhostInProduction && origin.startsWith('http://localhost:')) {
+    if (allowLocalhostInProduction && isLocalhostOrigin(origin)) {
       return callback(null, origin);
     }
-    console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+    console.warn('CORS blocked origin:', origin);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -63,12 +63,15 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for now to avoid conflicts
 }));
 
-// Ensure CORS headers are set correctly after Helmet
+// Ensure CORS headers are set correctly after Helmet (must mirror corsOptions logic)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || 
-      (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) ||
-      (allowLocalhostInProduction && origin.startsWith('http://localhost:')))) {
+  const allowed = origin && (
+    allowedOrigins.includes(origin) ||
+    (process.env.NODE_ENV !== 'production' && isLocalhostOrigin(origin)) ||
+    (allowLocalhostInProduction && isLocalhostOrigin(origin))
+  );
+  if (allowed) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');

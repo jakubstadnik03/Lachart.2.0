@@ -749,7 +749,7 @@ const FitAnalysisPage = () => {
   const { addNotification } = useNotification();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activityId } = useParams();
+  const { activityId, athleteId: athleteIdParam } = useParams();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
@@ -993,11 +993,16 @@ const FitAnalysisPage = () => {
     };
     
     const initialize = async () => {
+      // When URL is /training-calendar/:athleteId/:activityId (coach view), set athlete first so loads use correct data
+      if (athleteIdParam) {
+        setSelectedAthleteId(athleteIdParam);
+        localStorage.setItem('trainingCalendar_selectedAthleteId', athleteIdParam);
+      }
       await loadTrainings();
       await loadRegularTrainings();
       await loadExternalActivities();
 
-      // Canonical path: /training-calendar/:activityId
+      // Canonical path: /training-calendar/:activityId or .../:athleteId/:activityId
       if (activityId) {
         setTimeout(() => {
           openFromActivityId(activityId);
@@ -1029,7 +1034,7 @@ const FitAnalysisPage = () => {
     
     initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityId]);
+  }, [activityId, athleteIdParam]);
 
   useEffect(() => {
     const checkStatus = async () => {

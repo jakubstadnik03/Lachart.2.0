@@ -3,7 +3,7 @@ const User = require('../models/UserModel');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
 const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
-const { buildLactateCurveSvg, buildStagesSvg, escapeHtml } = require('../utils/lactateReportSvgs');
+const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
 
 function createTransporter() {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
@@ -354,10 +354,10 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
     unitSystem,
     inputMode
   });
-  const stagesSvg = buildStagesSvg({ results: testData.results || [], sport, unitSystem, inputMode });
 
   const title = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(testData.date || new Date())}`;
 
+  // Same content structure as lactateTestReportEmailService (report from logged-in Testing page)
   const content = `
     <div style="display:flex;flex-direction:column;gap:14px;">
       ${renderUserInfo(user)}
@@ -378,7 +378,6 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
         </div>
       </div>
 
-      ${stagesSvg ? `<div>${stagesSvg}</div>` : ''}
       ${lactateSvg ? `<div>${lactateSvg}</div>` : ''}
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
@@ -409,6 +408,10 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
     </div>
   `.trim();
 
+  const footerText = userId
+    ? 'Tip: Repeat the test under similar conditions for best comparisons.'
+    : 'Create an account to save and track your tests over time.';
+
   try {
     await transporter.sendMail({
       from: { name: 'LaChart', address: process.env.EMAIL_USER },
@@ -419,9 +422,7 @@ async function sendDemoTestEmail({ testData, email, name, userId = null }) {
         content,
         buttonText: 'Open LaChart',
         buttonUrl: `${clientUrl}/`,
-        loginButtonText: userId ? 'Login to LaChart' : null,
-        loginButtonUrl: userId ? `${clientUrl}/login` : null,
-        footerText: userId ? 'Tip: Repeat the test under similar conditions for best comparisons.' : 'This is a demo test. Create an account to save and track your tests over time.'
+        footerText
       })
     });
 

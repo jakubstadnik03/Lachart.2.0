@@ -8,10 +8,12 @@ import * as math from 'mathjs';
 
 const MIN_POINTS = 5;
 const MIN_LT2_LT1_GAP_W = 30;
-// Finální hodnota = průměr všech platných kandidátů (segmentovaná, OBLA, D-max)
+/** LT2 (anaerobní práh) má být alespoň kolem 3 mmol/L; pokud výpočet dá méně, použít OBLA 3.5/4.0 */
+const MIN_LTP2_LACTATE_REASONABLE = 2.5;
 const OBLA_MMOL = 2.0; // LT1 baseline: target OBLA 2.0 mmol/L
 const LT1_MAX_LACTATE_MMOL = 2.5; // pokud by laktát v LT1 byl > 2.5, použít OBLA 2.0
 const OBLA_LT2_MMOL = 4.0; // LT2: OBLA 4.0 mmol/L
+const OBLA_LT2_FALLBACK_MMOL = 3.5; // fallback když křivka nedosáhne 4.0
 const BOOTSTRAP_ITERATIONS = 200;
 
 // --- 1) Předzpracování ---
@@ -323,6 +325,20 @@ export function computeLactateThresholds(points, options = {}) {
   const lactateAtLt1 = result.LT1 != null ? lactateAtPower(power, lactate, result.LT1) : null;
   if (lactateAtLt1 != null && lactateAtLt1 > LT1_MAX_LACTATE_MMOL && lt1Base != null) {
     result.LT1 = lt1Base;
+  }
+
+  // LT2 musí dávat smysl: laktát alespoň ~2.5 mmol/L a dostatečný odstup od LT1 (min 30 W)
+  const lactateAtLt2 = result.LT2 != null ? lactateAtPower(power, lactate, result.LT2) : null;
+  const gap = result.LT1 != null && result.LT2 != null ? result.LT2 - result.LT1 : 0;
+  const lt2LactateLow = lactateAtLt2 != null && lactateAtLt2 < MIN_LTP2_LACTATE_REASONABLE;
+  const lt2GapSmall = gap < MIN_LT2_LT1_GAP_W;
+  if (result.LT2 != null && (lt2LactateLow || lt2GapSmall)) {
+    const lt2At4 = linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
+    const lt2At35 = linearInterpolationPower(power, lactate, OBLA_LT2_FALLBACK_MMOL);
+    const betterLt2 = lt2At4 ?? lt2At35;
+    if (betterLt2 != null && (result.LT1 == null || betterLt2 - result.LT1 >= MIN_LT2_LT1_GAP_W)) {
+      result.LT2 = betterLt2;
+    }
   }
 
   if (bootstrap && result.LT1 != null && result.LT2 != null && n >= 6) {

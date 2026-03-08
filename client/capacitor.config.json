@@ -1,0 +1,11 @@
+{
+  "appId": "com.lachart.app",
+  "appName": "Lachart",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}

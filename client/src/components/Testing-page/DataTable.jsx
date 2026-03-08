@@ -329,6 +329,10 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   const MAX_LTP1_LACTATE = 2.5;
   /** Fyziologické maximum: LTP2 (anaerobní práh) nemá přesáhnout 4.7 mmol/L (platí pro kolo, běh i plavání). */
   const MAX_LTP2_LACTATE = 4.7;
+  /** LT2 má být alespoň kolem 2.5 mmol/L; pokud výpočet dá méně, použít výkon při 3.5/4.0 mmol/L */
+  const MIN_LTP2_LACTATE_REASONABLE = 2.5;
+  /** Minimální odstup LT2 od LT1 (W pro kolo), aby zóny dávaly smysl */
+  const MIN_LT2_LT1_GAP_W = 25;
 
   /** Z polynomu spočítá LTP1 (kde křivka začne růst – vždy až po poklesu) a LTP2 (maximum první derivace). */
   const findLTPFromPolynomial = (polyFit, sortedResults, isPaceSport) => {
@@ -518,6 +522,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           return nearest.heartRate != null ? Number(nearest.heartRate) : null;
         };
         const ltp1Lactate = interpolateLactateAtPower(segLT1);
+        let ltp1Power = segLT1;
         let ltp2Lactate = interpolateLactateAtPower(segLT2);
         let ltp2Power = segLT2;
         // LTP2 nemá přesáhnout 4.7 mmol/L
@@ -535,9 +540,32 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             }
           }
         }
+        // LT2 musí dávat smysl: laktát alespoň ~2.5 mmol/L a odstup od LT1 min 25 W
+        const interpolatePowerAtLactate = (targetLa) => {
+          for (let i = 0; i < sortedResults.length - 1; i++) {
+            const a = sortedResults[i];
+            const b = sortedResults[i + 1];
+            const la = Number(a.lactate);
+            const lb = Number(b.lactate);
+            if ((la <= targetLa && lb >= targetLa) || (la >= targetLa && lb <= targetLa)) {
+              const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (targetLa - la) / (lb - la);
+              return Number(a.power) + t * (Number(b.power) - Number(a.power));
+            }
+          }
+          return null;
+        };
+        const gap = ltp2Power - ltp1Power;
+        if (ltp2Lactate < MIN_LTP2_LACTATE_REASONABLE || gap < MIN_LT2_LT1_GAP_W) {
+          const pAt4 = interpolatePowerAtLactate(4.0);
+          const pAt35 = interpolatePowerAtLactate(3.5);
+          const betterP = pAt4 ?? pAt35;
+          if (betterP != null && betterP - ltp1Power >= MIN_LT2_LT1_GAP_W) {
+            ltp2Power = betterP;
+            ltp2Lactate = interpolateLactateAtPower(ltp2Power);
+          }
+        }
         // LTP1 musí být vždy ≥ 1.5 mmol/L
         let ltp1La = ltp1Lactate;
-        let ltp1Power = segLT1;
         if (ltp1Lactate < MIN_LTP1_LACTATE) {
           for (let i = 0; i < sortedResults.length - 1; i++) {
             const a = sortedResults[i];

@@ -47,6 +47,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   }, [comparePeriod]);
   
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   
   // Load selectedMonths from localStorage
   const [selectedMonths, setSelectedMonths] = useState(() => {
@@ -94,10 +95,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
 
   useEffect(() => {
     const loadAllTimeRef = async () => {
-      const cacheKey = `powerRadar_allTimeRef_v1`;
-      const cacheTsKey = `powerRadar_allTimeRef_v1_ts`;
       const CACHE_DURATION = 60 * 60 * 1000; // 1h
-
+      const athletePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
+      const cacheKey = `powerRadar_allTimeRef_v1${athletePart}`;
+      const cacheTsKey = `powerRadar_allTimeRef_v1_ts${athletePart}`;
       try {
         const now = Date.now();
         const cached = localStorage.getItem(cacheKey);
@@ -140,10 +141,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   // Load power metrics from backend or cache
   useEffect(() => {
     const loadPowerMetrics = async () => {
-      // Define cache keys outside try block so they're accessible in catch
-      // v2 cache: avoid mixing old cached response expectations with new tooltip/normalization
-      const cacheKey = `powerRadar_metrics_v2_${comparePeriod}_${selectedMonths.join(',')}`;
-      const cacheTimestampKey = `powerRadar_metrics_v2_timestamp_${comparePeriod}_${selectedMonths.join(',')}`;
+      // Include athleteId in cache so coach switching athletes gets correct data
+      const athleteCachePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
+      const cacheKey = `powerRadar_metrics_v2_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
+      const cacheTimestampKey = `powerRadar_metrics_v2_timestamp_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
       // Keep cache shorter so new uploads/syncs show quickly
       const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
       
@@ -163,6 +164,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               // Validate that parsed data has the expected structure
               if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
                 setPowerMetrics(parsed);
+                setLoadError(null);
                 usedCachedData = true;
                 console.log('[SpiderChart] Using cached power metrics (valid)');
               } else {
@@ -177,6 +179,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               const parsed = JSON.parse(cachedData);
               if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
                 setPowerMetrics(parsed);
+                setLoadError(null);
                 usedCachedData = true;
                 console.log('[SpiderChart] Using expired cache as fallback');
               }
@@ -205,16 +208,28 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           params.append('athleteId', targetAthleteId);
         }
         
+        setLoadError(null);
         const response = await api.get(`/api/fit/power-metrics?${params.toString()}`);
         const metrics = response.data;
         
-        // Validate API response
-        if (!metrics || !metrics.allTime || typeof metrics.allTime !== 'object') {
+        // Validate API response (ensure compare exists so table/chart don't crash)
+        const hasAllTime = metrics?.allTime && typeof metrics.allTime === 'object';
+        const hasCompare = metrics?.compare && typeof metrics.compare === 'object';
+        if (!metrics || !hasAllTime) {
           console.error('[SpiderChart] Invalid API response structure:', metrics);
           setLoading(false);
           setRefreshing(false);
           return;
-      }
+        }
+        if (!hasCompare) {
+          metrics.compare = {
+            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
+          };
+        }
         
         // Cache the result
         try {
@@ -229,6 +244,30 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         
         setPowerMetrics(metrics);
       } catch (error) {
+        const status = error.response?.status;
+        const isNotFoundOrForbidden = status === 404 || status === 403;
+        if (isNotFoundOrForbidden) {
+          setLoadError(error.response?.data?.error || (status === 404 ? 'Athlete not found' : 'Access denied'));
+          const emptyCompare = {
+            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
+          };
+          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
+          setPowerMetrics({
+            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
+            compare: emptyCompare,
+            personalRecords: {},
+            improvements: {},
+            monthlyMetrics: {},
+            trainingsCount: 0
+          });
+          setLoading(false);
+          setRefreshing(false);
+          return;
+        }
         // If network error or empty response, try to use cached data even if expired
         if (error.code === 'ERR_NETWORK' || error.code === 'ERR_EMPTY_RESPONSE' || error.message?.includes('Network Error')) {
           try {
@@ -237,6 +276,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
               const cachedMetrics = JSON.parse(cachedData);
               if (cachedMetrics && cachedMetrics.allTime && typeof cachedMetrics.allTime === 'object') {
                 setPowerMetrics(cachedMetrics);
+                setLoadError(null);
                 setLoading(false);
                 setRefreshing(false);
                 return;
@@ -563,89 +603,38 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     return null;
   };
 
-  // Table data
-  const tableData = [
-    {
-      label: '5s',
-      name: 'Sprint',
-      key: 'sprint5s',
-      compareValue: getMetricValue(powerMetrics.compare.sprint5s),
-      allTimeValue: allTimeBest.sprint5s,
-      compareTrainingId: getMetricTrainingId(powerMetrics.compare.sprint5s),
-      compareTrainingType: getMetricTrainingType(powerMetrics.compare.sprint5s),
-      compareStravaId: getMetricStravaId(powerMetrics.compare.sprint5s),
-      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.sprint5s),
-      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.sprint5s),
-      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.sprint5s),
-      percentage: allTimeBest.sprint5s > 0 
-        ? Math.round((getMetricValue(powerMetrics.compare.sprint5s) / allTimeBest.sprint5s) * 100)
-        : 0
-    },
-    {
-      label: '1min',
-      name: 'Attack',
-      key: 'attack1min',
-      compareValue: getMetricValue(powerMetrics.compare.attack1min),
-      allTimeValue: allTimeBest.attack1min,
-      compareTrainingId: getMetricTrainingId(powerMetrics.compare.attack1min),
-      compareTrainingType: getMetricTrainingType(powerMetrics.compare.attack1min),
-      compareStravaId: getMetricStravaId(powerMetrics.compare.attack1min),
-      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.attack1min),
-      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.attack1min),
-      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.attack1min),
-      percentage: allTimeBest.attack1min > 0
-        ? Math.round((getMetricValue(powerMetrics.compare.attack1min) / allTimeBest.attack1min) * 100)
-        : 0
-    },
-    {
-      label: '5min',
-      name: 'VO2 Max',
-      key: 'vo2max5min',
-      compareValue: getMetricValue(powerMetrics.compare.vo2max5min),
-      allTimeValue: allTimeBest.vo2max5min,
-      compareTrainingId: getMetricTrainingId(powerMetrics.compare.vo2max5min),
-      compareTrainingType: getMetricTrainingType(powerMetrics.compare.vo2max5min),
-      compareStravaId: getMetricStravaId(powerMetrics.compare.vo2max5min),
-      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.vo2max5min),
-      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.vo2max5min),
-      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.vo2max5min),
-      percentage: allTimeBest.vo2max5min > 0
-        ? Math.round((getMetricValue(powerMetrics.compare.vo2max5min) / allTimeBest.vo2max5min) * 100)
-        : 0
-    },
-    {
-      label: '20min',
-      name: 'Threshold',
-      key: 'threshold20min',
-      compareValue: getMetricValue(powerMetrics.compare.threshold20min),
-      allTimeValue: allTimeBest.threshold20min,
-      compareTrainingId: getMetricTrainingId(powerMetrics.compare.threshold20min),
-      compareTrainingType: getMetricTrainingType(powerMetrics.compare.threshold20min),
-      compareStravaId: getMetricStravaId(powerMetrics.compare.threshold20min),
-      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.threshold20min),
-      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.threshold20min),
-      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.threshold20min),
-      percentage: allTimeBest.threshold20min > 0
-        ? Math.round((getMetricValue(powerMetrics.compare.threshold20min) / allTimeBest.threshold20min) * 100)
-        : 0
-    },
-    {
-      label: '60min',
-      name: 'Endurance',
-      key: 'endurance60min',
-      compareValue: getMetricValue(powerMetrics.compare.endurance60min),
-      allTimeValue: allTimeBest.endurance60min,
-      compareTrainingId: getMetricTrainingId(powerMetrics.compare.endurance60min),
-      compareTrainingType: getMetricTrainingType(powerMetrics.compare.endurance60min),
-      compareStravaId: getMetricStravaId(powerMetrics.compare.endurance60min),
-      allTimeTrainingId: getMetricTrainingId(allTimeSource?.allTime?.endurance60min),
-      allTimeTrainingType: getMetricTrainingType(allTimeSource?.allTime?.endurance60min),
-      allTimeStravaId: getMetricStravaId(allTimeSource?.allTime?.endurance60min),
-      percentage: allTimeBest.endurance60min > 0
-        ? Math.round((getMetricValue(powerMetrics.compare.endurance60min) / allTimeBest.endurance60min) * 100)
-        : 0
-    }
+  // Table data (use optional chaining so missing compare/allTime doesn't crash)
+  const compareObj = powerMetrics?.compare ?? {};
+  const allTimeObj = allTimeSource?.allTime ?? {};
+  const improvementsObj = powerMetrics?.improvements ?? {};
+  const personalRecordsObj = powerMetrics?.personalRecords ?? {};
+  const keys = [
+    { label: '5s', name: 'Sprint', key: 'sprint5s' },
+    { label: '1min', name: 'Attack', key: 'attack1min' },
+    { label: '5min', name: 'VO2 Max', key: 'vo2max5min' },
+    { label: '20min', name: 'Threshold', key: 'threshold20min' },
+    { label: '60min', name: 'Endurance', key: 'endurance60min' }
   ];
+  const tableData = keys.map(({ label, name, key }) => {
+    const compareVal = getMetricValue(compareObj[key]);
+    const allTimeVal = Number(allTimeBest?.[key] ?? 0);
+    return {
+      label,
+      name,
+      key,
+      compareValue: compareVal,
+      allTimeValue: allTimeVal,
+      compareTrainingId: getMetricTrainingId(compareObj[key]),
+      compareTrainingType: getMetricTrainingType(compareObj[key]),
+      compareStravaId: getMetricStravaId(compareObj[key]),
+      allTimeTrainingId: getMetricTrainingId(allTimeObj[key]),
+      allTimeTrainingType: getMetricTrainingType(allTimeObj[key]),
+      allTimeStravaId: getMetricStravaId(allTimeObj[key]),
+      percentage: allTimeVal > 0 ? Math.round((compareVal / allTimeVal) * 100) : 0,
+      improvement: improvementsObj[key] ?? null,
+      pr: personalRecordsObj[key] ?? null
+    };
+  });
 
   // Auto-select all months when switching to monthly view
   useEffect(() => {
@@ -738,6 +727,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                   </div>
         )}
 
+        {loadError && (
+          <div className="mb-2 p-2 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-sm">
+            {loadError}
+          </div>
+        )}
         {/* Radar Chart */}
         <div className="w-full relative" style={{ height: '350px' }}>
           {chartData && chartOptions ? (
@@ -747,9 +741,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-gray-500">
-              {comparePeriod === 'monthly' && selectedMonths.length === 0 
-                ? 'Select months to display' 
-                : 'No data available'}
+              {loadError
+                ? null
+                : comparePeriod === 'monthly' && selectedMonths.length === 0
+                  ? 'Select months to display'
+                  : (powerMetrics?.trainingsCount === 0 ? 'No power data for this period. Add cycling activities with power.' : 'No data available')}
             </div>
           )}
         </div>
@@ -799,24 +795,24 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                       const improvement = row.improvement;
                       const pr = row.pr;
                       
-                      // Helper to navigate to training
+                      // Helper to navigate to training (wrapped in try/catch to avoid crash)
                       const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey) => {
-                        if (!trainingId && !stravaId) return;
-                        
-                        // Build URL with athleteId if coach is viewing athlete
-                        // Format: /training-calendar/:athleteId/:activityId?highlightMetric=...
-                        const athleteParam = targetAthleteId ? `/${targetAthleteId}` : '';
-                        const metricParam = metricKey ? `?highlightMetric=${encodeURIComponent(metricKey)}` : '';
-                        
-                        if (stravaId) {
-                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
-                        } else if (trainingType === 'fit' && trainingId) {
-                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
-                        } else if (trainingType === 'strava' && trainingId) {
-                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
-                        } else if (trainingId) {
-                          // Default to fit training
-                          navigate(`/training-calendar${athleteParam}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                        try {
+                          if (!trainingId && !stravaId) return;
+                          const athleteParam = targetAthleteId ? `/${targetAthleteId}` : '';
+                          const metricParam = metricKey ? `?highlightMetric=${encodeURIComponent(metricKey)}` : '';
+                          const base = `/training-calendar${athleteParam}`;
+                          if (stravaId) {
+                            navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
+                          } else if (trainingType === 'fit' && trainingId) {
+                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                          } else if (trainingType === 'strava' && trainingId) {
+                            navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
+                          } else if (trainingId) {
+                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                          }
+                        } catch (err) {
+                          console.warn('[SpiderChart] Navigation error:', err);
                         }
                       };
                       

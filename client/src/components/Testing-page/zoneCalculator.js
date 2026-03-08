@@ -10,24 +10,56 @@ const formatPace = (seconds) => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 
+/** Minimální rozumný odstup LT2 od LT1 pro generování zón (W nebo % pro pace) */
+const MIN_LT2_LT1_GAP_W = 20;
+
 export const calculateZonesFromTest = (testData) => {
   if (!testData || !testData.results || testData.results.length < 3) {
     return null;
   }
-  
+
   const sport = testData.sport || 'bike';
   const thresholds = calculateThresholds(testData);
-  
-  const lt1_value = thresholds['LTP1'];
-  const lt2_value = thresholds['LTP2'];
-  const hr1 = thresholds.heartRates?.['LTP1'];
-  const hr2 = thresholds.heartRates?.['LTP2'];
+
+  let lt1_value = thresholds['LTP1'];
+  let lt2_value = thresholds['LTP2'];
+  let hr1 = thresholds.heartRates?.['LTP1'];
+  let hr2 = thresholds.heartRates?.['LTP2'];
+
+  // Pokud jsou LTP1 a LTP2 příliš blízko, použít pro LT2 rozumnější odhad (OBLA 3.5 / IAT)
+  if (sport === 'bike' && lt1_value != null && lt2_value != null && (lt2_value - lt1_value) < MIN_LT2_LT1_GAP_W) {
+    const obla35 = thresholds['OBLA 3.5'];
+    const iat = thresholds['IAT'];
+    if (obla35 != null && obla35 > lt1_value + MIN_LT2_LT1_GAP_W) {
+      lt2_value = obla35;
+      hr2 = thresholds.heartRates?.['OBLA 3.5'] ?? hr2;
+    } else if (iat != null && iat > lt1_value + MIN_LT2_LT1_GAP_W) {
+      lt2_value = iat;
+      hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
+    }
+  }
+  if (sport === 'run' || sport === 'swim') {
+    const gap = lt1_value != null && lt2_value != null ? lt1_value - lt2_value : 0; // pace: LT1 > LT2
+    const minGapPace = (lt2_value || 0) * 0.08; // min ~8% rozdíl v tempu
+    if (gap < minGapPace && lt1_value != null && lt2_value != null) {
+      const obla35 = thresholds['OBLA 3.5'];
+      const iat = thresholds['IAT'];
+      if (obla35 != null && lt1_value - obla35 >= minGapPace) {
+        lt2_value = obla35;
+        hr2 = thresholds.heartRates?.['OBLA 3.5'] ?? hr2;
+      } else if (iat != null && lt1_value - iat >= minGapPace) {
+        lt2_value = iat;
+        hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
+      }
+    }
+  }
+
   const hasHR = hr1 != null && hr2 != null && !Number.isNaN(Number(hr1)) && !Number.isNaN(Number(hr2));
-  
+
   if (!lt1_value || !lt2_value) {
     return null;
   }
-  
+
   // Validation: bike LTP2 > LTP1 (vyšší výkon), run/swim LTP2 < LTP1 (nižší tempo v sec = rychlejší)
   if (sport === 'bike') {
     if (lt2_value <= lt1_value) return null;

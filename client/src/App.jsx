@@ -159,6 +159,11 @@ function AppRoutes() {
               </ProtectedRoute>
             } 
           />
+          {/* Coach viewing athlete: /training-calendar/:athleteId/:activityId — must be before single-param route */}
+          <Route
+            path="/training-calendar/:athleteId/:activityId"
+            element={<FitAnalysisPage />}
+          />
           <Route 
             path="/training-calendar/:activityId?" 
             element={<FitAnalysisPage />}

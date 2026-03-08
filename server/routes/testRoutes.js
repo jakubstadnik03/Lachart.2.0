@@ -62,6 +62,12 @@ router.get('/:id', verifyToken, testController.getTestById);
 router.post('/:id/send-report-email', verifyToken, testController.sendTestReportEmail);
 
 /**
+ * Download lactate test report as PDF (same content as email, incl. previous test comparison)
+ * GET /test/:id/report-pdf
+ */
+router.get('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
+
+/**
  * Send demo test results to email (no authentication required)
  * POST /test/send-demo-email
  */
@@ -120,7 +126,19 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
  */
 router.post("/", verifyToken, async (req, res) => {
     try {
-        const test = await testAbl.createTest(req.body);
+        const User = require('../models/UserModel');
+        const user = await User.findById(req.user.userId).select('role');
+        const payload = { ...req.body };
+        // Athletes can only create tests for themselves (ensures test is saved to current user after register+send)
+        if (user && String(user.role || '').toLowerCase() === 'athlete') {
+            payload.athleteId = String(req.user.userId);
+        }
+        // Normalize date so Mongoose accepts it (ISO string or Date)
+        if (payload.date) {
+            const d = new Date(payload.date);
+            if (!isNaN(d.getTime())) payload.date = d;
+        }
+        const test = await testAbl.createTest(payload);
         res.status(201).json(test);
     } catch (error) {
         res.status(error.status || 400).json({ 

@@ -438,6 +438,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [emailStatus, setEmailStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTo, setEmailTo] = useState('');
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [zoneOverride, setZoneOverride] = useState(null);
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
@@ -505,6 +507,51 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       setEmailStatus({ type: 'error', message: msg });
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    const testId = mockData?._id;
+    if (!testId) {
+      setPdfStatus({ type: 'error', message: 'Missing test id.' });
+      return;
+    }
+    try {
+      setDownloadingPdf(true);
+      setPdfStatus(null);
+      const { data } = await api.get(`/test/${testId}/report-pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `lactate-report-${testId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setPdfStatus({ type: 'success', message: 'PDF downloaded.' });
+    } catch (e) {
+      const status = e?.response?.status;
+      let reason = e?.response?.data?.error || e?.response?.data?.reason;
+      if (e?.response?.data?.constructor?.name === 'Blob') {
+        try {
+          const text = await e.response.data.text();
+          const j = JSON.parse(text);
+          reason = j.error || j.reason;
+        } catch {
+          reason = status === 503 ? 'pdf_not_available' : 'failed';
+        }
+      }
+      const msg =
+        reason === 'pdf_not_available' || reason === 'pdf_generation_failed' || status === 503
+          ? 'PDF generation is not available on this server.'
+          : reason === 'forbidden' || status === 403
+            ? 'You do not have access to this report.'
+            : reason === 'test_not_found' || status === 404
+              ? 'Test not found.'
+              : (e?.response?.data?.message || 'Failed to download PDF.');
+      setPdfStatus({ type: 'error', message: msg });
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -1611,17 +1658,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               return `Base Lactate: ${yVal.toFixed(2)} mmol/L`;
             }
             
-            // Enhanced display for LTP1 and LTP2
+            // Enhanced display for LTP1 and LTP2 – same unit as X-axis (speed/pace/power)
             let formattedValue;
-            if (isPaceSport) {
-              if (inputMode === 'pace') {
-                const paceStr = formatSecondsToMMSS(xVal);
-                const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                formattedValue = `${paceStr}${unit}`;
-              } else {
-                const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                formattedValue = `${xVal.toFixed(1)}${unit}`;
-              }
+            const useSpeed = isPaceSport && (inputMode === 'speed' || (xVal > 0 && xVal < 100));
+            if (!isPaceSport) {
+              formattedValue = `${Math.round(xVal)}W`;
+            } else if (useSpeed) {
+              const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+              formattedValue = `${Number(xVal).toFixed(1)}${unit}`;
+            } else if (isPaceSport) {
+              const paceStr = formatSecondsToMMSS(xVal);
+              const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
+              formattedValue = `${paceStr}${unit}`;
             } else {
               formattedValue = `${Math.round(xVal)}W`;
             }
@@ -1871,24 +1919,45 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </button>
           </div>
           {!demoMode && (
-            <div className="flex flex-col items-start sm:items-end gap-1">
-              <button
-                onClick={openEmailModal}
-                disabled={sendingEmail}
-                className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
-                  sendingEmail
-                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
-                }`}
-                title="Send report to email"
-              >
-                {sendingEmail ? 'Sending…' : 'Send results to email'}
-              </button>
-              {emailStatus?.message && (
-                <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {emailStatus.message}
-                </div>
-              )}
+            <div className="flex flex-col sm:flex-row items-start sm:items-end gap-2">
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={openEmailModal}
+                  disabled={sendingEmail}
+                  className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                    sendingEmail
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
+                  }`}
+                  title="Send report to email"
+                >
+                  {sendingEmail ? 'Sending…' : 'Send results to email'}
+                </button>
+                {emailStatus?.message && (
+                  <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {emailStatus.message}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                    downloadingPdf
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
+                  }`}
+                  title="Download full report as PDF (includes comparison with previous tests)"
+                >
+                  {downloadingPdf ? 'Preparing…' : 'Download PDF'}
+                </button>
+                {pdfStatus?.message && (
+                  <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {pdfStatus.message}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -1980,30 +2049,27 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       const xPixel = xScale.getPixelForValue(point.x);
                       const label = index === 0 ? 'LT1' : 'LT2';
                       
-                      // Format value for label
-                      // Check sport from mockData directly to ensure correct detection
+                      // Format value for label: use same unit as X-axis (sport + inputMode; infer from point.x when needed)
                       const currentSport = mockData?.sport || '';
                       const isBikeSport = currentSport === 'bike';
-                      
+                      // When axis is Speed (km/h), point.x is in 0.5–30 (run) or 0.5–8 (swim). When axis is Pace, point.x is seconds (e.g. 180–600).
+                      const looksLikeSpeed = isPaceSport && point.x > 0 && point.x < 100;
+                      const useSpeedLabel = isPaceSport && (inputMode === 'speed' || looksLikeSpeed);
+
                       let valueText = '';
-                      // Always check bike first - bike should NEVER show pace
-                      // Double-check: if sport is bike OR if point.x is clearly a power value (>= 50), show Power
-                      const isClearlyPower = point.x >= 50 && point.x <= 1000; // Reasonable power range
-                      if (isBikeSport || (!isPaceSport && isClearlyPower)) {
-                        // For bike: always show Power (point.x is already in watts)
+                      if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
+                        // Bike or power-based: show Power (W)
                         valueText = `Power: ${Math.round(point.x)}W`;
+                      } else if (isPaceSport && useSpeedLabel) {
+                        // Run/swim, axis in km/h: point.x is speed
+                        const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+                        valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
                       } else if (isPaceSport) {
-                        // For run/swim: show Pace or Speed based on inputMode
-                        if (inputMode === 'pace') {
-                          const paceStr = formatSecondsToMMSS(point.x);
-                          const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                          valueText = `Pace: ${paceStr}${unit}`;
-                        } else {
-                          const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                          valueText = `Speed: ${point.x.toFixed(1)}${unit}`;
-                        }
+                        // Run/swim, axis in pace: point.x is seconds per km/100m
+                        const paceStr = formatSecondsToMMSS(point.x);
+                        const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
+                        valueText = `Pace: ${paceStr}${unit}`;
                       } else {
-                        // Fallback: show Power (for any other sport that uses power)
                         valueText = `Power: ${Math.round(point.x)}W`;
                       }
                       const lactateText = `${point.y.toFixed(2)} mmol/L`;

@@ -1,6 +1,7 @@
 const testAbl = require('../abl/testAbl');
 const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
 const { sendDemoTestEmail } = require('../services/demoTestEmailService');
+const { generateTestReportPdf } = require('../services/lactateTestPdfService');
 
 const testController = {
     // Get all tests for the authenticated user
@@ -135,6 +136,29 @@ const testController = {
         } catch (error) {
             console.error('[TestController] sendTestReportEmail error:', error);
             return res.status(500).json({ sent: false, error: 'Failed to send email' });
+        }
+    },
+
+    // Generate and download PDF report (same content as email, incl. previous test comparison)
+    getTestReportPdf: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await generateTestReportPdf(req.user.userId, id);
+            if (result.error) {
+                const status =
+                    result.reason === 'forbidden' ? 403 :
+                    result.reason === 'test_not_found' ? 404 :
+                    result.reason === 'pdf_not_available' || result.reason === 'pdf_generation_failed' ? 503 :
+                    400;
+                return res.status(status).json({ error: result.reason, message: result.message });
+            }
+            const filename = `lactate-report-${id}.pdf`;
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.send(result.pdf);
+        } catch (error) {
+            console.error('[TestController] getTestReportPdf error:', error);
+            return res.status(500).json({ error: 'Failed to generate PDF' });
         }
     },
 

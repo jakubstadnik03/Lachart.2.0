@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
     "@emailjs/browser": "^4.4.1",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
@@ -43,7 +45,10 @@
     "eject": "react-scripts eject",
     "analyze": "source-map-explorer 'build/static/js/*.js'",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d build"
+    "deploy": "gh-pages -d build",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:sync:no-build": "npx cap sync",
+    "cap:ios": "npx cap open ios"
   },
   "eslintConfig": {
     "extends": [
@@ -81,6 +86,7 @@
     ]
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "autoprefixer": "^10.4.20",
     "documentation": "^14.0.3",

@@ -299,9 +299,27 @@ function calculateThresholds(testData) {
     }
   }
 
-  if (ltp1 && ltp2 && ltp1 > 0 && ltp2 > 0) {
+  // Bike: pokud je LTP2 příliš blízko LTP1 nebo s příliš nízkým laktátem, použít OBLA 3.5
+  const MIN_LTP2_LACTATE = 2.5;
+  const MIN_LT2_LT1_GAP_W = 25;
+  if (sport === 'bike' && thresholds['LTP1'] != null && thresholds['LTP2'] != null) {
+    const ltp2La = thresholds.lactates?.['LTP2'];
+    const gap = thresholds['LTP2'] - thresholds['LTP1'];
+    if ((ltp2La != null && ltp2La < MIN_LTP2_LACTATE) || gap < MIN_LT2_LT1_GAP_W) {
+      const obla35 = thresholds['OBLA 3.5'];
+      if (obla35 != null && obla35 > thresholds['LTP1'] + MIN_LT2_LT1_GAP_W) {
+        thresholds['LTP2'] = obla35;
+        thresholds.heartRates['LTP2'] = thresholds.heartRates['OBLA 3.5'] ?? thresholds.heartRates['LTP2'];
+        thresholds.lactates['LTP2'] = 3.5;
+      }
+    }
+  }
+
+  if (thresholds['LTP1'] && thresholds['LTP2'] && thresholds['LTP1'] > 0 && thresholds['LTP2'] > 0) {
     const isPaceSport = sport === 'run' || sport === 'swim';
-    const ratio = isPaceSport ? (ltp1 / ltp2) : (ltp2 / ltp1);
+    const ratio = isPaceSport
+      ? (thresholds['LTP1'] / thresholds['LTP2'])
+      : (thresholds['LTP2'] / thresholds['LTP1']);
     if (Number.isFinite(ratio)) thresholds['LTRatio'] = ratio.toFixed(2);
   }
 
