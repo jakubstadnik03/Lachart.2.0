@@ -287,11 +287,11 @@ function renderFocusBlock(bullets) {
 }
 
 /**
- * Build full report HTML for a test (used for email and PDF).
- * Includes comparison with previous test when available.
- * @returns {{ html: string, title: string }} or {{ error: true, reason: string }}
+ * Load report data for a test (used by getReportHtml and PDF generation).
+ * @returns {{ test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, focus, lactateSvg, baseTitle }} or {{ error: true, reason: string }}
  */
-async function getReportHtml(requesterUserId, testId, overrides = {}) {
+async function getReportData(requesterUserId, testId, overrides = {}) {
+  const opts = overrides || {};
   const requester = await User.findById(requesterUserId).select('email role athletes name surname admin');
   if (!requester) return { error: true, reason: 'requester_not_found' };
 
@@ -351,6 +351,7 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
 
   const overrideZones = sanitizeZones(opts.zones);
   const curZones = overrideZones || computedZones;
+  const hasOverrideZones = Boolean(overrideZones);
   const prevThr = prevTest ? calculateThresholds(prevTest) : null;
 
   const focus = buildFocusRecommendation({ sport, cur: curThr, prev: prevThr });
@@ -373,7 +374,24 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
   });
 
   const baseTitle = `Lactate Test Report • ${sport.toUpperCase()} • ${formatDateShort(test.date)}`;
-  const opts = overrides || {};
+  return { test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, hasOverrideZones, focus, lactateSvg, baseTitle, opts };
+}
+
+/**
+ * Build full report HTML for a test (used for email).
+ * Includes comparison with previous test when available.
+ * @returns {{ html: string, title: string }} or {{ error: true, reason: string }}
+ */
+async function getReportHtml(requesterUserId, testId, overrides = {}) {
+  const data = await getReportData(requesterUserId, testId, overrides);
+  if (data.error) return { error: true, reason: data.reason };
+
+  const { test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, hasOverrideZones, focus, lactateSvg, baseTitle, opts } = data;
+  const clientUrl = getClientUrl();
+  const testUrl = `${clientUrl}/testing?testId=${test._id}`;
+  const aboutUrl = `${clientUrl}/about`;
+  const trainingImageUrl = `${clientUrl}/images/lachart_training.png`;
+
   const promoIntro = opts.promo
     ? `
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#f5f3ff;margin-bottom:10px;">
@@ -384,10 +402,6 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
       </div>
     `
     : '';
-  const clientUrl = getClientUrl();
-  const testUrl = `${clientUrl}/testing?testId=${test._id}`;
-  const aboutUrl = `${clientUrl}/about`;
-  const trainingImageUrl = `${clientUrl}/images/lachart_training.png`;
 
   const content = `
     <div style="display:flex;flex-direction:column;gap:14px;">
@@ -414,7 +428,7 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
         <div style="font-weight:800;color:#111827;font-size:16px;margin-bottom:6px;">Zones</div>
-        ${overrideZones ? `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(edited before sending)</div>` : `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(calculated from this test)</div>`}
+        ${hasOverrideZones ? `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(edited before sending)</div>` : `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(calculated from this test)</div>`}
         ${renderZonesTable(curZones, { sport })}
       </div>
 
@@ -537,6 +551,7 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
 }
 
 module.exports = {
+  getReportData,
   getReportHtml,
   sendLactateTestReportEmail
 };
