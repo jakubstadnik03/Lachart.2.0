@@ -1,7 +1,10 @@
 const UserDao = require("../../dao/userDao");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("../../config/jwt.config");
 const { sendEmailVerificationEmail } = require("../../services/emailVerificationService");
+const { saveRegistrationLocation } = require("../../utils/geoip");
 
 class RegisterAbl {
     constructor() {
@@ -66,6 +69,9 @@ class RegisterAbl {
             const savedUser = await this.userDao.findByEmail(email);
             console.log("Saved user password hash length:", savedUser.password.length);
 
+            // Save registration location (fire-and-forget)
+            saveRegistrationLocation(this.userDao, newUser._id, req);
+
             // Po úspěšné registraci pošleme verifikační e‑mail (best effort, neblokuje registraci)
             try {
                 if (savedUser?.email) {
@@ -79,8 +85,17 @@ class RegisterAbl {
                 // Nevracíme chybu uživateli – registrace proběhla, jen se nepovedlo odeslat e‑mail
             }
 
+            // Generate JWT so the client can immediately use the new account
+            // (e.g. save a test created before registration)
+            const token = jwt.sign(
+                { userId: newUser._id, email: newUser.email, role: newUser.role },
+                JWT_SECRET,
+                { expiresIn: "24h" }
+            );
+
             res.status(201).json({
                 message: "Uživatel úspěšně vytvořen",
+                token,
                 user: {
                     _id: newUser._id,
                     email: newUser.email,

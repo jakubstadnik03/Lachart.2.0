@@ -252,40 +252,38 @@ const DashboardPage = () => {
     }
   }, [setLoading]);
 
-  // Load regular trainings from /training route
   const loadRegularTrainings = useCallback(async (targetId) => {
     try {
-      // For athlete, use their own ID
-      // For coach, use targetId (must be selected, don't use coach's own ID)
       const athleteId = user?.role === 'athlete' ? user._id : targetId;
       
-      // If coach but no athlete selected, don't load trainings
       if (user?.role === 'coach' && !athleteId) {
         setRegularTrainings([]);
-        return;
+        return [];
       }
       
-      if (!athleteId) {
-        return; // Skip if no athleteId
-      }
+      if (!athleteId) return [];
       
       const response = await api.get(`/user/athlete/${athleteId}/trainings`);
       if (response && response.data) {
         setRegularTrainings(response.data);
+        return response.data;
       }
+      return [];
     } catch (error) {
-      // Handle rate limit errors gracefully
       if (error.response?.status === 429) {
-        console.warn('Rate limit exceeded when loading regular trainings. Please wait a moment.');
-        // Don't show error to user, just log it
-        return;
+        console.warn('Rate limit exceeded when loading regular trainings.');
+        return [];
       }
       console.error('Error loading regular trainings:', error);
+      return [];
     }
   }, [user?.role, user?._id]);
 
-  // Load training calendar data (FIT files and Strava activities) with localStorage caching
-  const loadCalendarData = useCallback(async (targetId) => {
+  // Load training calendar data (FIT files and Strava activities) with localStorage caching.
+  // Accepts optional regularTrainingsParam so the main loader can pass data directly
+  // without waiting for a state update cycle.
+  const loadCalendarData = useCallback(async (targetId, regularTrainingsParam) => {
+    const regTrainings = regularTrainingsParam || regularTrainings;
     try {
       // Check localStorage cache first
       const cacheKey = `calendarData_${targetId}`;
@@ -337,16 +335,12 @@ const DashboardPage = () => {
         })
       ]);
 
-      // Merge Training-model entries that are linked to a Strava activity into a single calendar item:
-      // show the Training title, but keep all Strava-derived metrics and open Strava detail on click.
-      // Use regularTrainings from state (loaded in parallel)
       const trainingByStravaId = new Map();
-      (regularTrainings || []).forEach(t => {
+      (regTrainings || []).forEach(t => {
         const sid = t?.sourceStravaActivityId;
         if (sid) trainingByStravaId.set(String(sid), t);
       });
 
-      // Combine and format data for calendar
       const combined = [
         ...(fitData || []).map(t => ({
           ...t,
@@ -361,8 +355,7 @@ const DashboardPage = () => {
           totalTime: t.totalElapsedTime || t.totalTimerTime,
           distance: t.totalDistance
         })),
-        // Only show regular trainings that are NOT linked to a Strava activity (linked ones will be merged into the Strava item below)
-        ...regularTrainings
+        ...(regTrainings || [])
           .filter(t => !t?.sourceStravaActivityId)
           .map(t => ({ 
             ...t,
@@ -569,17 +562,8 @@ const DashboardPage = () => {
     return () => window.removeEventListener('activityUpdated', handleActivityUpdate);
   }, [selectedAthleteId, user?._id, user?.role, loadCalendarData]);
 
-  // Reload calendar data when regularTrainings change (to update linked titles)
-  useEffect(() => {
-    if (regularTrainings.length > 0 && selectedAthleteId) {
-      // Only reload if we have regularTrainings and an athlete selected
-      // This ensures calendar data gets updated with linked training titles
-      const targetId = user?.role === 'athlete' ? user._id : selectedAthleteId;
-      if (targetId) {
-        loadCalendarData(targetId);
-      }
-    }
-  }, [regularTrainings, selectedAthleteId, user?._id, user?.role, loadCalendarData]);
+  // Removed: cascade useEffect that re-triggered loadCalendarData on regularTrainings change.
+  // The main loader now passes regularTrainings directly to loadCalendarData.
 
   // Sync selectedAthleteId with URL parameter when it changes
   useEffect(() => {
@@ -670,20 +654,19 @@ const DashboardPage = () => {
 
     const loadData = async () => {
       try {
-        // Mark as loading for this athlete
         lastLoadedAthleteIdRef.current = targetAthleteId;
         lastLoadTimeRef.current = now;
         hasLoadedOnceRef.current = true;
         
-        // Load regular trainings first (needed for calendar data linking)
-        await loadRegularTrainings(targetAthleteId);
+        // Load regular trainings first (needed by both loadTrainings and loadCalendarData)
+        const regTrainingsResponse = await loadRegularTrainings(targetAthleteId);
         
-        // Load all other data in parallel for better performance
+        // Load all other data in parallel, passing regularTrainings directly to loadCalendarData
         const [trainingsData, athleteData] = await Promise.all([
           loadTrainings(targetAthleteId),
           loadAthlete(targetAthleteId),
-          loadTests(targetAthleteId), // loadTests already sets tests state internally
-          loadCalendarData(targetAthleteId) // loadCalendarData already sets calendar state internally (uses regularTrainings from state)
+          loadTests(targetAthleteId),
+          loadCalendarData(targetAthleteId, regTrainingsResponse)
         ]);
 
         if (trainingsData) {
@@ -694,7 +677,6 @@ const DashboardPage = () => {
         }
       } catch (error) {
         console.error('Error loading data:', error);
-        // Don't reset ref on error - keep the cache to prevent rapid retries
       }
     };
 

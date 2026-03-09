@@ -14,6 +14,8 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require('google-auth-library');
 
+const { saveRegistrationLocation } = require("../utils/geoip");
+
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
 const Test = require("../models/test");
@@ -320,6 +322,7 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         };
 
         const athlete = await userDao.createUser(athleteData);
+        saveRegistrationLocation(userDao, athlete._id, req);
 
         // Add athlete to coach
         await userDao.addAthleteToCoach(coach._id, athlete._id);
@@ -1724,9 +1727,11 @@ router.post("/google-auth", async (req, res) => {
                 name: given_name,
                 surname: family_name,
                 googleId,
-                role: 'athlete', // Default role
+                role: 'athlete',
                 isRegistrationComplete: true
             });
+            // Save registration location (fire-and-forget)
+            saveRegistrationLocation(userDao, user._id, req);
         } else if (!user.googleId) {
             // Link Google account to existing user
             user = await userDao.updateUser(user._id, { googleId });
@@ -2031,7 +2036,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount,
                 athletes: user.role === 'coach' ? athletesList : undefined,
-                athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined
+                athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined,
+                registrationLocation: user.registrationLocation || null
             };
         }));
 
@@ -2096,6 +2102,13 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
             }
         });
         
+        // Build country breakdown from registrationLocation
+        const usersByCountry = {};
+        users.forEach(u => {
+            const country = u.registrationLocation?.country || 'Unknown';
+            usersByCountry[country] = (usersByCountry[country] || 0) + 1;
+        });
+
         const stats = {
             totalUsers: users.length,
             usersByRole: {
@@ -2108,6 +2121,7 @@ router.get("/admin/stats", verifyToken, async (req, res) => {
                 acc[sport] = (acc[sport] || 0) + 1;
                 return acc;
             }, {}),
+            usersByCountry,
             testsBySport: testsBySport,
             recentRegistrations: users
                 .filter(u => u.createdAt && new Date(u.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))

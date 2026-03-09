@@ -71,12 +71,9 @@ const TestingPage = () => {
       setError(null);
       // For tester role, use any ID (backend will return all tests)
       const testId = user?.role === 'tester' ? user._id : targetId;
-      console.log('[TestingPage] Loading tests for:', testId);
       const response = await api.get(`/test/list/${testId}`);
       
-      // Validate and deduplicate tests by ID
       const testsData = Array.isArray(response.data) ? response.data : [];
-      console.log('[TestingPage] Received tests count:', testsData.length);
       
       const seenIds = new Set();
       const uniqueTests = [];
@@ -106,8 +103,6 @@ const TestingPage = () => {
         addNotification(`Warning: Found ${duplicateIds.length} duplicate test(s). Only showing unique tests.`, 'warning');
       }
       
-      console.log('[TestingPage] Setting unique tests count:', uniqueTests.length);
-      console.log('[TestingPage] Test IDs:', uniqueTests.map(t => String(t._id)));
       setTests(uniqueTests);
     } catch (err) {
       console.error('Error loading tests:', err);

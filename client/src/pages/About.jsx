@@ -179,6 +179,286 @@ const faqItems = [
   }
 ];
 
+const tutorialSteps = [
+  {
+    title: 'Create Your Account',
+    description: 'Sign up for free in seconds. Choose your role — athlete or coach — and set up your profile with your sport, preferred units, and training preferences.',
+    media: [
+      { type: 'image', src: '/images/screenshot-signup.png', alt: 'LaChart sign up page' },
+      { type: 'image', src: '/images/lachart1.png', alt: 'LaChart registration and profile setup' },
+      { type: 'image', src: '/images/lachart1.jpeg', alt: 'Profile settings and preferences' },
+    ],
+  },
+  {
+    title: 'Connect Strava & Import Trainings',
+    description: 'Link your Strava account to automatically sync all your activities. Your rides, runs, and swims appear in the Training Calendar with full data — power, heart rate, pace, and GPS. You can also upload .FIT files directly or add trainings manually.',
+    media: [
+      { type: 'image', src: '/images/lachart_training.png', alt: 'Strava connection and training import' },
+      { type: 'image', src: '/images/training-calendar.png', alt: 'Imported trainings in calendar view' },
+    ],
+  },
+  {
+    title: 'Add a New Lactate Test',
+    description: 'Navigate to the Testing page and create a new test. Enter your baseline lactate, select your sport (cycling, running, swimming), and fill in each stage with power/pace, heart rate, and lactate values.',
+    media: [
+      { type: 'image', src: '/images/screenshot-testing.png', alt: 'LaChart testing page with lactate curve and data table' },
+      { type: 'image', src: '/images/lachart2.png', alt: 'Creating a new lactate test in LaChart' },
+      { type: 'image', src: '/images/lachart2.jpeg', alt: 'Filling in test stages with data' },
+    ],
+  },
+  {
+    title: 'View Your Lactate Curve',
+    description: 'Once your data is entered, LaChart instantly plots your lactate curve with heart rate overlay. The interactive chart highlights key inflection points and lets you hover over data points for details.',
+    media: [
+      { type: 'image', src: '/images/screenshot-testing.png', alt: 'LaChart lactate curve with heart rate overlay' },
+      { type: 'image', src: '/images/lachart3.png', alt: 'Lactate curve visualization with thresholds' },
+      { type: 'image', src: '/images/lachart3.jpeg', alt: 'Detailed curve with heart rate overlay' },
+    ],
+  },
+  {
+    title: 'Analyze Thresholds',
+    description: 'LaChart calculates multiple thresholds simultaneously — LTP1, LTP2, OBLA (2.0, 2.5, 3.0, 3.5), IAT, D-max, and log-log. Compare methods side by side to find your most accurate training anchors.',
+    media: [
+      { type: 'image', src: '/images/screenshot-testing.png', alt: 'Threshold analysis with all methods visible' },
+      { type: 'image', src: '/images/lachart4.png', alt: 'Threshold analysis with multiple methods' },
+      { type: 'image', src: '/images/lachart4.jpeg', alt: 'Threshold values and calculation details' },
+    ],
+  },
+  {
+    title: 'Generate Training Zones',
+    description: 'Based on your thresholds, LaChart automatically generates 5 personalized training zones with power/pace and heart rate ranges. Use "Set Zones" to save them directly to your profile for easy reference during workouts.',
+    media: [
+      { type: 'image', src: '/images/lachart5.png', alt: 'Training zones generated from lactate test' },
+      { type: 'image', src: '/images/lachart5.jpeg', alt: 'Zone details with power and HR ranges' },
+    ],
+  },
+  {
+    title: 'View Time Spent in Each Zone',
+    description: 'For every training session, see exactly how much time you spent in each training zone. Understand your training distribution — are you doing enough base work in Zone 1-2? Too much time in the grey zone? Optimize your training with real data.',
+    media: [
+      { type: 'image', src: '/images/lachart3.jpeg', alt: 'Time in zone analysis for a training session' },
+      { type: 'image', src: '/images/training-analytics.png', alt: 'Zone distribution overview' },
+    ],
+  },
+  {
+    title: 'Analyze Power & Pace Peaks',
+    description: 'View your max power (or fastest pace) for key durations — 1 minute, 5 minutes, 20 minutes, and more. Track how your peak efforts change over time and identify strengths and weaknesses across different effort durations.',
+    media: [
+      { type: 'image', src: '/images/lachart4.jpeg', alt: 'Power duration curve and peak analysis' },
+      { type: 'image', src: '/images/lachart6.jpeg', alt: 'Peak power across multiple sessions' },
+    ],
+  },
+  {
+    title: 'Export Trainings with Lactate Data',
+    description: 'Add lactate measurements to any training session — perfect for field tests or training sessions where you take blood samples. See lactate values overlaid on your power/pace and heart rate data for a complete physiological picture.',
+    media: [
+      { type: 'image', src: '/images/lachart5.jpeg', alt: 'Training with lactate data overlay' },
+      { type: 'image', src: '/images/lactate_testing.png', alt: 'Lactate data in training context' },
+    ],
+  },
+  {
+    title: 'Compare Similar Trainings',
+    description: 'Group trainings by name (e.g. "5x1km LT2 intervals") and compare them side by side. See how your power, pace, and heart rate evolve across sessions. The bar chart shows each interval, and the progress tracker highlights your improvements.',
+    media: [
+      { type: 'image', src: '/images/lachart6.jpeg', alt: 'Comparing similar training sessions over time' },
+      { type: 'image', src: '/images/lachart6.png', alt: 'Training comparison bar chart' },
+    ],
+  },
+  {
+    title: 'Compare Tests & Track Progress',
+    description: 'Overlay multiple lactate tests to visualize your progression over time. See how your lactate curve shifts right as your fitness improves, and track changes in thresholds and zones across training blocks.',
+    media: [
+      { type: 'image', src: '/images/lachart6.png', alt: 'Test comparison and progress tracking' },
+      { type: 'image', src: '/images/Form-fitness-chart.png', alt: 'Long-term fitness progression chart' },
+    ],
+  },
+  {
+    title: 'Download PDF Report',
+    description: 'Generate a professional PDF report with your lactate curve, all calculated thresholds, training zones, and comparison with previous tests. Share it with your coach, keep it in your medical records, or send it to your athletes.',
+    media: [
+      { type: 'image', src: '/images/lachart-test.png', alt: 'Professional PDF report from LaChart' },
+      { type: 'image', src: '/images/lactate-analysis.jpg', alt: 'PDF report detail with zones and thresholds' },
+    ],
+  },
+  {
+    title: 'Coach Dashboard & Athlete Management',
+    description: 'As a coach, manage multiple athletes from one dashboard. Invite athletes, view their test history, assign trainings, compare results, and provide feedback. Switch between athletes instantly and see their full training calendar and lactate history.',
+    media: [
+      { type: 'image', src: '/images/training-analytics.png', alt: 'Coach dashboard with athlete management' },
+      { type: 'image', src: '/images/lachart_training.png', alt: 'Athlete training overview' },
+    ],
+  },
+  {
+    title: 'Training Calendar Overview',
+    description: 'See all your activities in a weekly or monthly calendar view. Each day shows your completed sessions with key metrics. Click any training to dive into detailed analysis with intervals, zones, and physiological data.',
+    media: [
+      { type: 'image', src: '/images/training-calendar.png', alt: 'Training calendar with activity overview' },
+      { type: 'image', src: '/images/lachart_training.png', alt: 'Detailed training session view' },
+    ],
+  },
+];
+
+const HowToUseTutorial = () => {
+  const [activeStep, setActiveStep] = useState(0);
+  const [activeMedia, setActiveMedia] = useState(0);
+  const step = tutorialSteps[activeStep];
+  const mediaItems = Array.isArray(step.media) ? step.media : [step.media];
+  const currentMedia = mediaItems[activeMedia] || mediaItems[0];
+
+  const handleStepChange = (newStep) => {
+    setActiveStep(newStep);
+    setActiveMedia(0);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`tutorial-step-${newStep}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-8">
+      {/* Left: Step selector — scrollable, ~10 visible */}
+      <div className="lg:w-1/3 flex flex-col gap-2 lg:max-h-[520px] overflow-y-auto pr-1 scroll-smooth" style={{ scrollbarWidth: 'thin' }}>
+        {tutorialSteps.map((s, i) => (
+          <button
+            key={i}
+            id={`tutorial-step-${i}`}
+            onClick={() => handleStepChange(i)}
+            className={`text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-start gap-3 ${
+              i === activeStep
+                ? 'bg-primary/10 border-l-4 border-primary shadow-sm'
+                : 'hover:bg-gray-50 border-l-4 border-transparent'
+            }`}
+          >
+            <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+              i === activeStep ? 'bg-primary text-white' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {i + 1}
+            </span>
+            <span className={`font-medium text-sm ${i === activeStep ? 'text-primary' : 'text-gray-700'}`}>
+              {s.title}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Right: Content area */}
+      <div className="lg:w-2/3">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeStep}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3 }}
+            className="bg-gray-50 rounded-2xl p-6 sm:p-8 shadow-lg"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <span className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-lg">
+                {activeStep + 1}
+              </span>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-900">{step.title}</h3>
+            </div>
+            <p className="text-gray-600 mb-6 leading-relaxed">{step.description}</p>
+            
+            {/* Media area with carousel */}
+            <div className="relative">
+              <div className="rounded-xl overflow-hidden shadow-md border border-gray-200 bg-gray-100" style={{ aspectRatio: '16 / 9' }}>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`${activeStep}-${activeMedia}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full h-full flex items-center justify-center"
+                  >
+                    {currentMedia.type === 'video' ? (
+                      <video
+                        src={currentMedia.src}
+                        controls
+                        className="w-full h-full object-contain"
+                        poster={currentMedia.poster}
+                      />
+                    ) : (
+                      <LazyImage
+                        src={currentMedia.src}
+                        alt={currentMedia.alt}
+                        className="w-full h-full object-contain"
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Image carousel controls */}
+              {mediaItems.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setActiveMedia((prev) => (prev - 1 + mediaItems.length) % mediaItems.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm shadow-md flex items-center justify-center hover:bg-white transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setActiveMedia((prev) => (prev + 1) % mediaItems.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm shadow-md flex items-center justify-center hover:bg-white transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+
+                  {/* Dots indicator */}
+                  <div className="flex items-center justify-center gap-1.5 mt-3">
+                    {mediaItems.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveMedia(i)}
+                        className={`rounded-full transition-all duration-200 ${
+                          i === activeMedia
+                            ? 'w-6 h-2 bg-primary'
+                            : 'w-2 h-2 bg-gray-300 hover:bg-gray-400'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Step navigation arrows */}
+            <div className="flex items-center justify-between mt-6">
+              <button
+                onClick={() => handleStepChange(Math.max(0, activeStep - 1))}
+                disabled={activeStep === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 hover:bg-gray-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Previous
+              </button>
+              <span className="text-sm text-gray-500">{activeStep + 1} / {tutorialSteps.length}</span>
+              <button
+                onClick={() => handleStepChange(Math.min(tutorialSteps.length - 1, activeStep + 1))}
+                disabled={activeStep === tutorialSteps.length - 1}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 hover:bg-gray-200"
+              >
+                Next
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
 const About = () => {
   // Cookie consent state
   const [showCookieBar, setShowCookieBar] = useState(false);
@@ -547,10 +827,7 @@ const About = () => {
               <button onClick={() => scrollToSection('connect')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Connect</button>
               <button onClick={() => scrollToSection('solutions')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Solutions</button>
               <button onClick={() => scrollToSection('guide')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Guide</button>
-              <button onClick={() => scrollToSection('coaching')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Coaching</button>
-              <button onClick={() => scrollToSection('testimonials')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Testimonials</button>
               <button onClick={() => scrollToSection('how-to-use')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">How to Use</button>
-              <button onClick={() => scrollToSection('faq')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">FAQ</button>
               <button onClick={() => scrollToSection('contact')} className="px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 hover:text-primary whitespace-nowrap transition-colors">Contact</button>
             </div>
 
@@ -584,10 +861,7 @@ const About = () => {
                 <button onClick={() => scrollToSection('connect')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Connect</button>
                 <button onClick={() => scrollToSection('solutions')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Solutions</button>
                 <button onClick={() => scrollToSection('guide')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Guide</button>
-                <button onClick={() => scrollToSection('coaching')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Coaching</button>
-                <button onClick={() => scrollToSection('testimonials')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Testimonials</button>
                 <button onClick={() => scrollToSection('how-to-use')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">How to Use</button>
-                <button onClick={() => scrollToSection('faq')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">FAQ</button>
                 <button onClick={() => scrollToSection('contact')} className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-primary text-left">Contact</button>
                 <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-gray-200">
                   <a href="/login" className="px-3 py-2 text-sm font-medium text-primary hover:text-primary-dark text-left">Login</a>
@@ -1309,66 +1583,14 @@ const About = () => {
       <section id="how-to-use" className="py-16 bg-white scroll-mt-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-base text-primary font-semibold tracking-wide uppercase text-center">How to Use LaChart</h2>
-          <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl text-center mb-12">
-            Real-World Applications
+          <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl text-center mb-4">
+            Step-by-Step Tutorial
           </p>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Lactate Testing Card */}
-            <div className="bg-gray-50 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="text-3xl mb-4">🧪</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Lactate Testing</h3>
-              <p className="text-gray-600">
-                During lactate tests, record each step's data including intervals and measurements. LaChart automatically generates your lactate curve and identifies key points like LT1, LT2, and other thresholds. Compare with historical tests to track your performance improvements over time.
-              </p>
-            </div>
+          <p className="text-center text-gray-600 mb-12 max-w-2xl mx-auto">
+            Follow these steps to get the most out of LaChart — from creating your account to analyzing your performance.
+          </p>
 
-            {/* Coach Management Card */}
-            <div className="bg-gray-50 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="text-3xl mb-4">👥</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Coach Management</h3>
-              <p className="text-gray-600">
-                Coaches and testers can organize athletes into groups, assign and conduct tests, and evaluate results. The platform provides a comprehensive overview of each athlete's progress and development over time.
-              </p>
-            </div>
-
-            {/* Training Progress Card */}
-            <div className="bg-gray-50 p-8 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <div className="text-3xl mb-4">📈</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Training Progress</h3>
-              <p className="text-gray-600">
-                For recurring training sessions, like "10x1km LT2 runs", track changes in lactate levels and pace across multiple sessions. Monitor your progress and see how your performance metrics improve over time.
-              </p>
-            </div>
-          </div>
-
-          {/* Example Workflow */}
-          <div className="mt-12 bg-gray-50 p-8 rounded-2xl shadow-lg">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Example Workflow</h3>
-            <div className="space-y-6">
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">1</div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">Record Test Data</h4>
-                  <p className="text-gray-600">Enter your step-by-step test data including power output, heart rate, and lactate measurements.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">2</div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">Analyze Results</h4>
-                  <p className="text-gray-600">LaChart automatically generates your lactate curve and calculates key training zones (LT1, LT2, OBLA, IAT).</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">3</div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">Track Progress</h4>
-                  <p className="text-gray-600">Compare current results with historical data to visualize your performance improvements.</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <HowToUseTutorial />
         </div>
       </section>
 

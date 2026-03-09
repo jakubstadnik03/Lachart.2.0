@@ -83,16 +83,13 @@ const SignUpPage = () => {
 
   const handleGoogleSuccess = async (response) => {
     try {
-      const res = await fetch(`${API_ENDPOINTS.API_URL}/auth/google`, {
+      const res = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          googleId: response.credential,
-          email: response.email,
-          name: response.given_name,
-          surname: response.family_name,
+          credential: response.credential,
         }),
       });
 

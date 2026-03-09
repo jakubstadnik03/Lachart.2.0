@@ -424,16 +424,13 @@ const LactateCurveCalculatorPage = () => {
         setEmailError(null);
 
         try {
-            const res = await fetch(`${API_BASE_URL}/auth/google`, {
+            const res = await fetch(`${API_BASE_URL}/user/google-auth`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    googleId: response.credential,
-                    email: response.email,
-                    name: response.given_name,
-                    surname: response.family_name,
+                    credential: response.credential,
                 }),
             });
 
@@ -551,23 +548,21 @@ const LactateCurveCalculatorPage = () => {
                 }
 
                 // Send email with test results
-                // Prefer the same email/report generation as in the logged-in app:
-                // if we successfully saved the test, send the official report email for that test ID.
-                if (savedTestId) {
+                const userEmail = user?.email;
+                const userName = `${user?.name || ''} ${user?.surname || ''}`.trim();
+                if (savedTestId && userEmail) {
                     const currentToken = localStorage.getItem('token');
-                    await api.post(`/test/${savedTestId}/send-report-email`, { toEmail: response.email }, {
+                    await api.post(`/test/${savedTestId}/send-report-email`, { toEmail: userEmail }, {
                         headers: { 'Authorization': `Bearer ${currentToken}` }
                     });
-                } else {
-                    // Fallback: demo email (still works even if saving failed)
-                    await sendDemoTestEmail(emailTestData, response.email, `${response.given_name} ${response.family_name}`, userId);
+                } else if (userEmail) {
+                    await sendDemoTestEmail(emailTestData, userEmail, userName, userId);
                 }
 
                 addNotification('Test results sent to your email!', 'success');
                 trackDemoUsage('test_email_sent', { sport: testData.sport, intervals: testData.results.length, method: 'google' });
                 setShowEmailModal(false);
 
-                // Log in so app reloads and user sees their profile (with the test already saved)
                 await login(null, null, token, user);
             } else {
                 setEmailError('Google authentication failed. Please try again.');

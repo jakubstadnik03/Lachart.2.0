@@ -67,6 +67,8 @@ const SettingsPage = () => {
   const [currentCoach, setCurrentCoach] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameForm, setNameForm] = useState({ name: '', surname: '' });
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
@@ -674,6 +676,29 @@ const SettingsPage = () => {
     }
   };
 
+  const handleSaveName = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(API_ENDPOINTS.EDIT_PROFILE, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: nameForm.name.trim(), surname: nameForm.surname.trim() })
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updated }));
+        saveUserToStorage(updated);
+        addNotification('Name updated successfully', 'success');
+        setEditingName(false);
+      } else {
+        addNotification('Failed to update name', 'error');
+      }
+    } catch (e) {
+      console.error('Error updating name:', e);
+      addNotification('Failed to update name', 'error');
+    }
+  };
+
   const handleDeleteProfile = async () => {
     const confirmMessage = 'Are you sure you want to delete your profile? This action cannot be undone. All your data will be permanently deleted.';
     if (!window.confirm(confirmMessage)) {
@@ -906,7 +931,55 @@ const SettingsPage = () => {
               <div className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
                 <div>
                   <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Name</label>
-                  <p className={`${isMobile ? 'text-xs' : 'text-base'} text-gray-900 break-words`}>{user?.name || 'N/A'}</p>
+                  {editingName ? (
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={nameForm.name}
+                        onChange={(e) => setNameForm(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="First name"
+                        className={`${isMobile ? 'text-xs px-2 py-1' : 'text-sm px-3 py-2'} border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary flex-1`}
+                      />
+                      <input
+                        type="text"
+                        value={nameForm.surname}
+                        onChange={(e) => setNameForm(prev => ({ ...prev, surname: e.target.value }))}
+                        placeholder="Last name"
+                        className={`${isMobile ? 'text-xs px-2 py-1' : 'text-sm px-3 py-2'} border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary flex-1`}
+                      />
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={handleSaveName}
+                          className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-sm'} bg-primary text-white rounded-lg hover:bg-primary-dark`}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingName(false)}
+                          className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-sm'} bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className={`${isMobile ? 'text-xs' : 'text-base'} text-gray-900 break-words`}>
+                        {user?.name}{user?.surname ? ` ${user.surname}` : ''} {!user?.name && 'N/A'}
+                      </p>
+                      <button
+                        onClick={() => {
+                          setNameForm({ name: user?.name || '', surname: user?.surname || '' });
+                          setEditingName(true);
+                        }}
+                        className={`${isMobile ? 'p-0.5' : 'p-1'} text-gray-400 hover:text-primary transition-colors`}
+                      >
+                        <svg className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Email</label>

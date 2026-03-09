@@ -869,6 +869,23 @@ const AdminDashboard = () => {
                 </div>
               </div>
             </div>
+
+            {/* Users by Country */}
+            {stats?.usersByCountry && Object.keys(stats.usersByCountry).filter(c => c !== 'Unknown').length > 0 && (
+              <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Users by Country</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+                  {Object.entries(stats.usersByCountry)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([country, count]) => (
+                      <div key={country} className="text-center p-2 rounded-lg bg-gray-50">
+                        <p className="text-xl sm:text-2xl font-bold text-sky-600">{count}</p>
+                        <p className="text-xs sm:text-sm text-gray-600">{country}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -1112,7 +1129,21 @@ const AdminDashboard = () => {
                         </div>
                       </div>
 
-                      <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+                      <div className="mt-2 flex items-center justify-center gap-2 text-xs flex-wrap">
+                        {user.registrationLocation?.country && (
+                          <span className="inline-flex px-2 py-0.5 rounded-full font-semibold bg-sky-100 text-sky-800">
+                            {user.registrationLocation.countryCode && (
+                              <img
+                                src={`https://flagcdn.com/16x12/${user.registrationLocation.countryCode.toLowerCase()}.png`}
+                                alt=""
+                                className="inline mr-1 align-baseline"
+                                width="16"
+                                height="12"
+                              />
+                            )}
+                            {user.registrationLocation.city || user.registrationLocation.country}
+                          </span>
+                        )}
                         <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold ${
                           user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
                         }`}>
@@ -1238,6 +1269,7 @@ const AdminDashboard = () => {
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tests</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Logins</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                        <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Strava</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thank You Email</th>
@@ -1248,7 +1280,7 @@ const AdminDashboard = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan="11" className="px-4 lg:px-6 py-8 text-center text-gray-500">
+                          <td colSpan="13" className="px-4 lg:px-6 py-8 text-center text-gray-500">
                             {searchQuery ? `No users found matching "${searchQuery}"` : 'No users found'}
                           </td>
                         </tr>
@@ -1363,6 +1395,29 @@ const AdminDashboard = () => {
                               </div>
                             ) : (
                               <span className="text-gray-400 italic">Never</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-sm">
+                            {user.registrationLocation?.country ? (
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-gray-900" title={user.registrationLocation.ip}>
+                                  {user.registrationLocation.countryCode && (
+                                    <img
+                                      src={`https://flagcdn.com/16x12/${user.registrationLocation.countryCode.toLowerCase()}.png`}
+                                      alt={user.registrationLocation.countryCode}
+                                      className="inline mr-1 align-baseline"
+                                      width="16"
+                                      height="12"
+                                    />
+                                  )}
+                                  {user.registrationLocation.country}
+                                </span>
+                                {user.registrationLocation.city && (
+                                  <span className="text-xs text-gray-500">{user.registrationLocation.city}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">—</span>
                             )}
                           </td>
                           <td className="p-2 text-sm">

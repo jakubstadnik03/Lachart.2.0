@@ -16,6 +16,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
+  const [ltValues, setLtValues] = useState({ lt1: null, lt2: null });
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
@@ -158,14 +159,15 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     if (!mergedData.powerZones[sport]) mergedData.powerZones[sport] = {};
     
     if (zones.power) {
-      // Bike zones - power is already in watts
       mergedData.powerZones.cycling = {
         ...mergedData.powerZones.cycling,
         zone1: { min: zones.power.zone1?.min || 0, max: zones.power.zone1?.max || 0 },
         zone2: { min: zones.power.zone2?.min || 0, max: zones.power.zone2?.max || 0 },
         zone3: { min: zones.power.zone3?.min || 0, max: zones.power.zone3?.max || 0 },
         zone4: { min: zones.power.zone4?.min || 0, max: zones.power.zone4?.max || 0 },
-        zone5: { min: zones.power.zone5?.min || 0, max: zones.power.zone5?.max === Infinity ? Infinity : (zones.power.zone5?.max || 0) }
+        zone5: { min: zones.power.zone5?.min || 0, max: zones.power.zone5?.max === Infinity ? Infinity : (zones.power.zone5?.max || 0) },
+        lt1: ltValues.lt1 ? Math.round(ltValues.lt1) : '',
+        lt2: ltValues.lt2 ? Math.round(ltValues.lt2) : ''
       };
     } else if (zones.pace) {
       // Run/Swim zones - convert pace from mm:ss format to seconds
@@ -207,7 +209,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone5: { 
           min: parsePaceToSeconds(zones.pace.zone5?.min) || 0, 
           max: parsePaceToSeconds(zones.pace.zone5?.max) || 0 
-        }
+        },
+        lt1: ltValues.lt1 ? Math.round(ltValues.lt1) : '',
+        lt2: ltValues.lt2 ? Math.round(ltValues.lt2) : ''
       };
     }
     
@@ -252,6 +256,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     const lt1_lactate = thresholds.lactates?.['LTP1'];
     const lt2_lactate = thresholds.lactates?.['LTP2'];
     const baseLactate = mockData.baseLactate || 1.0;
+
+    setLtValues({ lt1: lt1_value || null, lt2: lt2_value || null });
     
     // Check if we have at least LTP1 and LTP2 (HR is optional)
     if (!lt1_value || !lt2_value) {
@@ -768,12 +774,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       <EditProfileModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
+        zonesOnly={true}
         onSubmit={async (formData) => {
-          // Handle profile update with zones
           try {
             await updateUserProfile(formData);
             setIsEditModalOpen(false);
-            // Reload user profile
             const profileResponse = await api.get('/user/profile');
             setUserProfile(profileResponse.data);
           } catch (error) {

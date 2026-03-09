@@ -139,8 +139,10 @@ router.post("/", verifyToken, async (req, res) => {
             if (!isNaN(d.getTime())) payload.date = d;
         }
         const test = await testAbl.createTest(payload);
+        console.log(`[Test] Test saved for user ${req.user.userId} → testId=${test._id}, sport=${test.sport}, title="${test.title}"`);
         res.status(201).json(test);
     } catch (error) {
+        console.error(`[Test] Failed to save test for user ${req.user?.userId}:`, error.error || error.message);
         res.status(error.status || 400).json({ 
             error: error.error || 'Chyba při vytváření testu' 
         });

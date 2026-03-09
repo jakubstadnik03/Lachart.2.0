@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../Modal';
 
-const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
+const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
   const [selectedSport, setSelectedSport] = useState('cycling'); // cycling or running
@@ -222,8 +222,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
     e.preventDefault();
     setError('');
 
-    // Základní validace
-    if (!formData.name?.trim()) {
+    if (!zonesOnly && !formData.name?.trim()) {
       setError('Name is required');
       return;
     }
@@ -623,7 +622,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
 
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Edit Profile">
+    <Modal isOpen={isOpen} onClose={onClose} title={zonesOnly ? "Set Training Zones" : "Edit Profile"}>
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
           <div className="p-4 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200">
@@ -631,7 +630,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+        {!zonesOnly && <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Date of Birth</label>
             <input
@@ -736,10 +735,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               placeholder="Tell us about yourself..."
             />
           </div>
-        </div>
+        </div>}
 
-        {/* Units Preferences Section */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
+        {!zonesOnly && <div className="mt-8 pt-6 border-t border-gray-200">
           <h3 className="text-xl font-bold text-gray-900 mb-6">Units Preferences</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
@@ -844,7 +842,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Power Zones Section */}
         <div className="mt-8 pt-6 border-t border-gray-200">

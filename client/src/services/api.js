@@ -323,17 +323,17 @@ export const getTrainingById = async (id) => {
     throw error;
   }
 };
-export const addTraining = (trainingData) => api.post('/training', trainingData);
-export const updateTraining = (id, trainingData) => api.put(`/training/${id}`, trainingData);
-export const deleteTraining = (id) => api.delete(`/training/${id}`);
+export const addTraining = (trainingData) => api.post('/training', trainingData).then(r => { invalidateTrainingCaches(); return r; });
+export const updateTraining = (id, trainingData) => api.put(`/training/${id}`, trainingData).then(r => { invalidateTrainingCaches(); return r; });
+export const deleteTraining = (id) => api.delete(`/training/${id}`).then(r => { invalidateTrainingCaches(); return r; });
 
 // Test endpoints
 export const getUserTests = () => api.get('/test/user');
 export const getAllTests = () => api.get('/test');
 export const getTestById = (id) => api.get(`/test/${id}`);
-export const addTest = (testData) => api.post('/test', testData);
-export const updateTest = (id, testData) => api.put(`/test/${id}`, testData);
-export const deleteTest = (id) => api.delete(`/test/${id}`);
+export const addTest = (testData) => api.post('/test', testData).then(r => { invalidateTestCaches(); return r; });
+export const updateTest = (id, testData) => api.put(`/test/${id}`, testData).then(r => { invalidateTestCaches(); return r; });
+export const deleteTest = (id) => api.delete(`/test/${id}`).then(r => { invalidateTestCaches(); return r; });
 export const sendDemoTestEmail = (testData, email, name, userId = null) => api.post('/test/send-demo-email', { testData, email, name, userId });
 
 export const getTestingsByAthleteId = async (athleteId) => {
@@ -397,6 +397,15 @@ const __getInFlight = new Map(); // key -> Promise
 export const clearApiCache = () => {
   __getCache.clear();
   __getInFlight.clear();
+  // Remove all localStorage API cache entries
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('api_cache_')) keys.push(k);
+    }
+    keys.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
 };
 
 function stableStringify(obj) {
@@ -409,27 +418,79 @@ function stableStringify(obj) {
 function buildGetCacheKey(url, config) {
   const token = getAuthToken() || '';
   const params = config?.params ? stableStringify(config.params) : '';
-  // include baseURL because some code uses absolute URLs
   const base = config?.baseURL || api.defaults.baseURL || '';
   return `${token}::${base}::${url}::${params}`;
 }
 
+// URL patterns that benefit from longer in-memory TTL + localStorage persistence.
+// These endpoints return large or stable data that rarely changes during a session.
+const LONG_CACHE_PATTERNS = [
+  { pattern: /\/test\/list\//, ttl: 120000, lsKey: 'api_cache_tests' },
+  { pattern: /\/user\/athlete\/[^/]+\/trainings$/, ttl: 120000, lsKey: 'api_cache_trainings' },
+  { pattern: /\/api\/fit\/trainings$/, ttl: 120000, lsKey: 'api_cache_fit_trainings' },
+  { pattern: /\/api\/fit\/trainings\/with-lactate/, ttl: 120000, lsKey: 'api_cache_fit_lactate' },
+  { pattern: /\/api\/fit\/trainings\/monthly-analysis/, ttl: 120000, lsKey: 'api_cache_fit_monthly' },
+  { pattern: /\/api\/fit\/power-metrics/, ttl: 120000, lsKey: 'api_cache_power_metrics' },
+  { pattern: /\/api\/integrations\/status$/, ttl: 60000 },
+  { pattern: /\/api\/integrations\/activities$/, ttl: 120000, lsKey: 'api_cache_ext_activities' },
+  { pattern: /\/api\/lactate-session\/zones\/latest/, ttl: 120000, lsKey: 'api_cache_zones_latest' },
+  { pattern: /\/user\/athlete\/[^/]+\/form-fitness/, ttl: 300000, lsKey: 'api_cache_form_fitness' },
+  { pattern: /\/user\/athlete\/[^/]+\/weekly-training-load/, ttl: 300000, lsKey: 'api_cache_weekly_load' },
+  { pattern: /\/user\/athlete\/[^/]+\/today-metrics/, ttl: 120000 },
+  { pattern: /\/user\/profile$/, ttl: 60000, lsKey: 'api_cache_profile' },
+];
+const LS_CACHE_MAX_AGE = 10 * 60 * 1000; // localStorage entries valid for 10 minutes
+
+function matchLongCache(url) {
+  for (const entry of LONG_CACHE_PATTERNS) {
+    if (entry.pattern.test(url)) return entry;
+  }
+  return null;
+}
+
+function lsCacheKey(baseKey, url, config) {
+  const token = getAuthToken() || '';
+  const uid = token.slice(-8);
+  const params = config?.params ? stableStringify(config.params) : '';
+  return `${baseKey}_${uid}_${url}_${params}`;
+}
+
+function lsCacheRead(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > LS_CACHE_MAX_AGE) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+function lsCacheWrite(key, data) {
+  try {
+    const payload = JSON.stringify({ ts: Date.now(), data });
+    if (payload.length > 2 * 1024 * 1024) return; // skip if > 2MB
+    localStorage.setItem(key, payload);
+  } catch { /* quota exceeded – silently ignore */ }
+}
+
 const __originalGet = api.get.bind(api);
-// In-flight key for GET /user/profile so noCache callers still share one request (prevents spam on remounts)
 const PROFILE_IN_FLIGHT_KEY = '__profile_in_flight__';
 api.get = (url, config = {}) => {
   const noCache = Boolean(config.noCache || config.headers?.['x-no-cache']);
   const responseType = config.responseType;
   const isProfileGet = typeof url === 'string' && (url === '/user/profile' || url.endsWith('/user/profile'));
-  // Skip caching for blobs/streams
   const cacheable = !noCache && (!responseType || responseType === 'json');
   if (!cacheable && !isProfileGet) return __originalGet(url, config);
 
   const key = isProfileGet ? PROFILE_IN_FLIGHT_KEY : buildGetCacheKey(url, config);
   const now = Date.now();
-  const ttl = Number(config.cacheTtlMs) || 10000; // 10s default (reduced from 30s to improve data freshness)
+  const longEntry = matchLongCache(url);
+  const ttl = Number(config.cacheTtlMs) || (longEntry ? longEntry.ttl : 10000);
 
-  // For profile: only use cache if not noCache
+  // 1. Check in-memory cache
   if (!isProfileGet || !noCache) {
     const hit = __getCache.get(key);
     if (hit && hit.expiresAt > now) {
@@ -441,25 +502,39 @@ api.get = (url, config = {}) => {
     }
   }
 
+  // 2. Check localStorage cache (for heavy endpoints) before network
+  if (longEntry?.lsKey && !noCache) {
+    const lsData = lsCacheRead(lsCacheKey(longEntry.lsKey, url, config));
+    if (lsData) {
+      const syntheticResp = { data: lsData, status: 200, statusText: 'OK', headers: {}, config: { ...config, url, __cached: true, __startTime: now } };
+      // Populate in-memory cache with shorter TTL to avoid repeated LS reads
+      __getCache.set(key, { expiresAt: now + ttl, response: syntheticResp });
+      if (ENABLE_API_MONITORING) {
+        logApiCall({ ...config, __cached: true }, now);
+      }
+      return Promise.resolve(syntheticResp);
+    }
+  }
+
   const inFlight = __getInFlight.get(key);
   if (inFlight) return inFlight;
 
   const requestStartTime = Date.now();
   const p = __originalGet(url, config)
     .then((resp) => {
-      // Only cache successful responses (status 200-299); skip cache write for profile when noCache
       if (resp && resp.status >= 200 && resp.status < 300 && (!isProfileGet || !noCache)) {
         __getCache.set(key, { expiresAt: now + ttl, response: resp });
+        // Persist to localStorage for heavy endpoints
+        if (longEntry?.lsKey && resp.data) {
+          lsCacheWrite(lsCacheKey(longEntry.lsKey, url, config), resp.data);
+        }
       }
-      // Track timing for monitoring
       if (resp.config) {
         resp.config.__startTime = requestStartTime;
       }
       return resp;
     })
     .catch((error) => {
-      // Don't cache error responses
-      // Track timing for monitoring
       if (error.config) {
         error.config.__startTime = requestStartTime;
       }
@@ -473,9 +548,54 @@ api.get = (url, config = {}) => {
   return p;
 };
 
+/**
+ * Invalidate both in-memory and localStorage caches for a given URL pattern.
+ * Call after any mutation (POST/PUT/DELETE) that changes the data an endpoint returns.
+ */
+export function invalidateCache(urlPattern) {
+  // In-memory: drop matching keys
+  for (const [key] of __getCache) {
+    if (key.includes(urlPattern)) __getCache.delete(key);
+  }
+  // localStorage: drop matching keys
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('api_cache_') && k.includes(urlPattern)) toRemove.push(k);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+}
+
+function invalidateProfileCaches() {
+  invalidateCache('/user/profile');
+  __getCache.delete(PROFILE_IN_FLIGHT_KEY);
+}
+
+function invalidateTestCaches() {
+  invalidateCache('/test/');
+  invalidateCache('api_cache_tests');
+  invalidateCache('api_cache_zones_latest');
+}
+
+function invalidateTrainingCaches() {
+  invalidateCache('/training/');
+  invalidateCache('/trainings');
+  invalidateCache('api_cache_trainings');
+  invalidateCache('api_cache_fit_trainings');
+  invalidateCache('api_cache_fit_lactate');
+  invalidateCache('api_cache_fit_monthly');
+  invalidateCache('api_cache_power_metrics');
+  invalidateCache('api_cache_ext_activities');
+  invalidateCache('api_cache_form_fitness');
+  invalidateCache('api_cache_weekly_load');
+}
+
 export const updateUserProfile = async (userData) => {
   try {
     const response = await api.put('/user/edit-profile', userData);
+    invalidateProfileCaches();
     return response;
   } catch (error) {
     console.error('Error updating user profile:', error);

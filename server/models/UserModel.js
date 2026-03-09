@@ -251,6 +251,16 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Geolocation captured at registration time
+  registrationLocation: {
+    ip: { type: String, default: null },
+    country: { type: String, default: null },
+    countryCode: { type: String, default: null },
+    city: { type: String, default: null },
+    region: { type: String, default: null },
+    timezone: { type: String, default: null },
+    resolvedAt: { type: Date, default: null }
+  },
   // Mobile push notification tokens (Expo)
   expoPushTokens: {
     type: [String],

@@ -459,9 +459,9 @@ async function generateTestReportPdf(requesterUserId, testId) {
     y += 28;
 
     // ---------- TEST INFO CARD ----------
-    y = ensureSpace(doc, y, 22, pageW, pageH, baseTitle, pageNumRef);
+    y = ensureSpace(doc, y, 26, pageW, pageH, baseTitle, pageNumRef);
     doc.setFillColor(245, 243, 255);
-    doc.roundedRect(left, y - 2, contentW, 18, 3, 3, 'F');
+    doc.roundedRect(left, y - 2, contentW, 22, 3, 3, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(...BRAND.primary);
@@ -470,8 +470,8 @@ async function generateTestReportPdf(requesterUserId, testId) {
     doc.setFontSize(9);
     doc.setTextColor(...BRAND.dark);
     doc.text(`Title: ${test.title || '—'}`, left + 4, y + 11);
-    doc.text(`Date: ${formatDateShort(test.date)}   |   Baseline La: ${Number(test.baseLactate || 0).toFixed(2)} mmol/L`, left + 4, y + 15.5);
-    y += 24;
+    doc.text(`Date: ${formatDateShort(test.date)}   |   Baseline La: ${Number(test.baseLactate || 0).toFixed(2)} mmol/L`, left + 4, y + 16);
+    y += 28;
 
     // ---------- LACTATE + HR CURVE (dual axis) ----------
     const dualSvg = buildDualAxisCurveSvg({

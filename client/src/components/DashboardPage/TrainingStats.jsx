@@ -80,6 +80,9 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
       if (!value) return null;
       
       if (typeof value === 'number') {
+        if (value > 100 && value % 1 === 0) {
+          return value / 1000;
+        }
         return value;
       }
       
@@ -323,8 +326,10 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
   const parseDistanceToKm = (value) => {
     if (!value) return null;
     
-    // If it's already a number, assume it's in km (don't auto-convert large numbers)
     if (typeof value === 'number') {
+      if (value > 100 && value % 1 === 0) {
+        return value / 1000;
+      }
       return value;
     }
     
