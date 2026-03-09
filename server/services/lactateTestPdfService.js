@@ -394,6 +394,15 @@ function ensureSpace(doc, y, needed, pageW, pageH, title, pageNumRef) {
   return y;
 }
 
+async function svgToPngBase64(svgString, width = 1400) {
+  const buf = await sharp(Buffer.from(svgString, 'utf8'), { density: 150 })
+    .resize(width, null, { fit: 'inside', withoutEnlargement: false })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  const b64 = buf.toString('base64');
+  return b64;
+}
+
 async function generateTestReportPdf(requesterUserId, testId) {
   if (!sharp || !jsPDF) {
     return { error: true, reason: 'pdf_not_available', message: 'PDF dependencies not installed' };
@@ -464,7 +473,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
     doc.text(`Date: ${formatDateShort(test.date)}   |   Baseline La: ${Number(test.baseLactate || 0).toFixed(2)} mmol/L`, left + 4, y + 15.5);
     y += 24;
 
-    // ---------- LACTATE + HR CURVE (dual axis, 300 DPI) ----------
+    // ---------- LACTATE + HR CURVE (dual axis) ----------
     const dualSvg = buildDualAxisCurveSvg({
       results: test.results || [],
       sport, unitSystem, inputMode
@@ -473,10 +482,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
       y = ensureSpace(doc, y, 95, pageW, pageH, baseTitle, pageNumRef);
       y = drawSectionTitle(doc, 'Lactate Curve & Heart Rate', y, left);
       try {
-        const pngBuffer = await sharp(Buffer.from(dualSvg, 'utf8'), { density: 300 })
-          .png()
-          .toBuffer();
-        const base64 = pngBuffer.toString('base64');
+        const base64 = await svgToPngBase64(dualSvg, 1400);
         const imgW = contentW;
         const imgH = (320 / 700) * imgW;
         doc.addImage(base64, 'PNG', left, y, imgW, imgH);
@@ -606,10 +612,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
       if (compSvg) {
         y = ensureSpace(doc, y, 90, pageW, pageH, baseTitle, pageNumRef);
         try {
-          const compPng = await sharp(Buffer.from(compSvg, 'utf8'), { density: 300 })
-            .png()
-            .toBuffer();
-          const compB64 = compPng.toString('base64');
+          const compB64 = await svgToPngBase64(compSvg, 1400);
           const gW = contentW;
           const gH = (320 / 700) * gW;
           doc.addImage(compB64, 'PNG', left, y, gW, gH);

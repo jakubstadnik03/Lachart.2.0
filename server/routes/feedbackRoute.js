@@ -5,7 +5,7 @@ const router = express.Router();
 
 // Simple feedback endpoint - logs to file and console
 router.post('/', async (req, res) => {
-  console.log('🚀 Feedback endpoint hit at:', new Date().toISOString());
+  console.log('🚀 Fedback endpoint hit at:', new Date().toISOString());
   
   try {
     const { subject, message, email, page } = req.body || {};

@@ -157,8 +157,9 @@ const testController = {
             }
             const filename = `lactate-report-${id}.pdf`;
             res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Length', result.pdf.length);
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-            res.send(result.pdf);
+            res.end(result.pdf);
         } catch (error) {
             console.error('[TestController] getTestReportPdf error:', error);
             return res.status(503).json({ error: 'pdf_generation_failed', message: 'PDF generation is not available on this server.' });
