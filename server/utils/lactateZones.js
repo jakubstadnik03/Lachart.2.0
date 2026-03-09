@@ -12,34 +12,62 @@ function formatPace(seconds) {
   return `${m}:${String(ss).padStart(2, '0')}`;
 }
 
+const MIN_LT2_LT1_GAP_W = 20;
+
 function calculateZonesFromTest(testData) {
   if (!testData || !Array.isArray(testData.results) || testData.results.length < 3) return null;
 
   const sport = testData.sport || 'bike';
   const thresholds = calculateThresholds(testData);
 
-  const lt1 = Number(thresholds['LTP1'] || 0);
-  const lt2 = Number(thresholds['LTP2'] || 0);
-  const hr1 = Number(thresholds.heartRates?.['LTP1'] || 0);
-  const hr2 = Number(thresholds.heartRates?.['LTP2'] || 0);
+  let lt1 = Number(thresholds['LTP1'] || 0);
+  let lt2 = Number(thresholds['LTP2'] || 0);
+  let hr1 = thresholds.heartRates?.['LTP1'];
+  let hr2 = thresholds.heartRates?.['LTP2'];
 
-  if (!lt1 || !lt2 || !hr1 || !hr2) return null;
+  if (sport === 'bike' && lt1 && lt2 && (lt2 - lt1) < MIN_LT2_LT1_GAP_W) {
+    const obla35 = thresholds['OBLA 3.5'];
+    const iat = thresholds['IAT'];
+    if (obla35 != null && obla35 > lt1 + MIN_LT2_LT1_GAP_W) {
+      lt2 = obla35;
+      hr2 = thresholds.heartRates?.['OBLA 3.5'] ?? hr2;
+    } else if (iat != null && iat > lt1 + MIN_LT2_LT1_GAP_W) {
+      lt2 = iat;
+      hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
+    }
+  }
+  if (sport === 'run' || sport === 'swim') {
+    const gap = lt1 && lt2 ? lt1 - lt2 : 0;
+    const minGapPace = (lt2 || 0) * 0.08;
+    if (gap < minGapPace && lt1 && lt2) {
+      const obla35 = thresholds['OBLA 3.5'];
+      const iat = thresholds['IAT'];
+      if (obla35 != null && lt1 - obla35 >= minGapPace) {
+        lt2 = obla35;
+        hr2 = thresholds.heartRates?.['OBLA 3.5'] ?? hr2;
+      } else if (iat != null && lt1 - iat >= minGapPace) {
+        lt2 = iat;
+        hr2 = thresholds.heartRates?.['IAT'] ?? hr2;
+      }
+    }
+  }
 
-  // Validation
+  if (!lt1 || !lt2) return null;
+
   if (sport === 'bike') {
     if (lt2 <= lt1) return null;
   } else {
-    // pace sports: LTP2 is faster => lower seconds => lt2 < lt1
     if (lt2 >= lt1) return null;
   }
 
-  const heartRate = {
+  const hasHR = hr1 != null && hr2 != null && !Number.isNaN(Number(hr1)) && !Number.isNaN(Number(hr2));
+  const heartRate = hasHR ? {
     zone1: { min: Math.round(hr1 * 0.70), max: Math.round(hr1 * 0.90) },
     zone2: { min: Math.round(hr1 * 0.90), max: Math.round(hr1 * 1.00) },
     zone3: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 0.95) },
     zone4: { min: Math.round(hr2 * 0.96), max: Math.round(hr2 * 1.04) },
     zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.20) }
-  };
+  } : null;
 
   if (sport === 'bike') {
     return {
@@ -57,7 +85,6 @@ function calculateZonesFromTest(testData) {
     };
   }
 
-  // run/swim: pace seconds
   const paceSeconds = {
     zone1: { min: lt1 / 0.70, max: lt1 / 0.90 },
     zone2: { min: lt1 / 0.90, max: lt1 / 1.00 },

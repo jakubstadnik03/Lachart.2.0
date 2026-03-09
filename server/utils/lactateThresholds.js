@@ -224,28 +224,95 @@ function findLactateThresholds(results, baseLactate, sport = 'bike') {
   };
 }
 
+function parseNum(val) {
+  if (val == null) return NaN;
+  const s = String(val).trim().replace(',', '.');
+  return Number(s);
+}
+
+function interpolateHR(x, sortedResults, sport) {
+  const isPace = sport === 'run' || sport === 'swim';
+  for (let i = 0; i < sortedResults.length - 1; i++) {
+    const a = Number(sortedResults[i].power);
+    const b = Number(sortedResults[i + 1].power);
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    if (x >= lo && x <= hi && a !== b) {
+      const hrA = sortedResults[i].heartRate != null ? Number(sortedResults[i].heartRate) : null;
+      const hrB = sortedResults[i + 1].heartRate != null ? Number(sortedResults[i + 1].heartRate) : null;
+      if (hrA != null && hrB != null && Number.isFinite(hrA) && Number.isFinite(hrB)) {
+        return hrA + (hrB - hrA) * (x - a) / (b - a);
+      }
+      if (hrA != null && Number.isFinite(hrA)) return hrA;
+      if (hrB != null && Number.isFinite(hrB)) return hrB;
+    }
+  }
+  const nearest = sortedResults.reduce((best, r) =>
+    Math.abs(Number(r.power) - x) < Math.abs(Number(best.power) - x) ? r : best
+  );
+  return nearest.heartRate != null && Number.isFinite(Number(nearest.heartRate)) ? Number(nearest.heartRate) : null;
+}
+
 function calculateThresholds(testData) {
   const baseLactate = Number(testData?.baseLactate) || 0;
   const sport = testData?.sport || 'bike';
+  const isPaceSport = sport === 'run' || sport === 'swim';
   const resultsRaw = Array.isArray(testData?.results) ? testData.results : [];
 
-  const results = resultsRaw
-    .map(r => ({
-      power: Number(r.power),
-      heartRate: Number(r.heartRate),
-      lactate: Number(r.lactate),
-      glucose: Number(r.glucose),
-      RPE: Number(r.RPE),
-      interval: Number(r.interval)
-    }))
-    .filter(r => Number.isFinite(r.power) && Number.isFinite(r.lactate));
+  let validResults = resultsRaw
+    .map(r => {
+      const power = parseNum(r.power);
+      const lactate = parseNum(r.lactate);
+      const heartRate = parseNum(r.heartRate);
+      return {
+        power,
+        heartRate: Number.isFinite(heartRate) ? heartRate : null,
+        lactate,
+        glucose: parseNum(r.glucose),
+        RPE: parseNum(r.RPE),
+        interval: parseNum(r.interval)
+      };
+    })
+    .filter(r => {
+      if (!Number.isFinite(r.power) || !Number.isFinite(r.lactate)) return false;
+      if (isPaceSport) {
+        if (r.power <= 0 || r.power < 60) return false;
+      } else {
+        if (r.power <= 0 || r.power < 50) return false;
+      }
+      if (r.lactate <= 0 || r.lactate > 20) return false;
+      return true;
+    });
 
-  if (results.length < 3) return { heartRates: {}, lactates: {} };
+  // Filter unrealistic lactate spikes (matching client logic)
+  if (validResults.length > 2) {
+    const sortedByPower = [...validResults].sort((a, b) =>
+      isPaceSport ? (b.power - a.power) : (a.power - b.power)
+    );
+    const filteredResults = [];
+    for (let i = 0; i < sortedByPower.length; i++) {
+      const currentLactate = sortedByPower[i].lactate;
+      if (currentLactate > 10) {
+        if (i < sortedByPower.length - 1) {
+          const nextLactate = sortedByPower[i + 1].lactate;
+          if (currentLactate - nextLactate > 3) continue;
+        }
+        if (i > 0) {
+          const prevLactate = sortedByPower[i - 1].lactate;
+          if (currentLactate - prevLactate > 5 && prevLactate < 5) continue;
+        }
+      }
+      filteredResults.push(sortedByPower[i]);
+    }
+    const filteredIds = new Set(filteredResults.map(r => `${r.power}_${r.lactate}`));
+    validResults = validResults.filter(r => filteredIds.has(`${r.power}_${r.lactate}`));
+  }
 
-  const sortedResults = [...results].sort((a, b) => {
-    if (sport === 'run' || sport === 'swim') return b.power - a.power;
-    return a.power - b.power;
-  });
+  if (validResults.length < 3) return { heartRates: {}, lactates: {} };
+
+  const sortedResults = [...validResults].sort((a, b) =>
+    isPaceSport ? (b.power - a.power) : (a.power - b.power)
+  );
 
   const thresholds = { heartRates: {}, lactates: {} };
 
@@ -264,15 +331,43 @@ function calculateThresholds(testData) {
   }
 
   const { ltp1, ltp2, ltp1Point, ltp2Point } = findLactateThresholds(sortedResults, baseLactate, sport);
-  if (ltp1 && ltp1Point) {
-    thresholds['LTP1'] = ltp1;
-    thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
-    thresholds.lactates['LTP1'] = ltp1Point.lactate || null;
-  }
-  if (ltp2 && ltp2Point) {
-    thresholds['LTP2'] = ltp2;
-    thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
-    thresholds.lactates['LTP2'] = ltp2Point.lactate || null;
+
+  if (ltp1Point && ltp1Point.lactate != null && ltp2Point && ltp2Point.lactate != null) {
+    let finalLtp1 = ltp1;
+    let finalLtp2 = ltp2;
+    let finalLtp1Lactate = ltp1Point.lactate;
+    let finalLtp2Lactate = ltp2Point.lactate;
+    let finalLtp1HR = ltp1Point.heartRate || null;
+    let finalLtp2HR = ltp2Point.heartRate || null;
+
+    // Ensure LT1 has lower lactate than LT2 (matching client validation)
+    if (finalLtp1Lactate > finalLtp2Lactate) {
+      finalLtp1 = ltp2;
+      finalLtp2 = ltp1;
+      finalLtp1Lactate = ltp2Point.lactate;
+      finalLtp2Lactate = ltp1Point.lactate;
+      finalLtp1HR = ltp2Point.heartRate || null;
+      finalLtp2HR = ltp1Point.heartRate || null;
+    }
+
+    thresholds['LTP1'] = finalLtp1;
+    thresholds.heartRates['LTP1'] = finalLtp1HR;
+    thresholds.lactates['LTP1'] = finalLtp1Lactate;
+
+    thresholds['LTP2'] = finalLtp2;
+    thresholds.heartRates['LTP2'] = finalLtp2HR;
+    thresholds.lactates['LTP2'] = finalLtp2Lactate;
+  } else {
+    if (ltp1 && ltp1Point) {
+      thresholds['LTP1'] = ltp1;
+      thresholds.heartRates['LTP1'] = ltp1Point.heartRate || null;
+      thresholds.lactates['LTP1'] = ltp1Point.lactate || null;
+    }
+    if (ltp2 && ltp2Point) {
+      thresholds['LTP2'] = ltp2;
+      thresholds.heartRates['LTP2'] = ltp2Point.heartRate || null;
+      thresholds.lactates['LTP2'] = ltp2Point.lactate || null;
+    }
   }
 
   const effectiveBase = baseLactate || 1.0;
@@ -299,6 +394,18 @@ function calculateThresholds(testData) {
     }
   }
 
+  // HR interpolation fallback for LTP1 (matching client DataTable.jsx)
+  if (thresholds['LTP1'] && !thresholds.heartRates['LTP1']) {
+    const hrVal = interpolateHR(thresholds['LTP1'], sortedResults, sport);
+    if (hrVal != null) thresholds.heartRates['LTP1'] = hrVal;
+  }
+
+  // HR interpolation fallback for LTP2
+  if (thresholds['LTP2'] && !thresholds.heartRates['LTP2']) {
+    const hrVal = interpolateHR(thresholds['LTP2'], sortedResults, sport);
+    if (hrVal != null) thresholds.heartRates['LTP2'] = hrVal;
+  }
+
   // Bike: pokud je LTP2 příliš blízko LTP1 nebo s příliš nízkým laktátem, použít OBLA 3.5
   const MIN_LTP2_LACTATE = 2.5;
   const MIN_LT2_LT1_GAP_W = 25;
@@ -316,11 +423,12 @@ function calculateThresholds(testData) {
   }
 
   if (thresholds['LTP1'] && thresholds['LTP2'] && thresholds['LTP1'] > 0 && thresholds['LTP2'] > 0) {
-    const isPaceSport = sport === 'run' || sport === 'swim';
     const ratio = isPaceSport
       ? (thresholds['LTP1'] / thresholds['LTP2'])
       : (thresholds['LTP2'] / thresholds['LTP1']);
-    if (Number.isFinite(ratio)) thresholds['LTRatio'] = ratio.toFixed(2);
+    if (Number.isFinite(ratio) && ratio >= 1.05 && ratio <= (isPaceSport ? 2.5 : 1.5)) {
+      thresholds['LTRatio'] = ratio.toFixed(2);
+    }
   }
 
   return thresholds;
