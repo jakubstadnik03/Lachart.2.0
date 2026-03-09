@@ -100,6 +100,12 @@ const LazyImage = ({ src, alt, className }) => {
 
 const updates = [
   {
+    title: 'Professional PDF reports from lactate tests',
+    date: 'Mar 2026',
+    summary: 'Generate branded PDF reports with lactate + HR curves, color-coded zones, threshold tables, previous test comparison graph, and training recommendations.',
+    link: '/lactate-curve-calculator'
+  },
+  {
     title: 'Bulk Strava interval detection released',
     date: 'Nov 2025',
     summary: 'Detect every power fluctuation, auto-create Strava laps, and analyze LT blocks instantly.',
@@ -110,12 +116,6 @@ const updates = [
     date: 'Oct 2025',
     summary: 'TestingWithoutLogin now loads faster, scales on mobile, and preserves manual adjustments.',
     link: '/lactate-curve-calculator'
-  },
-  {
-    title: 'Training Calendar available for all roles',
-    date: 'Sep 2025',
-    summary: 'Athletes, coaches, and admins now share the same calendar with athlete switcher support.',
-    link: '/training-calendar'
   }
 ];
 
@@ -125,6 +125,12 @@ const seoUseCases = [
     description: 'Upload or enter test steps, visualize lactate vs. power/pace, and export PDF reports. Supports cycling, running, swimming, and triathlon.',
     link: '/lactate-curve-calculator',
     anchor: 'free-lactate-curve-calculator'
+  },
+  {
+    title: 'Generate PDF from Lactate Test',
+    description: 'Download a professional PDF report with your lactate curve, heart rate overlay, training zones, thresholds, stage results, previous test comparison, and personalized recommendations.',
+    link: '/lactate-curve-calculator',
+    anchor: 'generate-pdf-lactate-test'
   },
   {
     title: 'Coach & Athlete Management Software',
@@ -165,6 +171,11 @@ const faqItems = [
     icon: 'chart',
     question: 'How does LaChart compare to expensive lab testing?',
     answer: 'While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.'
+  },
+  {
+    icon: 'flag',
+    question: 'Can I generate a PDF report from my lactate test?',
+    answer: 'Yes. After completing a lactate test, you can download a professional PDF report that includes your lactate curve with heart rate overlay, all calculated thresholds (LTP1, LTP2, OBLA, IAT), five training zones with power/pace and HR ranges, stage-by-stage results, a comparison graph with your previous test, and personalized training recommendations. Perfect for sharing with your coach or keeping in your medical records.'
   }
 ];
 
@@ -362,6 +373,12 @@ const About = () => {
       description: 'No registration required. Enter your test data and instantly generate a lactate curve with all threshold calculations. Export results to PDF. Perfect for quick analysis without creating an account.',
       icon: '🧮',
       category: 'Tools'
+    },
+    {
+      title: 'PDF Report Generation',
+      description: 'Generate professional PDF reports from any lactate test. Includes a high-quality lactate curve with heart rate overlay, all thresholds, color-coded training zones, stage results, comparison with previous tests, and personalized recommendations. Share with coaches, doctors, or keep for your records.',
+      icon: '📄',
+      category: 'Tools'
     }
   ];
 
@@ -411,8 +428,8 @@ const About = () => {
       <Helmet>
         <title>Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart - Free Online Tool</title>
         <link rel="canonical" href="https://lachart.net/about" />
-        <meta name="description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Track progress over time, record lactate to intervals, and analyze workouts from Strava, Garmin, and Wahoo." />
-        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate measurement, OBLA calculation, LT1 LT2 calculator, IAT threshold, endurance training zones, lactate testing app, sports analytics, performance analysis, cycling lactate test, running lactate test, lactate threshold training, anaerobic threshold, aerobic threshold, lactate zones, training zones calculator, sports science, endurance performance, lactate testing protocol, threshold training, cycling performance, running performance, triathlon training, lactate curve analysis, lactate testing software, free lactate calculator, online lactate analysis, lactate threshold determination, training zone calculator, endurance sports, performance testing, lactate testing methods, lactate threshold training zones, cycling power zones, running pace zones, lactate testing equipment, lactate threshold test, lactate curve interpretation, lactate testing results, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate testing accuracy, lactate testing reliability, lactate testing validity, lactate testing standardization, lactate testing best practices, lactate testing guidelines, lactate testing recommendations, lactate testing tips, lactate testing advice, lactate testing help, lactate testing support, lactate testing tutorial, lactate testing guide, lactate testing manual, lactate testing handbook, lactate testing book, lactate testing research, lactate testing studies, lactate testing science, lactate testing methodology, lactate testing techniques, lactate testing procedures, lactate testing protocols, lactate testing standards, lactate testing quality, lactate testing precision, lactate testing consistency, lactate testing reproducibility, lactate testing repeatability, lactate testing validity, lactate testing reliability, lactate testing accuracy, lactate testing sensitivity, lactate testing specificity, lactate testing predictive value, lactate testing diagnostic accuracy, lactate testing clinical utility, lactate testing practical application, lactate testing real world, lactate testing field testing, lactate testing laboratory testing, lactate testing portable testing, lactate testing mobile testing, lactate testing remote testing, lactate testing telemedicine, lactate testing digital health, lactate testing health technology, lactate testing fitness technology, lactate testing sports technology, lactate testing performance technology, lactate testing training technology, lactate testing coaching technology, lactate testing athlete technology, lactate testing coach technology, lactate testing team technology, lactate testing club technology, lactate testing organization technology, lactate testing institution technology, lactate testing university technology, lactate testing college technology, lactate testing school technology, lactate testing academy technology, lactate testing center technology, lactate testing facility technology, lactate testing laboratory technology, lactate testing clinic technology, lactate testing hospital technology, lactate testing medical technology, lactate testing healthcare technology, lactate testing wellness technology, lactate testing lifestyle technology, lactate testing fitness technology, lactate testing health technology, lactate testing sports technology, lactate testing performance technology, lactate testing training technology, lactate testing coaching technology, lactate testing athlete technology, lactate testing coach technology, lactate testing team technology, lactate testing club technology, lactate testing organization technology, lactate testing institution technology, lactate testing university technology, lactate testing college technology, lactate testing school technology, lactate testing academy technology, lactate testing center technology, lactate testing facility technology, lactate testing laboratory technology, lactate testing clinic technology, lactate testing hospital technology, lactate testing medical technology, lactate testing healthcare technology, lactate testing wellness technology, lactate testing lifestyle technology" />
+        <meta name="description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Download professional PDF reports with lactate curve, heart rate, zones, and previous test comparison. Track progress over time, record lactate to intervals, and analyze workouts from Strava, Garmin, and Wahoo." />
+        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate test PDF, generate PDF lactate test, lactate test report, lactate curve PDF report, lactate threshold PDF, download lactate test results, lactate measurement, OBLA calculation, LT1 LT2 calculator, IAT threshold, endurance training zones, lactate testing app, sports analytics, performance analysis, cycling lactate test, running lactate test, lactate threshold training, anaerobic threshold, aerobic threshold, lactate zones, training zones calculator, sports science, endurance performance, lactate testing protocol, threshold training, cycling performance, running performance, triathlon training, lactate curve analysis, lactate testing software, free lactate calculator, online lactate analysis, lactate threshold determination, training zone calculator, endurance sports, performance testing, lactate testing methods, lactate threshold training zones, cycling power zones, running pace zones, lactate threshold test, lactate curve interpretation, lactate testing results, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate test comparison, previous test comparison, heart rate lactate curve, lactate test recommendations, lactate report download, sports medicine report, endurance test PDF" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
         <meta name="author" content="LaChart Team" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -464,10 +481,13 @@ const About = () => {
                 "OBLA Determination",
                 "IAT Threshold Analysis",
                 "Training Zone Calculation",
+                "PDF Report Generation",
+                "Lactate Test to PDF Export",
+                "Heart Rate and Lactate Curve Overlay",
+                "Previous Test Comparison",
                 "Coach Mode",
                 "Athlete Management",
                 "Performance Tracking",
-                "Data Export",
                 "Free Online Calculator"
               ],
               "screenshot": "https://lachart.net/images/lachart1.png",
@@ -1211,7 +1231,7 @@ const About = () => {
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="text-primary text-2xl font-bold mt-1">✓</span>
-                  <span className="text-gray-700">Export results to PDF for professional reporting</span>
+                  <span className="text-gray-700">Generate professional PDF reports with lactate curve, HR overlay, zones, thresholds, and comparison</span>
                 </li>
               </ul>
             </div>
