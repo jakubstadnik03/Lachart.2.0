@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { formatDistanceForUser } from "../../utils/unitsConverter";
+import { formatDistanceForUser, formatSpeedForUser } from "../../utils/unitsConverter";
 
 const maxGraphHeight = 200;
 
@@ -527,8 +527,12 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
             stats={[
               { label: "Interval", value: `#${index + 1}`, unit: "" },
               // Show Distance or Duration based on durationType
-              ...(duration && durationType === 'distance' ? [{ label: "Distance", value: formatDistance(duration), unit: "" }] : []),
-              ...(duration && durationType !== 'distance' ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }] : []),
+              ...(duration && durationType === 'distance'
+                ? [{ label: "Distance", value: formatDistance(duration), unit: "" }]
+                : []),
+              ...(duration && durationType !== 'distance'
+                ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }]
+                : []),
               // For run sport, show Pace instead of Power
               ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}/km` : formatPace(power), unit: "" }] : []),
               // For other sports, show Power
@@ -562,7 +566,7 @@ function Scale({ values, unit, formatValue, isPace = false }) {
   );
 }
 
-function TrainingComparison({ training, previousTraining, sport, onTrainingClick }) {
+function TrainingComparison({ training, previousTraining, sport, onTrainingClick, user = null }) {
   const getAveragePower = (results) => {
     const powers = results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
     return powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b) / powers.length) : 0;
@@ -604,6 +608,17 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   const currentAvgPace = getAveragePace(training.results);
   const previousAvgPace = previousTraining ? getAveragePace(previousTraining.results) : 0;
   const paceDiff = currentAvgPace - previousAvgPace;
+
+  // For bike/ride: show Avg speed instead of Avg power in header
+  const sportLower = (sport || '').toLowerCase();
+  const isBike =
+    sportLower.includes('bike') ||
+    sportLower.includes('ride') ||
+    sportLower.includes('cycle') ||
+    sportLower === 'cycling';
+
+  const avgSpeedMps = Number(training.avgSpeed || 0);
+  const hasAvgSpeed = isBike && avgSpeedMps > 0;
   
   const getTrendIcon = (diff, isPace = false) => {
     // Pro pace: nižší pace (rychlejší) = lepší, takže opačně
@@ -664,6 +679,10 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
                   {getTrendIcon(paceDiff, true)} {formatPace(Math.abs(paceDiff))}
                 </span>
               )}
+            </>
+          ) : hasAvgSpeed ? (
+            <>
+              <span className="font-medium">{formatSpeedForUser(avgSpeedMps, user)}</span>
             </>
           ) : (
             <>
@@ -1161,17 +1180,39 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                     }}
                   >
                     {(() => {
-                      // Helper function to parse duration (handles string "5:00" or number)
-                      const parseDuration = (duration) => {
-                        if (!duration && duration !== 0) return 0;
-                        if (typeof duration === 'number') return duration;
-                        if (typeof duration === 'string') {
-                          if (duration.includes(':')) {
-                            const [minutes, seconds] = duration.split(':').map(Number);
-                            return (minutes || 0) * 60 + (seconds || 0);
+                      // Helper function to get "moving" duration in seconds
+                      // Prefer moving time (exclude stopped time) so duration reflects only active time
+                      const parseDuration = (result) => {
+                        if (!result || typeof result !== 'object') return 0;
+
+                        const candidates = [
+                          result.moving_time,
+                          result.totalTimerTime,
+                          result.total_timer_time,
+                          result.totalElapsedTime,
+                          result.total_elapsed_time,
+                          result.elapsed_time,
+                          result.duration
+                        ];
+
+                        for (const candidate of candidates) {
+                          if (candidate === undefined || candidate === null) continue;
+                          if (typeof candidate === 'number') return candidate;
+                          if (typeof candidate === 'string') {
+                            if (candidate.includes(':')) {
+                              const parts = candidate.split(':').map(Number);
+                              if (parts.length === 2) {
+                                return (parts[0] || 0) * 60 + (parts[1] || 0);
+                              }
+                              if (parts.length === 3) {
+                                return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+                              }
+                            }
+                            const num = parseFloat(candidate);
+                            if (!Number.isNaN(num) && num > 0) return num;
                           }
-                          return parseFloat(duration) || 0;
                         }
+
                         return 0;
                       };
 
@@ -1213,7 +1254,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
                       // Calculate total duration or distance for this training
                       const totalDuration = training.results ? training.results.reduce((sum, result) => {
-                        return sum + parseDuration(result.duration);
+                        return sum + parseDuration(result);
                       }, 0) : 0;
 
                       const totalDistance = training.results ? training.results.reduce((sum, result) => {
@@ -1247,7 +1288,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       
                       let cumulativeLeft = 0;
                       const intervalPositions = training.results.map((result, index) => {
-                        const durationValue = parseDuration(result.duration);
+                        const durationValue = parseDuration(result);
                         const distanceValue = result.distance || (result.durationType === 'distance' ? result.duration : null);
                         const parsedDistance = parseDistanceToMeters(distanceValue);
 
@@ -1266,26 +1307,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       //console.log('Training:', training.title || 'Untitled');
                      // console.log('Total Value:', totalValue, useDistance ? '(distance in meters)' : '(duration in seconds)');
                       //console.log('Total Distance:', totalDistance, 'meters');
-                      //console.log('Total Duration:', totalDuration, 'seconds');
-                      //console.log('Use Distance:', useDistance);
-                      //console.log('Results count:', training.results?.length || 0);
-                      console.log('Interval Widths:', intervalPositions.map((pos, idx) => {
-                        const result = training.results[idx];
-                        const dist = result?.distance || (result?.durationType === 'distance' ? result?.duration : null);
-                        const parsedDist = parseDistanceToMeters(dist);
-                        const durVal = parseDuration(result?.duration);
-                        return {
-                          interval: idx + 1,
-                          widthPercent: pos.widthPercent.toFixed(2) + '%',
-                          duration: result?.duration,
-                          distance: result?.distance,
-                          durationType: result?.durationType,
-                          parsedDistance: parsedDist,
-                          parsedDuration: durVal,
-                          value: useDistance ? parsedDist : durVal
-                        };
-                      }));
-                      console.log('==============================================');
+                      // Debug logging removed to keep console clean
 
                       // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
                       // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
@@ -1451,6 +1473,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                   previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
                   sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
                   onTrainingClick={handleTrainingClick}
+                  user={user}
                 />
               );
             })}

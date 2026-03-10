@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, CheckIcon, XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { getFitTrainings, getFitTraining, deleteFitTraining, createLap } from '../services/api';
 import { motion } from 'framer-motion';
 import CalendarView from '../components/Calendar/CalendarView';
@@ -202,7 +202,7 @@ const INTERVAL_SENSITIVITY_CONFIG = {
 };
 
 // Strava Laps Table Component
-const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null }) => {
+const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -210,6 +210,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   const [editingMode, setEditingMode] = useState(false); // Mode for selecting intervals to merge
   const [selectedLapIndices, setSelectedLapIndices] = useState(new Set()); // Selected lap indices for merging
   const [isMobileTable, setIsMobileTable] = useState(window.innerWidth < 768);
+  const lapRefs = useRef({});
   
   // Detect mobile (must be before early return)
   useEffect(() => {
@@ -219,6 +220,15 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // When selectedLapNumber changes (from chart click), scroll the list to that lap on mobile
+  useEffect(() => {
+    if (!isMobileTable || selectedLapNumber == null) return;
+    const el = lapRefs.current[selectedLapNumber];
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isMobileTable, selectedLapNumber]);
 
   // Use laps passed from selectedStrava (already deduplicated during load)
   const uniqueLaps = selectedStrava?.laps || [];
@@ -549,11 +559,119 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     );
   }
 
+  // Mobile card layout
+  if (isMobileTable) {
+    const isStravaRun = (selectedStrava?.sport || '').toLowerCase().includes('run');
+    const stravaPaceFmt = (spd) => {
+      if (!spd || spd <= 0) return null;
+      const s = Math.round(1000 / spd);
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    };
+
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-sm font-bold text-gray-900">Laps</h3>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => { setEditingLactate(!editingLactate); if (editingLactate) { setEditingMode(false); setSelectedLapIndices(new Set()); } }}
+              className="px-2.5 py-1 bg-primary text-white rounded-lg text-xs shadow-sm active:bg-primary-dark"
+            >
+              {editingLactate ? 'Cancel' : 'Lactate'}
+            </button>
+            {onExportToTraining && (
+              <button onClick={() => onExportToTraining()} className="px-2.5 py-1 bg-greenos text-white rounded-lg text-xs shadow-sm active:opacity-90">Export</button>
+            )}
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto pr-0.5">
+          {uniqueLaps.map((lap, index) => {
+            let cumulativeTime = 0;
+            for (let i = 0; i < index; i++) cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
+            const startTime = cumulativeTime;
+            const endTime = cumulativeTime + (lap.elapsed_time || 0);
+            const lapNumber = lap?.lapNumber ?? (index + 1);
+            const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+            const selectedStyle = isActive
+              ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
+              : {};
+            return (
+              <button
+                key={index}
+                ref={el => { lapRefs.current[lapNumber] = el; }}
+                onClick={() => {
+                  if (onSelectLapNumber) {
+                    onSelectLapNumber(isActive ? null : lapNumber);
+                  }
+                  if (editingLactate) return;
+                  if (!stravaChartRef || !stravaChartRef.current) return;
+                  if (isActive) {
+                    stravaChartRef.current.getEchartsInstance().dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+                    return;
+                  }
+                  const chart = stravaChartRef.current.getEchartsInstance();
+                  const maxTimeMin = maxTime / 60;
+                  const startPercent = ((startTime / 60) / maxTimeMin) * 100;
+                  const endPercent = ((endTime / 60) / maxTimeMin) * 100;
+                  const padding = Math.max(5, (endPercent - startPercent) * 0.1);
+                  chart.dispatchAction({ type: 'dataZoom', start: Math.max(0, startPercent - padding), end: Math.min(100, endPercent + padding) });
+                }}
+                className={`w-full text-left py-2.5 px-1 flex items-center gap-3 transition-colors touch-manipulation ${
+                  isActive ? 'bg-primary/10 border-l-[3px] border-primary' : lap.lactate ? 'bg-primary/5' : 'active:bg-gray-50'
+                }`}
+                style={{ WebkitTapHighlightColor: 'transparent', ...selectedStyle }}
+              >
+                <div className="w-7 text-center">
+                  <span className={`text-xs font-bold ${isActive ? 'text-primary' : 'text-gray-400'}`}>{index + 1}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-3">
+                    {lap.distance > 0 && <span className="text-sm font-semibold text-gray-900">{formatDistance(lap.distance, user)}</span>}
+                    <span className="text-sm text-gray-600">{formatDuration(lap.elapsed_time)}</span>
+                    {lap.average_speed > 0 && <span className="text-xs text-gray-500">{isStravaRun ? `${stravaPaceFmt(lap.average_speed)} /km` : `${(lap.average_speed * 3.6).toFixed(1)} km/h`}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    {lap.average_heartrate && <span className="text-[11px] text-red-500">{Math.round(lap.average_heartrate)} bpm</span>}
+                    {lap.average_watts > 0 && <span className="text-[11px] text-purple-600">{Math.round(lap.average_watts)} W</span>}
+                    {!editingLactate && lap.lactate && <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>}
+                  </div>
+                </div>
+                {editingLactate && (
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="La"
+                    value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
+                    onChange={(e) => setLactateInputs({ ...lactateInputs, [`lap-${index}`]: e.target.value })}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-16 px-2 py-1 border border-primary/40 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {editingLactate && (
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => { setEditingLactate(false); setLactateInputs({}); }} className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm active:bg-gray-200">Cancel</button>
+            <button onClick={handleSaveLactate} disabled={saving} className="flex-1 px-3 py-2 bg-greenos text-white rounded-lg text-sm active:opacity-90 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+          </div>
+        )}
+        <div className="mt-3 flex gap-2">
+          <button onClick={handleDeleteAllLaps} disabled={deletingAll || saving || uniqueLaps.length === 0} className="flex-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs border border-red-200 active:bg-red-100 disabled:opacity-50">
+            {deletingAll ? 'Deleting...' : 'Delete All'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className={`flex flex-col ${isMobileTable ? 'gap-2' : 'sm:flex-row justify-between items-start sm:items-center gap-3'} ${isMobileTable ? 'mb-2' : 'mb-4'}`}>
-        <h3 className={`${isMobileTable ? 'text-sm' : 'text-base sm:text-lg'} font-semibold`}>Intervals</h3>
-        <div className={`flex gap-1.5 sm:gap-2 ${isMobileTable ? 'flex-col' : 'w-full sm:w-auto flex-wrap'}`}>
+      <div className="flex sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <h3 className="text-base sm:text-lg font-semibold">Intervals</h3>
+        <div className="flex gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
         <button
           onClick={() => {
             setEditingLactate(!editingLactate);
@@ -562,7 +680,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
               setSelectedLapIndices(new Set());
             }
           }}
-          className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-primary text-white ${isMobileTable ? 'rounded-lg' : 'rounded-xl'} hover:bg-primary-dark shadow-md transition-colors ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-primary text-white rounded-xl hover:bg-primary-dark shadow-md transition-colors w-full sm:w-auto"
         >
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
@@ -571,7 +689,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
           <button
             onClick={handleMergeSelectedLaps}
             disabled={saving}
-            className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-blue-600 text-white ${isMobileTable ? 'rounded-lg' : 'rounded-xl'} hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors w-full sm:w-auto"
           >
             {saving ? 'Merging...' : `Merge ${selectedLapIndices.size} Selected`}
           </button>
@@ -579,7 +697,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         <button
           onClick={handleDeleteAllLaps}
           disabled={deletingAll || saving || uniqueLaps.length === 0 || editingMode}
-          className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-red-600 text-white ${isMobileTable ? 'rounded-lg' : 'rounded-xl'} hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors w-full sm:w-auto"
         >
           {deletingAll ? 'Deleting...' : 'Delete All Intervals'}
         </button>
@@ -587,14 +705,14 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
           <button
             onClick={() => onExportToTraining()}
             disabled={editingMode}
-            className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-greenos text-white ${isMobileTable ? 'rounded-lg' : 'rounded-xl'} hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-colors w-full sm:w-auto"
           >
             Export to Training
           </button>
         )}
         </div>
       </div>
-      <div className={`overflow-x-auto ${isMobileTable ? '-mx-1' : '-mx-2 sm:mx-0'}`}>
+      <div className="overflow-x-auto -mx-2 sm:mx-0">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -617,8 +735,8 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
               )}
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Distance</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Avg Speed</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Speed</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Lactate</th>
@@ -627,7 +745,6 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {uniqueLaps.map((lap, index) => {
-              // Calculate cumulative time for this lap
               let cumulativeTime = 0;
               for (let i = 0; i < index; i++) {
                 cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
@@ -639,7 +756,6 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                 <tr 
                   key={index}
                   onClick={(e) => {
-                    // Don't zoom if clicking on checkbox, lactate input, or delete button
                     if (editingMode && e.target.type === 'checkbox') return;
                     if (editingLactate && e.target.tagName === 'INPUT') return;
                     if (e.target.closest('button')) return;
@@ -650,11 +766,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                     const endTimeMin = endTime / 60;
                     const maxTimeMin = maxTime / 60;
                     
-                    // Calculate zoom percentages
                     const startPercent = (startTimeMin / maxTimeMin) * 100;
                     const endPercent = (endTimeMin / maxTimeMin) * 100;
                     
-                    // Add some padding (10% on each side)
                     const padding = Math.max(5, (endPercent - startPercent) * 0.1);
                     const zoomStart = Math.max(0, startPercent - padding);
                     const zoomEnd = Math.min(100, endPercent + padding);
@@ -680,8 +794,8 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   )}
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm hidden sm:table-cell">{formatDistance(lap.distance, user)}</td>
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm hidden md:table-cell">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDistance(lap.distance, user)}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
@@ -721,20 +835,20 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         </table>
       </div>
       {editingLactate && (
-        <div className={`${isMobileTable ? 'mt-2' : 'mt-4'} flex flex-col sm:flex-row justify-end gap-2`}>
+        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
           <button
             onClick={() => {
               setEditingLactate(false);
               setLactateInputs({});
             }}
-            className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-2 text-sm'} bg-gray-600 text-white ${isMobileTable ? 'rounded-md' : 'rounded-md'} hover:bg-gray-700 ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+            className="px-3 sm:px-4 py-2 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 w-full sm:w-auto"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveLactate}
             disabled={saving}
-            className={`${isMobileTable ? 'px-2.5 py-1.5 text-xs' : 'px-3 sm:px-4 py-2 text-sm'} bg-greenos text-white ${isMobileTable ? 'rounded-lg' : 'rounded-xl'} hover:opacity-90 disabled:opacity-50 shadow-md transition-colors ${isMobileTable ? 'w-full' : 'w-full sm:w-auto'}`}
+            className="px-3 sm:px-4 py-2 text-sm bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors w-full sm:w-auto"
           >
             {saving ? 'Saving...' : 'Save Lactate Values'}
           </button>
@@ -754,9 +868,11 @@ const FitAnalysisPage = () => {
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   const [selectedTraining, setSelectedTraining] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [highlightMetric, setHighlightMetric] = useState(null);
+  const [radarWatts, setRadarWatts] = useState(null);
   
   // Detect mobile
   useEffect(() => {
@@ -767,11 +883,13 @@ const FitAnalysisPage = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Read highlightMetric from query string (e.g. coming from Power Radar / SpiderChart)
+  // Read highlightMetric + radarWatts from query string (e.g. coming from Power Radar / SpiderChart)
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const metric = searchParams.get('highlightMetric');
+    const watts = searchParams.get('radarWatts');
     setHighlightMetric(metric || null);
+    setRadarWatts(watts ? Number(watts) : null);
   }, [location.search]);
 
   // Reset selected lap when training changes
@@ -903,6 +1021,19 @@ const FitAnalysisPage = () => {
   const [stravaSelectedTimeRange, setStravaSelectedTimeRange] = useState({ start: 0, end: 0 });
   const [stravaSelectionStats, setStravaSelectionStats] = useState(null);
   const stravaDragStateRef = useRef({ isActive: false, start: { x: 0, time: 0 }, end: { x: 0, time: 0 } });
+  const [showStravaLapsOnMobile, setShowStravaLapsOnMobile] = useState(false);
+
+  // Reset Strava laps visibility when switching activities
+  useEffect(() => {
+    setShowStravaLapsOnMobile(false);
+  }, [selectedStrava?._id]);
+  // Auto-show laps on mobile when user interacts (clicks bar or lap)
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!selectedStrava) return;
+    if (selectedLapNumber == null) return;
+    setShowStravaLapsOnMobile(true);
+  }, [isMobile, selectedStrava, selectedLapNumber]);
   
   // Smoothness state
   const [smoothingWindow] = useState(5); // seconds
@@ -1060,6 +1191,7 @@ const FitAnalysisPage = () => {
 
   const loadStravaDetail = useCallback(async (id, { overrideTitle = null } = {}) => {
     try {
+      setDetailLoading(true);
       // For coach, pass selectedAthleteId to get athlete's Strava token
       const athleteId = user?.role === 'coach' ? selectedAthleteId : null;
       const data = await getStravaActivityDetail(id, athleteId);
@@ -1076,6 +1208,19 @@ const FitAnalysisPage = () => {
       // Check if there's a linked training for this Strava activity (if regularTrainings is available)
       const linkedTraining = (regularTrainings || []).find(t => String(t?.sourceStravaActivityId) === String(id));
       const linkedTitle = linkedTraining?.title || overrideTitle;
+
+      // Merge lactate values from linked Training model into Strava laps (if user entered
+      // lactate during export but it wasn't saved to the Strava activity itself)
+      if (linkedTraining?.results && Array.isArray(linkedTraining.results)) {
+        uniqueLaps = uniqueLaps.map((lap, idx) => {
+          if (lap.lactate != null) return lap; // already has lactate
+          const linkedResult = linkedTraining.results[idx];
+          if (linkedResult?.lactate != null) {
+            return { ...lap, lactate: Number(linkedResult.lactate) };
+          }
+          return lap;
+        });
+      }
       
       // Merge titleManual, description, and category into detail object
       const detailWithMeta = {
@@ -1106,6 +1251,7 @@ const FitAnalysisPage = () => {
       localStorage.setItem('fitAnalysis_selectedStravaId', String(id));
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+      setDetailLoading(false);
     } catch (e) {
       // Handle 429 (Too Many Requests) specifically - don't log as error
       if (e.response?.status === 429 || (e.code === 'ERR_BAD_REQUEST' && e.response?.status === 429)) {
@@ -1119,6 +1265,7 @@ const FitAnalysisPage = () => {
         console.error('Strava token expired or invalid. Please reconnect your Strava account.');
         addNotification('Strava token expired. Please reconnect your Strava account in Settings.', 'error');
         // Don't clear state - user might want to see cached data
+        setDetailLoading(false);
         return;
       }
       
@@ -1130,6 +1277,7 @@ const FitAnalysisPage = () => {
       // Clear state on error
       setSelectedStrava(null);
       setSelectedStravaStreams(null);
+      setDetailLoading(false);
     }
   }, [selectedAthleteId, user?.role, addNotification, regularTrainings]);
 
@@ -1630,14 +1778,35 @@ const FitAnalysisPage = () => {
     try {
       const response = await api.get(`/api/training/${id}`);
       if (response && response.data) {
-        // Convert regular training format to match selectedTraining structure
+        const data = response.data;
+        const sportRaw = (data.sport || '').toLowerCase();
+        const sportMapped = sportRaw === 'bike' ? 'cycling' : sportRaw === 'run' ? 'running' : sportRaw === 'swim' ? 'swimming' : 'generic';
+
         const trainingData = {
-          ...response.data,
-          isRegularTraining: true // Flag to identify regular training
+          ...data,
+          sport: sportMapped,
+          titleManual: data.title || data.titleManual,
+          titleAuto: data.title || data.titleAuto,
+          timestamp: data.date ? new Date(data.date) : new Date(),
+          totalElapsedTime: data.results?.reduce((s, r) => s + (r.durationSeconds || parseDurationToSeconds(r.duration) || 0), 0) || 0,
+          laps: (data.results || []).map((result, index) => {
+            const durationSec = result.durationSeconds || parseDurationToSeconds(result.duration) || 0;
+            return {
+              lapNumber: index + 1,
+              totalElapsedTime: durationSec,
+              totalTimerTime: durationSec,
+              avgPower: result.power || null,
+              maxPower: result.power || null,
+              avgHeartRate: result.heartRate || null,
+              maxHeartRate: result.heartRate || null,
+              lactate: result.lactate || null,
+            };
+          }),
+          records: [],
+          isRegularTraining: true
         };
         setSelectedTraining(trainingData);
         setSelectedStrava(null);
-        // Persist selection to localStorage
         localStorage.setItem('fitAnalysis_selectedRegularTrainingId', id);
         localStorage.removeItem('fitAnalysis_selectedTrainingId');
         localStorage.removeItem('fitAnalysis_selectedStravaId');
@@ -1650,6 +1819,7 @@ const FitAnalysisPage = () => {
 
   const loadTrainingDetail = async (id) => {
     try {
+      setDetailLoading(true);
       const data = await getFitTraining(id);
       
       // Debug: Check what data we have
@@ -1714,6 +1884,7 @@ const FitAnalysisPage = () => {
       localStorage.setItem('fitAnalysis_selectedTrainingId', id);
       localStorage.removeItem('fitAnalysis_selectedStravaId');
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+      setDetailLoading(false);
       
       // Don't reload trainings here - it's expensive and usually not needed
       // Only reload if training was deleted or modified externally
@@ -1721,6 +1892,7 @@ const FitAnalysisPage = () => {
       console.error('Error loading training detail:', error);
       // Remove invalid ID from localStorage
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
+      setDetailLoading(false);
     }
   };
 
@@ -2272,9 +2444,15 @@ const FitAnalysisPage = () => {
       // Filter out unselected intervals (recovery intervals that user didn't select)
       const selectedResults = formData.results.filter(result => result.isSelected !== false);
       
-      // Remove internal flags before submitting
+      // Remove internal flags and convert lactate/power/heartRate to proper types
       const cleanedResults = selectedResults.map(result => {
         const { isRecovery, isSelected, ...cleanedResult } = result;
+        if (cleanedResult.lactate !== undefined && cleanedResult.lactate !== null && cleanedResult.lactate !== '') {
+          cleanedResult.lactate = parseFloat(cleanedResult.lactate);
+          if (isNaN(cleanedResult.lactate)) delete cleanedResult.lactate;
+        } else {
+          delete cleanedResult.lactate;
+        }
         return cleanedResult;
       });
       
@@ -2349,9 +2527,12 @@ const FitAnalysisPage = () => {
         return valueDiff < 0.10 && timeDiff < 0.20;
       });
       
+      let savedTrainingId = null;
+
       if (existing) {
         // Update existing training
         await updateTraining(existing._id, trainingData);
+        savedTrainingId = existing._id;
         if (similarTrainings.length > 0) {
           alert(`Training updated successfully! Found ${similarTrainings.length} similar training(s) with similar power/pace and duration.`);
         } else {
@@ -2359,7 +2540,8 @@ const FitAnalysisPage = () => {
         }
       } else {
         // Create new training
-        await addTraining(trainingData);
+        const resp = await addTraining(trainingData);
+        savedTrainingId = resp?.data?._id || null;
         if (similarTrainings.length > 0) {
           const similarList = similarTrainings.map(t => 
             `${t.title} (${new Date(t.date).toLocaleDateString('cs-CZ')})`
@@ -2370,8 +2552,24 @@ const FitAnalysisPage = () => {
         }
       }
       
+      // Notify other components (e.g. LactateStatistics) that training data changed
+      window.dispatchEvent(new Event('trainingAdded'));
+
       // Reload regular trainings to update calendar
       await loadRegularTrainings();
+
+      // Auto-select the saved training so user sees it with lactate values
+      if (savedTrainingId) {
+        const stravaLink = formData?.sourceStravaActivityId;
+        if (stravaLink) {
+          // Training is linked to a Strava activity → reload Strava detail (which will merge lactate)
+          loadStravaDetail(stravaLink);
+          navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaLink}`)}`);
+        } else {
+          loadRegularTrainingDetail(savedTrainingId);
+          navigate(`/training-calendar/${encodeURIComponent(`regular-${savedTrainingId}`)}`);
+        }
+      }
       
       setShowTrainingForm(false);
       setTrainingFormData(null);
@@ -2386,7 +2584,8 @@ const FitAnalysisPage = () => {
   return (
     <div className={`bg-gradient-to-br from-indigo-50 via-white to-pink-50 ${isMobile ? 'p-1' : 'p-2 sm:p-3 md:p-4 lg:p-6'}`}>
       <div className={`${isMobile ? 'w-full' : 'max-w-8xl'} mx-auto`}>
-        <h1 className={`${isMobile ? 'text-base mb-2' : 'text-xl sm:text-2xl md:text-3xl mb-3 sm:mb-4 md:mb-6 lg:mb-8'} font-bold text-gray-900`}>Training Calendar</h1>
+        {!isMobile && <h1 className="text-xl sm:text-2xl md:text-3xl mb-3 sm:mb-4 md:mb-6 lg:mb-8 font-bold text-gray-900">Training Calendar</h1>}
+        {isMobile && !(selectedTraining || selectedStrava) && <h1 className="text-base mb-2 font-bold text-gray-900">Training Calendar</h1>}
 
         {/* Athlete Selector for Coach */}
         {user?.role === 'coach' && (
@@ -2397,7 +2596,8 @@ const FitAnalysisPage = () => {
           />
         )}
 
-        {/* Calendar Section */}
+        {/* Calendar Section - hidden on mobile when training detail is open */}
+        <div className={isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''}>
         <CalendarView
           activities={(() => {
             // Merge Training-model entries that are linked to a Strava activity into a single calendar item:
@@ -2454,18 +2654,6 @@ const FitAnalysisPage = () => {
               avgSpeed: a.averageSpeed || a.average_speed || null
             }))
             ];
-            console.log('CalendarView activities:', {
-              total: allActivities.length,
-              fit: trainings.length,
-              regular: regularTrainings.length,
-              external: externalActivities.length,
-              sampleDates: allActivities.slice(0, 5).map(a => ({ 
-                id: a.id, 
-                date: a.date, 
-                dateType: typeof a.date,
-                parsed: a.date ? new Date(a.date).toISOString() : 'no date'
-              }))
-            });
             return allActivities;
           })()}
           selectedActivityId={
@@ -2486,6 +2674,12 @@ const FitAnalysisPage = () => {
           onSelectActivity={(a) => { 
             if (!a?.id) return;
             const rid = String(a.id);
+            // Clear previous selection immediately so UI nereuses old training
+            setSelectedTraining(null);
+            setSelectedStrava(null);
+            setSelectedStravaStreams(null);
+            setSelectedLapNumber(null);
+            setDetailLoading(true);
             // Keep URL in sync (id at the end)
             navigate(`/training-calendar/${encodeURIComponent(rid)}`);
 
@@ -2511,14 +2705,37 @@ const FitAnalysisPage = () => {
           }, [])}
           user={user}
         />
+        </div>
 
         {/* Training Detail and Charts - Full Width */}
+        {(detailLoading && !selectedTraining && !selectedStrava) && (
+          <div className="w-full mt-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-4 text-center text-sm text-gray-500">
+              Loading training…
+            </div>
+          </div>
+        )}
         {selectedTraining && (
-          <div className={`w-full ${isMobile ? 'mt-2' : 'mt-2 sm:mt-3 md:mt-4 lg:mt-6'}`}>
+          <div className={`w-full ${isMobile ? 'mt-0' : 'mt-2 sm:mt-3 md:mt-4 lg:mt-6'}`}>
+                {/* Mobile back button */}
+                {isMobile && (
+                  <button
+                    onClick={() => {
+                      setSelectedTraining(null);
+                      setSelectedStrava(null);
+                      navigate('/training-calendar');
+                    }}
+                    className="flex items-center gap-1.5 text-sm text-gray-600 mb-2 active:text-primary transition-colors touch-manipulation"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    <ChevronLeftIcon className="w-4 h-4" />
+                    <span>Calendar</span>
+                  </button>
+                )}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-xl'} ${isMobile ? 'rounded-lg' : 'rounded-2xl sm:rounded-3xl'} ${isMobile ? 'border border-gray-200' : 'border border-white/20'} shadow-md ${isMobile ? 'p-2' : 'p-3 sm:p-4 md:p-6'} ${isMobile ? 'space-y-2' : 'space-y-3 sm:space-y-4 md:space-y-6'}`}
+                  className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-xl'} ${isMobile ? 'rounded-xl' : 'rounded-2xl sm:rounded-3xl'} ${isMobile ? 'border border-gray-100' : 'border border-white/20'} shadow-md ${isMobile ? 'p-3' : 'p-3 sm:p-4 md:p-6'} ${isMobile ? 'space-y-3' : 'space-y-3 sm:space-y-4 md:space-y-6'}`}
                 >
                   {/* Header Stats */}
               <TrainingStats 
@@ -2526,11 +2743,37 @@ const FitAnalysisPage = () => {
                 onDelete={handleDeleteTraining}
                 onUpdate={async (id) => {
                   await loadTrainingDetail(id);
-                  await loadTrainings(); // Reload to update calendar
+                  await loadTrainings();
                 }}
                 user={user}
+                isMobile={isMobile}
               />
 
+                  {highlightMetric && (
+                    <div className="mb-3 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm text-indigo-800">
+                      <span>
+                        <span className="font-semibold">From Power Radar</span>
+                        {radarWatts > 0 && (
+                          <span className="ml-2">
+                            — Best {highlightMetric === 'sprint5s' ? '5s' : highlightMetric === 'attack1min' ? '1min' : highlightMetric === 'vo2max5min' ? '5min' : highlightMetric === 'threshold20min' ? '20min' : '60min'}: <span className="font-bold">{radarWatts} W</span>
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setHighlightMetric(null);
+                          setRadarWatts(null);
+                          const url = new URL(window.location);
+                          url.searchParams.delete('highlightMetric');
+                          url.searchParams.delete('radarWatts');
+                          window.history.replaceState({}, '', url.toString());
+                        }}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-900 underline underline-offset-2"
+                      >
+                        Clear highlight
+                      </button>
+                    </div>
+                  )}
 
                   {/* Training Chart - Modern SVG Version */}
                   {selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (() => {
@@ -2596,54 +2839,50 @@ const FitAnalysisPage = () => {
                     
                     return (
                       <div className={`${isMobile ? 'mb-2' : 'mb-4 md:mb-6'}`}>
-                        {/* Statistics */}
-                        <div className={`w-full overflow-x-auto ${isMobile ? 'mb-1.5' : 'mb-2 sm:mb-3 md:mb-4'}`}>
-                          <div className={`flex flex-wrap ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3'}`}>
-                            <div className={`flex-1 ${isMobile ? 'min-w-[100px] px-1.5 py-1.5' : 'min-w-[120px] sm:min-w-[160px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                              <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500`}>Date</div>
-                              <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-gray-900`}>{formatDateTime(trainingDate.toISOString())}</div>
+                        {/* Statistics - hidden on mobile (already shown in TrainingStats above) */}
+                        {!isMobile && (
+                        <div className="w-full overflow-x-auto mb-2 sm:mb-3 md:mb-4">
+                          <div className="flex flex-wrap gap-1.5 sm:gap-2 md:gap-3">
+                            <div className="flex-1 min-w-[120px] sm:min-w-[160px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                              <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500">Date</div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900">{formatDateTime(trainingDate.toISOString())}</div>
                             </div>
-                            <div className={`flex-1 ${isMobile ? 'min-w-[80px] px-1.5 py-1.5' : 'min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                              <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500`}>Sport</div>
-                              <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-gray-900`}>{sport}</div>
+                            <div className="flex-1 min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                              <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
+                              <div className="text-sm sm:text-base font-semibold text-gray-900">{sport}</div>
                             </div>
                             {avgPower && (
-                              <div className={`flex-1 ${isMobile ? 'min-w-[80px] px-1.5 py-1.5' : 'min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                                <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500`}>Avg Power</div>
-                                <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-gray-900`}>{avgPower} W</div>
-                                {maxPower && (
-                                  <div className={`${isMobile ? 'text-[8px]' : 'text-[10px] sm:text-xs'} text-gray-500 mt-0.5`}>Max: {Math.round(maxPower)} W</div>
-                                )}
+                              <div className="flex-1 min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                                <div className="text-sm sm:text-base font-semibold text-gray-900">{avgPower} W</div>
+                                {maxPower && <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5">Max: {Math.round(maxPower)} W</div>}
                               </div>
                             )}
                             {avgCadence && (
-                              <div className={`flex-1 ${isMobile ? 'min-w-[80px] px-1.5 py-1.5' : 'min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-blue-200 bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                                <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500`}>Avg Cadence</div>
-                                <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-blue-700`}>{avgCadence} rpm</div>
+                              <div className="flex-1 min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-blue-200 bg-blue-50 rounded-lg sm:rounded-xl shadow-sm">
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
+                                <div className="text-sm sm:text-base font-semibold text-blue-700">{avgCadence} rpm</div>
                               </div>
                             )}
                             {normalizedPower && (
-                              <div className={`flex-1 ${isMobile ? 'min-w-[80px] px-1.5 py-1.5' : 'min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-green-200 bg-green-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                                <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500`}>Normalized Power</div>
-                                <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-green-700`}>{normalizedPower} W</div>
+                              <div className="flex-1 min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-green-200 bg-green-50 rounded-lg sm:rounded-xl shadow-sm">
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
+                                <div className="text-sm sm:text-base font-semibold text-green-700">{normalizedPower} W</div>
                               </div>
                             )}
                             {tss !== null && (
-                              <div className={`flex-1 ${isMobile ? 'min-w-[80px] px-1.5 py-1.5' : 'min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3'} bg-white/90 border border-purple-200 bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                                <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'} uppercase tracking-wide text-gray-500 flex items-center gap-1`}>
+                              <div className="flex-1 min-w-[100px] sm:min-w-[140px] px-2 sm:px-4 py-2 sm:py-3 bg-white/90 border border-purple-200 bg-purple-50 rounded-lg sm:rounded-xl shadow-sm">
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
                                   TSS
-                                  {((isRun && !thresholdPace) || (!isRun && !ftp)) && (
-                                    <span className={`${isMobile ? 'text-[8px]' : 'text-[10px] sm:text-xs'} text-gray-400`} title={isRun ? "Estimated TSS (Threshold pace not set in profile)" : "Estimated TSS (FTP not set in profile)"}>*</span>
-                                  )}
+                                  {((isRun && !thresholdPace) || (!isRun && !ftp)) && <span className="text-[10px] sm:text-xs text-gray-400">*</span>}
                                 </div>
-                                <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-purple-700`}>{tss}</div>
-                                {intensityFactor && (
-                                  <div className={`${isMobile ? 'text-[8px]' : 'text-[10px] sm:text-xs'} text-gray-500 mt-0.5`}>IF: {intensityFactor}</div>
-                                )}
+                                <div className="text-sm sm:text-base font-semibold text-purple-700">{tss}</div>
+                                {intensityFactor && <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5">IF: {intensityFactor}</div>}
                               </div>
                             )}
                           </div>
                         </div>
+                        )}
                         
                         <h3 className={`${isMobile ? 'text-sm' : 'text-base sm:text-lg md:text-xl'} font-semibold text-gray-900 mb-2 sm:mb-3 md:mb-4`}>Training Chart</h3>
                         <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
@@ -2658,6 +2897,7 @@ const FitAnalysisPage = () => {
                           }}
                           user={user}
                           highlightMetric={highlightMetric}
+                          radarWatts={radarWatts}
                         />
                         </div>
                       </div>
@@ -3445,7 +3685,23 @@ const FitAnalysisPage = () => {
 
         {/* Strava Activity Detail */}
         {selectedStrava && (
-          <div className={`w-full ${isMobile ? 'mt-2' : 'mt-4 md:mt-6'}`}>
+          <div className={`w-full ${isMobile ? 'mt-0' : 'mt-4 md:mt-6'}`}>
+            {/* Mobile back button */}
+            {isMobile && (
+              <button
+                onClick={() => {
+                  setSelectedTraining(null);
+                  setSelectedStrava(null);
+                  setSelectedStravaStreams(null);
+                  navigate('/training-calendar');
+                }}
+                className="flex items-center gap-1.5 text-sm text-gray-600 mb-2 active:text-primary transition-colors touch-manipulation"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                <ChevronLeftIcon className="w-4 h-4" />
+                <span>Calendar</span>
+              </button>
+            )}
             {!selectedStravaStreams ? (
               <div className={`${isMobile ? 'p-2' : 'p-4 md:p-6'} bg-yellow-50/80 backdrop-blur-sm border border-yellow-200/60 ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-md`}>
                 <p className={`text-yellow-800 ${isMobile ? 'text-xs' : 'text-sm md:text-base'}`}>Loading graph data...</p>
@@ -3618,9 +3874,9 @@ const FitAnalysisPage = () => {
               <>
                 {/* Title and Category - Clean and compact */}
                 <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-3'} border-b border-gray-200/50`}>
-                  <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2' : 'gap-3'}`}>
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
                       {isEditingTitle ? (
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div className="relative flex-1">
                             <input
                               ref={titleInputRef}
@@ -3655,26 +3911,26 @@ const FitAnalysisPage = () => {
                                 ))}
                               </div>
                             )}
-                                    </div>
-                        <div className={`flex ${isMobile ? 'gap-1.5 w-full' : 'gap-2'}`}>
-                        <button
+                          </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
                             onClick={handleSaveTitle}
                             disabled={saving}
-                          className={`${isMobile ? 'p-1.5 flex-1' : 'p-2'} bg-emerald-500 text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md`}
+                            className="p-1.5 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
                             title="Save title"
                           >
-                          <CheckIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                            <CheckIcon className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => {
-                              setIsEditingTitle(false);
-                              setTitle(displayTitle);
-                            }}
-                          className={`${isMobile ? 'p-1.5 flex-1' : 'p-2'} bg-gray-400 text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-gray-500 transition-all shadow-sm hover:shadow-md`}
+                            setIsEditingTitle(false);
+                            setTitle(displayTitle);
+                          }}
+                          className="p-1.5 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition-all shadow-sm hover:shadow-md"
                             title="Cancel"
                           >
-                          <XMarkIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-                        </button>
+                            <XMarkIcon className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                       ) : (
@@ -3691,7 +3947,7 @@ const FitAnalysisPage = () => {
                           )}
                     
                     {/* Category - Right side */}
-                    <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'} flex-shrink-0 ${isMobile ? 'w-full mt-2' : ''}`}>
+                    <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'} flex-shrink-0`}>
                       {isEditingCategory ? (
                         <>
                           <select
@@ -3862,10 +4118,9 @@ const FitAnalysisPage = () => {
               
               {/* Header Stats + Toggles */}
               {(() => {
-                // Calculate pace for running activities
                 const formatPace = (speedMps) => {
                   if (!speedMps || speedMps <= 0) return null;
-                  const paceSeconds = Math.round(1000 / speedMps); // seconds per km
+                  const paceSeconds = Math.round(1000 / speedMps);
                   const minutes = Math.floor(paceSeconds / 60);
                   const seconds = paceSeconds % 60;
                   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -3876,66 +4131,81 @@ const FitAnalysisPage = () => {
                 const maxHR = selectedStrava.max_heartrate ? Math.round(selectedStrava.max_heartrate) : null;
                 const elevation = stravaElevationGain ? Math.round(stravaElevationGain) : null;
                 
-                // For running: show Duration, Distance, Avg Pace (with Max below), Avg HR (with Max below), Elevation (if available)
-                // For others: show Duration, Distance, Avg HR (with Max below if available), Avg Power (if available)
+                if (isMobile) {
+                  const items = [
+                    { label: 'Distance', value: formatDistance(selectedStrava.distance, user) },
+                    { label: 'Moving Time', value: formatDuration(selectedStrava.elapsed_time) },
+                    ...(avgPace ? [{ label: 'Avg Pace', value: `${avgPace} /100m`, sub: maxPace ? `Max ${maxPace}` : null }] : []),
+                    ...(selectedStrava.average_heartrate ? [{ label: 'Avg Heart Rate', value: `${Math.round(selectedStrava.average_heartrate)} bpm`, sub: maxHR ? `Max ${maxHR} bpm` : null }] : []),
+                    ...(selectedStrava.average_watts ? [{ label: 'Avg Power', value: `${Math.round(selectedStrava.average_watts)} W` }] : []),
+                    ...(elevation && elevation > 0 ? [{ label: 'Elevation', value: `+${elevation} m` }] : []),
+                    ...(stravaAvgCadence ? [{ label: 'Cadence', value: `${Math.round(stravaAvgCadence)} rpm` }] : []),
+                    ...(calculateStravaTSS ? [{ label: 'TSS', value: String(calculateStravaTSS.value), sub: calculateStravaIF ? `IF ${calculateStravaIF}` : null }] : []),
+                  ];
+                  return (
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-1">
+                      {items.map((item, idx) => (
+                        <div key={idx} className="py-1">
+                          <div className="text-[11px] text-gray-500 font-medium">{item.label}</div>
+                          <div className="text-lg font-bold text-gray-900 leading-tight">{item.value}</div>
+                          {item.sub && <div className="text-[10px] text-gray-400">{item.sub}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                
                 if (isStravaRun) {
                   return (
-                    <div className={`flex flex-nowrap overflow-x-auto ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3 lg:gap-4'}`}>
-                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Duration</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDuration(selectedStrava.elapsed_time)}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                    <div className="flex flex-nowrap overflow-x-auto gap-1.5 sm:gap-2 md:gap-3 lg:gap-4">
+                      <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Duration</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary">{formatDuration(selectedStrava.elapsed_time)}</div>
                       </div>
-                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Distance</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDistance(selectedStrava.distance, user)}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Distance</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary">{formatDistance(selectedStrava.distance, user)}</div>
                       </div>
                       {avgPace && (
-                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Pace</div>
-                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary-dark`}>{avgPace} /km</div>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
+                        <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                          <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Avg Pace</div>
+                          <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary-dark">{avgPace} /km</div>
+                          <div className="text-[9px] sm:text-[10px] text-gray-500">{maxPace ? `Max ${maxPace} /km` : '\u00A0'}</div>
                         </div>
                       )}
-                      <div className={`bg-red/10 backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-red/20 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Heart Rate</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-red`}>{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
+                      <div className="bg-red/10 backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-red/20 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Avg Heart Rate</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-red">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                        <div className="text-[9px] sm:text-[10px] text-gray-500">{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
                       </div>
                       {elevation && elevation > 0 && (
-                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Elevation</div>
-                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>+{elevation} m</div>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                        <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                          <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Elevation</div>
+                          <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary">+{elevation} m</div>
                         </div>
                       )}
                     </div>
                   );
                 } else {
-                  // For non-running activities: Duration, Distance, Avg HR (with Max below if available), Avg Power (if available)
                   return (
-                    <div className={`flex flex-nowrap overflow-x-auto ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3 lg:gap-4'}`}>
-                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Duration</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDuration(selectedStrava.elapsed_time)}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                    <div className="flex flex-nowrap overflow-x-auto gap-1.5 sm:gap-2 md:gap-3 lg:gap-4">
+                      <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Duration</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary">{formatDuration(selectedStrava.elapsed_time)}</div>
                       </div>
-                      <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Distance</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary`}>{formatDistance(selectedStrava.distance, user)}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                      <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Distance</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary">{formatDistance(selectedStrava.distance, user)}</div>
                       </div>
-                      <div className={`bg-red/10 backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-red/20 shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Heart Rate</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-red`}>{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
+                      <div className="bg-red/10 backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-red/20 shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Avg Heart Rate</div>
+                        <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-red">{selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}</div>
+                        <div className="text-[9px] sm:text-[10px] text-gray-500">{maxHR ? `Max ${maxHR} bpm` : '\u00A0'}</div>
                       </div>
                       {selectedStrava.average_watts && (
-                        <div className={`backdrop-blur-md flex-shrink-0 ${isMobile ? 'p-1 min-w-[80px]' : 'p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px]'} ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} border border-primary/20 bg-primary/10 shadow-sm`}>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-xs lg:text-sm'} text-gray-600`}>Avg Power</div>
-                          <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl'} font-bold ${isMobile ? 'mt-0.5' : 'mt-0.5 sm:mt-1'} text-primary-dark`}>{Math.round(selectedStrava.average_watts)} W</div>
-                          <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} text-gray-500`}>&nbsp;</div>
+                        <div className="backdrop-blur-md flex-shrink-0 p-1.5 sm:p-2 md:p-3 lg:p-4 min-w-[100px] sm:min-w-[120px] md:min-w-[140px] rounded-lg sm:rounded-xl border border-primary/20 bg-primary/10 shadow-sm">
+                          <div className="text-[9px] sm:text-[10px] md:text-xs lg:text-sm text-gray-600">Avg Power</div>
+                          <div className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-bold mt-0.5 sm:mt-1 text-primary-dark">{Math.round(selectedStrava.average_watts)} W</div>
                         </div>
                       )}
                     </div>
@@ -3943,60 +4213,77 @@ const FitAnalysisPage = () => {
                 }
               })()}
 
-              {/* Detailed Statistics */}
-              {selectedStrava && (
-                <div className={`w-full overflow-x-auto ${isMobile ? 'mt-1.5' : 'mt-2 sm:mt-3 md:mt-4'}`}>
-                  <div className={`flex flex-wrap ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2 md:gap-3'}`}>
-                    <div className={`flex-1 ${isMobile ? 'min-w-[90px] px-1 py-1' : 'min-w-[100px] sm:min-w-[120px] md:min-w-[160px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                      <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Date</div>
-                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-gray-900`}>{formatDateTime(stravaActivityDate)}</div>
+              {/* Detailed Statistics - hidden on mobile (already shown above) */}
+              {selectedStrava && !isMobile && (
+                <div className="w-full overflow-x-auto mt-2 sm:mt-3 md:mt-4">
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2 md:gap-3">
+                    <div className="flex-1 min-w-[100px] sm:min-w-[120px] md:min-w-[160px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                      <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Date</div>
+                      <div className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
                     </div>
-                    <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                      <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Sport</div>
-                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-gray-900`}>{stravaActivitySport || '-'}</div>
+                    <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                      <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Sport</div>
+                      <div className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
                     </div>
                     {stravaAvgPower && (
-                      <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Avg Power</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-gray-900`}>{Math.round(stravaAvgPower)} W</div>
-                        {stravaMaxPower && (
-                          <div className={`${isMobile ? 'text-[7px]' : 'text-[9px] sm:text-[10px] md:text-xs'} text-gray-500 mt-0.5`}>Max: {Math.round(stravaMaxPower)} W</div>
-                        )}
+                      <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Avg Power</div>
+                        <div className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">{Math.round(stravaAvgPower)} W</div>
+                        {stravaMaxPower && <div className="text-[9px] sm:text-[10px] md:text-xs text-gray-500 mt-0.5">Max: {Math.round(stravaMaxPower)} W</div>}
                       </div>
                     )}
                     {stravaAvgCadence && (
-                      <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-blue-200 bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Avg Cadence</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-blue-700`}>{Math.round(stravaAvgCadence)} rpm</div>
+                      <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-blue-200 bg-blue-50 rounded-lg sm:rounded-xl shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Avg Cadence</div>
+                        <div className="text-xs sm:text-sm md:text-base font-semibold text-blue-700">{Math.round(stravaAvgCadence)} rpm</div>
                       </div>
                     )}
                     {stravaNormalizedPower && (
-                      <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-green-200 bg-green-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Normalized Power</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-green-700`}>{Math.round(stravaNormalizedPower)} W</div>
+                      <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-green-200 bg-green-50 rounded-lg sm:rounded-xl shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Normalized Power</div>
+                        <div className="text-xs sm:text-sm md:text-base font-semibold text-green-700">{Math.round(stravaNormalizedPower)} W</div>
                       </div>
                     )}
                     {calculateStravaTSS && (
-                      <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-purple-200 bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500 flex items-center gap-1`}>
-                          TSS
-                          {calculateStravaTSS.estimated && (
-                            <span className={`${isMobile ? 'text-[7px]' : 'text-[9px] sm:text-[10px] md:text-xs'} text-gray-400`} title="Estimated TSS (FTP not set in profile)">*</span>
-                          )}
-                        </div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-purple-700`}>{calculateStravaTSS.value}</div>
-                        {calculateStravaIF && (
-                          <div className={`${isMobile ? 'text-[7px]' : 'text-[9px] sm:text-[10px] md:text-xs'} text-gray-500 mt-0.5`}>IF: {calculateStravaIF}</div>
-                        )}
+                      <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-purple-200 bg-purple-50 rounded-lg sm:rounded-xl shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500 flex items-center gap-1">TSS{calculateStravaTSS.estimated && <span className="text-[9px] sm:text-[10px] md:text-xs text-gray-400">*</span>}</div>
+                        <div className="text-xs sm:text-sm md:text-base font-semibold text-purple-700">{calculateStravaTSS.value}</div>
+                        {calculateStravaIF && <div className="text-[9px] sm:text-[10px] md:text-xs text-gray-500 mt-0.5">IF: {calculateStravaIF}</div>}
                       </div>
                     )}
                     {hasStravaElevation && (
-                      <div className={`flex-1 ${isMobile ? 'min-w-[70px] px-1 py-1' : 'min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3'} bg-white/90 border border-gray-200 ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl'} shadow-sm`}>
-                        <div className={`${isMobile ? 'text-[8px]' : 'text-[9px] sm:text-[10px] md:text-[11px]'} uppercase tracking-wide text-gray-500`}>Elevation</div>
-                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm md:text-base'} font-semibold text-gray-900`}>{Math.round(stravaElevationGain)} m</div>
+                      <div className="flex-1 min-w-[80px] sm:min-w-[100px] md:min-w-[140px] px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 bg-white/90 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm">
+                        <div className="text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wide text-gray-500">Elevation</div>
+                        <div className="text-xs sm:text-sm md:text-base font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {highlightMetric && (
+                <div className="mb-3 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm text-indigo-800">
+                  <span>
+                    <span className="font-semibold">From Power Radar</span>
+                    {radarWatts > 0 && (
+                      <span className="ml-2">
+                        — Best {highlightMetric === 'sprint5s' ? '5s' : highlightMetric === 'attack1min' ? '1min' : highlightMetric === 'vo2max5min' ? '5min' : highlightMetric === 'threshold20min' ? '20min' : '60min'}: <span className="font-bold">{radarWatts} W</span>
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setHighlightMetric(null);
+                      setRadarWatts(null);
+                      const url = new URL(window.location);
+                      url.searchParams.delete('highlightMetric');
+                      url.searchParams.delete('radarWatts');
+                      window.history.replaceState({}, '', url.toString());
+                    }}
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-900 underline underline-offset-2"
+                  >
+                    Clear highlight
+                  </button>
                 </div>
               )}
 
@@ -4066,6 +4353,7 @@ const FitAnalysisPage = () => {
                         }}
                         user={user}
                         highlightMetric={highlightMetric}
+                        radarWatts={radarWatts}
                       />
                       </div>
                     </div>
@@ -4098,19 +4386,6 @@ const FitAnalysisPage = () => {
                 const isSwim = sportType.toLowerCase().includes('swim');
                 const usePace = isRun || isSwim;
                 
-                // Debug logging for running activities
-                if (isRun) {
-                  console.log('=== [FitAnalysisPage] Strava Running Data ===', {
-                    activityName: selectedStrava?.name || selectedStrava?.titleManual || 'Unknown',
-                    sportType: sportType,
-                    speedArrayLength: speedArray.length,
-                    timeArrayLength: timeArray.length,
-                    speedSample: speedArray.slice(0, 5), // First 5 speed values
-                    timeSample: timeArray.slice(0, 5), // First 5 time values
-                    hasSpeedData: speedArray.length > 0 && speedArray.some(s => s > 0)
-                  });
-                }
-                
                 // Calculate pace from speed (in seconds per unit)
                 // For run: pace in seconds per km (1000 / speed)
                 // For swim: pace in seconds per 100m (100 / speed)
@@ -4126,25 +4401,6 @@ const FitAnalysisPage = () => {
                 
                 // Calculate pace array from speed
                 const pace = usePace ? speed.map(s => calculatePace(s)).filter(p => p !== null && p > 0 && !isNaN(p)) : null;
-                
-                // Debug logging for pace calculation
-                if (isRun && pace && pace.length > 0) {
-                  const validPaces = pace.filter(p => p && p > 0 && !isNaN(p));
-                  if (validPaces.length > 0) {
-                    const minPace = Math.min(...validPaces);
-                    const maxPace = Math.max(...validPaces);
-                    const avgPace = validPaces.reduce((a, b) => a + b, 0) / validPaces.length;
-                    console.log('=== [FitAnalysisPage] Calculated Running Pace ===', {
-                      validPacesCount: validPaces.length,
-                      minPace: `${Math.floor(minPace/60)}:${Math.round(minPace%60).toString().padStart(2,'0')}/km`,
-                      maxPace: `${Math.floor(maxPace/60)}:${Math.round(maxPace%60).toString().padStart(2,'0')}/km`,
-                      avgPace: `${Math.floor(avgPace/60)}:${Math.round(avgPace%60).toString().padStart(2,'0')}/km`,
-                      minPaceSeconds: minPace,
-                      maxPaceSeconds: maxPace,
-                      avgPaceSeconds: avgPace
-                    });
-                  }
-                }
                 
                 // Calculate pace range for Y-axis
                 // For run: dynamically calculate from data with padding
@@ -4240,16 +4496,18 @@ const FitAnalysisPage = () => {
 
                 return (
                   <div className={`${isMobile ? 'space-y-2' : 'space-y-3'}`}>
-                    {/* Interval Chart */}
+                    {/* Interval Chart (Strava) - linked with StravaLapsTable via selectedLapNumber */}
                     {shouldShowIntervalChart ? (
                       <div className="overflow-x-auto -mx-2 sm:-mx-3 md:mx-0 px-2 sm:px-3 md:px-0">
-                      <IntervalChart 
+                        <IntervalChart 
                           laps={uniqueLaps || []}
                           sport={selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || 'cycling'}
                           records={trainingRecords || []}
                           user={user}
+                          selectedLapNumber={selectedLapNumber}
+                          onSelectLapNumber={setSelectedLapNumber}
                           highlightMetric={highlightMetric}
-                      />
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -4365,16 +4623,20 @@ const FitAnalysisPage = () => {
               )}
               
 
-              {/* Laps/Intervals (Strava) */}
-              <StravaLapsTable 
-                selectedStrava={selectedStrava}
-                stravaChartRef={null}
-                maxTime={maxTime}
-                loadStravaDetail={loadStravaDetail}
-                loadExternalActivities={loadExternalActivities}
-                onExportToTraining={handleExportToTraining}
-                user={user}
-              />
+              {/* Strava Laps/Intervals */}
+              {(!isMobile || showStravaLapsOnMobile) && (
+                <StravaLapsTable 
+                  selectedStrava={selectedStrava}
+                  stravaChartRef={stravaChartRef}
+                  maxTime={maxTime}
+                  loadStravaDetail={loadStravaDetail}
+                  loadExternalActivities={loadExternalActivities}
+                  onExportToTraining={handleExportToTraining}
+                  user={user}
+                  selectedLapNumber={selectedLapNumber}
+                  onSelectLapNumber={setSelectedLapNumber}
+                />
+              )}
             </div>
           );
         })()}

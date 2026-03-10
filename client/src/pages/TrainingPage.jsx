@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
@@ -241,6 +241,22 @@ const TrainingPage = () => {
   };
 
 
+  // Apply sport & category filters for all visual components
+  const filteredTrainings = useMemo(() => {
+    let data = trainings || [];
+    if (selectedSport !== 'all') {
+      data = data.filter(t => t.sport === selectedSport);
+    }
+    if (selectedCategory !== 'all') {
+      if (selectedCategory === 'uncategorized') {
+        data = data.filter(t => !t.category);
+      } else {
+        data = data.filter(t => t.category === selectedCategory);
+      }
+    }
+    return data;
+  }, [trainings, selectedSport, selectedCategory]);
+
   if (error) return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -368,7 +384,7 @@ const TrainingPage = () => {
         transition={{ delay: 0.5 }}
         className="mb-6"
       >
-        <UserTrainingsTable trainings={trainings} />
+        <UserTrainingsTable trainings={filteredTrainings} />
       </motion.div>
 
       <motion.div
@@ -378,7 +394,7 @@ const TrainingPage = () => {
         className='max-w-[94vw] md:max-w-none'
       >
         <TrainingStats 
-          trainings={trainings} 
+          trainings={filteredTrainings} 
           selectedSport={selectedSport}
           onSportChange={setSelectedSport}
           isFullWidth={true}

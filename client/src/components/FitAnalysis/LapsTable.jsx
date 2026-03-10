@@ -1,10 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { formatDuration, formatDistance, formatSpeed, formatPace } from '../../utils/fitAnalysisUtils';
 import { updateLactateValues } from '../../services/api';
 
 const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
   const sportLower = (training?.sport || '').toLowerCase();
   const isRun = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
   
@@ -80,6 +86,14 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
     return unique;
   }, [training]);
 
+  const lapRefs = useRef({});
+
+  useEffect(() => {
+    if (isMobile && selectedLapNumber != null && lapRefs.current[selectedLapNumber]) {
+      lapRefs.current[selectedLapNumber].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedLapNumber, isMobile]);
+
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
 
   const handleSaveLactate = async () => {
@@ -104,6 +118,95 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
     }
   };
 
+  if (isMobile) {
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-sm font-bold text-gray-900">Laps</h3>
+          <button
+            onClick={() => setEditingLactate(!editingLactate)}
+            className="px-3 py-1 bg-primary text-white rounded-lg text-xs shadow-sm transition-colors active:bg-primary-dark"
+          >
+            {editingLactate ? 'Cancel' : 'Add Lactate'}
+          </button>
+        </div>
+
+        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto pr-0.5">
+          {uniqueLaps.map((lap, index) => {
+            const lapNumber = lap?.lapNumber ?? (index + 1);
+            const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+            const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
+            const dist = formatDistance(lap.totalDistance, user);
+            const pace = isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user);
+            const selectedStyle = isSelected
+              ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
+              : {};
+            return (
+              <button
+                key={index}
+                ref={el => { lapRefs.current[lapNumber] = el; }}
+                onClick={() => onSelectLapNumber && onSelectLapNumber(isSelected ? null : lapNumber)}
+                className={`w-full text-left py-2.5 px-1 flex items-center gap-3 transition-colors touch-manipulation ${
+                  isSelected ? 'bg-primary/10 border-l-[3px] border-primary' : lap.lactate ? 'bg-primary/5' : 'active:bg-gray-50'
+                }`}
+                style={{ WebkitTapHighlightColor: 'transparent', ...selectedStyle }}
+              >
+                <div className="w-7 text-center">
+                  <span className={`text-xs font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}`}>{index + 1}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-3">
+                    {dist && dist !== '0 m' && dist !== '0.0 km' && (
+                      <span className="text-sm font-semibold text-gray-900">{dist}</span>
+                    )}
+                    <span className="text-sm text-gray-600">{time}</span>
+                    {pace && pace !== '-' && (
+                      <span className="text-xs text-gray-500">{pace}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    {lap.avgHeartRate && <span className="text-[11px] text-red-500">{Math.round(lap.avgHeartRate)} bpm</span>}
+                    {lap.avgPower > 0 && <span className="text-[11px] text-purple-600">{Math.round(lap.avgPower)} W</span>}
+                    {!editingLactate && lap.lactate && (
+                      <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
+                    )}
+                  </div>
+                </div>
+                {editingLactate && (
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="La"
+                    value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
+                    onChange={(e) => setLactateInputs({ ...lactateInputs, [`lap-${index}`]: e.target.value })}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-16 px-2 py-1 border border-primary/40 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {editingLactate && (
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => { setEditingLactate(false); setLactateInputs({}); }}
+              className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm transition-colors active:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveLactate}
+              className="flex-1 px-3 py-2 bg-greenos text-white rounded-lg text-sm transition-colors active:opacity-90"
+            >
+              Save
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
@@ -121,8 +224,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             <tr>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden sm:table-cell">Distance</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase hidden md:table-cell">{isRun ? 'Avg Pace' : 'Avg Speed'}</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Distance</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">{isRun ? 'Avg Pace' : 'Avg Speed'}</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
@@ -140,8 +243,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               >
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden sm:table-cell">{formatDistance(lap.totalDistance, user)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 hidden md:table-cell">
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDistance(lap.totalDistance, user)}</td>
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
                   {isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user)}
                 </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>

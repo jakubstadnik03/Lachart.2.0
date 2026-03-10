@@ -87,6 +87,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [trainingDetail, setTrainingDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
   const [chartView, setChartView] = useState('training'); // 'training' or 'interval'
@@ -250,6 +251,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
         // Trigger activity click to show details after week is set
         setTimeout(() => {
           if (handleActivityClickRef.current) {
+            // Reset selected lap when switching activity from external table
+            setSelectedLapNumber(null);
             handleActivityClickRef.current(activity);
           }
         }, 200);
@@ -1062,10 +1065,49 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       {/* Interval Chart */}
                       {chartView === 'interval' && trainingDetail.laps && trainingDetail.laps.length > 0 && (
                         <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
+                          {/* Selected lap info (like on FitAnalysis) */}
+                          {(() => {
+                            if (!selectedLapNumber) return null;
+                            const lap = trainingDetail.laps.find(
+                              (l, idx) =>
+                                String(l.lapNumber ?? idx + 1) === String(selectedLapNumber)
+                            );
+                            if (!lap) return null;
+                            return (
+                              <div className="mb-2 px-1 text-xs sm:text-sm text-gray-100 flex flex-wrap items-center gap-2">
+                                <span className="font-medium">
+                                  Lap {lap.lapNumber ?? trainingDetail.laps.indexOf(lap) + 1}
+                                </span>
+                                {lap.duration != null && (
+                                  <span className="text-gray-300">
+                                    Time: {Math.round(lap.duration)} s
+                                  </span>
+                                )}
+                                {lap.distance != null && (
+                                  <span className="text-gray-300">
+                                    Dist: {(lap.distance / 1000).toFixed(2)} km
+                                  </span>
+                                )}
+                                {lap.avgPower != null && (
+                                  <span className="text-gray-300">
+                                    Power: {Math.round(lap.avgPower)} W
+                                  </span>
+                                )}
+                                {lap.avgPace != null && (
+                                  <span className="text-gray-300">
+                                    Pace: {lap.avgPace}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           <IntervalChart 
                             laps={trainingDetail.laps}
                             sport={trainingDetail.sport || 'cycling'}
                             user={user}
+                            selectedLapNumber={selectedLapNumber}
+                            onSelectLapNumber={setSelectedLapNumber}
                           />
                         </div>
                       )}

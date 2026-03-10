@@ -147,14 +147,8 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   };
   
   const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
-  const [expandedDays, setExpandedDays] = useState(new Set()); // Track which days are expanded
-  const [expandedSummary, setExpandedSummary] = useState(new Set()); // Track which week summaries are expanded
+  const [expandedDays, setExpandedDays] = useState(new Set());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [hoveredActivity, setHoveredActivity] = useState(null); // Track hovered activity for tooltip
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 }); // Tooltip position
-  const [showLeftScroll, setShowLeftScroll] = useState(false);
-  const [showRightScroll, setShowRightScroll] = useState(true);
-  const scrollContainerRef = useRef(null);
   
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -168,31 +162,7 @@ export default function CalendarView({ activities = [], onSelectActivity, select
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Check scroll position for mobile scroll indicators
-  useEffect(() => {
-    if (!isMobile || !scrollContainerRef.current || view !== 'week') return;
-    
-    const checkScroll = () => {
-      const container = scrollContainerRef.current;
-      if (!container) return;
-      
-      const { scrollLeft, scrollWidth, clientWidth } = container;
-      setShowLeftScroll(scrollLeft > 10);
-      setShowRightScroll(scrollLeft < scrollWidth - clientWidth - 10);
-    };
-    
-    const container = scrollContainerRef.current;
-    container.addEventListener('scroll', checkScroll, { passive: true });
-    checkScroll(); // Initial check
-    
-    // Also check on resize
-    window.addEventListener('resize', checkScroll);
-    
-    return () => {
-      container.removeEventListener('scroll', checkScroll);
-      window.removeEventListener('resize', checkScroll);
-    };
-  }, [isMobile, view, anchorDate]);
+  
   
   // Load user profile for FTP and threshold pace
   useEffect(() => {
@@ -287,7 +257,6 @@ export default function CalendarView({ activities = [], onSelectActivity, select
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(act);
     });
-    console.log('activitiesByDay map size:', map.size, 'keys:', Array.from(map.keys()).slice(0, 10));
     return map;
   }, [filteredActivities]);
 
@@ -322,11 +291,13 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   };
   const today = () => setAnchorDate(new Date());
   
-  // Handle day click on mobile - switch to week view
+  const [selectedDay, setSelectedDay] = useState(null); // YYYY-MM-DD key of selected day on mobile
+
+  // Handle day click on mobile - select day and show activities below
   const handleDayClick = (dayDate) => {
     if (isMobile) {
-      setView('week');
-      setAnchorDate(dayDate);
+      const key = getLocalDateString(dayDate);
+      setSelectedDay(prev => prev === key ? null : key); // toggle
     }
   };
 
@@ -509,42 +480,53 @@ export default function CalendarView({ activities = [], onSelectActivity, select
   };
 
   return (
-    <div className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-xl'} ${isMobile ? 'rounded-lg' : 'rounded-2xl md:rounded-3xl'} ${isMobile ? 'border border-gray-200' : 'border border-white/20'} shadow-md ${isMobile ? 'p-2' : 'p-3 md:p-4 lg:p-4'} ${isMobile ? 'mb-2' : 'mb-4 md:mb-6'} overflow-hidden`}>
+    <div className={`${isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white/10 backdrop-blur-xl rounded-2xl md:rounded-3xl border border-white/20 shadow-md p-3 md:p-4 lg:p-4 mb-4 md:mb-6'} overflow-hidden`}>
+      {/* Header */}
+      {isMobile ? (
+        <div className="flex items-center justify-between mb-2 px-1">
+          <button onClick={prev} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+            <ChevronLeftIcon className="w-5 h-5 text-gray-600" />
+          </button>
+          <button onClick={today} className="text-sm font-bold text-gray-900 uppercase tracking-wide active:text-primary transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+            {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+          </button>
+          <button onClick={next} className="p-1.5 rounded-full active:bg-gray-100 transition-colors touch-manipulation" style={{ WebkitTapHighlightColor: 'transparent' }}>
+            <ChevronRightIcon className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+      ) : (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex items-center gap-1.5 md:gap-2">
           <button 
             onClick={prev} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors flex items-center justify-center`}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
             aria-label="Previous"
           >
             <ChevronLeftIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
           <button 
             onClick={today} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors text-xs md:text-sm`}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors text-xs md:text-sm"
           >
             Today
           </button>
           <button 
             onClick={next} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} text-gray-700 shadow-sm transition-colors flex items-center justify-center`}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
             aria-label="Next"
           >
             <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
         </div>
         <div className="text-sm md:text-base lg:text-lg font-semibold text-gray-900">
-          {isMobile && view === 'week' 
-            ? formatWeekRange(startOfWeek(anchorDate))
-            : anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })
-          }
+          {anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
           <div className="relative">
             <select 
               value={sportFilter} 
               onChange={(e) => setSportFilter(e.target.value)} 
-              className={`appearance-none pr-6 md:pr-8 pl-2 md:pl-3 py-1 md:py-1.5 text-xs md:text-sm ${isMobile ? 'border border-gray-300 bg-white hover:bg-gray-50' : 'border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20'} rounded-lg md:rounded-xl text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all`}
+              className="appearance-none pr-6 md:pr-8 pl-2 md:pl-3 py-1 md:py-1.5 text-xs md:text-sm border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-lg md:rounded-xl text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all"
             >
               {uniqueSports.map(s => (
                 <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
@@ -552,449 +534,140 @@ export default function CalendarView({ activities = [], onSelectActivity, select
             </select>
             <ChevronDownIcon className="pointer-events-none absolute inset-y-0 right-1 md:right-2 flex items-center text-gray-400 w-4 h-4 md:w-5 md:h-5" />
           </div>
-          {!isMobile && (
-            <>
           <button 
             onClick={() => setView('week')} 
-                className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300' : 'border border-white/20'} shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':isMobile?'bg-white hover:bg-gray-50 text-gray-700':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
           >
             Week
           </button>
           <button 
             onClick={() => setView('month')} 
-                className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl ${isMobile ? 'border border-gray-300' : 'border border-white/20'} shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white hover:bg-primary-dark':isMobile?'bg-white hover:bg-gray-50 text-gray-700':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white hover:bg-primary-dark':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
           >
             Month
           </button>
-            </>
-          )}
         </div>
       </div>
+      )}
 
-      {/* Mobile: Month view or Week view */}
+      {/* Mobile: Strava-like compact month grid */}
       {isMobile ? (
-        <div className={view === 'week' ? 'space-y-2' : 'space-y-4'}>
-          {view === 'week' ? (
-            /* Week view - scrollable days */
-            <>
-              <button
-                onClick={() => setView('month')}
-                className="mb-2 px-3 py-1.5 text-xs bg-primary/20 text-primary-dark rounded-lg border border-primary/30 hover:bg-primary/30 transition-colors w-full flex items-center justify-center gap-2"
-              >
-                <ChevronLeftIcon className="w-4 h-4" />
-                <span>Back to Month</span>
-              </button>
-              <div className="relative">
-                {/* Left scroll indicator */}
-                {showLeftScroll && (
-                  <button
-                    onClick={() => {
-                      if (scrollContainerRef.current) {
-                        scrollContainerRef.current.scrollBy({ left: -200, behavior: 'smooth' });
-                      }
-                    }}
-                    className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 via-white/40 to-transparent z-10 flex items-center justify-start pl-2"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                      <ChevronLeftIcon className="w-4 h-4 text-primary" />
-                    </div>
-                  </button>
-                )}
-                
-                {/* Right scroll indicator */}
-                {showRightScroll && (
-                  <button
-                    onClick={() => {
-                      if (scrollContainerRef.current) {
-                        scrollContainerRef.current.scrollBy({ left: 200, behavior: 'smooth' });
-                      }
-                    }}
-                    className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 via-white/40 to-transparent z-10 flex items-center justify-end pr-2"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                      <ChevronRightIcon className="w-4 h-4 text-primary" />
-                    </div>
-                  </button>
-                )}
-                
-                <div 
-                  ref={scrollContainerRef}
-                  className="overflow-x-auto -mx-2 px-2" 
-                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
-                >
-                  <style>{`
-                    .overflow-x-auto::-webkit-scrollbar {
-                      display: none;
+        <div>
+          {/* Compact month grid */}
+          <div className="grid grid-cols-7 gap-0">
+            {/* Day name headers */}
+            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+              <div key={i} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
+            ))}
+            {/* Day cells */}
+            {days.map((dayDate, dayIdx) => {
+              const key = getLocalDateString(dayDate);
+              const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
+              const acts = activitiesByDay.get(key) || [];
+              const isToday = isSameDay(dayDate, new Date());
+              const isSelected = selectedDay === key;
+
+              const sportDots = acts.slice(0, 4).map(a => {
+                const s = (a.sport || '').toLowerCase();
+                if (s.includes('run')) return '#f97316';
+                if (s.includes('ride') || s.includes('cycle') || s.includes('bike')) return '#3b82f6';
+                if (s.includes('swim')) return '#06b6d4';
+                if (s.includes('strength') || s.includes('gym') || s.includes('weight')) return '#8b5cf6';
+                return '#9ca3af';
+              });
+
+              return (
+                <button
+                  key={dayIdx}
+                  onClick={() => {
+                    handleDayClick(dayDate);
+                    if (acts.length === 1 && onSelectActivity) {
+                      onSelectActivity(acts[0]);
                     }
-                  `}</style>
-                  <div className="flex gap-1.5 min-w-max pb-2">
-                  {(() => {
-                    const weekStart = startOfWeek(anchorDate);
-                    const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
-                    return weekDays.map((dayDate, dayIdx) => {
-                      const key = getLocalDateString(dayDate);
-                      const acts = activitiesByDay.get(key) || [];
-                      const isToday = isSameDay(dayDate, new Date());
-                      const isExpanded = expandedDays.has(key);
-                      const hasOverflow = acts.length > 3;
-                      const visibleActs = isExpanded
-                        ? acts
-                        : (hasOverflow ? acts.slice(0, 2) : acts.slice(0, 3));
-                      const remainingCount = hasOverflow ? (acts.length - 2) : 0;
-                      
-                      const toggleExpand = (e) => {
-                        e.stopPropagation();
-                        setExpandedDays(prev => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(key)) {
-                            newSet.delete(key);
-                          } else {
-                            newSet.add(key);
-                          }
-                          return newSet;
-                        });
-                      };
-                      
-                      const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                      
-                      return (
-                        <div 
-                          key={dayIdx} 
-                          className={`bg-white rounded-xl border ${isToday ? 'border-primary/30 ring-2 ring-primary/20' : 'border-gray-200'} ${isMobile ? 'p-2' : 'p-2'} ${isMobile ? 'w-[90px] flex-shrink-0' : 'min-w-[140px]'} transition-all shadow-sm hover:shadow-md hover:border-gray-300`}
-                        >
-                          <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-semibold mb-1 ${isToday ? 'text-primary font-bold' : 'text-gray-600'}`}>
-                            {dayNames[dayDate.getDay() === 0 ? 6 : dayDate.getDay() - 1]}
-                          </div>
-                          <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold mb-1.5 ${isToday ? 'text-primary' : 'text-gray-900'}`}>
-                            {dayDate.getDate()}
-                          </div>
-                          <div className="space-y-0.5">
-                            {visibleActs.map((a, i) => {
-                              const activityId = a.id || a._id;
-                              const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
-                              const activityTitle = a.title || a.name || a.originalFileName || 'Activity';
-                              const handleActivityClick = (e) => {
-                                e.stopPropagation();
-                                if (onSelectActivity) {
-                                  onSelectActivity(a);
-                                }
-                              };
-                              const handleTouchStart = (e) => {
-                                e.stopPropagation();
-                                if (onSelectActivity) {
-                                  onSelectActivity(a);
-                                }
-                              };
-                              return (
-                                <button 
-                                  key={i} 
-                                  onClick={handleActivityClick}
-                                  onTouchStart={handleTouchStart}
-                                  onMouseEnter={(e) => {
-                                    if (!isMobile) {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setHoveredActivity({ activity: a, title: activityTitle });
-                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
-                                    }
-                                  }}
-                                  onMouseLeave={() => {
-                                    if (!isMobile) {
-                                      setHoveredActivity(null);
-                                    }
-                                  }}
-                                  onMouseMove={(e) => {
-                                    if (!isMobile) {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top });
-                                    }
-                                  }}
-                                  className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-0.5' : 'text-[10px] px-2 py-1.5'} rounded-lg border transition-all flex items-center gap-1.5 touch-manipulation ${
-                                    isSelected 
-                                      ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg active:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
-                                      : `bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-800 shadow-sm hover:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'} ${a.category ? 'hover:border-opacity-70' : 'hover:border-primary/30'}`
-                                  }`}
-                                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                                >
-                                  <SportIcon sport={a.sport} className={isMobile ? "w-3 h-3" : "w-4 h-4"} />
-                                  <span className={`truncate font-medium ${isMobile ? 'text-[8px]' : 'text-[10px]'} flex-1`}>{activityTitle}</span>
-                                  {a.category && (
-                                    <div className={`${isMobile ? 'text-[7px] px-0.5 py-0' : 'text-[8px] px-1 py-0.5'} rounded flex-shrink-0 ${categoryColor(a.category)}`}>
-                                      {isMobile ? categoryLabel(a.category).substring(0, 3) : categoryLabel(a.category).substring(0, 4)}
-                                    </div>
-                                  )}
-                                </button>
-                              );
-                            })}
-                            {hasOverflow && (
-                              <button
-                                onClick={toggleExpand}
-                                onTouchStart={(e) => {
-                                  e.stopPropagation();
-                                  toggleExpand(e);
-                                }}
-                                className={`w-full text-left ${isMobile ? 'text-[8px] px-1 py-1' : 'text-[10px] px-2 py-1.5'} rounded-lg bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 border border-gray-200 shadow-sm transition-all font-medium touch-manipulation flex items-center gap-1.5`}
-                                style={{ WebkitTapHighlightColor: 'transparent' }}
-                              >
-                                {isExpanded ? (
-                                  <>
-                                    <ChevronDownIcon className="w-3 h-3 flex-shrink-0 text-gray-500" />
-                                    <span className="text-gray-600">Show less</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="text-primary font-bold">+</span>
-                                    <span className="text-gray-600">{remainingCount} more</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Custom Tooltip - Only show on desktop */}
-              {hoveredActivity && !isMobile && (
-                <div
-                  className="fixed z-[99999] bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-xl pointer-events-none"
-                  style={{
-                    left: `${tooltipPosition.x}px`,
-                    top: `${tooltipPosition.y - 5}px`,
-                    transform: 'translate(-50%, -100%)',
-                    maxWidth: '200px',
-                    wordWrap: 'break-word',
-                    whiteSpace: 'normal'
                   }}
+                  className={`flex flex-col items-center py-1.5 touch-manipulation transition-colors relative ${
+                    !isCurrentMonth ? 'opacity-30' : ''
+                  } ${isSelected ? 'bg-primary/10 rounded-lg' : ''}`}
+                  style={{ WebkitTapHighlightColor: 'transparent', minHeight: '44px' }}
                 >
-                  {hoveredActivity.title}
-                  {/* Arrow */}
-                  <div
-                    className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-px"
-                    style={{
-                      width: 0,
-                      height: 0,
-                      borderLeft: '6px solid transparent',
-                      borderRight: '6px solid transparent',
-                      borderTop: '6px solid rgb(17, 24, 39)'
-                    }}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            /* Month view - full calendar grid */
-            <div className="grid grid-cols-7 gap-0.5">
-              {/* Day headers */}
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName) => (
-                <div key={dayName} className="text-center text-[9px] font-semibold text-gray-600 py-0.5">
-                  {dayName.slice(0, 1)}
-                </div>
-              ))}
-              {/* Calendar days */}
-              {days.map((dayDate, dayIdx) => {
-                const key = getLocalDateString(dayDate);
-                const isCurrentMonth = dayDate.getMonth() === anchorDate.getMonth();
-                const acts = activitiesByDay.get(key) || [];
-                const isToday = isSameDay(dayDate, new Date());
-                
-                return (
-                  <button
-                    key={dayIdx}
-                    onClick={() => handleDayClick(dayDate)}
-                    className={`bg-white rounded-lg border transition-all ${
-                      isCurrentMonth ? 'border-gray-200' : 'border-gray-100 opacity-40'
-                    } ${isToday ? 'ring-2 ring-primary ring-offset-1 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/30 shadow-sm' : 'hover:border-gray-300 hover:shadow-sm'} p-1.5 min-h-[50px] flex flex-col items-start active:bg-gray-50`}
-                  >
-                    <div className={`text-[10px] font-semibold mb-0.5 w-full text-left ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
-                      {dayDate.getDate()}
+                  <span className={`text-xs font-medium leading-none ${
+                    isToday
+                      ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center font-bold'
+                      : isSelected
+                        ? 'text-primary font-bold'
+                        : 'text-gray-800'
+                  }`}>
+                    {dayDate.getDate()}
+                  </span>
+                  {/* Activity dots */}
+                  {sportDots.length > 0 && (
+                    <div className="flex items-center gap-[3px] mt-1">
+                      {sportDots.map((color, i) => (
+                        <div key={i} className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: color }} />
+                      ))}
                     </div>
-                    <div className="flex flex-wrap gap-0.5 w-full justify-start">
-                      {(acts.length > 3 ? acts.slice(0, 2) : acts.slice(0, 3)).map((a, i) => {
-                        const activityId = a.id || a._id;
-                        const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
-                        const handleActivityClick = (e) => {
-                              e.stopPropagation();
-                          if (onSelectActivity) {
-                            onSelectActivity(a);
-                          }
-                        };
-                        const handleTouchStart = (e) => {
-                          e.stopPropagation();
-                          if (onSelectActivity) {
-                            onSelectActivity(a);
-                          }
-                        };
-                        return (
-                          <div key={i} className="flex items-center gap-0.5">
-                            <button
-                              onClick={handleActivityClick}
-                              onTouchStart={handleTouchStart}
-                              className={`text-[7px] px-1 py-0.5 rounded-md border flex items-center justify-center touch-manipulation transition-all ${
-                              isSelected 
-                                  ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-sm active:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
-                                  : `bg-white text-gray-700 shadow-sm hover:shadow-md active:bg-gray-50 ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'}`
-                              }`}
-                              style={{ WebkitTapHighlightColor: 'transparent' }}
-                            >
-                              <SportIcon sport={a.sport} className="w-2.5 h-2.5" />
-                            </button>
-                            {a.category && (
-                              <div className={`text-[6px] px-0.5 py-0 rounded ${categoryColor(a.category)}`} title={categoryLabel(a.category)}>
-                                {categoryLabel(a.category).substring(0, 2)}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {acts.length > 3 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDayClick(dayDate);
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            handleDayClick(dayDate);
-                          }}
-                          className="text-[7px] px-1 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold touch-manipulation active:bg-gray-300 border border-gray-200 shadow-sm transition-all"
-                          style={{ WebkitTapHighlightColor: 'transparent' }}
-                        >
-                          +{acts.length - 2} more
-                        </button>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          
-          {/* Week Summary - Collapsible on mobile */}
-          {/* In week view, show only current week summary; in month view, show all visible weeks */}
-          {weeklySummary.length > 0 && (view === 'week' ? weeklySummary.length === 1 : true) && (
-            <div className="space-y-2">
-              {weeklySummary.map((weekSummary, idx) => {
-                const weekKey = weekSummary.weekStart.toISOString().slice(0, 10);
-                const isExpanded = expandedSummary.has(weekKey);
-                
-                return (
-                  <div key={idx} className={`${isMobile ? 'bg-white' : 'bg-white/10 backdrop-blur-md'} rounded-xl ${isMobile ? 'border border-gray-200' : 'border border-white/20'} p-4 shadow-sm hover:shadow-md transition-shadow`}>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Selected day activities - show below calendar */}
+          {selectedDay && (() => {
+            const dayActs = activitiesByDay.get(selectedDay) || [];
+            if (dayActs.length === 0) return null;
+            const dayDate = new Date(selectedDay + 'T12:00:00');
+            const dayLabel = dayDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+            return (
+              <div className="mt-3 space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">{dayLabel}</div>
+                {dayActs.map((a, i) => {
+                  const activityId = a.id || a._id;
+                  const isActSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                  const title = a.title || a.name || a.originalFileName || 'Activity';
+                  const duration = Number(a.totalTimerTime || a.moving_time || a.movingTime || a.totalElapsedTime || a.elapsedTime || a.duration || 0);
+                  const distance = Number(a.distance || 0);
+                  const durationStr = duration > 0
+                    ? `${Math.floor(duration / 3600)}:${String(Math.floor((duration % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(duration % 60)).padStart(2, '0')}`
+                    : '';
+                  const distanceStr = distance > 0 ? formatKm(distance) : '';
+                  const tss = Number(a.tss || a.TSS || a.totalTSS || 0);
+
+                  return (
                     <button
-                      onClick={() => {
-                        setExpandedSummary(prev => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(weekKey)) {
-                            newSet.delete(weekKey);
-                          } else {
-                            newSet.add(weekKey);
-                          }
-                          return newSet;
-                        });
-                      }}
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                      setExpandedSummary(prev => {
-                        const newSet = new Set(prev);
-                        if (newSet.has(weekKey)) {
-                          newSet.delete(weekKey);
-                        } else {
-                          newSet.add(weekKey);
-                        }
-                        return newSet;
-                      });
-                    }}
-                    className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50 rounded-lg p-1 -m-1 transition-colors"
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                      key={i}
+                      onClick={() => onSelectActivity && onSelectActivity(a)}
+                      className={`w-full text-left rounded-xl border p-3 transition-all touch-manipulation ${
+                        isActSelected
+                          ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/20'
+                          : 'border-gray-200 bg-white shadow-sm active:bg-gray-50'
+                      }`}
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
                     >
-                      <div className="text-left">
-                        <div className="text-sm font-bold text-gray-900 mb-1.5">
-                          {formatWeekRange(weekSummary.weekStart)}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 rounded-lg">
-                          <span className="text-xs font-semibold text-primary">
-                              {formatHours(weekSummary.totalSeconds)}
-                          </span>
+                      <div className="flex items-center gap-3">
+                        <SportIcon sport={a.sport} className="w-8 h-8" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-gray-900 truncate">{title}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {durationStr && <span className="text-xs text-gray-500">{durationStr}</span>}
+                            {distanceStr && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{distanceStr}</span></>}
+                            {tss > 0 && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{Math.round(tss)} TSS</span></>}
                           </div>
-                          {weekSummary.totalTSS > 0 && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 rounded-lg">
-                              <FireIcon className="w-3.5 h-3.5 text-primary" />
-                            <span className="text-xs font-bold text-primary">
-                                {Math.round(weekSummary.totalTSS)}
-                            </span>
-                            </div>
-                          )}
                         </div>
+                        <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       </div>
-                      <span className="text-gray-400 flex items-center">
-                        {isExpanded ? (
-                          <ChevronDownIcon className="w-5 h-5" />
-                        ) : (
-                          <ChevronRightIcon className="w-5 h-5" />
-                        )}
-                      </span>
+                      {a.category && (
+                        <div className={`mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border ${categoryColor(a.category)}`}>
+                          {categoryLabel(a.category)}
+                        </div>
+                      )}
                     </button>
-                    
-                    {isExpanded && (
-                      <div className="mt-4 pt-4 border-t border-gray-200 space-y-2.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                        {(weekSummary.distanceRun > 0 || weekSummary.runSeconds > 0) && (
-                            <div className="flex items-center gap-1.5">
-                              <img src="/icon/run.svg" alt="Run" className="w-4 h-4" />
-                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceRun)}</span>
-                              <span className="text-xs text-gray-500">•</span>
-                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.runSeconds)}</span>
-                              {weekSummary.tssRun > 0 && (
-                                <>
-                                  <span className="text-xs text-gray-500">•</span>
-                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
-                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssRun)} TSS</span>
-                                </>
-                              )}
-                          </div>
-                        )}
-                        {(weekSummary.distanceBike > 0 || weekSummary.bikeSeconds > 0) && (
-                            <div className="flex items-center gap-1.5">
-                              <img src="/icon/bike.svg" alt="Bike" className="w-4 h-4" />
-                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceBike)}</span>
-                              <span className="text-xs text-gray-500">•</span>
-                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.bikeSeconds)}</span>
-                              {weekSummary.tssBike > 0 && (
-                                <>
-                                  <span className="text-xs text-gray-500">•</span>
-                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
-                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssBike)} TSS</span>
-                                </>
-                              )}
-                          </div>
-                        )}
-                        {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
-                            <div className="flex items-center gap-1.5">
-                              <img src="/icon/swim.svg" alt="Swim" className="w-4 h-4" />
-                              <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
-                              <span className="text-xs text-gray-500">•</span>
-                              <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.swimSeconds)}</span>
-                              {weekSummary.tssSwim > 0 && (
-                                <>
-                                  <span className="text-xs text-gray-500">•</span>
-                                  <FireIcon className="w-3.5 h-3.5 text-primary" />
-                                  <span className="text-xs font-bold text-primary">{Math.round(weekSummary.tssSwim)} TSS</span>
-                                </>
-                              )}
-                          </div>
-                        )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       ) : (
         /* Desktop: Original grid layout */

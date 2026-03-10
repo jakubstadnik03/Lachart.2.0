@@ -97,8 +97,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     const loadAllTimeRef = async () => {
       const CACHE_DURATION = 60 * 60 * 1000; // 1h
       const athletePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
-      const cacheKey = `powerRadar_allTimeRef_v1${athletePart}`;
-      const cacheTsKey = `powerRadar_allTimeRef_v1_ts${athletePart}`;
+      const cacheKey = `powerRadar_allTimeRef_v2${athletePart}`;
+      const cacheTsKey = `powerRadar_allTimeRef_v2_ts${athletePart}`;
       try {
         const now = Date.now();
         const cached = localStorage.getItem(cacheKey);
@@ -143,8 +143,8 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     const loadPowerMetrics = async () => {
       // Include athleteId in cache so coach switching athletes gets correct data
       const athleteCachePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
-      const cacheKey = `powerRadar_metrics_v2_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
-      const cacheTimestampKey = `powerRadar_metrics_v2_timestamp_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
+      const cacheKey = `powerRadar_metrics_v3_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
+      const cacheTimestampKey = `powerRadar_metrics_v3_timestamp_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
       // Keep cache shorter so new uploads/syncs show quickly
       const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
       
@@ -795,21 +795,23 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                       const improvement = row.improvement;
                       const pr = row.pr;
                       
-                      // Helper to navigate to training (wrapped in try/catch to avoid crash)
-                      const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey) => {
+                      const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts) => {
                         try {
                           if (!trainingId && !stravaId) return;
                           const athleteParam = targetAthleteId ? `/${targetAthleteId}` : '';
-                          const metricParam = metricKey ? `?highlightMetric=${encodeURIComponent(metricKey)}` : '';
+                          const params = new URLSearchParams();
+                          if (metricKey) params.set('highlightMetric', metricKey);
+                          if (claimedWatts) params.set('radarWatts', String(Math.round(claimedWatts)));
+                          const qs = params.toString() ? `?${params.toString()}` : '';
                           const base = `/training-calendar${athleteParam}`;
                           if (stravaId) {
-                            navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${metricParam}`);
+                            navigate(`${base}/${encodeURIComponent(`strava-${stravaId}`)}${qs}`);
                           } else if (trainingType === 'fit' && trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
                           } else if (trainingType === 'strava' && trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${metricParam}`);
+                            navigate(`${base}/${encodeURIComponent(`strava-${trainingId}`)}${qs}`);
                           } else if (trainingId) {
-                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${metricParam}`);
+                            navigate(`${base}/${encodeURIComponent(`fit-${trainingId}`)}${qs}`);
                           }
                         } catch (err) {
                           console.warn('[SpiderChart] Navigation error:', err);
@@ -824,7 +826,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                               <td className="text-right py-2 px-2">
                                 {(row.compareTrainingId || row.compareStravaId) ? (
                                   <button
-                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId, row.key)}
+                                    onClick={() => handleTrainingClick(row.compareTrainingId, row.compareTrainingType, row.compareStravaId, row.key, row.compareValue)}
                                     className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                     title="Click to view training"
                                   >
@@ -837,7 +839,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                               <td className="text-right py-2 px-2">
                                 {(row.allTimeTrainingId || row.allTimeStravaId) ? (
                                   <button
-                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key)}
+                                    onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key, row.allTimeValue)}
                                     className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                     title="Click to view training"
                                   >
@@ -854,7 +856,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                             <td className="text-right py-2 px-2">
                               {(row.allTimeTrainingId || row.allTimeStravaId) ? (
                                 <button
-                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key)}
+                                  onClick={() => handleTrainingClick(row.allTimeTrainingId, row.allTimeTrainingType, row.allTimeStravaId, row.key, row.allTimeValue)}
                                   className="text-gray-900 font-semibold hover:text-primary hover:underline cursor-pointer transition-colors"
                                   title="Click to view training"
                                 >

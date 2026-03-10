@@ -76,8 +76,8 @@ const cache = require('node-cache');
 const routeCache = new cache({ stdTTL: 300 }); // 5 minutes cache
 
 const routeCacheMiddleware = (req, res, next) => {
-  // Create cache key from URL and query params
-  const cacheKey = `${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
+  const userId = req.user?.userId || 'anon';
+  const cacheKey = `${userId}:${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
   const cachedResponse = routeCache.get(cacheKey);
   
   if (cachedResponse) {

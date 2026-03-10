@@ -706,16 +706,16 @@ const About = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Helmet>
-        <title>Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart - Free Online Tool</title>
+        <title>Lactate Curve Analyzer, Lactate Threshold Calculator & Lactate Testing PDF Reports | LaChart</title>
         <link rel="canonical" href="https://lachart.net/about" />
-        <meta name="description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Download professional PDF reports with lactate curve, heart rate, zones, and previous test comparison. Track progress over time, record lactate to intervals, and analyze workouts from Strava, Garmin, and Wahoo." />
-        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate test PDF, generate PDF lactate test, lactate test report, lactate curve PDF report, lactate threshold PDF, download lactate test results, lactate measurement, OBLA calculation, LT1 LT2 calculator, IAT threshold, endurance training zones, lactate testing app, sports analytics, performance analysis, cycling lactate test, running lactate test, lactate threshold training, anaerobic threshold, aerobic threshold, lactate zones, training zones calculator, sports science, endurance performance, lactate testing protocol, threshold training, cycling performance, running performance, triathlon training, lactate curve analysis, lactate testing software, free lactate calculator, online lactate analysis, lactate threshold determination, training zone calculator, endurance sports, performance testing, lactate testing methods, lactate threshold training zones, cycling power zones, running pace zones, lactate threshold test, lactate curve interpretation, lactate testing results, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate test comparison, previous test comparison, heart rate lactate curve, lactate test recommendations, lactate report download, sports medicine report, endurance test PDF" />
+        <meta name="description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Download professional lactate testing PDF reports with lactate curve, heart rate, zones, and previous test comparison. Track progress over time, record lactate to intervals, and analyze workouts from Strava, Garmin, and Wahoo." />
+        <meta name="keywords" content="lactate curve analyzer, lactate threshold calculator, lactate test PDF, lactate testing PDF, generate PDF lactate test, lactate test report, lactate curve PDF report, lactate threshold PDF, download lactate test results, lactate measurement, OBLA calculation, LT1 LT2 calculator, IAT threshold, endurance training zones, lactate testing app, sports analytics, performance analysis, cycling lactate test, running lactate test, lactate threshold training, anaerobic threshold, aerobic threshold, lactate zones, training zones calculator, sports science, endurance performance, lactate testing protocol, threshold training, cycling performance, running performance, triathlon training, lactate curve analysis, lactate testing software, free lactate calculator, online lactate analysis, lactate threshold determination, training zone calculator, endurance sports, performance testing, lactate testing methods, lactate threshold training zones, cycling power zones, running pace zones, lactate threshold test, lactate curve interpretation, lactate testing results, lactate threshold improvement, lactate testing for athletes, lactate testing for coaches, lactate testing protocol cycling, lactate testing protocol running, lactate threshold training plan, lactate testing data analysis, lactate curve fitting, lactate threshold calculation methods, lactate test comparison, previous test comparison, heart rate lactate curve, lactate test recommendations, lactate report download, sports medicine report, endurance test PDF" />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
         <meta name="author" content="LaChart Team" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="theme-color" content="#7c3aed" />
-        <meta property="og:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart - Free Online Tool" />
-        <meta property="og:description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Track progress over time, record lactate to intervals, and analyze workouts from Strava." />
+        <meta property="og:title" content="Lactate Curve Analyzer, Lactate Threshold Calculator & Lactate Testing PDF Reports | LaChart" />
+        <meta property="og:description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), automatically determine training zones, and export professional lactate testing PDF reports with curve, heart rate and recommendations." />
         <meta property="og:image" content="https://lachart.net/images/lachart1.png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
@@ -724,8 +724,8 @@ const About = () => {
         <meta property="og:site_name" content="LaChart" />
         <meta property="og:locale" content="en_US" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Lactate Curve Analyzer & Lactate Threshold Calculator | LaChart" />
-        <meta name="twitter:description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Track progress over time, record lactate to intervals, and analyze workouts from Strava." />
+        <meta name="twitter:title" content="Lactate Curve Analyzer, Lactate Threshold Calculator & Lactate Testing PDF Reports | LaChart" />
+        <meta name="twitter:description" content="Generate lactate curves, calculate LT1/LT2 and export professional lactate testing PDF reports with training zones and previous test comparison." />
         <meta name="twitter:image" content="https://lachart.net/images/lachart1.png" />
         <meta name="twitter:site" content="@lachart" />
         <meta name="twitter:creator" content="@lachart" />
@@ -1217,6 +1217,283 @@ const About = () => {
                 </a>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Dedicated SEO section: Lactate Testing PDF */}
+      <section id="lactate-testing-pdf" className="py-16 bg-white scroll-mt-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 className="text-base text-primary font-semibold tracking-wide uppercase">
+              Lactate Testing PDF Reports
+            </h2>
+            <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+              Turn any lactate test into a professional PDF report in seconds
+            </p>
+            <p className="mt-4 text-lg text-gray-700">
+              LaChart lets you upload or enter lactate test data and download a ready-to-share PDF report. 
+              Ideal for sports labs, coaches and athletes who need clear, professional documentation of every test.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">What&apos;s included</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Lactate curve with heart rate overlay</li>
+                <li>• All key thresholds (LT1, LT2, OBLA, IAT, D-max, log-log)</li>
+                <li>• 5 training zones with power/pace &amp; HR ranges</li>
+                <li>• Stage-by-stage table with lactate, power/pace and HR</li>
+                <li>• Previous test comparison graph</li>
+              </ul>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Who it&apos;s for</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Sports medicine labs and clinics</li>
+                <li>• Endurance coaches (cycling, running, triathlon)</li>
+                <li>• Self-coached athletes testing at home or in the field</li>
+                <li>• Teams needing consistent reporting across athletes</li>
+              </ul>
+            </div>
+
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Why LaChart</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• No Excel templates or manual charting</li>
+                <li>• Beautiful, coach-branded PDF layout</li>
+                <li>• Works for cycling, running and swimming</li>
+                <li>• Secure cloud storage with history of all tests</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <a
+              href="/lactate-curve-calculator"
+              onClick={() => trackEvent('cta_click', { label: 'about_lactate_testing_pdf' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-primary text-white font-semibold shadow hover:bg-primary-dark transition-colors"
+            >
+              Generate free lactate testing PDF
+            </a>
+            <p className="text-xs text-gray-500">
+              No card required · Upload or enter test data · Export PDF in seconds
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO: Lactate Curve Calculator & Lactate Threshold */}
+      <section id="lactate-curve-calculator" className="py-16 bg-gray-50 scroll-mt-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 className="text-base text-primary font-semibold tracking-wide uppercase">
+              Free Lactate Curve Calculator
+            </h2>
+            <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+              Calculate lactate threshold and plot your lactate curve in one place
+            </p>
+            <p className="mt-4 text-lg text-gray-700">
+              Upload test data or enter stages manually. LaChart calculates LT1, LT2, OBLA (2.0–3.5 mmol/L), 
+              IAT, D-max and log-log in one click. Visualize the lactate curve with heart rate overlay and 
+              compare with previous tests — no spreadsheet needed.
+            </p>
+          </div>
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Threshold methods</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• LT1 / LTP1 (aerobic threshold)</li>
+                <li>• LT2 / LTP2 (lactate threshold)</li>
+                <li>• OBLA 2.0, 2.5, 3.0, 3.5 mmol/L</li>
+                <li>• IAT, D-max, log-log</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Sports</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Cycling (power)</li>
+                <li>• Running (pace)</li>
+                <li>• Swimming (pace per 100 m)</li>
+                <li>• Triathlon</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Features</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Interactive lactate curve chart</li>
+                <li>• Heart rate overlay</li>
+                <li>• Previous test comparison</li>
+                <li>• Export to PDF report</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-8">
+            <a
+              href="/lactate-curve-calculator"
+              onClick={() => trackEvent('cta_click', { label: 'about_lactate_curve_calculator' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-primary text-white font-semibold shadow hover:bg-primary-dark transition-colors"
+            >
+              Use free lactate curve calculator
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO: Training Zones from Lactate Test */}
+      <section id="training-zones-lactate" className="py-16 bg-white scroll-mt-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 className="text-base text-primary font-semibold tracking-wide uppercase">
+              Training Zones from Lactate Test
+            </h2>
+            <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+              Get 5 training zones from your lactate threshold — power, pace and heart rate
+            </p>
+            <p className="mt-4 text-lg text-gray-700">
+              After your lactate test, LaChart generates five training zones based on LT1 and LT2. 
+              Each zone has power (W) or pace (min/km) and heart rate ranges. Save zones to your profile 
+              and use them across the app for every workout and analysis.
+            </p>
+          </div>
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Zone types</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Zone 1–2: Recovery &amp; endurance</li>
+                <li>• Zone 3: Tempo</li>
+                <li>• Zone 4: Threshold</li>
+                <li>• Zone 5: VO2max &amp; above</li>
+              </ul>
+            </div>
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Units</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Power (W) for cycling</li>
+                <li>• Pace (min/km or min/mile) for run</li>
+                <li>• Pace (s/100 m) for swim</li>
+                <li>• Heart rate (bpm) for all</li>
+              </ul>
+            </div>
+            <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Where they appear</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Time in zone per training</li>
+                <li>• Calendar and dashboard</li>
+                <li>• Strava &amp; FIT analysis</li>
+                <li>• One profile for all sports</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-8">
+            <a
+              href="/lactate-curve-calculator"
+              onClick={() => trackEvent('cta_click', { label: 'about_training_zones' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-primary text-white font-semibold shadow hover:bg-primary-dark transition-colors"
+            >
+              Calculate zones from lactate test
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO: Lactate Testing Protocol & OBLA */}
+      <section id="lactate-testing-protocol" className="py-16 bg-gray-50 scroll-mt-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 className="text-base text-primary font-semibold tracking-wide uppercase">
+              Lactate Testing Protocol &amp; OBLA
+            </h2>
+            <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+              Run a proper lactate test and interpret OBLA, IAT and D-max
+            </p>
+            <p className="mt-4 text-lg text-gray-700">
+              A good lactate testing protocol uses step increases in power or pace with blood samples at each stage. 
+              LaChart supports all common methods: OBLA (fixed lactate levels like 2.0 or 4.0 mmol/L), IAT (individual 
+              anaerobic threshold), D-max and log-log. Use our guide to choose the right protocol for cycling, running or swimming.
+            </p>
+          </div>
+          <div className="mt-8 flex flex-wrap gap-4">
+            <a
+              href="/lactate-guide"
+              onClick={() => trackEvent('cta_click', { label: 'about_lactate_protocol' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-primary text-white font-semibold shadow hover:bg-primary-dark transition-colors"
+            >
+              Read lactate testing protocol guide
+            </a>
+            <a
+              href="/lactate-curve-calculator"
+              onClick={() => trackEvent('cta_click', { label: 'about_obla_calculator' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg border-2 border-primary text-primary font-semibold hover:bg-primary/5 transition-colors"
+            >
+              Calculate OBLA &amp; thresholds now
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO: Training Calendar & Strava for Coaches */}
+      <section id="training-calendar-strava" className="py-16 bg-gray-50 scroll-mt-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl">
+            <h2 className="text-base text-primary font-semibold tracking-wide uppercase">
+              Training Calendar with Strava &amp; FIT
+            </h2>
+            <p className="mt-2 text-3xl leading-tight font-extrabold text-gray-900">
+              One calendar for all trainings — Strava sync, FIT upload, and coach view
+            </p>
+            <p className="mt-4 text-lg text-gray-700">
+              Connect Strava to import rides, runs and swims automatically. Upload .FIT files from Garmin or Wahoo. 
+              Coaches see every athlete&apos;s calendar, tests and lactate history in one workspace. 
+              Detect intervals, add lactate to laps and export sessions to the training log.
+            </p>
+          </div>
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Sync &amp; import</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Strava: auto-import activities</li>
+                <li>• .FIT upload (Garmin, Wahoo, etc.)</li>
+                <li>• Manual training entry</li>
+                <li>• Power, HR, pace, GPS</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Analysis</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• Time in training zones</li>
+                <li>• Interval detection &amp; laps</li>
+                <li>• Lactate per interval</li>
+                <li>• Peak power/pace (1 min, 5 min, 20 min)</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+              <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">Coach workspace</h3>
+              <ul className="mt-3 space-y-2 text-sm text-gray-700">
+                <li>• All athletes in one place</li>
+                <li>• Tests + trainings + calendar</li>
+                <li>• Invite athletes by link</li>
+                <li>• No per-athlete fees</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-wrap gap-4">
+            <a
+              href="/training-calendar"
+              onClick={() => trackEvent('cta_click', { label: 'about_training_calendar' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-primary text-white font-semibold shadow hover:bg-primary-dark transition-colors"
+            >
+              Open training calendar
+            </a>
+            <a
+              href="/signup"
+              onClick={() => trackEvent('cta_click', { label: 'about_coach_signup' })}
+              className="inline-flex items-center justify-center px-6 py-3 rounded-lg border-2 border-primary text-primary font-semibold hover:bg-primary/5 transition-colors"
+            >
+              Register as coach
+            </a>
           </div>
         </div>
       </section>

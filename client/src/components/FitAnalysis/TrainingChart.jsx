@@ -71,7 +71,7 @@ const formatPace = (seconds, unitSystem, isSwim = false) => {
 };
 
 
-const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null }) => {
+const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highlightMetric = null, radarWatts = null }) => {
   const { user: authUser } = useAuth();
   const [smoothing, setSmoothing] = useState(0.5); // Default 50%
   const [showPower, setShowPower] = useState(true);
@@ -431,6 +431,23 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     return () => window.removeEventListener('resize', updateWidth);
   }, [isMobile]);
 
+  // Hide tooltip when clicking/tapping outside the chart container
+  useEffect(() => {
+    const handlePointerDown = (e) => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (container.contains(e.target)) return; // inside chart -> ignore
+
+      setHoveredPoint(null);
+      setClickedPoint(null);
+      setCursorX(null);
+      setClickedCursorX(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
   // Scale functions with zoom support
   const xScale = useCallback((distance) => {
     if (!processedData || processedData.maxDistance === 0) return 0;
@@ -536,26 +553,17 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
   const cadencePath = useMemo(() => {
     if (!processedData || processedData.points.length === 0) {
-      console.log('Cadence path: No processedData or points');
       return '';
     }
     
     if (processedData.maxCadence === null || processedData.maxCadence === undefined) {
-      console.log('Cadence path: No maxCadence', processedData.maxCadence);
       return '';
-    }
-    
-    // If maxCadence is 0, we still want to show cadence (it means all values are 0)
-    if (processedData.maxCadence === 0) {
-      console.log('Cadence path: maxCadence is 0, but cadence data exists');
     }
     
     // Filter points with valid cadence data (include 0 values)
     const validPoints = processedData.points.filter(p => p.cadence !== null && p.cadence !== undefined && p.cadence >= 0);
-    console.log('Cadence path: Valid points count:', validPoints.length, 'maxCadence:', processedData.maxCadence, 'sample cadence:', validPoints.slice(0, 5).map(p => p.cadence));
     
     if (validPoints.length === 0) {
-      console.log('No valid cadence points found');
       return '';
     }
     
@@ -598,11 +606,8 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       .filter(p => p !== null && p.x !== null && p.y !== null);
     
     if (points.length === 0) {
-      console.log('No valid elevation points after scaling');
       return '';
     }
-    
-    console.log('Elevation path created with', points.length, 'points, altitude range:', processedData.minAltitude, 'to', processedData.maxAltitude);
     // Always use straight lines - smoothing is applied to data, not to the curve
     return `M ${points[0].x},${points[0].y} L ${points.slice(1).map(p => `${p.x},${p.y}`).join(' L ')}`;
   }, [processedData, xScale, elevationYScale]);
@@ -667,7 +672,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
   const elevationAreaPath = useMemo(() => {
     if (!elevationPath || elevationPath.length === 0 || !processedData || processedData.maxAltitude === null || processedData.minAltitude === null) {
-      console.log('Elevation area path empty:', { elevationPath: !!elevationPath, elevationPathLength: elevationPath?.length, processedData: !!processedData, maxAltitude: processedData?.maxAltitude, minAltitude: processedData?.minAltitude });
       return '';
     }
     // Find first and last visible points with elevation data (include all values, not just > 0)
@@ -688,12 +692,10 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     const baseY = elevationYScale(processedData.minAltitude);
     
     if (firstX === null || lastX === null) {
-      console.log('Invalid X coordinates for elevation area');
       return elevationPath;
     }
     
     const areaPath = `${elevationPath} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
-    console.log('Elevation area path created, baseY:', baseY, 'minAltitude:', processedData.minAltitude);
     return areaPath;
   }, [elevationPath, processedData, xScale, elevationYScale]);
 
@@ -969,53 +971,72 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
       {/* Highlighted window summary (from Power Radar) */}
       {highlightSummary && (
-        <div className={`mb-2 sm:mb-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2 ${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-700 flex flex-wrap gap-x-4 gap-y-1`}>
-          <span className="font-semibold text-blue-800">
-            {highlightSummary.label}
-          </span>
-          <span>
-            Duration: <span className="font-medium">{formatDuration(highlightSummary.durationSec)}</span>
-          </span>
-          <span>
-            Distance:{' '}
-            <span className="font-medium">
-              {formatDistance((highlightSummary.distanceKm || 0) * 1000, unitSystem).formatted}
+        <div className={`mb-2 sm:mb-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2 ${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-700`}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-semibold text-blue-800">
+              {highlightSummary.label}
             </span>
-          </span>
-          {highlightSummary.avgPower && (
-            <span>
-              Avg Power:{' '}
-              <span className="font-medium text-purple-700">
-                {Math.round(highlightSummary.avgPower)} W
+            {radarWatts > 0 && (
+              <span>
+                Power Radar:{' '}
+                <span className="font-bold text-indigo-700">{radarWatts} W</span>
               </span>
-            </span>
-          )}
-          {highlightSummary.avgHr && (
+            )}
             <span>
-              Avg HR:{' '}
-              <span className="font-medium text-red-600">
-                {Math.round(highlightSummary.avgHr)} bpm
-              </span>
+              Duration: <span className="font-medium">{formatDuration(highlightSummary.durationSec)}</span>
             </span>
-          )}
-          {highlightSummary.avgSpeedKmh && (
             <span>
-              Avg Speed:{' '}
-              <span className="font-medium text-teal-700">
-                {unitSystem === 'imperial'
-                  ? `${(highlightSummary.avgSpeedKmh * 0.621371).toFixed(1)} mph`
-                  : `${highlightSummary.avgSpeedKmh.toFixed(1)} km/h`}
-              </span>
-            </span>
-          )}
-          {highlightSummary.avgCadence != null && (
-            <span>
-              Avg Cadence:{' '}
+              Distance:{' '}
               <span className="font-medium">
-                {Math.round(highlightSummary.avgCadence)} rpm
+                {formatDistance((highlightSummary.distanceKm || 0) * 1000, unitSystem).formatted}
               </span>
             </span>
-          )}
+            {highlightSummary.avgPower != null && highlightSummary.avgPower > 0 && (
+              <span>
+                Avg Power:{' '}
+                <span className="font-medium text-purple-700">
+                  {Math.round(highlightSummary.avgPower)} W
+                </span>
+              </span>
+            )}
+            {highlightSummary.avgHr != null && highlightSummary.avgHr > 0 && (
+              <span>
+                Avg HR:{' '}
+                <span className="font-medium text-red-600">
+                  {Math.round(highlightSummary.avgHr)} bpm
+                </span>
+              </span>
+            )}
+            {highlightSummary.avgSpeedKmh != null && highlightSummary.avgSpeedKmh > 0 && (
+              <span>
+                Avg Speed:{' '}
+                <span className="font-medium text-teal-700">
+                  {unitSystem === 'imperial'
+                    ? `${(highlightSummary.avgSpeedKmh * 0.621371).toFixed(1)} mph`
+                    : `${highlightSummary.avgSpeedKmh.toFixed(1)} km/h`}
+                </span>
+              </span>
+            )}
+            {highlightSummary.avgCadence != null && (
+              <span>
+                Avg Cadence:{' '}
+                <span className="font-medium">
+                  {Math.round(highlightSummary.avgCadence)} rpm
+                </span>
+              </span>
+            )}
+            <button
+              onClick={() => {
+                setHighlightWindow(null);
+                setHighlightSummary(null);
+                setZoomRange({ min: 0, max: 1 });
+                setHoveredPoint(null);
+              }}
+              className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-900 underline underline-offset-2"
+            >
+              View Full Training
+            </button>
+          </div>
         </div>
       )}
 
@@ -1033,42 +1054,10 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             handleMouseUp(e);
           }
         }}
-        onTouchStart={(e) => {
-          if (!isMobile || !containerRef.current || !processedData) return;
-          e.preventDefault();
-          const touch = e.touches[0];
-          const rect = containerRef.current.getBoundingClientRect();
-          const x = touch.clientX - rect.left;
-          const relativeX = x - padding.left;
-          
-          if (relativeX < 0 || relativeX > graphWidth) return;
-          
-          // Find closest point
-          const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
-          let closestPoint = null;
-          let minDist = Infinity;
-          
-          for (const point of processedData.points) {
-            const pointX = xScale(point.distance);
-            if (pointX === null || isNaN(pointX)) continue;
-            
-            const pointRelativeX = pointX - padding.left;
-            const dist = Math.abs(pointRelativeX - clampedRelativeX);
-            
-            if (dist < minDist) {
-              minDist = dist;
-              closestPoint = point;
-            }
-          }
-          
-          // Toggle tooltip on touch
-          if (closestPoint && clickedPoint === closestPoint) {
-            setClickedPoint(null);
-            setClickedCursorX(null);
-          } else if (closestPoint) {
-            setClickedPoint(closestPoint);
-            setClickedCursorX(x);
-          }
+        onTouchStart={() => {
+          if (!isMobile) return;
+          setClickedPoint(null);
+          setClickedCursorX(null);
         }}
       >
         {/* Drag selection rectangle */}

@@ -128,7 +128,18 @@ export const AuthProvider = ({ children }) => {
             removeToken();
             setLoading(false);
           } else {
-            console.warn("Token verification failed (non-401 error), keeping token:", error);
+            // Network / 5xx / CORS errors – nechceme uživatele odhlašovat, jen fallback na uložená data
+            console.warn("Token verification failed (non-401 error), keeping token and falling back to stored user if available:", error);
+            if (storedUser) {
+              try {
+                const parsedUser = JSON.parse(storedUser);
+                setToken(storedToken);
+                setUser(parsedUser);
+                setIsAuthenticated(true);
+              } catch {
+                // pokud by JSON selhal, prostě necháme uživatele v „nenačteném“ stavu
+              }
+            }
             setLoading(false);
           }
         }

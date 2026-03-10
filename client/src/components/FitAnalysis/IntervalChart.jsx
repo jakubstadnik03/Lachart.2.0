@@ -47,6 +47,13 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const [selectedMetric, setSelectedMetric] = useState(
     isRun || isSwim ? 'pace' : (hasPowerData ? 'power' : 'heartRate')
   );
+
+  // When sport or available data changes (e.g. switching from run to bike),
+  // reset selected metric to a sensible default so bike starts on power, run/swim on pace.
+  useEffect(() => {
+    const defaultMetric = isRun || isSwim ? 'pace' : (hasPowerData ? 'power' : 'heartRate');
+    setSelectedMetric(defaultMetric);
+  }, [isRun, isSwim, hasPowerData]);
   
   // Debug log
 
@@ -331,6 +338,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     return { bars, maxValue, minValue, totalDistance, groups };
   }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem]);
 
+  // Determine which bar corresponds to selectedLapNumber (after chartData is defined)
+  const selectedBarIndex = useMemo(() => {
+    if (!selectedLapNumber || !Array.isArray(chartData?.bars)) return -1;
+    return chartData.bars.findIndex(b => String(b.lapNumber) === String(selectedLapNumber));
+  }, [chartData, selectedLapNumber]);
+
   // Auto-highlight best bar when coming from Power Radar / SpiderChart
   useEffect(() => {
     if (!highlightMetric || !chartData || !chartData.bars || chartData.bars.length === 0) return;
@@ -418,6 +431,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [clickedBarIndex, onSelectLapNumber]);
+
+  // (mobile) We keep chart static; bar clicks only update selectedLapNumber and row highlight below.
 
   const getMetricColor = () => {
     switch (selectedMetric) {
@@ -643,44 +658,60 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       </div>
 
       <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px' }}>
-        {/* Y-axis labels - for pace: fastest (min) at top, slowest (max) at bottom; for cadence: min at bottom, max at top */}
-        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} flex flex-col justify-between ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-1 pt-0.5`}>
-          {yAxisLabels.map((label, i) => {
-            // For cadence and other normal metrics: reverse the order (first label at bottom, last at top)
-            // For pace (reversed): first label at top, last at bottom
-            const displayIndex = (selectedMetric === 'cadence' || !reversed) 
-              ? yAxisLabels.length - 1 - i  // Normal: reverse the array order (min at bottom, max at top)
-              : i; // Reversed (pace): keep original order (min at top, max at bottom)
-            const labelValue = yAxisLabels[displayIndex];
-            const isPaceTop = (isRun || isSwim) && selectedMetric === 'pace' && reversed && displayIndex === 0;
-            const isPaceBottom = (isRun || isSwim) && selectedMetric === 'pace' && reversed && displayIndex === yAxisLabels.length - 1;
-            
-            // Format pace as MM:SS
-            let displayLabel = labelValue;
-            if (selectedMetric === 'pace' && labelValue > 0) {
-              const minutes = Math.floor(labelValue / 60);
-              const seconds = Math.round(labelValue % 60);
-              displayLabel = `${minutes}:${String(seconds).padStart(2, '0')}`;
-            }
-            
-            return (
-            <div
-              key={i}
-              className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right shrink-0 ${isPaceBottom ? 'mb-0.5' : ''} ${isPaceTop ? 'mt-0.5' : ''}`}
-            >
-                {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}
-                {(isPaceTop || isPaceBottom) && (
-                  <div className="text-[10px] text-gray-500 font-medium mt-0.5 whitespace-nowrap">
-                    {isPaceTop ? 'Faster' : 'Slower'}
-                  </div>
-                )}
-            </div>
-            );
-          })}
+        {/* Y-axis labels - aligned 1:1 with dashed grid lines */}
+        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-1 pt-0.5`}>
+          <div className="relative w-full h-full">
+            {yAxisLabels.map((_, i) => {
+              const steps = yAxisLabels.length - 1 || 1;
+              const t = i / steps;
+              const range = adjustedMaxValue - adjustedMinValue;
+              let value;
+              if ((isRun || isSwim) && selectedMetric === 'pace') {
+                // Pace: nejrychlejší (nejmenší) nahoře, nejpomalejší dole
+                value = adjustedMinValue + range * t;  // min -> max zhora dolů
+              } else {
+                // Power / Speed / HR / Cadence: největší nahoře, nejmenší dole
+                value = adjustedMaxValue - range * t;  // max -> min zhora dolů
+              }
+
+              // Format display label
+              let displayLabel = value;
+              if (selectedMetric === 'pace' && value > 0) {
+                const minutes = Math.floor(value / 60);
+                const seconds = Math.round(value % 60);
+                displayLabel = `${minutes}:${String(seconds).padStart(2, '0')}`;
+              } else {
+                displayLabel = Math.round(value);
+              }
+
+              let topPercent = steps > 0 ? (i / steps) * 100 : 0;
+              // Slightly nudge first/last labels inside the chart so they are not clipped
+              if (i === 0) topPercent += 2;
+              else if (i === steps) topPercent -= 2;
+              
+              return (
+                <div
+                  key={i}
+                  className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right absolute right-0`}
+                  style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}
+                >
+                  {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}
+                  {((isRun || isSwim) && selectedMetric === 'pace' && (i === 0 || i === steps)) && (
+                    <div className="text-[10px] text-gray-500 font-medium mt-0.5 whitespace-nowrap">
+                      {i === 0 ? 'Faster' : 'Slower'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Chart area */}
-        <div className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`} style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}>
+        <div
+          className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`}
+          style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}
+        >
           {/* Grid lines */}
           <div className="absolute inset-0">
             {yAxisLabels.map((_, i) => (
@@ -695,8 +726,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           </div>
 
           {/* Bars */}
-          <div className="relative h-full flex items-end gap-0.5 overflow-hidden" style={{ minWidth: isMobile ? '100%' : 'auto' }}>
+          <div
+            className="relative h-full flex items-end gap-0.5 overflow-hidden"
+            style={{ minWidth: isMobile ? '100%' : 'auto' }}
+          >
             {bars.map((bar, index) => {
+              const isSelectedBar = selectedBarIndex === index;
               // For pace, reverse the height calculation (smaller pace = faster = higher bar)
               const height = adjustedMaxValue > adjustedMinValue 
                 ? reversed
@@ -742,9 +777,9 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                 : (unitSystem === 'imperial' ? '/mile' : '/km');
               const paceFormatted = paceSeconds > 0 ? `${paceMinutes}:${String(paceSecs).padStart(2, '0')}${paceUnit}` : '-';
               
-              // Calculate width based on distance
-              const widthPercent = totalDistance > 0 
-                ? (bar.distance / totalDistance) * 100 
+              // Calculate width based on distance (relative to totalDistance)
+              const widthPercent = totalDistance > 0
+                ? (bar.distance / totalDistance) * 100
                 : (100 / bars.length);
               
               const barColor = getBarColor(bar, maxValue, minValue, groups);
@@ -760,7 +795,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               return (
                 <div
                   key={index}
-                  className="group relative cursor-pointer flex items-end"
+                  className="group relative cursor-pointer flex flex-col items-stretch justify-end"
                   style={{ 
                     width: `${widthPercent}%`,
                     height: '100%'
@@ -777,11 +812,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     }
                   }}
                   onClick={() => {
-                    // On mobile, a tap can trigger both touch and click; ignore click right after touch
-                    if (isMobile && Date.now() - lastTouchAtRef.current < 600) {
-                      return;
-                    }
-                    // On click, toggle tooltip and keep it visible
+                    // Klik na bar: vždy jen vybrat / odvybrat interval a aktualizovat selectedLapNumber
                     if (clickedBarIndex === index) {
                       // If clicking the same bar, hide tooltip
                       setClickedBarIndex(null);
@@ -794,21 +825,9 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                       if (onSelectLapNumber) onSelectLapNumber(bar.lapNumber);
                     }
                   }}
-                  onTouchStart={(e) => {
-                    // Mark touch so the synthetic click won't immediately toggle off
+                  onTouchStart={() => {
+                    // Jen si poznačíme čas dotyku; samotný výběr řeší onClick
                     lastTouchAtRef.current = Date.now();
-                    // NOTE: don't call preventDefault here – React attaches touch listeners as passive,
-                    // so calling preventDefault would trigger "Unable to preventDefault inside passive event listener" warnings.
-                    // Toggle tooltip on touch (works on both mobile and desktop)
-                    if (clickedBarIndex === index) {
-                      setClickedBarIndex(null);
-                      setHoveredBar(null);
-                      if (onSelectLapNumber) onSelectLapNumber(null);
-                    } else {
-                      setClickedBarIndex(index);
-                      setHoveredBar({ bar, index, widthPercent });
-                      if (onSelectLapNumber) onSelectLapNumber(bar.lapNumber);
-                    }
                   }}
                   ref={(el) => {
                     if (el) {
@@ -816,6 +835,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     }
                   }}
                 >
+                  {/* Bar body */}
                   <div
                     className="w-full rounded-t transition-all hover:opacity-80"
                     style={{
@@ -825,6 +845,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                     }}
                     title={tooltipTitle}
                   />
+                  {/* Selected underline (bottom highlight) */}
+                  <div
+                    className={`h-1 w-full rounded-t-md mt-0.5 transition-colors ${
+                      isSelectedBar ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-200'
+                    }`}
+                  />
                 </div>
               );
             })}
@@ -832,8 +858,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           
         </div>
         
-        {/* Tooltip positioned above the bar */}
-        {(hoveredBar || clickedBarIndex !== null) && (() => {
+        {/* Tooltip positioned above the bar (desktop only) */}
+        {!isMobile && (hoveredBar || clickedBarIndex !== null) && (() => {
           // Use clicked bar if available, otherwise use hovered bar
           let activeBar = null;
           if (clickedBarIndex !== null && Array.isArray(chartData?.bars) && chartData.bars[clickedBarIndex]) {

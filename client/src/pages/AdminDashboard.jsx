@@ -1422,29 +1422,45 @@ const AdminDashboard = () => {
                           </td>
                           <td className="p-2 text-sm">
                             <div className="flex flex-col gap-1">
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
-                              user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
-                            }`}>
-                              {user.stravaConnected ? 'Connected' : '—'}
-                            </span>
-                            {user.stravaConnected && user.strava?.lastSyncDate && (
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full w-fit ${
+                                  user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                {user.stravaConnected ? 'Connected' : '—'}
+                              </span>
+                              {user.stravaConnected && user.strava?.lastSyncDate && (
                                 <div className="text-xs text-gray-400">
-                                Sync: {new Date(user.strava.lastSyncDate).toLocaleDateString()}
-                              </div>
-                            )}
-                              {!user.stravaConnected && user.email && (
-                                <button
-                                  onClick={() => handleSendStravaReminderEmail(user)}
-                                  disabled={stravaReminderEmailLoadingUserId === user._id}
-                                  className={`text-xs px-2 py-1 rounded ${
-                                    stravaReminderEmailLoadingUserId === user._id
-                                      ? 'text-gray-400 cursor-wait'
-                                      : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
-                                  } transition-colors`}
-                                  title="Send Strava connection reminder email"
-                                >
-                                  {stravaReminderEmailLoadingUserId === user._id ? 'Sending...' : 'Send reminder'}
-                                </button>
+                                  Sync: {new Date(user.strava.lastSyncDate).toLocaleDateString()}
+                                </div>
+                              )}
+                              {!user.stravaConnected && (
+                                <>
+                                  {user.stravaReminderEmail?.sent && user.stravaReminderEmail.lastSent && (
+                                    <div className="text-[11px] text-gray-400">
+                                      Reminder:{' '}
+                                      {new Date(user.stravaReminderEmail.lastSent).toLocaleDateString()}{' '}
+                                      {new Date(user.stravaReminderEmail.lastSent).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </div>
+                                  )}
+                                  {user.email && (
+                                    <button
+                                      onClick={() => handleSendStravaReminderEmail(user)}
+                                      disabled={stravaReminderEmailLoadingUserId === user._id}
+                                      className={`mt-0.5 text-xs px-2 py-1 rounded ${
+                                        stravaReminderEmailLoadingUserId === user._id
+                                          ? 'text-gray-400 cursor-wait'
+                                          : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
+                                      } transition-colors`}
+                                      title="Send Strava connection reminder email"
+                                    >
+                                      {stravaReminderEmailLoadingUserId === user._id ? 'Sending...' : 'Send reminder'}
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>

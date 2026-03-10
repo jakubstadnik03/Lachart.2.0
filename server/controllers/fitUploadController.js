@@ -2648,68 +2648,59 @@ async function analyzeTrainingsByMonth(req, res) {
 }
 
 /**
- * Calculate maximum average power for a given duration from records
+ * Calculate maximum average power for a given duration from records.
+ * Includes zero-power samples so averages match standard MMP (mean maximal power) calculation.
+ * Gaps > 5 s between consecutive records are treated as pauses (window resets).
  */
 function calculateMaxPowerForDuration(records, durationSeconds) {
   if (!records || records.length === 0) return 0;
-  
-  // Filter and sort records by timestamp
+
+  const MAX_GAP_S = 5;
+
   const sortedRecords = [...records]
-    .filter(r => r.power && r.power > 0)
-    .sort((a, b) => {
-      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return timeA - timeB;
-    });
-  
+    .filter(r => r.timestamp)
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
   if (sortedRecords.length === 0) return 0;
-  
-  // Calculate time from start for each record
-  const startTime = sortedRecords[0].timestamp ? new Date(sortedRecords[0].timestamp).getTime() : Date.now();
-  const recordsWithTime = sortedRecords.map((r, i) => {
-    const recordTime = r.timestamp ? new Date(r.timestamp).getTime() : startTime + (i * 1000);
-    return {
-      power: r.power,
-      timeFromStart: (recordTime - startTime) / 1000 // seconds
-    };
+
+  const startTime = new Date(sortedRecords[0].timestamp).getTime();
+  const pts = sortedRecords.map((r) => {
+    const t = (new Date(r.timestamp).getTime() - startTime) / 1000;
+    return { power: Number(r.power || 0), time: t };
   });
-  
+
   let maxAvgPower = 0;
-  let windowSum = 0;
-  let windowCount = 0;
-  
-  // Use sliding window with two pointers for O(n) complexity
-  // The window should contain records within the duration (e.g., 5 seconds, 60 seconds, etc.)
-  for (let end = 0, start = 0; end < recordsWithTime.length; end++) {
-    const endTime = recordsWithTime[end].timeFromStart;
-    
-    // Remove records that are outside the window (older than durationSeconds before endTime)
-    while (start < end && recordsWithTime[start].timeFromStart <= endTime - durationSeconds) {
-      windowSum -= recordsWithTime[start].power;
-      windowCount--;
+  let sum = 0;
+  let count = 0;
+  let start = 0;
+
+  for (let end = 0; end < pts.length; end++) {
+    // Detect pause/gap: reset window if gap between consecutive points > MAX_GAP_S
+    if (end > 0 && pts[end].time - pts[end - 1].time > MAX_GAP_S) {
+      sum = 0;
+      count = 0;
+      start = end;
+    }
+
+    sum += pts[end].power;
+    count++;
+
+    // Shrink window from left when it exceeds target duration
+    while (start < end && (pts[end].time - pts[start].time) > durationSeconds) {
+      sum -= pts[start].power;
+      count--;
       start++;
     }
-    
-    // Add current record to window
-    windowSum += recordsWithTime[end].power;
-    windowCount++;
-    
-    // Calculate average for current window only if window spans at least the duration
-    // For very short durations (5s), we need at least 2-3 records
-    // For longer durations, we need records that span the full duration
-    if (windowCount > 0 && start < recordsWithTime.length) {
-      const windowStartTime = recordsWithTime[start].timeFromStart;
-      const windowDuration = endTime - windowStartTime;
-      
-      // Only calculate average if window spans at least 80% of the target duration
-      // This ensures we're getting meaningful averages, not just partial windows
+
+    if (count > 0) {
+      const windowDuration = pts[end].time - pts[start].time;
       if (windowDuration >= durationSeconds * 0.8) {
-        const avgPower = windowSum / windowCount;
-        maxAvgPower = Math.max(maxAvgPower, avgPower);
+        const avg = sum / count;
+        if (avg > maxAvgPower) maxAvgPower = avg;
       }
     }
   }
-  
+
   return Math.round(maxAvgPower);
 }
 
@@ -2918,10 +2909,10 @@ async function getPowerMetrics(req, res) {
         const activityStartTime = activity.startDate ? new Date(activity.startDate).getTime() : Date.now();
         const records = timeStream.map((timeSeconds, index) => ({
           timestamp: activityStartTime + (timeSeconds * 1000),
-          power: powerStream[index] || null
-        })).filter(r => r.power && r.power > 0);
+          power: Number(powerStream[index] || 0)
+        }));
         
-        if (records.length === 0) continue;
+        if (records.length === 0 || !records.some(r => r.power > 0)) continue;
         
         stravaTrainingsProcessed.push({
           records: records,

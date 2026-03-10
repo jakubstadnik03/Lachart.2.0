@@ -6,7 +6,14 @@ import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
 import { formatSpeedForUser } from '../../utils/unitsConverter';
 
-const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
+const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileProp }) => {
+  const [isMobileLocal, setIsMobileLocal] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setIsMobileLocal(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  const isMobile = isMobileProp !== undefined ? isMobileProp : isMobileLocal;
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   // eslint-disable-next-line no-unused-vars
@@ -755,7 +762,28 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
       </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary cards - Strava-like on mobile, grid on desktop */}
+      {isMobile ? (
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-1">
+          {[
+            { label: 'Duration', value: formatDuration(totalTime) },
+            { label: 'Distance', value: formatDistance(training.totalDistance, user) },
+            ...(training.avgHeartRate ? [{ label: 'Avg Heart Rate', value: `${Math.round(training.avgHeartRate)} bpm`, sub: maxHeartRate ? `Max ${Math.round(maxHeartRate)}` : null }] : []),
+            ...(displayPower != null && displayPower > 0 ? [{ label: isNormalizedPower ? 'Norm. Power' : 'Avg Power', value: `${Math.round(displayPower)} W`, sub: maxPower ? `Max ${Math.round(maxPower)}` : null }] : []),
+            ...(isRun && avgPace ? [{ label: 'Avg Pace', value: `${avgPace} /km`, sub: maxPace ? `Max ${maxPace}` : null }] : []),
+            ...(!isRun && training.avgSpeed ? [{ label: 'Avg Speed', value: formatSpeedForUser(training.avgSpeed, user) }] : []),
+            ...(avgCadence ? [{ label: 'Cadence', value: `${Math.round(avgCadence)} rpm` }] : []),
+            ...(calculateTSS !== null ? [{ label: 'TSS', value: String(typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS), sub: calculateIF !== null ? `IF ${calculateIF}` : null }] : []),
+            ...(training.totalAscent && training.totalAscent > 0 ? [{ label: 'Elevation', value: `+${Math.round(training.totalAscent)} m` }] : []),
+          ].map((item, idx) => (
+            <div key={idx} className="py-1">
+              <div className="text-[11px] text-gray-500 font-medium">{item.label}</div>
+              <div className="text-lg font-bold text-gray-900 leading-tight">{item.value}</div>
+              {item.sub && <div className="text-[10px] text-gray-400">{item.sub}</div>}
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
         <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
@@ -794,7 +822,6 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         </div>
 
-        {/* Power: show NP when available, otherwise Avg Power */}
         {displayPower != null && displayPower > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
@@ -821,7 +848,6 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         )}
 
-        {/* Show TSS for all sports (including run and swim) */}
         {calculateTSS !== null && (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
@@ -840,7 +866,6 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         )}
 
-        {/* Show Pace for running, Speed for other sports */}
         {isRun && avgPace ? (
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
@@ -878,6 +903,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user }) => {
           </div>
         )}
       </div>
+      )}
     </>
   );
 };
