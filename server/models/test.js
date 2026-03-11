@@ -5,6 +5,7 @@ const testResultSchema = new mongoose.Schema({
     heartRate: Number,
     lactate: Number,
     glucose: Number,
+    vo2: Number,
     RPE: Number
 });
 
@@ -50,6 +51,7 @@ const testSchema = new mongoose.Schema({
         heartRate: Number,
         lactate: Number,
         glucose: Number,
+        vo2: Number,
         RPE: Number
     }]
 }, {

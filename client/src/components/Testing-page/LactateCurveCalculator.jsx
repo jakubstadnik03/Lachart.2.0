@@ -42,11 +42,13 @@ const colorMap = {
     'Bsln + 1.5': '#99f6e4',    
     'LTP1': '#16a34a',          // green-600 - tmavší zelená
     'LTP2': '#dc2626',          // red-600 - červená
-    'LTRatio': '#94a3b8'        
+    'LTRatio': '#94a3b8',
+    'Glucose': '#f59e0b',       // amber-500 - pro glucose křivku
+    'VO2': '#8b5cf6'            // violet-500 - pro VO2 křivku
   };
 
  
-  const legendItems = [
+  const baseLegendItems = [
     { color: 'border border-black border-solid bg-zinc-50', label: 'Data points', dsLabel: 'Measured data' },
     { color: 'bg-blue-600', label: 'Polynomial Fit', dsLabel: 'Polynomial Fit' },
     { color: 'bg-zinc-700', label: 'Log-log', dsLabel: 'Log-log' },
@@ -61,7 +63,7 @@ const colorMap = {
     { color: 'bg-green-600', label: 'LTP1', dsLabel: 'LTP1' },
     { color: 'bg-red-600', label: 'LTP2', dsLabel: 'LTP2' }
   ];
-  const Legend = ({ chartRef, zonesVisible, setZonesVisible, ltpLinesVisibleRef }) => {
+  const Legend = ({ chartRef, zonesVisible, setZonesVisible, ltpLinesVisibleRef, getLegendItems }) => {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
     const [hideAllActive, setHideAllActive] = useState(false);
     const [previousHiddenState, setPreviousHiddenState] = useState({});
@@ -274,7 +276,7 @@ const colorMap = {
             <div className="whitespace-nowrap">Hide LT lines</div>
           </div>
         </div>
-        {legendItems.map((item, index) => (
+        {(getLegendItems ? getLegendItems() : baseLegendItems).map((item, index) => (
           <div
             key={index}
             className={`cursor-pointer flex items-center ${
@@ -454,6 +456,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
+  const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set
   
   // Determine if axis should be reversed (for pace mode in pace sports)
   // Must be defined early because it's used in zoneDatasets calculation
@@ -901,7 +904,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       return { 
         x,
         y,
-        originalPace: isPaceSport ? r.power : null
+        originalPace: isPaceSport ? r.power : null,
+        rpe: r.RPE !== undefined && r.RPE !== null && r.RPE !== '' ? Number(r.RPE) : null,
+        heartRate: r.heartRate !== undefined && r.heartRate !== null && r.heartRate !== '' ? Number(r.heartRate) : null,
+        glucose: r.glucose !== undefined && r.glucose !== null && r.glucose !== '' ? Number(r.glucose) : null,
+        vo2: r.vo2 !== undefined && r.vo2 !== null && r.vo2 !== '' ? Number(r.vo2) : null
       };
     })
     .filter(point => point !== null); // Remove null values
@@ -1313,12 +1320,61 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return zoneDatasets;
   })();
 
+  // Create Glucose dataset if there's glucose data
+  const glucoseDataPoints = allMeasuredDataPoints
+    .filter(p => p.glucose !== null && p.glucose !== undefined && !isNaN(p.glucose) && p.glucose > 0)
+    .map(p => ({ x: p.x, y: p.glucose }));
+  
+  const glucoseDataSet = glucoseDataPoints.length > 0 ? {
+    label: 'Glucose',
+    data: glucoseDataPoints,
+    borderColor: '#f59e0b', // amber-500
+    backgroundColor: 'transparent',
+    pointRadius: 4,
+    pointBackgroundColor: '#f59e0b',
+    pointBorderColor: '#f59e0b',
+    showLine: true,
+    borderWidth: 2,
+    tension: 0.4,
+    yAxisID: 'y1', // Use secondary Y axis
+  } : null;
+
+  // Create VO2 dataset if there's VO2 data
+  const vo2DataPoints = allMeasuredDataPoints
+    .filter(p => p.vo2 !== null && p.vo2 !== undefined && !isNaN(p.vo2) && p.vo2 > 0)
+    .map(p => ({ x: p.x, y: p.vo2 }));
+  
+  // Create function to get legend items with dynamic Glucose and VO2
+  const getLegendItems = () => {
+    return [
+      ...baseLegendItems,
+      ...(glucoseDataPoints.length > 0 ? [{ color: 'bg-amber-500', label: 'Glucose', dsLabel: 'Glucose' }] : []),
+      ...(vo2DataPoints.length > 0 ? [{ color: 'bg-violet-500', label: 'VO₂', dsLabel: 'VO2' }] : [])
+    ];
+  };
+  
+  const vo2DataSet = vo2DataPoints.length > 0 ? {
+    label: 'VO2',
+    data: vo2DataPoints,
+    borderColor: '#8b5cf6', // violet-500
+    backgroundColor: 'transparent',
+    pointRadius: 4,
+    pointBackgroundColor: '#8b5cf6',
+    pointBorderColor: '#8b5cf6',
+    showLine: true,
+    borderWidth: 2,
+    tension: 0.4,
+    yAxisID: 'y2', // Use tertiary Y axis
+  } : null;
+
   const allDatasets = [
     ...zoneDatasets,
     ...ltpLineDatasets,
     ...thresholdDatasets,
     measuredDataSet,
     ...(polyDataSet ? [polyDataSet] : []),
+    ...(glucoseDataSet ? [glucoseDataSet] : []),
+    ...(vo2DataSet ? [vo2DataSet] : []),
   ];
 
   // Calculate X axis range - need to consider all data points (measured, base lactate, thresholds, polynomial)
@@ -1577,7 +1633,38 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           borderDash: [4, 4],
           drawTicks: true,
         },
+        position: 'left',
       },
+      ...(glucoseDataPoints.length > 0 ? {
+        y1: {
+          type: 'linear',
+          min: 0,
+          max: Math.max(...glucoseDataPoints.map(p => p.y)) * 1.1,
+          title: { display: true, text: 'Glucose (mmol/L)', color: '#f59e0b' },
+          position: 'right',
+          grid: {
+            drawOnChartArea: false, // Only draw grid for primary Y axis
+          },
+          ticks: {
+            color: '#f59e0b',
+          },
+        }
+      } : {}),
+      ...(vo2DataPoints.length > 0 ? {
+        y2: {
+          type: 'linear',
+          min: 0,
+          max: Math.max(...vo2DataPoints.map(p => p.y)) * 1.1,
+          title: { display: true, text: 'VO₂ (ml/kg/min)', color: '#8b5cf6' },
+          position: 'right',
+          grid: {
+            drawOnChartArea: false, // Only draw grid for primary Y axis
+          },
+          ticks: {
+            color: '#8b5cf6',
+          },
+        }
+      } : {}),
     },
     plugins: {
       legend: { display: false },
@@ -1667,15 +1754,37 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
               formattedValue = `${Number(xVal).toFixed(1)}${unit}`;
             } else if (isPaceSport) {
-              const paceStr = formatSecondsToMMSS(xVal);
-              const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
+                const paceStr = formatSecondsToMMSS(xVal);
+                const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
               formattedValue = `${paceStr}${unit}`;
-            } else {
+              } else {
               formattedValue = `${Math.round(xVal)}W`;
+              }
+            
+            // Add RPE/Borg and HR to tooltip if available
+            let additionalInfo = [];
+            if (point && point.rpe !== null && point.rpe !== undefined) {
+              const rpeLabel = rpeScale === 'borg' ? 'Borg' : 'RPE';
+              additionalInfo.push(`${rpeLabel}: ${point.rpe}`);
+            }
+            if (point && point.heartRate !== null && point.heartRate !== undefined) {
+              additionalInfo.push(`HR: ${Math.round(point.heartRate)} bpm`);
             }
             
-            const thresholdLabel = isLTP1 ? 'LT1 (Aerobic Threshold)' : isLTP2 ? 'LT2 (Anaerobic Threshold)' : label;
-            return `${thresholdLabel}: ${formattedValue} | ${yVal.toFixed(2)} mmol/L`;
+            // For LTP1/LTP2 thresholds
+            if (isLTP1 || isLTP2) {
+              const thresholdLabel = isLTP1 ? 'LT1 (Aerobic Threshold)' : 'LT2 (Anaerobic Threshold)';
+              const mainLabel = `${thresholdLabel}: ${formattedValue} | ${yVal.toFixed(2)} mmol/L`;
+              return additionalInfo.length > 0 
+                ? `${mainLabel} | ${additionalInfo.join(' | ')}`
+                : mainLabel;
+            }
+            
+            // For regular data points
+            const mainLabel = `${formattedValue} | ${yVal.toFixed(2)} mmol/L`;
+            return additionalInfo.length > 0 
+              ? `${mainLabel} | ${additionalInfo.join(' | ')}`
+              : mainLabel;
           },
           labelPointStyle: (context) => {
             return {
@@ -1921,23 +2030,23 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           {!demoMode && (
             <div className="flex flex-col sm:flex-row items-start sm:items-end gap-2">
               <div className="flex flex-col gap-1">
-                <button
-                  onClick={openEmailModal}
-                  disabled={sendingEmail}
-                  className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
-                    sendingEmail
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
-                  }`}
-                  title="Send report to email"
-                >
-                  {sendingEmail ? 'Sending…' : 'Send results to email'}
-                </button>
-                {emailStatus?.message && (
-                  <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {emailStatus.message}
-                  </div>
-                )}
+              <button
+                onClick={openEmailModal}
+                disabled={sendingEmail}
+                className={`px-3 py-2 text-xs sm:text-sm rounded-lg border transition-colors ${
+                  sendingEmail
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white hover:bg-gray-50 text-gray-900 border-gray-200'
+                }`}
+                title="Send report to email"
+              >
+                {sendingEmail ? 'Sending…' : 'Send results to email'}
+              </button>
+              {emailStatus?.message && (
+                <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {emailStatus.message}
+                </div>
+              )}
               </div>
               <div className="flex flex-col gap-1">
                 <button
@@ -2143,6 +2252,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       if (chartRef.current) chartRef.current.update();
                     }} 
                     ltpLinesVisibleRef={ltpLinesVisibleRef}
+                    getLegendItems={getLegendItems}
                   />
                 </div>
               )}

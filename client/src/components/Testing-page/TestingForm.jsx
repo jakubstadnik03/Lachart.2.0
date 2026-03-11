@@ -149,6 +149,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return 'metric';
   };
   const [unitSystem, setUnitSystem] = useState(getUserUnitSystem());
+  // RPE Scale: 'rpe' (1-10) or 'borg' (6-20)
+  const [rpeScale, setRpeScale] = useState(() => {
+    if (testData?.rpeScale) return testData.rpeScale;
+    return 'rpe'; // Default to RPE scale
+  });
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -244,6 +249,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     if (testData?.inputMode) {
         setInputMode(testData.inputMode);
       }
+    
+    if (testData?.rpeScale) {
+      setRpeScale(testData.rpeScale);
+    } else {
+      setRpeScale('rpe'); // Default to RPE if not set
+    }
   }, [testData, user?.units?.distance]);
 
   // Convert display format when switching inputMode/unitSystem (for existing values only)
@@ -325,6 +336,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [originalTestData, setOriginalTestData] = useState(null);
 
   const [showGlucose, setShowGlucose] = useState(true);
+  const [showVO2, setShowVO2] = useState(true);
 
   const inputRefs = useRef({});
 
@@ -356,7 +368,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   // Initialize refs for new rows
   useEffect(() => {
     rows.forEach((_, index) => {
-      ['power', 'heartRate', 'lactate', 'glucose', 'RPE'].forEach(field => {
+      ['power', 'heartRate', 'lactate', 'glucose', 'vo2', 'RPE'].forEach(field => {
         const key = `${field}_${index}`;
         if (!inputRefs.current[key]) {
           inputRefs.current[key] = null;
@@ -379,12 +391,27 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     Number(row.glucose) !== 0
   );
 
+  // Check if any row has VO2 data
+  const hasVO2Data = rows.some(row => 
+    row.vo2 !== undefined && 
+    row.vo2 !== null && 
+    row.vo2 !== '' && 
+    Number(row.vo2) !== 0
+  );
+
   // Update showGlucose based on whether there's any non-zero glucose data
   useEffect(() => {
     if (!hasGlucoseData) {
       setShowGlucose(false);
     }
   }, [hasGlucoseData]);
+
+  // Update showVO2 based on whether there's any non-zero VO2 data
+  useEffect(() => {
+    if (!hasVO2Data) {
+      setShowVO2(false);
+    }
+  }, [hasVO2Data]);
 
   // Notify parent component when glucose column visibility changes
   useEffect(() => {
@@ -430,6 +457,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         heartRate: '',
         lactate: '',
         glucose: '',
+        vo2: '',
         RPE: ''
       }]);
       return;
@@ -484,6 +512,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           heartRate: row.heartRate,
           lactate: row.lactate,
           glucose: row.glucose,
+          vo2: row.vo2,
           RPE: row.RPE
         }))
       );
@@ -524,6 +553,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             heartRate: row.heartRate ? String(row.heartRate) : '',
             lactate: row.lactate ? String(row.lactate) : '',
             glucose: row.glucose ? String(row.glucose) : '',
+            vo2: row.vo2 ? String(row.vo2) : '',
             RPE: row.RPE ? String(row.RPE) : ''
           };
         });
@@ -535,6 +565,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           heartRate: '',
           lactate: '',
           glucose: '',
+          vo2: '',
           RPE: ''
         }]);
       }
@@ -625,6 +656,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       comments: formData.comments?.trim() || '',
       unitSystem: finalUnitSystem,
       inputMode: finalInputMode,
+      rpeScale: rpeScale,
       results: rows
         .map((row, index) => {
           // Convert power to seconds for backend
@@ -650,6 +682,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             heartRate: convertToNumber(row.heartRate),
             lactate: convertToNumber(row.lactate),
             glucose: convertToNumber(row.glucose),
+            vo2: convertToNumber(row.vo2),
             RPE: convertToNumber(row.RPE)
           };
         })
@@ -1007,6 +1040,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                           heartRate: row.heartRate ? String(row.heartRate) : '',
                           lactate: row.lactate ? String(row.lactate) : '',
                           glucose: row.glucose ? String(row.glucose) : '',
+                          vo2: row.vo2 ? String(row.vo2) : '',
                           RPE: row.RPE ? String(row.RPE) : ''
                         };
                       });
@@ -1210,6 +1244,69 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
         )}
 
+        {/* Column Visibility & RPE Scale Controls - All in one row */}
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          <div className="flex items-end gap-3 flex-wrap">
+            {/* Column Visibility Controls */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Show Columns</label>
+              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
+                <button
+                  onClick={() => setShowGlucose(!showGlucose)}
+                  disabled={!isNewTest && !isEditMode}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  Glucose
+                </button>
+                <button
+                  onClick={() => setShowVO2(!showVO2)}
+                  disabled={!isNewTest && !isEditMode}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                >
+                  VO₂
+                </button>
+              </div>
+            </div>
+            
+            {/* RPE Scale Controls */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">RPE Scale</label>
+              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
+                <button
+                  onClick={() => {
+                    setRpeScale('rpe');
+                    const updatedTestData = {
+                      ...testData,
+                      rpeScale: 'rpe',
+                      results: rows
+                    };
+                    onTestDataChange(updatedTestData);
+                  }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'rpe' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  RPE (1-10)
+                </button>
+                <button
+                  onClick={() => {
+                    setRpeScale('borg');
+                    const updatedTestData = {
+                      ...testData,
+                      rpeScale: 'borg',
+                      results: rows
+                    };
+                    onTestDataChange(updatedTestData);
+                  }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'borg' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                  disabled={!isNewTest && !isEditMode}
+                >
+                  Borg (6-20)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
@@ -1251,17 +1348,31 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Data Table */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {(() => {
-            const gridCols = (isNewTest || isEditMode) 
-              ? (showGlucose 
-                  ? 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]'
-                  : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px]')
-              : (showGlucose
-                  ? 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]'
-                  : 'grid-cols-[32px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]');
+            // Calculate columns: Int + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
+            // Count actual visible columns - must match header and row structure exactly
+            // Header structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+            // Row structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
+            
+            const gridTemplateCols = ['32px']; // Int (fixed width)
+            gridTemplateCols.push('minmax(80px,1fr)'); // Power/Pace (min width 80px)
+            gridTemplateCols.push('minmax(60px,1fr)'); // HR (min width 60px)
+            gridTemplateCols.push('minmax(60px,1fr)'); // La (min width 60px)
+            if (showGlucose) {
+              gridTemplateCols.push('minmax(70px,1fr)'); // Glucose (min width 70px)
+            }
+            if (showVO2) {
+              gridTemplateCols.push('minmax(70px,1fr)'); // VO2 (min width 70px)
+            }
+            gridTemplateCols.push('minmax(60px,1fr)'); // RPE (min width 60px)
+            if (isNewTest || isEditMode) {
+              gridTemplateCols.push('32px'); // Delete button (fixed width)
+            }
+            
+            const gridTemplateColumns = gridTemplateCols.join(' ');
             
             return (
               <div className="flex flex-col flex-1 min-h-0">
-                <div className={`grid ${gridCols} gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0 overflow-x-auto`}>
+                <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0 overflow-x-auto" style={{ gridTemplateColumns }}>
                   <div className="text-center min-w-0 overflow-hidden">Int.</div>
                   <div className="text-center min-w-0 overflow-hidden">
   {formData.sport === 'bike' ? 'Power' :
@@ -1271,6 +1382,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   <div className="text-center min-w-0 overflow-hidden">HR</div>
                   <div className="text-center min-w-0 overflow-hidden">La</div>
                   {showGlucose && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
+                  {showVO2 && <div className="text-center min-w-0 overflow-hidden">VO₂</div>}
                   <div className="text-center min-w-0 overflow-hidden">RPE</div>
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
@@ -1278,7 +1390,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   {rows.map((row, index) => (
                     <div
                       key={index}
-                      className={`grid ${gridCols} gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors`}
+                      className="grid gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors"
+                      style={{ gridTemplateColumns }}
                     >
                       <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
                       {renderInput(index, 'power', row.power,
@@ -1289,7 +1402,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
                       {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
                       {showGlucose && renderInput(index, 'glucose', row.glucose, 'mmol/L')}
-                      {renderInput(index, 'RPE', row.RPE, '1-10')}
+                      {showVO2 && renderInput(index, 'vo2', row.vo2, 'ml/kg/min')}
+                      {renderInput(index, 'RPE', row.RPE, rpeScale === 'borg' ? '6-20' : '1-10')}
                       {(isNewTest || isEditMode) && (
                         <div className="flex justify-center min-w-0 overflow-hidden">
         <button 

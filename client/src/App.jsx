@@ -57,9 +57,34 @@ const PageLoader = () => (
     </div>
   </div>
 );
+
+// Error component for lazy loading failures
+const LazyLoadError = ({ retry }) => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+    <div className="text-center max-w-md">
+      <div className="text-6xl mb-4">⚠️</div>
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">Failed to load page</h2>
+      <p className="text-gray-600 mb-6">
+        The page could not be loaded. Please check your internet connection and try again.
+      </p>
+      <button
+        onClick={retry}
+        className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+);
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [retryKey, setRetryKey] = useState(0);
   const location = useLocation();
+  
+  const retry = () => {
+    setRetryKey(prev => prev + 1);
+    window.location.reload(); // Force reload on retry
+  };
 
   // Memoize the Layout component to prevent unnecessary re-renders
   const LayoutWithProps = useMemo(() => (
@@ -113,7 +138,10 @@ function AppRoutes() {
 
 
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense 
+      fallback={<PageLoader />}
+      key={retryKey}
+    >
       <Routes>
         {/* Veřejné routy */}
         <Route path="/" element={<About />} />

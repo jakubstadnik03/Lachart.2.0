@@ -90,11 +90,33 @@ export const AuthProvider = ({ children }) => {
       const storedToken = localStorage.getItem("token") || localStorage.getItem("authToken");
       const storedUser = localStorage.getItem("user");
 
+      // Set a timeout to ensure we don't wait forever (10 seconds max)
+      const timeoutId = setTimeout(() => {
+        console.warn('[AuthProvider] Auth check timeout - using fallback');
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            setToken(storedToken);
+            setUser(parsedUser);
+            setIsAuthenticated(true);
+          } catch {
+            // pokud by JSON selhal, prostě necháme uživatele v „nenačteném“ stavu
+          }
+        }
+        setLoading(false);
+      }, 10000); // 10 second timeout
+
       if (storedToken) {
         const tokenAtStart = storedToken;
         try {
           api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
-          const response = await api.get('/user/profile', { noCache: true });
+          // Use a shorter timeout for this specific request (8 seconds)
+          const response = await api.get('/user/profile', { 
+            noCache: true, 
+            timeout: 8000 // 8 second timeout
+          });
+
+          clearTimeout(timeoutId);
 
           // Ignore response if token changed in the meantime (e.g. user logged out and another logged in).
           const currentToken = localStorage.getItem("token") || localStorage.getItem("authToken");
@@ -123,9 +145,25 @@ export const AuthProvider = ({ children }) => {
           }
           setLoading(false);
         } catch (error) {
+          clearTimeout(timeoutId);
+          
           if (error.response?.status === 401) {
             console.error("Token verification failed (401 Unauthorized):", error);
             removeToken();
+            setLoading(false);
+          } else if (error.message === 'Request timeout' || error.code === 'ECONNABORTED') {
+            // Timeout error - use fallback
+            console.warn("Token verification timeout, falling back to stored user if available:", error);
+            if (storedUser) {
+              try {
+                const parsedUser = JSON.parse(storedUser);
+                setToken(storedToken);
+                setUser(parsedUser);
+                setIsAuthenticated(true);
+              } catch {
+                // pokud by JSON selhal, prostě necháme uživatele v „nenačteném“ stavu
+              }
+            }
             setLoading(false);
           } else {
             // Network / 5xx / CORS errors – nechceme uživatele odhlašovat, jen fallback na uložená data
@@ -144,9 +182,11 @@ export const AuthProvider = ({ children }) => {
           }
         }
       } else if (storedUser) {
+        clearTimeout(timeoutId);
         localStorage.removeItem("user");
         setLoading(false);
       } else {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     };

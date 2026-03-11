@@ -18,15 +18,43 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <h2 className="text-red-700 font-semibold">Something went wrong</h2>
-          <p className="text-red-600 mt-2">{this.state.error?.message}</p>
-          <button
-            className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            Try again
-          </button>
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
+            <div className="text-center">
+              <div className="text-6xl mb-4">⚠️</div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h2>
+              <p className="text-gray-600 mb-6">
+                {this.state.error?.message || 'An unexpected error occurred. Please try refreshing the page.'}
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh Page
+                </button>
+                <button
+                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  onClick={() => {
+                    this.setState({ hasError: false, error: null });
+                    window.location.href = '/';
+                  }}
+                >
+                  Go Home
+                </button>
+              </div>
+              {process.env.NODE_ENV === 'development' && (
+                <details className="mt-6 text-left">
+                  <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                    Error Details (Dev Only)
+                  </summary>
+                  <pre className="mt-2 p-3 bg-gray-100 rounded text-xs overflow-auto max-h-48">
+                    {this.state.error?.stack || JSON.stringify(this.state.error, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          </div>
         </div>
       );
     }

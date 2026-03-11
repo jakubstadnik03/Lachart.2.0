@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -107,6 +107,9 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showGlossary, setShowGlossary] = useState(false);
+  const [showGlucose, setShowGlucose] = useState(true);
+  const [showVO2, setShowVO2] = useState(true);
+  const chartRef = useRef(null);
   
   // Detect mobile
   useEffect(() => {
@@ -238,12 +241,39 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       return isNaN(value) || !isFinite(value) ? 0 : value;
     });
 
+    // Extract Glucose and VO2 data
+    const glucoseData = validResults.map((result) => {
+      if (!result.glucose) return null;
+      const value = Number(result.glucose.toString().replace(',', '.'));
+      return isNaN(value) || !isFinite(value) ? null : value;
+    });
+
+    const vo2Data = validResults.map((result) => {
+      if (!result.vo2) return null;
+      const value = Number(result.vo2.toString().replace(',', '.'));
+      return isNaN(value) || !isFinite(value) ? null : value;
+    });
+
+    // Check if we have any Glucose or VO2 data
+    const hasGlucoseData = glucoseData.some(v => v !== null && v !== 0);
+    const hasVO2Data = vo2Data.some(v => v !== null && v !== 0);
+
     // Dynamically determine heart rate axis limits based on entered values
     const nonZeroHeartRates = heartRateData.filter((v) => v > 0);
     const minHeartRate =
       nonZeroHeartRates.length > 0 ? Math.min(...nonZeroHeartRates) : 0;
     const maxHeartRate =
       nonZeroHeartRates.length > 0 ? Math.max(...nonZeroHeartRates) : 0;
+
+    // Determine Glucose axis limits
+    const nonNullGlucose = glucoseData.filter((v) => v !== null && v > 0);
+    const minGlucose = nonNullGlucose.length > 0 ? Math.min(...nonNullGlucose) : 0;
+    const maxGlucose = nonNullGlucose.length > 0 ? Math.max(...nonNullGlucose) : 0;
+
+    // Determine VO2 axis limits
+    const nonNullVO2 = vo2Data.filter((v) => v !== null && v > 0);
+    const minVO2 = nonNullVO2.length > 0 ? Math.min(...nonNullVO2) : 0;
+    const maxVO2 = nonNullVO2.length > 0 ? Math.max(...nonNullVO2) : 0;
 
     const datasets = [
       {
@@ -267,8 +297,41 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointHoverRadius: 8,
         pointBackgroundColor: "#E7515A",
         yAxisID: "y1",
+        hidden: false,
       },
     ];
+
+    // Add Glucose dataset if data exists
+    if (hasGlucoseData) {
+      datasets.push({
+        label: "Glucose (mmol/L)",
+        data: glucoseData,
+        borderColor: "#f59e0b",
+        backgroundColor: "#f59e0b",
+        pointStyle: "circle",
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: "#f59e0b",
+        yAxisID: "y2",
+        hidden: !showGlucose,
+      });
+    }
+
+    // Add VO2 dataset if data exists
+    if (hasVO2Data) {
+      datasets.push({
+        label: "VO₂ (ml/kg/min)",
+        data: vo2Data,
+        borderColor: "#8b5cf6",
+        backgroundColor: "#8b5cf6",
+        pointStyle: "circle",
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: "#8b5cf6",
+        yAxisID: "y3",
+        hidden: !showVO2,
+      });
+    }
 
     const data = { 
       labels: powerData.map(power => {
@@ -302,6 +365,32 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             pointRadius: 4,
             font: { size: 12 },
           },
+          onClick: (e, legendItem, legend) => {
+            const index = legendItem.datasetIndex;
+            const chart = legend.chart;
+            const dataset = chart.data.datasets[index];
+            
+            if (chart.isDatasetVisible(index)) {
+              chart.hide(index);
+              legendItem.hidden = true;
+              // Update state for Glucose and VO2
+              if (dataset.label === "Glucose (mmol/L)") {
+                setShowGlucose(false);
+              } else if (dataset.label === "VO₂ (ml/kg/min)") {
+                setShowVO2(false);
+              }
+            } else {
+              chart.show(index);
+              legendItem.hidden = false;
+              // Update state for Glucose and VO2
+              if (dataset.label === "Glucose (mmol/L)") {
+                setShowGlucose(true);
+              } else if (dataset.label === "VO₂ (ml/kg/min)") {
+                setShowVO2(true);
+              }
+            }
+            chart.update();
+          },
         },
         tooltip: {
           enabled: true,
@@ -325,9 +414,21 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               const label = context.dataset.label;
               const value = context.parsed.y;
               const power = powerData[context.dataIndex];
-              const isHeartRate = context.dataset.yAxisID === 'y1';
-              const valueUnit = isHeartRate ? 'bpm' : 'mmol/L';
-              const valueStr = isHeartRate ? Math.round(value) : value.toFixed(2);
+              const yAxisID = context.dataset.yAxisID;
+              
+              let valueUnit = 'mmol/L';
+              let valueStr = value.toFixed(2);
+              
+              if (yAxisID === 'y1') {
+                valueUnit = 'bpm';
+                valueStr = Math.round(value).toString();
+              } else if (yAxisID === 'y2') {
+                valueUnit = 'mmol/L';
+                valueStr = value.toFixed(2);
+              } else if (yAxisID === 'y3') {
+                valueUnit = 'ml/kg/min';
+                valueStr = value.toFixed(1);
+              }
 
               if (mockData.sport === 'bike') {
                 return `${label}: ${valueStr} ${valueUnit} | ${power}W`;
@@ -373,6 +474,32 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             borderDash: [4, 4],
           },
         },
+        ...(hasGlucoseData ? {
+          y2: {
+            title: { display: true, text: "Glucose (mmol/L)" },
+            min: Math.max(0, Math.floor(minGlucose - 1)),
+            max: maxGlucose > 0 ? Math.ceil(maxGlucose + 1) : 10,
+            position: "right",
+            ticks: { display: true },
+            grid: {
+              drawOnChartArea: false,
+              color: "rgba(0, 0, 0, 0)",
+            },
+          },
+        } : {}),
+        ...(hasVO2Data ? {
+          y3: {
+            title: { display: true, text: "VO₂ (ml/kg/min)" },
+            min: Math.max(0, Math.floor(minVO2 - 5)),
+            max: maxVO2 > 0 ? Math.ceil(maxVO2 + 5) : 80,
+            position: "right",
+            ticks: { display: true },
+            grid: {
+              drawOnChartArea: false,
+              color: "rgba(0, 0, 0, 0)",
+            },
+          },
+        } : {}),
         x: {
           title: {
             display: true,
@@ -437,7 +564,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           <InformationCircleIcon className="w-5 h-5 text-gray-500" />
         </button>
         <div className="flex-1 min-h-0" style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
-          <Line data={data} options={options} />
+          <Line ref={chartRef} data={data} options={options} />
         </div>
         <TrainingGlossary 
           isOpen={showGlossary} 

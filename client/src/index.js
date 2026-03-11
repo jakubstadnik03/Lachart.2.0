@@ -4,14 +4,17 @@ import './index.css';
 import App from './App';
 import { TrainingProvider } from "./context/TrainingContext";
 import { setMockUser } from "./mock/mockApi";
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 setMockUser(); 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <TrainingProvider>
-      <App />
-    </TrainingProvider>
+    <ErrorBoundary>
+      <TrainingProvider>
+        <App />
+      </TrainingProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

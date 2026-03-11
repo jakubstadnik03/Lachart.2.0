@@ -38,11 +38,15 @@ async function getValidStravaToken(user) {
     return user.strava.accessToken;
   } catch (error) {
     console.error('[StravaAutoSync] Error refreshing Strava token:', error.response?.data || error.message);
-    // If refresh token is invalid, clear Strava connection
-    if (error.response?.status === 400) {
-      user.strava = undefined;
-      await user.save();
-      console.log('[StravaAutoSync] Refresh token invalid, clearing Strava connection for user', user._id);
+    // If refresh token is invalid (400) or unauthorized (401), clear Strava connection
+    if (error.response?.status === 400 || error.response?.status === 401) {
+      try {
+        user.strava = undefined;
+        await user.save();
+        console.log('[StravaAutoSync] Refresh token invalid/expired, clearing Strava connection for user', user._id);
+      } catch (saveErr) {
+        console.error('[StravaAutoSync] Error clearing Strava connection:', saveErr.message);
+      }
     }
     return null;
   }
@@ -153,7 +157,27 @@ async function syncStravaForUser(user) {
           console.log('[StravaAutoSync] Rate limit hit during sync, stopping');
           break;
         }
-        throw pageErr;
+        if (pageErr.response?.status === 401) {
+          console.log('[StravaAutoSync] Got 401 (Unauthorized) - token may be invalid, attempting refresh...');
+          // Try to refresh token
+          const refreshedUser = await User.findById(user._id);
+          const newToken = await getValidStravaToken(refreshedUser);
+          if (newToken) {
+            // Update token and retry this page
+            token = newToken;
+            continue; // Retry this page with new token
+          } else {
+            // Token refresh failed - clear Strava connection and stop sync
+            console.log('[StravaAutoSync] Token refresh failed, clearing Strava connection for user', user._id);
+            await User.findByIdAndUpdate(user._id, {
+              $unset: { strava: 1 }
+            });
+            return { imported, updated, error: 'Strava token expired and could not be refreshed' };
+          }
+        }
+        // For other errors, log and continue (don't crash)
+        console.error(`[StravaAutoSync] Error fetching page ${page} for user ${user._id}:`, pageErr.message);
+        break; // Stop sync on other errors
       }
     }
     
@@ -167,8 +191,25 @@ async function syncStravaForUser(user) {
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
     return { imported, updated };
   } catch (error) {
-    console.error(`[StravaAutoSync] Error for user ${user._id}:`, error.message);
-    return { imported: 0, updated: 0, error: error.message };
+    // Ensure we never crash the server - catch all errors
+    const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+    const statusCode = error.response?.status;
+    
+    console.error(`[StravaAutoSync] Error for user ${user._id}:`, errorMessage, statusCode ? `(Status: ${statusCode})` : '');
+    
+    // If it's a 401 error, try to clear Strava connection
+    if (statusCode === 401) {
+      try {
+        await User.findByIdAndUpdate(user._id, {
+          $unset: { strava: 1 }
+        });
+        console.log('[StravaAutoSync] Cleared Strava connection for user', user._id, 'due to 401 error');
+      } catch (clearErr) {
+        console.error('[StravaAutoSync] Error clearing Strava connection:', clearErr.message);
+      }
+    }
+    
+    return { imported: 0, updated: 0, error: errorMessage };
   }
 }
 
