@@ -399,16 +399,30 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     Number(row.vo2) !== 0
   );
 
+  // Check if any row has RPE data
+  const hasRPEData = rows.some(row => 
+    row.RPE !== undefined && 
+    row.RPE !== null && 
+    row.RPE !== '' && 
+    Number(row.RPE) !== 0
+  );
+
   // Update showGlucose based on whether there's any non-zero glucose data
+  // If data exists, always show the column
   useEffect(() => {
-    if (!hasGlucoseData) {
+    if (hasGlucoseData) {
+      setShowGlucose(true);
+    } else {
       setShowGlucose(false);
     }
   }, [hasGlucoseData]);
 
   // Update showVO2 based on whether there's any non-zero VO2 data
+  // If data exists, always show the column
   useEffect(() => {
-    if (!hasVO2Data) {
+    if (hasVO2Data) {
+      setShowVO2(true);
+    } else {
       setShowVO2(false);
     }
   }, [hasVO2Data]);
@@ -1248,25 +1262,32 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         <div className="flex flex-col gap-2 flex-shrink-0">
           <div className="flex items-end gap-3 flex-wrap">
             {/* Column Visibility Controls */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Show Columns</label>
-              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
-                <button
-                  onClick={() => setShowGlucose(!showGlucose)}
-                  disabled={!isNewTest && !isEditMode}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                >
-                  Glucose
-                </button>
-                <button
-                  onClick={() => setShowVO2(!showVO2)}
-                  disabled={!isNewTest && !isEditMode}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                >
-                  VO₂
-                </button>
+            {/* Only show controls if columns can be toggled (no data) */}
+            {(!hasGlucoseData || !hasVO2Data) && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Show Columns</label>
+                <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
+                  {!hasGlucoseData && (
+                    <button
+                      onClick={() => setShowGlucose(!showGlucose)}
+                      disabled={!isNewTest && !isEditMode}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    >
+                      Glucose
+                    </button>
+                  )}
+                  {!hasVO2Data && (
+                    <button
+                      onClick={() => setShowVO2(!showVO2)}
+                      disabled={!isNewTest && !isEditMode}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    >
+                      VO₂
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
             
             {/* RPE Scale Controls */}
             <div>
@@ -1353,17 +1374,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             // Header structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
             // Row structure: Int | Power | HR | La | [Glu?] | [VO2?] | RPE | [Del?]
             
+            // Count flexible columns (all except Int and Del which are fixed)
+            let flexibleColCount = 0;
+            flexibleColCount += 1; // Power/Pace
+            flexibleColCount += 1; // HR
+            flexibleColCount += 1; // La
+            if (hasGlucoseData || showGlucose) {
+              flexibleColCount += 1; // Glucose
+            }
+            if (hasVO2Data || showVO2) {
+              flexibleColCount += 1; // VO2
+            }
+            flexibleColCount += 1; // RPE (always shown)
+            
+            // All flexible columns get equal width (1fr)
             const gridTemplateCols = ['32px']; // Int (fixed width)
-            gridTemplateCols.push('minmax(80px,1fr)'); // Power/Pace (min width 80px)
-            gridTemplateCols.push('minmax(60px,1fr)'); // HR (min width 60px)
-            gridTemplateCols.push('minmax(60px,1fr)'); // La (min width 60px)
-            if (showGlucose) {
-              gridTemplateCols.push('minmax(70px,1fr)'); // Glucose (min width 70px)
+            for (let i = 0; i < flexibleColCount; i++) {
+              gridTemplateCols.push('1fr'); // All flexible columns same width
             }
-            if (showVO2) {
-              gridTemplateCols.push('minmax(70px,1fr)'); // VO2 (min width 70px)
-            }
-            gridTemplateCols.push('minmax(60px,1fr)'); // RPE (min width 60px)
             if (isNewTest || isEditMode) {
               gridTemplateCols.push('32px'); // Delete button (fixed width)
             }
@@ -1372,7 +1400,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             
             return (
               <div className="flex flex-col flex-1 min-h-0">
-                <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0 overflow-x-auto" style={{ gridTemplateColumns }}>
+                <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0" style={{ gridTemplateColumns, maxWidth: '100%', overflowX: 'auto' }}>
                   <div className="text-center min-w-0 overflow-hidden">Int.</div>
                   <div className="text-center min-w-0 overflow-hidden">
   {formData.sport === 'bike' ? 'Power' :
@@ -1381,9 +1409,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 </div>
                   <div className="text-center min-w-0 overflow-hidden">HR</div>
                   <div className="text-center min-w-0 overflow-hidden">La</div>
-                  {showGlucose && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
-                  {showVO2 && <div className="text-center min-w-0 overflow-hidden">VO₂</div>}
-                  <div className="text-center min-w-0 overflow-hidden">RPE</div>
+                  {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
+                  {(hasVO2Data || showVO2) && <div className="text-center min-w-0 overflow-hidden">VO₂</div>}
+                  {(hasRPEData || true) && <div className="text-center min-w-0 overflow-hidden">RPE</div>}
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
                 <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 max-h-full">
@@ -1391,7 +1419,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                     <div
                       key={index}
                       className="grid gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors"
-                      style={{ gridTemplateColumns }}
+                      style={{ gridTemplateColumns, maxWidth: '100%' }}
                     >
                       <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
                       {renderInput(index, 'power', row.power,
@@ -1401,9 +1429,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       )}
                       {renderInput(index, 'heartRate', row.heartRate, 'bpm')}
                       {renderInput(index, 'lactate', row.lactate, 'mmol/L')}
-                      {showGlucose && renderInput(index, 'glucose', row.glucose, 'mmol/L')}
-                      {showVO2 && renderInput(index, 'vo2', row.vo2, 'ml/kg/min')}
-                      {renderInput(index, 'RPE', row.RPE, rpeScale === 'borg' ? '6-20' : '1-10')}
+                      {(hasGlucoseData || showGlucose) && renderInput(index, 'glucose', row.glucose, 'mmol/L')}
+                      {(hasVO2Data || showVO2) && renderInput(index, 'vo2', row.vo2, 'ml/kg/min')}
+                      {(hasRPEData || true) && renderInput(index, 'RPE', row.RPE, rpeScale === 'borg' ? '6-20' : '1-10')}
                       {(isNewTest || isEditMode) && (
                         <div className="flex justify-center min-w-0 overflow-hidden">
         <button 

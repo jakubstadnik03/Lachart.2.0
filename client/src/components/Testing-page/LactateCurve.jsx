@@ -109,6 +109,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   const [showGlossary, setShowGlossary] = useState(false);
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
+  const [showRPE, setShowRPE] = useState(true);
   const chartRef = useRef(null);
   
   // Detect mobile
@@ -254,9 +255,20 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       return isNaN(value) || !isFinite(value) ? null : value;
     });
 
-    // Check if we have any Glucose or VO2 data
+    // Extract RPE data
+    const rpeData = validResults.map((result) => {
+      if (!result.RPE) return null;
+      const value = Number(result.RPE.toString().replace(',', '.'));
+      return isNaN(value) || !isFinite(value) ? null : value;
+    });
+
+    // Check if we have any Glucose, VO2, or RPE data
     const hasGlucoseData = glucoseData.some(v => v !== null && v !== 0);
     const hasVO2Data = vo2Data.some(v => v !== null && v !== 0);
+    const hasRPEData = rpeData.some(v => v !== null && v !== 0);
+    
+    // Get RPE scale from mockData
+    const rpeScale = mockData?.rpeScale || 'rpe';
 
     // Dynamically determine heart rate axis limits based on entered values
     const nonZeroHeartRates = heartRateData.filter((v) => v > 0);
@@ -265,10 +277,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
     const maxHeartRate =
       nonZeroHeartRates.length > 0 ? Math.max(...nonZeroHeartRates) : 0;
 
-    // Determine Glucose axis limits
-    const nonNullGlucose = glucoseData.filter((v) => v !== null && v > 0);
-    const minGlucose = nonNullGlucose.length > 0 ? Math.min(...nonNullGlucose) : 0;
-    const maxGlucose = nonNullGlucose.length > 0 ? Math.max(...nonNullGlucose) : 0;
+    // Glucose and RPE use same Y-axis as Lactate, so we calculate max from all three
 
     // Determine VO2 axis limits
     const nonNullVO2 = vo2Data.filter((v) => v !== null && v > 0);
@@ -285,6 +294,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointRadius: 5,
         pointHoverRadius: 8,
         pointBackgroundColor: "#3F8CFE",
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         spanGaps: false,
       },
       {
@@ -296,12 +306,13 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointRadius: 5,
         pointHoverRadius: 8,
         pointBackgroundColor: "#E7515A",
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y1",
         hidden: false,
       },
     ];
 
-    // Add Glucose dataset if data exists
+    // Add Glucose dataset if data exists - uses same Y-axis as Lactate
     if (hasGlucoseData) {
       datasets.push({
         label: "Glucose (mmol/L)",
@@ -312,7 +323,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointRadius: 5,
         pointHoverRadius: 8,
         pointBackgroundColor: "#f59e0b",
-        yAxisID: "y2",
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
+        yAxisID: "y", // Same axis as Lactate
         hidden: !showGlucose,
       });
     }
@@ -328,8 +340,27 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointRadius: 5,
         pointHoverRadius: 8,
         pointBackgroundColor: "#8b5cf6",
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y3",
         hidden: !showVO2,
+      });
+    }
+
+    // Add RPE/Borg dataset if data exists - uses same Y-axis as Lactate
+    if (hasRPEData) {
+      const rpeLabel = rpeScale === 'borg' ? 'Borg (6-20)' : 'RPE (1-10)';
+      datasets.push({
+        label: rpeLabel,
+        data: rpeData,
+        borderColor: "#10b981",
+        backgroundColor: "#10b981",
+        pointStyle: "circle",
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: "#10b981",
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
+        yAxisID: "y", // Same axis as Lactate
+        hidden: !showRPE,
       });
     }
 
@@ -373,20 +404,24 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             if (chart.isDatasetVisible(index)) {
               chart.hide(index);
               legendItem.hidden = true;
-              // Update state for Glucose and VO2
+              // Update state for Glucose, VO2, and RPE
               if (dataset.label === "Glucose (mmol/L)") {
                 setShowGlucose(false);
               } else if (dataset.label === "VO₂ (ml/kg/min)") {
                 setShowVO2(false);
+              } else if (dataset.label.includes("RPE") || dataset.label.includes("Borg")) {
+                setShowRPE(false);
               }
             } else {
               chart.show(index);
               legendItem.hidden = false;
-              // Update state for Glucose and VO2
+              // Update state for Glucose, VO2, and RPE
               if (dataset.label === "Glucose (mmol/L)") {
                 setShowGlucose(true);
               } else if (dataset.label === "VO₂ (ml/kg/min)") {
                 setShowVO2(true);
+              } else if (dataset.label.includes("RPE") || dataset.label.includes("Borg")) {
+                setShowRPE(true);
               }
             }
             chart.update();
@@ -422,12 +457,22 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               if (yAxisID === 'y1') {
                 valueUnit = 'bpm';
                 valueStr = Math.round(value).toString();
-              } else if (yAxisID === 'y2') {
-                valueUnit = 'mmol/L';
-                valueStr = value.toFixed(2);
               } else if (yAxisID === 'y3') {
                 valueUnit = 'ml/kg/min';
                 valueStr = value.toFixed(1);
+              } else if (yAxisID === 'y' || !yAxisID) {
+                // Same axis as Lactate - determine unit from label
+                if (label.includes('Glucose')) {
+                  valueUnit = 'mmol/L';
+                  valueStr = value.toFixed(2);
+                } else if (label.includes('RPE') || label.includes('Borg')) {
+                  valueUnit = rpeScale === 'borg' ? '6-20' : '1-10';
+                  valueStr = Math.round(value).toString();
+                } else {
+                  // Lactate
+                  valueUnit = 'mmol/L';
+                  valueStr = value.toFixed(2);
+                }
               }
 
               if (mockData.sport === 'bike') {
@@ -452,7 +497,16 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         y: {
           title: { display: true, text: "Lactate (mmol/L)" },
           min: 0,
-          max: Math.ceil((Math.max(...lactateData.filter((v) => v != null)) || 0) + 1),
+          // Calculate max from lactate, but if RPE has value 10, max is 10
+          max: (() => {
+            const maxLactate = Math.max(...lactateData.filter((v) => v != null), 0);
+            const maxRPE = hasRPEData ? Math.max(...rpeData.filter((v) => v != null), 0) : 0;
+            // If RPE has value 10, max is 10, otherwise use lactate max
+            if (maxRPE >= 10) {
+              return 10;
+            }
+            return Math.ceil(maxLactate + 1);
+          })(),
           ticks: { display: true },
           border: { dash: [6, 6] },
           grid: {
@@ -474,19 +528,6 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             borderDash: [4, 4],
           },
         },
-        ...(hasGlucoseData ? {
-          y2: {
-            title: { display: true, text: "Glucose (mmol/L)" },
-            min: Math.max(0, Math.floor(minGlucose - 1)),
-            max: maxGlucose > 0 ? Math.ceil(maxGlucose + 1) : 10,
-            position: "right",
-            ticks: { display: true },
-            grid: {
-              drawOnChartArea: false,
-              color: "rgba(0, 0, 0, 0)",
-            },
-          },
-        } : {}),
         ...(hasVO2Data ? {
           y3: {
             title: { display: true, text: "VO₂ (ml/kg/min)" },

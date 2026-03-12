@@ -105,8 +105,9 @@ export const estimateHRmax = (activities, days = 42, sport = null) => {
   }
 
   if (recentActivities.length < 3) {
-    // Expand to 90 days only once to avoid infinite recursion
-    if (days >= 90) {
+    // Expand to 90 days, then 180 days
+    if (days >= 180) {
+      // Even with 180 days, if we don't have enough, return null
       return {
         value: null,
         min: null,
@@ -115,10 +116,11 @@ export const estimateHRmax = (activities, days = 42, sport = null) => {
         evidence: []
       };
     }
-    const cutoff90 = now - (90 * 24 * 60 * 60 * 1000);
+    const nextDays = days < 90 ? 90 : 180;
+    const nextCutoff = now - (nextDays * 24 * 60 * 60 * 1000);
     let expandedActivities = activities.filter(act => {
       const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
-      return actDate >= cutoff90;
+      return actDate >= nextCutoff;
     });
     if (sport) {
       expandedActivities = expandedActivities.filter(act => {
@@ -128,7 +130,7 @@ export const estimateHRmax = (activities, days = 42, sport = null) => {
         return true;
       });
     }
-    return estimateHRmax(expandedActivities, 90, sport);
+    return estimateHRmax(expandedActivities, nextDays, sport);
   }
 
   const allHRValues = [];
@@ -136,7 +138,11 @@ export const estimateHRmax = (activities, days = 42, sport = null) => {
   const evidence = [];
 
   recentActivities.forEach(act => {
-    if (!act.streams || !act.streams.heartrate) return;
+    if (!act.streams) return;
+    
+    // Check if streams have heartrate data - handle both formats: { heartrate: { data: [...] } } and { heartrate: [...] }
+    const hrData = act.streams.heartrate?.data || act.streams.heartrate || act.streams.hr?.data || act.streams.hr;
+    if (!hrData || !Array.isArray(hrData) || hrData.length === 0) return;
     
     const processed = preprocessStreams(act.streams);
     if (!processed || processed.length < 6) return; // Need at least 30s of data
@@ -229,7 +235,28 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     return true;
   });
 
+  // Expand time window if not enough activities
   if (recentActivities.length < 2) {
+    if (days < 180) {
+      const nextDays = days < 90 ? 90 : 180;
+      const nextCutoff = now - (nextDays * 24 * 60 * 60 * 1000);
+      const expandedActivities = activities.filter(act => {
+        const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
+        return actDate >= nextCutoff;
+      }).filter(act => {
+        const actSport = (act.sport || act.type || '').toLowerCase();
+        if (sport === 'run') {
+          return actSport.includes('run') || actSport === 'running';
+        }
+        if (sport === 'bike' || sport === 'ride') {
+          return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+        }
+        return true;
+      });
+      if (expandedActivities.length >= 2) {
+        return estimateLT1(expandedActivities, hrMaxEst, sport, nextDays);
+      }
+    }
     return {
       hr: { value: null, min: null, max: null },
       confidence: 'low',
@@ -241,7 +268,11 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
   const driftThreshold = sport === 'run' ? 4 : 3; // 4% for run, 3% for bike
 
   recentActivities.forEach(act => {
-    if (!act.streams || !act.streams.heartrate) return;
+    if (!act.streams) return;
+    
+    // Check if streams have heartrate data - handle both formats: { heartrate: { data: [...] } } and { heartrate: [...] }
+    const hrData = act.streams.heartrate?.data || act.streams.heartrate || act.streams.hr?.data || act.streams.hr;
+    if (!hrData || !Array.isArray(hrData) || hrData.length === 0) return;
     
     const processed = preprocessStreams(act.streams);
     if (!processed || processed.length < 240) return; // Need at least 20 min (240 samples at 5s)
@@ -301,23 +332,44 @@ export const estimateLT1 = (activities, hrMaxEst, sport = 'run', days = 42) => {
       if (drift <= driftThreshold) {
         const meanHR = (meanHR1 + meanHR2) / 2;
         
-        // Calculate average pace/power for this segment
+        // Calculate average pace/power from the SAME portion where HR is measured (secondHalf, which is more stable)
         let pace = null;
         let power = null;
         
+        // Use second half of segment (where HR2 is measured - more stable)
+        const secondHalfSegment = segment.slice(Math.floor(segment.length / 2));
+        
         if (hasPower) {
-          const powerValues = segment.map(p => p.power).filter(p => p && p > 0);
+          // Calculate power from second half (where HR2 is measured)
+          const powerValues = secondHalfSegment.map(p => p.power).filter(p => p && p > 0);
           if (powerValues.length > 0) {
             power = Math.round(powerValues.reduce((a, b) => a + b, 0) / powerValues.length);
+          } else {
+            // Fallback to whole segment
+            const allPowerValues = segment.map(p => p.power).filter(p => p && p > 0);
+            if (allPowerValues.length > 0) {
+              power = Math.round(allPowerValues.reduce((a, b) => a + b, 0) / allPowerValues.length);
+            }
           }
         } else if (hasPace) {
-          const velocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
+          // Calculate pace from second half (where HR2 is measured)
+          const velocityValues = secondHalfSegment.map(p => p.velocity).filter(v => v && v > 0);
           if (velocityValues.length > 0) {
             const avgVelocity = velocityValues.reduce((a, b) => a + b, 0) / velocityValues.length; // m/s
             const paceSecPerKm = Math.round(1000 / avgVelocity);
             const mins = Math.floor(paceSecPerKm / 60);
             const secs = paceSecPerKm % 60;
             pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+          } else {
+            // Fallback to whole segment
+            const allVelocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
+            if (allVelocityValues.length > 0) {
+              const avgVelocity = allVelocityValues.reduce((a, b) => a + b, 0) / allVelocityValues.length; // m/s
+            const paceSecPerKm = Math.round(1000 / avgVelocity);
+            const mins = Math.floor(paceSecPerKm / 60);
+            const secs = paceSecPerKm % 60;
+            pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+            }
           }
         }
         
@@ -398,7 +450,28 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     return true;
   });
 
+  // Expand time window if not enough activities
   if (recentActivities.length === 0) {
+    if (days < 180) {
+      const nextDays = days < 90 ? 90 : 180;
+      const nextCutoff = now - (nextDays * 24 * 60 * 60 * 1000);
+      const expandedActivities = activities.filter(act => {
+        const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
+        return actDate >= nextCutoff;
+      }).filter(act => {
+        const actSport = (act.sport || act.type || '').toLowerCase();
+        if (sport === 'run') {
+          return actSport.includes('run') || actSport === 'running';
+        }
+        if (sport === 'bike' || sport === 'ride') {
+          return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+        }
+        return true;
+      });
+      if (expandedActivities.length > 0) {
+        return estimateLT2(expandedActivities, hrMaxEst, sport, nextDays);
+      }
+    }
     return {
       hr: { value: null, min: null, max: null },
       confidence: 'low',
@@ -410,7 +483,11 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
   const candidates = [];
 
   recentActivities.forEach(act => {
-    if (!act.streams || !act.streams.heartrate) return;
+    if (!act.streams) return;
+    
+    // Check if streams have heartrate data - handle both formats: { heartrate: { data: [...] } } and { heartrate: [...] }
+    const hrData = act.streams.heartrate?.data || act.streams.heartrate || act.streams.hr?.data || act.streams.hr;
+    if (!hrData || !Array.isArray(hrData) || hrData.length === 0) return;
     
     const processed = preprocessStreams(act.streams);
     if (!processed || processed.length < minDuration / 5) return; // Need enough samples
@@ -456,39 +533,57 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
       
       const meanLTHR = lastHR.reduce((a, b) => a + b, 0) / lastHR.length;
       
-      // Ensure segment is "hard" enough - HR should be at least 75% of HRmax estimate
-      if (hrMaxEst?.value && meanLTHR < hrMaxEst.value * 0.75) {
-        continue; // Skip segments that are too easy
+      // Ensure segment is "hard" enough - HR should be at least 85% of HRmax estimate for LT2
+      // Also ensure it's higher than typical LT1 (if HRmax is available, LT2 should be ~85-92% of HRmax)
+      if (hrMaxEst?.value) {
+        const minLT2HR = hrMaxEst.value * 0.85; // At least 85% of HRmax
+        if (meanLTHR < minLT2HR) {
+          continue; // Skip segments that are too easy for LT2
+        }
       }
       
-      // Also check intensity if available
-      let intensity = null;
-      if (segment.some(p => p.power)) {
-        const powerValues = segment.map(p => p.power).filter(p => p && p > 0);
-        if (powerValues.length > 0) {
-          intensity = powerValues.reduce((a, b) => a + b, 0) / powerValues.length;
-        }
-      } else if (segment.some(p => p.velocity)) {
-        const velocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
-        if (velocityValues.length > 0) {
-          intensity = velocityValues.reduce((a, b) => a + b, 0) / velocityValues.length;
-        }
-      }
-
-      // Calculate pace/power for this segment
+      // Calculate pace/power from LAST PORTION (where LTHR is measured) - this is more accurate
       let pace = null;
       let power = null;
       
-      if (intensity) {
+      // Check for power data in last portion
+      const lastPowerValues = lastPortion.map(p => p.power).filter(p => p && p > 0);
+      if (lastPowerValues.length > 0) {
+        const avgPower = lastPowerValues.reduce((a, b) => a + b, 0) / lastPowerValues.length;
+        power = Math.round(avgPower);
+      }
+      
+      // Check for velocity data in last portion (for running)
+      if (!power) {
+        const lastVelocityValues = lastPortion.map(p => p.velocity).filter(v => v && v > 0);
+        if (lastVelocityValues.length > 0) {
+          const avgVelocity = lastVelocityValues.reduce((a, b) => a + b, 0) / lastVelocityValues.length; // m/s
         if (sport === 'run') {
-          // intensity is velocity in m/s
-          const paceSecPerKm = Math.round(1000 / intensity);
+            const paceSecPerKm = Math.round(1000 / avgVelocity);
           const mins = Math.floor(paceSecPerKm / 60);
           const secs = paceSecPerKm % 60;
           pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
-        } else if (sport === 'bike' || sport === 'ride') {
-          // intensity is power in W
-          power = Math.round(intensity);
+          }
+        }
+      }
+      
+      // Fallback: use whole segment if last portion doesn't have data
+      if (!power && !pace) {
+        const segmentPowerValues = segment.map(p => p.power).filter(p => p && p > 0);
+        if (segmentPowerValues.length > 0) {
+          const avgPower = segmentPowerValues.reduce((a, b) => a + b, 0) / segmentPowerValues.length;
+          power = Math.round(avgPower);
+        } else {
+          const segmentVelocityValues = segment.map(p => p.velocity).filter(v => v && v > 0);
+          if (segmentVelocityValues.length > 0) {
+            const avgVelocity = segmentVelocityValues.reduce((a, b) => a + b, 0) / segmentVelocityValues.length; // m/s
+            if (sport === 'run') {
+              const paceSecPerKm = Math.round(1000 / avgVelocity);
+              const mins = Math.floor(paceSecPerKm / 60);
+              const secs = paceSecPerKm % 60;
+              pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+            }
+          }
         }
       }
       
@@ -496,7 +591,6 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
         lthr: Math.round(meanLTHR),
         duration: segment.length * 5 / 60,
         slope: slopeBpmPerMin.toFixed(2),
-        intensity,
         pace,
         power,
         activityId: act.id || act.stravaId || act._id,
@@ -516,8 +610,20 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
   // Sort by LTHR (descending) and pick best
   candidates.sort((a, b) => b.lthr - a.lthr);
   
-  // If no candidates found, return null (will be handled by caller)
-  if (candidates.length === 0) {
+  // Filter out candidates that are too low (below typical LT2 range)
+  // LT2 should be higher than LT1, so filter candidates that are likely LT1 or below
+  // If hrMaxEst is available, LT2 should be at least 80% of HRmax
+  const filteredCandidates = hrMaxEst?.value 
+    ? candidates.filter(c => c.lthr >= hrMaxEst.value * 0.80)
+    : candidates;
+  
+  // If no candidates found after filtering, use original candidates but log warning
+  const candidatesToUse = filteredCandidates.length > 0 ? filteredCandidates : candidates;
+  if (filteredCandidates.length === 0 && candidates.length > 0 && hrMaxEst?.value) {
+    console.warn(`[estimateLT2] All ${candidates.length} candidates filtered out (below 80% HRmax). Using best candidate anyway.`);
+  }
+  
+  if (candidatesToUse.length === 0) {
     return {
       hr: { value: null, min: null, max: null },
       confidence: 'low',
@@ -525,31 +631,39 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
     };
   }
   
-  const bestCandidate = candidates[0];
+  const bestCandidate = candidatesToUse[0];
   
   // Range: ±(3-6 bpm) depending on stability
-  const stability = candidates.length >= 3 
-    ? Math.abs(candidates[0].lthr - candidates[2].lthr) 
+  const stability = candidatesToUse.length >= 3 
+    ? Math.abs(candidatesToUse[0].lthr - candidatesToUse[2].lthr) 
     : 10;
   const range = stability < 5 ? 3 : 6;
 
   // Confidence
   let confidence = 'low';
-  const uniqueDays = new Set(candidates.map(c => c.date)).size;
-  if (candidates.length >= 3 && uniqueDays >= 2) {
+  const uniqueDays = new Set(candidatesToUse.map(c => c.date)).size;
+  if (candidatesToUse.length >= 3 && uniqueDays >= 2) {
     confidence = 'high';
-  } else if (candidates.length >= 1) {
+  } else if (candidatesToUse.length >= 1) {
     confidence = 'med';
   }
+
+  // Calculate min and max correctly (min should be lower than max)
+  const minHR = Math.max(bestCandidate.lthr - range, 0);
+  const maxHR = Math.min(bestCandidate.lthr + range, hrMaxEst?.value || 220);
+  
+  // Ensure min < max
+  const finalMin = Math.min(minHR, maxHR);
+  const finalMax = Math.max(minHR, maxHR);
 
   const result = {
     hr: {
       value: bestCandidate.lthr,
-      min: Math.max(bestCandidate.lthr - range, 0),
-      max: Math.min(bestCandidate.lthr + range, hrMaxEst?.value || 220)
+      min: finalMin,
+      max: finalMax
     },
     confidence,
-    evidence: candidates.slice(0, 5)
+    evidence: candidatesToUse.slice(0, 5)
   };
   
   // Add pace/power from best candidate if available
@@ -565,7 +679,19 @@ export const estimateLT2 = (activities, hrMaxEst, sport = 'run', days = 42) => {
 export const fitHRIntensityModel = (activities, sport) => {
   const segments = [];
   
-  activities.forEach(act => {
+  // Filter activities by sport first
+  const filteredActivities = activities.filter(act => {
+    const actSport = (act.sport || act.type || '').toLowerCase();
+    if (sport === 'run') {
+      return actSport.includes('run') || actSport === 'running';
+    }
+    if (sport === 'bike' || sport === 'ride') {
+      return actSport.includes('ride') || actSport.includes('bike') || actSport.includes('cycling') || actSport === 'virtualride';
+    }
+    return true;
+  });
+  
+  filteredActivities.forEach(act => {
     if (!act.streams || !act.streams.heartrate) return;
     
     const processed = preprocessStreams(act.streams);
@@ -633,7 +759,8 @@ export const fitHRIntensityModel = (activities, sport) => {
       const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
       const intercept = (sumY - slope * sumX) / n;
       
-      return slope * targetHR + intercept;
+      const predicted = slope * targetHR + intercept;
+      return predicted > 0 ? predicted : null;
     }
   };
 };
@@ -763,13 +890,20 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
     };
   }
 
-  // Filter activities with HR streams
-  let activitiesWithHR = activities.filter(act => 
-    act.streams?.heartrate || act.streams?.hr
+  // Filter activities with HR streams - handle both formats: { heartrate: { data: [...] } } and { heartrate: [...] }
+  let activitiesWithHR = activities.filter(act => {
+    if (!act.streams) return false;
+    const hrData = act.streams.heartrate?.data || act.streams.heartrate || act.streams.hr?.data || act.streams.hr;
+    return hrData && Array.isArray(hrData) && hrData.length > 0;
+  });
+  
+  console.log(`[generateHRTestPlan] Total activities with HR streams: ${activitiesWithHR.length}`, 
+    activitiesWithHR.map(a => ({ sport: a.sport || a.type, id: a.stravaId || a.id }))
   );
   
   // Filter by sport if specified
   if (sport) {
+    const beforeFilter = activitiesWithHR.length;
     activitiesWithHR = activitiesWithHR.filter(act => {
       const actSport = (act.sport || act.type || '').toLowerCase();
       if (sport === 'run') {
@@ -780,6 +914,7 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
       }
       return true;
     });
+    console.log(`[generateHRTestPlan] After filtering for ${sport}: ${activitiesWithHR.length} activities (was ${beforeFilter})`);
   }
 
   if (activitiesWithHR.length === 0) {
@@ -821,21 +956,111 @@ export const generateHRTestPlan = async (activities, sport = 'run') => {
       // If LT2 is too low or equal to LT1, adjust it
       const adjustedValue = maxLT2HR ? Math.min(maxLT2HR, minLT2HR + 5) : minLT2HR;
       lt2.hr.value = adjustedValue;
-      lt2.hr.min = Math.max(lt2.hr.min || adjustedValue - 3, lt1.hr.value + 5);
-      lt2.hr.max = Math.min(lt2.hr.max || adjustedValue + 3, hrMax?.value || 220);
+      // Ensure min < max
+      const newMin = Math.max(adjustedValue - 5, lt1.hr.value + 5);
+      const newMax = Math.min(adjustedValue + 5, hrMax?.value || 220);
+      lt2.hr.min = Math.min(newMin, newMax);
+      lt2.hr.max = Math.max(newMin, newMax);
       lt2.confidence = 'low'; // Lower confidence if adjusted
+      console.warn(`[HRTestPlan] LT2 HR (${lt2.hr.value}) <= LT1 HR (${lt1.hr.value}), adjusted to ${adjustedValue} bpm`);
     } else if (lt2.hr.value < minLT2HR) {
       // If LT2 is only slightly above LT1, adjust it
       const adjustedValue = maxLT2HR ? Math.min(maxLT2HR, minLT2HR + 5) : minLT2HR;
       if (adjustedValue > lt2.hr.value) {
         lt2.hr.value = adjustedValue;
+        // Ensure min < max
+        const newMin = Math.max(adjustedValue - 5, lt1.hr.value + 5);
+        const newMax = Math.min(adjustedValue + 5, hrMax?.value || 220);
+        lt2.hr.min = Math.min(newMin, newMax);
+        lt2.hr.max = Math.max(newMin, newMax);
         lt2.confidence = lt2.confidence === 'high' ? 'med' : 'low';
+        console.warn(`[HRTestPlan] LT2 HR (${lt2.hr.value}) too close to LT1 HR (${lt1.hr.value}), adjusted to ${adjustedValue} bpm`);
+      }
+    } else {
+      // LT2 is valid, but ensure min < max
+      if (lt2.hr.min > lt2.hr.max) {
+        const temp = lt2.hr.min;
+        lt2.hr.min = lt2.hr.max;
+        lt2.hr.max = temp;
+        console.warn(`[HRTestPlan] Fixed LT2 min/max: min was ${temp}, max was ${lt2.hr.max}, swapped`);
       }
     }
   }
 
-  // Pace/power for LT1 and LT2 are already calculated in estimateLT1 and estimateLT2
-  // from the actual segments where they were found, so we don't need to use the model
+  // Validate and fix power/pace values - LT2 must have higher power/pace than LT1
+  if (lt1?.hr?.value && lt2?.hr?.value && lt1.hr.value < lt2.hr.value) {
+    // Build HR->intensity model to estimate correct power/pace if values are inconsistent
+    const model = fitHRIntensityModel(activitiesWithHR, sport);
+    
+    if (model) {
+      // If LT2 power is lower than LT1 power (or missing), estimate from HR using model
+      if (sport === 'bike' || sport === 'ride') {
+        if (lt2.power && lt1.power && lt2.power <= lt1.power) {
+          // LT2 power should be higher - estimate from HR using model
+          const estimatedPower = model.predict(lt2.hr.value);
+          if (estimatedPower && estimatedPower > lt1.power) {
+            console.warn(`[HRTestPlan] LT2 power (${lt2.power}W) <= LT1 power (${lt1.power}W), using model estimate: ${Math.round(estimatedPower)}W`);
+            lt2.power = Math.round(estimatedPower);
+          } else if (lt1.power) {
+            // Fallback: LT2 power should be at least 5-10% higher than LT1
+            lt2.power = Math.round(lt1.power * 1.08);
+            console.warn(`[HRTestPlan] LT2 power adjusted to ${lt2.power}W (8% above LT1)`);
+          }
+        } else if (!lt2.power && lt1.power) {
+          // LT2 power missing - estimate from HR
+          const estimatedPower = model.predict(lt2.hr.value);
+          if (estimatedPower && estimatedPower > lt1.power) {
+            lt2.power = Math.round(estimatedPower);
+          } else {
+            lt2.power = Math.round(lt1.power * 1.08);
+          }
+        }
+      } else if (sport === 'run') {
+        // For running, check pace (lower pace = faster = higher intensity)
+        // LT2 should have lower pace (faster) than LT1
+        if (lt2.pace && lt1.pace) {
+          // Parse pace strings (e.g., "4:30 /km")
+          const parsePace = (paceStr) => {
+            if (!paceStr) return null;
+            const match = paceStr.match(/(\d+):(\d+)/);
+            if (!match) return null;
+            return parseInt(match[1]) * 60 + parseInt(match[2]);
+          };
+          const lt1PaceSec = parsePace(lt1.pace);
+          const lt2PaceSec = parsePace(lt2.pace);
+          if (lt1PaceSec && lt2PaceSec && lt2PaceSec >= lt1PaceSec) {
+            // LT2 pace is slower or equal - estimate from HR
+            const estimatedVelocity = model.predict(lt2.hr.value);
+            if (estimatedVelocity && estimatedVelocity > 0) {
+              const paceSecPerKm = Math.round(1000 / estimatedVelocity);
+              const mins = Math.floor(paceSecPerKm / 60);
+              const secs = paceSecPerKm % 60;
+              lt2.pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+              console.warn(`[HRTestPlan] LT2 pace adjusted using model: ${lt2.pace}`);
+            }
+          }
+        } else if (!lt2.pace && lt1.pace) {
+          // LT2 pace missing - estimate from HR
+          const estimatedVelocity = model.predict(lt2.hr.value);
+          if (estimatedVelocity && estimatedVelocity > 0) {
+            const paceSecPerKm = Math.round(1000 / estimatedVelocity);
+            const mins = Math.floor(paceSecPerKm / 60);
+            const secs = paceSecPerKm % 60;
+            lt2.pace = `${mins}:${String(secs).padStart(2, '0')} /km`;
+          }
+        }
+      }
+    } else {
+      // No model available - use simple heuristic
+      if (sport === 'bike' || sport === 'ride') {
+        if (lt2.power && lt1.power && lt2.power <= lt1.power) {
+          // LT2 power should be at least 5-10% higher than LT1
+          lt2.power = Math.round(lt1.power * 1.08);
+          console.warn(`[HRTestPlan] LT2 power adjusted to ${lt2.power}W (8% above LT1, no model available)`);
+        }
+      }
+    }
+  }
 
   // Generate protocol
   const protocol = generateHRProtocol(hrMax, lt1, lt2, sport, activitiesWithHR);

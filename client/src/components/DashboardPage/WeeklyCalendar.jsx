@@ -4,6 +4,7 @@ import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon } f
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import TrainingChart from '../FitAnalysis/TrainingChart';
 import IntervalChart from '../FitAnalysis/IntervalChart';
+import LapsTable from '../FitAnalysis/LapsTable';
 import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
@@ -1121,6 +1122,73 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       {chartView === 'interval' && (!trainingDetail.laps || trainingDetail.laps.length === 0) && (
                         <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
                           Training has no intervals (laps) to display chart
+                        </div>
+                      )}
+
+                      {/* Laps Table - Show for both training and interval views if laps exist */}
+                      {trainingDetail.laps && trainingDetail.laps.length > 0 && (
+                        <div className="mt-3 sm:mt-4">
+                          <LapsTable 
+                            training={trainingDetail}
+                            onUpdate={async () => {
+                              // Reload detail if needed
+                              try {
+                                if (trainingDetail.type === 'fit' && trainingDetail._id) {
+                                  const detail = await getFitTraining(trainingDetail._id);
+                                  setTrainingDetail({ ...detail, type: 'fit' });
+                                } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
+                                  const detail = await getStravaActivityDetail(trainingDetail.id);
+                                  if (detail.detail && detail.streams) {
+                                    const startDate = new Date(detail.detail.start_date);
+                                    const timeArray = detail.streams.time?.data || detail.streams.time || [];
+                                    const wattsArray = detail.streams.watts?.data || detail.streams.watts || [];
+                                    const heartrateArray = detail.streams.heartrate?.data || detail.streams.heartrate || [];
+                                    const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
+                                    const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
+                                    const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
+                                    
+                                    if (Array.isArray(timeArray)) {
+                                      const records = timeArray.map((t, i) => ({
+                                        timestamp: new Date(startDate.getTime() + (t * 1000)),
+                                        power: wattsArray[i] || null,
+                                        heartRate: heartrateArray[i] || null,
+                                        speed: velocityArray[i] || null,
+                                        cadence: cadenceArray[i] || null,
+                                        distance: distanceArray[i] || null
+                                      }));
+                                      
+                                      setTrainingDetail({
+                                        ...selectedTraining,
+                                        type: 'strava',
+                                        records,
+                                        laps: detail.laps || [],
+                                        totalElapsedTime: detail.detail.elapsed_time || 0,
+                                        totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
+                                        totalDistance: detail.detail.distance || 0,
+                                        avgPower: detail.detail.average_watts || null,
+                                        maxPower: detail.detail.max_watts || null,
+                                        avgHeartRate: detail.detail.average_heartrate || null,
+                                        maxHeartRate: detail.detail.max_heartrate || null,
+                                        avgSpeed: detail.detail.average_speed || null,
+                                        maxSpeed: detail.detail.max_speed || null,
+                                        avgCadence: detail.detail.average_cadence || null,
+                                        maxCadence: detail.detail.max_cadence || null,
+                                        sport: trainingDetail.sport || detail.detail.type || 'cycling',
+                                        title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
+                                        linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
+                                        category: detail.category || trainingDetail.category || ''
+                                      });
+                                    }
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Error reloading training detail:', error);
+                              }
+                            }}
+                            user={user}
+                            selectedLapNumber={selectedLapNumber}
+                            onSelectLapNumber={setSelectedLapNumber}
+                          />
                         </div>
                       )}
                     </div>

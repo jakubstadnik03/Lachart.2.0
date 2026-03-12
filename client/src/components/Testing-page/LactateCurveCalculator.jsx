@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
@@ -67,7 +67,6 @@ const colorMap = {
     const [hiddenDatasets, setHiddenDatasets] = useState({});
     const [hideAllActive, setHideAllActive] = useState(false);
     const [previousHiddenState, setPreviousHiddenState] = useState({});
-    const [ltpLinesVisible, setLtpLinesVisible] = useState(true);
   
     React.useEffect(() => {
       const chart = chartRef?.current;
@@ -214,27 +213,19 @@ const colorMap = {
       const newValue = !zonesVisible;
       setZonesVisible(newValue);
       
-      // Update will be handled by parent component's setZonesVisible
-    };
-    
-    const handleToggleLtpLines = () => {
-      const chart = chartRef?.current;
-      if (!chart) return;
-      
-      const newValue = !ltpLinesVisible;
-      setLtpLinesVisible(newValue);
+      // Tie LT lines visibility to zones toggle
       if (ltpLinesVisibleRef) {
         ltpLinesVisibleRef.current = newValue;
       }
-      
-      // Hide/show LTP1_line and LTP2_line datasets
-      chart.data.datasets.forEach((ds, index) => {
-        if (ds.label === 'LTP1_line' || ds.label === 'LTP2_line') {
-          chart.setDatasetVisibility(index, newValue);
-        }
-      });
-      
-      chart.update();
+      const chart = chartRef?.current;
+      if (chart) {
+        chart.data.datasets.forEach((ds, index) => {
+          if (ds.label === 'LTP1_line' || ds.label === 'LTP2_line') {
+            chart.setDatasetVisibility(index, newValue);
+          }
+        });
+        chart.update();
+      }
     };
     
   
@@ -262,18 +253,6 @@ const colorMap = {
           <div className="flex items-center gap-2 min-w-[100px]">
             <div className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-gradient-to-r from-green-400 via-blue-400 via-yellow-400 via-red-400 to-purple-400" />
             <div className="whitespace-nowrap">Hide zones</div>
-          </div>
-        </div>
-        <div
-          className={`cursor-pointer flex items-center ${
-            !ltpLinesVisible ? 'line-through text-gray-400' : ''
-          }`}
-          onClick={handleToggleLtpLines}
-          title="Hide/show LT1 and LT2 lines"
-        >
-          <div className="flex items-center gap-2 min-w-[100px]">
-            <div className="flex-shrink-0 w-2.5 h-2.5 border-2 border-green-600 border-dashed bg-transparent" />
-            <div className="whitespace-nowrap">Hide LT lines</div>
           </div>
         </div>
         {(getLegendItems ? getLegendItems() : baseLegendItems).map((item, index) => (
@@ -448,10 +427,20 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const zonesVisibleRef = useRef(true); // Ref for plugin access
   const ltpLinesVisibleRef = useRef(true); // Ref for plugin access to ltpLinesVisible state
   const [chartView, setChartView] = useState('power'); // 'power' = power/pace vs lactate, 'hr' = heart rate vs lactate
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const isRunning = mockData?.sport === 'run';
   const isSwimming = mockData?.sport === 'swim';
   const isPaceSport = isRunning || isSwimming;
   const trainingTitle = (mockData?.title || mockData?.name || '').toString().trim();
+  
+  // Detect mobile
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
@@ -948,6 +937,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     pointRadius: allMeasuredDataPoints.map((_, idx) => 
       idx === 0 && baseLactatePoint ? 6 : 5  // Slightly larger for base lactate
     ),
+    hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
   };
 
   const polyDataSet = polyPoints.length > 0 ? {
@@ -1047,6 +1037,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       backgroundColor: colorMap[key] || '#2196F3',
       pointRadius: isLTP1 || isLTP2 ? 10 : 6, // Larger points for LTP1 and LTP2
       pointBorderWidth: isLTP1 || isLTP2 ? 3 : 2, // Thicker border for LTP1 and LTP2
+      hitRadius: isMobile ? 25 : 12, // Larger hit radius on mobile, especially for threshold points
       showLine: false,
       };
     })
@@ -1320,35 +1311,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return zoneDatasets;
   })();
 
-  // Create Glucose dataset if there's glucose data
-  const glucoseDataPoints = allMeasuredDataPoints
-    .filter(p => p.glucose !== null && p.glucose !== undefined && !isNaN(p.glucose) && p.glucose > 0)
-    .map(p => ({ x: p.x, y: p.glucose }));
-  
-  const glucoseDataSet = glucoseDataPoints.length > 0 ? {
-    label: 'Glucose',
-    data: glucoseDataPoints,
-    borderColor: '#f59e0b', // amber-500
-    backgroundColor: 'transparent',
-    pointRadius: 4,
-    pointBackgroundColor: '#f59e0b',
-    pointBorderColor: '#f59e0b',
-    showLine: true,
-    borderWidth: 2,
-    tension: 0.4,
-    yAxisID: 'y1', // Use secondary Y axis
-  } : null;
-
   // Create VO2 dataset if there's VO2 data
   const vo2DataPoints = allMeasuredDataPoints
     .filter(p => p.vo2 !== null && p.vo2 !== undefined && !isNaN(p.vo2) && p.vo2 > 0)
     .map(p => ({ x: p.x, y: p.vo2 }));
   
-  // Create function to get legend items with dynamic Glucose and VO2
+  // Create function to get legend items with dynamic VO2 only
   const getLegendItems = () => {
     return [
       ...baseLegendItems,
-      ...(glucoseDataPoints.length > 0 ? [{ color: 'bg-amber-500', label: 'Glucose', dsLabel: 'Glucose' }] : []),
       ...(vo2DataPoints.length > 0 ? [{ color: 'bg-violet-500', label: 'VO₂', dsLabel: 'VO2' }] : [])
     ];
   };
@@ -1361,6 +1332,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     pointRadius: 4,
     pointBackgroundColor: '#8b5cf6',
     pointBorderColor: '#8b5cf6',
+    hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
     showLine: true,
     borderWidth: 2,
     tension: 0.4,
@@ -1373,7 +1345,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ...thresholdDatasets,
     measuredDataSet,
     ...(polyDataSet ? [polyDataSet] : []),
-    ...(glucoseDataSet ? [glucoseDataSet] : []),
     ...(vo2DataSet ? [vo2DataSet] : []),
   ];
 
@@ -1635,21 +1606,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         },
         position: 'left',
       },
-      ...(glucoseDataPoints.length > 0 ? {
-        y1: {
-          type: 'linear',
-          min: 0,
-          max: Math.max(...glucoseDataPoints.map(p => p.y)) * 1.1,
-          title: { display: true, text: 'Glucose (mmol/L)', color: '#f59e0b' },
-          position: 'right',
-          grid: {
-            drawOnChartArea: false, // Only draw grid for primary Y axis
-          },
-          ticks: {
-            color: '#f59e0b',
-          },
-        }
-      } : {}),
       ...(vo2DataPoints.length > 0 ? {
         y2: {
           type: 'linear',
@@ -1829,7 +1785,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           return ctx.dataIndex === hoveredIndex ? 3 : 1;
         },
         hoverRadius: 8,
-        hitRadius: 8,
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
       },
       line: {
         borderWidth: 2,
@@ -1858,6 +1814,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         pointBorderColor: '#dc2626',
         pointBorderWidth: 2,
         pointRadius: 5,
+        hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
       }
     : null;
   const hrPolyDataSet = hasEnoughHRData && hrPolyPoints.length > 0
@@ -1870,7 +1827,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         borderWidth: 2,
         tension: 0.4,
         showLine: true,
-        hitRadius: 10 // Allow hovering over the line
+        hitRadius: isMobile ? 25 : 15 // Larger hit radius on mobile for line hovering
       }
     : null;
   const hrThresholdDatasets = hasEnoughHRData && thresholds?.heartRates && thresholds?.lactates
@@ -1884,6 +1841,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         borderColor: colorMap[key] || '#dc2626',
         backgroundColor: colorMap[key] || '#dc2626',
         pointRadius: 6,
+        hitRadius: isMobile ? 25 : 12, // Larger hit radius on mobile
         showLine: false,
       }))
     : [];
@@ -1957,11 +1915,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       },
     },
     elements: { 
-      point: { radius: 5, hoverRadius: 8, hitRadius: 8 },
+      point: { radius: 5, hoverRadius: 8, hitRadius: isMobile ? 20 : 10 },
       line: {
         borderWidth: 2,
         tension: 0.4,
-        hitRadius: 10 // Allow hovering over the line
+        hitRadius: isMobile ? 25 : 15 // Larger hit radius on mobile for line hovering
       }
     },
   };

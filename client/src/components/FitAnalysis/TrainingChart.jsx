@@ -93,6 +93,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
   const [highlightSummary, setHighlightSummary] = useState(null); // aggregated metrics for highlighted window
   const svgRef = useRef(null);
   const containerRef = useRef(null);
+  const mouseMoveTimeoutRef = useRef(null); // For throttling mouse move events
   
   // Determine unit system from user profile or default to metric
   const unitSystem = (user || authUser)?.units?.distance || 'metric';
@@ -153,9 +154,19 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
     const records = chartData.records;
     
+    // Reduce data points if too many to prevent memory issues and improve performance
+    // Keep max 2000 points for rendering (more than enough for smooth curves)
+    const MAX_POINTS = 2000;
+    let recordsToProcess = records;
+    if (records.length > MAX_POINTS) {
+      const step = Math.ceil(records.length / MAX_POINTS);
+      recordsToProcess = records.filter((_, i) => i % step === 0 || i === records.length - 1);
+      console.log(`[TrainingChart] Reduced ${records.length} records to ${recordsToProcess.length} points for rendering`);
+    }
+    
     // Convert to distance-based data - use actual distance from records if available
     let cumulativeDistance = 0;
-    const distanceData = records.map((record, i) => {
+    const distanceData = recordsToProcess.map((record, i) => {
       // Use distance from record if available (in meters), otherwise calculate from speed
       if (record.distance !== undefined && record.distance !== null && record.distance > 0) {
         cumulativeDistance = record.distance / 1000; // Convert meters to km
@@ -445,7 +456,14 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      // Cleanup throttle timeout
+      if (mouseMoveTimeoutRef.current) {
+        clearTimeout(mouseMoveTimeoutRef.current);
+        mouseMoveTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   // Scale functions with zoom support
@@ -699,7 +717,55 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     return areaPath;
   }, [elevationPath, processedData, xScale, elevationYScale]);
 
-  // Handle mouse down for drag selection
+  // Handle touch/click for mobile tooltip
+  const handleTouchStart = useCallback((e) => {
+    if (!containerRef.current || !processedData || !isMobile) return;
+    
+    // If two touches, allow pinch zoom (don't prevent default)
+    if (e.touches.length > 1) {
+      return; // Let browser handle pinch zoom
+    }
+    
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const relativeX = x - padding.left;
+    
+    if (relativeX < 0 || relativeX > graphWidth) return;
+    
+    // Find closest point
+    const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
+    let closestPoint = null;
+    let minDist = Infinity;
+    
+    for (const point of processedData.points) {
+      const pointX = xScale(point.distance);
+      if (pointX === null || isNaN(pointX)) continue;
+      
+      const pointRelativeX = pointX - padding.left;
+      const dist = Math.abs(pointRelativeX - clampedRelativeX);
+      
+      if (dist < minDist) {
+        minDist = dist;
+        closestPoint = point;
+      }
+    }
+    
+    // Toggle tooltip on tap
+    if (closestPoint && clickedPoint === closestPoint) {
+      // If tapping the same point, hide tooltip
+      setClickedPoint(null);
+      setClickedCursorX(null);
+    } else if (closestPoint) {
+      // Show tooltip for tapped point
+      setClickedPoint(closestPoint);
+      setClickedCursorX(x);
+    }
+  }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale]);
+
+  // Handle mouse down for drag selection (desktop)
   const handleMouseDown = useCallback((e) => {
     if (!containerRef.current || !processedData) return;
     if (e.button !== 0) return; // Only left mouse button
@@ -754,16 +820,29 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     setClickedCursorX(null);
   }, [processedData, graphWidth, padding.left, isMobile, clickedPoint, xScale]);
 
-  // Handle mouse move
+  // Handle mouse move with throttling to reduce CPU usage
   const handleMouseMove = useCallback((e) => {
     if (!containerRef.current || !processedData) return;
+    
+    // Throttle to max 30fps (33ms) to reduce CPU usage
+    if (mouseMoveTimeoutRef.current) {
+      return;
+    }
+    
+    mouseMoveTimeoutRef.current = setTimeout(() => {
+      mouseMoveTimeoutRef.current = null;
+    }, 33);
     
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const relativeX = x - padding.left;
     
-    // If dragging, update drag end
+    // If dragging, update drag end (no throttling for dragging)
     if (isDragging && dragStart) {
+      if (mouseMoveTimeoutRef.current) {
+        clearTimeout(mouseMoveTimeoutRef.current);
+        mouseMoveTimeoutRef.current = null;
+      }
       setDragEnd({ x, relativeX });
       return;
     }
@@ -781,15 +860,20 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     setCursorX(x);
 
     // Find closest point by pixel X position
-    // This ensures tooltip shows values for the point closest to the cursor visually
+    // Optimize: limit search to reasonable number of points to reduce CPU usage
     let closestPoint = null;
     let minDist = Infinity;
     
     // Clamp relativeX to valid range for comparison
     const clampedRelativeX = Math.max(0, Math.min(relativeX, graphWidth));
     
+    // Optimize: limit search to max 500 points (sample every Nth point if more)
+    const searchLimit = Math.min(processedData.points.length, 500);
+    const step = Math.max(1, Math.floor(processedData.points.length / searchLimit));
+    
     // Find closest point by comparing pixel X positions
-    for (const point of processedData.points) {
+    for (let i = 0; i < processedData.points.length; i += step) {
+      const point = processedData.points[i];
       const pointX = xScale(point.distance);
       if (pointX === null || isNaN(pointX)) continue;
       
@@ -1054,11 +1138,7 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
             handleMouseUp(e);
           }
         }}
-        onTouchStart={() => {
-          if (!isMobile) return;
-          setClickedPoint(null);
-          setClickedCursorX(null);
-        }}
+        onTouchStart={handleTouchStart}
       >
         {/* Drag selection rectangle */}
         {isDragging && dragStart && dragEnd && (

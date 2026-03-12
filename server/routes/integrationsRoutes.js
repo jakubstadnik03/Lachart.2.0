@@ -862,24 +862,32 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // IMPORTANT: Keep this payload small (calendar view).
     // Returning `raw` or `laps` for thousands of activities is extremely slow and bloats responses.
     // Optimize: Only fetch last 2 years of activities (reduces query time significantly)
-    const twoYearsAgo = new Date();
-    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    // For HR test plan, we need more activities - check if request is for HR test plan
+    const isHRTestPlan = req.query.hrTestPlan === 'true';
+    const dateCutoff = isHRTestPlan 
+      ? new Date(Date.now() - (180 * 24 * 60 * 60 * 1000)) // 180 days for HR test plan
+      : (() => {
+          const twoYearsAgo = new Date();
+          twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+          return twoYearsAgo;
+        })();
+    const activityLimit = isHRTestPlan ? 5000 : 2000; // More activities for HR test plan
     
     const [stravaActs, garminActs] = await Promise.all([
       StravaActivity.find({ 
         userId: targetUserId.toString(),
-        startDate: { $gte: twoYearsAgo }
+        startDate: { $gte: dateCutoff }
       })
       .sort({ startDate: -1 })
-        .limit(2000) // Reduced from 5000 to 2000 for better performance
+        .limit(activityLimit)
       .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
         .lean(),
       GarminActivity.find({ 
         userId: targetUserId.toString(),
-        startDate: { $gte: twoYearsAgo }
+        startDate: { $gte: dateCutoff }
       })
         .sort({ startDate: -1 })
-        .limit(2000) // Reduced from 5000 to 2000 for better performance
+        .limit(activityLimit)
         .select('garminId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
         .lean()
     ]);

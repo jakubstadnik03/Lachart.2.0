@@ -41,10 +41,16 @@ const TestingPage = () => {
   const [showNewTesting, setShowNewTesting] = useState(false);
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
+  
+  // Limit tests to prevent memory issues (max 500)
+  const MAX_TESTS = 500;
   const [error, setError] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [externalActivities, setExternalActivities] = useState([]);
+  
+  // Limit external activities to prevent memory issues (max 1000)
+  const MAX_EXTERNAL_ACTIVITIES = 1000;
   const [bikePowerMetrics, setBikePowerMetrics] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(true);
@@ -103,7 +109,13 @@ const TestingPage = () => {
         addNotification(`Warning: Found ${duplicateIds.length} duplicate test(s). Only showing unique tests.`, 'warning');
       }
       
-      setTests(uniqueTests);
+      // Limit tests to prevent memory issues
+      const limitedTests = uniqueTests.slice(0, MAX_TESTS);
+      if (uniqueTests.length > MAX_TESTS) {
+        console.warn(`[TestingPage] Limited ${uniqueTests.length} tests to ${MAX_TESTS} to prevent memory issues`);
+      }
+      
+      setTests(limitedTests);
     } catch (err) {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
@@ -333,12 +345,12 @@ const TestingPage = () => {
 
         // 1) Athlete profile (zones + units) - with error handling
         try {
-          if (user.role === 'coach' && String(targetId) !== String(user._id)) {
-            const { data } = await api.get(`/user/athlete/${targetId}/profile`);
-            setAthleteProfile(data);
-          } else {
-            const { data } = await api.get('/user/profile');
-            setAthleteProfile(data);
+        if (user.role === 'coach' && String(targetId) !== String(user._id)) {
+          const { data } = await api.get(`/user/athlete/${targetId}/profile`);
+          setAthleteProfile(data);
+        } else {
+          const { data } = await api.get('/user/profile');
+          setAthleteProfile(data);
           }
         } catch (profileError) {
           console.error('Failed to load athlete profile:', profileError);
@@ -358,9 +370,18 @@ const TestingPage = () => {
         }
 
         // 2) External activities (Strava/Garmin normalized list) - with error handling
+        // For HR test plan, we need more activities (up to 5000, last 180 days)
         try {
-          const acts = await listExternalActivities(user.role === 'coach' ? { athleteId: targetId } : {});
-          setExternalActivities(Array.isArray(acts) ? acts : []);
+          const params = user.role === 'coach' ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
+          const acts = await listExternalActivities(params);
+          const activitiesArray = Array.isArray(acts) ? acts : [];
+          // Limit to prevent memory issues
+          const limitedActivities = activitiesArray.slice(0, MAX_EXTERNAL_ACTIVITIES);
+          if (activitiesArray.length > MAX_EXTERNAL_ACTIVITIES) {
+            console.warn(`[TestingPage] Limited ${activitiesArray.length} activities to ${MAX_EXTERNAL_ACTIVITIES} to prevent memory issues`);
+          }
+          console.log(`[TestingPage] Loaded ${limitedActivities.length} external activities for HR test plan`);
+          setExternalActivities(limitedActivities);
         } catch (activitiesError) {
           console.error('Failed to load external activities:', activitiesError);
           setExternalActivities([]);
@@ -368,11 +389,11 @@ const TestingPage = () => {
 
         // 3) Bike power metrics (includes Strava streams when possible) - with error handling
         try {
-          const params = new URLSearchParams();
-          if (user.role === 'coach') params.set('athleteId', targetId);
-          params.set('comparePeriod', '90days');
-          const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
-          setBikePowerMetrics(resp.data || null);
+        const params = new URLSearchParams();
+        if (user.role === 'coach') params.set('athleteId', targetId);
+        params.set('comparePeriod', '90days');
+        const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
+        setBikePowerMetrics(resp.data || null);
         } catch (metricsError) {
           console.error('Failed to load power metrics:', metricsError);
           setBikePowerMetrics(null);
@@ -392,54 +413,103 @@ const TestingPage = () => {
 
   // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
+    let isMounted = true; // Track if component is still mounted
+    
     const loadHRTestPlan = async () => {
       if (!isAuthenticated || !user || !externalActivities || externalActivities.length === 0) {
-        setHrTestPlan(null);
+        if (isMounted) setHrTestPlan(null);
         return;
       }
 
       try {
-        setHrTestPlanLoading(true);
+        if (isMounted) setHrTestPlanLoading(true);
 
-        // Filter activities with HR data and get recent ones (last 42-90 days)
+        // Filter activities with HR data and get recent ones (last 42-180 days)
         const now = Date.now();
         const cutoff42 = now - (42 * 24 * 60 * 60 * 1000);
         const cutoff90 = now - (90 * 24 * 60 * 60 * 1000);
+        const cutoff180 = now - (180 * 24 * 60 * 60 * 1000);
 
-        const recentActivities = externalActivities.filter(act => {
+        // First, filter by sport (only Run and Ride/Bike, exclude Swim)
+        const runAndBikeActivities = externalActivities.filter(act => {
+          const actSport = (act.sport || act.type || '').toLowerCase();
+          return actSport.includes('run') || actSport === 'running' || 
+                 actSport.includes('ride') || actSport.includes('bike') || 
+                 actSport.includes('cycling') || actSport === 'virtualride';
+        });
+
+        const recentActivities = runAndBikeActivities.filter(act => {
           const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
           return actDate >= cutoff42;
         });
 
-        // If not enough activities, expand to 90 days
-        const activitiesToUse = recentActivities.length >= 8 
-          ? recentActivities 
-          : externalActivities.filter(act => {
+        // Expand time window if not enough activities: 90 days, then 180 days
+        let activitiesToUse = recentActivities;
+        if (recentActivities.length < 8) {
+          activitiesToUse = runAndBikeActivities.filter(act => {
               const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
               return actDate >= cutoff90;
             });
+        }
+        if (activitiesToUse.length < 8) {
+          activitiesToUse = runAndBikeActivities.filter(act => {
+            const actDate = new Date(act.startDate || act.date || act.start_date).getTime();
+            return actDate >= cutoff180;
+          });
+        }
 
         // Filter activities that likely have HR
+        // Don't slice here - we want to check all available activities
         const activitiesWithHR = activitiesToUse.filter(act => 
           act.averageHeartRate || 
           act.heartRateZones || 
           (act.stravaId && act.sport && (act.sport.toLowerCase().includes('run') || act.sport.toLowerCase().includes('ride')))
-        ).slice(0, 10); // Fewer activities to avoid Strava 429 rate limit
+        );
+
+        console.log(`[HRTestPlan] Found ${activitiesWithHR.length} activities with HR indicators (from ${activitiesToUse.length} total run/bike activities)`);
 
         if (activitiesWithHR.length === 0) {
+          console.warn('[HRTestPlan] No activities with HR indicators found');
           setHrTestPlan(null);
           return;
         }
 
         // Load streams sequentially with delay to avoid 429 (Strava rate limit)
-        const maxToFetch = 6;
-        const delayMs = 600;
+        // Strava rate limit: 600 requests per 15 minutes = 1 request per 1.5 seconds
+        // We'll use 2-3 seconds delay to be safe, and limit to 15 activities to avoid hitting rate limit
+        const maxToFetch = Math.min(15, activitiesWithHR.length);
+        const baseDelayMs = 2500; // 2.5 seconds base delay
         const activitiesWithStreams = [];
-        for (let i = 0; i < Math.min(activitiesWithHR.length, maxToFetch); i++) {
-          const act = activitiesWithHR[i];
-          if (!act.stravaId) continue;
-          if (i > 0) await new Promise(r => setTimeout(r, delayMs));
+        let rateLimitHit = false;
+        
+        // Sort activities by date (newest first) to prioritize recent data
+        const sortedActivities = [...activitiesWithHR]
+          .filter(act => act.stravaId)
+          .sort((a, b) => {
+            const dateA = new Date(a.startDate || a.date || a.start_date || 0).getTime();
+            const dateB = new Date(b.startDate || b.date || b.start_date || 0).getTime();
+            return dateB - dateA; // Newest first
+          })
+          .slice(0, maxToFetch);
+        
+        console.log(`[HRTestPlan] Loading streams for ${sortedActivities.length} activities (newest first)`);
+        
+        for (let i = 0; i < sortedActivities.length; i++) {
+          const act = sortedActivities[i];
+          if (!act.stravaId || rateLimitHit) continue;
+          
+          // Delay between requests (longer delay after first few requests)
+          if (i > 0) {
+            const delay = i < 5 ? baseDelayMs : baseDelayMs * 1.5; // Slower after first 5
+            await new Promise(r => setTimeout(r, delay));
+          }
 
+          // Retry mechanism with exponential backoff
+          let retries = 0;
+          const maxRetries = 3;
+          let success = false;
+          
+          while (retries <= maxRetries && !success) {
           try {
             const detail = await getStravaActivityDetail(act.stravaId, user.role === 'coach' ? selectedAthleteId : null);
             if (detail && detail.streams) {
@@ -452,33 +522,75 @@ const TestingPage = () => {
                 distance: detail.streams.distance?.data || []
               };
 
-              // Get sport from detail object first, then fallback to act
-              const sportFromDetail = detail.detail?.sport || detail.detail?.type || detail.sport || detail.type;
-              const sportFromAct = act.sport || act.type;
-              let finalSport = sportFromDetail || sportFromAct || 'Ride';
-              
-              // Normalize sport names for better matching
-              const sportLower = finalSport.toLowerCase();
-              if (sportLower.includes('run') || sportLower === 'running') {
-                finalSport = 'Run';
-              } else if (sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycling') || sportLower === 'virtualride') {
-                finalSport = 'Ride';
-              }
+                // Check if streams have HR data (required for HR test plan)
+                const hrData = streams.heartrate || streams.hr;
+                if (!hrData || !Array.isArray(hrData) || hrData.length === 0) {
+                  console.warn(`Activity ${act.stravaId} has no HR data in streams`);
+                  success = true; // Don't retry if no HR data
+                  break;
+                }
+
+                // Get sport from detail object first, then fallback to act
+                const sportFromDetail = detail.detail?.sport || detail.detail?.type || detail.sport || detail.type;
+                const sportFromAct = act.sport || act.type;
+                let finalSport = sportFromDetail || sportFromAct || 'Ride';
+                
+                // Normalize sport names for better matching - exclude Swim
+                const sportLower = finalSport.toLowerCase();
+                if (sportLower.includes('swim')) {
+                  // Skip swim activities - they don't have power data and aren't useful for HR test plan
+                  console.warn(`Skipping swim activity ${act.stravaId}`);
+                  success = true; // Don't retry
+                  break;
+                } else if (sportLower.includes('run') || sportLower === 'running') {
+                  finalSport = 'Run';
+                } else if (sportLower.includes('ride') || sportLower.includes('bike') || sportLower.includes('cycling') || sportLower === 'virtualride') {
+                  finalSport = 'Ride';
+                } else {
+                  // Skip unknown sports
+                  console.warn(`Skipping unknown sport activity ${act.stravaId}: ${finalSport}`);
+                  success = true; // Don't retry
+                  break;
+                }
 
               activitiesWithStreams.push({
                 id: act.stravaId || act.id || act._id,
                 stravaId: act.stravaId,
-                sport: finalSport,
-                type: finalSport, // Also set type for compatibility
+                  sport: finalSport,
+                  type: finalSport, // Also set type for compatibility
                 startDate: act.startDate || act.date || act.start_date,
                 date: act.startDate || act.date || act.start_date,
                 streams
               });
+                success = true; // Successfully loaded
+              } else {
+                // No streams in response
+                success = true; // Don't retry if no streams
             }
           } catch (e) {
-            console.warn(`Failed to load streams for activity ${act.stravaId}:`, e.message);
-            continue;
+              // Check if it's a rate limit error (429)
+              if (e.response?.status === 429 || e.message?.includes('429') || (e.code === 'ERR_BAD_REQUEST' && e.response?.status === 429)) {
+                rateLimitHit = true;
+                console.warn(`[HRTestPlan] Rate limit hit (429) after ${i + 1} activities. Stopping stream loading.`);
+                break; // Stop loading more streams
+              }
+              
+              retries++;
+              if (retries <= maxRetries) {
+                // Exponential backoff: wait 2^retries seconds
+                const backoffDelay = Math.min(1000 * Math.pow(2, retries), 10000); // Max 10 seconds
+                console.warn(`[HRTestPlan] Retry ${retries}/${maxRetries} for activity ${act.stravaId} after ${backoffDelay}ms delay`);
+                await new Promise(r => setTimeout(r, backoffDelay));
+              } else {
+                console.warn(`[HRTestPlan] Failed to load streams for activity ${act.stravaId} after ${maxRetries} retries:`, e.message);
+                success = true; // Stop retrying
+              }
+            }
           }
+        }
+        
+        if (rateLimitHit) {
+          console.warn(`[HRTestPlan] Rate limit reached. Loaded ${activitiesWithStreams.length} activities with streams out of ${sortedActivities.length} attempted.`);
         }
 
         // Generate HR test plan for both run and bike - with individual error handling
@@ -486,8 +598,23 @@ const TestingPage = () => {
         let bikePlan = null;
         
         if (activitiesWithStreams.length > 0) {
+          const runActivities = activitiesWithStreams.filter(a => {
+            const sport = (a.sport || a.type || '').toLowerCase();
+            return sport.includes('run') || sport === 'running';
+          });
+          const bikeActivities = activitiesWithStreams.filter(a => {
+            const sport = (a.sport || a.type || '').toLowerCase();
+            return sport.includes('ride') || sport.includes('bike') || sport.includes('cycling') || sport === 'virtualride';
+          });
+          
+          console.log(`[HRTestPlan] Loaded ${activitiesWithStreams.length} activities with streams:`, 
+            activitiesWithStreams.map(a => ({ sport: a.sport, id: a.stravaId, hrLength: (a.streams?.heartrate || a.streams?.hr || []).length, date: a.startDate || a.date }))
+          );
+          console.log(`[HRTestPlan] Run activities: ${runActivities.length}, Bike activities: ${bikeActivities.length}`);
+          
           try {
             runPlan = await generateHRTestPlan(activitiesWithStreams, 'run');
+            console.log('[HRTestPlan] Run plan result:', runPlan);
           } catch (runError) {
             console.warn('Failed to generate run HR test plan:', runError);
             runPlan = null;
@@ -495,30 +622,40 @@ const TestingPage = () => {
           
           try {
             bikePlan = await generateHRTestPlan(activitiesWithStreams, 'bike');
+            console.log('[HRTestPlan] Bike plan result:', bikePlan);
           } catch (bikeError) {
             console.warn('Failed to generate bike HR test plan:', bikeError);
             bikePlan = null;
           }
+        } else {
+          console.warn('[HRTestPlan] No activities with streams loaded');
         }
 
-        setHrTestPlan({
-          run: runPlan,
-          bike: bikePlan
-        });
+        if (isMounted) {
+          setHrTestPlan({
+            run: runPlan,
+            bike: bikePlan
+          });
+        }
       } catch (e) {
         console.error('Failed to generate HR test plan:', e);
-        setHrTestPlan(null);
+        if (isMounted) setHrTestPlan(null);
       } finally {
-        setHrTestPlanLoading(false);
+        if (isMounted) setHrTestPlanLoading(false);
       }
     };
-
+    
     // Only load if we have external activities
     if (externalActivities && externalActivities.length > 0) {
       loadHRTestPlan();
     } else {
       setHrTestPlan(null);
     }
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, [externalActivities, user, isAuthenticated, selectedAthleteId]);
 
   // Persist "recommendations panel" visibility per athlete
@@ -579,46 +716,46 @@ const TestingPage = () => {
   // Wrapped in try/catch to prevent freeze on problematic test data
   const estimateLt2FromTest = (test) => {
     try {
-      if (!test?.results || test.results.length < 3) return null;
-      const sport = test.sport;
-      const isPaceSport = sport === 'run' || sport === 'swim';
-      const baseLactate = Number(test.baseLactate || 1.0);
-      const targetLac = 4.0;
+    if (!test?.results || test.results.length < 3) return null;
+    const sport = test.sport;
+    const isPaceSport = sport === 'run' || sport === 'swim';
+    const baseLactate = Number(test.baseLactate || 1.0);
+    const targetLac = 4.0;
 
-      const pts = test.results
-        .map(r => ({
-          x: Number(String(r.power ?? '').replace(',', '.')),
-          y: Number(String(r.lactate ?? '').replace(',', '.')),
-          hr: Number(String(r.heartRate ?? '').replace(',', '.'))
-        }))
-        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+    const pts = test.results
+      .map(r => ({
+        x: Number(String(r.power ?? '').replace(',', '.')),
+        y: Number(String(r.lactate ?? '').replace(',', '.')),
+        hr: Number(String(r.heartRate ?? '').replace(',', '.'))
+      }))
+      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
 
-      if (pts.length < 3) return null;
+    if (pts.length < 3) return null;
 
-      // sort: bike ascending power; run/swim descending pace-seconds (slow->fast in seconds means higher seconds is slower)
-      pts.sort((a, b) => isPaceSport ? (b.x - a.x) : (a.x - b.x));
+    // sort: bike ascending power; run/swim descending pace-seconds (slow->fast in seconds means higher seconds is slower)
+    pts.sort((a, b) => isPaceSport ? (b.x - a.x) : (a.x - b.x));
 
-      // Find segment crossing target lactate
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i], b = pts[i + 1];
-        if ((a.y <= targetLac && b.y >= targetLac) || (a.y >= targetLac && b.y <= targetLac)) {
-          const t = (targetLac - a.y) / (b.y - a.y || 1);
-          const x = a.x + t * (b.x - a.x);
-          const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr)) ? (a.hr + t * (b.hr - a.hr)) : null;
-          return { x, hr, lac: targetLac };
-        }
+    // Find segment crossing target lactate
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if ((a.y <= targetLac && b.y >= targetLac) || (a.y >= targetLac && b.y <= targetLac)) {
+        const t = (targetLac - a.y) / (b.y - a.y || 1);
+        const x = a.x + t * (b.x - a.x);
+        const hr = (Number.isFinite(a.hr) && Number.isFinite(b.hr)) ? (a.hr + t * (b.hr - a.hr)) : null;
+        return { x, hr, lac: targetLac };
       }
+    }
 
-      // Fallback: D-max-ish fallback: use point where lactate is ~ base*3 (classic), otherwise max x
-      const target2 = baseLactate * 3.0;
-      const closest = pts.reduce((best, p) => {
-        const d = Math.abs(p.y - target2);
-        if (!best || d < best.d) return { p, d };
-        return best;
-      }, null);
-      if (closest?.p) return { x: closest.p.x, hr: closest.p.hr, lac: closest.p.y };
+    // Fallback: D-max-ish fallback: use point where lactate is ~ base*3 (classic), otherwise max x
+    const target2 = baseLactate * 3.0;
+    const closest = pts.reduce((best, p) => {
+      const d = Math.abs(p.y - target2);
+      if (!best || d < best.d) return { p, d };
+      return best;
+    }, null);
+    if (closest?.p) return { x: closest.p.x, hr: closest.p.hr, lac: closest.p.y };
 
-      return { x: pts[pts.length - 1].x, hr: pts[pts.length - 1].hr, lac: pts[pts.length - 1].y };
+    return { x: pts[pts.length - 1].x, hr: pts[pts.length - 1].hr, lac: pts[pts.length - 1].y };
     } catch (error) {
       console.error('Error estimating LT2 from test:', error, test);
       return null; // Return null instead of crashing
@@ -665,35 +802,35 @@ const TestingPage = () => {
 
   const advisor = useMemo(() => {
     try {
-      const zones = athleteProfile?.powerZones || {};
+    const zones = athleteProfile?.powerZones || {};
 
-      // Bike recommendation
-      const bikeLt2 = zones?.cycling?.lt2 || null;
-      const bikeFtp = bikeFtpEstimate || bikeLt2 || null;
-      const bikeStart = bikeFtp ? Math.max(80, Math.round((bikeFtp * 0.55) / 10) * 10) : null;
-      const bikeEnd = bikeFtp ? Math.round((bikeFtp * 1.15) / 10) * 10 : null;
-      const bikeStep = 25;
-      const bikeStageMin = 4;
-      const bikeRestMin = 1;
-      const bikeStages = bikeStart && bikeEnd ? Math.max(1, Math.round((bikeEnd - bikeStart) / bikeStep) + 1) : null;
+    // Bike recommendation
+    const bikeLt2 = zones?.cycling?.lt2 || null;
+    const bikeFtp = bikeFtpEstimate || bikeLt2 || null;
+    const bikeStart = bikeFtp ? Math.max(80, Math.round((bikeFtp * 0.55) / 10) * 10) : null;
+    const bikeEnd = bikeFtp ? Math.round((bikeFtp * 1.15) / 10) * 10 : null;
+    const bikeStep = 25;
+    const bikeStageMin = 4;
+    const bikeRestMin = 1;
+    const bikeStages = bikeStart && bikeEnd ? Math.max(1, Math.round((bikeEnd - bikeStart) / bikeStep) + 1) : null;
 
-      // Run recommendation
-      const runLt2 = zones?.running?.lt2 || null; // seconds per km
-      const runThr = runLt2 || runRecentPerf?.estThresholdPaceSecPerKm || null;
-      const runStart = runThr ? (runThr + 75) : null;
-      const runEnd = runThr ? Math.max(120, runThr - 20) : null;
-      const runStep = 15; // sec/km
-      const runStageMin = 3;
-      const runRestMin = 1;
+    // Run recommendation
+    const runLt2 = zones?.running?.lt2 || null; // seconds per km
+    const runThr = runLt2 || runRecentPerf?.estThresholdPaceSecPerKm || null;
+    const runStart = runThr ? (runThr + 75) : null;
+    const runEnd = runThr ? Math.max(120, runThr - 20) : null;
+    const runStep = 15; // sec/km
+    const runStageMin = 3;
+    const runRestMin = 1;
       const runStages = runStart != null && runEnd != null && runStart > runEnd
         ? Math.max(1, Math.round((runStart - runEnd) / runStep) + 1)
         : null;
 
       // Freshness + drift - with error handling
-      const lastBikeTest = latestBySport.bike;
-      const lastRunTest = latestBySport.run;
-      const bikeTestDays = daysSince(lastBikeTest?.date);
-      const runTestDays = daysSince(lastRunTest?.date);
+    const lastBikeTest = latestBySport.bike;
+    const lastRunTest = latestBySport.run;
+    const bikeTestDays = daysSince(lastBikeTest?.date);
+    const runTestDays = daysSince(lastRunTest?.date);
       
       let bikeLt2FromTest = null;
       let runLt2FromTest = null;
@@ -710,42 +847,42 @@ const TestingPage = () => {
         console.warn('Error estimating run LT2 from test:', e);
       }
 
-      const bikeZoneShift = (bikeLt2 && bikeLt2FromTest)
-        ? (Math.abs(bikeLt2 - bikeLt2FromTest) / bikeLt2) > 0.05
-        : (bikeLt2 && bikeFtpEstimate) ? (Math.abs(bikeLt2 - bikeFtpEstimate) / bikeLt2) > 0.05 : false;
+    const bikeZoneShift = (bikeLt2 && bikeLt2FromTest)
+      ? (Math.abs(bikeLt2 - bikeLt2FromTest) / bikeLt2) > 0.05
+      : (bikeLt2 && bikeFtpEstimate) ? (Math.abs(bikeLt2 - bikeFtpEstimate) / bikeLt2) > 0.05 : false;
 
-      const runZoneShift = (runLt2 && runLt2FromTest)
-        ? (Math.abs(runLt2 - runLt2FromTest) / runLt2) > 0.05
-        : (runLt2 && runRecentPerf?.estThresholdPaceSecPerKm) ? (Math.abs(runLt2 - runRecentPerf.estThresholdPaceSecPerKm) / runLt2) > 0.05 : false;
+    const runZoneShift = (runLt2 && runLt2FromTest)
+      ? (Math.abs(runLt2 - runLt2FromTest) / runLt2) > 0.05
+      : (runLt2 && runRecentPerf?.estThresholdPaceSecPerKm) ? (Math.abs(runLt2 - runRecentPerf.estThresholdPaceSecPerKm) / runLt2) > 0.05 : false;
 
-      return {
-        bike: {
-          ftp: bikeFtp,
-          start: bikeStart,
-          end: bikeEnd,
-          step: bikeStep,
-          stageMin: bikeStageMin,
-          restMin: bikeRestMin,
-          stages: bikeStages,
-          lastTest: lastBikeTest,
-          lastTestDays: bikeTestDays,
-          lt2FromLastTest: bikeLt2FromTest,
-          zoneShift: bikeZoneShift
-        },
-        run: {
-          thresholdPaceSecPerKm: runThr,
-          startPaceSecPerKm: runStart,
-          endPaceSecPerKm: runEnd,
-          stepSecPerKm: runStep,
-          stageMin: runStageMin,
-          restMin: runRestMin,
+    return {
+      bike: {
+        ftp: bikeFtp,
+        start: bikeStart,
+        end: bikeEnd,
+        step: bikeStep,
+        stageMin: bikeStageMin,
+        restMin: bikeRestMin,
+        stages: bikeStages,
+        lastTest: lastBikeTest,
+        lastTestDays: bikeTestDays,
+        lt2FromLastTest: bikeLt2FromTest,
+        zoneShift: bikeZoneShift
+      },
+      run: {
+        thresholdPaceSecPerKm: runThr,
+        startPaceSecPerKm: runStart,
+        endPaceSecPerKm: runEnd,
+        stepSecPerKm: runStep,
+        stageMin: runStageMin,
+        restMin: runRestMin,
           stages: runStages,
-          lastTest: lastRunTest,
-          lastTestDays: runTestDays,
-          lt2FromLastTest: runLt2FromTest,
-          zoneShift: runZoneShift
-        }
-      };
+        lastTest: lastRunTest,
+        lastTestDays: runTestDays,
+        lt2FromLastTest: runLt2FromTest,
+        zoneShift: runZoneShift
+      }
+    };
     } catch (error) {
       console.error('Error calculating advisor:', error);
       // Return safe default values instead of crashing
@@ -782,23 +919,23 @@ const TestingPage = () => {
 
   const lt2History = useMemo(() => {
     try {
-      const bySport = { bike: [], run: [] };
-      (tests || []).forEach(t => {
+    const bySport = { bike: [], run: [] };
+    (tests || []).forEach(t => {
         try {
-          const s = t?.sport;
-          if (s !== 'bike' && s !== 'run') return;
-          const d = t.date || t.createdAt;
-          const lt2 = estimateLt2FromTest(t)?.x;
-          if (!lt2) return;
-          bySport[s].push({ date: d, lt2 });
+      const s = t?.sport;
+      if (s !== 'bike' && s !== 'run') return;
+      const d = t.date || t.createdAt;
+      const lt2 = estimateLt2FromTest(t)?.x;
+      if (!lt2) return;
+      bySport[s].push({ date: d, lt2 });
         } catch (testError) {
           console.warn('Error processing test for LT2 history:', testError, t);
           // Skip problematic test, continue with others
         }
-      });
-      bySport.bike.sort((a, b) => new Date(a.date) - new Date(b.date));
-      bySport.run.sort((a, b) => new Date(a.date) - new Date(b.date));
-      return bySport;
+    });
+    bySport.bike.sort((a, b) => new Date(a.date) - new Date(b.date));
+    bySport.run.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return bySport;
     } catch (error) {
       console.error('Error calculating LT2 history:', error);
       return { bike: [], run: [] };
@@ -1022,7 +1159,12 @@ const TestingPage = () => {
           )}
           {hrTestPlan && (hrTestPlan.run || hrTestPlan.bike) && (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2">HR-First Test Plan (from Strava)</h3>
+              <div className="flex items-start justify-between mb-2">
+                <h3 className="text-sm font-semibold text-blue-900">HR-First Test Plan (from Strava)</h3>
+                <div className="text-xs text-blue-600 ml-2">
+                  Last 42-180 days
+                </div>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {hrTestPlan.run && (
                   <div className="text-xs text-blue-800">
@@ -1031,7 +1173,7 @@ const TestingPage = () => {
                       <div className="text-blue-600 italic">No HR data available for running activities</div>
                     )}
                     {hrTestPlan.run.hrMax?.value && (
-                      <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
+                    <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
                     )}
                     {hrTestPlan.run.lt1?.hr?.value && (
                       <div>
@@ -1071,7 +1213,7 @@ const TestingPage = () => {
                       <div className="text-blue-600 italic">No HR data available for cycling activities</div>
                     )}
                     {hrTestPlan.bike.hrMax?.value && (
-                      <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
+                    <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
                     )}
                     {hrTestPlan.bike.lt1?.hr?.value && (
                       <div>
@@ -1230,7 +1372,7 @@ const TestingPage = () => {
             />
           </div>
         </motion.div>
-      )}
+        )}
 
       <AnimatePresence>
         {showNewTesting && (

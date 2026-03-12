@@ -1854,28 +1854,16 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     
                     const trainings = await trainingDao.findByAthleteId(athleteIdStr);
                     
-                    // Get all tests and filter manually to handle any ID format mismatch
-                    const allTests = await Test.find({});
-                    const matchingTests = allTests.filter(t => {
-                        const testAthleteId = String(t.athleteId || '');
-                        const athleteId = athleteIdStr;
-                        // Try exact match
-                        if (testAthleteId === athleteId) return true;
-                        // Try without any whitespace
-                        if (testAthleteId.trim() === athleteId.trim()) return true;
-                        // Try comparing ObjectId strings
-                        try {
-                            if (mongoose.Types.ObjectId.isValid(testAthleteId) && mongoose.Types.ObjectId.isValid(athleteId)) {
-                                return new mongoose.Types.ObjectId(testAthleteId).equals(new mongoose.Types.ObjectId(athleteId));
-                            }
-                        } catch (e) {
-                            // Ignore conversion errors
-                        }
-                        return false;
+                    // Find tests - handle both ObjectId and String formats
+                    const tests = await Test.find({
+                        $or: [
+                            { athleteId: athleteIdStr },
+                            { athleteId: mongoose.Types.ObjectId.isValid(user._id) ? new mongoose.Types.ObjectId(user._id) : athleteIdStr }
+                        ]
                     });
                     
                     trainingCount = trainings.length;
-                    testCount = matchingTests.length;
+                    testCount = tests.length;
                     console.log(`[Admin Users] Found ${trainingCount} trainings and ${testCount} tests for ${user.name}`);
                 } catch (error) {
                     console.error(`[Admin Users] Error counting data for user ${user._id}:`, error);
@@ -1908,7 +1896,13 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                         try {
                             const athleteIdStr = String(athlete._id);
                             const trainings = await trainingDao.findByAthleteId(athleteIdStr);
-                            const tests = await Test.find({ athleteId: athleteIdStr });
+                            // Find tests - handle both ObjectId and String formats
+                            const tests = await Test.find({
+                                $or: [
+                                    { athleteId: athleteIdStr },
+                                    { athleteId: new mongoose.Types.ObjectId(athlete._id) }
+                                ]
+                            });
                                 athleteTrainingCount = trainings.length;
                                 athleteTestCount = tests.length;
                             trainingCount += athleteTrainingCount;
@@ -1940,47 +1934,22 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                         const coachIdStr = String(user._id);
                         console.log(`[Admin Users] Looking for coach's own data with ID: ${coachIdStr} (original: ${user._id}, type: ${typeof user._id})`);
                         
-                        // Get all tests and filter manually to handle any ID format mismatch
-                        const allTests = await Test.find({});
-                        const matchingTests = allTests.filter(t => {
-                            const testAthleteId = String(t.athleteId || '');
-                            const coachId = coachIdStr;
-                            // Try exact match
-                            if (testAthleteId === coachId) return true;
-                            // Try without any whitespace
-                            if (testAthleteId.trim() === coachId.trim()) return true;
-                            // Try comparing ObjectId strings
-                            try {
-                                if (mongoose.Types.ObjectId.isValid(testAthleteId) && mongoose.Types.ObjectId.isValid(coachId)) {
-                                    return new mongoose.Types.ObjectId(testAthleteId).equals(new mongoose.Types.ObjectId(coachId));
-                                }
-                            } catch (e) {
-                                // Ignore conversion errors
-                            }
-                            return false;
+                        // Find coach's own tests - handle both ObjectId and String formats
+                        const ownTests = await Test.find({
+                            $or: [
+                                { athleteId: coachIdStr },
+                                { athleteId: mongoose.Types.ObjectId.isValid(user._id) ? new mongoose.Types.ObjectId(user._id) : coachIdStr }
+                            ]
                         });
                         
                         const ownTrainings = await trainingDao.findByAthleteId(coachIdStr);
                         const ownTrainingCount = ownTrainings.length;
-                        const ownTestCount = matchingTests.length;
+                        const ownTestCount = ownTests.length;
                         
                         trainingCount += ownTrainingCount;
                         testCount += ownTestCount;
                         
                         console.log(`[Admin Users] Coach's own data (${coachIdStr}): ${ownTrainingCount} trainings, ${ownTestCount} tests`);
-                        
-                        // Debug: Show sample of what's in DB if no tests found
-                        if (ownTestCount === 0 && allTests.length > 0) {
-                            const sampleTests = allTests.slice(0, 5);
-                            console.log(`[Admin Users] Sample test athleteIds in DB:`, sampleTests.map(t => ({ 
-                                testId: t._id, 
-                                athleteId: t.athleteId, 
-                                athleteIdType: typeof t.athleteId,
-                                athleteIdString: String(t.athleteId),
-                                coachIdStr: coachIdStr,
-                                matches: String(t.athleteId) === coachIdStr
-                            })));
-                        }
                     } catch (error) {
                         // Ignore if coach has no own data
                         console.error(`[Admin Users] Error getting coach's own data:`, error);
