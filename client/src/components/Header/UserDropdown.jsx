@@ -8,8 +8,8 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
   const dropdownRef = useRef(null);
   const { user: authUser, logout } = useAuth();
 
-  // Use prop user if provided, otherwise use auth user
-  const user = propUser || authUser;
+  // For avatar/name in header always show logged-in user (coach sees own face, not athlete's)
+  const displayUser = authUser || propUser;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -57,15 +57,16 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
         disabled={disabled}
       >
         <img
-          src={getAvatar(user)}
+          src={getAvatar(displayUser)}
           alt="User Avatar"
           className="w-8 h-8 rounded-full"
+          key={displayUser?._id}
         />
         <div className="hidden md:block text-left">
           <p className="text-sm font-medium text-gray-700">
-            {user?.name || 'Demo'} {user?.surname || 'User'}
+            {displayUser?.name || 'Demo'} {displayUser?.surname || 'User'}
           </p>
-          <p className="text-xs text-gray-500">{user?.email || 'demo@example.com'}</p>
+          <p className="text-xs text-gray-500">{displayUser?.email || 'demo@example.com'}</p>
         </div>
       </button>
 

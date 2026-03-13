@@ -371,17 +371,24 @@ const TestingPage = () => {
 
         // 2) External activities (Strava/Garmin normalized list) - with error handling
         // For HR test plan, we need more activities (up to 5000, last 180 days)
+        // If Strava is not connected, skip loading external activities entirely
         try {
-          const params = user.role === 'coach' ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
-          const acts = await listExternalActivities(params);
-          const activitiesArray = Array.isArray(acts) ? acts : [];
-          // Limit to prevent memory issues
-          const limitedActivities = activitiesArray.slice(0, MAX_EXTERNAL_ACTIVITIES);
-          if (activitiesArray.length > MAX_EXTERNAL_ACTIVITIES) {
-            console.warn(`[TestingPage] Limited ${activitiesArray.length} activities to ${MAX_EXTERNAL_ACTIVITIES} to prevent memory issues`);
+          const status = await getIntegrationStatus();
+          const isConnected = Boolean(status.stravaConnected);
+          if (!isConnected) {
+            setExternalActivities([]);
+          } else {
+            const params = user.role === 'coach' ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
+            const acts = await listExternalActivities(params);
+            const activitiesArray = Array.isArray(acts) ? acts : [];
+            // Limit to prevent memory issues
+            const limitedActivities = activitiesArray.slice(0, MAX_EXTERNAL_ACTIVITIES);
+            if (activitiesArray.length > MAX_EXTERNAL_ACTIVITIES) {
+              console.warn(`[TestingPage] Limited ${activitiesArray.length} activities to ${MAX_EXTERNAL_ACTIVITIES} to prevent memory issues`);
+            }
+            console.log(`[TestingPage] Loaded ${limitedActivities.length} external activities for HR test plan`);
+            setExternalActivities(limitedActivities);
           }
-          console.log(`[TestingPage] Loaded ${limitedActivities.length} external activities for HR test plan`);
-          setExternalActivities(limitedActivities);
         } catch (activitiesError) {
           console.error('Failed to load external activities:', activitiesError);
           setExternalActivities([]);

@@ -20,6 +20,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   // Use prop user/token if provided, otherwise use auth values
   const user = propUser || authUser;
   const token = propToken || authToken;
+  // For avatar/name in sidebar always show logged-in user (coach sees own face, not athlete's)
+  const displayUser = authUser || propUser;
 
   // All useEffects - move all up here
   // Note: Auto-opening menu is now handled by parent components (like TestingWithoutLogin)
@@ -284,15 +286,16 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           className="p-4 flex items-center border-b border-gray-200 flex-shrink-0"
         >
           <img
-            src={getAvatar(user)}
+            src={getAvatar(displayUser)}
             alt="User Avatar"
             className="w-12 h-12 rounded-full"
+            key={displayUser?._id}
           />
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-800">
-              {user?.name || 'Demo'} {user?.surname || 'User'}
+              {displayUser?.name || 'Demo'} {displayUser?.surname || 'User'}
             </p>
-            <p className="text-xs text-gray-500">{user?.email || 'demo@example.com'}</p>
+            <p className="text-xs text-gray-500">{displayUser?.email || 'demo@example.com'}</p>
           </div>
         </div>
 
