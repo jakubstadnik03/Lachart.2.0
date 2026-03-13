@@ -195,10 +195,11 @@ const AthletesPage = () => {
       } else {
         // Přidání nového atleta
         try {
+          const emailValue = formData.email?.trim() || undefined;
           const response = await api.post('/user/coach/add-athlete', {
             name: formData.name,
             surname: formData.surname,
-            email: formData.email,
+            email: emailValue,
             dateOfBirth: formattedDate,
             address: formData.address,
             phone: formData.phone,
@@ -209,9 +210,13 @@ const AthletesPage = () => {
             gender: formData.gender || 'male'
           });
           
-          // Přidání nového atleta do seznamu
           setAthletes([...athletes, response.data.athlete]);
-          addNotification('Athlete added successfully and invitation sent', 'success');
+          addNotification(
+            emailValue
+              ? 'Athlete added successfully and invitation sent'
+              : 'Athlete added successfully (no email – no invitation sent)',
+            'success'
+          );
           // Zavření modalu a reset formuláře
           setIsModalOpen(false);
           setSelectedAthlete(null);
@@ -574,7 +579,7 @@ const AthletesPage = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
+                      Email <span className="text-gray-400 font-normal">(optional)</span>
                     </label>
                     <input
                       type="email"
@@ -582,7 +587,7 @@ const AthletesPage = () => {
                       value={formData.email}
                       onChange={handleInputChange}
                       className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder="Enter email address"
+                      placeholder="Leave empty to add without sending invitation"
                     />
                   </div>
 

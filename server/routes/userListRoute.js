@@ -300,26 +300,28 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(tempPassword, salt);
 
-        // Create new athlete
+        // Create new athlete (omit email when empty so DB allows multiple athletes without email)
         const athleteData = {
             name,
             surname,
-            email: email ? email.toLowerCase() : undefined,
             password: hashedPassword,
             role: 'athlete',
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-            address,
-            phone,
+            address: address || undefined,
+            phone: phone || undefined,
             height: height ? Number(height) : undefined,
             weight: weight ? Number(weight) : undefined,
-            sport,
-            specialization,
+            sport: sport || undefined,
+            specialization: specialization || undefined,
             gender: gender || 'male',
             coachId: coach._id,
             isRegistrationComplete: false,
             registrationToken: crypto.randomBytes(32).toString('hex'),
             registrationTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
         };
+        if (email && email.trim()) {
+            athleteData.email = email.trim().toLowerCase();
+        }
 
         const athlete = await userDao.createUser(athleteData);
         saveRegistrationLocation(userDao, athlete._id, req);
