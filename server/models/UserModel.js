@@ -276,12 +276,25 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Odstranění starého indexu, pokud existuje
+// Odstranění starého indexu, pokud existuje; oprava email indexu na sparse (umožní více uživatelů bez emailu)
 mongoose.connection.on('connected', async () => {
   try {
     await mongoose.connection.db.collection('users').dropIndex('id_1');
     console.log('Starý index byl odstraněn');
   } catch (error) {
+    // index nemusí existovat
+  }
+  try {
+    const coll = mongoose.connection.db.collection('users');
+    const indexes = await coll.indexes();
+    const emailIdx = indexes.find((i) => i.name === 'email_1');
+    if (emailIdx && !emailIdx.sparse) {
+      await coll.dropIndex('email_1');
+      await mongoose.model('User').syncIndexes();
+      console.log('Email index recreated with sparse: true (multiple users without email allowed)');
+    }
+  } catch (err) {
+    console.warn('Email index migration:', err.message);
   }
 });
 
