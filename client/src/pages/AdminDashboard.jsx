@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail } from '../services/api';
+import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, impersonateUser } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const AdminDashboard = () => {
-  const { user: currentUser, loading } = useAuth();
+  const { user: currentUser, loading, login: authLogin } = useAuth();
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
@@ -33,6 +33,23 @@ const AdminDashboard = () => {
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
   const [deleteAthleteLoadingId, setDeleteAthleteLoadingId] = useState(null);
+
+  const handleImpersonate = async (user) => {
+    if (!user?._id) return;
+    try {
+      const data = await impersonateUser(user._id);
+      const { token, user: impersonatedUser } = data || {};
+      if (!token || !impersonatedUser) {
+        console.error('Impersonation response missing token or user');
+        return;
+      }
+      // Reuse existing auth login flow so all caches and storage are handled consistently
+      await authLogin(null, null, token, impersonatedUser);
+    } catch (error) {
+      console.error('Failed to impersonate user:', error);
+      window.alert('Failed to impersonate user. Please check console for details.');
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -1026,13 +1043,20 @@ const AdminDashboard = () => {
                           </div>
                           <div className="text-xs text-gray-500 truncate">{user.email}</div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => setEditingUser(user)}
-                        className="flex-shrink-0 px-2 py-1 text-xs font-medium text-primary hover:text-primary-dark border border-primary rounded hover:bg-primary/5"
-                      >
-                        Edit
-                      </button>
+                    </div>
+                    <button
+                      onClick={() => setEditingUser(user)}
+                      className="flex-shrink-0 px-2 py-1 text-xs font-medium text-primary hover:text-primary-dark border border-primary rounded hover:bg-primary/5"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleImpersonate(user)}
+                      className="ml-1 flex-shrink-0 px-2 py-1 text-xs font-medium text-amber-700 border border-amber-500 rounded hover:bg-amber-50"
+                      title="Login as this user"
+                    >
+                      Login as user
+                    </button>
                     </div>
                     
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -1515,6 +1539,14 @@ const AdminDashboard = () => {
                               className="block text-primary hover:text-primary-dark"
                             >
                               Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleImpersonate(user)}
+                              className="block text-xs text-amber-700 hover:text-amber-800"
+                              title="Login as this user"
+                            >
+                              Login as user
                             </button>
                             <button
                               type="button"

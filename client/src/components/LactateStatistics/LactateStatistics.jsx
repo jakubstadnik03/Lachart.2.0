@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones } from '../../services/api';
+import { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones, getZoneHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 
@@ -29,6 +29,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const lastTrainingCountRef = useRef(0); // Track last known training count
   const pollingIntervalRef = useRef(null); // Reference to polling interval
+  const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
+  const [zoneHistoryLoading, setZoneHistoryLoading] = useState(false);
+  const [showZoneHistory, setShowZoneHistory] = useState(false);
   
   // Detect mobile
   useEffect(() => {
@@ -37,6 +40,25 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Load training zone history (power + HR) once
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        setZoneHistoryLoading(true);
+        const data = await getZoneHistory();
+        setZoneHistory({
+          powerZonesHistory: data?.powerZonesHistory || [],
+          heartRateZonesHistory: data?.heartRateZonesHistory || [],
+        });
+      } catch (e) {
+        console.warn('[LactateStatistics] Failed to load zone history', e?.message || e);
+      } finally {
+        setZoneHistoryLoading(false);
+      }
+    };
+    loadHistory();
   }, []);
   
   
@@ -452,6 +474,71 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
 
   return (
     <div className="space-y-2">
+      {/* Zones history toggle */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-text">Lactate Statistics</h2>
+        <button
+          type="button"
+          onClick={() => setShowZoneHistory(v => !v)}
+          className="text-[11px] px-2 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100"
+        >
+          {showZoneHistory ? 'Hide zone history' : 'Show zone history'}
+        </button>
+      </div>
+
+      {showZoneHistory && (
+        <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-3 text-[11px] max-h-64 overflow-y-auto">
+          {zoneHistoryLoading && (
+            <div className="text-gray-500">Loading zone history…</div>
+          )}
+          {!zoneHistoryLoading && zoneHistory.powerZonesHistory.length === 0 && zoneHistory.heartRateZonesHistory.length === 0 && (
+            <div className="text-gray-500">No previous zone versions saved yet.</div>
+          )}
+          {!zoneHistoryLoading && (
+            <div className="space-y-2">
+              {zoneHistory.powerZonesHistory.length > 0 && (
+                <div>
+                  <div className="font-semibold text-gray-800 mb-1">Power zones history</div>
+                  <ul className="space-y-1">
+                    {zoneHistory.powerZonesHistory
+                      .slice()
+                      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                      .map((h, i) => (
+                        <li key={i} className="bg-white rounded border border-gray-200 px-2 py-1">
+                          <div className="flex justify-between text-[10px] text-gray-600 mb-0.5">
+                            <span>{h.createdAt ? new Date(h.createdAt).toLocaleString() : 'Unknown date'}</span>
+                            <span>{h.source || 'manual'}</span>
+                          </div>
+                          {h.note && <div className="text-[10px] text-gray-500 italic">{h.note}</div>}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+              {zoneHistory.heartRateZonesHistory.length > 0 && (
+                <div>
+                  <div className="font-semibold text-gray-800 mb-1">Heart rate zones history</div>
+                  <ul className="space-y-1">
+                    {zoneHistory.heartRateZonesHistory
+                      .slice()
+                      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                      .map((h, i) => (
+                        <li key={i} className="bg-white rounded border border-gray-200 px-2 py-1">
+                          <div className="flex justify-between text-[10px] text-gray-600 mb-0.5">
+                            <span>{h.createdAt ? new Date(h.createdAt).toLocaleString() : 'Unknown date'}</span>
+                            <span>{h.source || 'manual'}</span>
+                          </div>
+                          {h.note && <div className="text-[10px] text-gray-500 italic">{h.note}</div>}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Monthly Analysis */}
       {activeTab === 'monthly' && (
         <div className="space-y-2">

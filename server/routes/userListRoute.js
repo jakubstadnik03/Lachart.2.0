@@ -12,6 +12,7 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("../config/jwt.config");
 const { OAuth2Client } = require('google-auth-library');
 
 const { saveRegistrationLocation } = require("../utils/geoip");
@@ -526,8 +527,43 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
-        if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
-        if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
+
+        // Load current user to snapshot previous zones into history before updating
+        const existingUser = await userDao.findById(userId);
+        if (existingUser) {
+            // Archive previous power zones if they exist and new ones are provided
+            if (req.body.powerZones && existingUser.powerZones && Object.keys(existingUser.powerZones || {}).length > 0) {
+                existingUser.powerZonesHistory = existingUser.powerZonesHistory || [];
+                existingUser.powerZonesHistory.push({
+                    zones: existingUser.powerZones,
+                    source: req.body.zonesSource || 'profile',
+                    note: req.body.zonesNote || null,
+                    createdAt: new Date()
+                });
+                updateData.powerZonesHistory = existingUser.powerZonesHistory;
+                updateData.powerZones = req.body.powerZones;
+            } else if (req.body.powerZones) {
+                updateData.powerZones = req.body.powerZones;
+            }
+
+            // Archive previous HR zones if they exist and new ones are provided
+            if (req.body.heartRateZones && existingUser.heartRateZones && Object.keys(existingUser.heartRateZones || {}).length > 0) {
+                existingUser.heartRateZonesHistory = existingUser.heartRateZonesHistory || [];
+                existingUser.heartRateZonesHistory.push({
+                    zones: existingUser.heartRateZones,
+                    source: req.body.zonesSource || 'profile',
+                    note: req.body.zonesNote || null,
+                    createdAt: new Date()
+                });
+                updateData.heartRateZonesHistory = existingUser.heartRateZonesHistory;
+                updateData.heartRateZones = req.body.heartRateZones;
+            } else if (req.body.heartRateZones) {
+                updateData.heartRateZones = req.body.heartRateZones;
+            }
+        } else {
+            if (req.body.powerZones) updateData.powerZones = req.body.powerZones;
+            if (req.body.heartRateZones) updateData.heartRateZones = req.body.heartRateZones;
+        }
         if (req.body.units) updateData.units = req.body.units;
         if (req.body.notifications) updateData.notifications = req.body.notifications;
         if (req.body.onboarding && typeof req.body.onboarding === 'object') {
@@ -597,6 +633,24 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
     }
 });
 
+// Get history of training zones (power + HR) for current user
+router.get("/zones/history", verifyToken, async (req, res) => {
+    try {
+        const user = await userDao.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        res.status(200).json({
+            powerZonesHistory: user.powerZonesHistory || [],
+            heartRateZonesHistory: user.heartRateZonesHistory || []
+        });
+    } catch (error) {
+        console.error("Error fetching zone history:", error);
+        res.status(500).json({ error: "Failed to fetch zone history" });
+    }
+});
+
 // Coach can edit athlete's profile
 router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
     try {
@@ -644,6 +698,32 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         if (specialization) updateData.specialization = specialization;
         if (gender) updateData.gender = gender;
         if (bio) updateData.bio = bio;
+
+        // Snapshot zones history if coach updates zones for athlete (optional – future use)
+        if (req.body.powerZones || req.body.heartRateZones) {
+            if (athlete.powerZones && Object.keys(athlete.powerZones || {}).length > 0 && req.body.powerZones) {
+                athlete.powerZonesHistory = athlete.powerZonesHistory || [];
+                athlete.powerZonesHistory.push({
+                    zones: athlete.powerZones,
+                    source: req.body.zonesSource || 'coach',
+                    note: req.body.zonesNote || null,
+                    createdAt: new Date()
+                });
+                updateData.powerZonesHistory = athlete.powerZonesHistory;
+                updateData.powerZones = req.body.powerZones;
+            }
+            if (athlete.heartRateZones && Object.keys(athlete.heartRateZones || {}).length > 0 && req.body.heartRateZones) {
+                athlete.heartRateZonesHistory = athlete.heartRateZonesHistory || [];
+                athlete.heartRateZonesHistory.push({
+                    zones: athlete.heartRateZones,
+                    source: req.body.zonesSource || 'coach',
+                    note: req.body.zonesNote || null,
+                    createdAt: new Date()
+                });
+                updateData.heartRateZonesHistory = athlete.heartRateZonesHistory;
+                updateData.heartRateZones = req.body.heartRateZones;
+            }
+        }
 
         console.log('Coach updating athlete profile:', { coachId, athleteId, updateData });
 
@@ -2016,6 +2096,51 @@ router.get("/admin/users", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error fetching users for admin:", error);
         res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Admin impersonation endpoint - allow admin to log in as another user without knowing their password
+router.post("/admin/impersonate/:userId", verifyToken, async (req, res) => {
+    try {
+        // Verify that current user has admin privileges
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { userId } = req.params;
+        const targetUser = await userDao.findById(userId);
+
+        if (!targetUser) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Build token payload as if target user logged in
+        const payload = {
+            userId: targetUser._id,
+            email: targetUser.email,
+            role: targetUser.role,
+            admin: targetUser.admin,
+            // Track who initiated impersonation (for potential audit/logging)
+            impersonatedBy: currentUser._id
+        };
+
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "12h" });
+
+        return res.status(200).json({
+            token,
+            user: {
+                _id: targetUser._id,
+                email: targetUser.email,
+                name: targetUser.name,
+                surname: targetUser.surname,
+                role: targetUser.role,
+                admin: targetUser.admin
+            }
+        });
+    } catch (error) {
+        console.error("Admin impersonate error:", error);
+        return res.status(500).json({ error: "Failed to impersonate user" });
     }
 });
 

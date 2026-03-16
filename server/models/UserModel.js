@@ -184,6 +184,20 @@ const userSchema = new mongoose.Schema({
       lastUpdated: Date
     }
   },
+  // History of power zones changes (for tracking progression over time)
+  powerZonesHistory: [{
+    zones: mongoose.Schema.Types.Mixed,
+    source: { type: String, default: 'manual' },
+    note: { type: String, default: null },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  // History of heart rate zones changes
+  heartRateZonesHistory: [{
+    zones: mongoose.Schema.Types.Mixed,
+    source: { type: String, default: 'manual' },
+    note: { type: String, default: null },
+    createdAt: { type: Date, default: Date.now }
+  }],
   // Onboarding modals dismissed/skipped (persisted in DB so it syncs across devices)
   onboarding: {
     basicProfileDone: { type: Boolean, default: false },

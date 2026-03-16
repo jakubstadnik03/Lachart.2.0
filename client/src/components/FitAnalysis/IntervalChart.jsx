@@ -739,7 +739,13 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                   : ((bar.value - adjustedMinValue) / (adjustedMaxValue - adjustedMinValue)) * 100
                 : 0;
               // Calculate speed based on unit system
-              const speedMps = bar.lap.average_speed || (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) || 0;
+              // Normalize speed: support average_speed (m/s), avg_speed (m/s), avgSpeed (km/h)
+              const rawSpeed =
+                bar.lap.average_speed ??
+                bar.lap.avg_speed ??
+                (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) ??
+                0;
+              const speedMps = rawSpeed > 10 ? rawSpeed / 3.6 : rawSpeed;
               const avgSpeed = speedMps > 0 
                 ? (unitSystem === 'imperial' 
                   ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
@@ -789,7 +795,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               
               // Tooltip title
               const tooltipTitle = (isRun || isSwim)
-                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nPace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
+                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. pace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
                 : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
               
               return (
@@ -872,7 +878,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           if (!activeBar || !activeBar.bar) return null;
           const bar = activeBar.bar;
           // Calculate speed based on unit system
-          const speedMps = bar.lap.average_speed || (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) || 0;
+          const rawSpeed =
+            bar.lap.average_speed ??
+            bar.lap.avg_speed ??
+            (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) ??
+            0;
+          const speedMps = rawSpeed > 10 ? rawSpeed / 3.6 : rawSpeed;
           const avgSpeed = speedMps > 0 
             ? (unitSystem === 'imperial' 
               ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
@@ -1023,12 +1034,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                         </div>
                         {(isRun || isSwim) ? (
                           <>
-                            <div className="text-greenos font-medium">
-                              Pace: {paceFormatted}
-                            </div>
-                            <div className="text-secondary font-medium">
-                              Avg. Speed: {avgSpeed}
-                            </div>
+                        <div className="text-greenos font-medium">
+                          Avg. pace: {paceFormatted}
+                        </div>
+                        <div className="text-secondary font-medium">
+                          Avg. Speed: {avgSpeed}
+                        </div>
                           </>
                         ) : (
                         <div className="text-secondary font-medium">

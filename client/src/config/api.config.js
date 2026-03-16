@@ -2,7 +2,7 @@
 // Uses REACT_APP_API_URL from environment variables if set, otherwise defaults to production URL
 // To use localhost: set REACT_APP_API_URL=http://localhost:8000 in .env file
 export const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://lachart.onrender.com';
-
+console.log('API_BASE_URL =', API_BASE_URL);
 export const API_ENDPOINTS = {
     LOGIN: `${API_BASE_URL}/user/login`,
     LOGOUT: `${API_BASE_URL}/user/logout`,

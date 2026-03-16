@@ -832,11 +832,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   // Note: increasingPoints and sortedPoints are calculated but not used - polynomial regression uses mockData.results directly
 
   // Generate polynomial curve using the same method as TestComparison.jsx
-  // Use original results directly (same as TestComparison.jsx uses test.results)
-  // This is critical - we must use the original results without any filtering or conversion
-  // Use mockData.results directly, just like TestComparison.jsx uses test.results
-  // Use filtered validResults for polynomial regression (excludes unrealistic spikes)
-  const polyPointsRaw = calculatePolynomialRegression(validResults);
+  // Use filtered validResults for polynomial regression (excludes unrealistic spikes).
+  // If regression fails (e.g. singular matrix with few/collinear points), use [] so chart still renders.
+  let polyPointsRaw = [];
+  try {
+    polyPointsRaw = calculatePolynomialRegression(validResults) || [];
+  } catch (e) {
+    console.warn('[LactateCurveCalculator] Polynomial regression failed:', e?.message);
+  }
   
   // Convert polyPoints to the correct coordinate system (pace/speed/power based on inputMode)
   // Also ensure lactate values are never negative

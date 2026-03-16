@@ -2352,44 +2352,47 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
   
   const calculatePolynomialRegression = (results) => {
-    const xVals = results.map(r => r.power);
-    const yVals = results.map(r => r.lactate);
-    
-    const polyRegression = (() => {
-      const n = xVals.length;
-      const X = [];
-      const Y = [];
+    if (!results || !Array.isArray(results) || results.length < 4) return [];
+    const xVals = results.map(r => Number(String(r.power ?? '').replace(',', '.')));
+    const yVals = results.map(r => Number(String(r.lactate ?? '').replace(',', '.')));
+    if (xVals.some(v => isNaN(v)) || yVals.some(v => isNaN(v))) return [];
+    const distinctX = new Set(xVals).size;
+    if (distinctX < 4) return []; // cubic needs at least 4 distinct x values
 
-      for (let i = 0; i < n; i++) {
-        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-        Y.push(yVals[i]);
+    try {
+      const polyRegression = (() => {
+        const n = xVals.length;
+        const X = [];
+        const Y = [];
+        for (let i = 0; i < n; i++) {
+          X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+          Y.push(yVals[i]);
+        }
+        const XT = math.transpose(X);
+        const XTX = math.multiply(XT, X);
+        const XTY = math.multiply(XT, Y);
+        const coefficients = math.lusolve(XTX, XTY).flat();
+        return (x) =>
+          coefficients[0] +
+          coefficients[1] * x +
+          coefficients[2] * Math.pow(x, 2) +
+          coefficients[3] * Math.pow(x, 3);
+      })();
+
+      const minPower = Math.min(...xVals);
+      const maxPower = Math.max(...xVals);
+      const step = Math.max((maxPower - minPower) / 100, 1e-6);
+      const polyPoints = [];
+      for (let x = minPower; x <= maxPower; x += step) {
+        const y = polyRegression(x);
+        if (isNaN(y) || !isFinite(y)) continue;
+        polyPoints.push({ x, y: Math.max(0, y) });
       }
-
-      const XT = math.transpose(X);
-      const XTX = math.multiply(XT, X);
-      const XTY = math.multiply(XT, Y);
-      const coefficients = math.lusolve(XTX, XTY).flat();
-
-      return (x) =>
-        coefficients[0] +
-        coefficients[1] * x +
-        coefficients[2] * Math.pow(x, 2) +
-        coefficients[3] * Math.pow(x, 3);
-    })();
-
-    // Generate points for polynomial curve
-    const minPower = Math.min(...xVals);
-    const maxPower = Math.max(...xVals);
-    const step = (maxPower - minPower) / 100;
-
-    const polyPoints = [];
-    for (let x = minPower; x <= maxPower; x += step) {
-      const y = polyRegression(x);
-      // Ensure lactate values are never negative - clamp to 0 minimum
-      polyPoints.push({ x, y: Math.max(0, y) });
+      return polyPoints;
+    } catch (e) {
+      console.warn('[DataTable] Polynomial regression failed (singular matrix or invalid data):', e?.message);
+      return [];
     }
-
-    return polyPoints;
   };
 
   /** Polynomial regression for HR vs lactate (x = heartRate bpm, y = lactate). Uses only results with valid heartRate. */
@@ -2407,28 +2410,34 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     if (valid.length < 4) return [];
     const xVals = valid.map(r => Number(String(r.heartRate).replace(',', '.')));
     const yVals = valid.map(r => Number(String(r.lactate).replace(',', '.')));
-    const n = xVals.length;
-    const X = [];
-    const Y = [];
-    for (let i = 0; i < n; i++) {
-      X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-      Y.push(yVals[i]);
+    if (new Set(xVals).size < 4) return [];
+    try {
+      const n = xVals.length;
+      const X = [];
+      const Y = [];
+      for (let i = 0; i < n; i++) {
+        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        Y.push(yVals[i]);
+      }
+      const XT = math.transpose(X);
+      const XTX = math.multiply(XT, X);
+      const XTY = math.multiply(XT, Y);
+      const coefficients = math.lusolve(XTX, XTY).flat();
+      const polyRegression = (x) =>
+        coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
+      const minX = Math.min(...xVals);
+      const maxX = Math.max(...xVals);
+      const step = (maxX - minX) / 100 || 1;
+      const polyPoints = [];
+      for (let x = minX; x <= maxX; x += step) {
+        const y = polyRegression(x);
+        if (!isNaN(y) && isFinite(y) && y >= 0) polyPoints.push({ x, y });
+      }
+      return polyPoints;
+    } catch (e) {
+      console.warn('[DataTable] Polynomial regression HR failed:', e?.message);
+      return [];
     }
-    const XT = math.transpose(X);
-    const XTX = math.multiply(XT, X);
-    const XTY = math.multiply(XT, Y);
-    const coefficients = math.lusolve(XTX, XTY).flat();
-    const polyRegression = (x) =>
-      coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
-    const minX = Math.min(...xVals);
-    const maxX = Math.max(...xVals);
-    const step = (maxX - minX) / 100 || 1;
-    const polyPoints = [];
-    for (let x = minX; x <= maxX; x += step) {
-      const y = polyRegression(x);
-      if (!isNaN(y) && isFinite(y) && y >= 0) polyPoints.push({ x, y });
-    }
-    return polyPoints;
   };
 
   /** Polynomial regression for lactate (x) -> HR (y). For chart with X = lactate, Y = heart rate (tepy). */
@@ -2446,28 +2455,34 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     if (valid.length < 4) return [];
     const xVals = valid.map(r => Number(String(r.lactate).replace(',', '.')));
     const yVals = valid.map(r => Number(String(r.heartRate).replace(',', '.')));
-    const n = xVals.length;
-    const X = [];
-    const Y = [];
-    for (let i = 0; i < n; i++) {
-      X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-      Y.push(yVals[i]);
+    if (new Set(xVals).size < 4) return [];
+    try {
+      const n = xVals.length;
+      const X = [];
+      const Y = [];
+      for (let i = 0; i < n; i++) {
+        X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
+        Y.push(yVals[i]);
+      }
+      const XT = math.transpose(X);
+      const XTX = math.multiply(XT, X);
+      const XTY = math.multiply(XT, Y);
+      const coefficients = math.lusolve(XTX, XTY).flat();
+      const polyRegression = (x) =>
+        coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
+      const minX = Math.min(...xVals);
+      const maxX = Math.max(...xVals);
+      const step = (maxX - minX) / 100 || 0.01;
+      const polyPoints = [];
+      for (let x = minX; x <= maxX; x += step) {
+        const y = polyRegression(x);
+        if (!isNaN(y) && isFinite(y) && y >= 0 && y <= 250) polyPoints.push({ x, y });
+      }
+      return polyPoints;
+    } catch (e) {
+      console.warn('[DataTable] Polynomial regression LactateToHR failed:', e?.message);
+      return [];
     }
-    const XT = math.transpose(X);
-    const XTX = math.multiply(XT, X);
-    const XTY = math.multiply(XT, Y);
-    const coefficients = math.lusolve(XTX, XTY).flat();
-    const polyRegression = (x) =>
-      coefficients[0] + coefficients[1] * x + coefficients[2] * Math.pow(x, 2) + coefficients[3] * Math.pow(x, 3);
-    const minX = Math.min(...xVals);
-    const maxX = Math.max(...xVals);
-    const step = (maxX - minX) / 100 || 0.01;
-    const polyPoints = [];
-    for (let x = minX; x <= maxX; x += step) {
-      const y = polyRegression(x);
-      if (!isNaN(y) && isFinite(y) && y >= 0 && y <= 250) polyPoints.push({ x, y });
-    }
-    return polyPoints;
   };
 
   export default DataTable;

@@ -770,6 +770,28 @@ export const deleteAthleteWithTests = async (athleteId) => {
   }
 };
 
+// Zones history – track progression of power & HR zones over time
+export const getZoneHistory = async () => {
+  try {
+    const response = await api.get('/user/zones/history');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching zone history:', error);
+    throw error;
+  }
+};
+
+// Impersonate a user as admin (login as another user without knowing their password)
+export const impersonateUser = async (userId) => {
+  try {
+    const response = await api.post(`/user/admin/impersonate/${userId}`);
+    return response.data; // { token, user }
+  } catch (error) {
+    console.error('Error impersonating user:', error);
+    throw error;
+  }
+};
+
 // Lactate testing session endpoints
 // Lactate Session API
 export const createLactateSession = (sessionData) => api.post('/api/lactate-session', sessionData);
