@@ -37,7 +37,22 @@ function formatIntensity(value, { sport, unitSystem, inputMode }) {
     return `${pace}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   }
 
-  // speed mode (value may still be seconds in data depending on UI; keep generic)
+  // speed mode: stored as seconds in this app, convert back to speed
+  if (inputMode === 'speed') {
+    if (sport === 'run') {
+      if (value <= 0) return '—';
+      const kmh = 3600 / value;
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+    if (sport === 'swim') {
+      if (value <= 0) return '—';
+      const kmh = 360 / value;
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+  }
+
   return `${value.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
 }
 

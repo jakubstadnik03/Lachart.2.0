@@ -35,7 +35,28 @@ function formatIntensity(value, { sport, unitSystem, inputMode }) {
     return `${pace}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   }
 
-  // speed mode (value may still be seconds in data depending on UI; keep generic)
+  // speed mode: in this app run/swim thresholds/results are stored as seconds
+  // (pace seconds), even when inputMode is set to "speed".
+  // Convert those seconds back to speed.
+  if (inputMode === 'speed') {
+    if (sport === 'run') {
+      // value is seconds per km
+      if (value <= 0) return '—';
+      const kmh = 3600 / value;
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+
+    if (sport === 'swim') {
+      // value is seconds per 100m
+      if (value <= 0) return '—';
+      const kmh = 360 / value; // 0.1 km per 100m -> speed (km/h) = 0.1*3600/sec = 360/sec
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+  }
+
+  // Fallback: treat as already speed
   return `${value.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
 }
 

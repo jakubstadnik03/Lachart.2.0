@@ -391,7 +391,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '96%–104% LT2 (threshold)',
             hr: hasHR ? `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM` : 'N/A',
             percent: '96–104% LT2',
-            lactate: `${lt2_lactate_value.toFixed(1)}–4.0`,
+            // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
+            lactate: `${finalZone4.min.toFixed(1)}–${finalZone4.max.toFixed(1)}`,
           },
           zone5: {
             min: zone5_min_power,
@@ -399,7 +400,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
             description: '105–120% LT2 (sprint/VO2max+ reference)',
             hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM` : 'N/A',
             percent: '105–120% LT2',
-            lactate: `4.0–${finalZone5.max.toFixed(1)}`,
+            // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
+            lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
           },
         },
         heartRate: hasHR ? {
@@ -512,7 +514,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '96%–104% LT2 (threshold)',
           hr: `${Math.round(hr2*0.96)}–${Math.round(hr2*1.04)} BPM`,
           percent: '96–104% LT2',
-          lactate: `${lt2_lactate_value_pace.toFixed(1)}–4.0`,
+          // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
+          lactate: `${finalZone4Pace.min.toFixed(1)}–${finalZone4Pace.max.toFixed(1)}`,
         },
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
@@ -520,7 +523,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           description: '105–120% LT2 (sprint/VO2max+ reference)',
           hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
           percent: '105–120% LT2',
-          lactate: `4.0–${finalZone5Pace.max.toFixed(1)}`,
+          // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
+          lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
       heartRate: {

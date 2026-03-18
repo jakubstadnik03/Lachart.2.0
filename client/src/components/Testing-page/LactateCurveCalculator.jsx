@@ -2104,52 +2104,75 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   });
                   }
                   
-                  // Draw labels for LTP1 and LTP2 lines only if they are visible (only for power/pace view, not HR view)
-                  if (chartView === 'power' && zonesVisibleRef.current && ltpLinesVisibleRef.current) {
+                  // Draw labels for LTP1 and LTP2 thresholds.
+                  // In power view: X-axis is Power/Pace/Speed, Y-axis is Lactate.
+                  // In HR view:     X-axis is Lactate,   Y-axis is HR.
+                  if ((chartView === 'power' || chartView === 'hr') && ltpLinesVisibleRef.current) {
                     const ltp1Dataset = chart.data.datasets.find(ds => ds.label === 'LTP1');
                     const ltp2Dataset = chart.data.datasets.find(ds => ds.label === 'LTP2');
+                    
+                    const ltp1Index = ltp1Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP1') : -1;
+                    const ltp2Index = ltp2Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP2') : -1;
+                    const isHRView = chartView === 'hr';
                     
                     const labels = [];
                     
                     // Collect label data
-                    [ltp1Dataset, ltp2Dataset].forEach((dataset, index) => {
+                    [
+                      { dataset: ltp1Dataset, index: 0, chartDsIndex: ltp1Index },
+                      { dataset: ltp2Dataset, index: 1, chartDsIndex: ltp2Index }
+                    ].forEach(({ dataset, index, chartDsIndex }) => {
                       if (!dataset || !dataset.data || dataset.data.length === 0) return;
+
+                      // Respect HRLegend/Legend toggles
+                      if (chartDsIndex >= 0 && typeof chart.isDatasetVisible === 'function' && !chart.isDatasetVisible(chartDsIndex)) {
+                        return;
+                      }
                       
                       const point = dataset.data[0];
                       const xPixel = xScale.getPixelForValue(point.x);
                       const label = index === 0 ? 'LT1' : 'LT2';
                       
-                      // Format value for label: use same unit as X-axis (sport + inputMode; infer from point.x when needed)
-                      const currentSport = mockData?.sport || '';
-                      const isBikeSport = currentSport === 'bike';
-                      // When axis is Speed (km/h), point.x is in 0.5–30 (run) or 0.5–8 (swim). When axis is Pace, point.x is seconds (e.g. 180–600).
-                      const looksLikeSpeed = isPaceSport && point.x > 0 && point.x < 100;
-                      const useSpeedLabel = isPaceSport && (inputMode === 'speed' || looksLikeSpeed);
-
                       let valueText = '';
-                      if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
-                        // Bike or power-based: show Power (W)
-                        valueText = `Power: ${Math.round(point.x)}W`;
-                      } else if (isPaceSport && useSpeedLabel) {
-                        // Run/swim, axis in km/h: point.x is speed
-                        const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                        valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
-                      } else if (isPaceSport) {
-                        // Run/swim, axis in pace: point.x is seconds per km/100m
-                        const paceStr = formatSecondsToMMSS(point.x);
-                        const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
-                        valueText = `Pace: ${paceStr}${unit}`;
+                      let lactateText = '';
+
+                      if (isHRView) {
+                        // HR view: point.x = lactate, point.y = HR
+                        lactateText = `Lactate: ${Number(point.x).toFixed(2)} mmol/L`;
+                        valueText = `HR: ${Math.round(Number(point.y))} bpm`;
                       } else {
-                        valueText = `Power: ${Math.round(point.x)}W`;
+                        // Power view: point.x = Power/Pace/Speed, point.y = lactate
+                        const currentSport = mockData?.sport || '';
+                        const isBikeSport = currentSport === 'bike';
+                        // When axis is Speed (km/h), point.x is in 0.5–30 (run) or 0.5–8 (swim). When axis is Pace, point.x is seconds (e.g. 180–600).
+                        const looksLikeSpeed = isPaceSport && point.x > 0 && point.x < 100;
+                        const useSpeedLabel = isPaceSport && (inputMode === 'speed' || looksLikeSpeed);
+
+                        if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
+                          valueText = `Power: ${Math.round(point.x)}W`;
+                        } else if (isPaceSport && useSpeedLabel) {
+                          const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+                          valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
+                        } else if (isPaceSport) {
+                          const paceStr = formatSecondsToMMSS(point.x);
+                          const unit = isSwimming
+                            ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
+                            : (unitSystem === 'imperial' ? '/mile' : '/km');
+                          valueText = `Pace: ${paceStr}${unit}`;
+                        } else {
+                          valueText = `Power: ${Math.round(point.x)}W`;
+                        }
+                        lactateText = `${Number(point.y).toFixed(2)} mmol/L`;
                       }
-                      const lactateText = `${point.y.toFixed(2)} mmol/L`;
                       
                       labels.push({
                         xPixel,
                         label,
                         valueText,
                         lactateText,
-                        fullLabel: `${label}: ${valueText} | ${lactateText}`
+                        fullLabel: isHRView
+                          ? `${label}: ${lactateText} | ${valueText}`
+                          : `${label}: ${valueText} | ${lactateText}`
                       });
                     });
                     
