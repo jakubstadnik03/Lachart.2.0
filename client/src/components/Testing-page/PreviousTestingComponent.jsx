@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
@@ -16,28 +16,30 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
   const [isInitialized, setIsInitialized] = useState(false);
   const lastRestoredTestIdRef = useRef(null);
 
-  // Filter tests based on selected sport and validate
-  // Remove duplicates and invalid entries
-  // Normalize IDs to strings for consistent comparison
-  const validTests = Array.isArray(tests) 
-    ? tests.filter(test => test && test._id)
-    : [];
+  // Filter tests based on selected sport and validate.
+  // IMPORTANT: memoize arrays so useEffect dependencies don't churn on every render (prevents UI freezes).
+  const validTests = useMemo(() => (
+    Array.isArray(tests) ? tests.filter(test => test && test._id) : []
+  ), [tests]);
   
-  // Deduplicate by ID (keep first occurrence) - normalize IDs to strings
-  const seenIds = new Set();
-  const uniqueTests = validTests.filter(test => {
-    const testIdStr = String(test._id);
-    if (seenIds.has(testIdStr)) {
-      console.warn(`[PreviousTestingComponent] Duplicate test ID found: ${testIdStr}, skipping duplicate`);
-      return false;
-    }
-    seenIds.add(testIdStr);
-    return true;
-  });
+  const uniqueTests = useMemo(() => {
+    const seenIds = new Set();
+    return validTests.filter(test => {
+      const testIdStr = String(test._id);
+      if (seenIds.has(testIdStr)) {
+        // Keep warning but avoid spamming: duplicates usually come in batches
+        return false;
+      }
+      seenIds.add(testIdStr);
+      return true;
+    });
+  }, [validTests]);
   
-  const filteredTests = selectedSport === 'all' 
-    ? uniqueTests 
-    : uniqueTests.filter(test => test.sport === selectedSport);
+  const filteredTests = useMemo(() => (
+    selectedSport === 'all'
+      ? uniqueTests
+      : uniqueTests.filter(test => test.sport === selectedSport)
+  ), [uniqueTests, selectedSport]);
 
   // Reset selected tests when sport changes, but keep initialization state
   // The main useEffect will handle restoring the correct test for the new sport
@@ -53,32 +55,19 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
     // This ensures URL testId is always respected, even on page refresh
     if (selectedTestId && !isInitialized) {
       try {
-        console.log('[PreviousTestingComponent] Processing testId from URL:', selectedTestId);
-        console.log('[PreviousTestingComponent] Tests array length:', tests?.length);
-        console.log('[PreviousTestingComponent] Selected sport:', selectedSport);
+        // Avoid noisy logs; this effect runs during navigation/restores.
         
         // First check in all tests (not filtered by sport), in case sport filter is hiding it
         // Validate tests array and filter out invalid entries
         const validTests = Array.isArray(tests) ? tests.filter(t => t && t._id) : [];
-        console.log('[PreviousTestingComponent] Valid tests count:', validTests.length);
         
         // Try to find test by ID - normalize both to strings for comparison
         const searchIdStr = String(selectedTestId);
         const foundInAll = validTests.find(t => String(t._id) === searchIdStr);
         
-        console.log('[PreviousTestingComponent] Found test:', foundInAll ? 'YES' : 'NO');
-        
         if (foundInAll) {
-          console.log('[PreviousTestingComponent] Test found:', {
-            _id: foundInAll._id,
-            sport: foundInAll.sport,
-            resultsCount: foundInAll.results?.length || 0,
-            hasResults: !!(foundInAll.results && Array.isArray(foundInAll.results) && foundInAll.results.length > 0)
-          });
-          
           // Check if test has valid results
           if (foundInAll.results && Array.isArray(foundInAll.results) && foundInAll.results.length > 0) {
-            console.log('[PreviousTestingComponent] Setting currentTest to found test');
             setCurrentTest(foundInAll);
             setIsInitialized(true);
             lastRestoredTestIdRef.current = foundInAll._id;
@@ -94,12 +83,10 @@ const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selecte
         } else {
           // Test from URL not found in all tests
           console.warn('[PreviousTestingComponent] Test not found in tests array:', selectedTestId);
-          console.log('[PreviousTestingComponent] Available test IDs:', validTests.map(t => t._id));
           
           if (tests.length === 0) {
             // Tests are still loading - wait and don't do anything else
             // This prevents fallback from running before tests are loaded
-            console.log('[PreviousTestingComponent] Tests are still loading, waiting...');
             return;
           }
           // Tests are loaded but test not found - it might have been deleted

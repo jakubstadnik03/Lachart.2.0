@@ -295,7 +295,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           if (powerStr.includes(':')) {
             const seconds = convertPaceToSeconds(powerStr);
             const speed = convertSecondsToSpeed(seconds, unitSystem);
-            return { ...row, power: speed.toFixed(1) };
+            const speedNum = Number(speed);
+            return { ...row, power: Number.isFinite(speedNum) ? speedNum.toFixed(1) : '' };
           }
           
           // If it's a number, check what it is
@@ -303,7 +304,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             // If it's a large number (>= 60), assume it's seconds from backend - convert to speed
             if (powerNum >= 60) {
               const speed = convertSecondsToSpeed(powerNum, unitSystem);
-              return { ...row, power: speed.toFixed(1) };
+              const speedNum = Number(speed);
+              return { ...row, power: Number.isFinite(speedNum) ? speedNum.toFixed(1) : '' };
             }
             // If it's already a small number (< 50), assume it's already speed, keep as is
             // But might need to convert if unitSystem changed
@@ -553,7 +555,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               } else if (inputMode === 'speed') {
                 // Convert seconds to speed (km/h or mph)
                 const speed = convertSecondsToSpeed(powerNum, unitSystem);
-                power = speed.toFixed(1);
+                const speedNum = Number(speed);
+                power = Number.isFinite(speedNum) ? speedNum.toFixed(1) : '';
             } else {
                 // Fallback: convert to pace format
                 power = convertSecondsToPace(powerNum);
@@ -1040,7 +1043,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                               power = convertSecondsToPace(powerNum);
                             } else if (restoredInputMode === 'speed') {
                               const speed = convertSecondsToSpeed(powerNum, restoredUnitSystem);
-                              power = speed.toFixed(1);
+                              const speedNum = Number(speed);
+                              power = Number.isFinite(speedNum) ? speedNum.toFixed(1) : '';
                             } else {
                               // Fallback: convert to pace
                               power = convertSecondsToPace(powerNum);
