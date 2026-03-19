@@ -2205,6 +2205,7 @@ const AdminDashboard = () => {
                     <option value="coach">Coach</option>
                     <option value="admin">Admin</option>
                     <option value="tester">Tester</option>
+                    <option value="testing">Testing</option>
                   </select>
                 </div>
                 <div className="flex items-center">

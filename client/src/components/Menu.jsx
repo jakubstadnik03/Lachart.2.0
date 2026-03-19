@@ -198,14 +198,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/dashboard/${athleteId}` : "/dashboard",
       icon: "/icon/dashboard.svg",
       iconWhite: "/icon/dashboard-white.svg",
-      showFor: ["coach", "athlete", "tester"]
+      showFor: ["coach", "athlete", "tester", "testing"]
     },
     {
       name: "Testing",
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
       icon: "/icon/testing.svg",
       iconWhite: "/icon/testing-white.svg",
-      showFor: ["coach", "athlete", "tester"]
+      showFor: ["coach", "athlete", "tester", "testing"]
     },
     {
       name: "Training Calendar",
@@ -240,14 +240,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/athletes",
       icon: "/icon/athletes.svg",
       iconWhite: "/icon/athletes-white.svg",
-      showFor: ["coach", "tester"]
+      showFor: ["coach", "testing", "tester"]
     },
     {
       name: "Profile",
       path: "/profile",
       icon: "/icon/profile.svg",
       iconWhite: "/icon/profile-white.svg",
-      showFor: ["coach", "athlete", "tester"]
+      showFor: ["coach", "athlete", "tester", "testing"]
     },
     {
       name: "Admin Dashboard",
@@ -405,7 +405,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           )}
         </motion.div>
 
-        {(user?.role === "coach" || user?.role === "tester") && (
+        {user?.role === "coach" && (
           <div 
             className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 

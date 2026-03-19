@@ -244,9 +244,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   }, [selectedLapNumber]);
 
   // Use laps passed from selectedStrava (already deduplicated during load)
-  const uniqueLaps = selectedStrava?.laps || [];
+  const uniqueLaps = React.useMemo(() => selectedStrava?.laps || [], [selectedStrava?.laps]);
 
-  const zoneKeys = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'];
+  const zoneKeys = React.useMemo(() => ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'], []);
   // HR bars: single red theme (like LactateStatistics HR screenshot)
   const hrRedColor = 'rgba(239, 68, 68, 0.95)';
 
@@ -263,10 +263,16 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     return 'cycling';
   }, [selectedStrava]);
 
-  const powerZonesForSport = userProfile?.powerZones?.[stravaSportType] || {};
-  const hrZonesForSport = userProfile?.heartRateZones?.[stravaSportType] || {};
+  const powerZonesForSport = React.useMemo(
+    () => userProfile?.powerZones?.[stravaSportType] || {},
+    [userProfile, stravaSportType]
+  );
+  const hrZonesForSport = React.useMemo(
+    () => userProfile?.heartRateZones?.[stravaSportType] || {},
+    [userProfile, stravaSportType]
+  );
 
-  const parseZoneNumber = (v) => {
+  const parseZoneNumber = useCallback((v) => {
     if (v === null || v === undefined) return null;
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
     if (typeof v !== 'string') return null;
@@ -275,7 +281,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     if (cleaned === '∞' || cleaned.includes('inf')) return Infinity;
     const n = Number(cleaned.replace(',', '.'));
     return Number.isFinite(n) ? n : null;
-  };
+  }, []);
 
   const formatPaceSeconds = (sec) => {
     const n = Number(sec);
@@ -285,7 +291,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
 
-  const findZoneKeyForValue = (value, zonesObj) => {
+  const findZoneKeyForValue = useCallback((value, zonesObj) => {
     const val = Number(value);
     if (!Number.isFinite(val)) return null;
     for (const zKey of zoneKeys) {
@@ -298,9 +304,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       if (val >= min && val <= maxSafe) return zKey;
     }
     return null;
-  };
+  }, [zoneKeys, parseZoneNumber]);
 
-  const getPowerMetricFromLap = (lap) => {
+  const getPowerMetricFromLap = useCallback((lap) => {
     if (!lap) return null;
     if (stravaSportType === 'cycling') {
       const p = Number(lap.average_watts ?? lap.avgPower ?? lap.average_power ?? lap.power ?? 0);
@@ -312,7 +318,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     if (!Number.isFinite(speedMps) || speedMps <= 0) return null;
     if (stravaSportType === 'running') return 1000 / speedMps; // sec/km
     return 100 / speedMps; // sec/100m (swimming)
-  };
+  }, [stravaSportType]);
 
   const getHrMetricFromLap = (lap) => {
     const hr = Number(lap.average_heartrate ?? lap.avgHeartRate ?? lap.heartRate ?? 0);
@@ -383,7 +389,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       avgPowerByZone,
       avgHrByZone,
     };
-  }, [uniqueLaps, userProfile, stravaSportType, powerZonesForSport, hrZonesForSport]);
+  }, [uniqueLaps, powerZonesForSport, hrZonesForSport, findZoneKeyForValue, getPowerMetricFromLap, zoneKeys]);
 
   const formatPowerZoneRange = (zKey) => {
     const def = powerZonesForSport?.[zKey];
@@ -418,7 +424,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       if (!def) return false;
       return (def?.min !== '' && def?.min !== undefined) || (def?.max !== '' && def?.max !== undefined);
     });
-  }, [hrZonesForSport]);
+  }, [hrZonesForSport, zoneKeys]);
 
   const hasPowerZoneDefs = React.useMemo(() => {
     return zoneKeys.some((zKey) => {
@@ -426,7 +432,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       if (!def) return false;
       return (def?.min !== '' && def?.min !== undefined) || (def?.max !== '' && def?.max !== undefined);
     });
-  }, [powerZonesForSport]);
+  }, [powerZonesForSport, zoneKeys]);
 
   useEffect(() => {
     if (!hasHrZoneDefs && hasPowerZoneDefs) setZonesView('power');
@@ -1414,7 +1420,6 @@ const FitAnalysisPage = () => {
 
   // Extra Strava summary metrics (cycling-oriented)
   const stravaAvgHeartRate = selectedStrava?.average_heartrate || null;
-  const stravaMaxHeartRate = selectedStrava?.max_heartrate || null;
   const stravaNp = stravaNormalizedPower || stravaAvgPower || null;
 
   const stravaWeightKg = userProfile?.weight != null
@@ -2314,7 +2319,7 @@ const FitAnalysisPage = () => {
     }
   }, []);
 
-  const loadTrainingDetail = async (id) => {
+  const loadTrainingDetail = useCallback(async (id) => {
     try {
       setDetailLoading(true);
       const data = await getFitTraining(id);
@@ -2391,10 +2396,10 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       setDetailLoading(false);
     }
-  };
+  }, []);
 
   // Load training from Training model (from TrainingTable)
-  const loadTrainingFromTrainingModel = async (trainingId) => {
+  const loadTrainingFromTrainingModel = useCallback(async (trainingId) => {
     try {
       // Ensure regularTrainings are loaded first so calendar can find the activity
       await loadRegularTrainings();
@@ -2522,7 +2527,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
       alert('Error loading training: ' + (error.response?.data?.error || error.message));
     }
-  };
+  }, [loadRegularTrainings, loadStravaDetail]);
   
   // Helper function to parse duration string (MM:SS or HH:MM:SS) to seconds
   const parseDurationToSeconds = (durationStr) => {

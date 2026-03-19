@@ -48,10 +48,9 @@ export default function AthleteProfile() {
         setError(null);
 
         // Načtení všech dat paralelně
-        const isTester = user?.role === 'tester';
         const [athleteData, trainingsData, testsData] = await Promise.all([
           api.get(`/user/athlete/${athleteId}`),
-          isTester ? Promise.resolve({ data: [] }) : api.get(`/user/athlete/${athleteId}/trainings`),
+          api.get(`/user/athlete/${athleteId}/trainings`),
           api.get(`/test/list/${athleteId}`)
         ]);
 
@@ -66,7 +65,7 @@ export default function AthleteProfile() {
       }
     };
 
-    if ((user?.role === 'coach' || user?.role === 'tester' || user?.role === 'admin') && athleteId) {
+    if (user?.role === 'coach' && athleteId) {
       fetchAthleteData();
     }
   }, [athleteId, user]);
@@ -358,7 +357,6 @@ export default function AthleteProfile() {
         transition={{ duration: 0.5, delay: 2.0 }}
         className="mt-6"
       >
-        {(user?.role === 'coach' || user?.role === 'admin') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -395,7 +393,6 @@ export default function AthleteProfile() {
             <UserTrainingsTable trainings={trainings} />
           </motion.div>
         </div>
-        )}
 
         <motion.div 
           initial={{ opacity: 0, y: 20 }}

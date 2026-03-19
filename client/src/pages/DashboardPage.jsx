@@ -32,7 +32,8 @@ import { motion } from 'framer-motion';
 const DashboardPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
-  const isTester = user?.role === 'tester';
+  const role = String(user?.role || '').toLowerCase();
+  const isTestingRole = role === 'testing' || role === 'tester';
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
@@ -221,8 +222,8 @@ const DashboardPage = () => {
     try {
       setLoading(true);
       setError(null);
-      // For tester role, use any ID (backend will return all tests)
-      const testId = user?.role === 'tester' ? user._id : targetId;
+      // testing/tester role can access all tests (backend handles scope)
+      const testId = isTestingRole ? user._id : targetId;
       const response = await api.get(`/test/list/${testId}`);
       if (response && response.data) {
         setTests(response.data);
@@ -235,7 +236,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, setLoading]);
+  }, [user, setLoading, isTestingRole]);
 
   const loadAthlete = useCallback(async (targetId) => {
     try {
@@ -659,9 +660,19 @@ const DashboardPage = () => {
         lastLoadTimeRef.current = now;
         hasLoadedOnceRef.current = true;
         
+        // Testing role: dashboard is focused on tests only (no training widgets/calendar).
+        if (isTestingRole) {
+          const athleteData = await loadAthlete(targetAthleteId);
+          await loadTests(targetAthleteId);
+          if (athleteData && athleteData._id !== selectedAthleteId) {
+            setSelectedAthleteId(athleteData._id);
+          }
+          return;
+        }
+
         // Load regular trainings first (needed by both loadTrainings and loadCalendarData)
         const regTrainingsResponse = await loadRegularTrainings(targetAthleteId);
-        
+
         // Load all other data in parallel, passing regularTrainings directly to loadCalendarData
         const [trainingsData, athleteData] = await Promise.all([
           loadTrainings(targetAthleteId),
@@ -682,7 +693,7 @@ const DashboardPage = () => {
     };
 
     loadData();
-  }, [user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings]);
+  }, [user?._id, user?.role, selectedAthleteId, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
@@ -818,37 +829,6 @@ const DashboardPage = () => {
     </motion.div>
   );
 
-  if (isTester) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="mx-6 m-auto max-w-[1200px] py-8 md:p-6 space-y-4"
-      >
-        <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Tester Dashboard</h1>
-          <p className="text-gray-600 mt-2">
-            This role is focused on lactate testing workflows. Use sections below.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              onClick={() => navigate('/testing')}
-              className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
-            >
-              Open Testing
-            </button>
-            <button
-              onClick={() => navigate('/athletes')}
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors"
-            >
-              Open Athletes
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -870,7 +850,7 @@ const DashboardPage = () => {
       )}
       
       {/* Strava Connection Banner */}
-      {showStravaBanner && !stravaConnected && user?.role === 'athlete' && (
+      {!isTestingRole && showStravaBanner && !stravaConnected && user?.role === 'athlete' && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -925,6 +905,8 @@ const DashboardPage = () => {
       )}
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        {!isTestingRole && (
+          <>
         {/* Form & Fitness Chart */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -1061,6 +1043,8 @@ const DashboardPage = () => {
             setSelectedTraining={setSelectedTraining}
           />
         </motion.div>
+          </>
+        )}
 
         <motion.div 
           initial={{ opacity: 0, y: 20 }}

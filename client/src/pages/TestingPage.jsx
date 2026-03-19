@@ -24,10 +24,12 @@ const TestingPage = () => {
   const { athleteId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
+  const role = String(user?.role || '').toLowerCase();
+  const isTestingRole = role === 'testing' || role === 'tester';
   const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
-    if (user?.role === 'coach' || user?.role === 'tester') {
+    if (user?.role === 'coach') {
       try {
         const globalId = localStorage.getItem('global_selectedAthleteId');
         if (globalId) return globalId;
@@ -84,8 +86,8 @@ const TestingPage = () => {
   const loadTests = React.useCallback(async (targetId) => {
     try {
       setError(null);
-      // For tester role, use any ID (backend will return all tests)
-      const testId = user?.role === 'tester' ? user._id : targetId;
+      // testing/tester role can load all tests (backend handles scope)
+      const testId = isTestingRole ? user._id : targetId;
       const response = await api.get(`/test/list/${testId}`);
       
       const testsData = Array.isArray(response.data) ? response.data : [];
@@ -130,7 +132,7 @@ const TestingPage = () => {
       setError('Failed to load tests');
       addNotification('Failed to load tests. Please refresh the page.', 'error');
     }
-  }, [user, addNotification]);
+  }, [user, addNotification, isTestingRole]);
 
   // If backend says the selected test doesn't exist anymore, the UI might be holding a stale testId.
   // Reload the test list, clear the URL param and localStorage selection.
@@ -181,7 +183,7 @@ const TestingPage = () => {
   useEffect(() => {
     if (athleteId) {
       setSelectedAthleteId(athleteId);
-    } else if ((user?.role === 'coach' || user?.role === 'tester') && !selectedAthleteId) {
+    } else if (user?.role === 'coach' && !selectedAthleteId) {
       // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
       setSelectedAthleteId(user._id);
     }
@@ -192,7 +194,7 @@ const TestingPage = () => {
       
       try {
         // Try to load athlete profile - if it fails, athlete might be deleted/problematic
-        if (user.role === 'coach' || user.role === 'tester') {
+        if (user.role === 'coach') {
           await api.get(`/user/athlete/${selectedAthleteId}/profile`);
         }
       } catch (error) {
@@ -248,8 +250,8 @@ const TestingPage = () => {
         const currentUserId = String(user._id);
         const isOwnTest = testAthleteId === currentUserId;
         const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
-        const role = String(user.role || '').toLowerCase();
-        const isTester = role === 'tester'; // jen tester vidí všechny testy; admin/coach/athlete jen svoje (coach i atletů)
+        const currentRole = String(user.role || '').toLowerCase();
+        const isTester = currentRole === 'tester' || currentRole === 'testing'; // testing/tester sees all tests; others scoped by ownership/coach relation
         
         if (!isOwnTest && !isAthleteTest && !isTester) {
           // Avoid console spam in loops; notify once and remove testId from URL
@@ -1111,7 +1113,7 @@ const TestingPage = () => {
       animate={{ opacity: 1 }}
       className="w-full max-w-[1600px] mx-auto md:p-6 min-w-0"
     >
-      {(user?.role === 'coach' || user?.role === 'tester') && (
+      {user?.role === 'coach' && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}

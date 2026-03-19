@@ -224,9 +224,9 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
         const Test = require('../models/test');
         const user = await User.findById(req.user.userId);
         
-        // Pouze tester vidí všechny testy; admin/coach/athlete jen svoje (resp. coach i testy atletů)
+        // Pouze tester/testing vidí všechny testy; admin/coach/athlete jen svoje (resp. coach i testy atletů)
         const role = String(user?.role || '').toLowerCase();
-        if (user && role === 'tester') {
+        if (user && (role === 'tester' || role === 'testing')) {
             const allTests = await Test.find({}).sort({ date: -1 });
             return res.status(200).json(allTests);
         }

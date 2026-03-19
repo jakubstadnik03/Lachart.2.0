@@ -11,8 +11,9 @@ const testController = {
             const Test = require('../models/test');
             const user = await User.findById(req.user.userId);
             
-            // If user is tester, return all tests
-            if (user && user.role === 'tester') {
+            // If user is tester/testing, return all tests
+            const role = String(user?.role || '').toLowerCase();
+            if (user && (role === 'tester' || role === 'testing')) {
                 const allTests = await Test.find({}).sort({ date: -1 });
                 return res.json(allTests);
             }
@@ -45,7 +46,7 @@ const testController = {
             const currentUserId = String(user._id);
             const isOwnTest = testAthleteId === currentUserId;
             const role = String(user.role || '').toLowerCase();
-            const isTester = role === 'tester';
+            const isTester = role === 'tester' || role === 'testing';
 
             // Coach může vidět i testy svých atletů; admin/athlete jen svoje; tester všechny
             let isAthleteTest = false;

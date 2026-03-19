@@ -242,20 +242,10 @@ router.post("/push-test", verifyToken, async (req, res) => {
 // Get coach's athletes
 router.get("/coach/athletes", verifyToken, async (req, res) => {
     try {
-        const requester = await userDao.findById(req.user.userId);
-
-        if (!requester) {
-            return res.status(404).json({ error: "User not found" });
-        }
-
-        // Tester: view-only list of all athletes for selecting test target/profile
-        if (requester.role === 'tester') {
-            const athletes = await User.find({ role: 'athlete' }).select('_id name surname email sport specialization gender coachId');
-            return res.status(200).json(athletes);
-        }
-
-        if (requester.role !== 'coach') {
-            return res.status(403).json({ error: "Access allowed only for coaches/testers" });
+        const coach = await userDao.findById(req.user.userId);
+        
+        if (!coach || coach.role !== 'coach') {
+            return res.status(403).json({ error: "Access allowed only for coaches" });
         }
 
         const athletes = await userDao.findAthletesByCoachId(req.user.userId);

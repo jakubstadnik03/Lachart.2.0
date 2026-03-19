@@ -343,7 +343,8 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
   const athleteId = String(test.athleteId);
   const isSelf = String(requester._id) === athleteId;
   const isCoachAllowed = requester.role === 'coach' && (requester.athletes || []).some(a => String(a) === athleteId);
-  const isTester = String(requester.role || '').toLowerCase() === 'tester';
+  const requesterRole = String(requester.role || '').toLowerCase();
+  const isTester = requesterRole === 'tester' || requesterRole === 'testing';
   if (!isSelf && !isCoachAllowed && !isTester) return { error: true, reason: 'forbidden' };
 
   const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications');

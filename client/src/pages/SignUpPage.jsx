@@ -409,7 +409,7 @@ const SignUpPage = () => {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5, delay: 1.4 }}
-              className='flex flex-wrap gap-4'
+              className='flex space-x-4'
             >
               <div className="flex items-center">
                 <input
@@ -438,21 +438,6 @@ const SignUpPage = () => {
                 />
                 <label htmlFor="role-coach" className="ml-2 block text-sm text-gray-900">
                   Coach
-                </label>
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  id="role-tester"
-                  name="role"
-                  type="radio"
-                  value="tester"
-                  checked={formData.role === 'tester'}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-gray-300 rounded"
-                />
-                <label htmlFor="role-tester" className="ml-2 block text-sm text-gray-900">
-                  Tester
                 </label>
               </div>
             </motion.div>

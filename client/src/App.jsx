@@ -151,14 +151,21 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/:athleteId" element={<Profile />} />
-          <Route path="/training-comparison/:title" element={<TrainingDetailPage />} />
-          <Route
-            path="/training"
+          <Route 
+            path="/training-comparison/:title" 
+            element={
+              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+                <TrainingDetailPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/training" 
             element={
               <ProtectedRoute allowedRoles={['coach', 'athlete']}>
                 <Training />
               </ProtectedRoute>
-            }
+            } 
           />
           <Route path="/testing" element={<Testing />} />
           <Route 
@@ -190,37 +197,37 @@ function AppRoutes() {
             path="/lactate-statistics" 
             element={<LactateStatisticsPage />}
           />
-          <Route
-            path="/athletes"
-            element={
-              <ProtectedRoute allowedRoles={['coach', 'tester']}>
-                <Athletes />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/athletes" element={<Athletes />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/athlete-profile/:id" element={<Profile />} />
           <Route path="/dashboard/:athleteId?" element={<Dashboard />} />
-          <Route
-            path="/training/:athleteId?"
+          <Route 
+            path="/training/:athleteId?" 
             element={
               <ProtectedRoute allowedRoles={['coach', 'athlete']}>
                 <Training />
               </ProtectedRoute>
-            }
+            } 
           />
           <Route path="/testing/:athleteId?" element={<Testing />} />
           <Route 
             path="/athlete/:athleteId" 
             element={
-              <ProtectedRoute allowedRoles={['coach', 'tester']}>
+              <ProtectedRoute allowedRoles={['coach', 'testing', 'tester']}>
                 <AthleteProfile />
               </ProtectedRoute>
             } 
           />
-          <Route path="/training-history/:title" element={<TrainingHistory />} />
+          <Route 
+            path="/training-history/:title" 
+            element={
+              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+                <TrainingHistory />
+              </ProtectedRoute>
+            } 
+          />
         </Route>
 
         {/* Fallback route */}
