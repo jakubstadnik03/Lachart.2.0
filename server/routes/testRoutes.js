@@ -208,6 +208,8 @@ router.post('/:id/send-report-email', verifyToken, testController.sendTestReport
  * GET /test/:id/report-pdf
  */
 router.get('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
+// Supports overrides payload (thresholds/zones from current UI view)
+router.post('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
 
 /**
  * Send demo test results to email (no authentication required)

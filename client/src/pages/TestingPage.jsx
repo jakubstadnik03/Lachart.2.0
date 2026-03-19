@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
-import api from '../services/api';
+import api, { invalidateCache } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
@@ -65,6 +65,15 @@ const TestingPage = () => {
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
 
+  const handleUrlTestSelection = (nextTestId) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev);
+      if (nextTestId) newParams.set('testId', String(nextTestId));
+      else newParams.delete('testId');
+      return newParams;
+    });
+  };
+
   const sports = [
     { id: "all", name: "All Sports" },
     { id: "run", name: "Running" },
@@ -122,6 +131,51 @@ const TestingPage = () => {
       addNotification('Failed to load tests. Please refresh the page.', 'error');
     }
   }, [user, addNotification]);
+
+  // If backend says the selected test doesn't exist anymore, the UI might be holding a stale testId.
+  // Reload the test list, clear the URL param and localStorage selection.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handler = (e) => {
+      const athleteIdFromEvent = e?.detail?.athleteId;
+
+      const targetAthleteId =
+        athleteIdFromEvent ||
+        (user?.role === 'coach' ? selectedAthleteId : user?._id);
+
+      if (!targetAthleteId) return;
+
+      try {
+        invalidateCache('/test/list/');
+        invalidateCache('/test/');
+        invalidateCache('api_cache_tests');
+      } catch {
+        // ignore
+      }
+
+      // Clear URL param so PreviousTestingComponent can fall back to a valid test.
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('testId');
+        return next;
+      });
+
+      // Clear saved selection(s) that could point to missing test.
+      try {
+        localStorage.removeItem('lachart:lastTestId');
+        localStorage.removeItem(`lachart:lastTestId:${selectedSport}`);
+        localStorage.removeItem('lachart:lastTestId:all');
+      } catch {
+        // ignore
+      }
+
+      loadTests(targetAthleteId);
+    };
+
+    window.addEventListener('lachart:testNotFound', handler);
+    return () => window.removeEventListener('lachart:testNotFound', handler);
+  }, [isAuthenticated, user?.role, user?._id, selectedAthleteId, selectedSport, loadTests, setSearchParams]);
 
   // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
@@ -1410,6 +1464,7 @@ const TestingPage = () => {
           tests={tests}
           setTests={setTests}
           selectedTestId={testIdFromUrl}
+          onSelectTestId={handleUrlTestSelection}
         />
       </motion.div>
 

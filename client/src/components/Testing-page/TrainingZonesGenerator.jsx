@@ -17,10 +17,30 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [ltValues, setLtValues] = useState({ lt1: null, lt2: null });
+  const [testZoneOverrides, setTestZoneOverrides] = useState(null);
+
+  const getLocalTestOverrides = (testId) => {
+    if (!testId) return null;
+    try {
+      const raw = localStorage.getItem(`lachart:testZoneOverrides:${testId}`);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const setLocalTestOverrides = (testId, overrides) => {
+    if (!testId) return;
+    try {
+      localStorage.setItem(`lachart:testZoneOverrides:${testId}`, JSON.stringify(overrides));
+    } catch {}
+  };
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
+  const selectedTestDate = mockData?.date || mockData?.createdAt || mockData?.timestamp;
 
   const formatPace = (seconds) => {
     if (!seconds || seconds === 0) return '0:00';
@@ -61,6 +81,63 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       return 3600 / seconds;
     }
   };
+
+  const mapSportToProfileKey = (sport) => (
+    sport === 'bike' ? 'cycling' :
+    sport === 'run' ? 'running' :
+    sport === 'swim' ? 'swimming' : sport
+  );
+
+  const applyTestZoneOverrides = useCallback((calculatedZones, sport) => {
+    const profileSport = mapSportToProfileKey(sport);
+    const overrideRoot = testZoneOverrides || mockData?.zoneOverrides;
+    const overridePower = overrideRoot?.powerZones?.[profileSport];
+    const overrideHr = overrideRoot?.heartRateZones?.[profileSport];
+    if (!overridePower && !overrideHr) return calculatedZones;
+
+    const next = { ...(calculatedZones || {}) };
+    const paceOrPowerKey = sport === 'bike' ? 'power' : 'pace';
+    if (!next[paceOrPowerKey]) next[paceOrPowerKey] = {};
+    if (!next.heartRate) next.heartRate = {};
+
+    for (let i = 1; i <= 5; i += 1) {
+      const zoneKey = `zone${i}`;
+      const existing = next[paceOrPowerKey][zoneKey] || {};
+      const pz = overridePower?.[zoneKey];
+      if (pz) {
+        const minVal = Number(pz.min);
+        const maxVal = Number(pz.max);
+        next[paceOrPowerKey][zoneKey] = {
+          ...existing,
+          min: sport === 'bike' ? (Number.isFinite(minVal) ? minVal : existing.min) : (Number.isFinite(minVal) ? formatPace(minVal) : existing.min),
+          max: sport === 'bike' ? (Number.isFinite(maxVal) ? maxVal : existing.max) : (Number.isFinite(maxVal) ? formatPace(maxVal) : existing.max),
+          description: pz.description || existing.description,
+          lactate: (Number.isFinite(Number(pz?.lactate?.min)) || Number.isFinite(Number(pz?.lactate?.max)))
+            ? `${Number.isFinite(Number(pz?.lactate?.min)) ? Number(pz.lactate.min).toFixed(1) : '0.0'}–${Number.isFinite(Number(pz?.lactate?.max)) ? Number(pz.lactate.max).toFixed(1) : '0.0'}`
+            : existing.lactate
+        };
+      }
+
+      const hz = overrideHr?.[zoneKey];
+      if (hz) {
+        const hrMin = Number(hz.min);
+        const hrMax = Number(hz.max);
+        next.heartRate[zoneKey] = {
+          min: Number.isFinite(hrMin) ? hrMin : next.heartRate?.[zoneKey]?.min,
+          max: Number.isFinite(hrMax) ? hrMax : next.heartRate?.[zoneKey]?.max
+        };
+      }
+    }
+
+    return next;
+  }, [mockData, testZoneOverrides]);
+
+  useEffect(() => {
+    const testId = mockData?._id;
+    const localOverrides = getLocalTestOverrides(testId);
+    // Local overrides should win, so user edits persist even if backend schema isn't updated yet.
+    setTestZoneOverrides(localOverrides || mockData?.zoneOverrides || null);
+  }, [mockData?.zoneOverrides, mockData?._id]);
 
   // Helper function to interpolate lactate value for a given power/pace using polynomial regression
   const getLactateForPower = (powerValue, results, sport) => {
@@ -157,15 +234,39 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     // Merge power zones
     if (!mergedData.powerZones) mergedData.powerZones = {};
     if (!mergedData.powerZones[sport]) mergedData.powerZones[sport] = {};
+
+    const parseLactateRange = (value) => {
+      if (!value || typeof value !== 'string') return { min: '', max: '' };
+      const normalized = value.replace('mmol/L', '').replace('–', '-').trim();
+      const [minRaw, maxRaw] = normalized.split('-').map((v) => v?.trim());
+      const min = Number(minRaw);
+      const max = Number(maxRaw);
+      return {
+        min: Number.isFinite(min) ? min : '',
+        max: Number.isFinite(max) ? max : ''
+      };
+    };
+
+    const getPersistedOrCalculatedLactate = (existingZone, calculatedLactate) => {
+      const existingMin = Number(existingZone?.lactate?.min);
+      const existingMax = Number(existingZone?.lactate?.max);
+      if (Number.isFinite(existingMin) || Number.isFinite(existingMax)) {
+        return {
+          min: Number.isFinite(existingMin) ? existingMin : '',
+          max: Number.isFinite(existingMax) ? existingMax : ''
+        };
+      }
+      return parseLactateRange(calculatedLactate);
+    };
     
     if (zones.power) {
       mergedData.powerZones.cycling = {
         ...mergedData.powerZones.cycling,
-        zone1: { min: zones.power.zone1?.min || 0, max: zones.power.zone1?.max || 0 },
-        zone2: { min: zones.power.zone2?.min || 0, max: zones.power.zone2?.max || 0 },
-        zone3: { min: zones.power.zone3?.min || 0, max: zones.power.zone3?.max || 0 },
-        zone4: { min: zones.power.zone4?.min || 0, max: zones.power.zone4?.max || 0 },
-        zone5: { min: zones.power.zone5?.min || 0, max: zones.power.zone5?.max === Infinity ? Infinity : (zones.power.zone5?.max || 0) },
+        zone1: { min: zones.power.zone1?.min || 0, max: zones.power.zone1?.max || 0, description: zones.power.zone1?.description || '', lactate: getPersistedOrCalculatedLactate(mergedData.powerZones.cycling?.zone1, zones.power.zone1?.lactate) },
+        zone2: { min: zones.power.zone2?.min || 0, max: zones.power.zone2?.max || 0, description: zones.power.zone2?.description || '', lactate: getPersistedOrCalculatedLactate(mergedData.powerZones.cycling?.zone2, zones.power.zone2?.lactate) },
+        zone3: { min: zones.power.zone3?.min || 0, max: zones.power.zone3?.max || 0, description: zones.power.zone3?.description || '', lactate: getPersistedOrCalculatedLactate(mergedData.powerZones.cycling?.zone3, zones.power.zone3?.lactate) },
+        zone4: { min: zones.power.zone4?.min || 0, max: zones.power.zone4?.max || 0, description: zones.power.zone4?.description || '', lactate: getPersistedOrCalculatedLactate(mergedData.powerZones.cycling?.zone4, zones.power.zone4?.lactate) },
+        zone5: { min: zones.power.zone5?.min || 0, max: zones.power.zone5?.max === Infinity ? Infinity : (zones.power.zone5?.max || 0), description: zones.power.zone5?.description || '', lactate: getPersistedOrCalculatedLactate(mergedData.powerZones.cycling?.zone5, zones.power.zone5?.lactate) },
         lt1: ltValues.lt1 ? Math.round(ltValues.lt1) : '',
         lt2: ltValues.lt2 ? Math.round(ltValues.lt2) : ''
       };
@@ -192,23 +293,33 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         ...mergedData.powerZones[sport],
         zone1: { 
           min: parsePaceToSeconds(zones.pace.zone1?.min) || 0, 
-          max: parsePaceToSeconds(zones.pace.zone1?.max) || 0 
+          max: parsePaceToSeconds(zones.pace.zone1?.max) || 0,
+          description: zones.pace.zone1?.description || '',
+          lactate: getPersistedOrCalculatedLactate(mergedData.powerZones[sport]?.zone1, zones.pace.zone1?.lactate)
         },
         zone2: { 
           min: parsePaceToSeconds(zones.pace.zone2?.min) || 0, 
-          max: parsePaceToSeconds(zones.pace.zone2?.max) || 0 
+          max: parsePaceToSeconds(zones.pace.zone2?.max) || 0,
+          description: zones.pace.zone2?.description || '',
+          lactate: getPersistedOrCalculatedLactate(mergedData.powerZones[sport]?.zone2, zones.pace.zone2?.lactate)
         },
         zone3: { 
           min: parsePaceToSeconds(zones.pace.zone3?.min) || 0, 
-          max: parsePaceToSeconds(zones.pace.zone3?.max) || 0 
+          max: parsePaceToSeconds(zones.pace.zone3?.max) || 0,
+          description: zones.pace.zone3?.description || '',
+          lactate: getPersistedOrCalculatedLactate(mergedData.powerZones[sport]?.zone3, zones.pace.zone3?.lactate)
         },
         zone4: { 
           min: parsePaceToSeconds(zones.pace.zone4?.min) || 0, 
-          max: parsePaceToSeconds(zones.pace.zone4?.max) || 0 
+          max: parsePaceToSeconds(zones.pace.zone4?.max) || 0,
+          description: zones.pace.zone4?.description || '',
+          lactate: getPersistedOrCalculatedLactate(mergedData.powerZones[sport]?.zone4, zones.pace.zone4?.lactate)
         },
         zone5: { 
           min: parsePaceToSeconds(zones.pace.zone5?.min) || 0, 
-          max: parsePaceToSeconds(zones.pace.zone5?.max) || 0 
+          max: parsePaceToSeconds(zones.pace.zone5?.max) || 0,
+          description: zones.pace.zone5?.description || '',
+          lactate: getPersistedOrCalculatedLactate(mergedData.powerZones[sport]?.zone5, zones.pace.zone5?.lactate)
         },
         lt1: ltValues.lt1 ? Math.round(ltValues.lt1) : '',
         lt2: ltValues.lt2 ? Math.round(ltValues.lt2) : ''
@@ -315,27 +426,32 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const lt1_lactate_value = lt1_lactate || getLactateForPower(lt1_watts, mockData.results, sport) || 2.0;
       const lt2_lactate_value = lt2_lactate || getLactateForPower(lt2_watts, mockData.results, sport) || 4.0;
       
-      // Calculate lactate ranges based on percentage of LTP1/LTP2
-      // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
-      const zone1_min_lactate = baseLactate;
-      const zone1_max_lactate = lt1_lactate_value * 0.9;
+      // Physiological lactate zoning:
+      // - wider Z2 (endurance/aerobic work)
+      // - smoother transitions around LT1/LT2
+      // - avoid overly narrow bands when LT1 and LT2 are close
+      const ltGap = Math.max(0.4, lt2_lactate_value - lt1_lactate_value);
+      const z2Headroom = Math.max(0.5, Math.min(1.2, ltGap * 0.45)); // wider Z2 span
+
+      // Zone 1: base -> clearly below LT1
+      const zone1_min_lactate = Math.max(0.7, baseLactate);
+      const zone1_max_lactate = Math.max(zone1_min_lactate + 0.2, lt1_lactate_value - z2Headroom);
       
-      // Zone 2: 90-100% LT1 -> 90-100% of LT1 lactate
-      const zone2_min_lactate = lt1_lactate_value * 0.9;
+      // Zone 2: broad aerobic range up to LT1
+      const zone2_min_lactate = zone1_max_lactate;
       const zone2_max_lactate = lt1_lactate_value;
       
-      // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
-      // This should end around 3.8 mmol/L if LT2 is 4.0
+      // Zone 3: LT1 to near LT2
       const zone3_min_lactate = lt1_lactate_value;
-      const zone3_max_lactate = lt2_lactate_value * 0.95; // 95% of LT2
+      const zone3_max_lactate = Math.max(zone3_min_lactate + 0.4, lt2_lactate_value - Math.max(0.2, ltGap * 0.15));
       
-      // Zone 4: 96-104% LT2 -> 96-104% of LT2 lactate (threshold zone)
-      const zone4_min_lactate = lt2_lactate_value * 0.96;
-      const zone4_max_lactate = lt2_lactate_value * 1.04;
+      // Zone 4: around LT2 (threshold band)
+      const zone4_min_lactate = Math.max(zone3_max_lactate, lt2_lactate_value - Math.max(0.2, ltGap * 0.08));
+      const zone4_max_lactate = lt2_lactate_value + Math.max(0.2, ltGap * 0.12);
       
-      // Zone 5: 105-120% LT2 -> 105-120% of LT2 lactate
-      const zone5_min_lactate = lt2_lactate_value * 1.05;
-      const zone5_max_lactate = lt2_lactate_value * 1.20;
+      // Zone 5: above LT2
+      const zone5_min_lactate = zone4_max_lactate;
+      const zone5_max_lactate = Math.max(zone5_min_lactate + 0.6, lt2_lactate_value + Math.max(0.8, ltGap * 0.8));
       
       // Ensure proper ordering and reasonable ranges
       const finalZone1 = {
@@ -356,10 +472,10 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       };
       const finalZone5 = {
         min: Math.max(finalZone4.max, Math.min(zone5_min_lactate, zone5_max_lactate)),
-        max: Math.max(zone5_min_lactate, zone5_max_lactate, 8.0)
+        max: Math.max(zone5_min_lactate, zone5_max_lactate)
       };
       
-      setZones({
+      const calculated = {
         power: {
           zone1: {
             min: zone1_min_power,
@@ -411,7 +527,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
           zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
         } : null
-      });
+      };
+      setZones(applyTestZoneOverrides(calculated, sport));
     } else {
       // Pro run/swim: použít tempo (sekundy)
       const lt1_sec = lt1_value;
@@ -438,27 +555,24 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const lt1_lactate_value_pace = lt1_lactate || getLactateForPower(lt1_sec, mockData.results, sport) || 2.0;
       const lt2_lactate_value_pace = lt2_lactate || getLactateForPower(lt2_sec, mockData.results, sport) || 4.0;
       
-      // Calculate lactate ranges based on percentage of LTP1/LTP2
-      // Zone 1: 70-90% LT1 -> 70-90% of LT1 lactate
-      const zone1_min_lactate_pace = baseLactate;
-      const zone1_max_lactate_pace = lt1_lactate_value_pace * 0.9;
+      // Same physiological shaping for run/swim pace zones.
+      const ltGapPace = Math.max(0.4, lt2_lactate_value_pace - lt1_lactate_value_pace);
+      const z2HeadroomPace = Math.max(0.5, Math.min(1.2, ltGapPace * 0.45));
+
+      const zone1_min_lactate_pace = Math.max(0.7, baseLactate);
+      const zone1_max_lactate_pace = Math.max(zone1_min_lactate_pace + 0.2, lt1_lactate_value_pace - z2HeadroomPace);
       
-      // Zone 2: 90-100% LT1 -> 90-100% of LT1 lactate
-      const zone2_min_lactate_pace = lt1_lactate_value_pace * 0.9;
+      const zone2_min_lactate_pace = zone1_max_lactate_pace;
       const zone2_max_lactate_pace = lt1_lactate_value_pace;
       
-      // Zone 3: 100% LT1 - 95% LT2 -> interpolate between LT1 and 95% of LT2
-      // This should end around 3.8 mmol/L if LT2 is 4.0
       const zone3_min_lactate_pace = lt1_lactate_value_pace;
-      const zone3_max_lactate_pace = lt2_lactate_value_pace * 0.95; // 95% of LT2
+      const zone3_max_lactate_pace = Math.max(zone3_min_lactate_pace + 0.4, lt2_lactate_value_pace - Math.max(0.2, ltGapPace * 0.15));
       
-      // Zone 4: 96-104% LT2 -> 96-104% of LT2 lactate (threshold zone)
-      const zone4_min_lactate_pace = lt2_lactate_value_pace * 0.96;
-      const zone4_max_lactate_pace = lt2_lactate_value_pace * 1.04;
+      const zone4_min_lactate_pace = Math.max(zone3_max_lactate_pace, lt2_lactate_value_pace - Math.max(0.2, ltGapPace * 0.08));
+      const zone4_max_lactate_pace = lt2_lactate_value_pace + Math.max(0.2, ltGapPace * 0.12);
       
-      // Zone 5: 105-120% LT2 -> 105-120% of LT2 lactate
-      const zone5_min_lactate_pace = lt2_lactate_value_pace * 1.05;
-      const zone5_max_lactate_pace = lt2_lactate_value_pace * 1.20;
+      const zone5_min_lactate_pace = zone4_max_lactate_pace;
+      const zone5_max_lactate_pace = Math.max(zone5_min_lactate_pace + 0.6, lt2_lactate_value_pace + Math.max(0.8, ltGapPace * 0.8));
       
       // Ensure proper ordering and reasonable ranges
       const finalZone1Pace = {
@@ -479,10 +593,10 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       };
       const finalZone5Pace = {
         min: Math.max(finalZone4Pace.max, Math.min(zone5_min_lactate_pace, zone5_max_lactate_pace)),
-        max: Math.max(zone5_min_lactate_pace, zone5_max_lactate_pace, 8.0)
+        max: Math.max(zone5_min_lactate_pace, zone5_max_lactate_pace)
       };
       
-    setZones({
+    const calculated = {
       pace: {
         zone1: {
             min: fmt(zone1_min_pace_sec), // pomalejší (více sekund)
@@ -534,15 +648,23 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
         zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
       }
-    });
+    };
+    setZones(applyTestZoneOverrides(calculated, sport));
     }
-  }, [mockData]);
+  }, [mockData, applyTestZoneOverrides]);
 
   useEffect(() => {
     if (mockData && mockData.results && mockData.results.length > 0) {
       calculateTrainingZones();
     }
   }, [mockData, calculateTrainingZones]);
+
+  // Recompute zones when user overrides are saved for this test
+  useEffect(() => {
+    if (mockData && mockData.results && mockData.results.length > 0) {
+      calculateTrainingZones();
+    }
+  }, [testZoneOverrides, mockData, calculateTrainingZones]);
 
   // Load user profile for EditProfileModal (only when not in demo mode)
   useEffect(() => {
@@ -611,6 +733,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 <p className="text-xs sm:text-sm text-gray-700 mt-1">
                   Training zones from selected test
                 </p>
+                {selectedTestDate && (
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Date: {new Date(selectedTestDate).toLocaleDateString()}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setShowGlossary(true)}
@@ -653,7 +780,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                   </th>
                 )}
                   <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
-                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden md:table-cell">Lactate</th>
+                  <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Lactate</th>
               </tr>
             </thead>
             <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
@@ -743,7 +870,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                         </span>
                     </td>
                     {/* LACTATE */}
-                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 hidden md:table-cell">
+                    <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4">
                       <span className="text-xs sm:text-sm text-gray-900 font-mono font-normal tracking-tight">
                         {lactateValue ? `${lactateValue} mmol/L` : '-'}
                       </span>
@@ -781,7 +908,29 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zonesOnly={true}
         onSubmit={async (formData) => {
           try {
-            await updateUserProfile(formData);
+            const testId = mockData?._id || '';
+            const testDateRaw = mockData?.date || mockData?.createdAt || mockData?.timestamp || '';
+            const testDate = testDateRaw ? new Date(testDateRaw).toISOString() : '';
+            const sportTag = selectedSport === 'bike' ? 'cycling' : selectedSport === 'run' ? 'running' : selectedSport === 'swim' ? 'swimming' : selectedSport;
+            const zonesNote = [`testId=${testId || 'n/a'}`, `sport=${sportTag}`, `date=${testDate || 'n/a'}`].join(' | ');
+            await updateUserProfile({
+              ...formData,
+              zonesSource: 'test',
+              zonesNote,
+            });
+            if (testId) {
+              const newOverrides = {
+                powerZones: formData.powerZones,
+                heartRateZones: formData.heartRateZones,
+                source: 'set-zones',
+                updatedAt: new Date().toISOString()
+              };
+              await api.put(`/test/${testId}`, {
+                zoneOverrides: newOverrides
+              });
+              setTestZoneOverrides(newOverrides);
+              setLocalTestOverrides(testId, newOverrides);
+            }
             setIsEditModalOpen(false);
             const profileResponse = await api.get('/user/profile');
             setUserProfile(profileResponse.data);

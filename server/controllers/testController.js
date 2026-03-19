@@ -143,7 +143,8 @@ const testController = {
     getTestReportPdf: async (req, res) => {
         try {
             const { id } = req.params;
-            const result = await generateTestReportPdf(req.user.userId, id);
+            const overrides = req.body?.overrides || {};
+            const result = await generateTestReportPdf(req.user.userId, id, overrides);
             if (result.error) {
                 const status =
                     result.reason === 'forbidden' ? 403 :

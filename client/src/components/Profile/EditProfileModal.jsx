@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
 
 const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
@@ -54,6 +54,39 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       console.error('Error parsing date:', error);
       return '';
     }
+  };
+
+  const toStringOrEmpty = (value) => (value === undefined || value === null ? '' : String(value));
+  const toNumberOrUndefined = (value) => {
+    if (value === '' || value === null || value === undefined) return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const normalizeLactateForForm = useCallback((zone = {}) => ({
+    min: toStringOrEmpty(zone?.lactate?.min),
+    max: toStringOrEmpty(zone?.lactate?.max),
+  }), []);
+
+  const DEFAULT_TRAINING_ZONE_DESCRIPTIONS = {
+    1: '70–90% LT1 (recovery, reference wide zone)',
+    2: '90%–100% LT1',
+    3: '100% LT1 – 95% LT2',
+    4: '96%–104% LT2 (threshold)',
+    5: '105–120% LT2 (sprint/VO2max+ reference)'
+  };
+
+  const mapPowerZoneForSubmit = (zone = {}, zoneNum) => {
+    const lactateMin = toNumberOrUndefined(zone?.lactate?.min);
+    const lactateMax = toNumberOrUndefined(zone?.lactate?.max);
+    const hasLactate = lactateMin !== undefined || lactateMax !== undefined;
+    const defaultDescription = DEFAULT_TRAINING_ZONE_DESCRIPTIONS[zoneNum];
+    return {
+      min: toNumberOrUndefined(zone?.min),
+      max: toNumberOrUndefined(zone?.max),
+      description: zone?.description?.trim?.() || defaultDescription || undefined,
+      lactate: hasLactate ? { min: lactateMin, max: lactateMax } : undefined
+    };
   };
 
   useEffect(() => {
@@ -177,6 +210,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             }
           }
         };
+        ['cycling', 'running', 'swimming'].forEach((sport) => {
+          for (let i = 1; i <= 5; i += 1) {
+            const key = `zone${i}`;
+            const sourceZones = sport === 'cycling' ? cyclingZones : sport === 'running' ? runningZones : swimmingZones;
+            const sourceZone = sourceZones?.[key] || {};
+            initialFormData.powerZones[sport][key].lactate = normalizeLactateForForm(sourceZone);
+          }
+        });
         console.log('Initial formData:', initialFormData);
         setFormData(initialFormData);
       } catch (error) {
@@ -216,7 +257,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         });
       }
     }
-  }, [userData]);
+  }, [userData, normalizeLactateForForm]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -235,91 +276,31 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
       // Převést power zones na správný formát (čísla místo stringů)
       powerZones: formData.powerZones ? {
         cycling: formData.powerZones.cycling ? {
-          zone1: {
-            min: formData.powerZones.cycling.zone1.min ? Number(formData.powerZones.cycling.zone1.min) : undefined,
-            max: formData.powerZones.cycling.zone1.max ? Number(formData.powerZones.cycling.zone1.max) : undefined,
-            description: formData.powerZones.cycling.zone1.description || undefined
-          },
-          zone2: {
-            min: formData.powerZones.cycling.zone2.min ? Number(formData.powerZones.cycling.zone2.min) : undefined,
-            max: formData.powerZones.cycling.zone2.max ? Number(formData.powerZones.cycling.zone2.max) : undefined,
-            description: formData.powerZones.cycling.zone2.description || undefined
-          },
-          zone3: {
-            min: formData.powerZones.cycling.zone3.min ? Number(formData.powerZones.cycling.zone3.min) : undefined,
-            max: formData.powerZones.cycling.zone3.max ? Number(formData.powerZones.cycling.zone3.max) : undefined,
-            description: formData.powerZones.cycling.zone3.description || undefined
-          },
-          zone4: {
-            min: formData.powerZones.cycling.zone4.min ? Number(formData.powerZones.cycling.zone4.min) : undefined,
-            max: formData.powerZones.cycling.zone4.max ? Number(formData.powerZones.cycling.zone4.max) : undefined,
-            description: formData.powerZones.cycling.zone4.description || undefined
-          },
-          zone5: {
-            min: formData.powerZones.cycling.zone5.min ? Number(formData.powerZones.cycling.zone5.min) : undefined,
-            max: formData.powerZones.cycling.zone5.max ? Number(formData.powerZones.cycling.zone5.max) : undefined,
-            description: formData.powerZones.cycling.zone5.description || undefined
-          },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.cycling.zone1, 1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.cycling.zone2, 2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.cycling.zone3, 3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.cycling.zone4, 4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.cycling.zone5, 5),
           lt1: formData.powerZones.cycling.lt1 ? Number(formData.powerZones.cycling.lt1) : undefined,
           lt2: formData.powerZones.cycling.lt2 ? Number(formData.powerZones.cycling.lt2) : undefined,
           lastUpdated: new Date()
         } : undefined,
         running: formData.powerZones.running ? {
-          zone1: {
-            min: formData.powerZones.running.zone1.min ? Number(formData.powerZones.running.zone1.min) : undefined,
-            max: formData.powerZones.running.zone1.max ? Number(formData.powerZones.running.zone1.max) : undefined,
-            description: formData.powerZones.running.zone1.description || undefined
-          },
-          zone2: {
-            min: formData.powerZones.running.zone2.min ? Number(formData.powerZones.running.zone2.min) : undefined,
-            max: formData.powerZones.running.zone2.max ? Number(formData.powerZones.running.zone2.max) : undefined,
-            description: formData.powerZones.running.zone2.description || undefined
-          },
-          zone3: {
-            min: formData.powerZones.running.zone3.min ? Number(formData.powerZones.running.zone3.min) : undefined,
-            max: formData.powerZones.running.zone3.max ? Number(formData.powerZones.running.zone3.max) : undefined,
-            description: formData.powerZones.running.zone3.description || undefined
-          },
-          zone4: {
-            min: formData.powerZones.running.zone4.min ? Number(formData.powerZones.running.zone4.min) : undefined,
-            max: formData.powerZones.running.zone4.max ? Number(formData.powerZones.running.zone4.max) : undefined,
-            description: formData.powerZones.running.zone4.description || undefined
-          },
-          zone5: {
-            min: formData.powerZones.running.zone5.min ? Number(formData.powerZones.running.zone5.min) : undefined,
-            max: formData.powerZones.running.zone5.max ? Number(formData.powerZones.running.zone5.max) : undefined,
-            description: formData.powerZones.running.zone5.description || undefined
-          },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.running.zone1, 1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.running.zone2, 2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.running.zone3, 3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.running.zone4, 4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.running.zone5, 5),
           lt1: formData.powerZones.running.lt1 ? Number(formData.powerZones.running.lt1) : undefined,
           lt2: formData.powerZones.running.lt2 ? Number(formData.powerZones.running.lt2) : undefined,
           lastUpdated: new Date()
         } : undefined,
         swimming: formData.powerZones.swimming ? {
-          zone1: {
-            min: formData.powerZones.swimming.zone1.min ? Number(formData.powerZones.swimming.zone1.min) : undefined,
-            max: formData.powerZones.swimming.zone1.max ? Number(formData.powerZones.swimming.zone1.max) : undefined,
-            description: formData.powerZones.swimming.zone1.description || undefined
-          },
-          zone2: {
-            min: formData.powerZones.swimming.zone2.min ? Number(formData.powerZones.swimming.zone2.min) : undefined,
-            max: formData.powerZones.swimming.zone2.max ? Number(formData.powerZones.swimming.zone2.max) : undefined,
-            description: formData.powerZones.swimming.zone2.description || undefined
-          },
-          zone3: {
-            min: formData.powerZones.swimming.zone3.min ? Number(formData.powerZones.swimming.zone3.min) : undefined,
-            max: formData.powerZones.swimming.zone3.max ? Number(formData.powerZones.swimming.zone3.max) : undefined,
-            description: formData.powerZones.swimming.zone3.description || undefined
-          },
-          zone4: {
-            min: formData.powerZones.swimming.zone4.min ? Number(formData.powerZones.swimming.zone4.min) : undefined,
-            max: formData.powerZones.swimming.zone4.max ? Number(formData.powerZones.swimming.zone4.max) : undefined,
-            description: formData.powerZones.swimming.zone4.description || undefined
-          },
-          zone5: {
-            min: formData.powerZones.swimming.zone5.min ? Number(formData.powerZones.swimming.zone5.min) : undefined,
-            max: formData.powerZones.swimming.zone5.max ? Number(formData.powerZones.swimming.zone5.max) : undefined,
-            description: formData.powerZones.swimming.zone5.description || undefined
-          },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.swimming.zone1, 1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.swimming.zone2, 2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.swimming.zone3, 3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.swimming.zone4, 4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.swimming.zone5, 5),
           lt1: formData.powerZones.swimming.lt1 ? Number(formData.powerZones.swimming.lt1) : undefined,
           lt2: formData.powerZones.swimming.lt2 ? Number(formData.powerZones.swimming.lt2) : undefined,
           lastUpdated: new Date()
@@ -478,7 +459,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           ...prev.powerZones,
           cycling: {
             ...prev.powerZones?.cycling,
-            ...zones,
+            zone1: { ...zones.zone1, lactate: prev.powerZones?.cycling?.zone1?.lactate || { min: '', max: '' } },
+            zone2: { ...zones.zone2, lactate: prev.powerZones?.cycling?.zone2?.lactate || { min: '', max: '' } },
+            zone3: { ...zones.zone3, lactate: prev.powerZones?.cycling?.zone3?.lactate || { min: '', max: '' } },
+            zone4: { ...zones.zone4, lactate: prev.powerZones?.cycling?.zone4?.lactate || { min: '', max: '' } },
+            zone5: { ...zones.zone5, lactate: prev.powerZones?.cycling?.zone5?.lactate || { min: '', max: '' } },
             lt1: lt1,
             lt2: lt2
           }
@@ -527,7 +512,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           ...prev.powerZones,
           [sport]: {
             ...prev.powerZones?.[sport],
-            ...zones,
+            zone1: { ...zones.zone1, lactate: prev.powerZones?.[sport]?.zone1?.lactate || { min: '', max: '' } },
+            zone2: { ...zones.zone2, lactate: prev.powerZones?.[sport]?.zone2?.lactate || { min: '', max: '' } },
+            zone3: { ...zones.zone3, lactate: prev.powerZones?.[sport]?.zone3?.lactate || { min: '', max: '' } },
+            zone4: { ...zones.zone4, lactate: prev.powerZones?.[sport]?.zone4?.lactate || { min: '', max: '' } },
+            zone5: { ...zones.zone5, lactate: prev.powerZones?.[sport]?.zone5?.lactate || { min: '', max: '' } },
             lt1: lt1,
             lt2: lt2
           }
@@ -1013,7 +1002,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                     }`}>
                       {zoneNum}
                     </span>
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                       {/* Power/Pace Zones */}
                       <div className="space-y-2">
                         <div className="text-xs font-semibold text-gray-700 mb-1">
@@ -1132,6 +1121,65 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                               }))}
                               className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
                               placeholder={zoneNum === 5 ? "∞" : "Max"}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Lactate Zones */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-gray-700 mb-1">Lactate (mmol/L)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Min</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate?.min || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                powerZones: {
+                                  ...prev.powerZones,
+                                  [selectedSport]: {
+                                    ...prev.powerZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      lactate: {
+                                        ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate,
+                                        min: e.target.value
+                                      }
+                                    }
+                                  }
+                                }
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder="e.g. 1.5"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <label className="block text-xs font-medium text-gray-600 mb-0.5">Max</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate?.max || ''}
+                              onChange={(e) => setFormData(prev => ({
+                                ...prev,
+                                powerZones: {
+                                  ...prev.powerZones,
+                                  [selectedSport]: {
+                                    ...prev.powerZones?.[selectedSport],
+                                    [`zone${zoneNum}`]: {
+                                      ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`],
+                                      lactate: {
+                                        ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate,
+                                        max: e.target.value
+                                      }
+                                    }
+                                  }
+                                }
+                              }))}
+                              className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent transition-all"
+                              placeholder={zoneNum === 5 ? "∞" : "e.g. 2.5"}
                             />
                           </div>
                         </div>

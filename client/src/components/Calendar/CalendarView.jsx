@@ -27,6 +27,10 @@ function startOfMonth(date) {
   return d;
 }
 
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
 function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate()+n); return d; }
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
@@ -117,7 +121,15 @@ function categoryLabel(category) {
   return labels[category] || 'Uncategorized';
 }
 
-export default function CalendarView({ activities = [], onSelectActivity, selectedActivityId, initialAnchorDate, user = null, onMonthChange = null }) {
+export default function CalendarView({
+  activities = [],
+  onSelectActivity,
+  selectedActivityId,
+  initialAnchorDate,
+  user = null,
+  onMonthChange = null,
+  onVisiblePeriodChange = null,
+}) {
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
   const getInitialAnchorDate = () => {
     if (initialAnchorDate) return initialAnchorDate;
@@ -198,6 +210,38 @@ export default function CalendarView({ activities = [], onSelectActivity, select
     }
     lastMonthRef.current = currentMonth;
   }, [anchorDate, initialAnchorDate, onMonthChange]);
+
+  // Notify parent about the stats period (week on desktop week view, otherwise calendar month)
+  useEffect(() => {
+    if (!onVisiblePeriodChange) return;
+    const useWeek = !isMobile && view === 'week';
+    let periodStart;
+    let periodEnd;
+    let label;
+    if (useWeek) {
+      periodStart = startOfWeek(anchorDate);
+      periodEnd = new Date(periodStart);
+      periodEnd.setDate(periodEnd.getDate() + 6);
+      periodEnd.setHours(23, 59, 59, 999);
+      const endLabel = new Date(periodStart);
+      endLabel.setDate(endLabel.getDate() + 6);
+      const opt = { month: 'short', day: 'numeric' };
+      label = `${periodStart.toLocaleDateString(undefined, opt)} – ${endLabel.toLocaleDateString(undefined, {
+        ...opt,
+        year: 'numeric',
+      })}`;
+    } else {
+      periodStart = startOfMonth(anchorDate);
+      periodEnd = endOfMonth(anchorDate);
+      label = anchorDate.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    }
+    onVisiblePeriodChange({
+      view: useWeek ? 'week' : 'month',
+      periodStart,
+      periodEnd,
+      label,
+    });
+  }, [view, anchorDate, isMobile, onVisiblePeriodChange]);
 
   // Save view to localStorage when it changes
   useEffect(() => {

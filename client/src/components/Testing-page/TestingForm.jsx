@@ -339,6 +339,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
+  const rowsScrollRef = useRef(null);
+  const [rowsCanScroll, setRowsCanScroll] = useState(false);
+  const [rowsAtTop, setRowsAtTop] = useState(true);
+  const [rowsAtBottom, setRowsAtBottom] = useState(true);
 
   const inputRefs = useRef({});
 
@@ -435,6 +439,37 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       onGlucoseColumnChange(!showGlucose);
     }
   }, [showGlucose, onGlucoseColumnChange]);
+
+  const handleScrollHintClick = () => {
+    const el = rowsScrollRef.current;
+    if (!el) return;
+    const step = Math.max(120, Math.round(el.clientHeight * 0.6));
+    el.scrollBy({ top: step, behavior: 'smooth' });
+  };
+
+  // Visual scroll hint for the intervals table (fade + helper text).
+  useEffect(() => {
+    const el = rowsScrollRef.current;
+    if (!el) return;
+
+    const updateRowsScrollState = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 2;
+      const atTop = el.scrollTop <= 2;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+      setRowsCanScroll(canScroll);
+      setRowsAtTop(atTop);
+      setRowsAtBottom(atBottom);
+    };
+
+    updateRowsScrollState();
+    el.addEventListener('scroll', updateRowsScrollState);
+    window.addEventListener('resize', updateRowsScrollState);
+
+    return () => {
+      el.removeEventListener('scroll', updateRowsScrollState);
+      window.removeEventListener('resize', updateRowsScrollState);
+    };
+  }, [rows.length, hasGlucoseData, hasVO2Data, formData.sport, inputMode, isEditMode, isNewTest]);
 
   const handleValueChange = (rowIndex, field, value) => {
     console.log('Input change:', { rowIndex, field, value });
@@ -1418,7 +1453,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   {(hasRPEData || true) && <div className="text-center min-w-0 overflow-hidden">RPE</div>}
                   {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
                 </div>
-                <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0 max-h-full">
+                <div className="relative flex-1 min-h-0 max-h-full">
+                <div
+                  ref={rowsScrollRef}
+                  className={`h-full overflow-y-auto overflow-x-auto ${rowsCanScroll ? 'pr-1' : ''}`}
+                >
                   {rows.map((row, index) => (
                     <div
                       key={index}
@@ -1451,6 +1490,23 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       )}
                     </div>
                   ))}
+                </div>
+                {rowsCanScroll && !rowsAtTop && (
+                  <div className="pointer-events-none absolute top-0 left-0 right-0 h-5 bg-gradient-to-b from-white via-white/80 to-transparent rounded-t-lg" />
+                )}
+                {rowsCanScroll && !rowsAtBottom && (
+                  <>
+                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white via-white/90 to-transparent rounded-b-lg" />
+                    <button
+                      type="button"
+                      onClick={handleScrollHintClick}
+                      className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-gray-600 bg-white/95 px-2 py-0.5 rounded-full border border-gray-200 hover:bg-white hover:text-gray-800 transition-colors"
+                      title="Scroll down"
+                    >
+                      Scroll for more rows
+                    </button>
+                  </>
+                )}
                 </div>
               </div>
             );

@@ -247,8 +247,14 @@ const TrainingGlossary = ({ isOpen, onClose, initialTerm = 'Form & Fitness', ini
 
   // Render modal using React Portal to document.body to ensure it's always on top
   return ReactDOM.createPortal(
-    <div className={`fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center ${isMobile ? 'p-0' : 'p-4'}`}>
-      <div className={`bg-white w-full flex flex-col ${isMobile ? 'h-[100dvh] max-h-[100dvh] rounded-none' : 'rounded-lg max-w-5xl max-h-[90vh]'}`}>
+    <div
+      className={`fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center ${isMobile ? 'p-0' : 'p-4'}`}
+      onClick={onClose}
+    >
+      <div
+        className={`bg-white w-full flex flex-col ${isMobile ? 'h-[100dvh] max-h-[100dvh] rounded-none' : 'rounded-lg max-w-5xl max-h-[90vh]'}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className={`sticky top-0 bg-white border-b border-gray-200 z-10 ${isMobile ? 'p-3' : 'p-4'}`}>
           <div className="flex items-center justify-between mb-3">

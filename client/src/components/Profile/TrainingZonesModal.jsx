@@ -6,6 +6,25 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
   const [error, setError] = useState('');
   const [selectedSport, setSelectedSport] = useState('cycling');
 
+  const toStringOrEmpty = (value) => (value === undefined || value === null ? '' : String(value));
+  const toNumberOrUndefined = (value) => {
+    if (value === '' || value === null || value === undefined) return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const mapPowerZoneForSubmit = (zone = {}) => {
+    const lactateMin = toNumberOrUndefined(zone?.lactate?.min);
+    const lactateMax = toNumberOrUndefined(zone?.lactate?.max);
+    const hasLactate = lactateMin !== undefined || lactateMax !== undefined;
+    return {
+      min: toNumberOrUndefined(zone?.min),
+      max: toNumberOrUndefined(zone?.max),
+      description: zone?.description || undefined,
+      lactate: hasLactate ? { min: lactateMin, max: lactateMax } : undefined
+    };
+  };
+
   useEffect(() => {
     if (userData) {
       if (userData._selectedSport) {
@@ -18,32 +37,32 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
       const runningHrZones = userData.heartRateZones?.running || {};
       const swimmingHrZones = userData.heartRateZones?.swimming || {};
       
-      setFormData({
+      const next = {
         powerZones: {
           cycling: {
-            zone1: { min: cyclingZones.zone1?.min || '', max: cyclingZones.zone1?.max || '', description: cyclingZones.zone1?.description || '' },
-            zone2: { min: cyclingZones.zone2?.min || '', max: cyclingZones.zone2?.max || '', description: cyclingZones.zone2?.description || '' },
-            zone3: { min: cyclingZones.zone3?.min || '', max: cyclingZones.zone3?.max || '', description: cyclingZones.zone3?.description || '' },
-            zone4: { min: cyclingZones.zone4?.min || '', max: cyclingZones.zone4?.max || '', description: cyclingZones.zone4?.description || '' },
-            zone5: { min: cyclingZones.zone5?.min || '', max: cyclingZones.zone5?.max || '', description: cyclingZones.zone5?.description || '' },
+            zone1: { min: cyclingZones.zone1?.min || '', max: cyclingZones.zone1?.max || '', description: cyclingZones.zone1?.description || '', lactate: { min: toStringOrEmpty(cyclingZones.zone1?.lactate?.min), max: toStringOrEmpty(cyclingZones.zone1?.lactate?.max) } },
+            zone2: { min: cyclingZones.zone2?.min || '', max: cyclingZones.zone2?.max || '', description: cyclingZones.zone2?.description || '', lactate: { min: toStringOrEmpty(cyclingZones.zone2?.lactate?.min), max: toStringOrEmpty(cyclingZones.zone2?.lactate?.max) } },
+            zone3: { min: cyclingZones.zone3?.min || '', max: cyclingZones.zone3?.max || '', description: cyclingZones.zone3?.description || '', lactate: { min: toStringOrEmpty(cyclingZones.zone3?.lactate?.min), max: toStringOrEmpty(cyclingZones.zone3?.lactate?.max) } },
+            zone4: { min: cyclingZones.zone4?.min || '', max: cyclingZones.zone4?.max || '', description: cyclingZones.zone4?.description || '', lactate: { min: toStringOrEmpty(cyclingZones.zone4?.lactate?.min), max: toStringOrEmpty(cyclingZones.zone4?.lactate?.max) } },
+            zone5: { min: cyclingZones.zone5?.min || '', max: cyclingZones.zone5?.max || '', description: cyclingZones.zone5?.description || '', lactate: { min: toStringOrEmpty(cyclingZones.zone5?.lactate?.min), max: toStringOrEmpty(cyclingZones.zone5?.lactate?.max) } },
             lt1: cyclingZones.lt1 || '',
             lt2: cyclingZones.lt2 || ''
           },
           running: {
-            zone1: { min: runningZones.zone1?.min !== undefined && runningZones.zone1?.min !== null ? String(runningZones.zone1.min) : '', max: runningZones.zone1?.max !== undefined && runningZones.zone1?.max !== null ? String(runningZones.zone1.max) : '', description: runningZones.zone1?.description || '' },
-            zone2: { min: runningZones.zone2?.min !== undefined && runningZones.zone2?.min !== null ? String(runningZones.zone2.min) : '', max: runningZones.zone2?.max !== undefined && runningZones.zone2?.max !== null ? String(runningZones.zone2.max) : '', description: runningZones.zone2?.description || '' },
-            zone3: { min: runningZones.zone3?.min !== undefined && runningZones.zone3?.min !== null ? String(runningZones.zone3.min) : '', max: runningZones.zone3?.max !== undefined && runningZones.zone3?.max !== null ? String(runningZones.zone3.max) : '', description: runningZones.zone3?.description || '' },
-            zone4: { min: runningZones.zone4?.min !== undefined && runningZones.zone4?.min !== null ? String(runningZones.zone4.min) : '', max: runningZones.zone4?.max !== undefined && runningZones.zone4?.max !== null ? String(runningZones.zone4.max) : '', description: runningZones.zone4?.description || '' },
-            zone5: { min: runningZones.zone5?.min !== undefined && runningZones.zone5?.min !== null ? String(runningZones.zone5.min) : '', max: runningZones.zone5?.max !== undefined && runningZones.zone5?.max !== null ? String(runningZones.zone5.max) : '', description: runningZones.zone5?.description || '' },
+            zone1: { min: runningZones.zone1?.min !== undefined && runningZones.zone1?.min !== null ? String(runningZones.zone1.min) : '', max: runningZones.zone1?.max !== undefined && runningZones.zone1?.max !== null ? String(runningZones.zone1.max) : '', description: runningZones.zone1?.description || '', lactate: { min: toStringOrEmpty(runningZones.zone1?.lactate?.min), max: toStringOrEmpty(runningZones.zone1?.lactate?.max) } },
+            zone2: { min: runningZones.zone2?.min !== undefined && runningZones.zone2?.min !== null ? String(runningZones.zone2.min) : '', max: runningZones.zone2?.max !== undefined && runningZones.zone2?.max !== null ? String(runningZones.zone2.max) : '', description: runningZones.zone2?.description || '', lactate: { min: toStringOrEmpty(runningZones.zone2?.lactate?.min), max: toStringOrEmpty(runningZones.zone2?.lactate?.max) } },
+            zone3: { min: runningZones.zone3?.min !== undefined && runningZones.zone3?.min !== null ? String(runningZones.zone3.min) : '', max: runningZones.zone3?.max !== undefined && runningZones.zone3?.max !== null ? String(runningZones.zone3.max) : '', description: runningZones.zone3?.description || '', lactate: { min: toStringOrEmpty(runningZones.zone3?.lactate?.min), max: toStringOrEmpty(runningZones.zone3?.lactate?.max) } },
+            zone4: { min: runningZones.zone4?.min !== undefined && runningZones.zone4?.min !== null ? String(runningZones.zone4.min) : '', max: runningZones.zone4?.max !== undefined && runningZones.zone4?.max !== null ? String(runningZones.zone4.max) : '', description: runningZones.zone4?.description || '', lactate: { min: toStringOrEmpty(runningZones.zone4?.lactate?.min), max: toStringOrEmpty(runningZones.zone4?.lactate?.max) } },
+            zone5: { min: runningZones.zone5?.min !== undefined && runningZones.zone5?.min !== null ? String(runningZones.zone5.min) : '', max: runningZones.zone5?.max !== undefined && runningZones.zone5?.max !== null ? String(runningZones.zone5.max) : '', description: runningZones.zone5?.description || '', lactate: { min: toStringOrEmpty(runningZones.zone5?.lactate?.min), max: toStringOrEmpty(runningZones.zone5?.lactate?.max) } },
             lt1: runningZones.lt1 || '',
             lt2: runningZones.lt2 || ''
           },
           swimming: {
-            zone1: { min: swimmingZones.zone1?.min !== undefined && swimmingZones.zone1?.min !== null ? String(swimmingZones.zone1.min) : '', max: swimmingZones.zone1?.max !== undefined && swimmingZones.zone1?.max !== null ? String(swimmingZones.zone1.max) : '', description: swimmingZones.zone1?.description || '' },
-            zone2: { min: swimmingZones.zone2?.min !== undefined && swimmingZones.zone2?.min !== null ? String(swimmingZones.zone2.min) : '', max: swimmingZones.zone2?.max !== undefined && swimmingZones.zone2?.max !== null ? String(swimmingZones.zone2.max) : '', description: swimmingZones.zone2?.description || '' },
-            zone3: { min: swimmingZones.zone3?.min !== undefined && swimmingZones.zone3?.min !== null ? String(swimmingZones.zone3.min) : '', max: swimmingZones.zone3?.max !== undefined && swimmingZones.zone3?.max !== null ? String(swimmingZones.zone3.max) : '', description: swimmingZones.zone3?.description || '' },
-            zone4: { min: swimmingZones.zone4?.min !== undefined && swimmingZones.zone4?.min !== null ? String(swimmingZones.zone4.min) : '', max: swimmingZones.zone4?.max !== undefined && swimmingZones.zone4?.max !== null ? String(swimmingZones.zone4.max) : '', description: swimmingZones.zone4?.description || '' },
-            zone5: { min: swimmingZones.zone5?.min !== undefined && swimmingZones.zone5?.min !== null ? String(swimmingZones.zone5.min) : '', max: swimmingZones.zone5?.max !== undefined && swimmingZones.zone5?.max !== null ? String(swimmingZones.zone5.max) : '', description: swimmingZones.zone5?.description || '' },
+            zone1: { min: swimmingZones.zone1?.min !== undefined && swimmingZones.zone1?.min !== null ? String(swimmingZones.zone1.min) : '', max: swimmingZones.zone1?.max !== undefined && swimmingZones.zone1?.max !== null ? String(swimmingZones.zone1.max) : '', description: swimmingZones.zone1?.description || '', lactate: { min: toStringOrEmpty(swimmingZones.zone1?.lactate?.min), max: toStringOrEmpty(swimmingZones.zone1?.lactate?.max) } },
+            zone2: { min: swimmingZones.zone2?.min !== undefined && swimmingZones.zone2?.min !== null ? String(swimmingZones.zone2.min) : '', max: swimmingZones.zone2?.max !== undefined && swimmingZones.zone2?.max !== null ? String(swimmingZones.zone2.max) : '', description: swimmingZones.zone2?.description || '', lactate: { min: toStringOrEmpty(swimmingZones.zone2?.lactate?.min), max: toStringOrEmpty(swimmingZones.zone2?.lactate?.max) } },
+            zone3: { min: swimmingZones.zone3?.min !== undefined && swimmingZones.zone3?.min !== null ? String(swimmingZones.zone3.min) : '', max: swimmingZones.zone3?.max !== undefined && swimmingZones.zone3?.max !== null ? String(swimmingZones.zone3.max) : '', description: swimmingZones.zone3?.description || '', lactate: { min: toStringOrEmpty(swimmingZones.zone3?.lactate?.min), max: toStringOrEmpty(swimmingZones.zone3?.lactate?.max) } },
+            zone4: { min: swimmingZones.zone4?.min !== undefined && swimmingZones.zone4?.min !== null ? String(swimmingZones.zone4.min) : '', max: swimmingZones.zone4?.max !== undefined && swimmingZones.zone4?.max !== null ? String(swimmingZones.zone4.max) : '', description: swimmingZones.zone4?.description || '', lactate: { min: toStringOrEmpty(swimmingZones.zone4?.lactate?.min), max: toStringOrEmpty(swimmingZones.zone4?.lactate?.max) } },
+            zone5: { min: swimmingZones.zone5?.min !== undefined && swimmingZones.zone5?.min !== null ? String(swimmingZones.zone5.min) : '', max: swimmingZones.zone5?.max !== undefined && swimmingZones.zone5?.max !== null ? String(swimmingZones.zone5.max) : '', description: swimmingZones.zone5?.description || '', lactate: { min: toStringOrEmpty(swimmingZones.zone5?.lactate?.min), max: toStringOrEmpty(swimmingZones.zone5?.lactate?.max) } },
             lt1: swimmingZones.lt1 || '',
             lt2: swimmingZones.lt2 || ''
           }
@@ -74,7 +93,8 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
             maxHeartRate: swimmingHrZones.maxHeartRate || ''
           }
         }
-      });
+      };
+      setFormData(next);
     }
   }, [userData]);
 
@@ -85,31 +105,31 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
     const dataToSubmit = {
       powerZones: formData.powerZones ? {
         cycling: formData.powerZones.cycling ? {
-          zone1: { min: formData.powerZones.cycling.zone1.min ? Number(formData.powerZones.cycling.zone1.min) : undefined, max: formData.powerZones.cycling.zone1.max ? Number(formData.powerZones.cycling.zone1.max) : undefined, description: formData.powerZones.cycling.zone1.description || undefined },
-          zone2: { min: formData.powerZones.cycling.zone2.min ? Number(formData.powerZones.cycling.zone2.min) : undefined, max: formData.powerZones.cycling.zone2.max ? Number(formData.powerZones.cycling.zone2.max) : undefined, description: formData.powerZones.cycling.zone2.description || undefined },
-          zone3: { min: formData.powerZones.cycling.zone3.min ? Number(formData.powerZones.cycling.zone3.min) : undefined, max: formData.powerZones.cycling.zone3.max ? Number(formData.powerZones.cycling.zone3.max) : undefined, description: formData.powerZones.cycling.zone3.description || undefined },
-          zone4: { min: formData.powerZones.cycling.zone4.min ? Number(formData.powerZones.cycling.zone4.min) : undefined, max: formData.powerZones.cycling.zone4.max ? Number(formData.powerZones.cycling.zone4.max) : undefined, description: formData.powerZones.cycling.zone4.description || undefined },
-          zone5: { min: formData.powerZones.cycling.zone5.min ? Number(formData.powerZones.cycling.zone5.min) : undefined, max: formData.powerZones.cycling.zone5.max ? Number(formData.powerZones.cycling.zone5.max) : undefined, description: formData.powerZones.cycling.zone5.description || undefined },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.cycling.zone1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.cycling.zone2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.cycling.zone3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.cycling.zone4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.cycling.zone5),
           lt1: formData.powerZones.cycling.lt1 ? Number(formData.powerZones.cycling.lt1) : undefined,
           lt2: formData.powerZones.cycling.lt2 ? Number(formData.powerZones.cycling.lt2) : undefined,
           lastUpdated: new Date()
         } : undefined,
         running: formData.powerZones.running ? {
-          zone1: { min: formData.powerZones.running.zone1.min ? Number(formData.powerZones.running.zone1.min) : undefined, max: formData.powerZones.running.zone1.max ? Number(formData.powerZones.running.zone1.max) : undefined, description: formData.powerZones.running.zone1.description || undefined },
-          zone2: { min: formData.powerZones.running.zone2.min ? Number(formData.powerZones.running.zone2.min) : undefined, max: formData.powerZones.running.zone2.max ? Number(formData.powerZones.running.zone2.max) : undefined, description: formData.powerZones.running.zone2.description || undefined },
-          zone3: { min: formData.powerZones.running.zone3.min ? Number(formData.powerZones.running.zone3.min) : undefined, max: formData.powerZones.running.zone3.max ? Number(formData.powerZones.running.zone3.max) : undefined, description: formData.powerZones.running.zone3.description || undefined },
-          zone4: { min: formData.powerZones.running.zone4.min ? Number(formData.powerZones.running.zone4.min) : undefined, max: formData.powerZones.running.zone4.max ? Number(formData.powerZones.running.zone4.max) : undefined, description: formData.powerZones.running.zone4.description || undefined },
-          zone5: { min: formData.powerZones.running.zone5.min ? Number(formData.powerZones.running.zone5.min) : undefined, max: formData.powerZones.running.zone5.max ? Number(formData.powerZones.running.zone5.max) : undefined, description: formData.powerZones.running.zone5.description || undefined },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.running.zone1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.running.zone2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.running.zone3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.running.zone4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.running.zone5),
           lt1: formData.powerZones.running.lt1 ? Number(formData.powerZones.running.lt1) : undefined,
           lt2: formData.powerZones.running.lt2 ? Number(formData.powerZones.running.lt2) : undefined,
           lastUpdated: new Date()
         } : undefined,
         swimming: formData.powerZones.swimming ? {
-          zone1: { min: formData.powerZones.swimming.zone1.min ? Number(formData.powerZones.swimming.zone1.min) : undefined, max: formData.powerZones.swimming.zone1.max ? Number(formData.powerZones.swimming.zone1.max) : undefined, description: formData.powerZones.swimming.zone1.description || undefined },
-          zone2: { min: formData.powerZones.swimming.zone2.min ? Number(formData.powerZones.swimming.zone2.min) : undefined, max: formData.powerZones.swimming.zone2.max ? Number(formData.powerZones.swimming.zone2.max) : undefined, description: formData.powerZones.swimming.zone2.description || undefined },
-          zone3: { min: formData.powerZones.swimming.zone3.min ? Number(formData.powerZones.swimming.zone3.min) : undefined, max: formData.powerZones.swimming.zone3.max ? Number(formData.powerZones.swimming.zone3.max) : undefined, description: formData.powerZones.swimming.zone3.description || undefined },
-          zone4: { min: formData.powerZones.swimming.zone4.min ? Number(formData.powerZones.swimming.zone4.min) : undefined, max: formData.powerZones.swimming.zone4.max ? Number(formData.powerZones.swimming.zone4.max) : undefined, description: formData.powerZones.swimming.zone4.description || undefined },
-          zone5: { min: formData.powerZones.swimming.zone5.min ? Number(formData.powerZones.swimming.zone5.min) : undefined, max: formData.powerZones.swimming.zone5.max ? Number(formData.powerZones.swimming.zone5.max) : undefined, description: formData.powerZones.swimming.zone5.description || undefined },
+          zone1: mapPowerZoneForSubmit(formData.powerZones.swimming.zone1),
+          zone2: mapPowerZoneForSubmit(formData.powerZones.swimming.zone2),
+          zone3: mapPowerZoneForSubmit(formData.powerZones.swimming.zone3),
+          zone4: mapPowerZoneForSubmit(formData.powerZones.swimming.zone4),
+          zone5: mapPowerZoneForSubmit(formData.powerZones.swimming.zone5),
           lt1: formData.powerZones.swimming.lt1 ? Number(formData.powerZones.swimming.lt1) : undefined,
           lt2: formData.powerZones.swimming.lt2 ? Number(formData.powerZones.swimming.lt2) : undefined,
           lastUpdated: new Date()
@@ -414,6 +434,44 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
               >
                 Generate HR Zones from Max HR
               </button>
+            </div>
+            <div className="space-y-1">
+              {[1, 2, 3, 4, 5].map(zoneNum => (
+                <div key={zoneNum} className="p-2 bg-gray-50 rounded-md border border-gray-200">
+                  <div className="flex items-start gap-3">
+                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-bold text-xs flex-shrink-0 mt-1 ${
+                      zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
+                      zoneNum === 2 ? 'bg-green-100 text-green-700' :
+                      zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
+                      zoneNum === 4 ? 'bg-orange-100 text-orange-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>{zoneNum}</span>
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold text-gray-700">{selectedSport === 'cycling' ? 'Power (W)' : selectedSport === 'running' ? 'Pace (s)' : 'Pace (s/100m)'}</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="number" value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''} onChange={(e) => setFormData(prev => ({ ...prev, powerZones: { ...prev.powerZones, [selectedSport]: { ...prev.powerZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`], min: e.target.value } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder="Min" />
+                          <input type="number" value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''} onChange={(e) => setFormData(prev => ({ ...prev, powerZones: { ...prev.powerZones, [selectedSport]: { ...prev.powerZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`], max: e.target.value } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder={zoneNum === 5 ? '∞' : 'Max'} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold text-gray-700">Heart Rate (BPM)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="number" value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.min || ''} onChange={(e) => setFormData(prev => ({ ...prev, heartRateZones: { ...prev.heartRateZones, [selectedSport]: { ...prev.heartRateZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`], min: e.target.value } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder="Min" />
+                          <input type="number" value={formData.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`]?.max || ''} onChange={(e) => setFormData(prev => ({ ...prev, heartRateZones: { ...prev.heartRateZones, [selectedSport]: { ...prev.heartRateZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.heartRateZones?.[selectedSport]?.[`zone${zoneNum}`], max: e.target.value } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder={zoneNum === 5 ? '∞' : 'Max'} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold text-gray-700">Lactate (mmol/L)</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="number" step="0.1" value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate?.min || ''} onChange={(e) => setFormData(prev => ({ ...prev, powerZones: { ...prev.powerZones, [selectedSport]: { ...prev.powerZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`], lactate: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate, min: e.target.value } } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder="Min" />
+                          <input type="number" step="0.1" value={formData.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate?.max || ''} onChange={(e) => setFormData(prev => ({ ...prev, powerZones: { ...prev.powerZones, [selectedSport]: { ...prev.powerZones?.[selectedSport], [`zone${zoneNum}`]: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`], lactate: { ...prev.powerZones?.[selectedSport]?.[`zone${zoneNum}`]?.lactate, max: e.target.value } } } } }))} className="w-full px-2 py-1 text-xs bg-white border border-gray-200 rounded" placeholder={zoneNum === 5 ? '∞' : 'Max'} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

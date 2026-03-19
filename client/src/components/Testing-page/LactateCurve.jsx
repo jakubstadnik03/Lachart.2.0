@@ -109,7 +109,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   const [showGlossary, setShowGlossary] = useState(false);
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
-  const [showRPE, setShowRPE] = useState(true);
+  const [showRPE, setShowRPE] = useState(false);
   const chartRef = useRef(null);
   
   // Detect mobile
@@ -346,7 +346,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       });
     }
 
-    // Add RPE/Borg dataset if data exists - uses same Y-axis as Lactate
+    // Add RPE/Borg dataset if data exists
     if (hasRPEData) {
       const rpeLabel = rpeScale === 'borg' ? 'Borg (6-20)' : 'RPE (1-10)';
       datasets.push({
@@ -359,7 +359,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         pointHoverRadius: 8,
         pointBackgroundColor: "#10b981",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
-        yAxisID: "y", // Same axis as Lactate
+        yAxisID: "y2",
         hidden: !showRPE,
       });
     }
@@ -460,6 +460,9 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
               } else if (yAxisID === 'y3') {
                 valueUnit = 'ml/kg/min';
                 valueStr = value.toFixed(1);
+              } else if (yAxisID === 'y2') {
+                valueUnit = rpeScale === 'borg' ? '6-20' : '1-10';
+                valueStr = Math.round(value).toString();
               } else if (yAxisID === 'y' || !yAxisID) {
                 // Same axis as Lactate - determine unit from label
                 if (label.includes('Glucose')) {
@@ -497,17 +500,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         y: {
           title: { display: true, text: "Lactate (mmol/L)" },
           min: 0,
-          // Calculate max from lactate, but if RPE has value 10, max is 10
           max: (() => {
             const maxLactate = Math.max(...lactateData.filter((v) => v != null), 0);
-            const maxRPE = hasRPEData ? Math.max(...rpeData.filter((v) => v != null), 0) : 0;
-            // If RPE has value 10, max is 10, otherwise use lactate max
-            if (maxRPE >= 10) {
-              return 10;
-            }
             return Math.ceil(maxLactate + 1);
           })(),
           ticks: { display: true },
+          position: "left",
           border: { dash: [6, 6] },
           grid: {
             color: "rgba(0, 0, 0, 0.15)",
@@ -528,6 +526,39 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             borderDash: [4, 4],
           },
         },
+        ...(hasRPEData ? {
+          y2: {
+            title: { display: !!showRPE, text: rpeScale === 'borg' ? "Borg (6-20)" : "RPE (1-10)" },
+            // Align axis height with lactate axis (starts at baseline).
+            min: 0,
+            max: rpeScale === 'borg' ? 20 : 10,
+            bounds: 'ticks',
+            reverse: false,
+            grace: 0,
+            position: "left",
+            offset: true,
+            ticks: {
+              display: !!showRPE,
+              stepSize: 1,
+              includeBounds: true,
+              autoSkip: false,
+              callback: (value) => {
+                const rounded = Math.round(value);
+                if (rpeScale === 'borg') {
+                  return rounded >= 6 ? `${rounded}` : '';
+                }
+                return rounded >= 1 ? `${rounded}` : '';
+              }
+            },
+            border: {
+              display: !!showRPE
+            },
+            grid: {
+              drawOnChartArea: false,
+              color: "rgba(0, 0, 0, 0)",
+            },
+          },
+        } : {}),
         ...(hasVO2Data ? {
           y3: {
             title: { display: true, text: "VO₂ (ml/kg/min)" },

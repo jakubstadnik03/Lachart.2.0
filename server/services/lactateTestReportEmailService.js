@@ -115,28 +115,48 @@ function buildFocusRecommendation({ sport, cur, prev }) {
   return bullets.slice(0, 3);
 }
 
-function renderZonesTable(zones, { sport }) {
+function renderZonesTable(zones, { sport, unitSystem, inputMode }) {
   if (!zones) return '<p style="margin:0;color:#6b7280;">Zones could not be calculated from this test (missing LTP/HR).</p>';
 
   const rows = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'].map((z, idx) => {
     const zn = idx + 1;
     const hr = zones.heartRate?.[z];
+    const la = zones.lactate?.[z];
     const main = (sport === 'bike') ? zones.power?.[z] : zones.pace?.[z];
-    const mainText = sport === 'bike'
-      ? `${main?.min ?? '—'}–${main?.max ?? '—'} W`
-      : `${main?.min ?? '—'}–${main?.max ?? '—'}`;
+    let mainText = '—';
+    if (sport === 'bike') {
+      mainText = `${main?.min ?? '—'}–${main?.max ?? '—'} W`;
+    } else if (inputMode === 'speed') {
+      const minSec = main?.minSeconds ?? null;
+      const maxSec = main?.maxSeconds ?? null;
+      const minSpeedKmH = sport === 'run' ? (minSec ? 3600 / minSec : null) : (minSec ? 360 / minSec : null);
+      const maxSpeedKmH = sport === 'run' ? (maxSec ? 3600 / maxSec : null) : (maxSec ? 360 / maxSec : null);
+      const minShown = minSpeedKmH == null ? null : (unitSystem === 'imperial' ? minSpeedKmH * 0.621371 : minSpeedKmH);
+      const maxShown = maxSpeedKmH == null ? null : (unitSystem === 'imperial' ? maxSpeedKmH * 0.621371 : maxSpeedKmH);
+      const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
+      mainText =
+        Number.isFinite(minShown) && Number.isFinite(maxShown)
+          ? `${minShown.toFixed(1)}–${maxShown.toFixed(1)} ${unit}`
+          : `${main?.min ?? '—'}–${main?.max ?? '—'}`;
+    } else {
+      mainText = `${main?.min ?? '—'}–${main?.max ?? '—'}`;
+    }
     const hrText = hr ? `${hr.min}–${hr.max}` : '—';
+    const laText = (Number.isFinite(Number(la?.min)) && Number.isFinite(Number(la?.max)))
+      ? `${Number(la.min).toFixed(1)}–${Number(la.max).toFixed(1)}`
+      : '—';
 
     return `
       <tr>
         <td style="padding:8px 0;border-bottom:1px solid #eef2f7;color:#111827;font-weight:700;">Z${zn}</td>
         <td style="padding:8px 0;border-bottom:1px solid #eef2f7;color:#111827;">${escapeHtml(mainText)}</td>
         <td style="padding:8px 0;border-bottom:1px solid #eef2f7;color:#111827;text-align:right;">${escapeHtml(hrText)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #eef2f7;color:#111827;text-align:right;">${escapeHtml(laText)}</td>
       </tr>
     `;
   }).join('');
 
-  const mainHeader = sport === 'bike' ? 'Power' : 'Pace';
+  const mainHeader = sport === 'bike' ? 'Power' : (inputMode === 'speed' ? 'Speed' : 'Pace');
 
   return `
     <table role="presentation" style="width:100%;border-collapse:collapse;">
@@ -144,6 +164,7 @@ function renderZonesTable(zones, { sport }) {
         <th style="text-align:left;padding:0 0 8px;color:#6b7280;font-size:12px;font-weight:700;">Zone</th>
         <th style="text-align:left;padding:0 0 8px;color:#6b7280;font-size:12px;font-weight:700;">${escapeHtml(mainHeader)}</th>
         <th style="text-align:right;padding:0 0 8px;color:#6b7280;font-size:12px;font-weight:700;">HR</th>
+        <th style="text-align:right;padding:0 0 8px;color:#6b7280;font-size:12px;font-weight:700;">La</th>
       </tr>
       ${rows}
     </table>
@@ -329,13 +350,15 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
   if (!athlete) return { error: true, reason: 'athlete_not_found' };
 
   const sport = test.sport;
-  const unitSystem = test.unitSystem || 'metric';
-  const inputMode = test.inputMode || 'pace';
+  // Allow client to override how values should be rendered (pace vs speed, unit system).
+  // This is important because the UI can display km/h while the stored values are still pace seconds.
+  const unitSystem = opts.unitSystem || test.unitSystem || 'metric';
+  const inputMode = opts.inputMode || test.inputMode || 'pace';
 
   const allTests = await Test.find({ athleteId, sport }).sort({ date: 1 }).select('date sport baseLactate results unitSystem inputMode title');
   const prevTest = pickPreviousTest(allTests, test);
 
-  const curThr = calculateThresholds(test);
+  const computedThr = calculateThresholds(test);
   const computedZones = calculateZonesFromTest(test);
 
   const sanitizeZones = (z) => {
@@ -365,12 +388,51 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
         out.heartRate[k] = { min: Number(item.min), max: Number(item.max) };
       });
     }
+    if (z.lactate && typeof z.lactate === 'object') {
+      out.lactate = {};
+      ['zone1','zone2','zone3','zone4','zone5'].forEach(k => {
+        const item = z.lactate?.[k];
+        if (!item) return;
+        out.lactate[k] = { min: Number(item.min), max: Number(item.max) };
+      });
+    }
     // Keep only if it has at least something
-    const hasAny = Boolean(out.power || out.pace || out.heartRate);
+    const hasAny = Boolean(out.power || out.pace || out.heartRate || out.lactate);
     return hasAny ? out : null;
   };
 
+  const sanitizeThresholds = (t) => {
+    if (!t || typeof t !== 'object') return null;
+    const out = { heartRates: {}, lactates: {} };
+    const keys = Object.keys(t).filter(k => !['heartRates', 'lactates'].includes(k));
+    keys.forEach((k) => {
+      if (k === 'LTRatio') {
+        const v = Number(t[k]);
+        if (Number.isFinite(v) && v > 0) out[k] = v;
+        return;
+      }
+      const v = Number(t[k]);
+      if (Number.isFinite(v)) out[k] = v;
+    });
+    if (t.heartRates && typeof t.heartRates === 'object') {
+      Object.keys(t.heartRates).forEach((k) => {
+        const v = Number(t.heartRates[k]);
+        if (Number.isFinite(v)) out.heartRates[k] = v;
+      });
+    }
+    if (t.lactates && typeof t.lactates === 'object') {
+      Object.keys(t.lactates).forEach((k) => {
+        const v = Number(t.lactates[k]);
+        if (Number.isFinite(v)) out.lactates[k] = v;
+      });
+    }
+    const hasMain = Object.keys(out).some(k => !['heartRates', 'lactates'].includes(k));
+    return hasMain ? out : null;
+  };
+
   const overrideZones = sanitizeZones(opts.zones);
+  const overrideThr = sanitizeThresholds(opts.thresholds);
+  const curThr = overrideThr || computedThr;
   const curZones = overrideZones || computedZones;
   const hasOverrideZones = Boolean(overrideZones);
   const prevThr = prevTest ? calculateThresholds(prevTest) : null;
@@ -450,7 +512,7 @@ async function getReportHtml(requesterUserId, testId, overrides = {}) {
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">
         <div style="font-weight:800;color:#111827;font-size:16px;margin-bottom:6px;">Zones</div>
         ${hasOverrideZones ? `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(edited before sending)</div>` : `<div style="color:#6b7280;font-size:12px;margin-bottom:10px;">(calculated from this test)</div>`}
-        ${renderZonesTable(curZones, { sport })}
+        ${renderZonesTable(curZones, { sport, unitSystem, inputMode })}
       </div>
 
       <div style="border:1px solid #eef2f7;border-radius:10px;padding:14px;background:#ffffff;">

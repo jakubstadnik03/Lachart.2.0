@@ -49,36 +49,143 @@ function formatDateShort(dateLike) {
   }
 }
 
+function normalizeSport(rawSport) {
+  const s = String(rawSport || '').toLowerCase();
+  if (s === 'run' || s === 'running') return 'run';
+  if (s === 'swim' || s === 'swimming') return 'swim';
+  if (s === 'bike' || s === 'cycling' || s === 'cycle') return 'bike';
+  return s || 'bike';
+}
+
 function formatIntensity(value, { sport, unitSystem, inputMode }) {
+  const coreSport = normalizeSport(sport);
   if (!Number.isFinite(value)) return '—';
-  if (sport === 'bike') return `${Math.round(value)} W`;
-  if (inputMode === 'pace' && (sport === 'run' || sport === 'swim')) {
+  if (coreSport === 'bike') return `${Math.round(value)} W`;
+  if (inputMode === 'pace' && (coreSport === 'run' || coreSport === 'swim')) {
     const pace = formatPace(value);
-    return sport === 'swim' ? `${pace}${unitSystem === 'imperial' ? '/100yd' : '/100m'}` : `${pace}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
+    return coreSport === 'swim' ? `${pace}${unitSystem === 'imperial' ? '/100yd' : '/100m'}` : `${pace}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
+  }
+  // speed mode: in this app run/swim thresholds/results are stored as seconds (pace),
+  // even when inputMode is set to "speed". Convert seconds back to speed.
+  if (inputMode === 'speed' && (coreSport === 'run' || coreSport === 'swim')) {
+    if (value <= 0) return '—';
+    if (!isLikelyPaceSeconds(value, coreSport)) {
+      return `${Number(value).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+    if (coreSport === 'run') {
+      const kmh = 3600 / value; // seconds per km -> km/h
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
+    if (coreSport === 'swim') {
+      const kmh = 360 / value; // seconds per 100m -> km/h
+      const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      return `${shown.toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+    }
   }
   return `${Number(value).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
 }
 
 function formatIntensityTick(value, { sport, unitSystem, inputMode }) {
+  const coreSport = normalizeSport(sport);
   const v = Number(value);
   if (!Number.isFinite(v)) return '';
-  if (sport === 'bike') return String(Math.round(v));
-  if (sport === 'run' || sport === 'swim') return formatPace(v);
+  if (coreSport === 'bike') return String(Math.round(v));
+  if (coreSport === 'run' || coreSport === 'swim') {
+    if (inputMode === 'speed') {
+      if (!isLikelyPaceSeconds(v, coreSport)) return v.toFixed(1);
+      const text = formatIntensity(v, { sport: coreSport, unitSystem, inputMode });
+      // Return just the numeric part for axis ticks
+      const num = text.split(' ')[0];
+      return num || '';
+    }
+    return formatPace(v);
+  }
   return inputMode === 'speed' ? v.toFixed(1) : String(Math.round(v));
 }
 
 function paceUnitLabel({ sport, unitSystem }) {
-  if (sport === 'swim') return unitSystem === 'imperial' ? 'min/100yd' : 'min/100m';
+  const coreSport = normalizeSport(sport);
+  if (coreSport === 'swim') return unitSystem === 'imperial' ? 'min/100yd' : 'min/100m';
   return unitSystem === 'imperial' ? 'min/mile' : 'min/km';
+}
+
+function speedUnitLabel({ unitSystem }) {
+  return unitSystem === 'imperial' ? 'mph' : 'km/h';
+}
+
+function parsePaceToSeconds(paceStr) {
+  if (typeof paceStr !== 'string') return null;
+  const s = paceStr.trim();
+  const m = s.match(/^(\d+)\s*:\s*(\d{1,2})$/);
+  if (!m) return null;
+  const minutes = Number(m[1]);
+  const seconds = Number(m[2]);
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+  return minutes * 60 + seconds;
+}
+
+function paceSecondsToSpeed(paceSeconds, { sport, unitSystem }) {
+  const coreSport = normalizeSport(sport);
+  const sec = Number(paceSeconds);
+  if (!Number.isFinite(sec) || sec <= 0) return null;
+  // run: seconds per km -> km/h = 3600/sec
+  // swim: seconds per 100m -> km/h = 360/sec
+  const kmh = coreSport === 'run' ? 3600 / sec : 360 / sec;
+  const shown = unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+  return shown;
+}
+
+function isLikelyPaceSeconds(value, sport) {
+  const v = Number(value);
+  if (!Number.isFinite(v) || v <= 0) return false;
+  if (sport === 'run') return v >= 40;
+  if (sport === 'swim') return v >= 25;
+  return false;
+}
+
+function inferInputModeForPdf({ sport, inputMode, results }) {
+  const coreSport = normalizeSport(sport);
+  if (!(coreSport === 'run' || coreSport === 'swim')) return inputMode || 'pace';
+  if (inputMode === 'speed') return 'speed';
+  const vals = (results || [])
+    .map(r => Number(r?.power))
+    .filter(v => Number.isFinite(v) && v > 0);
+  if (!vals.length) return inputMode || 'pace';
+  const sorted = [...vals].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  return isLikelyPaceSeconds(median, coreSport) ? 'pace' : 'speed';
+}
+
+function toDisplayX(rawX, { sport, unitSystem, inputMode }) {
+  const coreSport = normalizeSport(sport);
+  const x = Number(rawX);
+  if (!Number.isFinite(x)) return NaN;
+  if (coreSport === 'run' || coreSport === 'swim') {
+    if (inputMode === 'speed') {
+      if (!isLikelyPaceSeconds(x, coreSport)) return x;
+      if (x <= 0) return NaN;
+      if (coreSport === 'run') {
+        const kmh = 3600 / x;
+        return unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+      }
+      const kmh = 360 / x;
+      return unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+    }
+    // pace mode: keep seconds
+    return x;
+  }
+  return x; // bike power
 }
 
 /**
  * Build lactate curve SVG with dual Y-axis: lactate (left, red) + heart rate (right, blue).
  */
 function buildDualAxisCurveSvg({ results, sport, unitSystem, inputMode }) {
+  const coreSport = normalizeSport(sport);
   const pts = (Array.isArray(results) ? results : [])
     .map(r => ({
-      x: Number(r.power),
+      x: toDisplayX(r.power, { sport: coreSport, unitSystem, inputMode }),
       la: Number(r.lactate),
       hr: Number(r.heartRate)
     }))
@@ -87,9 +194,8 @@ function buildDualAxisCurveSvg({ results, sport, unitSystem, inputMode }) {
   if (pts.length < 2) return '';
 
   const hasHr = pts.some(p => Number.isFinite(p.hr) && p.hr > 0);
-  const coreSport = (sport === 'run' || sport === 'swim' || sport === 'bike') ? sport : null;
   const isPace = coreSport === 'run' || coreSport === 'swim';
-  const reverseX = isPace;
+  const reverseX = Boolean(isPace && inputMode === 'pace');
 
   const minX = Math.min(...pts.map(p => p.x));
   const maxX = Math.max(...pts.map(p => p.x));
@@ -161,8 +267,11 @@ function buildDualAxisCurveSvg({ results, sport, unitSystem, inputMode }) {
               <text x="${xx}" y="${H - padB + 18}" text-anchor="middle" font-size="11" fill="#6B7280">${escapeHtml(label)}</text>`;
     }).join('');
 
-  const xLabel = coreSport === 'bike' ? 'Power (W)'
-    : (coreSport === 'run' || coreSport === 'swim') ? `Pace (${paceUnitLabel({ sport: coreSport, unitSystem })})` : 'Intensity';
+  const xLabel = coreSport === 'bike'
+    ? 'Power (W)'
+    : (coreSport === 'run' || coreSport === 'swim')
+      ? (inputMode === 'speed' ? `Speed (${speedUnitLabel({ unitSystem })})` : `Pace (${paceUnitLabel({ sport: coreSport, unitSystem })})`)
+      : 'Intensity';
 
   const legendX = padL + 8;
   const legend = `
@@ -204,17 +313,17 @@ function buildDualAxisCurveSvg({ results, sport, unitSystem, inputMode }) {
  * Build comparison SVG overlaying current and previous test lactate curves.
  */
 function buildComparisonSvg({ currentTest, prevTest, sport, unitSystem, inputMode }) {
+  const coreSport = normalizeSport(sport);
   const parse = (test) => (Array.isArray(test?.results) ? test.results : [])
-    .map(r => ({ x: Number(r.power), la: Number(r.lactate), hr: Number(r.heartRate) }))
+    .map(r => ({ x: toDisplayX(r.power, { sport: coreSport, unitSystem, inputMode }), la: Number(r.lactate), hr: Number(r.heartRate) }))
     .filter(p => Number.isFinite(p.x) && Number.isFinite(p.la));
 
   const curPts = parse(currentTest);
   const prevPts = parse(prevTest);
   if (curPts.length < 2 && prevPts.length < 2) return '';
 
-  const coreSport = (sport === 'run' || sport === 'swim' || sport === 'bike') ? sport : null;
   const isPace = coreSport === 'run' || coreSport === 'swim';
-  const reverseX = isPace;
+  const reverseX = Boolean(isPace && inputMode === 'pace');
 
   const allX = [...curPts.map(p => p.x), ...prevPts.map(p => p.x)];
   const allLa = [...curPts.map(p => p.la), ...prevPts.map(p => p.la)];
@@ -278,8 +387,11 @@ function buildComparisonSvg({ currentTest, prevTest, sport, unitSystem, inputMod
             <text x="${cx}" y="${(Number(cy) + 14).toFixed(1)}" text-anchor="middle" font-size="8" fill="#9CA3AF">${p.la.toFixed(1)}</text>`;
   }).join('');
 
-  const xLabel = coreSport === 'bike' ? 'Power (W)'
-    : (coreSport === 'run' || coreSport === 'swim') ? `Pace (${paceUnitLabel({ sport: coreSport, unitSystem })})` : 'Intensity';
+  const xLabel = coreSport === 'bike'
+    ? 'Power (W)'
+    : (coreSport === 'run' || coreSport === 'swim')
+      ? (inputMode === 'speed' ? `Speed (${speedUnitLabel({ unitSystem })})` : `Pace (${paceUnitLabel({ sport: coreSport, unitSystem })})`)
+      : 'Intensity';
 
   const curDate = currentTest?.date ? formatDateShort(currentTest.date) : '';
   const prevDate = prevTest?.date ? formatDateShort(prevTest.date) : '';
@@ -403,16 +515,22 @@ async function svgToPngBase64(svgString, width = 1400) {
   return b64;
 }
 
-async function generateTestReportPdf(requesterUserId, testId) {
+async function generateTestReportPdf(requesterUserId, testId, overrides = {}) {
   if (!sharp || !jsPDF) {
     return { error: true, reason: 'pdf_not_available', message: 'PDF dependencies not installed' };
   }
 
   try {
-    const data = await getReportData(requesterUserId, testId, {});
+    const data = await getReportData(requesterUserId, testId, overrides || {});
     if (data.error) return { error: true, reason: data.reason };
 
     const { test, athlete, sport, unitSystem, inputMode, curThr, prevTest, prevThr, curZones, focus, lactateSvg, baseTitle } = data;
+    const coreSport = normalizeSport(sport);
+    const displayInputMode = inferInputModeForPdf({
+      sport: coreSport,
+      inputMode,
+      results: test?.results || []
+    });
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -476,7 +594,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
     // ---------- LACTATE + HR CURVE (dual axis) ----------
     const dualSvg = buildDualAxisCurveSvg({
       results: test.results || [],
-      sport, unitSystem, inputMode
+      sport: coreSport, unitSystem, inputMode: displayInputMode
     });
     if (dualSvg) {
       y = ensureSpace(doc, y, 95, pageW, pageH, baseTitle, pageNumRef);
@@ -498,20 +616,37 @@ async function generateTestReportPdf(requesterUserId, testId) {
     y = drawSectionTitle(doc, 'Training Zones', y, left);
 
     if (curZones) {
-      const mainHeader = sport === 'bike' ? 'Power' : 'Pace';
+      const mainHeader = coreSport === 'bike' ? 'Power' : (displayInputMode === 'speed' ? 'Speed' : 'Pace');
       const zoneNames = ['Recovery', 'Endurance', 'Tempo', 'Threshold', 'VO2 Max'];
       const zoneRows = ['zone1', 'zone2', 'zone3', 'zone4', 'zone5'].map((z, idx) => {
         const hr = curZones.heartRate?.[z];
-        const main = (sport === 'bike') ? curZones.power?.[z] : curZones.pace?.[z];
-        const mainText = sport === 'bike'
-          ? `${main?.min ?? '—'} – ${main?.max ?? '—'} W`
-          : `${main?.min ?? '—'} – ${main?.max ?? '—'}`;
+        const la = curZones.lactate?.[z];
+        const main = (coreSport === 'bike') ? curZones.power?.[z] : curZones.pace?.[z];
+        let mainText = '—';
+        if (coreSport === 'bike') {
+          mainText = `${main?.min ?? '—'} – ${main?.max ?? '—'} W`;
+        } else if (displayInputMode === 'speed') {
+          const minSec = main?.minSeconds ?? parsePaceToSeconds(main?.min);
+          const maxSec = main?.maxSeconds ?? parsePaceToSeconds(main?.max);
+          const minSpeed = paceSecondsToSpeed(minSec, { sport: coreSport, unitSystem });
+          const maxSpeed = paceSecondsToSpeed(maxSec, { sport: coreSport, unitSystem });
+          const unit = speedUnitLabel({ unitSystem });
+          mainText =
+            Number.isFinite(minSpeed) && Number.isFinite(maxSpeed)
+              ? `${minSpeed.toFixed(1)} – ${maxSpeed.toFixed(1)} ${unit}`
+              : `${main?.min ?? '—'} – ${main?.max ?? '—'}`;
+        } else {
+          mainText = `${main?.min ?? '—'} – ${main?.max ?? '—'}`;
+        }
         const hrText = hr ? `${hr.min} – ${hr.max} bpm` : '—';
-        return [`Z${idx + 1}`, zoneNames[idx], mainText, hrText];
+        const laText = (Number.isFinite(Number(la?.min)) && Number.isFinite(Number(la?.max)))
+          ? `${Number(la.min).toFixed(1)} – ${Number(la.max).toFixed(1)}`
+          : '—';
+        return [`Z${idx + 1}`, zoneNames[idx], mainText, hrText, laText];
       });
       doc.autoTable({
         startY: y,
-        head: [['Zone', 'Name', mainHeader, 'Heart Rate']],
+        head: [['Zone', 'Name', mainHeader, 'Heart Rate', 'Lactate']],
         body: zoneRows,
         theme: 'plain',
         margin: { left, right: 14 },
@@ -548,7 +683,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
       const v = curThr?.[m];
       const hr = curThr?.heartRates?.[m];
       const la = curThr?.lactates?.[m];
-      const valueText = (m === 'LTRatio') ? (v ? String(v) : '—') : (v ? formatIntensity(Number(v), { sport, unitSystem, inputMode }) : '—');
+      const valueText = (m === 'LTRatio') ? (v ? String(v) : '—') : (v ? formatIntensity(Number(v), { sport: coreSport, unitSystem, inputMode: displayInputMode }) : '—');
       const hrText = (m === 'LTRatio') ? '—' : (hr ? String(Math.round(hr)) : '—');
       const laText = (m === 'LTRatio') ? '—' : (la ? Number(la).toFixed(2) : '—');
       return [m, valueText, hrText, laText];
@@ -579,7 +714,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
     y = drawSectionTitle(doc, 'Stage Results', y, left);
     const resultRows = (test.results || []).map((r, idx) => {
       const stage = r.interval ?? (idx + 1);
-      const p = formatIntensity(Number(r.power), { sport, unitSystem, inputMode });
+      const p = formatIntensity(Number(r.power), { sport: coreSport, unitSystem, inputMode: displayInputMode });
       const hr = Number.isFinite(Number(r.heartRate)) ? String(Math.round(Number(r.heartRate))) : '—';
       const la = Number.isFinite(Number(r.lactate)) ? Number(r.lactate).toFixed(2) : '—';
       const rpe = Number.isFinite(Number(r.RPE)) ? String(Number(r.RPE)) : '—';
@@ -608,7 +743,7 @@ async function generateTestReportPdf(requesterUserId, testId) {
       y += 6;
 
       // Comparison graph: overlay both curves
-      const compSvg = buildComparisonSvg({ currentTest: test, prevTest, sport, unitSystem, inputMode });
+      const compSvg = buildComparisonSvg({ currentTest: test, prevTest, sport: coreSport, unitSystem, inputMode: displayInputMode });
       if (compSvg) {
         y = ensureSpace(doc, y, 90, pageW, pageH, baseTitle, pageNumRef);
         try {
@@ -627,15 +762,15 @@ async function generateTestReportPdf(requesterUserId, testId) {
       const curLt2 = Number(curThr['LTP2'] || 0);
       const prevLt1 = Number(prevThr['LTP1'] || 0);
       const prevLt2 = Number(prevThr['LTP2'] || 0);
-      const isPace = sport === 'run' || sport === 'swim';
+      const isPace = coreSport === 'run' || coreSport === 'swim';
       const delta1 = isPace ? prevLt1 - curLt1 : curLt1 - prevLt1;
       const delta2 = isPace ? prevLt2 - curLt2 : curLt2 - prevLt2;
       const pct1 = prevLt1 ? Math.round((delta1 / prevLt1) * 100) : 0;
       const pct2 = prevLt2 ? Math.round((delta2 / prevLt2) * 100) : 0;
       const arrow = (d) => d > 0 ? '+' : d < 0 ? '' : '';
       const compRows = [
-        ['LTP1', formatIntensity(curLt1, { sport, unitSystem, inputMode }), formatIntensity(prevLt1, { sport, unitSystem, inputMode }), `${arrow(pct1)}${pct1}%`],
-        ['LTP2', formatIntensity(curLt2, { sport, unitSystem, inputMode }), formatIntensity(prevLt2, { sport, unitSystem, inputMode }), `${arrow(pct2)}${pct2}%`]
+        ['LTP1', formatIntensity(curLt1, { sport: coreSport, unitSystem, inputMode: displayInputMode }), formatIntensity(prevLt1, { sport: coreSport, unitSystem, inputMode: displayInputMode }), `${arrow(pct1)}${pct1}%`],
+        ['LTP2', formatIntensity(curLt2, { sport: coreSport, unitSystem, inputMode: displayInputMode }), formatIntensity(prevLt2, { sport: coreSport, unitSystem, inputMode: displayInputMode }), `${arrow(pct2)}${pct2}%`]
       ];
       y = ensureSpace(doc, y, 25, pageW, pageH, baseTitle, pageNumRef);
       doc.autoTable({

@@ -468,7 +468,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   const openEmailModal = () => {
     const zones = calculateZonesFromTest(mockData);
-    setZoneOverride(zones);
+    const thr = calculateThresholds(mockData);
+    const lt1La = Number(thr?.lactates?.['LTP1']);
+    const lt2La = Number(thr?.lactates?.['LTP2']);
+    const baseLa = Number(mockData?.baseLactate || 1.0);
+    const safeLt1 = Number.isFinite(lt1La) ? lt1La : Math.max(baseLa + 0.8, 2.0);
+    const safeLt2 = Number.isFinite(lt2La) ? lt2La : Math.max(safeLt1 + 1.2, 3.5);
+    const lactateZones = {
+      zone1: { min: Number(baseLa.toFixed(1)), max: Number(Math.max(baseLa + 0.2, safeLt1 * 0.9).toFixed(1)) },
+      zone2: { min: Number((safeLt1 * 0.9).toFixed(1)), max: Number(safeLt1.toFixed(1)) },
+      zone3: { min: Number(safeLt1.toFixed(1)), max: Number((safeLt2 * 0.95).toFixed(1)) },
+      zone4: { min: Number((safeLt2 * 0.96).toFixed(1)), max: Number((safeLt2 * 1.04).toFixed(1)) },
+      zone5: { min: Number((safeLt2 * 1.05).toFixed(1)), max: Number((safeLt2 * 1.20).toFixed(1)) }
+    };
+    const mergedZones = zones ? { ...zones, lactate: { ...lactateZones, ...(zones.lactate || {}) } } : { lactate: lactateZones };
+    setZoneOverride(mergedZones);
     setEmailStatus(null);
     setShowEmailModal(true);
   };
@@ -483,9 +497,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     try {
       setSendingEmail(true);
       setEmailStatus(null);
+      const overrides = {
+        inputMode,
+        unitSystem,
+        ...(zoneOverride ? { zones: zoneOverride } : {})
+      };
       await api.post(`/test/${testId}/send-report-email`, {
         toEmail: emailTo?.trim() ? emailTo.trim() : null,
-        overrides: zoneOverride ? { zones: zoneOverride } : null
+        overrides
       });
       setEmailStatus({ type: 'success', message: 'Email sent.' });
       setShowEmailModal(false);
@@ -511,7 +530,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     try {
       setDownloadingPdf(true);
       setPdfStatus(null);
-      const { data } = await api.get(`/test/${testId}/report-pdf`, { responseType: 'blob' });
+      const overrides = {
+        thresholds,
+        zones: zoneOverride || zones,
+        inputMode,
+        unitSystem
+      };
+      const { data } = await api.post(`/test/${testId}/report-pdf`, { overrides }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([data]));
       const link = document.createElement('a');
       link.href = url;
@@ -533,13 +558,55 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           reason = status === 503 ? 'pdf_not_available' : 'failed';
         }
       }
+
+      // If backend returns JSON { error: 'test_not_found' }, reason will be that string.
+      // If the endpoint is missing (route mismatch), reason is often empty/undefined.
+      const isTestNotFound = reason === 'test_not_found';
+      const isLikelyRouteMissing = status === 404 && !reason;
+
+      // Fallback: try GET without overrides (some deployments only support GET).
+      if (isLikelyRouteMissing) {
+        try {
+          const { data } = await api.get(`/test/${testId}/report-pdf`, { responseType: 'blob' });
+          const url = window.URL.createObjectURL(new Blob([data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `lactate-report-${testId}.pdf`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+          setPdfStatus({ type: 'success', message: 'PDF downloaded (fallback GET).' });
+          return;
+        } catch {
+          // fallthrough to error message
+        }
+      }
+
+      if (isTestNotFound) {
+        // Notify parent to reload tests list and clear stale selection.
+        try {
+          window.dispatchEvent(
+            new CustomEvent('lachart:testNotFound', {
+              detail: {
+                testId: testId || null,
+                athleteId: mockData?.athleteId || null,
+              },
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
       const msg =
         reason === 'pdf_not_available' || reason === 'pdf_generation_failed' || status === 503
           ? 'PDF generation is not available on this server.'
           : reason === 'forbidden' || status === 403
             ? 'You do not have access to this report.'
-            : reason === 'test_not_found' || status === 404
-              ? 'Test not found.'
+            : isTestNotFound
+              ? `Test not found (testId: ${testId}). The UI selection may be stale.`
+              : isLikelyRouteMissing
+                ? `PDF endpoint missing on server (404).`
               : (e?.response?.data?.message || 'Failed to download PDF.');
       setPdfStatus({ type: 'error', message: msg });
     } finally {
@@ -2113,9 +2180,40 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                     
                     const ltp1Index = ltp1Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP1') : -1;
                     const ltp2Index = ltp2Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP2') : -1;
-                    const isHRView = chartView === 'hr';
+                    // Detect actual rendered mode from chart scales (more reliable than React closure/state inside plugin).
+                    const yAxisTitle = String(chart?.options?.scales?.y?.title?.text || '').toLowerCase();
+                    const isHRView = yAxisTitle.includes('heart rate') || yAxisTitle.includes('tepy');
                     
                     const labels = [];
+
+                    // In HR view we don't have dedicated LTP*_line datasets,
+                    // so draw dashed vertical lines directly from visible LT points.
+                    if (isHRView) {
+                      [
+                        { dataset: ltp1Dataset, key: 'LTP1', chartDsIndex: ltp1Index },
+                        { dataset: ltp2Dataset, key: 'LTP2', chartDsIndex: ltp2Index }
+                      ].forEach(({ dataset, key, chartDsIndex }) => {
+                        if (!dataset || !dataset.data || dataset.data.length === 0) return;
+                        if (chartDsIndex >= 0 && typeof chart.isDatasetVisible === 'function' && !chart.isDatasetVisible(chartDsIndex)) {
+                          return;
+                        }
+
+                        const x = Number(dataset.data[0]?.x);
+                        if (!Number.isFinite(x)) return;
+                        const xPixel = xScale.getPixelForValue(x);
+                        const lineColor = colorMap[key] || '#2196F3';
+
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.setLineDash([5, 5]);
+                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = lineColor;
+                        ctx.moveTo(xPixel, chartArea.top);
+                        ctx.lineTo(xPixel, chartArea.bottom);
+                        ctx.stroke();
+                        ctx.restore();
+                      });
+                    }
                     
                     // Collect label data
                     [
@@ -2300,6 +2398,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       const zNum = zKey.replace('zone','');
                       const main = mockData?.sport === 'bike' ? zoneOverride.power?.[zKey] : zoneOverride.pace?.[zKey];
                       const hr = zoneOverride.heartRate?.[zKey];
+                      const lactate = zoneOverride.lactate?.[zKey];
                       const mainLabel = mockData?.sport === 'bike' ? 'Power' : 'Pace';
 
                       const setMain = (field, val) => {
@@ -2330,10 +2429,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                         });
                       };
 
+                      const setLactate = (field, val) => {
+                        setZoneOverride((prev) => {
+                          if (!prev) return prev;
+                          const next = { ...prev };
+                          next.lactate = { ...(next.lactate || {}) };
+                          next.lactate[zKey] = { ...(next.lactate[zKey] || {}) };
+                          next.lactate[zKey][field] = Number(val);
+                          return next;
+                        });
+                      };
+
                       return (
                         <div key={zKey} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                           <div className="sm:col-span-2 text-sm font-semibold text-gray-900">Z{zNum}</div>
-                          <div className="sm:col-span-5">
+                          <div className="sm:col-span-4">
                             <div className="text-[11px] font-semibold text-gray-600 mb-1">{mainLabel}</div>
                             <div className="grid grid-cols-2 gap-2">
                               <input
@@ -2350,7 +2460,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                               />
                             </div>
                           </div>
-                          <div className="sm:col-span-5">
+                          <div className="sm:col-span-3">
                             <div className="text-[11px] font-semibold text-gray-600 mb-1">HR</div>
                             <div className="grid grid-cols-2 gap-2">
                               <input
@@ -2362,6 +2472,23 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                               <input
                                 value={hr?.max ?? ''}
                                 onChange={(e) => setHr('max', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="max"
+                              />
+                            </div>
+                          </div>
+                          <div className="sm:col-span-3">
+                            <div className="text-[11px] font-semibold text-gray-600 mb-1">Lactate</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                value={lactate?.min ?? ''}
+                                onChange={(e) => setLactate('min', e.target.value)}
+                                className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                                placeholder="min"
+                              />
+                              <input
+                                value={lactate?.max ?? ''}
+                                onChange={(e) => setLactate('max', e.target.value)}
                                 className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                                 placeholder="max"
                               />

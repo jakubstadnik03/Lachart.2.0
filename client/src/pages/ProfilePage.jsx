@@ -6,7 +6,7 @@ import PreviousTestingComponent from "../components/Testing-page/PreviousTesting
 import SportsSelector from "../components/Header/SportsSelector";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
-import { updateUserProfile } from '../services/api';
+import { getZoneHistory, updateUserProfile } from '../services/api';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { 
   PencilIcon, 
@@ -37,9 +37,11 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isZonesModalOpen, setIsZonesModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [selectedZoneSport, setSelectedZoneSport] = useState('cycling'); // cycling or running
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   
   // Detect mobile
   useEffect(() => {
@@ -126,6 +128,76 @@ const ProfilePage = () => {
     }
     return unitSystem === 'imperial' ? '/mile' : '/km';
   };
+
+  const formatZoneBound = (value) => {
+    if (value === Infinity || value === null || value === undefined || value === '') return '∞';
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num}` : '∞';
+  };
+
+  const formatPowerOrPaceRange = (zone, sport) => {
+    if (!zone) return '-';
+    const min = zone.min ?? 0;
+    const max = zone.max;
+    if (sport === 'cycling') {
+      return `${formatZoneBound(min)}-${formatZoneBound(max)} W`;
+    }
+    const paceMin = formatPace(min);
+    const paceMax = max === Infinity || max === null || max === undefined ? '∞' : formatPace(max);
+    return `${paceMin}-${paceMax} ${getPaceUnit(sport)}`;
+  };
+
+  const formatHeartRateRange = (zone) => {
+    if (!zone) return '-';
+    const min = zone.min ?? 0;
+    const max = zone.max;
+    return `${formatZoneBound(min)}-${formatZoneBound(max)} BPM`;
+  };
+
+  const formatLactateRange = (lactate) => {
+    if (!lactate) return '-';
+    const min = lactate.min;
+    const max = lactate.max;
+    if (!Number.isFinite(Number(min)) && !Number.isFinite(Number(max))) return '-';
+    const fmt = (v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(1) : '∞');
+    return `${fmt(min)}-${fmt(max)} mmol/L`;
+  };
+
+  const formatLactateRangeShort = (lactate) => {
+    if (!lactate) return '-';
+    const min = Number(lactate.min);
+    const max = Number(lactate.max);
+    const fmt = (v) => (Number.isFinite(v) ? v.toFixed(1) : '∞');
+    if (!Number.isFinite(min) && !Number.isFinite(max)) return '-';
+    return `${fmt(min)}-${fmt(max)}`;
+  };
+
+  const selectedZoneHistory = useMemo(() => {
+    const power = Array.isArray(zoneHistory?.powerZonesHistory) ? zoneHistory.powerZonesHistory : [];
+    const hr = Array.isArray(zoneHistory?.heartRateZonesHistory) ? zoneHistory.heartRateZonesHistory : [];
+
+    const bucket = new Map();
+    power.forEach((entry, idx) => {
+      const ts = entry?.createdAt ? new Date(entry.createdAt).toISOString() : `power-${idx}`;
+      const prev = bucket.get(ts) || { key: ts, createdAt: entry?.createdAt || null, powerSnapshot: null, hrSnapshot: null, source: null, note: null };
+      prev.powerSnapshot = entry?.zones?.[selectedZoneSport] || null;
+      prev.source = entry?.source || prev.source;
+      prev.note = entry?.note || prev.note;
+      bucket.set(ts, prev);
+    });
+    hr.forEach((entry, idx) => {
+      const ts = entry?.createdAt ? new Date(entry.createdAt).toISOString() : `hr-${idx}`;
+      const prev = bucket.get(ts) || { key: ts, createdAt: entry?.createdAt || null, powerSnapshot: null, hrSnapshot: null, source: null, note: null };
+      prev.hrSnapshot = entry?.zones?.[selectedZoneSport] || null;
+      prev.source = entry?.source || prev.source;
+      prev.note = entry?.note || prev.note;
+      bucket.set(ts, prev);
+    });
+
+    return Array.from(bucket.values())
+      .filter((e) => e.powerSnapshot || e.hrSnapshot)
+      .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0));
+  }, [zoneHistory, selectedZoneSport]);
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching
   const loadCalendarData = useCallback(async (targetId) => {
@@ -232,6 +304,7 @@ const ProfilePage = () => {
 
       const profileResponse = await api.get(`/user/profile`);
       const profileData = profileResponse.data;
+      const historyPromise = getZoneHistory().catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
 
       // Use the new utility function to get avatar
       const avatar = getAvatarBySportAndGender(profileData);
@@ -256,6 +329,11 @@ const ProfilePage = () => {
         powerZones: profileData.powerZones, // Include power zones
         heartRateZones: profileData.heartRateZones, // Include heart rate zones
         units: profileData.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' } // Include units
+      });
+      const historyData = await historyPromise;
+      setZoneHistory({
+        powerZonesHistory: historyData?.powerZonesHistory || [],
+        heartRateZonesHistory: historyData?.heartRateZonesHistory || []
       });
 
       // Pokud je to trenér, nemusíme načítat tréninky a testy
@@ -332,13 +410,13 @@ const ProfilePage = () => {
   const handleProfileUpdate = async (updatedData) => {
     try {
       const { name, ...restData } = updatedData;
-      const [firstName, ...lastNameParts] = name.split(' ');
+      const hasName = typeof name === 'string' && name.trim().length > 0;
+      const [firstName = '', ...lastNameParts] = hasName ? name.split(' ') : [];
       const surname = lastNameParts.join(' ');
 
       const dataToSend = {
         ...restData,
-        name: firstName,
-        surname: surname,
+        ...(hasName ? { name: firstName, surname } : {}),
         height: restData.height ? Number(restData.height) : undefined,
         weight: restData.weight ? Number(restData.weight) : undefined,
       };
@@ -367,6 +445,12 @@ const ProfilePage = () => {
       });
 
       setIsEditModalOpen(false);
+      setIsZonesModalOpen(false);
+      const historyData = await getZoneHistory().catch(() => ({ powerZonesHistory: [], heartRateZonesHistory: [] }));
+      setZoneHistory({
+        powerZonesHistory: historyData?.powerZonesHistory || [],
+        heartRateZonesHistory: historyData?.heartRateZonesHistory || []
+      });
     } catch (error) {
       console.error('Error updating profile:', error);
     }
@@ -657,7 +741,7 @@ const ProfilePage = () => {
                 </div>
                 <button
                   onClick={() => {
-                    setIsEditModalOpen(true);
+                    setIsZonesModalOpen(true);
                   }}
                   className={`flex items-center justify-center gap-2 ${isMobile ? 'px-3 py-1.5 text-xs w-full' : 'px-4 py-2 text-sm'} font-semibold text-white bg-primary ${isMobile ? 'rounded-lg' : 'rounded-xl'} hover:bg-primary-dark shadow-md hover:shadow-lg transition-all`}
                 >
@@ -702,6 +786,7 @@ const ProfilePage = () => {
                     <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
                     <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Power Range (W)</th>
                     <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
                     <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                   </tr>
                 </thead>
@@ -741,6 +826,11 @@ const ProfilePage = () => {
                           ) : (
                             <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
                           )}
+                        </td>
+                        <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
+                          <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                            {formatLactateRangeShort(zone?.lactate)} mmol/L
+                          </span>
                         </td>
                         <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                           {zone.description || '-'}
@@ -801,6 +891,7 @@ const ProfilePage = () => {
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/km)</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                       </tr>
                     </thead>
@@ -840,6 +931,11 @@ const ProfilePage = () => {
                               ) : (
                                 <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
                               )}
+                            </td>
+                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
+                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                                {formatLactateRangeShort(zone?.lactate)} mmol/L
+                              </span>
                             </td>
                             <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                               {zone.description || '-'}
@@ -900,6 +996,7 @@ const ProfilePage = () => {
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/100m)</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
+                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
                         <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
                       </tr>
                     </thead>
@@ -940,6 +1037,11 @@ const ProfilePage = () => {
                                 <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
                               )}
                             </td>
+                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
+                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                                {formatLactateRangeShort(zone?.lactate)} mmol/L
+                              </span>
+                            </td>
                             <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
                               {zone.description || '-'}
                             </td>
@@ -959,6 +1061,61 @@ const ProfilePage = () => {
                 )}
               </>
             )}
+
+            <div className="mt-6 border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900`}>Zones History</h3>
+                <span className="text-xs text-gray-500">Scroll for older changes</span>
+              </div>
+              {selectedZoneHistory.length === 0 ? (
+                <p className="text-sm text-gray-500">No history yet. After next zone edit, snapshots will appear here.</p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto pr-1 space-y-3">
+                  {selectedZoneHistory.map((item) => (
+                    <div key={item.key} className="rounded-xl border border-gray-200 p-3 bg-gray-50">
+                      <p className="text-xs text-gray-500 mb-2">
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
+                      </p>
+                      {(item.source || item.note) && (
+                        <p className="text-xs text-gray-500 mb-2">
+                          {item.source ? `Source: ${item.source}` : ''}
+                          {item.source && item.note ? ' | ' : ''}
+                          {item.note ? `Ref: ${item.note}` : ''}
+                        </p>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[560px]">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">Zone</th>
+                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">
+                                {selectedZoneSport === 'cycling' ? 'Power' : `Pace (${getPaceUnit(selectedZoneSport)})`}
+                              </th>
+                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">HR</th>
+                              <th className="text-left py-2 text-xs font-semibold text-gray-700">Lactate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[1, 2, 3, 4, 5].map((zoneNum) => {
+                              const pz = item.powerSnapshot?.[`zone${zoneNum}`];
+                              const hz = item.hrSnapshot?.[`zone${zoneNum}`];
+                              return (
+                                <tr key={zoneNum} className="border-b border-gray-100 last:border-b-0">
+                                  <td className="py-2 pr-2 text-xs font-semibold text-gray-700">Z{zoneNum}</td>
+                                  <td className="py-2 pr-2 text-xs font-mono text-gray-800">{formatPowerOrPaceRange(pz, selectedZoneSport)}</td>
+                                  <td className="py-2 pr-2 text-xs font-mono text-gray-800">{formatHeartRateRange(hz)}</td>
+                                  <td className="py-2 text-xs font-mono text-gray-800">{formatLactateRange(pz?.lactate)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </motion.div>
       )}
@@ -1033,15 +1190,28 @@ const ProfilePage = () => {
 
       <AnimatePresence>
         {isEditModalOpen && (
-      <EditProfileModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        onSubmit={handleProfileUpdate}
-        userData={{
-          ...userInfo,
-          _selectedSport: selectedZoneSport // Pass selected sport to open modal on correct tab
-        }}
-      />
+          <EditProfileModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            onSubmit={handleProfileUpdate}
+            userData={{
+              ...userInfo,
+              _selectedSport: selectedZoneSport // Pass selected sport to open modal on correct tab
+            }}
+          />
+        )}
+
+        {isZonesModalOpen && (
+          <EditProfileModal
+            isOpen={isZonesModalOpen}
+            onClose={() => setIsZonesModalOpen(false)}
+            onSubmit={handleProfileUpdate}
+            zonesOnly={true}
+            userData={{
+              ...userInfo,
+              _selectedSport: selectedZoneSport
+            }}
+          />
         )}
 
         {isPasswordModalOpen && (

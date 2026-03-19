@@ -327,15 +327,102 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   const MIN_LTP1_LACTATE = 1.5;
   /** Fyziologické maximum: LTP1 (aerobní práh) nemá být vyšší než 2.5 mmol/L. */
   const MAX_LTP1_LACTATE = 2.5;
-  /** Fyziologické maximum: LTP2 (anaerobní práh) nemá přesáhnout 4.7 mmol/L (platí pro kolo, běh i plavání). */
-  const MAX_LTP2_LACTATE = 4.7;
+  /** Absolutní fyziologické maximum pro LTP2 (nikdy nepřekročit). */
+  const MAX_LTP2_LACTATE = 4.2;
   /** LT2 má být alespoň kolem 2.5 mmol/L; pokud výpočet dá méně, použít výkon při 3.5/4.0 mmol/L */
   const MIN_LTP2_LACTATE_REASONABLE = 2.5;
   /** Minimální odstup LT2 od LT1 (W pro kolo), aby zóny dávaly smysl */
   const MIN_LT2_LT1_GAP_W = 25;
 
+  const getAdaptiveLtp2Cap = (points) => {
+    const vals = (points || [])
+      .map(p => Number(p?.lactate))
+      .filter(v => Number.isFinite(v) && v > 0);
+    if (!vals.length) return MAX_LTP2_LACTATE;
+    const observedMax = Math.max(...vals);
+    // Adaptive cap follows measured test profile but never exceeds hard cap 4.2.
+    // Keep a practical floor so very low tests don't collapse LT2 unrealistically.
+    return Math.min(MAX_LTP2_LACTATE, Math.max(3.6, observedMax - 0.1));
+  };
+
+  // Lightweight robust smoothing: median-of-3 on lactate to reduce single-point noise.
+  const smoothLactateMedian3 = (points) => {
+    if (!points || points.length < 3) return points || [];
+    return points.map((p, i) => {
+      if (i === 0 || i === points.length - 1) return { ...p };
+      const vals = [Number(points[i - 1].lactate), Number(points[i].lactate), Number(points[i + 1].lactate)]
+        .filter(v => Number.isFinite(v))
+        .sort((a, b) => a - b);
+      return { ...p, lactate: vals.length ? vals[Math.floor(vals.length / 2)] : p.lactate };
+    });
+  };
+
+  // LT1 helper: first sustained rise above baseline + delta, confirmed by next point.
+  const findFirstSustainedRise = (points, baseline, sport = 'bike') => {
+    if (!points || points.length < 3) return null;
+    const isPaceSport = sport === 'run' || sport === 'swim';
+    const ordered = [...points].sort((a, b) => isPaceSport ? Number(b.power) - Number(a.power) : Number(a.power) - Number(b.power));
+    const smoothed = smoothLactateMedian3(ordered);
+    const target = Math.max(Number(baseline || 1.0) + 0.35, MIN_LTP1_LACTATE);
+    for (let i = 1; i < smoothed.length - 1; i++) {
+      const prev = Number(smoothed[i - 1].lactate);
+      const cur = Number(smoothed[i].lactate);
+      const next = Number(smoothed[i + 1].lactate);
+      if (Number.isFinite(prev) && Number.isFinite(cur) && Number.isFinite(next)) {
+        const sustainedRise = cur >= target && next >= (cur - 0.05) && (cur - prev) >= 0.15;
+        if (sustainedRise) return smoothed[i];
+      }
+    }
+    return null;
+  };
+
+  const weightedMedian = (entries) => {
+    const valid = (entries || [])
+      .filter(e => Number.isFinite(Number(e?.x)) && Number.isFinite(Number(e?.w)) && Number(e.w) > 0)
+      .map(e => ({ x: Number(e.x), w: Number(e.w) }))
+      .sort((a, b) => a.x - b.x);
+    if (!valid.length) return null;
+    const total = valid.reduce((s, v) => s + v.w, 0);
+    let acc = 0;
+    for (const v of valid) {
+      acc += v.w;
+      if (acc >= total / 2) return v.x;
+    }
+    return valid[valid.length - 1].x;
+  };
+
+  const blendThreshold = ({ primary, candidates = [], isPaceSport, preferHigher }) => {
+    if (!Number.isFinite(Number(primary))) return null;
+    const p = Number(primary);
+    const band = Math.max(Math.abs(p) * 0.18, isPaceSport ? 12 : 20);
+    const filtered = candidates
+      .filter(c => Number.isFinite(Number(c?.x)) && Number.isFinite(Number(c?.w)) && Number(c.w) > 0)
+      .map(c => ({ x: Number(c.x), w: Number(c.w) }))
+      .filter(c => Math.abs(c.x - p) <= band);
+    const pool = [{ x: p, w: 2.5 }, ...filtered];
+    const med = weightedMedian(pool);
+    if (!Number.isFinite(Number(med))) return p;
+    const m = Number(med);
+    if (preferHigher) return Math.max(p, m);
+    return Math.min(p, m);
+  };
+
+  const estimateThresholdConfidence = ({ ltp1, ltp2, candidates = [], isPaceSport, pointsCount = 0, hasHR = false }) => {
+    if (!Number.isFinite(Number(ltp1)) || !Number.isFinite(Number(ltp2))) return 0;
+    const base = Math.min(45, pointsCount * 7);
+    const gap = isPaceSport ? (Number(ltp1) - Number(ltp2)) : (Number(ltp2) - Number(ltp1));
+    const gapScore = Math.max(0, Math.min(25, gap / (isPaceSport ? 6 : 4)));
+    const diffs = candidates
+      .filter(c => Number.isFinite(Number(c)))
+      .map(c => Math.abs(Number(c) - Number(ltp2)));
+    const spread = diffs.length ? (diffs.reduce((a, b) => a + b, 0) / diffs.length) : 999;
+    const spreadScore = Math.max(0, 25 - Math.min(25, spread / (isPaceSport ? 2 : 5)));
+    const hrScore = hasHR ? 5 : 0;
+    return Math.round(Math.max(0, Math.min(100, base + gapScore + spreadScore + hrScore)));
+  };
+
   /** Z polynomu spočítá LTP1 (kde křivka začne růst – vždy až po poklesu) a LTP2 (maximum první derivace). */
-  const findLTPFromPolynomial = (polyFit, sortedResults, isPaceSport) => {
+  const findLTPFromPolynomial = (polyFit, sortedResults, isPaceSport, ltp2Cap = MAX_LTP2_LACTATE) => {
     if (!polyFit || !sortedResults || sortedResults.length < 2) return null;
     const { polyFn, derivFn, fitMinX, fitMaxX, postDropStartX } = polyFit;
     const steps = 200;
@@ -391,12 +478,12 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
     let ltp2Lactate = Math.max(0, polyFn(ltp2X));
-    // LTP2 nemá přesáhnout 4.7 mmol/L; pokud je výše, vezmeme bod na křivce kde lactate = 4.7
-    if (ltp2Lactate > MAX_LTP2_LACTATE) {
-      const xAt47 = findXForLactate(polyFn, fitMinX, fitMaxX, MAX_LTP2_LACTATE, isPaceSport, false);
-      if (xAt47 != null) {
-        ltp2X = xAt47;
-        ltp2Lactate = MAX_LTP2_LACTATE;
+    // LTP2 nemá přesáhnout adaptivní cap; pokud je výše, vezmeme bod na křivce kde lactate = cap.
+    if (ltp2Lactate > ltp2Cap) {
+      const xAtCap = findXForLactate(polyFn, fitMinX, fitMaxX, ltp2Cap, isPaceSport, false);
+      if (xAtCap != null) {
+        ltp2X = xAtCap;
+        ltp2Lactate = ltp2Cap;
       }
     }
     const interpolateHR = (x) => {
@@ -482,6 +569,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
       return a.power - b.power; // Vzestupně pro power (nižší -> vyšší)
     });
+    const adaptiveLtp2Cap = getAdaptiveLtp2Cap(sortedResults);
 
     // Primárně pro bike s ≥5 body: segmentovaná regrese + ensemble (isotonic, 2 zlomy, baseline + D-max)
     if (sport === 'bike' && sortedResults.length >= 5) {
@@ -525,17 +613,17 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         let ltp1Power = segLT1;
         let ltp2Lactate = interpolateLactateAtPower(segLT2);
         let ltp2Power = segLT2;
-        // LTP2 nemá přesáhnout 4.7 mmol/L
-        if (ltp2Lactate > MAX_LTP2_LACTATE) {
+        // LTP2 nemá přesáhnout adaptivní strop
+        if (ltp2Lactate > adaptiveLtp2Cap) {
           for (let i = 0; i < sortedResults.length - 1; i++) {
             const a = sortedResults[i];
             const b = sortedResults[i + 1];
             const la = Number(a.lactate);
             const lb = Number(b.lactate);
-            if ((la <= MAX_LTP2_LACTATE && lb >= MAX_LTP2_LACTATE) || (la >= MAX_LTP2_LACTATE && lb <= MAX_LTP2_LACTATE)) {
-              const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (MAX_LTP2_LACTATE - la) / (lb - la);
+            if ((la <= adaptiveLtp2Cap && lb >= adaptiveLtp2Cap) || (la >= adaptiveLtp2Cap && lb <= adaptiveLtp2Cap)) {
+              const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (adaptiveLtp2Cap - la) / (lb - la);
               ltp2Power = Number(a.power) + t * (Number(b.power) - Number(a.power));
-              ltp2Lactate = MAX_LTP2_LACTATE;
+              ltp2Lactate = adaptiveLtp2Cap;
               break;
             }
           }
@@ -581,7 +669,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           }
         }
         const ltp1Reasonable = ltp1La >= MIN_LTP1_LACTATE && ltp1La <= 5 && ltp1Power > 0;
-        const ltp2Reasonable = ltp2Lactate >= 1.5 && ltp2Lactate <= MAX_LTP2_LACTATE && ltp2Power > 0;
+        const ltp2Reasonable = ltp2Lactate >= 1.5 && ltp2Lactate <= adaptiveLtp2Cap && ltp2Power > 0;
         if (ltp1Reasonable && ltp2Reasonable) {
           return {
             ltp1: ltp1Power,
@@ -596,12 +684,12 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // Sekundárně: LTP1 a LTP2 z polynomického fitu (kde křivka začne růst / maximum sklonu)
     const polyFit = buildPolynomialFit(sortedResults, baseLactate, sport);
     if (polyFit) {
-      const fromPoly = findLTPFromPolynomial(polyFit, sortedResults, isPaceSport);
+      const fromPoly = findLTPFromPolynomial(polyFit, sortedResults, isPaceSport, adaptiveLtp2Cap);
       if (fromPoly) {
         const { ltp1Power, ltp2Power, ltp1Lactate, ltp2Lactate, ltp1HR, ltp2HR } = fromPoly;
         const validOrder = isPaceSport ? ltp2Power < ltp1Power : ltp2Power > ltp1Power;
         const ltp1Reasonable = ltp1Lactate >= MIN_LTP1_LACTATE && ltp1Lactate <= 5 && ltp1Power > 0;
-        const ltp2Reasonable = ltp2Lactate >= 1.0 && ltp2Lactate <= MAX_LTP2_LACTATE && ltp2Power > 0;
+        const ltp2Reasonable = ltp2Lactate >= 1.0 && ltp2Lactate <= adaptiveLtp2Cap && ltp2Power > 0;
         if (validOrder && ltp1Reasonable && ltp2Reasonable) {
           return {
             ltp1: ltp1Power,
@@ -627,9 +715,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
     
-    // Validace LTP2: měl by mít laktát vyšší než base lactate, max 4.7 mmol/L (kolo, běh, plavání)
+    // Validace LTP2: měl by mít laktát vyšší než base lactate, max adaptivní strop
     const minLactateForLTP2 = Math.max(effectiveBaseLactate * 2.0, 3.5);
-    const maxLactateForLTP2 = MAX_LTP2_LACTATE; // 4.7 mmol/L
+    const maxLactateForLTP2 = adaptiveLtp2Cap;
     const idealLTP2Lactate = 4.0;
     
     // Pro LTP2: použít D-max na druhé polovině křivky (rychlejší část s vyšším laktátem)
@@ -690,7 +778,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           ltp2Point = idealLTP2Point;
         } else {
           // Fallback: najít bod s laktátem nejblíže 4.0 mmol/L (ale ne příliš vysoký)
-          const fallbackCandidates = sortedResults.filter(p => p.lactate >= minLactateForLTP2 && p.lactate <= MAX_LTP2_LACTATE);
+          const fallbackCandidates = sortedResults.filter(p => p.lactate >= minLactateForLTP2 && p.lactate <= adaptiveLtp2Cap);
           if (fallbackCandidates.length > 0) {
             // Preferovat body kolem 4.0 mmol/L
             ltp2Point = fallbackCandidates.reduce((best, current) => {
@@ -709,9 +797,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
     
-    // Finální validace: LTP2 max 4.7 mmol/L
-    if (ltp2Point && ltp2Point.lactate > MAX_LTP2_LACTATE) {
-      const lowerCandidates = sortedResults.filter(p => p.lactate >= 3.5 && p.lactate <= MAX_LTP2_LACTATE);
+    // Finální validace: LTP2 max adaptivní strop
+    if (ltp2Point && ltp2Point.lactate > adaptiveLtp2Cap) {
+      const lowerCandidates = sortedResults.filter(p => p.lactate >= 3.5 && p.lactate <= adaptiveLtp2Cap);
       if (lowerCandidates.length > 0) {
         // Najít bod nejblíže 4.0 mmol/L
         const betterLTP2Point = lowerCandidates.reduce((best, current) => {
@@ -1223,11 +1311,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           };
           let lactateAtLTP2 = Math.max(0, polyFn(xLTP2));
           let powerLTP2 = xLTP2;
-          if (lactateAtLTP2 > MAX_LTP2_LACTATE) {
-            const xAt47 = findXForLactate(polyFn, fitMinX, fitMaxX, MAX_LTP2_LACTATE, isPaceSport, false);
-            if (xAt47 != null) {
-              powerLTP2 = xAt47;
-              lactateAtLTP2 = MAX_LTP2_LACTATE;
+          if (lactateAtLTP2 > adaptiveLtp2Cap) {
+            const xAtCap = findXForLactate(polyFn, fitMinX, fitMaxX, adaptiveLtp2Cap, isPaceSport, false);
+            if (xAtCap != null) {
+              powerLTP2 = xAtCap;
+              lactateAtLTP2 = adaptiveLtp2Cap;
             }
           }
           ltp2Point = {
@@ -1239,7 +1327,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
-    // Finální pravidlo: LTP1 v rozmezí 1.5–2.5 mmol/L, LTP2 ≤ 4.7 mmol/L (aerobní/anaerobní práh)
+    // Finální pravidlo: LTP1 v rozmezí 1.5–2.5 mmol/L, LTP2 ≤ adaptivní cap.
     if (ltp1Point && ltp1Point.lactate < MIN_LTP1_LACTATE) {
       let powerAt15 = null;
       let hrAt15 = null;
@@ -1337,32 +1425,32 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
-    // LTP2 max 4.7 mmol/L (kolo, běh, plavání)
-    if (ltp2Point && ltp2Point.lactate > MAX_LTP2_LACTATE) {
-      let powerAt47 = null;
-      let hrAt47 = null;
+    // LTP2 max adaptivní strop (s absolutním max 4.2 mmol/L)
+    if (ltp2Point && ltp2Point.lactate > adaptiveLtp2Cap) {
+      let powerAtCap = null;
+      let hrAtCap = null;
       if (polyFit) {
         const { polyFn, fitMinX, fitMaxX } = polyFit;
-        powerAt47 = findXForLactate(polyFn, fitMinX, fitMaxX, MAX_LTP2_LACTATE, isPaceSport, false);
-        if (powerAt47 != null) {
+        powerAtCap = findXForLactate(polyFn, fitMinX, fitMaxX, adaptiveLtp2Cap, isPaceSport, false);
+        if (powerAtCap != null) {
           for (let i = 0; i < sortedResults.length - 1; i++) {
             const a = Number(sortedResults[i].power);
             const b = Number(sortedResults[i + 1].power);
             const lo = Math.min(a, b);
             const hi = Math.max(a, b);
-            if (powerAt47 >= lo && powerAt47 <= hi && a !== b) {
+            if (powerAtCap >= lo && powerAtCap <= hi && a !== b) {
               const ha = sortedResults[i].heartRate != null ? Number(sortedResults[i].heartRate) : null;
               const hb = sortedResults[i + 1].heartRate != null ? Number(sortedResults[i + 1].heartRate) : null;
-              if (ha != null && hb != null) hrAt47 = ha + (hb - ha) * (powerAt47 - a) / (b - a);
-              else hrAt47 = ha ?? hb;
+              if (ha != null && hb != null) hrAtCap = ha + (hb - ha) * (powerAtCap - a) / (b - a);
+              else hrAtCap = ha ?? hb;
               break;
             }
           }
-          if (hrAt47 == null) {
+          if (hrAtCap == null) {
             const nearest = sortedResults.reduce((best, r) =>
-              Math.abs(Number(r.power) - powerAt47) < Math.abs(Number(best.power) - powerAt47) ? r : best
+              Math.abs(Number(r.power) - powerAtCap) < Math.abs(Number(best.power) - powerAtCap) ? r : best
             );
-            hrAt47 = nearest.heartRate != null ? Number(nearest.heartRate) : null;
+            hrAtCap = nearest.heartRate != null ? Number(nearest.heartRate) : null;
           }
         }
       } else {
@@ -1371,18 +1459,18 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           const b = sortedResults[i + 1];
           const la = Number(a.lactate);
           const lb = Number(b.lactate);
-          if ((la <= MAX_LTP2_LACTATE && lb >= MAX_LTP2_LACTATE) || (la >= MAX_LTP2_LACTATE && lb <= MAX_LTP2_LACTATE)) {
-            const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (MAX_LTP2_LACTATE - la) / (lb - la);
-            powerAt47 = Number(a.power) + t * (Number(b.power) - Number(a.power));
+          if ((la <= adaptiveLtp2Cap && lb >= adaptiveLtp2Cap) || (la >= adaptiveLtp2Cap && lb <= adaptiveLtp2Cap)) {
+            const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (adaptiveLtp2Cap - la) / (lb - la);
+            powerAtCap = Number(a.power) + t * (Number(b.power) - Number(a.power));
             const ha = a.heartRate != null ? Number(a.heartRate) : null;
             const hb = b.heartRate != null ? Number(b.heartRate) : null;
-            hrAt47 = (ha != null && hb != null) ? ha + (hb - ha) * t : (ha ?? hb);
+            hrAtCap = (ha != null && hb != null) ? ha + (hb - ha) * t : (ha ?? hb);
             break;
           }
         }
       }
-      if (powerAt47 != null) {
-        ltp2Point = { power: powerAt47, lactate: MAX_LTP2_LACTATE, heartRate: hrAt47 };
+      if (powerAtCap != null) {
+        ltp2Point = { power: powerAtCap, lactate: adaptiveLtp2Cap, heartRate: hrAtCap };
       }
     }
 
@@ -1745,6 +1833,87 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           // Uložit cílový laktát
           thresholds.lactates[key] = target;
         }
+      });
+    }
+
+    // --- Ensemble refinement (LT1/LT2) ---
+    // Keep current method as primary, then nudge with robust candidates.
+    const currentLtp1 = thresholds['LTP1'];
+    const currentLtp2 = thresholds['LTP2'];
+    if (Number.isFinite(Number(currentLtp1)) && Number.isFinite(Number(currentLtp2))) {
+      const isPaceSportNow = sport === 'run' || sport === 'swim';
+      const sustainedRise = findFirstSustainedRise(sortedResults, effectiveBaseLactate, sport);
+
+      const lt1Candidates = [
+        { x: thresholds['OBLA 2.0'], w: 1.0 },
+        { x: thresholds['Bsln + 0.5'], w: 1.2 },
+        { x: sustainedRise?.power, w: 1.4 }
+      ];
+      const lt2Candidates = [
+        { x: thresholds['IAT'], w: 1.0 },
+        { x: thresholds['OBLA 3.5'], w: 1.3 },
+      ];
+
+      const refinedLtp1 = blendThreshold({
+        primary: currentLtp1,
+        candidates: lt1Candidates,
+        isPaceSport: isPaceSportNow,
+        preferHigher: !isPaceSportNow // bike: slightly higher LT1 is safer; pace sports opposite
+      });
+      const refinedLtp2 = blendThreshold({
+        primary: currentLtp2,
+        candidates: lt2Candidates,
+        isPaceSport: isPaceSportNow,
+        preferHigher: !isPaceSportNow
+      });
+      const weightedAverage = (items) => {
+        const valid = (items || []).filter(i => Number.isFinite(Number(i?.x)) && Number.isFinite(Number(i?.w)) && Number(i.w) > 0);
+        if (!valid.length) return null;
+        const sumW = valid.reduce((s, i) => s + Number(i.w), 0);
+        if (sumW <= 0) return null;
+        return valid.reduce((s, i) => s + (Number(i.x) * Number(i.w)), 0) / sumW;
+      };
+      const averagedLtp1 = weightedAverage([
+        { x: refinedLtp1, w: 0.55 },
+        { x: thresholds['Bsln + 0.5'], w: 0.25 },
+        { x: thresholds['OBLA 2.0'], w: 0.20 },
+      ]);
+      const averagedLtp2Raw = weightedAverage([
+        { x: refinedLtp2, w: 0.50 },
+        { x: thresholds['OBLA 3.5'], w: 0.35 },
+        { x: thresholds['IAT'], w: 0.15 },
+      ]);
+      const averagedLtp2 = Number.isFinite(Number(averagedLtp2Raw))
+        ? averagedLtp2Raw
+        : refinedLtp2;
+
+      if (Number.isFinite(Number(averagedLtp1)) && Number.isFinite(Number(averagedLtp2))) {
+        const orderOk = isPaceSportNow ? averagedLtp2 < averagedLtp1 : averagedLtp2 > averagedLtp1;
+        const minGap = isPaceSportNow ? 6 : MIN_LT2_LT1_GAP_W;
+        const gapOk = isPaceSportNow
+          ? (averagedLtp1 - averagedLtp2) >= minGap
+          : (averagedLtp2 - averagedLtp1) >= minGap;
+
+        if (orderOk && gapOk) {
+          thresholds['LTP1'] = averagedLtp1;
+          thresholds['LTP2'] = averagedLtp2;
+        }
+      }
+
+      // Internal confidence only (for debugging/telemetry), no UI side effects.
+      const confidence = estimateThresholdConfidence({
+        ltp1: thresholds['LTP1'],
+        ltp2: thresholds['LTP2'],
+        candidates: [thresholds['IAT'], thresholds['OBLA 3.5']],
+        isPaceSport: isPaceSportNow,
+        pointsCount: sortedResults.length,
+        hasHR: sortedResults.some(r => Number.isFinite(Number(r.heartRate)))
+      });
+      dbgWarn('[calculateThresholds] LT confidence', {
+        confidence,
+        ltp1: thresholds['LTP1'],
+        ltp2: thresholds['LTP2'],
+        sport
       });
     }
   

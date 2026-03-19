@@ -53,7 +53,14 @@ const testSchema = new mongoose.Schema({
         glucose: Number,
         vo2: Number,
         RPE: Number
-    }]
+    }],
+    // User-edited zone values linked to this specific test (Set Zones modal)
+    zoneOverrides: {
+      powerZones: mongoose.Schema.Types.Mixed,
+      heartRateZones: mongoose.Schema.Types.Mixed,
+      source: { type: String, default: 'set-zones' },
+      updatedAt: { type: Date, default: null }
+    }
 }, {
     timestamps: true,
 });

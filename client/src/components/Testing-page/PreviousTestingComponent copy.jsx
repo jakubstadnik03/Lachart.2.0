@@ -9,13 +9,7 @@ import TestSelector from "./TestSelector";
 import api from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 
-const PreviousTestingComponent = ({
-  selectedSport,
-  tests = [],
-  setTests,
-  selectedTestId = null,
-  onSelectTestId,
-}) => {
+const PreviousTestingComponent = ({ selectedSport, tests = [], setTests, selectedTestId = null }) => {
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
@@ -59,7 +53,7 @@ const PreviousTestingComponent = ({
   useEffect(() => {
     // PRIORITY 1: Use testId from URL (highest priority) - check this FIRST, even if tests are loading
     // This ensures URL testId is always respected, even on page refresh
-    if (selectedTestId) {
+    if (selectedTestId && !isInitialized) {
       try {
         // Avoid noisy logs; this effect runs during navigation/restores.
         
@@ -70,13 +64,6 @@ const PreviousTestingComponent = ({
         // Try to find test by ID - normalize both to strings for comparison
         const searchIdStr = String(selectedTestId);
         const foundInAll = validTests.find(t => String(t._id) === searchIdStr);
-
-        // If currentTest already matches URL, don't override it.
-        if (currentTest && String(currentTest._id) === searchIdStr) {
-          setIsInitialized(true);
-          lastRestoredTestIdRef.current = currentTest._id;
-          return;
-        }
         
         if (foundInAll) {
           // Check if test has valid results
@@ -126,20 +113,6 @@ const PreviousTestingComponent = ({
         lastRestoredTestIdRef.current = null;
       }
       return;
-    }
-
-    // Recovery:
-    // If the currently displayed test is no longer present in the loaded list,
-    // clear it so Priority 5 fallback can select a valid test.
-    if (!selectedTestId && currentTest && Array.isArray(filteredTests) && filteredTests.length > 0) {
-      const stillExists = filteredTests.some(t => String(t._id) === String(currentTest._id));
-      if (!stillExists) {
-        setCurrentTest(null);
-        setSelectedTests([]);
-        setIsInitialized(false);
-        lastRestoredTestIdRef.current = null;
-        return;
-      }
     }
     
     // PRIORITY 2: If we already have a currentTest that matches the restored ID, keep it
@@ -234,10 +207,6 @@ const PreviousTestingComponent = ({
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, selectedTest._id);
       localStorage.setItem('lachart:lastTestId', selectedTest._id);
-
-      if (typeof onSelectTestId === 'function') {
-        onSelectTestId(selectedTest._id);
-      }
     }
   };
 
@@ -250,14 +219,6 @@ const PreviousTestingComponent = ({
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, newSelectedTests[0]._id);
       localStorage.setItem('lachart:lastTestId', newSelectedTests[0]._id);
-
-       if (typeof onSelectTestId === 'function') {
-         onSelectTestId(newSelectedTests[0]._id);
-       }
-    } else {
-      if (typeof onSelectTestId === 'function') {
-        onSelectTestId(null);
-      }
     }
   };
 
