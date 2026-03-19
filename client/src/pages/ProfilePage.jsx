@@ -42,6 +42,8 @@ const ProfilePage = () => {
   const [selectedZoneSport, setSelectedZoneSport] = useState('cycling'); // cycling or running
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
+  const [compareHistoryAKey, setCompareHistoryAKey] = useState('');
+  const [compareHistoryBKey, setCompareHistoryBKey] = useState('');
   
   // Detect mobile
   useEffect(() => {
@@ -198,6 +200,45 @@ const ProfilePage = () => {
       .filter((e) => e.powerSnapshot || e.hrSnapshot)
       .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0));
   }, [zoneHistory, selectedZoneSport]);
+
+  useEffect(() => {
+    if (!selectedZoneHistory.length) {
+      setCompareHistoryAKey('');
+      setCompareHistoryBKey('');
+      return;
+    }
+    const newest = selectedZoneHistory[0]?.key || '';
+    const previous = selectedZoneHistory[1]?.key || newest;
+    setCompareHistoryAKey((prev) => (prev && selectedZoneHistory.some((x) => x.key === prev) ? prev : newest));
+    setCompareHistoryBKey((prev) => (prev && selectedZoneHistory.some((x) => x.key === prev) ? prev : previous));
+  }, [selectedZoneHistory]);
+
+  const comparedSnapshotA = useMemo(
+    () => selectedZoneHistory.find((x) => x.key === compareHistoryAKey) || null,
+    [selectedZoneHistory, compareHistoryAKey]
+  );
+  const comparedSnapshotB = useMemo(
+    () => selectedZoneHistory.find((x) => x.key === compareHistoryBKey) || null,
+    [selectedZoneHistory, compareHistoryBKey]
+  );
+
+  const formatNumericDelta = (a, b, suffix = '') => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return '-';
+    const delta = na - nb;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${Math.round(delta)}${suffix}`;
+  };
+
+  const formatPaceDelta = (a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return '-';
+    const delta = na - nb;
+    const sign = delta > 0 ? '+' : '-';
+    return `${sign}${formatPace(Math.abs(delta))}`;
+  };
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching
   const loadCalendarData = useCallback(async (targetId) => {
@@ -1070,49 +1111,98 @@ const ProfilePage = () => {
               {selectedZoneHistory.length === 0 ? (
                 <p className="text-sm text-gray-500">No history yet. After next zone edit, snapshots will appear here.</p>
               ) : (
-                <div className="max-h-72 overflow-y-auto pr-1 space-y-3">
-                  {selectedZoneHistory.map((item) => (
-                    <div key={item.key} className="rounded-xl border border-gray-200 p-3 bg-gray-50">
-                      <p className="text-xs text-gray-500 mb-2">
-                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
-                      </p>
-                      {(item.source || item.note) && (
-                        <p className="text-xs text-gray-500 mb-2">
-                          {item.source ? `Source: ${item.source}` : ''}
-                          {item.source && item.note ? ' | ' : ''}
-                          {item.note ? `Ref: ${item.note}` : ''}
-                        </p>
-                      )}
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-gray-200 p-3 bg-white">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Compare snapshots</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                      <label className="text-xs text-gray-600">
+                        Snapshot A
+                        <select
+                          value={compareHistoryAKey}
+                          onChange={(e) => setCompareHistoryAKey(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
+                        >
+                          {selectedZoneHistory.map((item) => (
+                            <option key={`a-${item.key}`} value={item.key}>
+                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs text-gray-600">
+                        Snapshot B
+                        <select
+                          value={compareHistoryBKey}
+                          onChange={(e) => setCompareHistoryBKey(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
+                        >
+                          {selectedZoneHistory.map((item) => (
+                            <option key={`b-${item.key}`} value={item.key}>
+                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    {comparedSnapshotA && comparedSnapshotB && (
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[560px]">
                           <thead>
                             <tr className="border-b border-gray-200">
                               <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">Zone</th>
-                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">
-                                {selectedZoneSport === 'cycling' ? 'Power' : `Pace (${getPaceUnit(selectedZoneSport)})`}
-                              </th>
-                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">HR</th>
-                              <th className="text-left py-2 text-xs font-semibold text-gray-700">Lactate</th>
+                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">Main (A vs B)</th>
+                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">HR (A vs B)</th>
+                              <th className="text-left py-2 text-xs font-semibold text-gray-700">Lactate (A vs B)</th>
                             </tr>
                           </thead>
                           <tbody>
                             {[1, 2, 3, 4, 5].map((zoneNum) => {
-                              const pz = item.powerSnapshot?.[`zone${zoneNum}`];
-                              const hz = item.hrSnapshot?.[`zone${zoneNum}`];
+                              const aPz = comparedSnapshotA.powerSnapshot?.[`zone${zoneNum}`];
+                              const bPz = comparedSnapshotB.powerSnapshot?.[`zone${zoneNum}`];
+                              const aHz = comparedSnapshotA.hrSnapshot?.[`zone${zoneNum}`];
+                              const bHz = comparedSnapshotB.hrSnapshot?.[`zone${zoneNum}`];
+                              const deltaMain =
+                                selectedZoneSport === 'cycling'
+                                  ? formatNumericDelta(aPz?.max, bPz?.max, ' W')
+                                  : formatPaceDelta(aPz?.max, bPz?.max);
+                              const deltaHr = formatNumericDelta(aHz?.max, bHz?.max, ' bpm');
+                              const deltaLac = (() => {
+                                const aL = Number(aPz?.lactate?.max);
+                                const bL = Number(bPz?.lactate?.max);
+                                if (!Number.isFinite(aL) || !Number.isFinite(bL)) return '-';
+                                const d = aL - bL;
+                                const sign = d > 0 ? '+' : '';
+                                return `${sign}${d.toFixed(1)} mmol/L`;
+                              })();
                               return (
-                                <tr key={zoneNum} className="border-b border-gray-100 last:border-b-0">
+                                <tr key={`cmp-${zoneNum}`} className="border-b border-gray-100 last:border-b-0">
                                   <td className="py-2 pr-2 text-xs font-semibold text-gray-700">Z{zoneNum}</td>
-                                  <td className="py-2 pr-2 text-xs font-mono text-gray-800">{formatPowerOrPaceRange(pz, selectedZoneSport)}</td>
-                                  <td className="py-2 pr-2 text-xs font-mono text-gray-800">{formatHeartRateRange(hz)}</td>
-                                  <td className="py-2 text-xs font-mono text-gray-800">{formatLactateRange(pz?.lactate)}</td>
+                                  <td className="py-2 pr-2 text-xs text-gray-800">
+                                    <span className="font-mono">{formatPowerOrPaceRange(aPz, selectedZoneSport)}</span>
+                                    <span className="text-gray-400"> vs </span>
+                                    <span className="font-mono">{formatPowerOrPaceRange(bPz, selectedZoneSport)}</span>
+                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaMain})</span>
+                                  </td>
+                                  <td className="py-2 pr-2 text-xs text-gray-800">
+                                    <span className="font-mono">{formatHeartRateRange(aHz)}</span>
+                                    <span className="text-gray-400"> vs </span>
+                                    <span className="font-mono">{formatHeartRateRange(bHz)}</span>
+                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaHr})</span>
+                                  </td>
+                                  <td className="py-2 text-xs text-gray-800">
+                                    <span className="font-mono">{formatLactateRange(aPz?.lactate)}</span>
+                                    <span className="text-gray-400"> vs </span>
+                                    <span className="font-mono">{formatLactateRange(bPz?.lactate)}</span>
+                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaLac})</span>
+                                  </td>
                                 </tr>
                               );
                             })}
                           </tbody>
                         </table>
                       </div>
-                    </div>
-                  ))}
+                    )}
+                  </div>
                 </div>
               )}
             </div>

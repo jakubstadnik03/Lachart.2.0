@@ -32,6 +32,7 @@ import { motion } from 'framer-motion';
 const DashboardPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
+  const isTester = user?.role === 'tester';
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
@@ -816,6 +817,37 @@ const DashboardPage = () => {
       Please log in to view this page
     </motion.div>
   );
+
+  if (isTester) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="mx-6 m-auto max-w-[1200px] py-8 md:p-6 space-y-4"
+      >
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <h1 className="text-2xl font-semibold text-gray-900">Tester Dashboard</h1>
+          <p className="text-gray-600 mt-2">
+            This role is focused on lactate testing workflows. Use sections below.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              onClick={() => navigate('/testing')}
+              className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
+            >
+              Open Testing
+            </button>
+            <button
+              onClick={() => navigate('/athletes')}
+              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors"
+            >
+              Open Athletes
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div 

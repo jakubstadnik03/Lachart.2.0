@@ -943,14 +943,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
         : xRaw;
       
-      // Validate x value - filter out unrealistic values
-      if (isPaceSport && inputMode === 'speed') {
-        // For running: max reasonable speed ~30 km/h, for swimming ~10 km/h
-        const maxReasonableSpeed = isSwimming ? 10 : 30;
-        if (x > maxReasonableSpeed || x < 0.1) {
-          console.warn(`[LactateCurveCalculator] Filtering out unrealistic speed value: ${x} km/h`);
-          return null;
-        }
+      // Keep all measured points visible in chart; only reject non-finite X.
+      if (!Number.isFinite(x)) {
+        console.warn('[LactateCurveCalculator] Filtering out non-finite x value for measured point');
+        return null;
       }
       
       // Validate y value (lactate)

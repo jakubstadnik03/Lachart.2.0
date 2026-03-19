@@ -212,7 +212,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/training-calendar",
       icon: "/icon/calendar.svg",
       iconWhite: "/icon/calendar-white.svg",
-      showFor: ["coach", "athlete", "tester"]
+      showFor: ["coach", "athlete"]
      },
     // {
     //   name: "Lactate Statistics",
@@ -226,7 +226,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       getPath: (athleteId) => user?.role === "coach" && athleteId ? `/training/${athleteId}` : "/training",
       icon: "/icon/training.svg",
       iconWhite: "/icon/training-white.svg",
-      showFor: ["coach", "athlete", "tester"]
+      showFor: ["coach", "athlete"]
     },
     {
       name: "Lactate Testing",
@@ -240,7 +240,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       path: "/athletes",
       icon: "/icon/athletes.svg",
       iconWhite: "/icon/athletes-white.svg",
-      showFor: ["coach"]
+      showFor: ["coach", "tester"]
     },
     {
       name: "Profile",
@@ -405,7 +405,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           )}
         </motion.div>
 
-        {user?.role === "coach" && (
+        {(user?.role === "coach" || user?.role === "tester") && (
           <div 
             className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 

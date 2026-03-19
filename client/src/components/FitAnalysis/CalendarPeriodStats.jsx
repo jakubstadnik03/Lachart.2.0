@@ -431,7 +431,9 @@ export default function CalendarPeriodStats({
   }, [filtered]);
 
   const [showAllCategories, setShowAllCategories] = useState(false);
+  const [expandedCategoryKeys, setExpandedCategoryKeys] = useState(() => new Set());
   const MAX_CATEGORIES_VISIBLE = 3;
+  const MAX_ACTIVITIES_PER_CATEGORY = 5;
   const visibleCategoryKeys = showAllCategories ? byCategory.keys : byCategory.keys.slice(0, MAX_CATEGORIES_VISIBLE);
   const hasMoreCategories = byCategory.keys.length > MAX_CATEGORIES_VISIBLE;
 
@@ -961,6 +963,9 @@ export default function CalendarPeriodStats({
           <h3 className="text-sm sm:text-base font-bold text-gray-900 border-b border-white/20 pb-2">By category</h3>
           {visibleCategoryKeys.map((catKey) => {
             const acts = byCategory.map.get(catKey) || [];
+            const isExpanded = expandedCategoryKeys.has(catKey);
+            const visibleActs = isExpanded ? acts : acts.slice(0, MAX_ACTIVITIES_PER_CATEGORY);
+            const hiddenCount = Math.max(0, acts.length - MAX_ACTIVITIES_PER_CATEGORY);
             const displayCat = catKey === UNCATEGORIZED_KEY ? null : catKey;
             return (
               <div key={catKey} className="space-y-2">
@@ -975,7 +980,7 @@ export default function CalendarPeriodStats({
                   </span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {acts.map((act, idx) => {
+                  {visibleActs.map((act, idx) => {
                     const sec = actDurationSec(act);
                     const tss = computeTssForAct(act, userProfile);
                     const dist = Number(act.distance || 0);
@@ -1005,6 +1010,36 @@ export default function CalendarPeriodStats({
                     );
                   })}
                 </div>
+                {hiddenCount > 0 && !isExpanded && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedCategoryKeys((prev) => {
+                        const next = new Set(prev);
+                        next.add(catKey);
+                        return next;
+                      })
+                    }
+                    className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
+                  >
+                    Show more ({hiddenCount})
+                  </button>
+                )}
+                {acts.length > MAX_ACTIVITIES_PER_CATEGORY && isExpanded && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedCategoryKeys((prev) => {
+                        const next = new Set(prev);
+                        next.delete(catKey);
+                        return next;
+                      })
+                    }
+                    className="w-full sm:w-auto px-3 py-1.5 rounded-xl text-sm font-medium text-gray-700 bg-white/10 border border-white/20 hover:bg-white/20 shadow-sm transition-colors"
+                  >
+                    Show fewer
+                  </button>
+                )}
               </div>
             );
           })}

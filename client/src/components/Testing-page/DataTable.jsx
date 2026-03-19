@@ -325,8 +325,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
   /** Fyziologické minimum: LTP1 (aerobní práh) má být vždy ≥ 1.5 mmol/L. */
   const MIN_LTP1_LACTATE = 1.5;
-  /** Fyziologické maximum: LTP1 (aerobní práh) nemá být vyšší než 2.5 mmol/L. */
-  const MAX_LTP1_LACTATE = 2.5;
+  /** Fyziologické maximum: LTP1 (aerobní práh) nemá být vyšší než 2.2 mmol/L. */
+  const MAX_LTP1_LACTATE = 2.2;
   /** Absolutní fyziologické maximum pro LTP2 (nikdy nepřekročit). */
   const MAX_LTP2_LACTATE = 4.2;
   /** LT2 má být alespoň kolem 2.5 mmol/L; pokud výpočet dá méně, použít výkon při 3.5/4.0 mmol/L */

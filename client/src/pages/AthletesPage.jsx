@@ -36,7 +36,7 @@ const AthletesPage = () => {
 
   useEffect(() => {
     const loadAthletes = async () => {
-      if (user?.role !== 'coach') {
+      if (!['coach', 'tester', 'admin'].includes(user?.role)) {
         return;
       }
       
@@ -69,13 +69,15 @@ const AthletesPage = () => {
     `${athlete.name} ${athlete.surname}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (user?.role !== 'coach') {
+  if (!['coach', 'tester', 'admin'].includes(user?.role)) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-190px)]">
-        <p className="text-gray-500">This page is only available for coaches.</p>
+        <p className="text-gray-500">This page is only available for coach/tester/admin.</p>
       </div>
     );
   }
+
+  const canManageAthletes = user?.role === 'coach' || user?.role === 'admin';
 
 
   const handleViewProfile = (athleteId) => {
@@ -361,6 +363,7 @@ const AthletesPage = () => {
                       className="w-full pl-9 sm:pl-10 pr-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
+                  {canManageAthletes && (
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -369,6 +372,8 @@ const AthletesPage = () => {
                   >
                     Add New Athlete
                   </motion.button>
+                  )}
+                  {canManageAthletes && (
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -377,6 +382,7 @@ const AthletesPage = () => {
                   >
                     Add Existing Athlete
                   </motion.button>
+                  )}
                 </div>
               </div>
 
@@ -396,6 +402,7 @@ const AthletesPage = () => {
                     className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden flex flex-col h-full"
                   >
                     <div className="h-24 sm:h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
+                      {canManageAthletes && (
                       <div className="absolute top-2 sm:top-4 right-2 sm:right-4 dropdown-container">
                         <button 
                           onClick={() => setDropdownOpen(athlete._id)}
@@ -428,6 +435,7 @@ const AthletesPage = () => {
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                     <div className="px-4 sm:px-6 pb-4 sm:pb-6 flex-grow flex flex-col">
                       <div className="flex justify-center -mt-12 sm:-mt-16">
@@ -485,7 +493,7 @@ const AthletesPage = () => {
         </motion.div>
       </motion.div>
 
-      {isModalOpen && (
+      {isModalOpen && canManageAthletes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl  overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
@@ -737,7 +745,7 @@ const AthletesPage = () => {
       )}
 
       {/* Invite Athlete Modal */}
-      {isInviteModalOpen && (
+      {isInviteModalOpen && canManageAthletes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">

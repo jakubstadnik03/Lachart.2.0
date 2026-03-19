@@ -1358,7 +1358,7 @@ const LactateCurveCalculatorPage = () => {
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
                                             Role <span className="text-red-500">*</span>
                                         </label>
-                                        <div className="flex gap-4">
+                                        <div className="flex flex-wrap gap-4">
                                             <label className="flex items-center cursor-pointer">
                                                 <input
                                                     type="radio"
@@ -1382,6 +1382,18 @@ const LactateCurveCalculatorPage = () => {
                                                     disabled={isSendingEmail}
                                                 />
                                                 <span className="text-sm text-gray-700">Coach</span>
+                                            </label>
+                                            <label className="flex items-center cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="role"
+                                                    value="tester"
+                                                    checked={emailFormData.role === 'tester'}
+                                                    onChange={(e) => setEmailFormData({ ...emailFormData, role: e.target.value })}
+                                                    className="mr-2 text-primary focus:ring-primary"
+                                                    disabled={isSendingEmail}
+                                                />
+                                                <span className="text-sm text-gray-700">Tester</span>
                                             </label>
                                         </div>
                                     </div>

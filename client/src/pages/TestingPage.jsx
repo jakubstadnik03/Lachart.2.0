@@ -27,7 +27,7 @@ const TestingPage = () => {
   const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
-    if (user?.role === 'coach') {
+    if (user?.role === 'coach' || user?.role === 'tester') {
       try {
         const globalId = localStorage.getItem('global_selectedAthleteId');
         if (globalId) return globalId;
@@ -181,7 +181,7 @@ const TestingPage = () => {
   useEffect(() => {
     if (athleteId) {
       setSelectedAthleteId(athleteId);
-    } else if (user?.role === 'coach' && !selectedAthleteId) {
+    } else if ((user?.role === 'coach' || user?.role === 'tester') && !selectedAthleteId) {
       // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
       setSelectedAthleteId(user._id);
     }
@@ -192,7 +192,7 @@ const TestingPage = () => {
       
       try {
         // Try to load athlete profile - if it fails, athlete might be deleted/problematic
-        if (user.role === 'coach') {
+        if (user.role === 'coach' || user.role === 'tester') {
           await api.get(`/user/athlete/${selectedAthleteId}/profile`);
         }
       } catch (error) {
@@ -1111,7 +1111,7 @@ const TestingPage = () => {
       animate={{ opacity: 1 }}
       className="w-full max-w-[1600px] mx-auto md:p-6 min-w-0"
     >
-      {user?.role === 'coach' && (
+      {(user?.role === 'coach' || user?.role === 'tester') && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
