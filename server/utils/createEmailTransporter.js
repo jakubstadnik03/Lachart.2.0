@@ -1,11 +1,11 @@
 const nodemailer = require('nodemailer');
 
 function createEmailTransporter() {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_APP_PASSWORD;
+  const user = process.env.EMAIL_USER?.trim();
+  const pass = process.env.EMAIL_APP_PASSWORD?.trim();
   if (!user || !pass) return null;
 
-  const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_SMTP_HOST;
+  const smtpHost = process.env.SMTP_HOST?.trim() || process.env.EMAIL_SMTP_HOST?.trim();
   const smtpPortRaw = process.env.SMTP_PORT || process.env.EMAIL_SMTP_PORT;
   const smtpPort = smtpPortRaw ? Number(smtpPortRaw) : null;
 
@@ -18,7 +18,10 @@ function createEmailTransporter() {
   // Helpful runtime log for diagnosing provider auth issues (do not log secrets).
   try {
     const transportMode = smtpHost && smtpPort ? 'hostPort' : 'service';
-    const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE || 'zoho';
+    const smtpService =
+      process.env.SMTP_SERVICE?.trim() ||
+      process.env.EMAIL_SMTP_SERVICE?.trim() ||
+      'zoho';
     console.log('[EmailTransporter]', {
       from: user,
       transportMode,
