@@ -620,13 +620,22 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
   if (recipients.size === 0) return { sent: false, reason: 'no_recipient_email' };
 
   const transporter = createTransporter();
-  await transporter.sendMail({
-    from: { name: 'LaChart', address: process.env.EMAIL_USER },
-    to: Array.from(recipients).join(', '),
-    subject: overrides?.subject || result.title,
-    html: result.html
-  });
-  return { sent: true };
+  if (!transporter) {
+    // Shouldn't happen after createEmailTransporter zoho fallback, but keep this safe.
+    return { sent: false, reason: 'transporter_not_created' };
+  }
+  try {
+    await transporter.sendMail({
+      from: { name: 'LaChart', address: process.env.EMAIL_USER },
+      to: Array.from(recipients).join(', '),
+      subject: overrides?.subject || result.title,
+      html: result.html
+    });
+    return { sent: true };
+  } catch (err) {
+    const rawMessage = (err && (err.message || err.reason || String(err))) || 'send_mail_failed';
+    return { sent: false, reason: rawMessage };
+  }
 }
 
 module.exports = {

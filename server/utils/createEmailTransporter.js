@@ -15,6 +15,22 @@ function createEmailTransporter() {
       ? String(smtpSecureEnv).toLowerCase() === 'true'
       : smtpPort === 465;
 
+  // Helpful runtime log for diagnosing provider auth issues (do not log secrets).
+  try {
+    const transportMode = smtpHost && smtpPort ? 'hostPort' : 'service';
+    const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE || 'zoho';
+    console.log('[EmailTransporter]', {
+      from: user,
+      transportMode,
+      smtpHost: smtpHost || null,
+      smtpPort: smtpPort || null,
+      smtpSecure,
+      smtpService,
+    });
+  } catch {
+    // ignore logging failures
+  }
+
   // Prefer explicit SMTP settings (works for Zoho and any provider).
   if (smtpHost && smtpPort) {
     return nodemailer.createTransport({
@@ -25,11 +41,9 @@ function createEmailTransporter() {
     });
   }
 
-  // Optional fallback via nodemailer "service" name (e.g. 'gmail', 'zoho', ...).
-  // If nothing is configured, return null so calling code can fail gracefully.
-  const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE;
-  if (!smtpService) return null;
-
+  // Fallback via nodemailer "service" name.
+  // If nothing else is configured, default to Zoho to match the branding requirement.
+  const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE || 'zoho';
   return nodemailer.createTransport({
     service: smtpService,
     auth: { user, pass },
