@@ -88,6 +88,23 @@ const TestingPage = () => {
       setError(null);
       // testing/tester role can load all tests (backend handles scope)
       const testId = isTestingRole ? user._id : targetId;
+      const t0 = Date.now();
+
+      // #region agent log
+      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
+        body: JSON.stringify({
+          sessionId: '2e357f',
+          runId: 'precheck',
+          hypothesisId: 'H4',
+          location: 'TestingPage.jsx',
+          message: 'loadTests start',
+          data: { role: user?.role, athleteId: targetId, testId, isTestingRole },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       const response = await api.get(`/test/list/${testId}`);
       
       const testsData = Array.isArray(response.data) ? response.data : [];
@@ -127,6 +144,22 @@ const TestingPage = () => {
       }
       
       setTests(limitedTests);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
+        body: JSON.stringify({
+          sessionId: '2e357f',
+          runId: 'precheck',
+          hypothesisId: 'H4',
+          location: 'TestingPage.jsx',
+          message: 'loadTests end',
+          data: { testsCount: Array.isArray(limitedTests) ? limitedTests.length : null, durationMs: Date.now() - t0 },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (err) {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');

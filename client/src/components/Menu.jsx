@@ -12,6 +12,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
   const menuRef = useRef(null);
+  const menuDebugLastRef = useRef({ role: null, path: null });
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.split('/')[1];
@@ -65,6 +66,31 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
       return () => clearTimeout(timer);
     }
   }, [location.pathname, setIsMenuOpen]);
+
+  // #region agent log
+  // IMPORTANT: Hooks must be declared unconditionally before any early return.
+  useEffect(() => {
+    if (user?.role !== 'testing') return;
+    const path = location.pathname;
+    if (menuDebugLastRef.current.role === 'testing' && menuDebugLastRef.current.path === path) return;
+    menuDebugLastRef.current = { role: 'testing', path };
+
+    // For testing role: Training & Training Calendar should be hidden by menu rules.
+    fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
+      body: JSON.stringify({
+        sessionId: '2e357f',
+        runId: 'precheck',
+        hypothesisId: 'H2',
+        location: 'Menu.jsx',
+        message: 'testing menu expected visibility',
+        data: { role: user?.role, path, trainingCalendarVisibleExpected: false, trainingVisibleExpected: false },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [user?.role, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // #endregion
 
   // THEN: run loading check
   // Only hide menu if loading AND no user (to prevent flickering when user is already loaded)

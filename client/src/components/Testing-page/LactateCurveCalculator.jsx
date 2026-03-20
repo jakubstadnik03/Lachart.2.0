@@ -527,6 +527,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       setPdfStatus({ type: 'error', message: 'Missing test id.' });
       return;
     }
+    const t0 = Date.now();
+    let pdfOutcome = 'unknown';
+    let pdfStatus = null;
+    let pdfReason = null;
     try {
       setDownloadingPdf(true);
       setPdfStatus(null);
@@ -546,16 +550,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       link.remove();
       window.URL.revokeObjectURL(url);
       setPdfStatus({ type: 'success', message: 'PDF downloaded.' });
+      pdfOutcome = 'post_success';
     } catch (e) {
       const status = e?.response?.status;
       let reason = e?.response?.data?.error || e?.response?.data?.reason;
+      pdfStatus = status;
+      pdfReason = reason;
       if (e?.response?.data?.constructor?.name === 'Blob') {
         try {
           const text = await e.response.data.text();
           const j = JSON.parse(text);
           reason = j.error || j.reason;
+          pdfReason = reason;
         } catch {
           reason = status === 503 ? 'pdf_not_available' : 'failed';
+          pdfReason = reason;
         }
       }
 
@@ -577,11 +586,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           link.remove();
           window.URL.revokeObjectURL(url);
           setPdfStatus({ type: 'success', message: 'PDF downloaded (fallback GET).' });
+          pdfOutcome = 'fallback_success';
           return;
         } catch {
           // fallthrough to error message
         }
       }
+      pdfOutcome = 'error';
 
       if (isTestNotFound) {
         // Notify parent to reload tests list and clear stale selection.
@@ -610,6 +621,29 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               : (e?.response?.data?.message || 'Failed to download PDF.');
       setPdfStatus({ type: 'error', message: msg });
     } finally {
+      // #region agent log
+      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
+        body: JSON.stringify({
+          sessionId: '2e357f',
+          runId: 'precheck',
+          hypothesisId: 'H5',
+          location: 'LactateCurveCalculator.jsx',
+          message: 'downloadPdf outcome',
+          data: {
+            testId: testId || null,
+            inputMode,
+            unitSystem,
+            outcome: pdfOutcome,
+            status: pdfStatus,
+            reason: pdfReason,
+            durationMs: Date.now() - t0,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       setDownloadingPdf(false);
     }
   };

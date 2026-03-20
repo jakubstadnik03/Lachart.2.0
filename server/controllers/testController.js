@@ -2,6 +2,17 @@ const testAbl = require('../abl/testAbl');
 const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
 const { sendDemoTestEmail } = require('../services/demoTestEmailService');
 const { generateTestReportPdf } = require('../services/lactateTestPdfService');
+const fs = require('fs');
+const path = require('path');
+
+const debugLogPath = path.join(__dirname, '../../.cursor/debug-2e357f.log');
+const appendDebugLog = (payload) => {
+    try {
+        fs.appendFileSync(debugLogPath, JSON.stringify(payload) + '\n');
+    } catch {
+        // ignore logging failures
+    }
+};
 
 const testController = {
     // Get all tests for the authenticated user
@@ -14,7 +25,30 @@ const testController = {
             // If user is tester/testing, return all tests
             const role = String(user?.role || '').toLowerCase();
             if (user && (role === 'tester' || role === 'testing')) {
+                const t0 = Date.now();
+                // #region agent log
+                appendDebugLog({
+                    sessionId: '2e357f',
+                    id: 'getTests',
+                    timestamp: Date.now(),
+                    hypothesisId: 'H4',
+                    location: 'testController.getTests',
+                    message: 'testing/tester listing all tests',
+                    data: { role: user?.role, requesterUserId: req.user?.userId || null },
+                });
+                // #endregion
                 const allTests = await Test.find({}).sort({ date: -1 });
+                // #region agent log
+                appendDebugLog({
+                    sessionId: '2e357f',
+                    id: 'getTests_count',
+                    timestamp: Date.now(),
+                    hypothesisId: 'H4',
+                    location: 'testController.getTests',
+                    message: 'tests count returned',
+                    data: { count: Array.isArray(allTests) ? allTests.length : null, durationMs: Date.now() - t0 },
+                });
+                // #endregion
                 return res.json(allTests);
             }
             
@@ -145,6 +179,25 @@ const testController = {
         try {
             const { id } = req.params;
             const overrides = req.body?.overrides || {};
+            const t0 = Date.now();
+            // #region agent log
+            appendDebugLog({
+                sessionId: '2e357f',
+                id: 'reportPdf_start',
+                timestamp: Date.now(),
+                hypothesisId: 'H5',
+                location: 'testController.getTestReportPdf',
+                message: 'report-pdf request start',
+                data: {
+                    requesterUserRole: req.user?.role || null,
+                    requesterUserId: req.user?.userId || null,
+                    testId: id,
+                    hasOverrides: Boolean(overrides),
+                    overridesInputMode: overrides?.inputMode || null,
+                    overridesUnitSystem: overrides?.unitSystem || null,
+                },
+            });
+            // #endregion
             const result = await generateTestReportPdf(req.user.userId, id, overrides);
             if (result.error) {
                 const status =
@@ -152,18 +205,62 @@ const testController = {
                     result.reason === 'test_not_found' ? 404 :
                     result.reason === 'pdf_not_available' || result.reason === 'pdf_generation_failed' ? 503 :
                     400;
+                // #region agent log
+                appendDebugLog({
+                    sessionId: '2e357f',
+                    id: 'reportPdf_error',
+                    timestamp: Date.now(),
+                    hypothesisId: 'H5',
+                    location: 'testController.getTestReportPdf',
+                    message: 'report-pdf failed',
+                    data: { testId: id, reason: result.reason, status, durationMs: Date.now() - t0 },
+                });
+                // #endregion
                 return res.status(status).json({ error: result.reason, message: result.message || result.reason });
             }
             if (!result.pdf || !Buffer.isBuffer(result.pdf)) {
+                // #region agent log
+                appendDebugLog({
+                    sessionId: '2e357f',
+                    id: 'reportPdf_no_buffer',
+                    timestamp: Date.now(),
+                    hypothesisId: 'H5',
+                    location: 'testController.getTestReportPdf',
+                    message: 'PDF buffer missing',
+                    data: { testId: id, durationMs: Date.now() - t0 },
+                });
+                // #endregion
                 return res.status(503).json({ error: 'pdf_generation_failed', message: 'PDF buffer missing' });
             }
             const filename = `lactate-report-${id}.pdf`;
+            // #region agent log
+            appendDebugLog({
+                sessionId: '2e357f',
+                id: 'reportPdf_success',
+                timestamp: Date.now(),
+                hypothesisId: 'H5',
+                location: 'testController.getTestReportPdf',
+                message: 'report-pdf generated',
+                data: { testId: id, bytes: result.pdf?.length || null, durationMs: Date.now() - t0 },
+            });
+            // #endregion
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Length', result.pdf.length);
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
             res.end(result.pdf);
         } catch (error) {
             console.error('[TestController] getTestReportPdf error:', error);
+            // #region agent log
+            appendDebugLog({
+                sessionId: '2e357f',
+                id: 'reportPdf_exception',
+                timestamp: Date.now(),
+                hypothesisId: 'H5',
+                location: 'testController.getTestReportPdf',
+                message: 'report-pdf exception',
+                data: { testId: req.params?.id || null },
+            });
+            // #endregion
             return res.status(503).json({ error: 'pdf_generation_failed', message: 'PDF generation is not available on this server.' });
         }
     },
