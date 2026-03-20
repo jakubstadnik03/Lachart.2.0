@@ -1,17 +1,8 @@
-const nodemailer = require('nodemailer');
+const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 
 function createTransporter() {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
-    return null;
-  }
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD
-    }
-  });
+  return createEmailTransporter();
 }
 
 /**

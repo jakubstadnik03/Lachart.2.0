@@ -7,9 +7,9 @@ const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 const bcrypt = require("bcrypt");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const { createEmailTransporter } = require("../utils/createEmailTransporter");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -120,13 +120,7 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         await userDao.addAthleteToCoach(coach._id, athlete._id);
 
         // Send email with instructions
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${athlete.registrationToken}`;
         
@@ -196,13 +190,7 @@ router.post("/complete-registration/:token", async (req, res) => {
         });
 
         // Send confirmation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -604,13 +592,7 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
     });
 
     // Send new email
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD
-      }
-    });
+    const transporter = createEmailTransporter();
 
     const registrationLink = `${process.env.CLIENT_URL}/complete-registration/${registrationToken}`;
 
@@ -722,13 +704,7 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         const invitationLink = `${process.env.CLIENT_URL}/accept-invitation/${invitationToken}`;
 
@@ -793,13 +769,7 @@ router.post("/accept-invitation/:token", verifyToken, async (req, res) => {
 
         // Send confirmation email to coach
         const coach = await userDao.findById(athlete.pendingCoachId);
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -883,13 +853,7 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
         // Send notification email to coach
         const coach = await userDao.findById(coachId);
         if (coach) {
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_APP_PASSWORD
-                }
-            });
+            const transporter = createEmailTransporter();
 
             await transporter.sendMail({
                 from: process.env.EMAIL_USER,
@@ -1047,13 +1011,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         const invitationLink = `${process.env.CLIENT_URL}/accept-coach-invitation/${invitationToken}`;
 
@@ -1145,13 +1103,7 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
         });
 
         // Send confirmation email to athlete
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: process.env.EMAIL_USER,

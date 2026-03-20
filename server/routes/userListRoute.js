@@ -59,11 +59,9 @@ function createEmailTransporter() {
         });
     }
 
-    // Backward compatible fallback (existing configuration).
-    return nodemailer.createTransport({
-        service: "gmail",
-        auth: { user, pass },
-    });
+    // If no explicit SMTP settings are provided, don't guess a provider.
+    // This keeps email sending consistent (Zoho SMTP when SMTP_HOST/PORT are set).
+    return null;
 }
 
 // Google OAuth client
@@ -1103,13 +1101,7 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
     });
 
     // Send new email
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD
-      }
-    });
+    const transporter = createEmailTransporter();
 
     const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
     const clientUrl = getClientUrl();
@@ -1230,13 +1222,7 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
@@ -1309,13 +1295,7 @@ router.post("/accept-invitation/:token", async (req, res) => {
         });
 
         // Send confirmation email to coach
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         if (coach?.email) {
             await transporter.sendMail({
@@ -1400,13 +1380,7 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
 
         // Send notification emails to both coach and athlete
         const coach = await userDao.findById(coachId);
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         // Use unified branded template for coach/athlete notifications
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
@@ -1642,13 +1616,7 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
         });
 
         // Send invitation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
@@ -1748,13 +1716,7 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
         });
 
         // Send confirmation email to athlete
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         // Branded confirmation email to athlete when coach accepts the invitation
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
@@ -2400,13 +2362,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
         `;
 
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: {
@@ -2439,7 +2395,7 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         console.error("Error sending thank you email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
-        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send thank you email";
+        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send thank you email";
         const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
         res.status(500).json({ error: errorTitle, reason });
     }
@@ -2495,13 +2451,7 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
             });
         }
 
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         let successCount = 0;
         let failCount = 0;
@@ -2774,13 +2724,7 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
                 `;
         }
 
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: {
@@ -2814,7 +2758,7 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
         console.error("Error sending feature announcement email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
-        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send feature announcement email";
+        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send feature announcement email";
         const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
         res.status(500).json({ error: errorTitle, reason });
     }
@@ -2883,13 +2827,7 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
             <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
         `;
 
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
 
         await transporter.sendMail({
             from: {
@@ -2922,7 +2860,7 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         console.error("Error sending Strava reminder email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
-        const errorTitle = isAuthError ? "Email credentials invalid. Use Gmail App Password (not account password)." : "Failed to send Strava reminder email";
+        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send Strava reminder email";
         const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
         res.status(500).json({ error: errorTitle, reason });
     }

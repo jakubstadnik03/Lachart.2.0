@@ -2,3 +2,5 @@
 {"sessionId":"2e357f","runId":"precheck","hypothesisId":"H4","location":"TestingPage.jsx","message":"loadTests start","data":{"role":"athlete","athleteId":"67ee3f1adb0943b29d8eaa53","testId":"67ee3f1adb0943b29d8eaa53","isTestingRole":false},"timestamp":1773993707731}
 {"sessionId":"2e357f","runId":"precheck","hypothesisId":"H4","location":"TestingPage.jsx","message":"loadTests end","data":{"testsCount":13,"durationMs":1},"timestamp":1773993707731}
 {"sessionId":"2e357f","runId":"precheck","hypothesisId":"H4","location":"TestingPage.jsx","message":"loadTests end","data":{"testsCount":13,"durationMs":1},"timestamp":1773993707732}
+{"sessionId":"2e357f","runId":"precheck","hypothesisId":"H4","location":"TestingPage.jsx","message":"loadTests start","data":{"role":"athlete","athleteId":"67ee3f1adb0943b29d8eaa53","testId":"67ee3f1adb0943b29d8eaa53","isTestingRole":false},"timestamp":1773994676334}
+{"sessionId":"2e357f","runId":"precheck","hypothesisId":"H4","location":"TestingPage.jsx","message":"loadTests end","data":{"testsCount":13,"durationMs":5},"timestamp":1773994676339}

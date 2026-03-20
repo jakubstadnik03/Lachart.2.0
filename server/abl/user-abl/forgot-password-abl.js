@@ -1,5 +1,5 @@
 const UserDao = require("../../dao/userDao");
-const nodemailer = require("nodemailer");
+const { createEmailTransporter } = require("../../utils/createEmailTransporter");
 const bcrypt = require("bcryptjs");
 const { JWT_SECRET } = require("../../config/jwt.config");
 const jwt = require("jsonwebtoken");
@@ -8,14 +8,8 @@ const { generateEmailTemplate, getClientUrl } = require("../../utils/emailTempla
 class ForgotPasswordAbl {
     constructor() {
         this.userDao = new UserDao();
-        // Upravená konfigurace pro Gmail SMTP
-        this.transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        // Uses Zoho SMTP when configured (EMAIL_USER/EMAIL_APP_PASSWORD + SMTP_HOST/PORT/SECURE).
+        this.transporter = createEmailTransporter();
 
         // Ověření konfigurace při startu
         this.transporter.verify((error, success) => {

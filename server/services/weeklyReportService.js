@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 const StravaActivity = require('../models/StravaActivity');
 const FitTraining = require('../models/fitTraining');
@@ -661,13 +661,8 @@ function renderWeeklyReportContent({ userName, weekStart, weekEnd, summary }) {
 }
 
 function createTransporter() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD
-    }
-  });
+  const transporter = createEmailTransporter();
+  return transporter;
 }
 
 async function sendWeeklyReportEmailToUser(user, weekStart, weekEnd, { force = false } = {}) {

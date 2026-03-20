@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 const Test = require('../models/test');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
@@ -7,13 +7,8 @@ const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
 const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
 
 function createTransporter() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD
-    }
-  });
+  // Uses Zoho SMTP when configured (EMAIL_USER/EMAIL_APP_PASSWORD + SMTP_HOST/PORT/SECURE).
+  return createEmailTransporter();
 }
 
 function formatDateShort(dateLike, locale = 'cs-CZ') {

@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { createEmailTransporter } = require('../utils/createEmailTransporter');
 const User = require('../models/UserModel');
 const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
 const { calculateThresholds } = require('../utils/lactateThresholds');
@@ -6,16 +6,7 @@ const { calculateZonesFromTest, formatPace } = require('../utils/lactateZones');
 const { buildLactateCurveSvg, escapeHtml } = require('../utils/lactateReportSvgs');
 
 function createTransporter() {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
-    return null;
-  }
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD
-    }
-  });
+  return createEmailTransporter();
 }
 
 function formatDateShort(dateLike, locale = 'cs-CZ') {
