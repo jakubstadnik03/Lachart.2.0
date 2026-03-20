@@ -27,6 +27,45 @@ const Event = require("../models/Event");
 const User = require("../models/UserModel");
 const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
 
+function createEmailTransporter() {
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_APP_PASSWORD;
+    if (!user || !pass) return null;
+
+    const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_SMTP_HOST;
+    const smtpPortRaw = process.env.SMTP_PORT || process.env.EMAIL_SMTP_PORT;
+    const smtpPort = smtpPortRaw ? Number(smtpPortRaw) : null;
+    const smtpSecure =
+        typeof process.env.SMTP_SECURE !== 'undefined'
+            ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
+            : null;
+
+    // If explicit SMTP host/port provided -> use generic SMTP (works for Zoho and others).
+    if (smtpHost && smtpPort) {
+        return nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure === null ? smtpPort === 465 : smtpSecure, // common default
+            auth: { user, pass },
+        });
+    }
+
+    // Optional: allow service override.
+    const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE;
+    if (smtpService) {
+        return nodemailer.createTransport({
+            service: smtpService,
+            auth: { user, pass },
+        });
+    }
+
+    // Backward compatible fallback (existing configuration).
+    return nodemailer.createTransport({
+        service: "gmail",
+        auth: { user, pass },
+    });
+}
+
 // Google OAuth client
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -333,13 +372,13 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         // Send email with instructions (only if email is provided)
         if (email) {
             try {
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER/EMAIL_APP_PASSWORD (and optionally SMTP_HOST/SMTP_PORT/SMTP_SECURE) in server .env to send emails."
+            });
+        }
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
@@ -426,13 +465,13 @@ router.post("/complete-registration/:token", async (req, res) => {
         });
 
         // Send confirmation email
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_APP_PASSWORD
-            }
-        });
+        const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER/EMAIL_APP_PASSWORD (and optionally SMTP_HOST/SMTP_PORT/SMTP_SECURE) in server .env to send emails."
+            });
+        }
 
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
