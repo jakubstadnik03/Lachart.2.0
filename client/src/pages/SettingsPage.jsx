@@ -69,6 +69,8 @@ const SettingsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameForm, setNameForm] = useState({ name: '', surname: '' });
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleForm, setRoleForm] = useState(user?.role || 'athlete');
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
@@ -110,6 +112,12 @@ const SettingsPage = () => {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!editingRole && user?.role) {
+      setRoleForm(user.role);
+    }
+  }, [user?.role, editingRole]);
 
   useEffect(() => {
     fetchCurrentCoach();
@@ -699,6 +707,30 @@ const SettingsPage = () => {
     }
   };
 
+  const handleSaveRole = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(API_ENDPOINTS.EDIT_PROFILE, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: roleForm })
+      });
+
+      if (response.ok) {
+        const updated = await response.json();
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updated }));
+        saveUserToStorage(updated);
+        addNotification('Role updated successfully', 'success');
+        setEditingRole(false);
+      } else {
+        addNotification('Failed to update role', 'error');
+      }
+    } catch (e) {
+      console.error('Error updating role:', e);
+      addNotification('Failed to update role', 'error');
+    }
+  };
+
   const handleDeleteProfile = async () => {
     const confirmMessage = 'Are you sure you want to delete your profile? This action cannot be undone. All your data will be permanently deleted.';
     if (!window.confirm(confirmMessage)) {
@@ -987,7 +1019,65 @@ const SettingsPage = () => {
                 </div>
                 <div>
                   <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Role</label>
-                  <p className={`${isMobile ? 'text-xs' : 'text-base'} text-gray-900 capitalize`}>{user?.role || 'N/A'}</p>
+                  {!editingRole ? (
+                    <div className="flex items-center gap-2">
+                      <p className={`${isMobile ? 'text-xs' : 'text-base'} text-gray-900 capitalize`}>{user?.role || 'N/A'}</p>
+                      <button
+                        onClick={() => {
+                          setRoleForm(user?.role || 'athlete');
+                          setEditingRole(true);
+                        }}
+                        className={`${isMobile ? 'p-0.5' : 'p-1'} text-gray-400 hover:text-primary transition-colors`}
+                        aria-label="Edit role"
+                      >
+                        <svg className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-900">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="athlete"
+                            checked={roleForm === 'athlete'}
+                            onChange={() => setRoleForm('athlete')}
+                          />
+                          Athlete
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-900">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="coach"
+                            checked={roleForm === 'coach'}
+                            onChange={() => setRoleForm('coach')}
+                          />
+                          Coach
+                        </label>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSaveRole}
+                          className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-sm'} bg-primary text-white rounded-lg hover:bg-primary-dark`}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRoleForm(user?.role || 'athlete');
+                            setEditingRole(false);
+                          }}
+                          className={`${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-sm'} bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

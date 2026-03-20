@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 function sanitizeEnvValue(value) {
   if (typeof value !== 'string') return value;
@@ -41,6 +42,7 @@ function createEmailTransporter() {
         length: pass.length,
         hasWhitespace: /\s/.test(pass),
         hasQuotes: /^[\'"]/.test(pass),
+        sha256_prefix: crypto.createHash('sha256').update(pass).digest('hex').slice(0, 8),
       }
     });
   } catch {
@@ -68,16 +70,77 @@ function createEmailTransporter() {
         const looksLikeAuthFailure = code === 'EAUTH' || msg.includes('535 Authentication Failed');
         if (!looksLikeAuthFailure) throw err;
 
-        console.warn('[EmailTransporter] hostPort auth failed; retrying with service transport', {
+        console.warn('[EmailTransporter] hostPort auth failed; trying fallbacks', {
           smtpHost,
           smtpPort,
           code,
         });
-        const fallbackTransport = nodemailer.createTransport({
-          service: smtpServiceForLog,
-          auth: { user, pass },
+
+        const candidates = [];
+        // 1) service transport (zoho)
+        candidates.push({
+          label: `service:${smtpServiceForLog}`,
+          transport: nodemailer.createTransport({
+            service: smtpServiceForLog,
+            auth: { user, pass },
+          })
         });
-        return fallbackTransport.sendMail(...args);
+
+        // 2) Try STARTTLS (587) on the same host
+        candidates.push({
+          label: `${smtpHost}:587 secure=false`,
+          transport: nodemailer.createTransport({
+            host: smtpHost,
+            port: 587,
+            secure: false,
+            auth: { user, pass },
+          })
+        });
+
+        // 3) Try other Zoho region host if applicable
+        if (smtpHost === 'smtp.zoho.com') {
+          candidates.push({
+            label: 'smtp.zoho.eu:465 secure=true',
+            transport: nodemailer.createTransport({
+              host: 'smtp.zoho.eu',
+              port: 465,
+              secure: true,
+              auth: { user, pass },
+            })
+          });
+        } else if (smtpHost === 'smtp.zoho.eu') {
+          candidates.push({
+            label: 'smtp.zoho.com:465 secure=true',
+            transport: nodemailer.createTransport({
+              host: 'smtp.zoho.com',
+              port: 465,
+              secure: true,
+              auth: { user, pass },
+            })
+          });
+        }
+
+        let lastErr = err;
+        for (const c of candidates) {
+          try {
+            console.warn('[EmailTransporter] trying candidate', c.label);
+            return await c.transport.sendMail(...args);
+          } catch (fallbackErr) {
+            lastErr = fallbackErr;
+            const fMsg = (fallbackErr && (fallbackErr.message || fallbackErr.reason || String(fallbackErr))) || '';
+            const fCode = fallbackErr?.code ? String(fallbackErr.code) : '';
+            const fAuth = fCode === 'EAUTH' || fMsg.includes('535 Authentication Failed');
+            console.warn('[EmailTransporter] candidate failed', {
+              candidate: c.label,
+              code: fCode,
+              authFailure: fAuth,
+            });
+            // If it's not an auth failure, don't keep trying unrelated fallbacks.
+            if (!fAuth) throw fallbackErr;
+          }
+        }
+
+        throw lastErr;
       }
     };
 

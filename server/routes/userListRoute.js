@@ -540,6 +540,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         const {
             name,
             surname,
+            role,
             dateOfBirth,
             address,
             phone,
@@ -555,6 +556,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         const updateData = {};
         if (name) updateData.name = name;
         if (surname) updateData.surname = surname;
+        if (role && ['coach', 'athlete'].includes(role)) updateData.role = role;
         if (dateOfBirth) updateData.dateOfBirth = new Date(dateOfBirth);
         if (address) updateData.address = address;
         if (phone) updateData.phone = phone;
@@ -568,6 +570,12 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
         // Load current user to snapshot previous zones into history before updating
         const existingUser = await userDao.findById(userId);
         if (existingUser) {
+            if (updateData.role === 'coach') {
+                // Ensure coach has an athletes array for downstream code.
+                if (!Array.isArray(existingUser.athletes)) {
+                    updateData.athletes = [];
+                }
+            }
             // Archive previous power zones if they exist and new ones are provided
             if (req.body.powerZones && existingUser.powerZones && Object.keys(existingUser.powerZones || {}).length > 0) {
                 existingUser.powerZonesHistory = existingUser.powerZonesHistory || [];
@@ -1789,7 +1797,9 @@ router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res
 // Google authentication endpoint
 router.post("/google-auth", async (req, res) => {
     try {
-        const { credential } = req.body;
+        const { credential, role } = req.body;
+
+        const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
         
         // Verify Google token
         const ticket = await client.verifyIdToken({
@@ -1810,7 +1820,8 @@ router.post("/google-auth", async (req, res) => {
                 name: given_name,
                 surname: family_name,
                 googleId,
-                role: 'athlete',
+                role: normalizedRole,
+                athletes: normalizedRole === 'coach' ? [] : undefined,
                 isRegistrationComplete: true
             });
             // Save registration location (fire-and-forget)
@@ -1819,6 +1830,8 @@ router.post("/google-auth", async (req, res) => {
             // Link Google account to existing user
             user = await userDao.updateUser(user._id, { googleId });
         }
+
+        // Role is only applied on first Google registration creation.
 
         // Generate JWT token
         const token = jwt.sign(
@@ -2406,6 +2419,12 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
         const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send thank you email";
         const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        if (isAuthError) {
+            return res.status(400).json({
+                error: 'SMTP authentication failed',
+                reason: errorTitle
+            });
+        }
         res.status(500).json({ error: errorTitle, reason });
     }
 });

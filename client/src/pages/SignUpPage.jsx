@@ -12,7 +12,6 @@ import { AnimatePresence, motion as m } from 'framer-motion';
 import EditProfileModal from '../components/Profile/EditProfileModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import api from '../services/api';
-import { saveUserToStorage } from '../utils/userStorage';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -31,6 +30,9 @@ const SignUpPage = () => {
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [newUser, setNewUser] = useState(null);
+  const [showGoogleRoleModal, setShowGoogleRoleModal] = useState(false);
+  const [pendingGoogleCredential, setPendingGoogleCredential] = useState(null);
+  const [googleRoleChoice, setGoogleRoleChoice] = useState('athlete');
   const { addNotification } = useNotification();
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -52,26 +54,16 @@ const SignUpPage = () => {
       
       // Log registration event
       await logUserRegistration('email', response?.data?.user?._id);
-      
-      // Automatically log in the user after registration
+
+      // Redirect to login flow (LoginPage handles onboarding modals).
+      // We still auto-auth so user doesn't need to re-enter credentials.
       if (response?.data?.token && response?.data?.user) {
-        // Save token and user
-        localStorage.setItem('token', response.data.token);
-        saveUserToStorage(response.data.user);
-        api.defaults.headers.common["Authorization"] = `Bearer ${response.data.token}`;
-        
-        // Update auth state
-        await login(formData.email, formData.password, response.data.token, response.data.user);
-        
-        // Store new user for onboarding modals
-        setNewUser(response.data.user);
-        
-        // Show edit profile modal first
-        setShowEditProfileModal(true);
-      } else {
-        // Fallback to login page if auto-login fails
-      navigate('/login');
+        navigate('/login', { replace: true });
+        await login(null, null, response.data.token, response.data.user);
+        return;
       }
+
+      navigate('/login', { replace: true });
     } catch (error) {
       setError(error.response?.data?.message || 'Registration failed');
       trackEvent('register_error', { 
@@ -83,43 +75,57 @@ const SignUpPage = () => {
 
   const handleGoogleSuccess = async (response) => {
     try {
+      if (!acceptedTerms) {
+        setError('You must accept the Terms and Privacy Policy.');
+        return;
+      }
+
+      // Ask for role before finalizing google signup.
+      setPendingGoogleCredential(response.credential);
+      setGoogleRoleChoice(formData.role || 'athlete');
+      setShowGoogleRoleModal(true);
+    } catch (error) {
+      console.error('Google auth error:', error);
+      addNotification('Google authentication failed', 'error');
+    }
+  };
+
+  const finalizeGoogleSignup = async () => {
+    try {
+      if (!pendingGoogleCredential) return;
+
       const res = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          credential: response.credential,
+          credential: pendingGoogleCredential,
+          role: googleRoleChoice,
         }),
       });
 
       const data = await res.json();
       if (data.token) {
-        trackUserRegistration('google', 'athlete');
-        trackConversionFunnel('signup_complete', { method: 'google', role: 'athlete' });
-        
+        trackUserRegistration('google', googleRoleChoice);
+        trackConversionFunnel('signup_complete', { method: 'google', role: googleRoleChoice });
+
         // Log registration event
         await logUserRegistration('google', data.user?._id);
-        
-        // Save token and user
-        localStorage.setItem('token', data.token);
-        saveUserToStorage(data.user);
-        api.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
-        
-        // Update auth state
+
+        setShowGoogleRoleModal(false);
+        setPendingGoogleCredential(null);
+
+        // Redirect to login flow (LoginPage handles onboarding modals).
+        navigate('/login', { replace: true });
         await login(null, null, data.token, data.user);
-        
-        // Store new user for onboarding modals
-        setNewUser(data.user);
-        
-        // Show edit profile modal first
-        setShowEditProfileModal(true);
-      } else {
-        addNotification('Google authentication failed', 'error');
-        trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
+        return;
       }
+
+      addNotification('Google authentication failed', 'error');
+      trackEvent('register_error', { method: 'google', error: 'Authentication failed' });
     } catch (error) {
-      console.error('Google auth error:', error);
+      console.error('Google finalize error:', error);
       addNotification('Google authentication failed', 'error');
     }
   };
@@ -541,6 +547,81 @@ const SignUpPage = () => {
           </motion.p>
         </motion.div>
       </motion.div>
+
+      {/* Google role selection modal (first step for google signup) */}
+      <AnimatePresence>
+        {showGoogleRoleModal && (
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center px-3"
+            onClick={() => setShowGoogleRoleModal(false)}
+          >
+            <m.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white max-w-md w-full p-8 rounded-xl shadow-xl relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg"
+                onClick={() => setShowGoogleRoleModal(false)}
+                type="button"
+              >
+                &times;
+              </button>
+              <h2 className="text-2xl font-bold mb-2 text-primary">Choose your role</h2>
+              <p className="text-sm text-gray-600 mb-6">This helps us tailor your dashboard.</p>
+
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 text-gray-900 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="googleRole"
+                    value="athlete"
+                    checked={googleRoleChoice === 'athlete'}
+                    onChange={() => setGoogleRoleChoice('athlete')}
+                  />
+                  Athlete
+                </label>
+
+                <label className="flex items-center gap-3 text-gray-900 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="googleRole"
+                    value="coach"
+                    checked={googleRoleChoice === 'coach'}
+                    onChange={() => setGoogleRoleChoice('coach')}
+                  />
+                  Coach
+                </label>
+              </div>
+
+              <div className="mt-6 flex gap-2">
+                <button
+                  type="button"
+                  onClick={finalizeGoogleSignup}
+                  className="flex-1 px-5 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark"
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGoogleRoleModal(false);
+                    setPendingGoogleCredential(null);
+                  }}
+                  className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </m.div>
+          </m.div>
+        )}
+      </AnimatePresence>
       </div>
 
       {/* Terms Modal */}
