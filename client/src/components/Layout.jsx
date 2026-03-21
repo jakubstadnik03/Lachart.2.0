@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, memo, lazy, Suspense } from "react";
+import React, { useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from "react";
 import { useAuth } from "../context/AuthProvider";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
@@ -8,6 +8,7 @@ import BasicProfileModal from "./Profile/BasicProfileModal";
 import UnitsPreferencesModal from "./Profile/UnitsPreferencesModal";
 import TrainingZonesModal from "./Profile/TrainingZonesModal";
 import StravaConnectModal from "./Onboarding/StravaConnectModal";
+import ProductWalkthrough from "./Onboarding/ProductWalkthrough";
 import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
@@ -27,6 +28,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const walkthroughTimerRef = useRef(null);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const [profileForModal, setProfileForModal] = useState(null); // fresh profile when showing BasicProfileModal
   const { addNotification } = useNotification();
@@ -257,6 +260,40 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     return () => clearTimeout(timeoutId);
   }, [user?._id, user?.garmin?.autoSync, user?.garmin?.accessToken, user?.role]);
 
+  // First-time product tour (after onboarding modals — delay so they don't stack)
+  useEffect(() => {
+    if (walkthroughTimerRef.current) {
+      clearTimeout(walkthroughTimerRef.current);
+      walkthroughTimerRef.current = null;
+    }
+    if (!user?._id) return undefined;
+    if (user.admin || user.role === 'admin') return undefined;
+    // Only when walkthroughDone is explicitly false (set on new email/Google signup).
+    // Legacy users: field missing → undefined → no tour.
+    if (user.onboarding?.walkthroughDone !== false) return undefined;
+    const role = String(user.role || '').toLowerCase();
+    if (!['athlete', 'coach', 'tester', 'testing'].includes(role)) return undefined;
+
+    walkthroughTimerRef.current = setTimeout(() => {
+      setShowWalkthrough(true);
+      walkthroughTimerRef.current = null;
+    }, 20000);
+
+    return () => {
+      if (walkthroughTimerRef.current) {
+        clearTimeout(walkthroughTimerRef.current);
+        walkthroughTimerRef.current = null;
+      }
+    };
+  }, [user?._id, user?.onboarding?.walkthroughDone, user?.role, user?.admin]);
+
+  // Open product tour from Settings (or anywhere): window.dispatchEvent(new CustomEvent('lachart:openWalkthrough'))
+  useEffect(() => {
+    const openWalkthrough = () => setShowWalkthrough(true);
+    window.addEventListener('lachart:openWalkthrough', openWalkthrough);
+    return () => window.removeEventListener('lachart:openWalkthrough', openWalkthrough);
+  }, []);
+
   // Allow access to lactate-guide and admin without login - render them directly
   if (location.pathname === '/lactate-guide') {
     return <Outlet />;
@@ -458,6 +495,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             if (user?._id) localStorage.setItem(`stravaConnectModalDone_${user._id}`, 'true');
             addNotification('Strava connected successfully', 'success');
           }}
+        />
+      )}
+
+      {user && (
+        <ProductWalkthrough
+          open={showWalkthrough}
+          onClose={() => setShowWalkthrough(false)}
+          userRole={user.role}
         />
       )}
     </div>

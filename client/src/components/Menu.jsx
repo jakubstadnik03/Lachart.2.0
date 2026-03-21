@@ -406,8 +406,9 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   return false;
                 })
                 .map((item) => (
-                  <li 
+                  <li
                     key={item.name}
+                    data-tour={item.name === 'Testing' ? 'tour-menu-testing' : undefined}
                   >
                     <NavLink
                       to={item.getPath ? item.getPath(effectiveAthleteId) : item.path}
@@ -438,7 +439,8 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         </motion.div>
 
         {["coach", "tester", "testing"].includes(user?.role) && (
-          <div 
+          <div
+            data-tour="tour-athletes-sidebar"
             className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 
               WebkitOverflowScrolling: 'touch',
@@ -491,7 +493,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           ) : (
             <div className="p-4 border-t border-gray-200">
               <ul className="space-y-2">
-                <li>
+                <li data-tour="tour-menu-settings">
                   <NavLink
                     to="/settings"
                     className={({ isActive }) =>

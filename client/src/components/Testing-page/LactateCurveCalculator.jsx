@@ -2150,7 +2150,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </button>
           </div>
           {!demoMode && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-end gap-2">
+            <div data-tour="tour-lactate-share" className="flex flex-col sm:flex-row items-start sm:items-end gap-2">
               <div className="flex flex-col gap-1">
               <button
                 onClick={openEmailModal}

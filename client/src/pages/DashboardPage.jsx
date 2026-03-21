@@ -29,6 +29,16 @@ import { motion } from 'framer-motion';
 //   ArrowTrendingDownIcon
 // } from '@heroicons/react/24/outline';
 
+/** API může vrátit { error } nebo objekt místo pole — ochrana před .map/.forEach */
+function normalizeApiList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.trainings)) return payload.trainings;
+  if (payload && Array.isArray(payload.activities)) return payload.activities;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  if (payload && Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 const DashboardPage = () => {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
@@ -208,9 +218,9 @@ const DashboardPage = () => {
       ]);
 
       const allTrainings = [
-        ...(response.data || []),
-        ...(fitResponse.data || []).map(t => ({ ...t, category: t.category || null })),
-        ...(stravaResponse.data || []).map(a => ({ ...a, category: a.category || null }))
+        ...normalizeApiList(response.data),
+        ...normalizeApiList(fitResponse?.data).map(t => ({ ...t, category: t.category || null })),
+        ...normalizeApiList(stravaResponse?.data).map(a => ({ ...a, category: a.category || null }))
       ];
 
       setTrainings(allTrainings);

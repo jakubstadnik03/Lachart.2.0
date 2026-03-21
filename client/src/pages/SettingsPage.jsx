@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, garminLogin } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 
 const SettingsPage = () => {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -116,6 +118,16 @@ const SettingsPage = () => {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(location.search || '');
+      const tab = q.get('tab');
+      if (tab === 'integrations') setActiveTab('integrations');
+    } catch {
+      // ignore
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!editingRole && user?.role) {
@@ -1122,6 +1134,31 @@ const SettingsPage = () => {
               </div>
             </div>
 
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'} border border-teal-100`}>
+              <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-start justify-between gap-4'}`}>
+                <div className="flex gap-3 min-w-0">
+                  <div className={`shrink-0 ${isMobile ? 'mt-0.5' : 'mt-0.5'} rounded-lg bg-teal-50 p-2 text-teal-700`}>
+                    <Compass className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} aria-hidden />
+                  </div>
+                  <div>
+                    <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900`}>App walkthrough</h3>
+                    <p className={`${isMobile ? 'text-[10px] mt-0.5' : 'text-sm mt-1'} text-gray-600`}>
+                      Interactive tour: Strava, Testing, lactate tests, email/PDF — tailored for athletes and coaches.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('lachart:openWalkthrough'));
+                  }}
+                  className={`shrink-0 ${isMobile ? 'w-full' : ''} inline-flex items-center justify-center gap-2 font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'}`}
+                >
+                  Start walkthrough
+                </button>
+              </div>
+            </div>
+
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>Danger Zone</h3>
               <div className={`border border-red-200 ${isMobile ? 'rounded-md p-2' : 'rounded-lg p-4'} bg-red-50`}>
@@ -1642,7 +1679,10 @@ const SettingsPage = () => {
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Integrations & Sync</h3>
               <div className={`grid ${isMobile ? 'grid-cols-1 gap-2.5' : 'grid-cols-1 md:grid-cols-2 gap-4'}`}>
-                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                <div
+                  data-tour="tour-strava-card"
+                  className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}
+                >
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
                       {/* Strava Logo */}

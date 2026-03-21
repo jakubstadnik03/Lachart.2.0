@@ -30,6 +30,16 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+/** Odpověď z API / localStorage cache může být objekt místo pole — zabrání data.forEach crash */
+function normalizeApiList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.trainings)) return payload.trainings;
+  if (payload && Array.isArray(payload.activities)) return payload.activities;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  if (payload && Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 const deduplicateStravaLaps = (laps = []) => {
   if (!Array.isArray(laps) || laps.length === 0) return [];
 
@@ -1796,14 +1806,14 @@ const FitAnalysisPage = () => {
       }
       
       const params = athleteId ? { athleteId } : {};
-      const acts = await listExternalActivities(params);
-      setExternalActivities(acts || []);
+      const acts = normalizeApiList(await listExternalActivities(params));
+      setExternalActivities(acts);
       
       // Check if we should restore Strava selection (only on initial load or when athlete changes)
       const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
       if (savedStravaId) {
         // Verify the activity still exists
-        const activityExists = acts?.some(a => String(a.stravaId) === savedStravaId);
+        const activityExists = acts.some(a => String(a.stravaId) === savedStravaId);
         if (activityExists) {
           // Only load if not already selected (to avoid unnecessary API calls)
           if (!selectedStrava || String(selectedStrava.id) !== savedStravaId) {
@@ -1822,6 +1832,7 @@ const FitAnalysisPage = () => {
         return;
       }
       console.error('Error loading external activities:', e);
+      setExternalActivities([]);
     }
   }, [selectedAthleteId, user?.role, selectedStrava, loadStravaDetail]);
 
@@ -2198,7 +2209,11 @@ const FitAnalysisPage = () => {
         return;
       }
       
-      const data = await getFitTrainings(athleteId);
+      const raw = await getFitTrainings(athleteId);
+      const data = normalizeApiList(raw);
+      if (raw != null && !Array.isArray(raw) && data.length === 0) {
+        console.warn('[FitAnalysis] getFitTrainings returned non-array; using empty list.', raw);
+      }
       
       // Remove duplicates based on _id before setting
       const uniqueTrainings = [];
@@ -2239,6 +2254,7 @@ const FitAnalysisPage = () => {
         return;
       }
       console.error('Error loading trainings:', error);
+      setTrainings([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthleteId, user?.role, user?._id, selectedTraining]);

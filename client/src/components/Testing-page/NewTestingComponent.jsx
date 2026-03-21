@@ -31,8 +31,11 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
 
   
     return (
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 mt-4 lg:mt-5 w-full min-w-0">
-        <div className="w-full lg:w-1/2 min-w-0">
+      <div
+        data-tour="tour-create-test-form"
+        className="flex flex-col lg:flex-row gap-4 lg:gap-6 mt-4 lg:mt-5 w-full min-w-0"
+      >
+        <div data-tour="tour-live-curve-preview" className="w-full lg:w-1/2 min-w-0">
           <LactateCurve mockData={testData} />
         </div>
         <div className="w-full lg:w-1/2 min-w-0">

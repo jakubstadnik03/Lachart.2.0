@@ -1027,7 +1027,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         </button>
       </div>
 
-      <div className="flex flex-col gap-2 flex-shrink-0">
+      <div data-tour="tour-test-details" className="flex flex-col gap-2 flex-shrink-0">
         {/* Title and Edit Button Row */}
         <div className="flex items-center gap-2 justify-between">
           <div className="flex-1">
@@ -1421,7 +1421,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       </div>
 
         {/* Data Table */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {(() => {
             // Calculate columns: Int + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly
@@ -1531,7 +1531,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         {/* Action Buttons */}
         {(isNewTest || isEditMode) && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
-            <button 
+            <button
+              data-tour="tour-add-interval"
               onClick={() => {
                 logClick('Add Interval Button');
                 handleAddRow();
@@ -1555,7 +1556,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               )}
 
             {!demoMode && (
-            <button 
+            <button
+                data-tour="tour-save-test"
                 onClick={() => {
                   logClick('Save Button', { isNewTest });
                   handleSaveChanges();

@@ -428,6 +428,13 @@ const TestingPage = () => {
     return () => window.removeEventListener('userUpdated', handleUserUpdate);
   }, []);
 
+  // Product walkthrough: open "New testing" panel before create-test steps
+  useEffect(() => {
+    const openNewTesting = () => setShowNewTesting(true);
+    window.addEventListener('lachart:ensureNewTesting', openNewTesting);
+    return () => window.removeEventListener('lachart:ensureNewTesting', openNewTesting);
+  }, []);
+
   const handleStravaModalClose = () => {
     setShowStravaModal(false);
     // Remember that user dismissed the modal (for 7 days)
@@ -1237,10 +1244,12 @@ const TestingPage = () => {
               <span className="hidden sm:inline">Add Athlete & Test</span>
             </button>
           )}
-          <NotificationBadge
-            isActive={showNewTesting}
-            onToggle={() => setShowNewTesting((prev) => !prev)}
-          />
+          <div data-tour="tour-new-testing" className="w-full sm:w-auto">
+            <NotificationBadge
+              isActive={showNewTesting}
+              onToggle={() => setShowNewTesting((prev) => !prev)}
+            />
+          </div>
         </motion.div>
       </div>
 
@@ -1516,7 +1525,8 @@ const TestingPage = () => {
         )}
       </AnimatePresence>
 
-      <motion.div 
+      <motion.div
+        data-tour="tour-test-list"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}

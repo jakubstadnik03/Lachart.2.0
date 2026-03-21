@@ -211,12 +211,53 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         setLoadError(null);
         const response = await api.get(`/api/fit/power-metrics?${params.toString()}`);
         const metrics = response.data;
+
+        // HTTP 200 s tělem { error: 'Access denied' } apod.
+        if (metrics && typeof metrics.error === 'string' && metrics.error) {
+          const emptyCompare = {
+            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
+          };
+          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
+          setLoadError(metrics.error);
+          setPowerMetrics({
+            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
+            compare: emptyCompare,
+            personalRecords: {},
+            improvements: {},
+            monthlyMetrics: {},
+            trainingsCount: 0
+          });
+          setLoading(false);
+          setRefreshing(false);
+          return;
+        }
         
         // Validate API response (ensure compare exists so table/chart don't crash)
         const hasAllTime = metrics?.allTime && typeof metrics.allTime === 'object';
         const hasCompare = metrics?.compare && typeof metrics.compare === 'object';
         if (!metrics || !hasAllTime) {
-          console.error('[SpiderChart] Invalid API response structure:', metrics);
+          console.warn('[SpiderChart] Invalid API response structure (using empty chart):', metrics);
+          const emptyCompare = {
+            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
+            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
+          };
+          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
+          setLoadError('No power metrics available');
+          setPowerMetrics({
+            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
+            compare: emptyCompare,
+            personalRecords: {},
+            improvements: {},
+            monthlyMetrics: {},
+            trainingsCount: 0
+          });
           setLoading(false);
           setRefreshing(false);
           return;

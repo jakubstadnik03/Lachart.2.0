@@ -6,6 +6,11 @@ import { formatDistanceForUser, formatSpeedForUser } from "../../utils/unitsConv
 
 const maxGraphHeight = 200;
 
+/** Interval rows for a training — API or merged objects may omit `results`. */
+function trainingResultsOf(training) {
+  return Array.isArray(training?.results) ? training.results : [];
+}
+
 function StatCard({ stats }) {
   return (
     <div className="flex flex-col text-[10px] sm:text-xs rounded-none max-w-[160px] sm:max-w-[192px]" >
@@ -154,8 +159,8 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
     
     // Najdeme všechny velikosti intervalů (vzdálenost nebo čas) napříč všemi tréninky stejného typu
-    const allSizes = sameTypeTrainings.flatMap(t => 
-      t.results.map(r => getIntervalSize(r))
+    const allSizes = sameTypeTrainings.flatMap((t) =>
+      trainingResultsOf(t).map((r) => getIntervalSize(r))
     );
     
     // Rozdělíme na vzdálenosti a časy, filtrujeme null hodnoty
@@ -175,7 +180,10 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     const currentValue = currentSize.value;
     
     // Celkový počet intervalů napříč všemi zobrazenými tréninky
-    const totalIntervals = visibleTrainings.reduce((sum, t) => sum + t.results.length, 0);
+    const totalIntervals = visibleTrainings.reduce(
+      (sum, t) => sum + trainingResultsOf(t).length,
+      0
+    );
     
     // Vypočítáme dostupnou šířku pro celý graf (s rezervou pro padding a mezery)
     const availableWidth = containerWidth * 0.95; // 95% pro sloupce, 5% pro padding
@@ -252,14 +260,18 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
     
     // Zajistíme, že se všechny sloupce vejdou
     // Vypočítáme celkovou šířku všech intervalů v nejdelším tréninku s jejich poměrovými šířkami
-    const longestTraining = sameTypeTrainings.reduce((longest, t) => 
-      t.results.length > longest.results.length ? t : longest, 
-      sameTypeTrainings[0] || { results: [] }
-    );
-    
-    if (longestTraining.results.length > 0) {
+    const longestTraining =
+      sameTypeTrainings.length > 0
+        ? sameTypeTrainings.reduce(
+            (longest, t) =>
+              trainingResultsOf(t).length > trainingResultsOf(longest).length ? t : longest,
+            sameTypeTrainings[0]
+          )
+        : { results: [] };
+
+    if (trainingResultsOf(longestTraining).length > 0) {
       // Vypočítáme šířky pro všechny intervaly v nejdelším tréninku
-      const widths = longestTraining.results.map(r => {
+      const widths = trainingResultsOf(longestTraining).map((r) => {
         const rSize = getIntervalSize(r);
         // Pokud je hodnota null nebo undefined, použijeme stejnou šířku
         if (rSize.value === null || rSize.value === undefined) {
@@ -601,12 +613,16 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
     return `${minutes}:${String(remainingSeconds).padStart(2, '0')}/km`;
   };
 
-  const currentAvgPower = getAveragePower(training.results);
-  const previousAvgPower = previousTraining ? getAveragePower(previousTraining.results) : 0;
+  const currentAvgPower = getAveragePower(trainingResultsOf(training));
+  const previousAvgPower = previousTraining
+    ? getAveragePower(trainingResultsOf(previousTraining))
+    : 0;
   const powerDiff = currentAvgPower - previousAvgPower;
 
-  const currentAvgPace = getAveragePace(training.results);
-  const previousAvgPace = previousTraining ? getAveragePace(previousTraining.results) : 0;
+  const currentAvgPace = getAveragePace(trainingResultsOf(training));
+  const previousAvgPace = previousTraining
+    ? getAveragePace(trainingResultsOf(previousTraining))
+    : 0;
   const paceDiff = currentAvgPace - previousAvgPace;
 
   // For bike/ride: show Avg speed instead of Avg power in header
@@ -702,8 +718,12 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
 
 export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false, user = null }) {
   const navigate = useNavigate();
+  const trainingsList = useMemo(
+    () => (Array.isArray(trainings) ? trainings : []),
+    [trainings]
+  );
   // Get available sports from trainings
-  const availableSports = [...new Set(trainings.map(t => t.sport))].filter(Boolean);
+  const availableSports = [...new Set(trainingsList.map((t) => t.sport))].filter(Boolean);
   
   // Initialize selectedSport with localStorage or default to 'all' if not provided
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
@@ -761,10 +781,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   }, []);
 
   useEffect(() => {
-    if (trainings.length > 0) {
+    if (trainingsList.length > 0) {
       const relevantTrainings = currentSelectedSport === 'all' 
-        ? trainings 
-        : trainings.filter(t => t.sport === currentSelectedSport);
+        ? trainingsList 
+        : trainingsList.filter(t => t.sport === currentSelectedSport);
       if (relevantTrainings.length > 0) {
         const firstTitle = relevantTrainings[0].title;
         if (!currentSelectedTitle || !relevantTrainings.some(t => t.title === currentSelectedTitle)) {
@@ -779,7 +799,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         }
       }
     }
-  }, [trainings, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
+  }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -795,7 +815,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
   const trainingOptions = useMemo(() => {
     const uniqueTitles = [...new Set(
-      trainings
+      trainingsList
         .filter(t => currentSelectedSport === 'all' || t.sport === currentSelectedSport)
         .map(t => t.title)
     )];
@@ -804,17 +824,17 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       value: title,
       label: title
     }));
-  }, [trainings, currentSelectedSport]);
+  }, [trainingsList, currentSelectedSport]);
 
   const filteredTrainings = useMemo(() => {
     // Filter trainings by sport and title
-    const filtered = trainings
+    const filtered = trainingsList
       .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === currentSelectedTitle)
       // Sort by date from newest to oldest
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     
     return filtered;
-  }, [trainings, currentSelectedSport, currentSelectedTitle]);
+  }, [trainingsList, currentSelectedSport, currentSelectedTitle]);
 
   // Reset progress index when filtered trainings or selected title changes
   useEffect(() => {
@@ -825,7 +845,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   const handleTrainingTitleChange = (newTitle) => {
     setCurrentSelectedTitle(newTitle);
     // Najdeme nejnovější trénink s tímto názvem
-    const trainingsWithTitle = trainings
+    const trainingsWithTitle = trainingsList
       .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === newTitle)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
     if (trainingsWithTitle.length > 0 && setSelectedTrainingId) {
@@ -918,16 +938,16 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   
     if (isRun) {
       // Pro běh: používáme pace z power pole (uložené jako mm:ss string)
-      const allPaces = filteredTrainings.flatMap((t) => 
-        t.results.map((r) => {
+      const allPaces = filteredTrainings.flatMap((t) =>
+        trainingResultsOf(t).map((r) => {
           // Power u běhu je pace v mm:ss formátu
           const paceSeconds = parsePaceToSeconds(r.power);
           return paceSeconds !== null && paceSeconds > 0 ? paceSeconds : null;
         })
       ).filter(p => p !== null);
 
-      const allHeartRates = filteredTrainings.flatMap((t) => 
-        t.results.map((r) => {
+      const allHeartRates = filteredTrainings.flatMap((t) =>
+        trainingResultsOf(t).map((r) => {
           const hr = Number(r.heartRate);
           return !isNaN(hr) && hr > 0 ? hr : null;
         })
@@ -948,8 +968,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       const minHeartRate = 0;
       const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
 
-      const averageHeartRate = filteredTrainings.map(training => {
-        const hrs = training.results.map(r => Number(r.heartRate)).filter(hr => !isNaN(hr) && hr > 0);
+      const averageHeartRate = filteredTrainings.map((training) => {
+        const hrs = trainingResultsOf(training)
+          .map((r) => Number(r.heartRate))
+          .filter((hr) => !isNaN(hr) && hr > 0);
         return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
       });
 
@@ -969,15 +991,15 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       };
     } else {
       // Pro ostatní sporty: používáme power
-      const allPowers = filteredTrainings.flatMap((t) => 
-        t.results.map((r) => {
+      const allPowers = filteredTrainings.flatMap((t) =>
+        trainingResultsOf(t).map((r) => {
           const power = Number(r.power);
           return !isNaN(power) && power > 0 ? power : null;
         })
       ).filter(p => p !== null);
 
-      const allHeartRates = filteredTrainings.flatMap((t) => 
-        t.results.map((r) => {
+      const allHeartRates = filteredTrainings.flatMap((t) =>
+        trainingResultsOf(t).map((r) => {
           const hr = Number(r.heartRate);
           return !isNaN(hr) && hr > 0 ? hr : null;
         })
@@ -997,8 +1019,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
       const minHeartRate = 0;
       const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
 
-      const averageHeartRate = filteredTrainings.map(training => {
-        const hrs = training.results.map(r => Number(r.heartRate)).filter(hr => !isNaN(hr) && hr > 0);
+      const averageHeartRate = filteredTrainings.map((training) => {
+        const hrs = trainingResultsOf(training)
+          .map((r) => Number(r.heartRate))
+          .filter((hr) => !isNaN(hr) && hr > 0);
         return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
       });
     
@@ -1158,7 +1182,8 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
           <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4" style={{ overflow: 'visible' }}>
             {visibleTrainings.map((training, trainingIndex) => {
               const columnWidth = `${100 / visibleTrainings.length}%`;
-              
+              const results = trainingResultsOf(training);
+
               return (
                 <div 
                   key={`training-${training._id || training.id || trainingIndex}`} 
@@ -1247,20 +1272,20 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       };
 
                       // Check if results have distance data (for distance-based intervals)
-                      const hasDistanceData = training.results && training.results.some(r => {
+                      const hasDistanceData = results.some((r) => {
                         const dist = r.distance || (r.durationType === 'distance' ? r.duration : null);
                         return dist && parseDistanceToMeters(dist) > 0;
                       });
 
                       // Calculate total duration or distance for this training
-                      const totalDuration = training.results ? training.results.reduce((sum, result) => {
+                      const totalDuration = results.reduce((sum, result) => {
                         return sum + parseDuration(result);
-                      }, 0) : 0;
+                      }, 0);
 
-                      const totalDistance = training.results ? training.results.reduce((sum, result) => {
+                      const totalDistance = results.reduce((sum, result) => {
                         const dist = result.distance || (result.durationType === 'distance' ? result.duration : null);
                         return sum + parseDistanceToMeters(dist);
-                      }, 0) : 0;
+                      }, 0);
 
                       // Use distance if available, otherwise use duration
                       const useDistance = hasDistanceData && totalDistance > 0;
@@ -1270,7 +1295,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       // Account for gaps between intervals (3px each, N-1 gaps for N intervals)
                       // With flexbox gap, we need to ensure bars fit within container
                       // Approach: calculate widthPercent accounting for gap space
-                      const numIntervals = training.results.length;
+                      const numIntervals = results.length;
                       
                       // For flexbox with gap, we'll calculate widthPercent as:
                       // widthPercent = (value/totalValue) * (100% - gapPercentage)
@@ -1280,14 +1305,15 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       // Get container width from ref if available, otherwise estimate
                       const containerWidthPx = containerWidth || 300; // Fallback to 300px
                       const gapSizePx = 3; // pixels per gap
-                      const totalGapWidthPx = (numIntervals - 1) * gapSizePx;
+                      const gapCount = Math.max(0, numIntervals - 1);
+                      const totalGapWidthPx = gapCount * gapSizePx;
                       const gapPercent = containerWidthPx > 0 
                         ? Math.min(20, (totalGapWidthPx / containerWidthPx) * 100) // Cap at 20%
-                        : Math.min(15, (numIntervals - 1) * 1.5); // Fallback estimate
+                        : Math.min(15, gapCount * 1.5); // Fallback estimate
                       const availableWidthPercent = Math.max(50, 100 - gapPercent); // Ensure at least 50% available
                       
                       let cumulativeLeft = 0;
-                      const intervalPositions = training.results.map((result, index) => {
+                      const intervalPositions = results.map((result, index) => {
                         const durationValue = parseDuration(result);
                         const distanceValue = result.distance || (result.durationType === 'distance' ? result.duration : null);
                         const parsedDistance = parseDistanceToMeters(distanceValue);
@@ -1296,7 +1322,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         // Calculate width as percentage of available space (after accounting for gaps)
                         const widthPercent = totalValue > 0 
                           ? (value / totalValue) * availableWidthPercent 
-                          : (availableWidthPercent / training.results.length);
+                          : (availableWidthPercent / Math.max(results.length, 1));
                         const leftPercent = cumulativeLeft;
                         cumulativeLeft += widthPercent;
                         return { widthPercent, leftPercent };
@@ -1312,7 +1338,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
                       // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
                       // Pro ostatní: nejvyšší power = nejtmavší
-                      const powerPaceValues = training.results.map((r, idx) => {
+                      const powerPaceValues = results.map((r, idx) => {
                         if (isRun) {
                           const paceSeconds = parsePaceToSeconds(r.power);
                           return { value: paceSeconds, index: idx };
@@ -1335,7 +1361,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         colorIndexMap.set(item.index, sortedIndex);
                       });
                       
-                      return training.results.map((result, resultIndex) => {
+                      return results.map((result, resultIndex) => {
                         let height = 0;
                         if (isRun) {
                           // Power u běhu je pace v mm:ss formátu
@@ -1386,7 +1412,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
                           user={user}
                           widthPercent={intervalPositions[resultIndex]?.widthPercent}
-                          trainingResults={training.results}
+                          trainingResults={results}
                         />
                       );
                     });
