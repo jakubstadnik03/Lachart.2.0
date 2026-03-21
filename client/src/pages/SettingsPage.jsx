@@ -64,7 +64,8 @@ const SettingsPage = () => {
     confirm: false
   });
 
-  const [currentCoach, setCurrentCoach] = useState(null);
+  /** Linked coaches (athlete can have multiple) */
+  const [myCoaches, setMyCoaches] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -88,22 +89,25 @@ const SettingsPage = () => {
     }));
   };
 
-  const fetchCurrentCoach = useCallback(async () => {
+  const fetchMyCoaches = useCallback(async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.COACH_PROFILE, {
+      const response = await fetch(API_ENDPOINTS.MY_COACHES, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
       if (response.ok) {
-        const coachData = await response.json();
-        setCurrentCoach(coachData);
+        const data = await response.json();
+        const list = Array.isArray(data.coaches) ? data.coaches : [];
+        setMyCoaches(list);
+      } else {
+        setMyCoaches([]);
       }
     } catch (error) {
-      console.error('Error fetching coach:', error);
-      addNotification('Failed to load coach data', 'error');
+      console.error('Error fetching coaches:', error);
+      setMyCoaches([]);
     }
-  }, [addNotification]);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -120,19 +124,20 @@ const SettingsPage = () => {
   }, [user?.role, editingRole]);
 
   useEffect(() => {
-    fetchCurrentCoach();
-    if (!user?.coachId) {
-      setCurrentCoach(null);
+    if (user?.role === 'athlete') {
+      fetchMyCoaches();
+    } else {
+      setMyCoaches([]);
     }
-  }, [user?.coachId, fetchCurrentCoach]);
+  }, [user?.role, user?.coachId, fetchMyCoaches]);
 
   useEffect(() => {
     const handleFocus = () => {
-      fetchCurrentCoach();
+      if (user?.role === 'athlete') fetchMyCoaches();
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [fetchCurrentCoach]);
+  }, [fetchMyCoaches, user?.role]);
 
   useEffect(() => {
     const checkIntegrationStatus = async () => {
@@ -225,12 +230,39 @@ const SettingsPage = () => {
             
             // Automatically sync Strava activities after connection
             try {
-              console.log('Starting automatic Strava sync after connection...');
+              // 1) Enable auto-sync for new activities
+              try {
+                await fetch(`${API_BASE_URL}/api/integrations/strava/auto-sync`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  },
+                  body: JSON.stringify({ autoSync: true })
+                });
+              } catch (e) {
+                console.error('Failed to enable Strava auto-sync (ignored):', e);
+              }
+
+              // 2) Sync now (download trainings/activities)
+              console.log('Starting automatic Strava sync (sync now) after connection...');
               const syncResult = await syncStravaActivities();
-              console.log('Automatic sync completed:', syncResult);
+              console.log('Automatic sync (sync now) completed:', syncResult);
+
+              // 3) Update profile picture from Strava
+              try {
+                const avatarRes = await updateAvatarFromStrava();
+                console.log('Avatar updated from Strava:', avatarRes);
+              } catch (e) {
+                console.error('Failed to update avatar from Strava (ignored):', e);
+              }
+
               if (syncResult.imported > 0 || syncResult.updated > 0) {
                 addNotification(`Strava sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
-                // Reload user profile to get updated sync date
+              }
+
+              // Reload user profile to reflect autoSync + avatar updates
+              try {
                 const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
                   headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -241,6 +273,8 @@ const SettingsPage = () => {
                   saveUserToStorage(refreshedUser);
                   window.dispatchEvent(new CustomEvent('userUpdated', { detail: refreshedUser }));
                 }
+              } catch (e) {
+                console.error('Failed to reload user profile after Strava connect actions (ignored):', e);
               }
             } catch (syncError) {
               console.error('Error during automatic Strava sync:', syncError);
@@ -776,14 +810,20 @@ const SettingsPage = () => {
     }
   };
 
-  const handleRemoveCoach = async () => {
-    if (!window.confirm('Are you sure you want to remove your coach?')) {
+  const handleRemoveCoach = async (coachId = null) => {
+    const msg = coachId
+      ? 'Remove this coach from your account?'
+      : 'Remove all coaches from your account?';
+    if (!window.confirm(msg)) {
       return;
     }
 
     try {
       setIsLoading(true);
-      const response = await fetch(API_ENDPOINTS.REMOVE_COACH, {
+      const url = coachId
+        ? `${API_ENDPOINTS.REMOVE_COACH}?coachId=${encodeURIComponent(coachId)}`
+        : API_ENDPOINTS.REMOVE_COACH;
+      const response = await fetch(url, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -791,7 +831,7 @@ const SettingsPage = () => {
       });
 
       if (response.ok) {
-        setCurrentCoach(null);
+        await fetchMyCoaches();
         addNotification('Coach successfully removed', 'success');
       } else {
         const data = await response.json();
@@ -944,7 +984,7 @@ const SettingsPage = () => {
       await response.json();
       addNotification('Coach invitation sent successfully', 'success');
       setFormData(prev => ({ ...prev, newCoachEmail: '' }));
-      fetchCurrentCoach();
+      fetchMyCoaches();
     } catch (error) {
       console.error('Error inviting coach:', error);
       addNotification(error.message || 'Failed to invite coach', 'error');
@@ -1493,34 +1533,60 @@ const SettingsPage = () => {
                 </form>
               </div>
 
+            {user?.role === 'athlete' && (
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Coach Management</h3>
-                
-                {currentCoach ? (
-                  <div className={`${isMobile ? 'mb-2 p-1.5' : 'mb-6 p-4'} bg-gray-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                    <h4 className={`${isMobile ? 'text-xs' : 'text-base'} font-medium text-gray-900 ${isMobile ? 'mb-1' : 'mb-2'}`}>Current Coach</h4>
-                    <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-1.5' : ''}`}>
-                      <div>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 break-words`}>{currentCoach.name} {currentCoach.surname}</p>
-                        <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 break-words`}>{currentCoach.email}</p>
-                      </div>
-                      <button
-                        onClick={handleRemoveCoach}
-                        disabled={isLoading}
-                        className={`flex items-center ${isMobile ? 'justify-center w-full' : 'gap-2'} ${isMobile ? 'px-2.5 py-1 text-[10px]' : 'px-4 py-2 text-sm'} font-medium text-red-600 hover:text-red-700 focus:outline-none ${isMobile ? 'mt-1' : ''}`}
+                <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                  You can connect multiple coaches. Each must accept the invitation (email).
+                </p>
+
+                {myCoaches.length > 0 ? (
+                  <div className={`${isMobile ? 'space-y-2 mb-2' : 'space-y-3 mb-6'}`}>
+                    <h4 className={`${isMobile ? 'text-xs' : 'text-base'} font-medium text-gray-900`}>Your coaches</h4>
+                    {myCoaches.map((c) => (
+                      <div
+                        key={String(c._id)}
+                        className={`${isMobile ? 'p-1.5' : 'p-4'} bg-gray-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}
                       >
-                        <UserMinus className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-                        Remove Coach
+                        <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-1.5' : 'gap-2'}`}>
+                          <div>
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 break-words`}>
+                              {c.name} {c.surname}
+                            </p>
+                            <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 break-words`}>{c.email}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCoach(c._id)}
+                            disabled={isLoading}
+                            className={`flex items-center ${isMobile ? 'justify-center w-full' : 'gap-2'} ${isMobile ? 'px-2.5 py-1 text-[10px]' : 'px-4 py-2 text-sm'} font-medium text-red-600 hover:text-red-700 focus:outline-none shrink-0`}
+                          >
+                            <UserMinus className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {myCoaches.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCoach(null)}
+                        disabled={isLoading}
+                        className={`text-red-600 hover:text-red-700 ${isMobile ? 'text-[10px]' : 'text-sm'} underline`}
+                      >
+                        Remove all coaches
                       </button>
-                    </div>
+                    )}
                   </div>
                 ) : (
-                  <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>You currently don't have an assigned coach.</p>
+                  <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
+                    You don&apos;t have any linked coaches yet. Invite one by email below, or ask a coach to invite you from their dashboard.
+                  </p>
                 )}
 
                 <form onSubmit={handleCoachChange} className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
                   <div>
-                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>New Coach Email</label>
+                    <label className={`block ${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-700`}>Coach email (invite)</label>
                       <input
                         type="email"
                         value={formData.newCoachEmail}
@@ -1536,10 +1602,11 @@ const SettingsPage = () => {
                     className={`w-full flex items-center justify-center ${isMobile ? 'gap-1 px-2.5 py-1.5 text-[10px]' : 'gap-2 px-4 py-2 text-sm'} border border-transparent ${isMobile ? 'rounded-md' : 'rounded-md'} shadow-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary`}
                   >
                     <UserPlus className={isMobile ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-                    {isLoading ? 'Sending...' : 'Invite New Coach'}
+                    {isLoading ? 'Sending...' : 'Send invitation'}
                   </button>
                 </form>
               </div>
+            )}
 
             <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
               <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-6'}`}>Linked Social Accounts</h3>
@@ -1654,6 +1721,50 @@ const SettingsPage = () => {
                       className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
                     >
                       Sync Now
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const ok = window.confirm('Disconnect your Strava account? Auto-sync will be turned off.');
+                          if (!ok) return;
+
+                          const resp = await fetch(`${API_BASE_URL}/api/integrations/strava/disconnect`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            },
+                          });
+
+                          if (!resp.ok) {
+                            const data = await resp.json().catch(() => ({}));
+                            throw new Error(data.error || 'Failed to disconnect Strava');
+                          }
+
+                          // Reload profile so UI reflects disconnected state
+                          const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+                            headers: {
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            }
+                          });
+
+                          if (profileResponse.ok) {
+                            const updatedUser = await profileResponse.json();
+                            saveUserToStorage(updatedUser);
+                            window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+                          }
+
+                          setStravaConnected(false);
+                          setStravaAutoSync(false);
+                          addNotification('Strava disconnected successfully', 'success');
+                        } catch (e) {
+                          console.error('Disconnect Strava error:', e);
+                          addNotification(e.message || 'Failed to disconnect Strava', 'error');
+                        }
+                      }}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                    >
+                      Disconnect Strava
                     </button>
                   </div>
                 </div>

@@ -26,6 +26,13 @@ const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
 const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
+const {
+  isCoachLikeRole,
+  athleteHasCoachUser,
+  mergeCoachIds,
+  removeCoachFromAthleteIds,
+  athleteCoachIdSet,
+} = require("../utils/athleteCoachAccess");
 
 function createEmailTransporter() {
     const user = process.env.EMAIL_USER;
@@ -62,6 +69,41 @@ function createEmailTransporter() {
     // If no explicit SMTP settings are provided, don't guess a provider.
     // This keeps email sending consistent (Zoho SMTP when SMTP_HOST/PORT are set).
     return null;
+}
+
+/** Load linked coaches for an athlete (legacy coachId + coachIds). */
+async function getAthleteCoachesPayload(athleteId) {
+    const athlete = await userDao.findById(athleteId);
+    if (!athlete) {
+        return { coaches: [], coach: null };
+    }
+    // Migrate legacy single coachId into coachIds once
+    if (athlete.coachId && (!athlete.coachIds || athlete.coachIds.length === 0)) {
+        try {
+            await userDao.updateUser(athlete._id, { coachIds: [athlete.coachId] });
+            athlete.coachIds = [athlete.coachId];
+        } catch (e) {
+            console.warn("migrate coachIds legacy:", e);
+        }
+    }
+    const ids = Array.from(athleteCoachIdSet(athlete));
+    if (ids.length === 0) {
+        return { coaches: [], coach: null };
+    }
+    const oids = ids.map((id) =>
+        mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id
+    );
+    const coachDocs = await User.find({ _id: { $in: oids } }).select("name surname email role");
+    const coaches = coachDocs
+        .filter((c) => isCoachLikeRole(c.role))
+        .map((c) => ({
+            _id: c._id,
+            name: c.name,
+            surname: c.surname,
+            email: c.email,
+            role: c.role,
+        }));
+    return { coaches, coach: coaches[0] || null };
 }
 
 // Google OAuth client
@@ -281,8 +323,8 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
     try {
         const coach = await userDao.findById(req.user.userId);
         
-        if (!coach || coach.role !== 'coach') {
-            return res.status(403).json({ error: "Access allowed only for coaches" });
+        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+            return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
         const athletes = await userDao.findAthletesByCoachId(req.user.userId);
@@ -319,9 +361,9 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         console.log("Looking up coach with ID:", req.user.userId);
         const coach = await userDao.findById(req.user.userId);
         
-        if (!coach || coach.role !== 'coach') {
-            console.log("User is not a coach:", coach);
-            return res.status(403).json({ error: "Access allowed only for coaches" });
+        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+            console.log("User is not in coach-like role:", coach);
+            return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
         // Check if email is already registered (only if email is provided)
@@ -507,8 +549,8 @@ router.delete("/coach/remove-athlete/:athleteId", verifyToken, async (req, res) 
     try {
         const coach = await userDao.findById(req.user.userId);
         
-        if (!coach || coach.role !== 'coach') {
-            return res.status(403).json({ error: "Access allowed only for coaches" });
+        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+            return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
         const athlete = await userDao.findById(req.params.athleteId);
@@ -516,7 +558,7 @@ router.delete("/coach/remove-athlete/:athleteId", verifyToken, async (req, res) 
             return res.status(404).json({ error: "Athlete not found" });
         }
 
-        if (athlete.coachId.toString() !== coach._id.toString()) {
+        if (!athleteHasCoachUser(athlete, coach._id)) {
             return res.status(403).json({ error: "You are not authorized to remove this athlete" });
         }
 
@@ -715,10 +757,10 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
             bio
         } = req.body;
 
-        // Check if user is a coach
+        // Check if user has coach-like permissions
         const coach = await userDao.findById(coachId);
-        if (!coach || coach.role !== 'coach') {
-            return res.status(403).json({ error: "Access allowed only for coaches" });
+        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+            return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
         // Check if athlete belongs to the coach
@@ -726,7 +768,7 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
         if (!athlete) {
             return res.status(404).json({ error: "Athlete not found" });
         }
-        if (!athlete.coachId || athlete.coachId.toString() !== coachId) {
+        if (!athleteHasCoachUser(athlete, coachId)) {
             return res.status(403).json({ error: "This athlete does not belong to your team" });
         }
 
@@ -813,18 +855,16 @@ router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        // Allow access either to the athlete's coach or to the athlete for their own trainings
-        if (user.role === 'coach') {
-            // If coach is loading their own trainings (athleteId === userId), allow access
+        // Allow access either to the athlete's coach/tester or to the athlete for their own trainings
+        if (['coach', 'tester', 'testing'].includes(user.role)) {
             if (athleteId.toString() === userId.toString()) {
-                // Coach can view their own trainings
+                // Coach/tester viewing own trainings
             } else {
-                // Coach is loading trainings for an athlete - check if athlete belongs to coach
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
             }
-            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+            if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
                 }
             }
@@ -852,14 +892,14 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        // Allow access either to the athlete's coach or to the athlete for their own profile
-        if (user.role === 'coach') {
+        // Allow access either to the athlete's coach/tester or to the athlete for their own profile
+        if (['coach', 'tester', 'testing'].includes(user.role)) {
             // Check for coach
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
             }
-            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+            if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
             }
         } else if (user.role === 'athlete' && userId !== athleteId) {
@@ -909,13 +949,13 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        // Allow access either to the athlete's coach or to the athlete for their own profile
-        if (user.role === 'coach') {
+        // Allow access either to the athlete's coach/tester or to the athlete for their own profile
+        if (['coach', 'tester', 'testing'].includes(user.role)) {
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
             }
-            if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+            if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
             }
         } else if (user.role === 'athlete' && userId !== athleteId) {
@@ -997,6 +1037,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             bio: user.bio,
             avatar: user.avatar, // Include avatar
             coachId: user.coachId,
+            coachIds: user.coachIds || [],
             powerZones: user.powerZones, // Include power zones
             heartRateZones: user.heartRateZones, // Include heart rate zones
             units: user.units || { distance: 'metric', weight: 'kg', temperature: 'celsius' }, // Include units
@@ -1089,7 +1130,7 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
     }
 
     // Check if athlete is assigned to coach
-    if (!athlete.coachId || athlete.coachId.toString() !== coachId.toString()) {
+    if (!athleteHasCoachUser(athlete, coachId)) {
       return res.status(403).json({ success: false, message: 'Not authorized to resend invitation' });
     }
 
@@ -1199,8 +1240,8 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
 
         // Check if user is a coach
         const coach = await userDao.findById(coachId);
-        if (!coach || coach.role !== 'coach') {
-            return res.status(403).json({ error: "Access allowed only for coaches" });
+        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+            return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
         // Find athlete by email
@@ -1213,9 +1254,9 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             return res.status(400).json({ error: "User with this email is not an athlete" });
         }
 
-        // Check if athlete already has a coach
-        if (athlete.coachId) {
-            return res.status(400).json({ error: "This athlete already has an assigned coach" });
+        // Already linked to this coach (multi-coach: block duplicate link only)
+        if (athleteHasCoachUser(athlete, coachId)) {
+            return res.status(400).json({ error: "This athlete is already on your team" });
         }
 
         // Generate invitation token
@@ -1293,14 +1334,16 @@ router.post("/accept-invitation/:token", async (req, res) => {
             return res.status(404).json({ error: "Coach not found for this invitation" });
         }
 
-        // Link athlete and coach
-        await userDao.addAthleteToCoach(coach._id, athlete._id);
+        // Link athlete and coach (supports multiple coaches)
+        const mergedTeam = mergeCoachIds(athlete, coach._id);
         await userDao.updateUser(athlete._id, {
-            coachId: coach._id,
+            coachIds: mergedTeam.coachIds,
+            coachId: mergedTeam.coachId,
             invitationToken: null,
             invitationTokenExpires: null,
             pendingCoachId: null
         });
+        await userDao.addAthleteToCoach(coach._id, athlete._id);
 
         // Send confirmation email to coach
         const transporter = createEmailTransporter();
@@ -1360,34 +1403,52 @@ router.get("/verify-invitation-token/:token", async (req, res) => {
     }
 });
 
-// Remove coach from athlete
+// Remove coach from athlete (?coachId= for one coach; omit to remove all)
 router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
     try {
         const athleteId = req.user.userId;
-        
+        const coachIdParam = req.query.coachId || req.body?.coachId;
+
         // Find athlete
         const athlete = await userDao.findById(athleteId);
         if (!athlete) {
             return res.status(404).json({ error: "Athlete not found" });
         }
 
-        if (!athlete.coachId) {
+        const linked = athleteCoachIdSet(athlete);
+        if (linked.size === 0) {
             return res.status(400).json({ error: "Athlete does not have an assigned coach" });
         }
 
-        // Save coach ID for later use
-        const coachId = athlete.coachId;
+        const coachesToNotify = [];
 
-        // Remove coach from athlete's profile
-        await userDao.updateUser(athleteId, {
-            coachId: null
-        });
+        if (coachIdParam) {
+            const cid = String(coachIdParam);
+            if (!linked.has(cid)) {
+                return res.status(400).json({ error: "That coach is not linked to your account" });
+            }
+            const next = removeCoachFromAthleteIds(athlete, cid);
+            await userDao.updateUser(athleteId, {
+                coachIds: next.coachIds,
+                coachId: next.coachId
+            });
+            await userDao.removeAthleteFromCoach(cid, athleteId);
+            const coach = await userDao.findById(cid);
+            if (coach) coachesToNotify.push(coach);
+        } else {
+            const ids = Array.from(linked);
+            for (const cid of ids) {
+                await userDao.removeAthleteFromCoach(cid, athleteId);
+                const c = await userDao.findById(cid);
+                if (c) coachesToNotify.push(c);
+            }
+            await userDao.updateUser(athleteId, {
+                coachId: null,
+                coachIds: []
+            });
+        }
 
-        // Remove athlete from coach's list
-        await userDao.removeAthleteFromCoach(coachId, athleteId);
-
-        // Send notification emails to both coach and athlete
-        const coach = await userDao.findById(coachId);
+        const coach = coachesToNotify[0];
         const transporter = createEmailTransporter();
 
         // Use unified branded template for coach/athlete notifications
@@ -1491,50 +1552,29 @@ router.get("/user/:userId", verifyToken, async (req, res) => {
     }
 });
 
-// Get coach profile for athlete
+// List coaches linked to the athlete (supports multiple coaches)
+router.get("/athlete/my-coaches", verifyToken, async (req, res) => {
+    try {
+        const { coaches, coach } = await getAthleteCoachesPayload(req.user.userId);
+        res.json({ coaches, coach });
+    } catch (error) {
+        console.error("Error listing coaches:", error);
+        res.status(500).json({ error: "Error listing coaches" });
+    }
+});
+
+// Get coach profile for athlete (backward compatible: single `coach` + full `coaches` array)
 router.get("/coach/profile", verifyToken, async (req, res) => {
     try {
-        console.log('Fetching coach profile for athlete ID:', req.user.userId);
-        
-        // Find athlete by ID
-        const athlete = await userDao.findById(req.user.userId);
-        console.log('Found athlete:', athlete);
-        
-        if (!athlete) {
-            return res.status(404).json({ error: 'Athlete not found' });
-        }
-
-        if (!athlete.coachId) {
-            return res.status(404).json({ error: 'Athlete does not have an assigned coach' });
-        }
-
-        // Find coach by ID
-        console.log('Looking for coach with ID:', athlete.coachId);
-        const coach = await userDao.findOne({ _id: athlete.coachId, role: 'coach' });
-        console.log('Found coach:', coach);
-
-        if (!coach) {
-            return res.status(404).json({ error: 'Coach not found' });
-        }
-
-        if (coach.role !== 'coach') {
-            return res.status(400).json({ error: 'User is not a coach' });
-        }
-
-        // Return coach data (without sensitive information)
-        const coachData = {
-            _id: coach._id,
-            name: coach.name,
-            surname: coach.surname,
-            email: coach.email,
-            role: coach.role
-        };
-
-        console.log('Sending coach data:', coachData);
-        res.json(coachData);
+        const { coaches, coach } = await getAthleteCoachesPayload(req.user.userId);
+        res.json({
+            ...(coach || {}),
+            coaches,
+            coach,
+        });
     } catch (error) {
-        console.error('Error getting coach profile:', error);
-        res.status(500).json({ error: 'Error getting coach profile' });
+        console.error("Error getting coach profile:", error);
+        res.status(500).json({ error: "Error getting coach profile" });
     }
 });
 
@@ -1569,12 +1609,6 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for athletes" });
         }
 
-        // Check if athlete already has a coach
-        if (athlete.coachId) {
-            console.log('Athlete already has a coach:', athlete.coachId);
-            return res.status(400).json({ error: "You already have a coach assigned" });
-        }
-
         // Find coach by email
         const coach = await userDao.findByEmail(email);
         console.log('Found coach:', coach);
@@ -1584,10 +1618,16 @@ router.post('/athlete/invite-coach', verifyToken, async (req, res) => {
             return res.status(404).json({ error: "Coach not found" });
         }
 
-        // Verify coach role
-        if (coach.role !== 'coach') {
+        // Verify coach-like role
+        if (!isCoachLikeRole(coach.role)) {
             console.log('User is not a coach:', coach.role);
             return res.status(400).json({ error: "User with this email is not a coach" });
+        }
+
+        // Already linked to this coach (multi-coach allowed for others)
+        if (athleteHasCoachUser(athlete, coach._id)) {
+            console.log('Athlete already linked to this coach:', coach._id);
+            return res.status(400).json({ error: "This coach is already linked to your account" });
         }
 
         // Check if coach has reached maximum number of athletes (10)
@@ -1699,19 +1739,32 @@ router.post("/accept-coach-invitation/:token", verifyToken, async (req, res) => 
             return res.status(404).json({ error: "Athlete not found" });
         }
 
-        // Check if athlete already has a coach
-        if (athlete.coachId) {
-            console.log('Athlete already has a coach:', athlete.coachId);
-            return res.status(400).json({ error: "Athlete already has a coach" });
+        if (athleteHasCoachUser(athlete, coach._id)) {
+            console.log('Athlete already linked to this coach:', coach._id);
+            await userDao.updateUser(coach._id, {
+                invitationToken: null,
+                invitationTokenExpires: null,
+                pendingAthleteId: null
+            });
+            return res.status(200).json({
+                message: "Already linked to this coach",
+                alreadyLinked: true,
+                coach: {
+                    _id: coach._id,
+                    name: coach.name,
+                    surname: coach.surname,
+                    email: coach.email
+                }
+            });
         }
 
-        // Add coach to athlete
+        const merged = mergeCoachIds(athlete, coach._id);
         console.log('Adding coach to athlete:', { athleteId: athlete._id, coachId: coach._id });
         await userDao.updateUser(athlete._id, {
-            coachId: coach._id
+            coachIds: merged.coachIds,
+            coachId: merged.coachId
         });
 
-        // Add athlete to coach's list
         console.log('Adding athlete to coach list');
         await userDao.addAthleteToCoach(coach._id, athlete._id);
 
@@ -2953,8 +3006,8 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
             return res.status(404).json({ error: "Athlete not found" });
         }
 
-        // Check permissions
-        if (!isAdmin && (currentUser.role !== 'coach' || athlete.coachId?.toString() !== currentUser._id.toString())) {
+        // Check permissions (coach/tester/testing + multi-coach)
+        if (!isAdmin && (!isCoachLikeRole(currentUser.role) || !athleteHasCoachUser(athlete, currentUser._id))) {
             return res.status(403).json({ error: "Access denied. You can only delete your own athletes." });
         }
 
@@ -2974,9 +3027,9 @@ router.delete("/admin/athlete/:athleteId/delete-with-tests", verifyToken, async 
         const stravaActivitiesDeleted = await StravaActivity.deleteMany({ userId: athleteId });
         const eventsDeleted = await Event.deleteMany({ userId: athleteId });
 
-        // Remove from coach's athletes list
-        if (athlete.coachId) {
-            await userDao.removeAthleteFromCoach(athlete.coachId, athleteId);
+        // Remove from all linked coaches' athlete lists
+        for (const cid of athleteCoachIdSet(athlete)) {
+            await userDao.removeAthleteFromCoach(cid, athleteId);
         }
 
         // Delete athlete account

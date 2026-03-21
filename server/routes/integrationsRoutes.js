@@ -14,8 +14,9 @@ const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
 
 // Cache middleware for activities
 const activitiesCacheMiddleware = (req, res, next) => {
-  // Create cache key from URL and query params
-  const cacheKey = `${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
+  // User-scoped cache key (prevents cross-user status/activity leaks)
+  const userId = req.user?.userId ? String(req.user.userId) : 'anonymous';
+  const cacheKey = `${req.method}:${req.path}:${userId}:${JSON.stringify(req.query || {})}`;
   const cachedResponse = activitiesCache.get(cacheKey);
   
   if (cachedResponse) {
@@ -132,6 +133,23 @@ router.get('/strava/callback', async (req, res) => {
   } catch (err) {
     console.error('Strava callback error', err.response?.data || err.message);
     res.status(500).json({ error: 'Strava callback failed' });
+  }
+});
+
+// POST /api/integrations/strava/disconnect - remove Strava tokens & disable auto-sync
+router.post('/strava/disconnect', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Remove Strava connection data (tokens, athleteId, autoSync, lastSyncDate)
+    user.strava = undefined;
+    await user.save();
+
+    res.json({ success: true, message: 'Strava disconnected' });
+  } catch (error) {
+    console.error('Error disconnecting Strava:', error);
+    res.status(500).json({ error: error.message || 'Failed to disconnect Strava' });
   }
 });
 
@@ -830,7 +848,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     let targetUserId = userId;
     if (req.query.athleteId) {
       // If query parameter is provided, validate access
-      if (user.role === 'coach') {
+        if (['coach', 'tester', 'testing'].includes(user.role)) {
         // Coach can view their own activities or their athletes' activities
         if (req.query.athleteId === userId.toString()) {
           targetUserId = userId;
@@ -1043,7 +1061,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     let targetUserId = user._id.toString();
     if (req.query.athleteId) {
       // If query parameter is provided, validate access
-      if (user.role === 'coach') {
+      if (['coach', 'tester', 'testing'].includes(user.role)) {
         // Coach can view their own activities or their athletes' activities
         if (req.query.athleteId === user._id.toString()) {
           targetUserId = user._id.toString();
@@ -1068,7 +1086,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     } else if (user.role === 'athlete') {
       // Athlete always sees their own activities
       targetUserId = user._id.toString();
-    } else if (user.role === 'coach') {
+    } else if (['coach', 'tester', 'testing'].includes(user.role)) {
       // Coach without athleteId query param - try to determine from activity
       // First try to find the activity to see which userId it belongs to
       const mongoose = require('mongoose');
@@ -1113,7 +1131,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
       
       // Verify access for coach
-      if (user.role === 'coach' && savedActivity.userId.toString() !== user._id.toString()) {
+      if (['coach', 'tester', 'testing'].includes(user.role) && savedActivity.userId.toString() !== user._id.toString()) {
         const activityOwner = await User.findById(savedActivity.userId);
         if (!activityOwner || !activityOwner.coachId || activityOwner.coachId.toString() !== user._id.toString()) {
           return res.status(403).json({ error: 'You are not authorized to view this activity' });
@@ -1133,7 +1151,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       });
       
       // If not found and we're a coach, try to find the activity and verify it belongs to coach or their athlete
-      if (!savedActivity && user.role === 'coach') {
+      if (!savedActivity && ['coach', 'tester', 'testing'].includes(user.role)) {
         const foundActivity = await StravaActivity.findOne({ stravaId: stravaId });
         if (foundActivity) {
           const activityOwner = await User.findById(foundActivity.userId);

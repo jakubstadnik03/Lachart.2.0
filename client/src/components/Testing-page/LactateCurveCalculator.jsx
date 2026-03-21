@@ -446,6 +446,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
   const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set
+
+  // Popisek přepínače: bike = Power, běh/plavání podle inputMode (pace vs speed)
+  const chartPrimaryIntensityLabel =
+    mockData?.sport === 'bike' ? 'Power' : inputMode === 'speed' ? 'Speed' : 'Pace';
+  const chartPrimaryVsLactateLabel = `${chartPrimaryIntensityLabel} vs lactate`;
   
   // Determine if axis should be reversed (for pace mode in pace sports)
   // Must be defined early because it's used in zoneDatasets calculation
@@ -1089,7 +1094,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   };
 
   const thresholdDatasets = Object.keys(thresholds)
-    .filter(key => !['heartRates', 'lactates', 'LTRatio'].includes(key)) // LTRatio je poměr, ne hodnota power/pace, takže ho nezobrazovat v grafu
+    .filter(key => !['heartRates', 'lactates', 'LTRatio', 'testAnalysis'].includes(key)) // LTRatio je poměr, ne hodnota power/pace, takže ho nezobrazovat v grafu
     .map(key => {
       const yValue = thresholds.lactates[key];
       
@@ -1099,15 +1104,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       }
       
       // Find X value from the displayed curve (polyPointsRaw) for this lactate value
-      // This ensures thresholds match the displayed curve
       let xValueFromCurve = findXFromCurve(yValue, polyPointsRaw);
       
-      // Fallback to original threshold value if curve doesn't have enough points
-      let xValue = xValueFromCurve != null 
-        ? xValueFromCurve
-        : (isPaceSport
-            ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
-            : thresholds[key]);
+      // LTP1 u běhu/plavání: X z naměřeného tempa (calculateThresholds), ne z polynomu u daného La
+      let xValue;
+      if (isPaceSport && key === 'LTP1' && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
+        xValue = inputMode === 'pace'
+          ? Number(thresholds[key])
+          : convertPaceToSpeed(Number(thresholds[key]), unitSystem);
+      } else {
+        xValue = xValueFromCurve != null
+          ? xValueFromCurve
+          : (isPaceSport
+              ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
+              : thresholds[key]);
+      }
       
       // Validate x value - filter out unrealistic values for speed mode
       if (isPaceSport && inputMode === 'speed') {
@@ -1131,7 +1142,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       data: [{
           x: xValue,
           y: Math.max(0, yValue), // Ensure lactate is never negative
-        originalPace: isPaceSport ? (xValueFromCurve != null ? null : thresholds[key]) : null
+        originalPace: isPaceSport
+          ? (key === 'LTP1' && Number.isFinite(Number(thresholds[key]))
+              ? Number(thresholds[key])
+              : (xValueFromCurve != null ? null : thresholds[key]))
+          : null
       }],
       borderColor: colorMap[key] || '#2196F3',
       backgroundColor: colorMap[key] || '#2196F3',
@@ -1204,12 +1219,33 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ...(polyPoints.length > 0 ? polyPoints.map(p => p.x) : []),
     ...thresholdDatasets
       .filter(ds => ds !== null)
-      .flatMap(ds => ds.data.map(d => d.x))
+      .flatMap(ds => ds.data.map(d => d.x)),
   ].filter(x => !isNaN(x) && isFinite(x));
   
   const minXForZones = allXValuesForZones.length > 0 ? Math.min(...allXValuesForZones) : 0;
   const maxXForZones = allXValuesForZones.length > 0 ? Math.max(...allXValuesForZones) : 100;
   const xRangeForZones = maxXForZones - minXForZones;
+
+  // ~10 % „pomaleji“ od baseline / nejpomalejšího bodu — jen kousíček osy a Z1, ne celá vypočtená recovery zóna
+  const Z1_SLOW_NUDGE_RATIO = 0.1;
+  const slowNibbleX = (() => {
+    if (!zones || !thresholds['LTP1'] || !thresholds['LTP2']) return null;
+    if (allXValuesForZones.length === 0) return null;
+    const dMin = minXForZones;
+    const dMax = maxXForZones;
+    const b = baseLactatePoint && isFinite(baseLactatePoint.x) ? baseLactatePoint.x : null;
+    let refSlow;
+    if (isPaceSport && inputMode === 'pace') {
+      refSlow = b != null ? Math.max(b, dMax) : dMax;
+    } else {
+      refSlow = b != null ? Math.min(b, dMin) : dMin;
+    }
+    if (!isFinite(refSlow)) return null;
+    if (isPaceSport && inputMode === 'pace') {
+      return refSlow / (1 - Z1_SLOW_NUDGE_RATIO);
+    }
+    return refSlow * (1 - Z1_SLOW_NUDGE_RATIO);
+  })();
 
   // Create zone datasets for colored background areas
   const zoneDatasets = (() => {
@@ -1315,8 +1351,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             // Zone 1 (slowest) should be on left (starts at minPace), Zone 5 (fastest) should be on right (ends at maxPace)
             // Same logic as speed mode but with reverse axis
             if (zoneKey === 'zone1') {
-              // Zone 1 starts from the left edge (slowest pace, highest value = minPace)
-              zoneMinX = maxXForZones + (xRangeForZones * 0.1);
+              // Jen kousíček pomaleji než baseline / první krok (~10 %), ne celá modelová Z1
+              zoneMinX =
+                slowNibbleX != null
+                  ? Math.min(minPace, Math.max(maxPace, slowNibbleX))
+                  : minPace;
             } else {
               // Other zones start where previous zone ended
               zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
@@ -1328,8 +1367,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             // Normal axis (speed mode): Zone 1 (slowest) starts from left side (minX), Zone 5 (fastest) ends at right side (maxX)
             // minPace = lower speed (slower), maxPace = higher speed (faster)
             if (zoneKey === 'zone1') {
-              // Zone 1 starts from the left edge (slowest speed, lowest value)
-              zoneMinX = Math.max(0, minXForZones - (xRangeForZones * 0.1));
+              zoneMinX =
+                slowNibbleX != null
+                  ? Math.min(maxPace, Math.max(minPace, slowNibbleX))
+                  : minPace;
             } else {
               // Other zones start where previous zone ended
               zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
@@ -1376,8 +1417,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           
           // For Zone 1, start from the beginning of the graph
           // For other zones, start where previous zone ended (no gaps)
-          const actualMinX = (zoneKey === 'zone1') 
-            ? Math.max(0, minXForZones - (xRangeForZones * 0.1)) 
+          const actualMinX = (zoneKey === 'zone1')
+            ? Math.max(
+                0,
+                slowNibbleX != null ? Math.max(zone.min, slowNibbleX) : zone.min
+              )
             : (previousMax !== null ? previousMax : zone.min);
           
           previousMax = zone.max;
@@ -1448,14 +1492,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     ...(vo2DataSet ? [vo2DataSet] : []),
   ];
 
-  // Calculate X axis range - need to consider all data points (measured, base lactate, thresholds, polynomial)
+  // X axis: values from data only (Z1 recovery edge is applied below without inflating padding)
   const allXValues = [
     ...xVals,
     ...(baseLactatePoint ? [baseLactatePoint.x] : []),
     ...(polyPoints.length > 0 ? polyPoints.map(p => p.x) : []),
     ...thresholdDatasets
       .filter(ds => ds !== null)
-      .flatMap(ds => ds.data.map(d => d.x))
+      .flatMap(ds => ds.data.map(d => d.x)),
   ].filter(x => !isNaN(x) && isFinite(x));
   
   if (allXValues.length === 0) {
@@ -1463,10 +1507,31 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return null;
   }
   
-  const minX = Math.min(...allXValues);
-  const maxX = Math.max(...allXValues);
-  const xRange = maxX - minX;
-  const padding = xRange * 0.1; // 10% padding on each side
+  const dataMinX = Math.min(...allXValues);
+  const dataMaxX = Math.max(...allXValues);
+  const dataXRange = Math.max(dataMaxX - dataMinX, 1e-9);
+  // Malý okraj jen u „rychlé“ strany dat (bez velké bílé díry / přetékání)
+  const padOuter = Math.max(dataXRange * 0.02, 1e-6);
+  const z1SlowExtent = slowNibbleX;
+
+  let xScaleMin;
+  let xScaleMax;
+  if (isReverse) {
+    // Pace (s): vyšší = pomalejší (levá strana grafu). Rychlá strana = min hodnota.
+    xScaleMin = Math.max(dataMinX - padOuter, 0);
+    const extendSlow = z1SlowExtent != null && z1SlowExtent > dataMaxX;
+    const slowBound = extendSlow ? z1SlowExtent : dataMaxX;
+    // Po prodloužení k nibblu už nepřidávat padding — jinak bílá mezera vlevo
+    xScaleMax = extendSlow ? slowBound : slowBound + padOuter;
+  } else {
+    // Speed / power: pomalejší = menší X vlevo
+    const extendSlow = z1SlowExtent != null && z1SlowExtent < dataMinX;
+    const slowBound = extendSlow ? z1SlowExtent : dataMinX;
+    xScaleMin = extendSlow ? slowBound : Math.max(slowBound - padOuter, 0);
+    xScaleMax = dataMaxX + padOuter;
+  }
+
+  const xAxisDisplayRange = Math.max(xScaleMax - xScaleMin, 1e-9);
 
   const data = { datasets: allDatasets };
   
@@ -1616,12 +1681,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         // For normal axis:
         //   min = left side = slowest (lowest value)
         //   max = right side = fastest (highest value)
-        min: isReverse
-          ? Math.max(minX - padding, 0) // Show faster than fastest (right side)
-          : Math.max(minX - padding, 0), // Show slower than slowest (left side)
-        max: isReverse
-          ? maxX + padding // Show slower than slowest (left side)
-          : maxX + padding, // Show faster than fastest (right side)
+        min: xScaleMin,
+        max: xScaleMax,
         title: { 
           display: true, 
           text: isPaceSport ? 
@@ -1643,7 +1704,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         ticks: {
           // Calculate step size for more ticks
           stepSize: (() => {
-            const range = maxX - minX;
+            const range = xAxisDisplayRange;
             if (isPaceSport && inputMode === 'pace') {
               // For pace: aim for ~8-12 ticks, step should be nice round seconds (15s, 30s, 1min, etc.)
               const idealStep = range / 10;
@@ -1670,8 +1731,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           })(),
           maxTicksLimit: 15, // Maximum number of ticks
           callback: function(value) {
-            // Show "Base Lactate" for base lactate point position
-            if (baseLactatePoint && Math.abs(value - baseLactatePoint.x) < 0.01) {
+            // Štítek „Base Lactate“ jen když nejsou zobrazené zóny — se Z1 na grafu je to zbytečné
+            if (
+              baseLactatePoint &&
+              Math.abs(value - baseLactatePoint.x) < 0.01 &&
+              !zonesVisible
+            ) {
               return 'Base Lactate';
             }
             if (isPaceSport) {
@@ -2049,9 +2114,9 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   chartView === 'power' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                 }`}
-                title="Power or pace vs lactate"
+                title={chartPrimaryVsLactateLabel}
               >
-                Power/pace vs lactate
+                {chartPrimaryVsLactateLabel}
               </button>
               <button
                 type="button"
@@ -2061,7 +2126,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 }`}
                 title="Heart rate vs lactate"
               >
-                Heart rate vs lactate
+                HR vs lactate
               </button>
             </div>
             <button
@@ -2378,6 +2443,88 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               </div>
             </>
           )}
+          {thresholds?.testAnalysis && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:p-4 text-sm space-y-3">
+              <div className="font-semibold text-indigo-900 text-base">Test quality &amp; protocol analysis</div>
+              <p className="text-xs text-indigo-800/90">
+                Heuristic model (breakpoint + baseline rules). Shown alongside classic LTP1/LTP2 in the table — use both for context.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {thresholds.testAnalysis.flags?.highBaselineLactate && (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 text-xs font-medium">High baseline La</span>
+                )}
+                {thresholds.testAnalysis.flags?.sharpRise && (
+                  <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 text-xs font-medium">Sharp lactate rise</span>
+                )}
+                {thresholds.testAnalysis.flags?.poorLt1Detectability && (
+                  <span className="px-2 py-0.5 rounded-md bg-gray-200 text-gray-800 text-xs font-medium">Low LT1 detectability</span>
+                )}
+                {!thresholds.testAnalysis.loadMonotonicOk && (
+                  <span className="px-2 py-0.5 rounded-md bg-red-100 text-red-900 text-xs font-medium">Non-monotonic load</span>
+                )}
+                {!thresholds.testAnalysis.hrMonotonicOk && (
+                  <span className="px-2 py-0.5 rounded-md bg-orange-100 text-orange-900 text-xs font-medium">HR not steadily rising</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-700 space-y-1">
+                <div>
+                  Baseline (analysis): <span className="font-medium">{Number(thresholds.testAnalysis.baselineLactate).toFixed(2)}</span> mmol/L
+                  {thresholds.testAnalysis.baselineLevel && (
+                    <span className="text-gray-500"> — {thresholds.testAnalysis.baselineLevel}</span>
+                  )}
+                </div>
+                {thresholds.testAnalysis.lt1 && (
+                  <div>
+                    LT1 (analysis):{' '}
+                    <span className="font-medium">
+                      {isPaceSport && inputMode === 'pace'
+                        ? formatSecondsToMMSS(thresholds.testAnalysis.lt1.power)
+                        : isPaceSport && inputMode === 'speed'
+                          ? `${Number(thresholds.testAnalysis.lt1.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+                          : `${Math.round(thresholds.testAnalysis.lt1.power)} W`}
+                    </span>
+                    {thresholds.testAnalysis.lt1.hr != null && (
+                      <span className="text-gray-600"> · HR {Math.round(thresholds.testAnalysis.lt1.hr)} · La {Number(thresholds.testAnalysis.lt1.lactate).toFixed(2)}</span>
+                    )}
+                    <span className={` ml-1 text-xs font-semibold ${
+                      thresholds.testAnalysis.lt1.confidence === 'high' ? 'text-emerald-700' :
+                      thresholds.testAnalysis.lt1.confidence === 'medium' ? 'text-amber-700' : 'text-red-700'
+                    }`}>
+                      ({thresholds.testAnalysis.lt1.confidence})
+                    </span>
+                  </div>
+                )}
+                {thresholds.testAnalysis.lt2 && (
+                  <div>
+                    LT2 (analysis @ 4.0 mmol):{' '}
+                    <span className="font-medium">
+                      {isPaceSport && inputMode === 'pace'
+                        ? formatSecondsToMMSS(thresholds.testAnalysis.lt2.power)
+                        : isPaceSport && inputMode === 'speed'
+                          ? `${Number(thresholds.testAnalysis.lt2.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
+                          : `${Math.round(thresholds.testAnalysis.lt2.power)} W`}
+                    </span>
+                    {thresholds.testAnalysis.lt2.hr != null && (
+                      <span className="text-gray-600"> · HR {Math.round(thresholds.testAnalysis.lt2.hr)}</span>
+                    )}
+                    <span className={` ml-1 text-xs font-semibold ${
+                      thresholds.testAnalysis.lt2.confidence === 'high' ? 'text-emerald-700' :
+                      thresholds.testAnalysis.lt2.confidence === 'medium' ? 'text-amber-700' : 'text-red-700'
+                    }`}>
+                      ({thresholds.testAnalysis.lt2.confidence})
+                    </span>
+                  </div>
+                )}
+              </div>
+              {thresholds.testAnalysis.insights?.length > 0 && (
+                <ul className="list-disc list-inside text-xs text-gray-700 space-y-1 border-t border-indigo-100 pt-2">
+                  {thresholds.testAnalysis.insights.map((line, idx) => (
+                    <li key={idx}>{line}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <TrainingGlossary 
@@ -2429,7 +2576,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                       const main = mockData?.sport === 'bike' ? zoneOverride.power?.[zKey] : zoneOverride.pace?.[zKey];
                       const hr = zoneOverride.heartRate?.[zKey];
                       const lactate = zoneOverride.lactate?.[zKey];
-                      const mainLabel = mockData?.sport === 'bike' ? 'Power' : 'Pace';
+                      const mainLabel = chartPrimaryIntensityLabel;
 
                       const setMain = (field, val) => {
                         setZoneOverride((prev) => {

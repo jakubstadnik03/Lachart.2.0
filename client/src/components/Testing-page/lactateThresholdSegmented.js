@@ -335,7 +335,10 @@ export function computeLactateThresholds(points, options = {}) {
   if (result.LT2 != null && (lt2LactateLow || lt2GapSmall)) {
     const lt2At4 = linearInterpolationPower(power, lactate, OBLA_LT2_MMOL);
     const lt2At35 = linearInterpolationPower(power, lactate, OBLA_LT2_FALLBACK_MMOL);
-    const betterLt2 = lt2At4 ?? lt2At35;
+    let betterLt2 = lt2At4 ?? lt2At35;
+    if (lt2At4 != null && lt2At35 != null) {
+      betterLt2 = (lt2At4 + lt2At35) / 2;
+    }
     if (betterLt2 != null && (result.LT1 == null || betterLt2 - result.LT1 >= MIN_LT2_LT1_GAP_W)) {
       result.LT2 = betterLt2;
     }

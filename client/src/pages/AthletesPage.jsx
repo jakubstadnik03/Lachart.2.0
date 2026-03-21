@@ -36,7 +36,7 @@ const AthletesPage = () => {
 
   useEffect(() => {
     const loadAthletes = async () => {
-      if (user?.role !== 'coach') {
+      if (!['coach', 'tester', 'testing'].includes(user?.role)) {
         return;
       }
       
@@ -69,7 +69,7 @@ const AthletesPage = () => {
     `${athlete.name} ${athlete.surname}`.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (user?.role !== 'coach') {
+  if (!['coach', 'tester', 'testing'].includes(user?.role)) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-190px)]">
         <p className="text-gray-500">This page is only available for coaches.</p>

@@ -3,8 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { calculateThresholds, calculatePolynomialRegression } from './DataTable';
 import EditProfileModal from '../Profile/EditProfileModal';
-import api from '../../services/api';
-import { updateUserProfile } from '../../services/api';
+import api, { updateUserProfile, updateTest } from '../../services/api';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
@@ -410,7 +409,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       console.log(`[Zones Bike] LTP1: ${lt1_watts}W LTP2: ${lt2_watts}W`);
       
       // Calculate lactate values for each zone based on actual test data
-      const zone1_min_power = Math.round(lt1_watts * 0.70);
+      // Z1: intenzita pod 90 % LT1 (spodní hranice ~50 % LT1 pro tabulku)
+      const zone1_min_power = Math.round(lt1_watts * 0.50);
       const zone1_max_power = Math.round(lt1_watts * 0.90);
       const zone2_min_power = Math.round(lt1_watts * 0.90);
       const zone2_max_power = Math.round(lt1_watts * 1.00);
@@ -480,9 +480,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone1: {
             min: zone1_min_power,
             max: zone1_max_power,
-            description: '70–90% LT1 (recovery, reference wide zone)',
-            hr: hasHR ? `${Math.round(hr1*0.70)}–${Math.round(hr1*0.90)} BPM` : 'N/A',
-            percent: '70–90% LT1',
+            description: '< 90% LT1 (recovery / easy)',
+            hr: hasHR ? `${Math.round(hr1*0.50)}–${Math.round(hr1*0.90)} BPM` : 'N/A',
+            percent: '< 90% LT1',
             lactate: `${finalZone1.min.toFixed(1)}–${finalZone1.max.toFixed(1)}`,
           },
           zone2: {
@@ -513,19 +513,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
           zone5: {
             min: zone5_min_power,
             max: zone5_max_power,
-            description: '105–120% LT2 (sprint/VO2max+ reference)',
-            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM` : 'N/A',
-            percent: '105–120% LT2',
+            description: '> 105% LT2 (VO₂max+ / sprint)',
+            hr: hasHR ? `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM` : 'N/A',
+            percent: '> 105% LT2',
             // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
             lactate: `${finalZone5.min.toFixed(1)}–${finalZone5.max.toFixed(1)}`,
           },
         },
         heartRate: hasHR ? {
-          zone1: { min: Math.round(hr1*0.70), max: Math.round(hr1*0.90) },
+          zone1: { min: Math.round(hr1*0.50), max: Math.round(hr1*0.90) },
           zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
           zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
           zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
+          zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.30) },
         } : null
       };
       setZones(applyTestZoneOverrides(calculated, sport));
@@ -539,8 +539,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       
     // NOVÁ LOGIKA: dělení pro tempo, násobení pro HR
       // Pro pace: min = pomalejší (více sekund), max = rychlejší (méně sekund)
-      const zone1_min_pace_sec = lt1_sec / 0.70; // pomalejší (více sekund)
-      const zone1_max_pace_sec = lt1_sec / 0.90; // rychlejší (méně sekund)
+      const zone1_min_pace_sec = lt1_sec / 0.50; // pomalejší (více sekund) — spodek < 90 % LT1
+      const zone1_max_pace_sec = lt1_sec / 0.90; // rychlejší = hranice 90 % LT1
       const zone2_min_pace_sec = lt1_sec / 0.90;
       const zone2_max_pace_sec = lt1_sec / 1.00;
       const zone3_min_pace_sec = lt1_sec / 1.00;
@@ -548,7 +548,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       const zone4_min_pace_sec = lt2_sec / 0.96;
       const zone4_max_pace_sec = lt2_sec / 1.04;
       const zone5_min_pace_sec = lt2_sec / 1.05;
-      const zone5_max_pace_sec = lt2_sec / 1.20;
+      const zone5_max_pace_sec = lt2_sec / 1.30;
       
       // Calculate lactate values based on LTP1 and LTP2 lactate values (for pace)
       // If we have lactate values from thresholds, use them; otherwise interpolate from test data
@@ -601,9 +601,9 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone1: {
             min: fmt(zone1_min_pace_sec), // pomalejší (více sekund)
             max: fmt(zone1_max_pace_sec), // rychlejší (méně sekund)
-          description: '70–90% LT1 (recovery, reference wide zone)',
-          hr: `${Math.round(hr1*0.90)}–${Math.round(hr1*0.70)} BPM`,
-          percent: '70–90% LT1',
+          description: '< 90% LT1 (recovery / easy)',
+          hr: `${Math.round(hr1*0.50)}–${Math.round(hr1*0.90)} BPM`,
+          percent: '< 90% LT1',
           lactate: `${finalZone1Pace.min.toFixed(1)}–${finalZone1Pace.max.toFixed(1)}`,
         },
         zone2: {
@@ -634,19 +634,19 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
         zone5: {
             min: fmt(zone5_min_pace_sec), // pomalejší
             max: fmt(zone5_max_pace_sec), // rychlejší
-          description: '105–120% LT2 (sprint/VO2max+ reference)',
-          hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.20)} BPM`,
-          percent: '105–120% LT2',
+          description: '> 105% LT2 (VO₂max+ / sprint)',
+          hr: `${Math.round(hr2 * 1.05)}–${Math.round(hr2 * 1.30)} BPM`,
+          percent: '> 105% LT2',
           // Use the calculated range for this specific test (no hardcoded 4.0 anchor)
           lactate: `${finalZone5Pace.min.toFixed(1)}–${finalZone5Pace.max.toFixed(1)}`,
         },
       },
       heartRate: {
-        zone1: { min: Math.round(hr1*0.70), max: Math.round(hr1*0.90) },
+        zone1: { min: Math.round(hr1*0.50), max: Math.round(hr1*0.90) },
         zone2: { min: Math.round(hr1*0.90), max: Math.round(hr1*1.00) },
         zone3: { min: Math.round(hr1*1.00), max: Math.round(hr2*0.95) },
         zone4: { min: Math.round(hr2*0.96), max: Math.round(hr2*1.04) },
-        zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.20) },
+        zone5: { min: Math.round(hr2*1.05), max: Math.round(hr2*1.30) },
       }
     };
     setZones(applyTestZoneOverrides(calculated, sport));
@@ -892,11 +892,11 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       <div className="rounded-xl sm:rounded-xl px-3 sm:px-4 py-3 sm:py-4 bg-white/40 backdrop-blur-sm mt-4 shadow text-gray-700">
         <h4 className="text-sm sm:text-base font-semibold text-blue-900 mb-2">Training Zone Reference</h4>
         <ul className="text-xs sm:text-sm pl-2 sm:pl-3 space-y-1.5 sm:space-y-1">
-          <li><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline">&gt;110% LT1 : </span>Long easy runs &amp; recovery</li>
-          <li><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline">100–110% LT1 : </span>Aerobic base building</li>
+          <li><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline">&lt;90% LT1 : </span>Long easy runs &amp; recovery</li>
+          <li><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline">90–100% LT1 : </span>Aerobic base building</li>
           <li><span className="font-medium text-gray-900">Zone 3 (Tempo):</span> <span className="hidden sm:inline">LT1–LT2 : </span>Marathon/sweet spot/steady state</li>
-          <li><span className="font-medium text-gray-900">Zone 4 (Threshold):</span> <span className="hidden sm:inline">95–100% LT2 : </span>Threshold/interval, high aerobic</li>
-          <li><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline">&lt;95% LT2 : </span>Fast repeats, <b>max</b> zone</li>
+          <li><span className="font-medium text-gray-900">Zone 4 (Threshold):</span> <span className="hidden sm:inline">~LT2 : </span>Threshold/interval, high aerobic</li>
+          <li><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline">&gt;105% LT2 : </span>Fast repeats, <b>max</b> zone</li>
         </ul>
       </div>
 
@@ -925,7 +925,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 source: 'set-zones',
                 updatedAt: new Date().toISOString()
               };
-              await api.put(`/test/${testId}`, {
+              await updateTest(testId, {
                 zoneOverrides: newOverrides
               });
               setTestZoneOverrides(newOverrides);

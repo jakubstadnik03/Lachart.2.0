@@ -34,12 +34,13 @@ const DashboardPage = () => {
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
   const isTestingRole = role === 'testing' || role === 'tester';
+  const isCoachLikeRole = role === 'coach' || role === 'testing' || role === 'tester';
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
-    if (user?.role === 'coach') {
+    if (isCoachLikeRole) {
       // Prefer globally vybraného atleta (ze selectu/Menu), jinak sebe
       try {
         const globalId = localStorage.getItem('global_selectedAthleteId');
@@ -47,7 +48,8 @@ const DashboardPage = () => {
       } catch {
         // ignore
       }
-      return user._id;
+      // Coach can fallback to self, tester/testing must explicitly pick an athlete
+      return user?.role === 'coach' ? user._id : null;
     }
     return null;
   });
@@ -84,11 +86,22 @@ const DashboardPage = () => {
   useEffect(() => {
     const checkStravaConnection = async () => {
       if (!user || user.role === 'coach') return; // Only show for athletes
+      const hasLocalStravaConnection = Boolean(user?.strava?.accessToken || user?.strava?.athleteId);
+
+      // Trust local profile first to avoid false banner flashes on slow/intermittent API.
+      if (hasLocalStravaConnection) {
+        setStravaConnected(true);
+        setShowStravaBanner(false);
+      }
       
       try {
         const status = await getIntegrationStatus();
-        const isConnected = Boolean(status.stravaConnected);
+        // Prefer positive local state over transient API false.
+        const isConnected = Boolean(status?.stravaConnected) || hasLocalStravaConnection;
         setStravaConnected(isConnected);
+        if (isConnected) {
+          setShowStravaBanner(false);
+        }
         
         // Show banner if not connected and user hasn't dismissed it recently
         if (!isConnected) {
@@ -102,6 +115,11 @@ const DashboardPage = () => {
         }
       } catch (error) {
         console.warn('Failed to check Strava connection:', error);
+        // Keep banner hidden when local profile already says connected.
+        if (hasLocalStravaConnection) {
+          setStravaConnected(true);
+          setShowStravaBanner(false);
+        }
       }
     };
     
@@ -222,8 +240,8 @@ const DashboardPage = () => {
     try {
       setLoading(true);
       setError(null);
-      // testing/tester role can access all tests (backend handles scope)
-      const testId = isTestingRole ? user._id : targetId;
+      // Coach-like roles must load only selected athlete tests.
+      const testId = targetId;
       const response = await api.get(`/test/list/${testId}`);
       if (response && response.data) {
         setTests(response.data);
@@ -236,7 +254,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, setLoading, isTestingRole]);
+  }, [setLoading]);
 
   const loadAthlete = useCallback(async (targetId) => {
     try {
@@ -258,7 +276,7 @@ const DashboardPage = () => {
     try {
       const athleteId = user?.role === 'athlete' ? user._id : targetId;
       
-      if (user?.role === 'coach' && !athleteId) {
+      if (isCoachLikeRole && !athleteId) {
         setRegularTrainings([]);
         return [];
       }
@@ -279,7 +297,7 @@ const DashboardPage = () => {
       console.error('Error loading regular trainings:', error);
       return [];
     }
-  }, [user?.role, user?._id]);
+  }, [isCoachLikeRole, user?._id]);
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching.
   // Accepts optional regularTrainingsParam so the main loader can pass data directly
@@ -542,7 +560,7 @@ const DashboardPage = () => {
         return [...updated];
       });
       // Invalidate cache to force reload on next refresh
-      const targetId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user?._id;
+      const targetId = isCoachLikeRole && selectedAthleteId ? selectedAthleteId : user?._id;
       const cacheKey = `calendarData_${targetId}`;
       const cacheTimestampKey = `calendarData_timestamp_${targetId}`;
       localStorage.removeItem(cacheKey);
@@ -586,7 +604,8 @@ const DashboardPage = () => {
   useEffect(() => {
     if (!user?._id) return;
     
-    const targetId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user._id;
+    const targetId = isCoachLikeRole ? selectedAthleteId : user._id;
+    if (!targetId) return;
     const cacheKey = `calendarData_${targetId}`;
     
     try {
@@ -629,13 +648,13 @@ const DashboardPage = () => {
     }
 
     // Determine target athlete ID
-    const targetAthleteId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user?._id;
+    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user?._id;
     
     if (!targetAthleteId) {
       return;
     }
 
-    // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
+    // Coach fallback: if nothing is selected, use coach self profile.
     if (user?.role === 'coach' && !selectedAthleteId) {
       setSelectedAthleteId(user._id);
       return;
@@ -735,7 +754,7 @@ const DashboardPage = () => {
     }
 
     // Only auto-sync for the current user (not for coach viewing athlete)
-    const targetAthleteId = user?.role === 'coach' && selectedAthleteId ? selectedAthleteId : user?._id;
+    const targetAthleteId = isCoachLikeRole ? selectedAthleteId : user?._id;
     if (targetAthleteId !== user._id) {
       return; // Don't auto-sync when viewing another athlete
     }
@@ -868,7 +887,7 @@ const DashboardPage = () => {
       animate={{ opacity: 1 }}
       className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6"
     >
-      {user?.role === 'coach' && (
+      {isCoachLikeRole && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}

@@ -337,13 +337,26 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
 
   const athleteId = String(test.athleteId);
   const isSelf = String(requester._id) === athleteId;
-  const isCoachAllowed = requester.role === 'coach' && (requester.athletes || []).some(a => String(a) === athleteId);
-  const requesterRole = String(requester.role || '').toLowerCase();
-  const isTester = requesterRole === 'tester' || requesterRole === 'testing';
-  if (!isSelf && !isCoachAllowed && !isTester) return { error: true, reason: 'forbidden' };
 
-  const athlete = await User.findById(athleteId).select('name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications');
+  // Load athlete early so we can apply coach/tester scope using athlete.coachId.
+  const athlete = await User.findById(athleteId).select(
+    'name surname email dateOfBirth height weight sport specialization units powerZones heartRateZones notifications coachId'
+  );
   if (!athlete) return { error: true, reason: 'athlete_not_found' };
+
+  const requesterRole = String(requester.role || '').toLowerCase();
+  const isAdmin = requesterRole === 'admin';
+  const isCoachLikeRole = requesterRole === 'coach' || requesterRole === 'tester' || requesterRole === 'testing';
+  const isCoachAllowed =
+    requesterRole === 'coach' &&
+    (requester.athletes || []).some(a => String(a) === athleteId);
+  const isCoachIdAllowed =
+    athlete.coachId && String(athlete.coachId) === String(requester._id);
+
+  // Self always allowed. Coach/tester allowed only for their scoped athletes.
+  if (!isSelf && !isAdmin && !(isCoachLikeRole && (isCoachAllowed || isCoachIdAllowed))) {
+    return { error: true, reason: 'forbidden' };
+  }
 
   const sport = test.sport;
   // Allow client to override how values should be rendered (pace vs speed, unit system).
@@ -611,11 +624,12 @@ async function sendLactateTestReportEmail({ requesterUserId, testId, toEmail = n
     return { sent: false, reason: 'email_notifications_disabled' };
   }
 
-  const isCoach = requester.role === 'coach';
+  const requesterRole = String(requester.role || '').toLowerCase();
+  const isCoachLike = requesterRole === 'coach' || requesterRole === 'tester' || requesterRole === 'testing';
   const recipients = new Set();
   if (toEmail) recipients.add(toEmail);
   else if (requester.email) recipients.add(requester.email);
-  if (isCoach && athlete?.email) recipients.add(athlete.email);
+  if (isCoachLike && athlete?.email) recipients.add(athlete.email);
   if (recipients.size === 0 && athlete?.email) recipients.add(athlete.email);
   if (recipients.size === 0) return { sent: false, reason: 'no_recipient_email' };
 

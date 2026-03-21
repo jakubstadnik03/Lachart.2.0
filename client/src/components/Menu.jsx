@@ -30,7 +30,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   useEffect(() => {
     const loadAthletes = async () => {
-      if (user?.role === "coach") {
+      if (["coach", "tester", "testing"].includes(user?.role)) {
         try {
           setLoadingAthletes(true);
           const response = await api.get('/user/coach/athletes');
@@ -98,7 +98,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   // Pro trenéra: efektivně vybraný atlet (URL > global > sám trenér)
   let effectiveAthleteId = null;
-  if (user?.role === 'coach') {
+  if (["coach", "tester", "testing"].includes(user?.role)) {
     effectiveAthleteId = currentAthleteIdFromUrl;
     if (!effectiveAthleteId) {
       try {
@@ -221,14 +221,20 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   const menuItems = [
     {
       name: "Dashboard",
-      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/dashboard/${athleteId}` : "/dashboard",
+      getPath: (athleteId) =>
+        ["coach", "tester", "testing"].includes(user?.role) && athleteId
+          ? `/dashboard/${athleteId}`
+          : "/dashboard",
       icon: "/icon/dashboard.svg",
       iconWhite: "/icon/dashboard-white.svg",
       showFor: ["coach", "athlete", "tester", "testing"]
     },
     {
       name: "Testing",
-      getPath: (athleteId) => user?.role === "coach" && athleteId ? `/testing/${athleteId}` : "/testing",
+      getPath: (athleteId) =>
+        ["coach", "tester", "testing"].includes(user?.role) && athleteId
+          ? `/testing/${athleteId}`
+          : "/testing",
       icon: "/icon/testing.svg",
       iconWhite: "/icon/testing-white.svg",
       showFor: ["coach", "athlete", "tester", "testing"]
@@ -431,7 +437,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           )}
         </motion.div>
 
-        {user?.role === "coach" && (
+        {["coach", "tester", "testing"].includes(user?.role) && (
           <div 
             className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
             style={{ 

@@ -689,10 +689,16 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return result;
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (!validateForm()) {
       return;
     }
+    const parseLocalizedNumber = (value, emptyFallback = 0) => {
+      const raw = value === null || value === undefined ? '' : String(value).trim();
+      if (raw === '') return emptyFallback;
+      const parsed = parseFloat(raw.replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : emptyFallback;
+    };
     const finalInputMode = inputMode;
     const finalUnitSystem = unitSystem;
     
@@ -700,9 +706,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       ...testData,
       title: formData.title.trim(),
       description: formData.description?.trim() || '',
-      weight: formData.weight === '' ? 0 : parseFloat(formData.weight.replace(',', '.')),
+      weight: parseLocalizedNumber(formData.weight, 0),
       sport: formData.sport,
-      baseLactate: formData.baseLa === '' ? 0 : parseFloat(formData.baseLa.replace(',', '.')),
+      baseLactate: parseLocalizedNumber(formData.baseLa, 0),
       date: formData.date,
       specifics: formData.specifics || { specific: '', weather: '' },
       comments: formData.comments?.trim() || '',
@@ -748,7 +754,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     };
     if (onSave) {
       try {
-        onSave(updatedTest);
+        await Promise.resolve(onSave(updatedTest));
         addNotification('Test data saved successfully', 'success');
         trackEvent('test_saved', {
           sport: formData.sport,
@@ -759,13 +765,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         setOriginalTestData(null); // Clear original data after successful save
       } catch (error) {
         console.error('Error saving test data:', error);
-        addNotification('Failed to save test data', 'error');
+        addNotification(
+          error?.response?.data?.message || error?.message || 'Failed to save test data',
+          'error'
+        );
       }
     }
   };
 
   const validateForm = () => {
     const errors = [];
+    const baseLaRaw = formData.baseLa === null || formData.baseLa === undefined ? '' : String(formData.baseLa).trim();
     
     if (!formData.title?.trim()) {
       errors.push('Test title is required');
@@ -778,8 +788,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     }
     
     // Validate baseLactate - should be a positive number
-    const baseLaNum = formData.baseLa ? parseFloat(formData.baseLa.toString().replace(',', '.')) : 0;
-    if (!formData.baseLa || formData.baseLa.trim() === '' || isNaN(baseLaNum) || baseLaNum <= 0) {
+    const baseLaNum = baseLaRaw ? parseFloat(baseLaRaw.replace(',', '.')) : 0;
+    if (!baseLaRaw || isNaN(baseLaNum) || baseLaNum <= 0) {
       errors.push('Base lactate is required and must be greater than 0');
       setHighlightedField('baseLa');
     }
@@ -948,7 +958,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     
     // NO AUTOMATIC CONVERSIONS - let user type anything
     // Only show the raw value as stored in state
-  return (
+    return (
       <div className="min-w-0 overflow-hidden relative">
       <input 
           ref={el => inputRefs.current[`${field}_${index}`] = el}
@@ -971,6 +981,11 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       </div>
     );
   };
+
+  const baseLaValue = formData.baseLa === null || formData.baseLa === undefined ? '' : String(formData.baseLa);
+  const baseLaTrimmed = baseLaValue.trim();
+  const baseLaParsed = baseLaTrimmed ? parseFloat(baseLaTrimmed.replace(',', '.')) : 0;
+  const isBaseLaInvalid = !baseLaTrimmed || Number.isNaN(baseLaParsed) || baseLaParsed <= 0;
 
   return (
     <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative h-full">
@@ -1171,7 +1186,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           <div className="relative">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">
               Base La
-              {(!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) && (
+              {isBaseLaInvalid && (
                 <span className="text-red-500 ml-1">*</span>
               )}
             </label>
@@ -1184,14 +1199,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 className={`w-full p-1 border rounded-lg text-sm ${
                   currentTutorialStep === 3 ? 'ring-2 ring-primary border-primary' : ''
                 } ${
-                  (!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) 
+                  isBaseLaInvalid
                     ? 'border-red-300 bg-red-50' 
                     : ''
                 }`}
                 disabled={!isNewTest && !isEditMode}
                 placeholder="mmol/L"
               />
-              {(!formData.baseLa || formData.baseLa.trim() === '' || parseFloat(formData.baseLa.toString().replace(',', '.')) <= 0) && (
+              {isBaseLaInvalid && (
                 <div className="absolute left-0 top-full mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none max-w-xs">
                   <div className="bg-red-600 text-white text-xs rounded-lg px-3 py-2 shadow-lg relative">
                     <div className="space-y-1">

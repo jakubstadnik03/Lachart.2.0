@@ -26,17 +26,21 @@ const TestingPage = () => {
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
   const isTestingRole = role === 'testing' || role === 'tester';
+  // Coach-like roles operate on selected athlete's data (zones + tests).
+  const isCoachLikeRole = role === 'coach' || role === 'testing' || role === 'tester';
   const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
-    if (user?.role === 'coach') {
+    if (isCoachLikeRole) {
       try {
         const globalId = localStorage.getItem('global_selectedAthleteId');
         if (globalId) return globalId;
       } catch {
         // ignore storage errors
       }
-      return user?._id || null;
+      // Only "coach" defaults to self if nothing selected; tester/testing start with no athlete.
+      if (user?.role === 'coach') return user?._id || null;
+      return null;
     }
     return null;
   });
@@ -63,6 +67,20 @@ const TestingPage = () => {
   const navigate = useNavigate();
   const lastLoadedTestIdFromUrlRef = useRef(null);
   const lastLoadedTestsForAthleteRef = useRef(null);
+  /**
+   * Same rule as DashboardPage: coach/tester use selected athlete (or coach self);
+   * plain athletes always use user._id (selectedAthleteId state stays null for them).
+   */
+  const effectiveTargetAthleteId = useMemo(() => {
+    if (isCoachLikeRole) {
+      return selectedAthleteId || (user?.role === 'coach' ? user._id : null);
+    }
+    return user?._id ?? null;
+  }, [isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
+
+  /** Current effective athlete for data loads — used to drop stale / out-of-order list responses */
+  const effectiveAthleteIdRef = useRef(effectiveTargetAthleteId);
+  effectiveAthleteIdRef.current = effectiveTargetAthleteId;
   
   // Get testId from URL
   const testIdFromUrl = searchParams.get('testId');
@@ -86,8 +104,7 @@ const TestingPage = () => {
   const loadTests = React.useCallback(async (targetId) => {
     try {
       setError(null);
-      // testing/tester role can load all tests (backend handles scope)
-      const testId = isTestingRole ? user._id : targetId;
+      const testId = targetId;
       const t0 = Date.now();
 
       // #region agent log
@@ -142,7 +159,12 @@ const TestingPage = () => {
       if (uniqueTests.length > MAX_TESTS) {
         console.warn(`[TestingPage] Limited ${uniqueTests.length} tests to ${MAX_TESTS} to prevent memory issues`);
       }
-      
+
+      // Ignore responses if user switched athlete or list was superseded
+      if (String(effectiveAthleteIdRef.current) !== String(targetId)) {
+        return;
+      }
+
       setTests(limitedTests);
 
       // #region agent log
@@ -164,6 +186,10 @@ const TestingPage = () => {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
       addNotification('Failed to load tests. Please refresh the page.', 'error');
+      // Allow the effect to retry the same athlete (ref was set before the request)
+      if (String(effectiveAthleteIdRef.current) === String(targetId)) {
+        lastLoadedTestsForAthleteRef.current = null;
+      }
     }
   }, [user, addNotification, isTestingRole]);
 
@@ -177,7 +203,7 @@ const TestingPage = () => {
 
       const targetAthleteId =
         athleteIdFromEvent ||
-        (user?.role === 'coach' ? selectedAthleteId : user?._id);
+        (isCoachLikeRole ? selectedAthleteId : user?._id);
 
       if (!targetAthleteId) return;
 
@@ -227,7 +253,7 @@ const TestingPage = () => {
       
       try {
         // Try to load athlete profile - if it fails, athlete might be deleted/problematic
-        if (user.role === 'coach') {
+        if (isCoachLikeRole) {
           await api.get(`/user/athlete/${selectedAthleteId}/profile`);
         }
       } catch (error) {
@@ -237,7 +263,7 @@ const TestingPage = () => {
           localStorage.removeItem('global_selectedAthleteId');
           localStorage.removeItem(`testing_recommendations_open_${selectedAthleteId}`);
         } catch {}
-        setSelectedAthleteId(user._id);
+        setSelectedAthleteId(user?.role === 'coach' ? user._id : null);
         navigate('/testing', { replace: true });
         addNotification('Athlete data could not be loaded. Reset to your profile.', 'warning');
       }
@@ -341,14 +367,17 @@ const TestingPage = () => {
       return;
     }
 
-    const targetId = selectedAthleteId || user._id;
-    // Guard: avoid refetching the same athlete's test list repeatedly
-    if (String(lastLoadedTestsForAthleteRef.current) === String(targetId) && Array.isArray(tests) && tests.length > 0) {
+    const targetId = effectiveTargetAthleteId;
+    if (!targetId) return;
+    // One fetch per athlete selection. Do NOT depend on `tests` here: when the API returns []
+    // that would retrigger the effect forever (guard used to require tests.length > 0).
+    if (String(lastLoadedTestsForAthleteRef.current) === String(targetId)) {
       return;
     }
     lastLoadedTestsForAthleteRef.current = targetId;
     loadTests(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTests, tests]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tests intentionally omitted; see comment above
+  }, [user, isAuthenticated, navigate, effectiveTargetAthleteId, loadTests]);
 
   // Check Strava connection status and show modal if not connected
   useEffect(() => {
@@ -426,7 +455,7 @@ const TestingPage = () => {
   useEffect(() => {
     const loadAdvisor = async () => {
       if (!isAuthenticated || !user) return;
-      const targetId = selectedAthleteId || user._id;
+      const targetId = effectiveTargetAthleteId;
       if (!targetId) return;
       
       try {
@@ -434,7 +463,7 @@ const TestingPage = () => {
 
         // 1) Athlete profile (zones + units) - with error handling
         try {
-        if (user.role === 'coach' && String(targetId) !== String(user._id)) {
+        if (isCoachLikeRole && String(targetId) !== String(user._id)) {
           const { data } = await api.get(`/user/athlete/${targetId}/profile`);
           setAthleteProfile(data);
         } else {
@@ -444,13 +473,13 @@ const TestingPage = () => {
         } catch (profileError) {
           console.error('Failed to load athlete profile:', profileError);
           // If athlete profile fails to load, clear selection to prevent freeze
-          if (user.role === 'coach' && targetId !== user._id) {
+          if (isCoachLikeRole && String(targetId) !== String(user._id)) {
             console.warn('Clearing problematic athlete selection');
             try {
               localStorage.removeItem('global_selectedAthleteId');
               localStorage.removeItem(`testing_recommendations_open_${targetId}`);
             } catch {}
-            setSelectedAthleteId(user._id);
+            setSelectedAthleteId(user?.role === 'coach' ? user._id : null);
             navigate('/testing', { replace: true });
             addNotification('Failed to load athlete data. Please try again.', 'error');
             return;
@@ -467,7 +496,7 @@ const TestingPage = () => {
           if (!isConnected) {
             setExternalActivities([]);
           } else {
-            const params = user.role === 'coach' ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
+            const params = isCoachLikeRole ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
             const acts = await listExternalActivities(params);
             const activitiesArray = Array.isArray(acts) ? acts : [];
             // Limit to prevent memory issues
@@ -486,7 +515,7 @@ const TestingPage = () => {
         // 3) Bike power metrics (includes Strava streams when possible) - with error handling
         try {
         const params = new URLSearchParams();
-        if (user.role === 'coach') params.set('athleteId', targetId);
+        if (isCoachLikeRole) params.set('athleteId', targetId);
         params.set('comparePeriod', '90days');
         const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
         setBikePowerMetrics(resp.data || null);
@@ -505,7 +534,7 @@ const TestingPage = () => {
     };
 
     loadAdvisor();
-  }, [user, isAuthenticated, selectedAthleteId, navigate, addNotification]);
+  }, [user, isAuthenticated, effectiveTargetAthleteId, navigate, addNotification, isCoachLikeRole]);
 
   // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
@@ -607,7 +636,7 @@ const TestingPage = () => {
           
           while (retries <= maxRetries && !success) {
           try {
-            const detail = await getStravaActivityDetail(act.stravaId, user.role === 'coach' ? selectedAthleteId : null);
+            const detail = await getStravaActivityDetail(act.stravaId, isCoachLikeRole ? selectedAthleteId : null);
             if (detail && detail.streams) {
               // Convert Strava streams format to our format
               const streams = {
@@ -1146,7 +1175,7 @@ const TestingPage = () => {
       animate={{ opacity: 1 }}
       className="w-full max-w-[1600px] mx-auto md:p-6 min-w-0"
     >
-      {user?.role === 'coach' && (
+      {isCoachLikeRole && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}

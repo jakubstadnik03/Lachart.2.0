@@ -15,6 +15,7 @@ export const API_ENDPOINTS = {
     COACH_EDIT_ATHLETE: (id) => `${API_BASE_URL}/user/coach/edit-athlete/${id}`,
     // Nové endpointy pro správu trenéra
     COACH_PROFILE: `${API_BASE_URL}/user/coach/profile`,
+    MY_COACHES: `${API_BASE_URL}/user/athlete/my-coaches`,
     REMOVE_COACH: `${API_BASE_URL}/user/athlete/remove-coach`,
     INVITE_COACH: `${API_BASE_URL}/user/athlete/invite-coach`,
     // Nové endpointy

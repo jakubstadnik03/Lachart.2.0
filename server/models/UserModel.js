@@ -74,6 +74,11 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  /** Multiple coaches (coachId stays primary / legacy first coach). */
+  coachIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   athletes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

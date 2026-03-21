@@ -69,11 +69,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
   }), []);
 
   const DEFAULT_TRAINING_ZONE_DESCRIPTIONS = {
-    1: '70–90% LT1 (recovery, reference wide zone)',
+    1: '< 90% LT1 (recovery / easy)',
     2: '90%–100% LT1',
     3: '100% LT1 – 95% LT2',
     4: '96%–104% LT2 (threshold)',
-    5: '105–120% LT2 (sprint/VO2max+ reference)'
+    5: '> 105% LT2 (VO₂max+ / sprint)'
   };
 
   const mapPowerZoneForSubmit = (zone = {}, zoneNum) => {

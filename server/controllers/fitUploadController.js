@@ -2721,8 +2721,8 @@ async function getPowerMetrics(req, res) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Check if coach is accessing athlete data
-    if (user.role === 'coach' && athleteId !== userId) {
+    // Check if coach/tester is accessing athlete data
+    if (['coach', 'tester', 'testing'].includes(user.role) && athleteId !== userId) {
       const athlete = await User.findById(athleteId);
       if (!athlete) {
         return res.status(404).json({ error: 'Athlete not found' });

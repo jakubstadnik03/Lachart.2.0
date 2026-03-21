@@ -186,11 +186,11 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
         return;
       }
       const zones = {
-        zone1: { min: Math.round(lt1 * 0.70), max: Math.round(lt1 * 0.90), description: '70–90% LT1 (recovery, reference wide zone)' },
+        zone1: { min: Math.round(lt1 * 0.50), max: Math.round(lt1 * 0.90), description: '< 90% LT1 (recovery / easy)' },
         zone2: { min: Math.round(lt1 * 0.90), max: Math.round(lt1 * 1.00), description: '90%–100% LT1' },
         zone3: { min: Math.round(lt1 * 1.00), max: Math.round(lt2 * 0.95), description: '100% LT1 – 95% LT2' },
         zone4: { min: Math.round(lt2 * 0.96), max: Math.round(lt2 * 1.04), description: '96%–104% LT2 (threshold)' },
-        zone5: { min: Math.round(lt2 * 1.05), max: Math.round(lt2 * 1.20), description: '105–120% LT2 (sprint/VO2max+ reference)' }
+        zone5: { min: Math.round(lt2 * 1.05), max: Math.round(lt2 * 1.30), description: '> 105% LT2 (VO₂max+ / sprint)' }
       };
       setFormData(prev => ({
         ...prev,
@@ -206,11 +206,11 @@ const TrainingZonesModal = ({ isOpen, onClose, onSubmit, userData }) => {
         return;
       }
       const zones = {
-        zone1: { min: Math.round(lt1 / 0.70), max: Math.round(lt1 / 0.90), description: '70–90% LT1 (recovery, reference wide zone)' },
+        zone1: { min: Math.round(lt1 / 0.50), max: Math.round(lt1 / 0.90), description: '< 90% LT1 (recovery / easy)' },
         zone2: { min: Math.round(lt1 / 0.90), max: Math.round(lt1 / 1.00), description: '90%–100% LT1' },
         zone3: { min: Math.round(lt1 / 1.00), max: Math.round(lt2 / 0.95), description: '100% LT1 – 95% LT2' },
         zone4: { min: Math.round(lt2 / 0.96), max: Math.round(lt2 / 1.04), description: '96%–104% LT2 (threshold)' },
-        zone5: { min: Math.round(lt2 / 1.05), max: Math.round(lt2 / 1.20), description: '105–120% LT2 (sprint/VO2max+ reference)' }
+        zone5: { min: Math.round(lt2 / 1.05), max: Math.round(lt2 / 1.30), description: '> 105% LT2 (VO₂max+ / sprint)' }
       };
       setFormData(prev => ({
         ...prev,

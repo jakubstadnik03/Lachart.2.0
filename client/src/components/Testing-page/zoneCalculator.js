@@ -68,11 +68,11 @@ export const calculateZonesFromTest = (testData) => {
   }
   
   const heartRateZones = hasHR ? {
-    zone1: { min: Math.round(hr1 * 0.70), max: Math.round(hr1 * 0.90) },
+    zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 0.90) },
     zone2: { min: Math.round(hr1 * 0.90), max: Math.round(hr1 * 1.00) },
     zone3: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 0.95) },
     zone4: { min: Math.round(hr2 * 0.96), max: Math.round(hr2 * 1.04) },
-    zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.20) },
+    zone5: { min: Math.round(hr2 * 1.05), max: Math.round(hr2 * 1.30) },
   } : null;
   
   if (sport === 'bike') {
@@ -80,11 +80,11 @@ export const calculateZonesFromTest = (testData) => {
     const lt2_watts = lt2_value;
     return {
       power: {
-        zone1: { min: Math.round(lt1_watts * 0.70), max: Math.round(lt1_watts * 0.90) },
+        zone1: { min: Math.round(lt1_watts * 0.50), max: Math.round(lt1_watts * 0.90) },
         zone2: { min: Math.round(lt1_watts * 0.90), max: Math.round(lt1_watts * 1.00) },
         zone3: { min: Math.round(lt1_watts * 1.00), max: Math.round(lt2_watts * 0.95) },
         zone4: { min: Math.round(lt2_watts * 0.96), max: Math.round(lt2_watts * 1.04) },
-        zone5: { min: Math.round(lt2_watts * 1.05), max: Math.round(lt2_watts * 1.20) },
+        zone5: { min: Math.round(lt2_watts * 1.05), max: Math.round(lt2_watts * 1.30) },
       },
       heartRate: heartRateZones
     };
@@ -96,11 +96,11 @@ export const calculateZonesFromTest = (testData) => {
   const fmt = (s) => formatPace(s);
   return {
     pace: {
-      zone1: { min: fmt(lt1_sec / 0.70), max: fmt(lt1_sec / 0.90) },
+      zone1: { min: fmt(lt1_sec / 0.50), max: fmt(lt1_sec / 0.90) },
       zone2: { min: fmt(lt1_sec / 0.90), max: fmt(lt1_sec / 1.00) },
       zone3: { min: fmt(lt1_sec / 1.00), max: fmt(lt2_sec / 0.95) },
       zone4: { min: fmt(lt2_sec / 0.96), max: fmt(lt2_sec / 1.04) },
-      zone5: { min: fmt(lt2_sec / 1.05), max: fmt(lt2_sec / 1.20) },
+      zone5: { min: fmt(lt2_sec / 1.05), max: fmt(lt2_sec / 1.30) },
     },
     heartRate: heartRateZones
   };

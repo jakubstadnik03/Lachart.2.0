@@ -168,17 +168,17 @@ class UserDao {
 
   async findAthletesByCoachId(coachId) {
     try {
+      const { athletesLinkedToCoachQuery } = require('../utils/athleteCoachAccess');
       // Convert coachId to ObjectId if it's a string, since coachId is stored as ObjectId reference
       let coachIdObj = coachId;
       if (coachId && typeof coachId === 'string') {
         try {
           coachIdObj = new mongoose.Types.ObjectId(coachId);
         } catch (e) {
-          // If conversion fails, use the original value
           coachIdObj = coachId;
         }
       }
-      return await UserModel.find({ coachId: coachIdObj });
+      return await UserModel.find(athletesLinkedToCoachQuery(coachIdObj));
     } catch (error) {
       console.error("Error finding athletes by coach ID:", error);
       throw error;

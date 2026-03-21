@@ -60,6 +60,7 @@ class GetAbl {
 
     async addAthleteToCoach(coachId, athleteEmail) {
         try {
+            const { athleteHasCoachUser, mergeCoachIds } = require('../../utils/athleteCoachAccess');
             const athlete = await this.userDao.findByEmail(athleteEmail);
             if (!athlete) {
                 throw new Error('Atlet nenalezen');
@@ -67,14 +68,16 @@ class GetAbl {
             if (athlete.role !== 'athlete') {
                 throw new Error('Uživatel není atlet');
             }
-            if (athlete.coachId) {
-                throw new Error('Atlet již má přiřazeného trenéra');
+            if (athleteHasCoachUser(athlete, coachId)) {
+                throw new Error('Atlet již je u tohoto trenéra');
             }
 
-            // Přidat atleta k trenérovi
+            const merged = mergeCoachIds(athlete, coachId);
             await this.userDao.addAthleteToCoach(coachId, athlete._id);
-            // Nastavit trenéra atletovi
-            await this.userDao.updateUser(athlete._id, { coachId });
+            await this.userDao.updateUser(athlete._id, {
+                coachIds: merged.coachIds,
+                coachId: merged.coachId
+            });
 
             return { message: 'Atlet úspěšně přidán' };
         } catch (error) {
@@ -84,18 +87,21 @@ class GetAbl {
 
     async removeAthleteFromCoach(coachId, athleteId) {
         try {
+            const { athleteHasCoachUser, removeCoachFromAthleteIds } = require('../../utils/athleteCoachAccess');
             const athlete = await this.userDao.findById(athleteId);
             if (!athlete) {
                 throw new Error('Atlet nenalezen');
             }
-            if (athlete.coachId.toString() !== coachId.toString()) {
+            if (!athleteHasCoachUser(athlete, coachId)) {
                 throw new Error('Atlet nepatří tomuto trenérovi');
             }
 
-            // Odstranit atleta od trenéra
             await this.userDao.removeAthleteFromCoach(coachId, athleteId);
-            // Odstranit trenéra atletovi
-            await this.userDao.updateUser(athleteId, { coachId: null });
+            const next = removeCoachFromAthleteIds(athlete, coachId);
+            await this.userDao.updateUser(athleteId, {
+                coachIds: next.coachIds,
+                coachId: next.coachId
+            });
 
             return { message: 'Atlet úspěšně odebrán' };
         } catch (error) {

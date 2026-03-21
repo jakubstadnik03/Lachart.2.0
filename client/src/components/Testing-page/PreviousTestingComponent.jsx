@@ -6,7 +6,7 @@ import LactateCurveCalculator from "./LactateCurveCalculator";
 import TrainingZonesGenerator from "./TrainingZonesGenerator";
 import TestComparison from "./TestComparison";
 import TestSelector from "./TestSelector";
-import api from '../../services/api';
+import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
 
 const PreviousTestingComponent = ({
@@ -264,7 +264,7 @@ const PreviousTestingComponent = ({
   const handleTestUpdate = async (updatedTest) => {
     try {
       console.log('Updating test with data:', updatedTest);
-      const response = await api.put(`/test/${updatedTest._id}`, updatedTest);
+      const response = await updateTest(updatedTest._id, updatedTest);
       console.log('API response:', response.data);
       setTests(prev => prev.map(t => 
         t._id === updatedTest._id ? response.data : t
@@ -281,12 +281,13 @@ const PreviousTestingComponent = ({
       ));
     } catch (err) {
       console.error('Error updating test:', err);
+      throw err;
     }
   };
 
   const handleTestDelete = async (testToDelete) => {
     try {
-      await api.delete(`/test/${testToDelete._id}`);
+      await deleteTest(testToDelete._id);
       setTests(prev => prev.filter(t => t._id !== testToDelete._id));
       setCurrentTest(null);
       setSelectedTests(prev => prev.filter(t => t._id !== testToDelete._id));

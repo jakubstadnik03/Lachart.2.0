@@ -224,15 +224,32 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
         const Test = require('../models/test');
         const user = await User.findById(req.user.userId);
         
-        // Pouze tester/testing vidí všechny testy; admin/coach/athlete jen svoje (resp. coach i testy atletů)
-        const role = String(user?.role || '').toLowerCase();
-        if (user && (role === 'tester' || role === 'testing')) {
-            const allTests = await Test.find({}).sort({ date: -1 });
-            return res.status(200).json(allTests);
-        }
-        
         const { athleteId } = req.params;
-        const tests = await testAbl.getTestsByAthleteId(athleteId);
+        const role = String(user?.role || '').toLowerCase();
+        const requesterUserId = String(user?._id);
+        const targetAthleteId = String(athleteId);
+        const isTesterRole = role === 'tester' || role === 'testing';
+
+        // tester/testing should only work with assigned athletes, not their own user profile
+        if (isTesterRole && targetAthleteId === requesterUserId) {
+            return res.status(403).json({ error: 'Select an assigned athlete to view tests' });
+        }
+
+        // tester/testing should behave like coach: only tests for their own athletes
+        if (['tester', 'testing', 'coach'].includes(role) && targetAthleteId !== requesterUserId) {
+            const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
+            const athlete = await User.findById(targetAthleteId).select('coachId coachIds');
+            if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+            if (!athleteHasCoachUser(athlete, requesterUserId)) {
+                return res.status(403).json({ error: 'You do not have permission to view these tests' });
+            }
+        }
+
+        if (role === 'athlete' && targetAthleteId !== requesterUserId) {
+            return res.status(403).json({ error: 'You do not have permission to view these tests' });
+        }
+
+        const tests = await testAbl.getTestsByAthleteId(targetAthleteId);
         res.status(200).json(tests);
     } catch (error) {
         console.error('Error fetching athlete tests (alias):', error);
@@ -273,9 +290,34 @@ router.post("/", verifyToken, async (req, res) => {
         const User = require('../models/UserModel');
         const user = await User.findById(req.user.userId).select('role');
         const payload = { ...req.body };
+        const requesterId = String(req.user.userId);
+        const requesterRole = String(user?.role || '').toLowerCase();
         // Athletes can only create tests for themselves (ensures test is saved to current user after register+send)
-        if (user && String(user.role || '').toLowerCase() === 'athlete') {
+        if (user && requesterRole === 'athlete') {
             payload.athleteId = String(req.user.userId);
+        }
+
+        // Coach/tester should only create tests for their own athletes (via athlete.coachId).
+        if (user && ['coach', 'tester', 'testing'].includes(requesterRole)) {
+            const requestedAthleteId = payload?.athleteId ? String(payload.athleteId) : null;
+            if (!requestedAthleteId) {
+                return res.status(400).json({ error: 'athleteId is required' });
+            }
+
+            const isTesterRole = requesterRole === 'tester' || requesterRole === 'testing';
+            if (isTesterRole && requestedAthleteId === requesterId) {
+                return res.status(403).json({ error: 'Select an assigned athlete to create tests' });
+            }
+
+            // Allow creating for self (rare, but consistent with isSelf permissions elsewhere)
+            if (requestedAthleteId !== requesterId) {
+                const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
+                const athlete = await User.findById(requestedAthleteId).select('coachId coachIds');
+                if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+                if (!athleteHasCoachUser(athlete, requesterId)) {
+                    return res.status(403).json({ error: 'You do not have permission to create tests for this athlete' });
+                }
+            }
         }
         // Normalize date so Mongoose accepts it (ISO string or Date)
         if (payload.date) {

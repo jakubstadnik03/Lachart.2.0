@@ -154,7 +154,7 @@ const TestComparison = ({ tests = [] }) => {
     };
 
     const thresholdDatasets = Object.entries(test.thresholds)
-      .filter(([key]) => !['heartRates', 'lactates', 'LTRatio'].includes(key))
+      .filter(([key]) => !['heartRates', 'lactates', 'LTRatio', 'testAnalysis'].includes(key))
       .map(([key, value]) => {
         const color = zoneColors[key];
         const rgbaColor = `rgba(${hexToRgb(color)}, ${opacity})`;

@@ -22,10 +22,12 @@ const testController = {
             const Test = require('../models/test');
             const user = await User.findById(req.user.userId);
             
-            // If user is tester/testing, return all tests
             const role = String(user?.role || '').toLowerCase();
-            if (user && (role === 'tester' || role === 'testing')) {
+            const isTester = role === 'tester' || role === 'testing';
+            if (user && isTester) {
                 const t0 = Date.now();
+                const athletes = await User.find({ coachId: user._id }).select('_id');
+                const athleteIds = (athletes || []).map(a => String(a._id));
                 // #region agent log
                 appendDebugLog({
                     sessionId: '2e357f',
@@ -33,11 +35,11 @@ const testController = {
                     timestamp: Date.now(),
                     hypothesisId: 'H4',
                     location: 'testController.getTests',
-                    message: 'testing/tester listing all tests',
-                    data: { role: user?.role, requesterUserId: req.user?.userId || null },
+                    message: 'testing/tester listing tests for coachId athletes',
+                    data: { role: user?.role, requesterUserId: req.user?.userId || null, athletesCount: athleteIds.length },
                 });
                 // #endregion
-                const allTests = await Test.find({}).sort({ date: -1 });
+                const allTests = await Test.find({ athleteId: { $in: athleteIds } }).sort({ date: -1 });
                 // #region agent log
                 appendDebugLog({
                     sessionId: '2e357f',
@@ -80,18 +82,21 @@ const testController = {
             const currentUserId = String(user._id);
             const isOwnTest = testAthleteId === currentUserId;
             const role = String(user.role || '').toLowerCase();
-            const isTester = role === 'tester' || role === 'testing';
+            const isCoachLike = role === 'coach' || role === 'tester' || role === 'testing';
+            const isTesterRole = role === 'tester' || role === 'testing';
+            const isAdmin = role === 'admin';
+            const isOwnAllowed = isOwnTest && !isTesterRole;
 
-            // Coach může vidět i testy svých atletů; admin/athlete jen svoje; tester všechny
+            // Coach/tester/testing can view tests only for their own athletes; admin can view all.
             let isAthleteTest = false;
-            if (role === 'coach' && !isOwnTest) {
+            if (isCoachLike && !isOwnTest) {
                 const athlete = await User.findById(testAthleteId);
                 if (athlete && athlete.coachId && String(athlete.coachId) === currentUserId) {
                     isAthleteTest = true;
                 }
             }
 
-            if (!isOwnTest && !isAthleteTest && !isTester) {
+            if (!isOwnAllowed && !isAthleteTest && !isAdmin) {
                 return res.status(403).json({ error: 'You do not have permission to view this test' });
             }
 
