@@ -297,7 +297,7 @@ const DashboardPage = () => {
       console.error('Error loading regular trainings:', error);
       return [];
     }
-  }, [isCoachLikeRole, user?._id]);
+  }, [isCoachLikeRole, user?._id, user?.role]);
 
   // Load training calendar data (FIT files and Strava activities) with localStorage caching.
   // Accepts optional regularTrainingsParam so the main loader can pass data directly
@@ -580,7 +580,7 @@ const DashboardPage = () => {
 
     window.addEventListener('activityUpdated', handleActivityUpdate);
     return () => window.removeEventListener('activityUpdated', handleActivityUpdate);
-  }, [selectedAthleteId, user?._id, user?.role, loadCalendarData]);
+  }, [selectedAthleteId, user?._id, user?.role, isCoachLikeRole, loadCalendarData]);
 
   // Removed: cascade useEffect that re-triggered loadCalendarData on regularTrainings change.
   // The main loader now passes regularTrainings directly to loadCalendarData.
@@ -620,7 +620,7 @@ const DashboardPage = () => {
     } catch (e) {
       console.error('Error loading calendar data from cache on mount:', e);
     }
-  }, [user?._id, selectedAthleteId, user?.role]);
+  }, [user?._id, selectedAthleteId, user?.role, isCoachLikeRole]);
 
   // Listen for athlete change from Menu (for immediate update before URL changes)
   useEffect(() => {
@@ -745,7 +745,7 @@ const DashboardPage = () => {
     };
 
     loadData();
-  }, [user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole]);
+  }, [user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
@@ -788,7 +788,7 @@ const DashboardPage = () => {
     const timeoutId = setTimeout(performAutoSync, 2000);
     
     return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData]);
+  }, [user?._id, user?.strava?.autoSync, selectedAthleteId, user?.role, loadCalendarData, isCoachLikeRole]);
 
   useEffect(() => {
     if (recentTrainings.length > 0) {

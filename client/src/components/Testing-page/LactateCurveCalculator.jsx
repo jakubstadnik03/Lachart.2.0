@@ -1224,7 +1224,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   
   const minXForZones = allXValuesForZones.length > 0 ? Math.min(...allXValuesForZones) : 0;
   const maxXForZones = allXValuesForZones.length > 0 ? Math.max(...allXValuesForZones) : 100;
-  const xRangeForZones = maxXForZones - minXForZones;
 
   // ~10 % „pomaleji“ od baseline / nejpomalejšího bodu — jen kousíček osy a Z1, ne celá vypočtená recovery zóna
   const Z1_SLOW_NUDGE_RATIO = 0.1;

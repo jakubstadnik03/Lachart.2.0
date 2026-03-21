@@ -5,7 +5,6 @@ import React, { useState, useRef, useEffect, createContext, useContext } from 'r
 import * as math from 'mathjs';
 import { useAuth } from '../../context/AuthProvider';
 import { computeLactateThresholds } from './lactateThresholdSegmented';
-import { analyzeLactateTest } from './lactateTestAnalysis';
 
 // Pomocná funkce pro lineární interpolaci
 const interpolate = (x0, y0, x1, y1, targetY) => {

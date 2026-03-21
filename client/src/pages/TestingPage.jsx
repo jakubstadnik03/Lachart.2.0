@@ -236,7 +236,7 @@ const TestingPage = () => {
 
     window.addEventListener('lachart:testNotFound', handler);
     return () => window.removeEventListener('lachart:testNotFound', handler);
-  }, [isAuthenticated, user?.role, user?._id, selectedAthleteId, selectedSport, loadTests, setSearchParams]);
+  }, [isAuthenticated, user?.role, user?._id, selectedAthleteId, selectedSport, loadTests, setSearchParams, isCoachLikeRole]);
 
   // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
@@ -272,7 +272,7 @@ const TestingPage = () => {
     if (isAuthenticated && user) {
       validateAthlete();
     }
-  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification]);
+  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole]);
 
   // Load test by ID from URL if present (before loading all tests)
   useEffect(() => {
@@ -781,7 +781,7 @@ const TestingPage = () => {
     return () => {
       isMounted = false;
     };
-  }, [externalActivities, user, isAuthenticated, selectedAthleteId]);
+  }, [externalActivities, user, isAuthenticated, selectedAthleteId, isCoachLikeRole]);
 
   // Persist "recommendations panel" visibility per athlete
   useEffect(() => {
