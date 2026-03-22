@@ -4,6 +4,7 @@
 import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
 import * as math from 'mathjs';
 import { useAuth } from '../../context/AuthProvider';
+import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
 import { computeLactateThresholds } from './lactateThresholdSegmented';
 
 // Pomocná funkce pro lineární interpolaci
@@ -781,7 +782,13 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           return null;
         };
         const ltp1Lactate = interpolateLactateAtPower(segLT1);
+        // Breakpoint segLT1 je na modelu; výkon u LT1 musí odpovídat krvi — inverzní interpolace
+        // mezi naměřenými body při tomto La (typicky nižší W než segLT1, pokud křivka „utíká“ od vzorků).
         let ltp1Power = segLT1;
+        const pMeasLt1 = interpolatePowerAtLactate(ltp1Lactate);
+        if (pMeasLt1 != null && Number.isFinite(pMeasLt1)) {
+          ltp1Power = pMeasLt1;
+        }
         let ltp2Lactate = interpolateLactateAtPower(segLT2);
         let ltp2Power = segLT2;
         // LTP2 nemá přesáhnout adaptivní strop — místo přesného cap (~4.2) průměr výkonů při OBLA 4.0 a 3.5 mmol/L
@@ -870,6 +877,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             }
           }
         }
+        // LT2: výkon při vypočteném La zarovnat na naměřenou úsečku (ne ponechat jen breakpoint z segmentace).
+        const pMeasLt2 = interpolatePowerAtLactate(ltp2Lactate);
+        if (pMeasLt2 != null && Number.isFinite(pMeasLt2)) {
+          ltp2Power = pMeasLt2;
+        }
         const ltp1Reasonable = ltp1La >= MIN_LTP1_LACTATE && ltp1La <= 5 && ltp1Power > 0;
         const ltp2Reasonable = ltp2Lactate >= 1.5 && ltp2Lactate <= adaptiveLtp2Cap && ltp2Power > 0;
         if (ltp1Reasonable && ltp2Reasonable) {
@@ -918,34 +930,61 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             }
             if (ltp1Lactate < MIN_LTP1_LACTATE) ltp1Lactate = MIN_LTP1_LACTATE;
           }
-        } else if (firstSignificantLactateRiseIsFalseStart(sortedResults)) {
-          // Kolo: polynom ztrácí poklesy; u falešného startu LT1 z druhého nárůstu.
-          const rawLtp1 = pickLtp1PointSkippingFalseStarts(sortedResults, effectiveBaseLactate);
-          if (rawLtp1 != null) {
-            ltp1Power = Number(rawLtp1.power);
-            ltp1Lactate = Number(rawLtp1.lactate);
-            if (rawLtp1.heartRate != null && Number.isFinite(Number(rawLtp1.heartRate))) {
-              ltp1HR = Number(rawLtp1.heartRate);
-            } else {
-              const interpolateHRAtPowerPoly = (powerVal) => {
-                for (let i = 0; i < sortedResults.length - 1; i++) {
-                  const a = Number(sortedResults[i].power);
-                  const b = Number(sortedResults[i + 1].power);
-                  if (powerVal >= Math.min(a, b) && powerVal <= Math.max(a, b) && a !== b) {
-                    const ha = sortedResults[i].heartRate;
-                    const hb = sortedResults[i + 1].heartRate;
-                    if (ha != null && hb != null) return ha + (hb - ha) * (powerVal - a) / (b - a);
-                    return ha ?? hb;
-                  }
-                }
-                const nearest = sortedResults.reduce((best, r) =>
-                  Math.abs(Number(r.power) - powerVal) < Math.abs(Number(best.power) - powerVal) ? r : best
-                );
-                return nearest.heartRate != null ? Number(nearest.heartRate) : null;
-              };
-              ltp1HR = interpolateHRAtPowerPoly(ltp1Power);
+        } else {
+          const interpolatePowerAtLactateBike = (targetLa) => {
+            for (let i = 0; i < sortedResults.length - 1; i++) {
+              const a = sortedResults[i];
+              const b = sortedResults[i + 1];
+              const la = Number(a.lactate);
+              const lb = Number(b.lactate);
+              if ((la <= targetLa && lb >= targetLa) || (la >= targetLa && lb <= targetLa)) {
+                const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (targetLa - la) / (lb - la);
+                return Number(a.power) + t * (Number(b.power) - Number(a.power));
+              }
             }
-            if (ltp1Lactate < MIN_LTP1_LACTATE) ltp1Lactate = MIN_LTP1_LACTATE;
+            return null;
+          };
+          const interpolateHRAtPowerPolyBike = (powerVal) => {
+            for (let i = 0; i < sortedResults.length - 1; i++) {
+              const a = Number(sortedResults[i].power);
+              const b = Number(sortedResults[i + 1].power);
+              if (powerVal >= Math.min(a, b) && powerVal <= Math.max(a, b) && a !== b) {
+                const ha = sortedResults[i].heartRate;
+                const hb = sortedResults[i + 1].heartRate;
+                if (ha != null && hb != null) return ha + (hb - ha) * (powerVal - a) / (b - a);
+                return ha ?? hb;
+              }
+            }
+            const nearest = sortedResults.reduce((best, r) =>
+              Math.abs(Number(r.power) - powerVal) < Math.abs(Number(best.power) - powerVal) ? r : best
+            );
+            return nearest.heartRate != null ? Number(nearest.heartRate) : null;
+          };
+          const pMeasPoly = interpolatePowerAtLactateBike(ltp1Lactate);
+          if (pMeasPoly != null && Number.isFinite(pMeasPoly)) {
+            ltp1Power = pMeasPoly;
+            const hrM = interpolateHRAtPowerPolyBike(ltp1Power);
+            if (hrM != null) ltp1HR = hrM;
+          }
+          if (firstSignificantLactateRiseIsFalseStart(sortedResults)) {
+            // Kolo: polynom ztrácí poklesy; u falešného startu LT1 z druhého nárůstu.
+            const rawLtp1 = pickLtp1PointSkippingFalseStarts(sortedResults, effectiveBaseLactate);
+            if (rawLtp1 != null) {
+              ltp1Power = Number(rawLtp1.power);
+              ltp1Lactate = Number(rawLtp1.lactate);
+              if (rawLtp1.heartRate != null && Number.isFinite(Number(rawLtp1.heartRate))) {
+                ltp1HR = Number(rawLtp1.heartRate);
+              } else {
+                ltp1HR = interpolateHRAtPowerPolyBike(ltp1Power);
+              }
+              if (ltp1Lactate < MIN_LTP1_LACTATE) ltp1Lactate = MIN_LTP1_LACTATE;
+            }
+          }
+          const pMeasLt2Poly = interpolatePowerAtLactateBike(ltp2Lactate);
+          if (pMeasLt2Poly != null && Number.isFinite(pMeasLt2Poly)) {
+            ltp2Power = pMeasLt2Poly;
+            const hr2m = interpolateHRAtPowerPolyBike(ltp2Power);
+            if (hr2m != null) ltp2HR = hr2m;
           }
         }
         const validOrder = isPaceSport ? ltp2Power < ltp1Power : ltp2Power > ltp1Power;
@@ -1787,8 +1826,14 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
 
   const calculateThresholds = (mockData) => {
     const baseLactate = mockData.baseLactate;
-    const { results, sport } = mockData;
-  
+    const { results } = mockData;
+    // API / formulář může posílat cycling|running|swimming — findLactateThresholds očekává bike|run|swim
+    let sport = mockData.sport || 'bike';
+    const sLow = String(sport).toLowerCase();
+    if (sLow === 'cycling' || sLow === 'cycle') sport = 'bike';
+    else if (sLow === 'running') sport = 'run';
+    else if (sLow === 'swimming') sport = 'swim';
+
     if (!results || results.length < 3) {
       return {
         heartRates: {},
@@ -1970,16 +2015,13 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       return closestPoint.x;
     };
     
-    // Pokud máme LTP body, použít stejnou metodu jako v grafu
+    // Pokud máme LTP body: kolo = výhradně výkon z findLactateThresholds (segmentace / D-max na vzorcích), ne X z polynomu.
+    // Běh/plavání: stále můžeme použít polynom pro kontrolu pořadí a pro LT2 na křivce kde dává smysl.
     if (ltp1Point && ltp1Point.lactate != null && ltp2Point && ltp2Point.lactate != null) {
       const ltp1Lactate = ltp1Point.lactate;
       const ltp2Lactate = ltp2Point.lactate;
-      
-      // Najít X hodnoty z polynomiální křivky pro lactate hodnoty (stejně jako v grafu)
-      const ltp1XFromCurve = findXFromCurve(ltp1Lactate, polyPointsRaw);
-      const ltp2XFromCurve = findXFromCurve(ltp2Lactate, polyPointsRaw);
-      
-      // Interpolace HR pro nové X hodnoty
+      const isPaceSport = sport === 'run' || sport === 'swim';
+
       const interpolateHR = (x) => {
         for (let i = 0; i < sortedResults.length - 1; i++) {
           const a = Number(sortedResults[i].power);
@@ -1998,72 +2040,15 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         );
         return nearest.heartRate != null ? Number(nearest.heartRate) : null;
       };
-      
-      // Použít hodnoty z křivky pokud jsou k dispozici
-      if (ltp1XFromCurve != null && !isNaN(ltp1XFromCurve) && ltp2XFromCurve != null && !isNaN(ltp2XFromCurve)) {
-        const isPaceSport = sport === 'run' || sport === 'swim';
-        // Pace: LT2 rychlejší = menší sekundy; pro LT1 bereme naměřený krok, ne X z křivky.
-        const validOrder = isPaceSport
-          ? (Number(ltp2Point.power) < Number(ltp1Point.power))
-          : (ltp2XFromCurve > ltp1XFromCurve);
-        const validLactateOrder = ltp1Lactate < ltp2Lactate; // LT1 must always have lower lactate than LT2
-        
-        if (validOrder && validLactateOrder) {
-          // Běh/plavání: LTP1 držet na naměřeném tempu/kroku (ne přepočítávat na polynom).
-          if (isPaceSport) {
-            const p1m = Number(ltp1Point.power);
-            thresholds['LTP1'] = p1m;
-            thresholds.heartRates['LTP1'] = interpolateHR(p1m);
-            thresholds.lactates['LTP1'] = Number(ltp1Point.lactate);
-          } else {
-            thresholds['LTP1'] = ltp1XFromCurve;
-            thresholds.heartRates['LTP1'] = interpolateHR(ltp1XFromCurve);
-            thresholds.lactates['LTP1'] = ltp1Lactate;
-          }
-          thresholds['LTP2'] = ltp2XFromCurve;
-          thresholds.heartRates['LTP2'] = interpolateHR(ltp2XFromCurve);
-          thresholds.lactates['LTP2'] = ltp2Lactate;
-        } else {
-          // Pokud pořadí není validní, použít fallback na D-max hodnoty
-          // Ensure LT1 has lower lactate than LT2
-          let finalLtp1 = ltp1;
-          let finalLtp2 = ltp2;
-          let finalLtp1Lactate = ltp1Lactate;
-          let finalLtp2Lactate = ltp2Lactate;
-          let finalLtp1HR = ltp1Point.heartRate || null;
-          let finalLtp2HR = ltp2Point.heartRate || null;
-          
-          if (ltp1Lactate > ltp2Lactate) {
-            // Swap if LT1 has higher lactate than LT2
-            console.warn('[calculateThresholds] LT1 lactate higher than LT2, swapping values');
-            finalLtp1 = ltp2;
-            finalLtp2 = ltp1;
-            finalLtp1Lactate = ltp2Lactate;
-            finalLtp2Lactate = ltp1Lactate;
-            finalLtp1HR = ltp2Point.heartRate || null;
-            finalLtp2HR = ltp1Point.heartRate || null;
-          }
-          
-          thresholds['LTP1'] = finalLtp1;
-          thresholds.heartRates['LTP1'] = finalLtp1HR;
-          thresholds.lactates['LTP1'] = finalLtp1Lactate;
-          
-          thresholds['LTP2'] = finalLtp2;
-          thresholds.heartRates['LTP2'] = finalLtp2HR;
-          thresholds.lactates['LTP2'] = finalLtp2Lactate;
-        }
-      } else {
-        // Fallback na D-max hodnoty pokud křivka nefunguje
-        // Ensure LT1 has lower lactate than LT2
+
+      const applyLtpSwapFallback = () => {
         let finalLtp1 = ltp1;
         let finalLtp2 = ltp2;
         let finalLtp1Lactate = ltp1Lactate;
         let finalLtp2Lactate = ltp2Lactate;
         let finalLtp1HR = ltp1Point.heartRate || null;
         let finalLtp2HR = ltp2Point.heartRate || null;
-        
         if (ltp1Lactate > ltp2Lactate) {
-          // Swap if LT1 has higher lactate than LT2
           console.warn('[calculateThresholds] LT1 lactate higher than LT2, swapping values');
           finalLtp1 = ltp2;
           finalLtp2 = ltp1;
@@ -2072,14 +2057,49 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           finalLtp1HR = ltp2Point.heartRate || null;
           finalLtp2HR = ltp1Point.heartRate || null;
         }
-        
         thresholds['LTP1'] = finalLtp1;
         thresholds.heartRates['LTP1'] = finalLtp1HR;
         thresholds.lactates['LTP1'] = finalLtp1Lactate;
-        
         thresholds['LTP2'] = finalLtp2;
         thresholds.heartRates['LTP2'] = finalLtp2HR;
         thresholds.lactates['LTP2'] = finalLtp2Lactate;
+      };
+
+      if (!isPaceSport) {
+        const p1 = Number(ltp1Point.power);
+        const p2 = Number(ltp2Point.power);
+        const validOrder = Number.isFinite(p1) && Number.isFinite(p2) && p2 > p1;
+        const validLactateOrder = ltp1Lactate < ltp2Lactate;
+        if (validOrder && validLactateOrder) {
+          thresholds['LTP1'] = p1;
+          thresholds['LTP2'] = p2;
+          thresholds.heartRates['LTP1'] = interpolateHR(p1);
+          thresholds.heartRates['LTP2'] = interpolateHR(p2);
+          thresholds.lactates['LTP1'] = ltp1Lactate;
+          thresholds.lactates['LTP2'] = ltp2Lactate;
+        } else {
+          applyLtpSwapFallback();
+        }
+      } else {
+        const ltp1XFromCurve = findXFromCurve(ltp1Lactate, polyPointsRaw);
+        const ltp2XFromCurve = findXFromCurve(ltp2Lactate, polyPointsRaw);
+        if (ltp1XFromCurve != null && !isNaN(ltp1XFromCurve) && ltp2XFromCurve != null && !isNaN(ltp2XFromCurve)) {
+          const validOrder = Number(ltp2Point.power) < Number(ltp1Point.power);
+          const validLactateOrder = ltp1Lactate < ltp2Lactate;
+          if (validOrder && validLactateOrder) {
+            const p1m = Number(ltp1Point.power);
+            thresholds['LTP1'] = p1m;
+            thresholds.heartRates['LTP1'] = interpolateHR(p1m);
+            thresholds.lactates['LTP1'] = Number(ltp1Point.lactate);
+            thresholds['LTP2'] = ltp2XFromCurve;
+            thresholds.heartRates['LTP2'] = interpolateHR(ltp2XFromCurve);
+            thresholds.lactates['LTP2'] = ltp2Lactate;
+          } else {
+            applyLtpSwapFallback();
+          }
+        } else {
+          applyLtpSwapFallback();
+        }
       }
     } else {
       // Fallback na D-max hodnoty pokud nemáme body
@@ -2185,12 +2205,15 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         ? averagedLtp2Raw
         : refinedLtp2;
 
-      if (Number.isFinite(Number(averagedLtp1)) && Number.isFinite(Number(averagedLtp2))) {
-        const orderOk = isPaceSportNow ? averagedLtp2 < averagedLtp1 : averagedLtp2 > averagedLtp1;
-        const minGap = isPaceSportNow ? 6 : MIN_LT2_LT1_GAP_W;
-        const gapOk = isPaceSportNow
-          ? (averagedLtp1 - averagedLtp2) >= minGap
-          : (averagedLtp2 - averagedLtp1) >= minGap;
+      // Bike: vůbec nepřepisovat LTP1/LTP2 ensemblem (jinak se z OBLA/IAT zase „utrhne“ od segmentace).
+      if (
+        isPaceSportNow &&
+        Number.isFinite(Number(averagedLtp1)) &&
+        Number.isFinite(Number(averagedLtp2))
+      ) {
+        const orderOk = averagedLtp2 < averagedLtp1;
+        const minGap = 6;
+        const gapOk = (averagedLtp1 - averagedLtp2) >= minGap;
 
         if (orderOk && gapOk) {
           thresholds['LTP1'] = averagedLtp1;
@@ -2392,9 +2415,10 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       });
     }
 
-    // Sladit LTP1/LTP2 ve sloupci Power|Pace s polynomem (stejné X jako markery v LactateCurveCalculator).
-    // Ensemble refinement dříve přepisoval jen tempo/výkon, zatímco graf bere X = findXFromCurve(La) → nesoulad.
-    if (polyPointsRaw && polyPointsRaw.length > 0) {
+    // Sladit LTP2 u běhu/plavání s polynomem (LTP1 tam bereme z naměřených kroků).
+    // Kolo: už vůbec nesnapovat na polynom — tento krok dřív přepsal veškerou logiku „z krevních vzorků“ zpět na křivku.
+    const isPaceSportSync = sport === 'run' || sport === 'swim';
+    if (isPaceSportSync && polyPointsRaw && polyPointsRaw.length > 0) {
       const interpolateHRAtIntensity = (x) => {
         if (x == null || !Number.isFinite(Number(x))) return null;
         for (let i = 0; i < sortedResults.length - 1; i++) {
@@ -2414,9 +2438,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         );
         return nearest.heartRate != null ? Number(nearest.heartRate) : null;
       };
-      const isPaceSportSync = sport === 'run' || sport === 'swim';
       ['LTP1', 'LTP2'].forEach((ltpKey) => {
-        if (isPaceSportSync && ltpKey === 'LTP1') return;
+        if (ltpKey === 'LTP1') return;
         const la = thresholds.lactates[ltpKey];
         if (la == null || !Number.isFinite(Number(la))) return;
         const xCurve = findXFromCurve(Number(la), polyPointsRaw);
@@ -2667,7 +2690,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     const thresholds = calculateThresholds(mockData);
     const sport = mockData?.sport || 'bike';
     const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
-    const inputMode = mockData?.inputMode || 'pace';
+    const inputMode = getEffectiveLactateInputMode(mockData);
   
     // Seznam metod, včetně Log-log
     const methods = [

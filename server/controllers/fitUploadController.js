@@ -397,13 +397,13 @@ async function getFitTrainings(req, res) {
         String(athleteIdParam).trim() !== '' &&
         athleteIdParam !== null &&
         athleteIdParam !== undefined) {
-      // If query parameter is provided, validate access
-      if (user.role === 'coach') {
-        // Coach can view their own trainings or their athletes' trainings
+      // If query parameter is provided, validate access (stejné role jako /api/integrations/activities)
+      const requesterRole = String(user.role || '').toLowerCase();
+      if (['coach', 'tester', 'testing'].includes(requesterRole)) {
+        // Coach / tester může vlastní nebo svěřenecká data
         if (String(athleteIdParam) === String(userId)) {
           targetAthleteId = String(userId);
         } else {
-          // Check if athlete belongs to coach
           const athlete = await User.findById(athleteIdParam);
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
@@ -413,7 +413,7 @@ async function getFitTrainings(req, res) {
           }
           targetAthleteId = String(athleteIdParam);
         }
-      } else if (user.role === 'athlete') {
+      } else if (requesterRole === 'athlete') {
         // Athlete can only view their own trainings - ignore athleteId parameter
         targetAthleteId = String(userId);
       }
@@ -2722,12 +2722,13 @@ async function getPowerMetrics(req, res) {
     }
     
     // Check if coach/tester is accessing athlete data
-    if (['coach', 'tester', 'testing'].includes(user.role) && athleteId !== userId) {
+    const requesterRole = String(user.role || '').toLowerCase();
+    if (['coach', 'tester', 'testing'].includes(requesterRole) && String(athleteId) !== String(userId)) {
       const athlete = await User.findById(athleteId);
       if (!athlete) {
         return res.status(404).json({ error: 'Athlete not found' });
       }
-      if (!athlete.coachId || athlete.coachId.toString() !== userId) {
+      if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }

@@ -844,16 +844,17 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const requesterRole = String(user.role || '').toLowerCase();
+
     // Determine which userId to use
     let targetUserId = userId;
     if (req.query.athleteId) {
       // If query parameter is provided, validate access
-        if (['coach', 'tester', 'testing'].includes(user.role)) {
-        // Coach can view their own activities or their athletes' activities
+      if (['coach', 'tester', 'testing'].includes(requesterRole)) {
+        // Coach / tester: own or linked athletes' activities
         if (req.query.athleteId === userId.toString()) {
           targetUserId = userId;
         } else {
-          // Check if athlete belongs to coach
           const athlete = await User.findById(req.query.athleteId);
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
@@ -863,15 +864,13 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           }
           targetUserId = req.query.athleteId;
         }
-      } else if (user.role === 'athlete') {
-        // Athlete can only view their own activities
+      } else if (requesterRole === 'athlete') {
         if (req.query.athleteId !== userId.toString()) {
           return res.status(403).json({ error: 'You are not authorized to view these activities' });
         }
         targetUserId = userId;
       }
-    } else if (user.role === 'athlete') {
-      // Athlete always sees their own activities
+    } else if (requesterRole === 'athlete') {
       targetUserId = userId;
     }
 
@@ -1056,17 +1055,15 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     const id = req.params.id;
+    const detailRequesterRole = String(user.role || '').toLowerCase();
     
     // Determine which userId to use (for coach viewing athlete's activities)
     let targetUserId = user._id.toString();
     if (req.query.athleteId) {
-      // If query parameter is provided, validate access
-      if (['coach', 'tester', 'testing'].includes(user.role)) {
-        // Coach can view their own activities or their athletes' activities
+      if (['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
         if (req.query.athleteId === user._id.toString()) {
           targetUserId = user._id.toString();
         } else {
-          // Check if athlete belongs to coach
           const athlete = await User.findById(req.query.athleteId);
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
@@ -1076,17 +1073,15 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           }
           targetUserId = req.query.athleteId;
         }
-      } else if (user.role === 'athlete') {
-        // Athlete can only view their own activities
+      } else if (detailRequesterRole === 'athlete') {
         if (req.query.athleteId !== user._id.toString()) {
           return res.status(403).json({ error: 'You are not authorized to view these activities' });
         }
         targetUserId = user._id.toString();
       }
-    } else if (user.role === 'athlete') {
-      // Athlete always sees their own activities
+    } else if (detailRequesterRole === 'athlete') {
       targetUserId = user._id.toString();
-    } else if (['coach', 'tester', 'testing'].includes(user.role)) {
+    } else if (['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
       // Coach without athleteId query param - try to determine from activity
       // First try to find the activity to see which userId it belongs to
       const mongoose = require('mongoose');
@@ -1131,7 +1126,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
       
       // Verify access for coach
-      if (['coach', 'tester', 'testing'].includes(user.role) && savedActivity.userId.toString() !== user._id.toString()) {
+      if (['coach', 'tester', 'testing'].includes(detailRequesterRole) && savedActivity.userId.toString() !== user._id.toString()) {
         const activityOwner = await User.findById(savedActivity.userId);
         if (!activityOwner || !activityOwner.coachId || activityOwner.coachId.toString() !== user._id.toString()) {
           return res.status(403).json({ error: 'You are not authorized to view this activity' });
@@ -1151,7 +1146,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       });
       
       // If not found and we're a coach, try to find the activity and verify it belongs to coach or their athlete
-      if (!savedActivity && ['coach', 'tester', 'testing'].includes(user.role)) {
+      if (!savedActivity && ['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
         const foundActivity = await StravaActivity.findOne({ stravaId: stravaId });
         if (foundActivity) {
           const activityOwner = await User.findById(foundActivity.userId);

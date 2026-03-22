@@ -3,6 +3,8 @@
  * Doplňuje existující calculateThresholds (polynom / D-max); nezávislý výstup pro UI a reporty.
  */
 
+import { getEffectiveLactateInputMode, normalizeLactateSport } from '../../utils/lactateTestInputMode';
+
 const MIN_STEPS = 4;
 const LT2_TARGET_LA = 4.0;
 const EPS = 1e-9;
@@ -281,8 +283,8 @@ function buildInsights(flags, lt1, lt2, baselineLevel, loadOk, hrOk, validationE
  * @returns {object} ThresholdResult-like
  */
 export function analyzeLactateTest(mockData) {
-  const sport = mockData?.sport || 'bike';
-  const inputMode = mockData?.inputMode || 'pace';
+  const sport = normalizeLactateSport(mockData?.sport);
+  const inputMode = getEffectiveLactateInputMode(mockData);
   const baseForm = mockData?.baseLactate != null ? parseNum(mockData.baseLactate) : null;
 
   const empty = {

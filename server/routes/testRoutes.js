@@ -221,21 +221,17 @@ router.post('/send-demo-email', testController.sendDemoTestEmail);
 router.get('/list/:athleteId', verifyToken, async (req, res) => {
     try {
         const User = require('../models/UserModel');
-        const Test = require('../models/test');
         const user = await User.findById(req.user.userId);
         
         const { athleteId } = req.params;
         const role = String(user?.role || '').toLowerCase();
         const requesterUserId = String(user?._id);
         const targetAthleteId = String(athleteId);
-        const isTesterRole = role === 'tester' || role === 'testing';
 
-        // tester/testing should only work with assigned athletes, not their own user profile
-        if (isTesterRole && targetAthleteId === requesterUserId) {
-            return res.status(403).json({ error: 'Select an assigned athlete to view tests' });
-        }
+        // Own profile: athletes (and tester/testing viewing their own account) may list their tests.
+        // tester/testing accessing another athlete follow coach-like rules below.
 
-        // tester/testing should behave like coach: only tests for their own athletes
+        // tester/testing/coach: only tests for their own athletes (not arbitrary users)
         if (['tester', 'testing', 'coach'].includes(role) && targetAthleteId !== requesterUserId) {
             const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
             const athlete = await User.findById(targetAthleteId).select('coachId coachIds');

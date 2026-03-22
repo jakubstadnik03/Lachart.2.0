@@ -370,7 +370,13 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
         }
         if (action === ACTIONS.NEXT) {
           const next = index + 1;
-          if (next >= steps.length) return;
+          // Last step: primary button is "Finish" but Joyride still sends NEXT; controlled mode never reaches FINISHED status here.
+          if (next >= steps.length) {
+            setRun(false);
+            setStepIndex(0);
+            afterClose();
+            return;
+          }
 
           // Open New testing panel before create-test spotlight steps
           const openNewTestingStep =

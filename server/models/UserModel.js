@@ -207,7 +207,8 @@ const userSchema = new mongoose.Schema({
   onboarding: {
     basicProfileDone: { type: Boolean, default: false },
     unitsDone: { type: Boolean, default: false },
-    trainingZonesDone: { type: Boolean, default: false }
+    trainingZonesDone: { type: Boolean, default: false },
+    walkthroughDone: { type: Boolean, default: false }
   },
   // User preferences for units
   units: {

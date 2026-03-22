@@ -16,6 +16,7 @@ import DataTable, { calculateThresholds, calculatePolynomialRegression, calculat
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
+import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
 
 ChartJS.register(
     CategoryScale,
@@ -428,8 +429,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const ltpLinesVisibleRef = useRef(true); // Ref for plugin access to ltpLinesVisible state
   const [chartView, setChartView] = useState('power'); // 'power' = power/pace vs lactate, 'hr' = heart rate vs lactate
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const isRunning = mockData?.sport === 'run';
-  const isSwimming = mockData?.sport === 'swim';
+  // Align with DataTable.calculateThresholds: API may send cycling|running|swimming
+  const sportKey = (() => {
+    const s = String(mockData?.sport || 'bike').toLowerCase().trim();
+    if (s === 'cycling' || s === 'cycle' || s === 'bike') return 'bike';
+    if (s === 'running' || s === 'run' || s.includes('run')) return 'run';
+    if (s === 'swimming' || s === 'swim' || s.includes('swim')) return 'swim';
+    return 'bike';
+  })();
+  const isRunning = sportKey === 'run';
+  const isSwimming = sportKey === 'swim';
   const isPaceSport = isRunning || isSwimming;
   const trainingTitle = (mockData?.title || mockData?.name || '').toString().trim();
   
@@ -444,12 +453,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
-  const inputMode = mockData?.inputMode || 'pace';
+  // Case + nesoulad metadat (speed) vs skutečná data v sekundách po přepnutí jiného testu
+  const inputMode = getEffectiveLactateInputMode({ ...mockData, sport: sportKey });
   const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set
 
   // Popisek přepínače: bike = Power, běh/plavání podle inputMode (pace vs speed)
   const chartPrimaryIntensityLabel =
-    mockData?.sport === 'bike' ? 'Power' : inputMode === 'speed' ? 'Speed' : 'Pace';
+    sportKey === 'bike' ? 'Power' : inputMode === 'speed' ? 'Speed' : 'Pace';
   const chartPrimaryVsLactateLabel = `${chartPrimaryIntensityLabel} vs lactate`;
   
   // Determine if axis should be reversed (for pace mode in pace sports)
@@ -1106,9 +1116,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       // Find X value from the displayed curve (polyPointsRaw) for this lactate value
       let xValueFromCurve = findXFromCurve(yValue, polyPointsRaw);
       
-      // LTP1 u běhu/plavání: X z naměřeného tempa (calculateThresholds), ne z polynomu u daného La
+      // Kolo: LTP1 i LTP2 — X z calculateThresholds (naměřené body / segmentace), ne průsečík s polynomem.
+      // Běh/plavání: LTP1 z thresholds (tempo); ostatní klíče často z křivky.
       let xValue;
-      if (isPaceSport && key === 'LTP1' && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
+      if (!isPaceSport && (key === 'LTP1' || key === 'LTP2') && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
+        xValue = Number(thresholds[key]);
+      } else if (isPaceSport && key === 'LTP1' && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
         xValue = inputMode === 'pace'
           ? Number(thresholds[key])
           : convertPaceToSpeed(Number(thresholds[key]), unitSystem);
@@ -1867,7 +1880,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             
             // Enhanced display for LTP1 and LTP2 – same unit as X-axis (speed/pace/power)
             let formattedValue;
-            const useSpeed = isPaceSport && (inputMode === 'speed' || (xVal > 0 && xVal < 100));
+            const useSpeed = isPaceSport && inputMode === 'speed';
             if (!isPaceSport) {
               formattedValue = `${Math.round(xVal)}W`;
             } else if (useSpeed) {
@@ -2216,6 +2229,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               </div>
             ) : (
             <Line 
+              key={`${mockData?._id || 'test'}-${sportKey}-${inputMode}`}
               ref={chartRef} 
               data={finalData} 
               options={finalOptions}
@@ -2334,15 +2348,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                         valueText = `HR: ${Math.round(Number(point.y))} bpm`;
                       } else {
                         // Power view: point.x = Power/Pace/Speed, point.y = lactate
-                        const currentSport = mockData?.sport || '';
-                        const isBikeSport = currentSport === 'bike';
+                        const isBikeSport = sportKey === 'bike';
                         // When axis is Speed (km/h), point.x is in 0.5–30 (run) or 0.5–8 (swim). When axis is Pace, point.x is seconds (e.g. 180–600).
-                        const looksLikeSpeed = isPaceSport && point.x > 0 && point.x < 100;
-                        const useSpeedLabel = isPaceSport && (inputMode === 'speed' || looksLikeSpeed);
+                        // Pouze podle efektivního inputMode — heuristika x<100 kazila rychlé tempa v sekundách
+                        const useSpeedLabel = isPaceSport && inputMode === 'speed';
 
-                        if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
-                          valueText = `Power: ${Math.round(point.x)}W`;
-                        } else if (isPaceSport && useSpeedLabel) {
+                        // Pace sporty + rychlost nejdřív — ať „Power“ nevyhraje kvůli case / edge case v sportKey
+                        if (isPaceSport && useSpeedLabel) {
                           const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
                           valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
                         } else if (isPaceSport) {
@@ -2351,6 +2363,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                             ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
                             : (unitSystem === 'imperial' ? '/mile' : '/km');
                           valueText = `Pace: ${paceStr}${unit}`;
+                        } else if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
+                          valueText = `Power: ${Math.round(point.x)}W`;
                         } else {
                           valueText = `Power: ${Math.round(point.x)}W`;
                         }
@@ -2572,7 +2586,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   <div className="space-y-3">
                     {['zone1','zone2','zone3','zone4','zone5'].map((zKey) => {
                       const zNum = zKey.replace('zone','');
-                      const main = mockData?.sport === 'bike' ? zoneOverride.power?.[zKey] : zoneOverride.pace?.[zKey];
+                      const main = sportKey === 'bike' ? zoneOverride.power?.[zKey] : zoneOverride.pace?.[zKey];
                       const hr = zoneOverride.heartRate?.[zKey];
                       const lactate = zoneOverride.lactate?.[zKey];
                       const mainLabel = chartPrimaryIntensityLabel;
@@ -2581,7 +2595,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                         setZoneOverride((prev) => {
                           if (!prev) return prev;
                           const next = { ...prev };
-                          if (mockData?.sport === 'bike') {
+                          if (sportKey === 'bike') {
                             next.power = { ...(next.power || {}) };
                             next.power[zKey] = { ...(next.power[zKey] || {}) };
                             next.power[zKey][field] = Number(val);

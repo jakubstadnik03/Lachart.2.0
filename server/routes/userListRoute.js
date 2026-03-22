@@ -657,12 +657,13 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             const existing = await userDao.findById(userId);
             const current = existing?.onboarding
                 ? (typeof existing.onboarding.toObject === 'function' ? existing.onboarding.toObject() : { ...existing.onboarding })
-                : { basicProfileDone: false, unitsDone: false, trainingZonesDone: false };
+                : { basicProfileDone: false, unitsDone: false, trainingZonesDone: false, walkthroughDone: false };
             const ob = req.body.onboarding;
             updateData.onboarding = {
                 basicProfileDone: ob.basicProfileDone === true || current.basicProfileDone === true,
                 unitsDone: ob.unitsDone === true || current.unitsDone === true,
-                trainingZonesDone: ob.trainingZonesDone === true || current.trainingZonesDone === true
+                trainingZonesDone: ob.trainingZonesDone === true || current.trainingZonesDone === true,
+                walkthroughDone: ob.walkthroughDone === true || current.walkthroughDone === true
             };
         }
 
@@ -705,7 +706,7 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
                 weeklyReports: true,
                 achievementAlerts: true
             },
-            onboarding: updatedUser.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false },
+            onboarding: updatedUser.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false, walkthroughDone: false },
             strava: updatedUser.strava ? {
                 athleteId: updatedUser.strava.athleteId,
                 autoSync: updatedUser.strava.autoSync !== undefined ? updatedUser.strava.autoSync : false,
@@ -849,15 +850,19 @@ router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
         const { athleteId } = req.params;
+        const uid = String(userId);
+        const aid = String(athleteId);
 
         const user = await userDao.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
 
+        const roleLower = String(user.role || '').toLowerCase();
+
         // Allow access either to the athlete's coach/tester or to the athlete for their own trainings
-        if (['coach', 'tester', 'testing'].includes(user.role)) {
-            if (athleteId.toString() === userId.toString()) {
+        if (['coach', 'tester', 'testing'].includes(roleLower)) {
+            if (aid === uid) {
                 // Coach/tester viewing own trainings
             } else {
             const athlete = await userDao.findById(athleteId);
@@ -868,7 +873,7 @@ router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
                 }
             }
-        } else if (user.role === 'athlete' && userId !== athleteId) {
+        } else if (roleLower === 'athlete' && uid !== aid) {
             return res.status(403).json({ error: "You are not authorized to view these trainings" });
         }
 
@@ -886,14 +891,18 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
     try {
         const userId = req.user.userId;
         const { athleteId } = req.params;
+        const uid = String(userId);
+        const aid = String(athleteId);
 
         const user = await userDao.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
 
+        const roleLower = String(user.role || '').toLowerCase();
+
         // Allow access either to the athlete's coach/tester or to the athlete for their own profile
-        if (['coach', 'tester', 'testing'].includes(user.role)) {
+        if (['coach', 'tester', 'testing'].includes(roleLower)) {
             // Check for coach
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
@@ -902,7 +911,7 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
             if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
             }
-        } else if (user.role === 'athlete' && userId !== athleteId) {
+        } else if (roleLower === 'athlete' && uid !== aid) {
             // Athlete can only see their own profile
             return res.status(403).json({ error: "You are not authorized to view this profile" });
         }
@@ -1047,7 +1056,7 @@ router.get("/profile", verifyToken, async (req, res) => {
               weeklyReports: true,
               achievementAlerts: true
             },
-            onboarding: user.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false },
+            onboarding: user.onboarding || { basicProfileDone: false, unitsDone: false, trainingZonesDone: false, walkthroughDone: false },
             strava: user.strava ? {
               athleteId: user.strava.athleteId,
               autoSync: user.strava.autoSync !== undefined ? user.strava.autoSync : false,
@@ -1345,19 +1354,32 @@ router.post("/accept-invitation/:token", async (req, res) => {
         });
         await userDao.addAthleteToCoach(coach._id, athlete._id);
 
-        // Send confirmation email to coach
+        // Send confirmation email to coach (same branded template as other LaChart emails)
         const transporter = createEmailTransporter();
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
 
-        if (coach?.email) {
+        if (coach?.email && transporter) {
+            const coachContent = `
+                <p>Hi ${coach.name},</p>
+                <p>Athlete <strong>${athlete.name} ${athlete.surname}</strong> has accepted your team invitation in LaChart.</p>
+                <p>They will now appear in your athletes list and you can view their shared data from your coach dashboard.</p>
+            `;
+
             await transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: coach.email,
-                subject: 'Athlete Accepted Team Invitation',
-                html: `
-                    <h2>Invitation Accepted</h2>
-                    <p>Athlete ${athlete.name} ${athlete.surname} has accepted your team invitation.</p>
-                    <p>They will now appear in your athletes list.</p>
-                `
+                from: {
+                    name: 'LaChart',
+                    address: process.env.EMAIL_USER
+                },
+                to: coach.email.toLowerCase(),
+                subject: 'Invitation Accepted – LaChart',
+                html: generateEmailTemplate({
+                    title: 'Invitation Accepted',
+                    content: coachContent,
+                    loginButtonText: 'Open LaChart',
+                    loginButtonUrl: clientUrl,
+                    footerText: 'You can manage your athletes and invitations from your LaChart coach dashboard.'
+                })
             });
         }
 
@@ -1875,7 +1897,13 @@ router.post("/google-auth", async (req, res) => {
                 googleId,
                 role: normalizedRole,
                 athletes: normalizedRole === 'coach' ? [] : undefined,
-                isRegistrationComplete: true
+                isRegistrationComplete: true,
+                onboarding: {
+                    basicProfileDone: false,
+                    unitsDone: false,
+                    trainingZonesDone: false,
+                    walkthroughDone: false
+                }
             });
             // Save registration location (fire-and-forget)
             saveRegistrationLocation(userDao, user._id, req);

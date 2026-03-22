@@ -58,7 +58,13 @@ class RegisterAbl {
                 athletes: role === 'coach' ? [] : undefined,
                 emailVerified: false,
                 emailVerificationToken: emailVerificationToken,
-                emailVerificationTokenExpires: emailVerificationTokenExpires
+                emailVerificationTokenExpires: emailVerificationTokenExpires,
+                onboarding: {
+                    basicProfileDone: false,
+                    unitsDone: false,
+                    trainingZonesDone: false,
+                    walkthroughDone: false
+                }
             };
 
             console.log("Creating new user with hash:", hashedPassword);
