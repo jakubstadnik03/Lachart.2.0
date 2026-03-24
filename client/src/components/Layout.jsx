@@ -13,6 +13,8 @@ import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
 
+const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
+
 // Lazy load TestingWithoutLogin to reduce initial bundle size
 const TestingWithoutLogin = lazy(() => import("../pages/TestingWithoutLogin"));
 
@@ -268,6 +270,11 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
     if (!user?._id) return undefined;
     if (user.admin || user.role === 'admin') return undefined;
+    try {
+      if (localStorage.getItem(WALKTHROUGH_DISMISSED_KEY) === 'true') return undefined;
+    } catch {
+      // Ignore storage errors.
+    }
     // Only when walkthroughDone is explicitly false (set on new email/Google signup).
     // Legacy users: field missing → undefined → no tour.
     if (user.onboarding?.walkthroughDone !== false) return undefined;

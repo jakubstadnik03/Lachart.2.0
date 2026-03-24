@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 
 const COACH_LIKE = ['coach', 'tester', 'testing'];
+const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
 async function persistWalkthroughDone() {
   try {
@@ -312,6 +313,14 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
+  const persistLocalDismiss = useCallback(() => {
+    try {
+      localStorage.setItem(WALKTHROUGH_DISMISSED_KEY, 'true');
+    } catch {
+      // Ignore storage errors.
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       setStepIndex(0);
@@ -323,9 +332,11 @@ const ProductWalkthrough = ({ open, onClose, userRole }) => {
   }, [open, userRole]);
 
   const afterClose = useCallback(async () => {
+    // Make sure it never auto-opens again even if API persistence fails.
+    persistLocalDismiss();
     await persistWalkthroughDone();
     onClose();
-  }, [onClose]);
+  }, [onClose, persistLocalDismiss]);
 
   const navigateForStepIndex = useCallback(
     (index) => {
