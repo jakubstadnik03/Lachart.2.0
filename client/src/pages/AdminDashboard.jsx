@@ -199,6 +199,21 @@ const AdminDashboard = () => {
     try {
       setStravaReminderEmailLoadingUserId(targetUser._id);
       await sendStravaReminderEmail(targetUser._id);
+      const nowIso = new Date().toISOString();
+      setUsers((prev) =>
+        prev.map((u) =>
+          u._id === targetUser._id
+            ? {
+                ...u,
+                stravaReminderEmail: {
+                  sent: true,
+                  sentCount: (u.stravaReminderEmail?.sentCount || 0) + 1,
+                  lastSent: nowIso,
+                },
+              }
+            : u
+        )
+      );
       addNotification(`Strava reminder email sent to ${targetUser.email}`, 'success');
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send Strava reminder email';

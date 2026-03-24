@@ -31,6 +31,8 @@ const SettingsPage = () => {
   const [garminConnected, setGarminConnected] = useState(false);
   const [stravaAutoSync, setStravaAutoSync] = useState(false);
   const [garminAutoSync, setGarminAutoSync] = useState(false);
+  const [isSyncingStrava, setIsSyncingStrava] = useState(false);
+  const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [garminLoginModal, setGarminLoginModal] = useState(false);
@@ -524,13 +526,17 @@ const SettingsPage = () => {
   };
 
   const handleSyncStrava = async () => {
+    if (isSyncingStrava) return;
     try {
+      setIsSyncingStrava(true);
       const res = await syncStravaActivities();
       addNotification(`Strava sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       await handleSyncComplete();
     } catch (e) {
       console.error('Strava sync error:', e);
       addNotification('Failed to sync Strava activities', 'error');
+    } finally {
+      setIsSyncingStrava(false);
     }
   };
 
@@ -587,13 +593,17 @@ const SettingsPage = () => {
   };
 
   const handleSyncGarmin = async () => {
+    if (isSyncingGarmin) return;
     try {
+      setIsSyncingGarmin(true);
       const res = await syncGarminActivities();
       addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin sync error:', e);
       addNotification('Failed to sync Garmin activities', 'error');
+    } finally {
+      setIsSyncingGarmin(false);
     }
   };
 
@@ -1758,9 +1768,10 @@ const SettingsPage = () => {
                     </button>
                     <button
                       onClick={handleSyncStrava}
-                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
+                      disabled={isSyncingStrava}
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
-                      Sync Now
+                      {isSyncingStrava ? 'Syncing...' : 'Sync Now'}
                     </button>
                     <button
                       onClick={async () => {
@@ -1868,9 +1879,10 @@ const SettingsPage = () => {
                     {garminConnected && (
                       <button
                         onClick={handleSyncGarmin}
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
+                        disabled={isSyncingGarmin}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
                       >
-                        Sync Now
+                        {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
                       </button>
                     )}
                   </div>
