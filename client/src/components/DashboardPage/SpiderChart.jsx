@@ -699,7 +699,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-xl p-2">
+    <div className="w-full h-full flex flex-col backdrop-blur-xl  border p-2 bg-white rounded-2xl p-4 sm:p-6 shadow-lg ">
       <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 mb-1.5">
         <h2 className="text-lg md:text-xl font-semibold text-gray-900">Power Radar</h2>
         <div className="flex items-center gap-2">

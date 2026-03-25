@@ -12,6 +12,7 @@ import { AnimatePresence, motion as m } from 'framer-motion';
 import EditProfileModal from '../components/Profile/EditProfileModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import api from '../services/api';
+import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -135,7 +136,7 @@ const SignUpPage = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen flex flex-col bg-[#EEF2FF] pt-safe-top"
+      className="min-h-screen flex flex-col bg-gradient-to-br from-[#EEF2FF] via-[#E9ECFF] to-[#D6DCFF] pt-safe-top"
     >
       <div className="flex flex-1 min-h-0" style={{ minHeight: '100vh' }}>
         {/* Left side - Background with Image and SEO Content */}
@@ -145,67 +146,15 @@ const SignUpPage = () => {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="hidden lg:flex lg:w-1/2 overflow-y-auto"
         >
-          <div className="flex flex-col items-center justify-center w-full min-h-full px-8 py-8 space-y-4">
-            {/* Image */}
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="w-full max-w-md"
-            >
-              <img
-                src="/images/testing.png"
-                alt="LaChart - Advanced Lactate Testing and Training Analysis"
-                className="w-full h-auto rounded-2xl shadow-2xl object-contain"
-              />
-            </motion.div>
-
-            {/* SEO Content */}
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.6 }}
-              className="text-center space-y-4 max-w-xl"
-            >
-              <h1 className="text-3xl font-bold text-gray-900 leading-tight">
-                Advanced Lactate Testing & Training Analysis
-              </h1>
-              <p className="text-base text-gray-700 leading-relaxed">
-                LaChart is a comprehensive platform for endurance athletes and coaches to analyze lactate threshold tests, 
-                track training progress, and optimize performance through data-driven insights.
-              </p>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Lactate Testing</h3>
-                  <p className="text-xs text-gray-600">
-                    Perform accurate lactate threshold tests and analyze results with advanced curve fitting algorithms.
-                  </p>
-                </div>
-                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Training Zones</h3>
-                  <p className="text-xs text-gray-600">
-                    Calculate personalized training zones based on your lactate thresholds for optimal training intensity.
-                  </p>
-                </div>
-                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Strava Integration</h3>
-                  <p className="text-xs text-gray-600">
-                    Seamlessly sync your training data from Strava for comprehensive performance tracking.
-                  </p>
-                </div>
-                <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                  <h3 className="font-semibold text-gray-900 mb-1 text-sm">Progress Tracking</h3>
-                  <p className="text-xs text-gray-600">
-                    Monitor your training progress over time with detailed analytics and visualizations.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
+          <div className="w-full h-full p-8 flex items-center justify-center">
+            <div className="w-full max-w-2xl">
+              <AuthSideCarousel />
+            </div>
           </div>
         </motion.div>
 
         {/* Right side - Form */}
-        <motion.div 
+        <motion.div
           initial={{ x: 100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.8, delay: 0.2 }}
@@ -222,13 +171,11 @@ const SignUpPage = () => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.5, delay: 0.6 }}
           >
-            <div className='mx-auto flex items-center gap-2 justify-center'>
-              <img
-                className="h-12 w-auto"
-                src="/images/LaChart.png"
-                alt="Your Logo"
-              />
-              <h1 className='text-2xl font-bold text-primary'>LaChart</h1>
+            <div className="mx-auto flex items-center gap-2 justify-center">
+              <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
+                <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+              </div>
+              <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
             </div>
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
               Sign Up for an Account

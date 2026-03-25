@@ -522,7 +522,7 @@ export default function TrainingTable({
   });
 
   return (
-    <div className="flex flex-col justify-start p-2 sm:p-5 bg-white rounded-3xl shadow-md h-full">
+    <div className="flex flex-col justify-start p-2 sm:p-5 bg-white rounded-3xl shadow-md h-full bg-white rounded-2xl p-4 sm:p-6 shadow-lg ">
       <div className="flex flex-col w-full max-md:max-w-full">
         <div className="flex flex-col px-2 sm:px-5 pb-2 sm:pb-3.5 w-full max-md:max-w-full">
           <div className="flex flex-wrap gap-3 sm:gap-10 items-center w-full max-md:max-w-full">

@@ -1047,7 +1047,7 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
 
   return (
-    <div className="flex flex-col p-3 sm:p-5 bg-white rounded-3xl shadow-md relative h-full">
+    <div className="flex flex-col p-3 sm:p-5 bg-white relative h-full bg-white rounded-2xl p-4 shadow-lg">
       <div className="flex  flex-row  justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
         <div className="flex items-center gap-2 sm:gap-4">
           <h2 className="text-base sm:text-xl font-semibold text-zinc-900">

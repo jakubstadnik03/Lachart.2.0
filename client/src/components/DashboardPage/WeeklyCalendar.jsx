@@ -622,7 +622,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   return (
-    <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2 sm:p-3 md:p-4">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
       <div className="flex items-center justify-between mb-2 sm:mb-3">
         <h3 className="text-base sm:text-lg font-semibold text-text">Weekly Calendar</h3>
         <div className="flex items-center gap-1 sm:gap-1.5">

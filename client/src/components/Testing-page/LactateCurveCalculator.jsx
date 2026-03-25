@@ -995,7 +995,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       // Keep all measured points visible in chart; only reject non-finite X.
       if (!Number.isFinite(x)) {
         console.warn('[LactateCurveCalculator] Filtering out non-finite x value for measured point');
-        return null;
+          return null;
       }
       
       // Validate y value (lactate)
@@ -1429,7 +1429,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           
           // For Zone 1, start from the beginning of the graph
           // For other zones, start where previous zone ended (no gaps)
-          const actualMinX = (zoneKey === 'zone1')
+          const actualMinX = (zoneKey === 'zone1') 
             ? Math.max(
                 0,
                 slowNibbleX != null ? Math.max(zone.min, slowNibbleX) : zone.min

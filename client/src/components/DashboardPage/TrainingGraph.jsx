@@ -427,7 +427,7 @@ const TrainingGraph = ({
   // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
   if (!trainingList || trainingList.length === 0 || sportTrainings.length === 0) {
     return (
-      <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg">
+      <div className="relative w-full max-w-3xl p-4 bg-white rounded-2xl shadow-lg h-full ">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-semibold text-gray-500">No trainings for {currentSelectedSport}</h2>
           <div className="flex items-center gap-4">
@@ -646,7 +646,7 @@ const TrainingGraph = ({
   };
 
   return (
-    <div className="relative w-full max-w-3xl p-6 bg-white rounded-3xl shadow-lg">
+    <div className="relative w-full max-w-3xl p-4 bg-white rounded-2xl shadow-lg h-full">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-semibold">{selectedTitle}</h2>
         <div className="flex items-center gap-4">

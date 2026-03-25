@@ -998,7 +998,7 @@ const DashboardPage = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="lg:col-span-5 md:col-span-2 mb-6"
+          className="lg:col-span-5 md:col-span-2"
         >
           <WeeklyCalendar 
             selectedAthleteId={selectedAthleteId}

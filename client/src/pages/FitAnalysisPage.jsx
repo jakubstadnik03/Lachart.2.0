@@ -2725,7 +2725,9 @@ const FitAnalysisPage = () => {
     return [
       ...trainings.map((t) => ({
         id: `fit-${t._id}`,
-        date: t.timestamp,
+        // Some older FIT imports may have missing `timestamp`; fall back to uploadDate/date
+        // so CalendarView doesn't drop the activity as "missing date".
+        date: t.timestamp || t.uploadDate || t.date,
         title: t.titleManual || t.titleAuto || t.originalFileName || 'Untitled Training',
         sport: t.sport,
         category: t.category || null,

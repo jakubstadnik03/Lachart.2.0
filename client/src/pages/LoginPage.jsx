@@ -13,6 +13,7 @@ import BasicProfileModal from '../components/Profile/BasicProfileModal';
 import UnitsPreferencesModal from '../components/Profile/UnitsPreferencesModal';
 import TrainingZonesModal from '../components/Profile/TrainingZonesModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
+import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -309,7 +310,7 @@ const LoginPage = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen flex flex-col bg-gradient-to-br from-[#EEF2FF] via-[#E5E9FF] to-[#D6DCFF] pt-safe-top"
+      className="min-h-screen flex flex-col bg-gradient-to-br from-[#EEF2FF] via-[#E9ECFF] to-[#D6DCFF] pt-safe-top"
     >
       <div className="flex flex-1 min-h-0" style={{ minHeight: '100vh' }}>
         {/* Left side - Background with Image and SEO Content */}
@@ -319,63 +320,11 @@ const LoginPage = () => {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="hidden lg:flex lg:w-1/2 overflow-hidden relative"
         >
-        <div className="flex flex-col items-center justify-center w-full min-h-full px-8 py-8 space-y-4">
-          {/* Image */}
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="w-full max-w-md"
-          >
-            <img
-              src="/images/testing.png"
-              alt="LaChart - Advanced Lactate Testing and Training Analysis"
-              className="w-full h-auto rounded-2xl shadow-2xl object-contain"
-            />
-          </motion.div>
-
-          {/* SEO Content */}
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-            className="text-center space-y-4 max-w-xl"
-          >
-            <h1 className="text-3xl font-bold text-gray-900 leading-tight">
-              Advanced Lactate Testing & Training Analysis
-            </h1>
-            <p className="text-base text-gray-700 leading-relaxed">
-              LaChart is a comprehensive platform for endurance athletes and coaches to analyze lactate threshold tests, 
-              track training progress, and optimize performance through data-driven insights.
-            </p>
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                <h3 className="font-semibold text-gray-900 mb-1 text-sm">Lactate Testing</h3>
-                <p className="text-xs text-gray-600">
-                  Perform accurate lactate threshold tests and analyze results with advanced curve fitting algorithms.
-                </p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                <h3 className="font-semibold text-gray-900 mb-1 text-sm">Training Zones</h3>
-                <p className="text-xs text-gray-600">
-                  Calculate personalized training zones based on your lactate thresholds for optimal training intensity.
-                </p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                <h3 className="font-semibold text-gray-900 mb-1 text-sm">Strava Integration</h3>
-                <p className="text-xs text-gray-600">
-                  Seamlessly sync your training data from Strava for comprehensive performance tracking.
-                </p>
-              </div>
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                <h3 className="font-semibold text-gray-900 mb-1 text-sm">Progress Tracking</h3>
-                <p className="text-xs text-gray-600">
-                  Monitor your training progress over time with detailed analytics and visualizations.
-                </p>
-              </div>
+          <div className="w-full h-full p-8 flex items-center justify-center">
+            <div className="w-full max-w-2xl">
+              <AuthSideCarousel />
             </div>
-          </motion.div>
-        </div>
+          </div>
       </motion.div>
 
       {/* Right side - Form */}
@@ -383,7 +332,7 @@ const LoginPage = () => {
         initial={{ x: 100, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
-        className="w-full lg:w-1/2 flex items-center justify-center px-8 overflow-hidden"
+        className="w-full lg:w-1/2 flex items-center justify-center px-6 sm:px-8 overflow-hidden"
       >
         <motion.div 
           initial={{ y: 20, opacity: 0 }}
@@ -396,13 +345,11 @@ const LoginPage = () => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.5, delay: 0.6 }}
           >
-            <div className='mx-auto flex items-center gap-2 justify-center'>
-              <img
-                className="h-12 w-auto"
-                src="/images/LaChart.png"
-                alt="Your Logo"
-              />
-              <h1 className='text-2xl font-bold text-primary'>LaChart</h1>
+            <div className="mx-auto flex items-center gap-2 justify-center">
+              <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
+                <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+              </div>
+              <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
             </div>
 
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
@@ -420,7 +367,7 @@ const LoginPage = () => {
             className="mt-8 space-y-6" 
             onSubmit={handleSubmit}
           >
-            <motion.div 
+            <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5, delay: 1 }}
@@ -437,7 +384,7 @@ const LoginPage = () => {
                   autoComplete="email"
                   required
                   disabled={isLoading}
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="appearance-none rounded-xl relative block w-full px-4 py-3 border border-gray-200 placeholder-gray-400 text-gray-900 bg-white/80 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-sm"
                   placeholder="Email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -455,7 +402,7 @@ const LoginPage = () => {
                   autoComplete="current-password"
                   required
                   disabled={isLoading}
-                  className="appearance-none rounded-lg relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="appearance-none rounded-xl relative block w-full px-4 py-3 border border-gray-200 placeholder-gray-400 text-gray-900 bg-white/80 backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-sm"
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -517,7 +464,7 @@ const LoginPage = () => {
               whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed relative"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed relative"
             >
               {isLoading ? (
                 <>

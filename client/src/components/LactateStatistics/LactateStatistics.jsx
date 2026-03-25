@@ -629,7 +629,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
               const showSwim = selectedZoneType === 'swimming';
 
               return (
-                <div key={month.monthKey} className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2.5">
+                <div key={month.monthKey} className="bg-white backdrop-blur-xl rounded-2xl  shadow-lg p-4">
                   {/* Header with Month Selector */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10">
                     <h2 className="text-sm font-semibold text-text">Monthly Analysis</h2>
@@ -637,7 +637,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                       <select
                         value={selectedMonth || ''}
                         onChange={(e) => setSelectedMonth(e.target.value || null)}
-                        className="px-2 py-0.5 text-xs border border-white/20 rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text appearance-none cursor-pointer"
+                        className="px-2 py-0.5 text-xs border rounded-lg focus:ring-1 focus:ring-white/30 focus:border-white/30 bg-white/10 backdrop-blur-md text-text appearance-none cursor-pointer"
                         style={{
                           WebkitAppearance: 'none',
                           MozAppearance: 'none',

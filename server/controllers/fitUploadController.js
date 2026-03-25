@@ -444,21 +444,31 @@ async function getFitTrainings(req, res) {
       
       // Find trainings with the athleteId as string
       // Try both userId.toString() and String(userId) to handle different formats
-      let trainings = await FitTraining.find({ 
+      // Some older / malformed FIT imports may have missing `timestamp`.
+      // Include those by falling back to `uploadDate` so users still see their trainings list.
+      let trainings = await FitTraining.find({
         athleteId: targetAthleteIdStr,
-        timestamp: { $gte: twoYearsAgo }
+        $or: [
+          { timestamp: { $gte: twoYearsAgo } },
+          { timestamp: { $exists: false }, uploadDate: { $gte: twoYearsAgo } },
+          { timestamp: null, uploadDate: { $gte: twoYearsAgo } },
+        ]
       })
-        .sort({ timestamp: -1 })
+        .sort({ timestamp: -1, uploadDate: -1 })
         .limit(1000) // Limit to 1000 most recent trainings
         .select('-records'); // Don't send all records by default
 
       // If no results and userId is ObjectId, try with ObjectId.toString() format
       if (trainings.length === 0 && userId && userId.toString && userId.toString() !== targetAthleteIdStr) {
-        trainings = await FitTraining.find({ 
+        trainings = await FitTraining.find({
           athleteId: userId.toString(),
-          timestamp: { $gte: twoYearsAgo }
+          $or: [
+            { timestamp: { $gte: twoYearsAgo } },
+            { timestamp: { $exists: false }, uploadDate: { $gte: twoYearsAgo } },
+            { timestamp: null, uploadDate: { $gte: twoYearsAgo } },
+          ]
         })
-          .sort({ timestamp: -1 })
+          .sort({ timestamp: -1, uploadDate: -1 })
           .limit(1000)
           .select('-records');
       }
