@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, impersonateUser } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, impersonateUser } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -33,6 +33,11 @@ const AdminDashboard = () => {
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
   const [deleteAthleteLoadingId, setDeleteAthleteLoadingId] = useState(null);
+
+  // Lazy-loaded athletes lists inside coach cards (pagination).
+  // Key: coachId, Value: { athletes: [], totalLinked: number, totalWithPassword: number }
+  const [coachAthletesByCoachId, setCoachAthletesByCoachId] = useState({});
+  const [coachAthletesLoadingByCoachId, setCoachAthletesLoadingByCoachId] = useState({});
 
   const handleImpersonate = async (user) => {
     if (!user?._id) return;
@@ -78,6 +83,40 @@ const AdminDashboard = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartTimeRange]);
+
+  const handleLoadMoreCoachAthletes = async (coach) => {
+    const coachId = coach?._id;
+    if (!coachId) return;
+
+    if (coachAthletesLoadingByCoachId[coachId]) return;
+
+    const currentAthletes = coachAthletesByCoachId[coachId]?.athletes ?? coach.athletes ?? [];
+    const totalLinked = coachAthletesByCoachId[coachId]?.totalLinked ?? coach.athletesLinkedCount ?? 0;
+
+    // Nothing to load if we already have everything.
+    if (totalLinked > 0 && currentAthletes.length >= totalLinked) return;
+
+    setCoachAthletesLoadingByCoachId((prev) => ({ ...prev, [coachId]: true }));
+    try {
+      const { athletes: nextAthletes = [], totalLinked: totalLinkedResp, totalWithPassword: totalWithPasswordResp } =
+        await getCoachAthletesPage(coachId, { limit: 20, offset: currentAthletes.length });
+
+      const merged = [...currentAthletes, ...nextAthletes];
+      setCoachAthletesByCoachId((prev) => ({
+        ...prev,
+        [coachId]: {
+          athletes: merged,
+          totalLinked: totalLinkedResp ?? prev[coachId]?.totalLinked ?? coach.athletesLinkedCount ?? merged.length,
+          totalWithPassword: totalWithPasswordResp ?? prev[coachId]?.totalWithPassword ?? coach.athletesCount ?? 0
+        }
+      }));
+    } catch (e) {
+      console.error('Failed to load more coach athletes:', e);
+      addNotification('Failed to load more athletes', 'error');
+    } finally {
+      setCoachAthletesLoadingByCoachId((prev) => ({ ...prev, [coachId]: false }));
+    }
+  };
 
 
   const handleUserUpdate = async (userId, userData) => {
@@ -145,7 +184,8 @@ const AdminDashboard = () => {
       await sendReactivationEmail(targetUser._id);
       addNotification(`Reactivation email sent to ${targetUser.email}`, 'success');
     } catch (err) {
-      const message = err?.response?.data?.error || 'Failed to send reactivation email';
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed to send reactivation email'}: ${data.reason}` : (data?.error || 'Failed to send reactivation email');
       addNotification(message, 'error');
       console.error('Reactivation email error:', err);
     } finally {
@@ -1188,6 +1228,12 @@ const AdminDashboard = () => {
                         }`}>
                           Strava: {user.stravaConnected ? 'Connected' : '—'}
                         </span>
+                        {!user.stravaConnected && user.stravaReminderEmail?.sent && user.stravaReminderEmail.lastSent && (
+                          <span className="text-gray-400">
+                            Reminder: {new Date(user.stravaReminderEmail.lastSent).toLocaleDateString()}{' '}
+                            {new Date(user.stravaReminderEmail.lastSent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                         {user.lastLogin && (
                           <span className="text-gray-400">
                             Last login: {new Date(user.lastLogin).toLocaleDateString()}
@@ -1204,10 +1250,10 @@ const AdminDashboard = () => {
                             {user.athletes && user.athletes.length > 0 && (
                               <details className="mt-1">
                                 <summary className="text-xs text-gray-500 text-center cursor-pointer hover:text-gray-700">
-                                  View athletes ({user.athletes.filter(a => a.hasPassword).length})
+                                  View athletes ({user.athletesCount !== undefined ? user.athletesCount : (coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => a.hasPassword).length})
                                 </summary>
                                 <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                                  {user.athletes.filter(a => a.hasPassword).map((athlete) => (
+                                  {(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => a.hasPassword).map((athlete) => (
                                     <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded">
                                       <div className="font-medium">{athlete.name} {athlete.surname}</div>
                                       {athlete.email && (
@@ -1220,14 +1266,39 @@ const AdminDashboard = () => {
                                         <span className="text-blue-600 font-semibold">Trainings: {athlete.trainingCount || 0}</span>
                                         <span className="text-purple-600 font-semibold">Tests: {athlete.testCount || 0}</span>
                                       </div>
+                                      {(athlete.lastLogin || athlete.createdAt) && (
+                                        <div className="text-gray-500 text-[10px] mt-1">
+                                          {athlete.lastLogin ? 'Last login:' : 'Registered:'} {new Date(athlete.lastLogin || athlete.createdAt).toLocaleDateString()}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
-                                  {user.athletes.filter(a => !a.hasPassword).length > 0 && (
+                                  {(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => !a.hasPassword).length > 0 && (
                                     <div className="text-[10px] text-gray-400 italic text-center pt-1">
-                                      +{user.athletes.filter(a => !a.hasPassword).length} without password
+                                      +{(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => !a.hasPassword).length} without password
                                     </div>
                                   )}
                                 </div>
+
+                                {(() => {
+                                  const loadedCount = (coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).length;
+                                  const totalLinked = coachAthletesByCoachId[user._id]?.totalLinked ?? user.athletesLinkedCount ?? 0;
+                                  if (!totalLinked || loadedCount >= totalLinked) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="mt-2 w-full px-2 py-1.5 text-[10px] rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                                      disabled={coachAthletesLoadingByCoachId[user._id]}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleLoadMoreCoachAthletes(user);
+                                      }}
+                                    >
+                                      {coachAthletesLoadingByCoachId[user._id] ? 'Loading...' : 'Load more'}
+                                    </button>
+                                  );
+                                })()}
                               </details>
                             )}
                           </div>
@@ -1366,10 +1437,10 @@ const AdminDashboard = () => {
                                 {user.athletes && user.athletes.length > 0 && (
                                   <details className="mt-1">
                                     <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                                      View athletes ({user.athletes.filter(a => a.hasPassword).length})
+                                      View athletes ({user.athletesCount !== undefined ? user.athletesCount : (coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => a.hasPassword).length})
                                     </summary>
                                     <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-                                      {user.athletes.filter(a => a.hasPassword).map((athlete) => (
+                                      {(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => a.hasPassword).map((athlete) => (
                                         <div key={athlete._id} className="text-xs text-gray-700 px-2 py-1 bg-gray-50 rounded border border-gray-200">
                                           <div className="font-medium">{athlete.name} {athlete.surname}</div>
                                           {athlete.email && (
@@ -1382,17 +1453,39 @@ const AdminDashboard = () => {
                                             <span className="text-blue-600 font-semibold">Trainings: {athlete.trainingCount || 0}</span>
                                             <span className="text-purple-600 font-semibold">Tests: {athlete.testCount || 0}</span>
                                           </div>
-                                          {athlete.lastLogin && (
-                                            <div className="text-gray-500 text-[10px] mt-1">Last login: {new Date(athlete.lastLogin).toLocaleDateString()}</div>
+                                          {(athlete.lastLogin || athlete.createdAt) && (
+                                            <div className="text-gray-500 text-[10px] mt-1">
+                                              {athlete.lastLogin ? 'Last login:' : 'Registered:'} {new Date(athlete.lastLogin || athlete.createdAt).toLocaleDateString()}
+                                            </div>
                                           )}
                                         </div>
                                       ))}
-                                      {user.athletes.filter(a => !a.hasPassword).length > 0 && (
+                                      {(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => !a.hasPassword).length > 0 && (
                                         <div className="text-[10px] text-gray-400 italic text-center pt-1">
-                                          +{user.athletes.filter(a => !a.hasPassword).length} without password (not counted)
+                                          +{(coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).filter(a => !a.hasPassword).length} without password (not counted)
                                         </div>
                                       )}
                                     </div>
+
+                                    {(() => {
+                                      const loadedCount = (coachAthletesByCoachId[user._id]?.athletes ?? user.athletes ?? []).length;
+                                      const totalLinked = coachAthletesByCoachId[user._id]?.totalLinked ?? user.athletesLinkedCount ?? 0;
+                                      if (!totalLinked || loadedCount >= totalLinked) return null;
+                                      return (
+                                        <button
+                                          type="button"
+                                          className="mt-2 w-full px-2 py-1.5 text-[10px] rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                                          disabled={coachAthletesLoadingByCoachId[user._id]}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleLoadMoreCoachAthletes(user);
+                                          }}
+                                        >
+                                          {coachAthletesLoadingByCoachId[user._id] ? 'Loading...' : 'Load more'}
+                                        </button>
+                                      );
+                                    })()}
                                   </details>
                                 )}
                               </div>

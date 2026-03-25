@@ -2047,92 +2047,86 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 }
             }
             
-            // Count trainings and tests for coaches (sum of all their athletes' data)
+            // Count trainings and tests for coaches (sum of all their athletes' data).
+            // Important: we only return a preview list of athletes (first N), so the admin UI doesn't pull everything at once.
             let athletesList = [];
             let athletesWithPasswordCount = 0;
+            let athletesLinkedCount = 0; // includes athletes without password as well
             if (user.role === 'coach') {
                 try {
-                    console.log(`[Admin Users] Counting data for coach ${user._id} (${user.name} ${user.surname})`);
-                    // Find all athletes assigned to this coach
-                    const athletes = await userDao.findAthletesByCoachId(user._id);
-                    console.log(`[Admin Users] Found ${athletes.length} athletes for coach ${user.name}:`, athletes.map(a => `${a.name} ${a.surname} (${a._id})`));
-                    
-                    // Filter athletes with password and count their tests/trainings
-                    athletesList = [];
-                    athletesWithPasswordCount = 0;
-                    
-                    // Count trainings and tests for all athletes (only those with password)
-                    for (const athlete of athletes) {
-                        const hasPassword = !!(athlete.password && athlete.password.trim() !== '');
-                        
-                        let athleteTrainingCount = 0;
-                        let athleteTestCount = 0;
-                        
-                        // Only count tests/trainings for athletes with password
-                        if (hasPassword) {
-                        try {
-                            const athleteIdStr = String(athlete._id);
-                            const trainings = await trainingDao.findByAthleteId(athleteIdStr);
-                            // Find tests - handle both ObjectId and String formats
-                            const tests = await Test.find({
-                                $or: [
-                                    { athleteId: athleteIdStr },
-                                    { athleteId: new mongoose.Types.ObjectId(athlete._id) }
-                                ]
-                            });
-                                athleteTrainingCount = trainings.length;
-                                athleteTestCount = tests.length;
-                            trainingCount += athleteTrainingCount;
-                            testCount += athleteTestCount;
-                            console.log(`[Admin Users] Athlete ${athlete.name} ${athlete.surname} (${athleteIdStr}): ${athleteTrainingCount} trainings, ${athleteTestCount} tests`);
-                        } catch (error) {
-                            console.error(`[Admin Users] Error counting data for athlete ${athlete._id}:`, error);
-                        }
-                            athletesWithPasswordCount++;
-                        }
-                        
-                        // Add athlete to list with counts
-                        athletesList.push({
+                    const previewLimit = 20;
+                    const { athletesLinkedToCoachQuery } = require('../utils/athleteCoachAccess');
+
+                    const coachIdStr = String(user._id);
+                    const athletesQuery = athletesLinkedToCoachQuery(user._id);
+
+                    // Totals (used for labels and "load more" UI).
+                    athletesLinkedCount = await User.countDocuments(athletesQuery);
+                    athletesWithPasswordCount = await User.countDocuments({
+                        ...athletesQuery,
+                        password: { $exists: true, $ne: null, $ne: '' }
+                    });
+
+                    // Preview athletes for the coach (sorted by registration date / createdAt).
+                    const athletesPreview = await User.find(athletesQuery)
+                        .sort({ createdAt: -1 })
+                        .limit(previewLimit)
+                        .select('_id name surname email sport password lastLogin createdAt')
+                        .lean();
+
+                    const previewIdsWithPassword = athletesPreview
+                        .filter(a => !!(a.password && typeof a.password === 'string' && a.password.trim() !== ''))
+                        .map(a => String(a._id));
+
+                    // Batch counts for the preview (only for athletes with password).
+                    const previewTrainingCountMap = await trainingDao.countByAthleteIdsGrouped(previewIdsWithPassword);
+                    const previewTestCountMap = new Map();
+                    if (previewIdsWithPassword.length > 0) {
+                        const testRows = await Test.aggregate([
+                            { $match: { athleteId: { $in: previewIdsWithPassword } } },
+                            { $group: { _id: '$athleteId', count: { $sum: 1 } } }
+                        ]);
+                        (testRows || []).forEach(r => previewTestCountMap.set(String(r._id), Number(r.count || 0)));
+                    }
+
+                    athletesList = athletesPreview.map(athlete => {
+                        const hasPassword = !!(athlete.password && typeof athlete.password === 'string' && athlete.password.trim() !== '');
+                        const athleteIdStr = String(athlete._id);
+                        return {
                             _id: athlete._id,
                             name: athlete.name,
                             surname: athlete.surname,
                             email: athlete.email,
                             sport: athlete.sport,
-                            hasPassword: hasPassword,
-                            lastLogin: athlete.lastLogin,
-                            createdAt: athlete.createdAt,
-                            trainingCount: athleteTrainingCount,
-                            testCount: athleteTestCount
-                        });
+                            hasPassword,
+                            lastLogin: athlete.lastLogin || null,
+                            createdAt: athlete.createdAt || null,
+                            trainingCount: hasPassword ? (previewTrainingCountMap.get(athleteIdStr) || 0) : 0,
+                            testCount: hasPassword ? (previewTestCountMap.get(athleteIdStr) || 0) : 0
+                        };
+                    });
+
+                    // Coach totals (sum trainings/tests across all linked athletes with password).
+                    // This still needs athleteIds, but we avoid N× queries by batching counts.
+                    const allAthletesWithPassword = await User.find({
+                        ...athletesQuery,
+                        password: { $exists: true, $ne: null, $ne: '' }
+                    }).select('_id').lean();
+
+                    const athleteIdsWithPasswordAll = (allAthletesWithPassword || []).map(a => String(a._id));
+
+                    if (athleteIdsWithPasswordAll.length > 0) {
+                        trainingCount = await trainingDao.countByAthleteIds(athleteIdsWithPasswordAll);
+                        testCount = await Test.countDocuments({ athleteId: { $in: athleteIdsWithPasswordAll } });
                     }
-                    
-                    // Also count coach's own data (coaches can also be athletes)
-                    try {
-                        const coachIdStr = String(user._id);
-                        console.log(`[Admin Users] Looking for coach's own data with ID: ${coachIdStr} (original: ${user._id}, type: ${typeof user._id})`);
-                        
-                        // Find coach's own tests - handle both ObjectId and String formats
-                        const ownTests = await Test.find({
-                            $or: [
-                                { athleteId: coachIdStr },
-                                { athleteId: mongoose.Types.ObjectId.isValid(user._id) ? new mongoose.Types.ObjectId(user._id) : coachIdStr }
-                            ]
-                        });
-                        
-                        const ownTrainings = await trainingDao.findByAthleteId(coachIdStr);
-                        const ownTrainingCount = ownTrainings.length;
-                        const ownTestCount = ownTests.length;
-                        
-                        trainingCount += ownTrainingCount;
+
+                    // Also count coach's own data (coaches can also be athletes) - only if not already included.
+                    if (!athleteIdsWithPasswordAll.includes(coachIdStr)) {
+                        const ownTrainingsCount = await trainingDao.countByAthleteIds([coachIdStr]);
+                        const ownTestCount = await Test.countDocuments({ athleteId: coachIdStr });
+                        trainingCount += ownTrainingsCount;
                         testCount += ownTestCount;
-                        
-                        console.log(`[Admin Users] Coach's own data (${coachIdStr}): ${ownTrainingCount} trainings, ${ownTestCount} tests`);
-                    } catch (error) {
-                        // Ignore if coach has no own data
-                        console.error(`[Admin Users] Error getting coach's own data:`, error);
                     }
-                    
-                    console.log(`[Admin Users] Total for coach ${user.name}: ${trainingCount} trainings, ${testCount} tests (from ${athletes.length} athletes + own)`);
                 } catch (error) {
                     console.error(`[Admin Users] Error counting data for coach ${user._id}:`, error);
                 }
@@ -2141,6 +2135,20 @@ router.get("/admin/users", verifyToken, async (req, res) => {
             // Ensure counts are numbers
             const finalTrainingCount = Number(trainingCount) || 0;
             const finalTestCount = Number(testCount) || 0;
+
+            const baseLoginCount = (user.loginCount && Number(user.loginCount) > 0)
+                ? Number(user.loginCount)
+                : (loginCountsByUserId.get(String(user._id)) || 0);
+
+            // For athletes: if they never logged in, treat registration as the first "login"
+            // so the admin UI shows the registration date and a non-zero login count.
+            const effectiveLastLogin = user.role === 'athlete' && !user.lastLogin && user.createdAt
+                ? user.createdAt
+                : user.lastLogin;
+
+            const effectiveLoginCount = user.role === 'athlete' && baseLoginCount === 0 && user.createdAt
+                ? 1
+                : baseLoginCount;
             
             if (user.role === 'coach') {
                 console.log(`[Admin Users] Coach ${user.name} ${user.surname} (${user._id}): trainingCount=${finalTrainingCount}, testCount=${finalTestCount}`);
@@ -2156,10 +2164,8 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 dateOfBirth: user.dateOfBirth,
                 sport: user.sport,
                 createdAt: user.createdAt,
-                lastLogin: user.lastLogin,
-                loginCount: (user.loginCount && Number(user.loginCount) > 0)
-                    ? Number(user.loginCount)
-                    : (loginCountsByUserId.get(String(user._id)) || 0),
+                lastLogin: effectiveLastLogin,
+                loginCount: effectiveLoginCount,
                 stravaConnected: !!(user.strava && user.strava.athleteId),
                 strava: user.strava ? {
                     athleteId: user.strava.athleteId,
@@ -2183,6 +2189,7 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 testCount: finalTestCount,
                 athletes: user.role === 'coach' ? athletesList : undefined,
                 athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined,
+                athletesLinkedCount: user.role === 'coach' ? athletesLinkedCount : undefined,
                 registrationLocation: user.registrationLocation || null
             };
         }));
@@ -2191,6 +2198,89 @@ router.get("/admin/users", verifyToken, async (req, res) => {
     } catch (error) {
         console.error("Error fetching users for admin:", error);
         res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Admin endpoint: fetch athletes assigned to a specific coach with pagination.
+// This avoids returning all athletes in one big `/admin/users` payload.
+router.get("/admin/coach-athletes/:coachId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { coachId } = req.params;
+        const limit = Math.min(Number(req.query.limit) || 20, 50);
+        const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+        const { athletesLinkedToCoachQuery } = require('../utils/athleteCoachAccess');
+
+        let coachIdObj = coachId;
+        try {
+            coachIdObj = mongoose.Types.ObjectId.isValid(coachId) ? new mongoose.Types.ObjectId(coachId) : coachId;
+        } catch {
+            coachIdObj = coachId;
+        }
+
+        const athletesQuery = athletesLinkedToCoachQuery(coachIdObj);
+
+        const totalLinked = await User.countDocuments(athletesQuery);
+        const totalWithPassword = await User.countDocuments({
+            ...athletesQuery,
+            password: { $exists: true, $ne: null, $ne: '' }
+        });
+
+        const athletesPage = await User.find(athletesQuery)
+            .sort({ createdAt: -1 })
+            .skip(offset)
+            .limit(limit)
+            .select('_id name surname email sport password lastLogin createdAt')
+            .lean();
+
+        const idsWithPassword = (athletesPage || [])
+            .filter(a => !!(a.password && typeof a.password === 'string' && a.password.trim() !== ''))
+            .map(a => String(a._id));
+
+        const trainingCountMap = await trainingDao.countByAthleteIdsGrouped(idsWithPassword);
+        const testCountMap = new Map();
+        if (idsWithPassword.length > 0) {
+            const testRows = await Test.aggregate([
+                { $match: { athleteId: { $in: idsWithPassword } } },
+                { $group: { _id: '$athleteId', count: { $sum: 1 } } }
+            ]);
+            (testRows || []).forEach(r => testCountMap.set(String(r._id), Number(r.count || 0)));
+        }
+
+        const athletes = (athletesPage || []).map(athlete => {
+            const hasPassword = !!(athlete.password && typeof athlete.password === 'string' && athlete.password.trim() !== '');
+            const athleteIdStr = String(athlete._id);
+            return {
+                _id: athlete._id,
+                name: athlete.name,
+                surname: athlete.surname,
+                email: athlete.email,
+                sport: athlete.sport,
+                hasPassword,
+                // Treat registration as the first "login" date for UI.
+                lastLogin: athlete.lastLogin || athlete.createdAt || null,
+                createdAt: athlete.createdAt || null,
+                trainingCount: hasPassword ? (trainingCountMap.get(athleteIdStr) || 0) : 0,
+                testCount: hasPassword ? (testCountMap.get(athleteIdStr) || 0) : 0
+            };
+        });
+
+        const loaded = athletes.length;
+        res.status(200).json({
+            athletes,
+            totalLinked,
+            totalWithPassword,
+            nextOffset: offset + loaded,
+            hasMore: offset + loaded < totalLinked
+        });
+    } catch (error) {
+        console.error("Error fetching coach athletes:", error);
+        res.status(500).json({ error: "Failed to fetch coach athletes" });
     }
 });
 
@@ -2335,6 +2425,13 @@ router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, r
             return res.status(403).json({ error: "Access denied. Admin privileges required." });
         }
 
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
         const { userId } = req.params;
         const targetUser = await userDao.findById(userId);
         if (!targetUser) {
@@ -2355,26 +2452,87 @@ router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, r
             .sort({ date: -1, createdAt: -1 })
             .exec();
 
-        if (!latestTest) {
-            return res.status(400).json({ error: "User has no lactate tests to include in the email" });
+        // Prefer sending the latest test report when available; otherwise send a generic reactivation email.
+        if (latestTest) {
+            const result = await sendLactateTestReportEmail({
+                requesterUserId: currentUser._id,
+                testId: latestTest._id,
+                toEmail: targetUser.email,
+                overrides: {
+                    promo: true,
+                    subject: "Your last lactate test in LaChart – plan your next block",
+                    ignoreEmailPreferences: false
+                }
+            });
+
+            if (!result.sent) {
+                return res.status(400).json({ error: "Failed to send email", reason: result.reason });
+            }
+
+            await userDao.updateUser(userId, {
+                reactivationEmail: {
+                    sent: true,
+                    sentCount: (targetUser.reactivationEmail?.sentCount || 0) + 1,
+                    lastSent: new Date()
+                }
+            });
+
+            return res.status(200).json({ ok: true, message: "Reactivation email sent", testId: latestTest._id });
         }
 
-        const result = await sendLactateTestReportEmail({
-            requesterUserId: currentUser._id,
-            testId: latestTest._id,
-            toEmail: targetUser.email,
-            overrides: {
-                promo: true,
-                subject: "Your last lactate test in LaChart – plan your next block",
-                ignoreEmailPreferences: false
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl();
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+        const userName = targetUser.name || 'there';
+
+        const emailContent = `
+            <p>Hi ${userName},</p>
+            <p>Just a quick note — you can get a lot more value from <strong>LaChart</strong> with a simple setup:</p>
+            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                <li>Connect Strava (optional) so your trainings sync automatically</li>
+                <li>Create your first lactate test (or try the demo) to generate zones and recommendations</li>
+                <li>Export/share results (email/PDF) once you have a test saved</li>
+            </ul>
+            <p style="margin-top: 22px;">
+                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+            </p>
+            <p>If you have any questions, just reply to this email — I’ll help.</p>
+            <p style="margin-top: 30px;">Thanks,<br/><strong>Jakub Stádník</strong><br/>Creator of LaChart</p>
+        `;
+
+        const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "SMTP transporter could not be created. Check SMTP_HOST/PORT or EMAIL_USER/EMAIL_APP_PASSWORD."
+            });
+        }
+
+        await transporter.sendMail({
+            from: {
+                name: 'Jakub - LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: targetUser.email,
+            subject: 'Get the most out of LaChart',
+            html: generateEmailTemplate({
+                title: 'Welcome back',
+                content: emailContent,
+                buttonText: 'Open LaChart',
+                buttonUrl: `${clientUrl}/login`,
+                footerText: 'If you need help, reply to this email.'
+            })
+        });
+
+        await userDao.updateUser(userId, {
+            reactivationEmail: {
+                sent: true,
+                sentCount: (targetUser.reactivationEmail?.sentCount || 0) + 1,
+                lastSent: new Date()
             }
         });
 
-        if (!result.sent) {
-            return res.status(400).json({ error: "Failed to send email", reason: result.reason });
-        }
-
-        res.status(200).json({ ok: true, message: "Reactivation email sent", testId: latestTest._id });
+        return res.status(200).json({ ok: true, message: "Reactivation email sent (no test available)" });
     } catch (error) {
         console.error("Error sending reactivation email:", error);
       const code = error?.code ? String(error.code) : '';

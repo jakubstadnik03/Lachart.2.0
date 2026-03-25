@@ -957,10 +957,15 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   // Mobile card layout
   if (isMobileTable) {
     const isStravaRun = (selectedStrava?.sport || '').toLowerCase().includes('run');
+    const isStravaSwim = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase().includes('swim');
+    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
     const stravaPaceFmt = (spd) => {
       if (!spd || spd <= 0) return null;
-      const s = Math.round(1000 / spd);
-      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      const seconds = isStravaSwim
+        ? (unitSystem === 'imperial' ? Math.round(109.361 / spd) : Math.round(100 / spd))
+        : Math.round(1000 / spd);
+      const suffix = isStravaSwim ? (unitSystem === 'imperial' ? ' /100y' : ' /100m') : ' /km';
+      return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}${suffix}`;
     };
 
     return (
@@ -1025,7 +1030,11 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   <div className="flex items-baseline gap-3">
                     {lap.distance > 0 && <span className="text-sm font-semibold text-gray-900">{formatDistance(lap.distance, user)}</span>}
                     <span className="text-sm text-gray-600">{formatDuration(lap.elapsed_time)}</span>
-                    {lap.average_speed > 0 && <span className="text-xs text-gray-500">{isStravaRun ? `${stravaPaceFmt(lap.average_speed)} /km` : `${(lap.average_speed * 3.6).toFixed(1)} km/h`}</span>}
+                    {lap.average_speed > 0 && (
+                      <span className="text-xs text-gray-500">
+                        {(isStravaRun || isStravaSwim) ? stravaPaceFmt(lap.average_speed) : `${(lap.average_speed * 3.6).toFixed(1)} km/h`}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     {lap.average_heartrate && <span className="text-[11px] text-red-500">{Math.round(lap.average_heartrate)} bpm</span>}
@@ -1246,7 +1255,32 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                     {formatDistance(normalizeLapDistance(lap.distance), user)}
                   </td>
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_speed ? `${(lap.average_speed*3.6).toFixed(1)} km/h` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
+                    {(() => {
+                      const sportRaw = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
+                      const isSwim = sportRaw.includes('swim');
+                      const isRun = sportRaw.includes('run') || sportRaw === 'walk' || sportRaw === 'hike';
+                      const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+                      const spd = Number(lap.average_speed || 0);
+                      if (!Number.isFinite(spd) || spd <= 0) return '-';
+
+                      if (isSwim) {
+                        const sec = unitSystem === 'imperial' ? Math.round(109.361 / spd) : Math.round(100 / spd);
+                        const mm = Math.floor(sec / 60);
+                        const ss = Math.max(0, Math.round(sec % 60));
+                        return `${mm}:${String(ss).padStart(2, '0')} ${unitSystem === 'imperial' ? '/100y' : '/100m'}`;
+                      }
+
+                      if (isRun) {
+                        const sec = unitSystem === 'imperial' ? Math.round(1609.34 / spd) : Math.round(1000 / spd);
+                        const mm = Math.floor(sec / 60);
+                        const ss = Math.max(0, Math.round(sec % 60));
+                        return `${mm}:${String(ss).padStart(2, '0')} ${unitSystem === 'imperial' ? '/mi' : '/km'}`;
+                      }
+
+                      return `${(spd * 3.6).toFixed(1)} km/h`;
+                    })()}
+                  </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>

@@ -13,6 +13,22 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   }, []);
   const sportLower = (training?.sport || '').toLowerCase();
   const isRun = sportLower.includes('run') || sportLower === 'walk' || sportLower === 'hike';
+  const isSwim = sportLower.includes('swim');
+  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+
+  const formatSwimPace = (speedMps) => {
+    const spd = Number(speedMps);
+    if (!Number.isFinite(spd) || spd <= 0) return '-';
+
+    const secondsPer100 = unitSystem === 'imperial'
+      ? 109.361 / spd // s/100yd
+      : 100 / spd; // s/100m
+
+    const secRounded = Math.round(secondsPer100);
+    const minutes = Math.floor(secRounded / 60);
+    const secs = Math.max(0, secRounded % 60);
+    return `${minutes}:${String(secs).padStart(2, '0')}/${unitSystem === 'imperial' ? '100y' : '100m'}`;
+  };
   
   // Additional safety check - ensure no duplicates in the component
   const uniqueLaps = React.useMemo(() => {
@@ -87,12 +103,23 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   }, [training]);
 
   const lapRefs = useRef({});
+  const tableContainerRef = useRef(null);
 
   useEffect(() => {
-    if (isMobile && selectedLapNumber != null && lapRefs.current[selectedLapNumber]) {
-      lapRefs.current[selectedLapNumber].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (selectedLapNumber == null) return;
+    const el = lapRefs.current[selectedLapNumber];
+    if (el && el.scrollIntoView) {
+      // Scroll the row into view inside the table container (desktop) / list (mobile)
+      // so chart-selection and table-selection stay in sync.
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch {
+        // ignore
+      }
+    } else if (tableContainerRef.current) {
+      // no-op fallback
     }
-  }, [selectedLapNumber, isMobile]);
+  }, [selectedLapNumber]);
 
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
 
@@ -136,8 +163,52 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             const lapNumber = lap?.lapNumber ?? (index + 1);
             const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
             const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
-            const dist = formatDistance(lap.totalDistance, user);
-            const pace = isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user);
+            const distanceMeters =
+              lap.totalDistance ??
+              lap.total_distance ??
+              lap.distance ??
+              lap.distanceMeters ??
+              lap.distance_meters ??
+              0;
+            const dist = formatDistance(distanceMeters, user);
+
+            const speedMps =
+              lap.avgSpeed ??
+              lap.average_speed ??
+              lap.avg_speed ??
+              lap.averageSpeed ??
+              lap.speed ??
+              null;
+
+            const pace = isRun
+              ? formatPace(speedMps)
+              : isSwim
+                ? formatSwimPace(speedMps)
+                : formatSpeed(speedMps, user);
+
+            const hr =
+              lap.avgHeartRate ??
+              lap.avg_heart_rate ??
+              lap.average_heartrate ??
+              lap.averageHeartRate ??
+              lap.heartRate ??
+              0;
+
+            const power =
+              lap.avgPower ??
+              lap.avg_power ??
+              lap.average_watts ??
+              lap.averageWatts ??
+              0;
+
+            const cadence =
+              lap.avgCadence ??
+              lap.avg_cadence ??
+              lap.average_cadence ??
+              lap.averageCadence ??
+              lap.cadence ??
+              0;
+
             const selectedStyle = isSelected
               ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
               : {};
@@ -165,8 +236,9 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
-                    {lap.avgHeartRate && <span className="text-[11px] text-red-500">{Math.round(lap.avgHeartRate)} bpm</span>}
-                    {lap.avgPower > 0 && <span className="text-[11px] text-purple-600">{Math.round(lap.avgPower)} W</span>}
+                      {hr > 0 && <span className="text-[11px] text-red-500">{Math.round(hr)} bpm</span>}
+                      {!isSwim && power > 0 && <span className="text-[11px] text-purple-600">{Math.round(power)} W</span>}
+                      {isSwim && cadence > 0 && <span className="text-[11px] text-gray-600">{Math.round(cadence)} rpm</span>}
                     {!editingLactate && lap.lactate && (
                       <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
                     )}
@@ -218,16 +290,26 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
         </button>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0">
+      <div
+        ref={tableContainerRef}
+        className="overflow-x-auto overflow-y-auto max-h-[400px] rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0"
+      >
         <table className="min-w-full divide-y divide-gray-200/50">
-          <thead className="bg-white/80 backdrop-blur-sm">
+          <thead className="bg-white/80 backdrop-blur-sm sticky top-0 z-10">
             <tr>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Distance</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">{isRun ? 'Avg Pace' : 'Avg Speed'}</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">
+                {(isRun || isSwim) ? 'Avg Pace' : 'Avg Speed'}
+              </th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg HR</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
+              {!isSwim && (
+                <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Power</th>
+              )}
+              {isSwim && (
+                <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Cadence</th>
+              )}
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
             </tr>
           </thead>
@@ -235,20 +317,69 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             {uniqueLaps.map((lap, index) => {
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+
+              const distanceMeters =
+                lap.totalDistance ??
+                lap.total_distance ??
+                lap.distance ??
+                lap.distanceMeters ??
+                lap.distance_meters ??
+                0;
+              const speedMps =
+                lap.avgSpeed ??
+                lap.average_speed ??
+                lap.avg_speed ??
+                lap.averageSpeed ??
+                lap.speed ??
+                null;
+              const hr =
+                lap.avgHeartRate ??
+                lap.avg_heart_rate ??
+                lap.average_heartrate ??
+                lap.averageHeartRate ??
+                lap.heartRate ??
+                0;
+              const power =
+                lap.avgPower ??
+                lap.avg_power ??
+                lap.average_watts ??
+                lap.averageWatts ??
+                0;
+
+              const cadence =
+                lap.avgCadence ??
+                lap.avg_cadence ??
+                lap.average_cadence ??
+                lap.averageCadence ??
+                lap.cadence ??
+                0;
+
+              const paceCell = isRun
+                ? formatPace(speedMps)
+                : isSwim
+                  ? formatSwimPace(speedMps)
+                  : formatSpeed(speedMps, user);
+
               return (
               <tr
                 key={index}
                 onClick={() => onSelectLapNumber && onSelectLapNumber(lapNumber)}
+                ref={(el) => { if (el) lapRefs.current[lapNumber] = el; }}
                 className={`transition-colors hover:bg-white/60 cursor-pointer ${lap.lactate ? 'bg-primary/10' : ''} ${isSelected ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}
               >
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time)}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDistance(lap.totalDistance, user)}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDistance(distanceMeters, user)}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
-                  {isRun ? formatPace(lap.avgSpeed || lap.average_speed || null) : formatSpeed(lap.avgSpeed, user)}
+                  {paceCell}
                 </td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '-'}</td>
-                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{hr > 0 ? `${Math.round(hr)} bpm` : '-'}</td>
+                {!isSwim && (
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{power > 0 ? `${Math.round(power)} W` : '-'}</td>
+                )}
+                {isSwim && (
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{cadence > 0 ? `${Math.round(cadence)} rpm` : '-'}</td>
+                )}
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                   {editingLactate ? (
                     <input

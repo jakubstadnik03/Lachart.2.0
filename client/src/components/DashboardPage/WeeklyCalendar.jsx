@@ -104,6 +104,209 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [showRightScrollNoTraining, setShowRightScrollNoTraining] = useState(true);
   const scrollContainerRef = useRef(null);
   const scrollContainerNoTrainingRef = useRef(null);
+
+  // If Strava doesn't provide explicit swim laps, generate swim splits from stream records.
+  // This keeps the Interval tabs/table usable for swimming too.
+  const generateSwimLapsFromRecords = (records = []) => {
+    if (!Array.isArray(records) || records.length < 2) return [];
+
+    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+    const stepMeters = unitSystem === 'imperial' ? 91.44 : 100; // 100yd vs 100m
+    const MOVING_SPEED_THRESHOLD_MPS = 0.06; // swim speed can be low; use a small threshold
+
+    const getDistance = (r) => {
+      const d = Number(r?.distance ?? 0);
+      return Number.isFinite(d) ? d : 0;
+    };
+    const getSpeedMps = (r) => {
+      const s = Number(r?.speed ?? 0);
+      return Number.isFinite(s) ? s : 0;
+    };
+    const getHr = (r) => {
+      const hr = Number(r?.heartRate ?? r?.heartrate ?? 0);
+      return Number.isFinite(hr) && hr > 0 ? hr : 0;
+    };
+    const getCadence = (r) => {
+      // For swim this is typically strokes/min in Strava streams
+      const c = Number(r?.cadence ?? r?.avgCadence ?? r?.average_cadence ?? r?.averageCadence ?? 0);
+      return Number.isFinite(c) && c > 0 ? c : 0;
+    };
+    const getTs = (r) => {
+      const ts = r?.timestamp ? new Date(r.timestamp).getTime() : NaN;
+      return Number.isFinite(ts) ? ts : null;
+    };
+
+    const hasDistanceStream = records.some((r) => getDistance(r) > 0);
+    const hasSpeedStream = records.some((r) => getSpeedMps(r) > 0);
+    let estimatedDistance = 0;
+    let lastDistanceValue = 0;
+    let prevBoundaryDistance = 0; // cumulative distance at the start of the current split
+
+    const computeSegmentStats = (seg) => {
+      if (!seg || seg.length < 2) {
+        return { movingTimeSec: 0, avgSpeedMps: 0, avgHeartRate: 0, avgCadence: 0 };
+      }
+
+      let movingTimeSec = 0;
+      for (let i = 1; i < seg.length; i++) {
+        const prev = seg[i - 1];
+        const curr = seg[i];
+
+        const prevTs = getTs(prev);
+        const currTs = getTs(curr);
+        const dt = prevTs != null && currTs != null ? (currTs - prevTs) / 1000 : 1;
+        if (!Number.isFinite(dt) || dt <= 0) continue;
+
+        const prevSpeed = getSpeedMps(prev);
+        const currSpeed = getSpeedMps(curr);
+        if (prevSpeed >= MOVING_SPEED_THRESHOLD_MPS || currSpeed >= MOVING_SPEED_THRESHOLD_MPS) {
+          movingTimeSec += dt;
+        }
+      }
+
+      const moving = seg.filter((r) => getSpeedMps(r) >= MOVING_SPEED_THRESHOLD_MPS);
+      const speeds = moving.map((r) => getSpeedMps(r)).filter((v) => v > 0);
+      const hrs = moving.map((r) => getHr(r)).filter((v) => v > 0);
+      const cads = moving.map((r) => getCadence(r)).filter((v) => v > 0);
+
+      const avgSpeedMps = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+      const avgHeartRate = hrs.length > 0 ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : 0;
+      const avgCadence = cads.length > 0 ? Math.round(cads.reduce((a, b) => a + b, 0) / cads.length) : 0;
+
+      return { movingTimeSec, avgSpeedMps, avgHeartRate, avgCadence };
+    };
+
+    const laps = [];
+    let lapNumber = 1;
+    let lastProcessedDistance = 0;
+    let currentSegment = [];
+    let distanceStreamOffset = 0;
+    let prevDistanceStream = 0;
+
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+
+      let distanceNow = 0;
+      if (!hasSpeedStream) {
+        // No reliable speed stream -> fall back to distance stream (if present).
+        const dRaw = hasDistanceStream ? getDistance(record) : 0;
+        if (i === 0) {
+          prevDistanceStream = dRaw;
+          distanceStreamOffset = 0;
+        } else {
+          // Some streams reset (e.g. per-length). If we detect a reset, accumulate an offset.
+          if (dRaw > 0 && dRaw < prevDistanceStream) {
+            distanceStreamOffset += prevDistanceStream;
+          }
+          prevDistanceStream = dRaw;
+        }
+        distanceNow = distanceStreamOffset + dRaw;
+      } else {
+        // If we don't have distance in stream data, estimate distance by integrating speed over time.
+        if (i === 0) {
+          distanceNow = 0;
+        } else {
+          const prevRecord = records[i - 1];
+          const prevTs = getTs(prevRecord);
+          const currTs = getTs(record);
+          const dt = prevTs != null && currTs != null ? (currTs - prevTs) / 1000 : 1;
+
+          const prevSpeed = getSpeedMps(prevRecord);
+          const currSpeed = getSpeedMps(record);
+          const speedAvg = (prevSpeed + currSpeed) / 2;
+
+          if (Number.isFinite(dt) && dt > 0 && speedAvg > 0) {
+            estimatedDistance += speedAvg * dt;
+          }
+          distanceNow = estimatedDistance;
+        }
+      }
+
+      if (!Number.isFinite(distanceNow) || distanceNow < 0) continue;
+      lastDistanceValue = distanceNow;
+
+      const splitEndTarget = lapNumber * stepMeters;
+      if (distanceNow >= splitEndTarget && distanceNow > lastProcessedDistance) {
+        if (currentSegment.length > 0) {
+          const stats = computeSegmentStats(currentSegment);
+          laps.push({
+            lapNumber,
+            // Use per-split distance so chart/table widths & display are correct.
+            distance: stepMeters,
+            totalDistance: stepMeters,
+            elapsed_time: stats.movingTimeSec,
+            moving_time: stats.movingTimeSec,
+            totalElapsedTime: stats.movingTimeSec,
+            totalTimerTime: stats.movingTimeSec,
+            average_speed: stats.avgSpeedMps, // m/s
+            avgSpeed: stats.avgSpeedMps, // m/s (LapsTable expects m/s in swim mode)
+            average_heartrate: stats.avgHeartRate,
+            avgHeartRate: stats.avgHeartRate,
+            average_cadence: stats.avgCadence,
+            avgCadence: stats.avgCadence
+          });
+        }
+
+        lastProcessedDistance = distanceNow;
+        prevBoundaryDistance = splitEndTarget;
+        lapNumber += 1;
+        currentSegment = [record];
+      } else {
+        currentSegment.push(record);
+      }
+    }
+
+    // Add incomplete last segment if it contains enough distance
+    if (currentSegment.length > 10) {
+      const lastDistance = hasDistanceStream ? getDistance(currentSegment[currentSegment.length - 1]) : lastDistanceValue;
+      const incompleteDistance = Math.max(0, lastDistance - prevBoundaryDistance);
+      const minIncomplete = stepMeters * 0.45;
+      if (incompleteDistance >= minIncomplete && incompleteDistance > 0) {
+        const stats = computeSegmentStats(currentSegment);
+        laps.push({
+          lapNumber,
+          distance: incompleteDistance,
+          totalDistance: incompleteDistance,
+          elapsed_time: stats.movingTimeSec,
+          moving_time: stats.movingTimeSec,
+          totalElapsedTime: stats.movingTimeSec,
+          totalTimerTime: stats.movingTimeSec,
+          average_speed: stats.avgSpeedMps,
+          avgSpeed: stats.avgSpeedMps,
+          average_heartrate: stats.avgHeartRate,
+          avgHeartRate: stats.avgHeartRate,
+          average_cadence: stats.avgCadence,
+          avgCadence: stats.avgCadence
+        });
+      }
+    }
+
+    // Last-resort fallback: if we failed to generate any splits, still return 1 lap
+    // so the UI doesn't show an empty table for swim activities.
+    if (laps.length === 0) {
+      const stats = computeSegmentStats(records);
+      const distanceEst = lastDistanceValue > 0 ? lastDistanceValue : stepMeters;
+      if (stats.movingTimeSec > 0 || stats.avgSpeedMps > 0) {
+        laps.push({
+          lapNumber: 1,
+          distance: distanceEst,
+          totalDistance: distanceEst,
+          elapsed_time: stats.movingTimeSec,
+          moving_time: stats.movingTimeSec,
+          totalElapsedTime: stats.movingTimeSec,
+          totalTimerTime: stats.movingTimeSec,
+          average_speed: stats.avgSpeedMps,
+          avgSpeed: stats.avgSpeedMps,
+          average_heartrate: stats.avgHeartRate,
+          avgHeartRate: stats.avgHeartRate,
+          average_cadence: stats.avgCadence,
+          avgCadence: stats.avgCadence
+        });
+      }
+    }
+
+    return laps;
+  };
   
   // Ref to store handleActivityClick function for event listener
   const handleActivityClickRef = useRef(null);
@@ -357,12 +560,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
             cadence: cadenceArray[i] || null,
             distance: distanceArray[i] || null
           }));
+
+          const sportLower = String(activity?.sport || detail?.detail?.type || '').toLowerCase();
+          const isSwim = sportLower.includes('swim');
+          let laps = Array.isArray(detail.laps) ? detail.laps : [];
+          if (isSwim && laps.length === 0) {
+            laps = generateSwimLapsFromRecords(records);
+          }
           
           const trainingData = {
             ...activity,
             type: 'strava',
             records,
-            laps: detail.laps || [],
+            laps,
             totalElapsedTime: detail.detail.elapsed_time || 0,
             totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
             totalDistance: detail.detail.distance || 0,
@@ -684,12 +894,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     cadence: cadenceArray[i] || null,
                                     distance: distanceArray[i] || null
                                   }));
+                                
+                                const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                                const isSwim = sportLower.includes('swim');
+                                let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                                if (isSwim && laps.length === 0) {
+                                  laps = generateSwimLapsFromRecords(records);
+                                }
                                   
                                   setTrainingDetail({
                                     ...selectedTraining,
                                     type: 'strava',
                                     records,
-                                    laps: detail.laps || [],
+                                    laps,
                                     totalElapsedTime: detail.detail.elapsed_time || 0,
                                     totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
                                     totalDistance: detail.detail.distance || 0,
@@ -836,12 +1053,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                       cadence: cadenceArray[i] || null,
                                       distance: distanceArray[i] || null
                                     }));
+
+                                    const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                                    const isSwim = sportLower.includes('swim');
+                                    let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                                    if (isSwim && laps.length === 0) {
+                                      laps = generateSwimLapsFromRecords(records);
+                                    }
                                     
                                     setTrainingDetail({
                                       ...selectedTraining,
                                       type: 'strava',
                                       records,
-                                      laps: detail.laps || [],
+                                      laps,
                                       totalElapsedTime: detail.detail.elapsed_time || 0,
                                       totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
                                       totalDistance: detail.detail.distance || 0,
@@ -989,12 +1213,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 cadence: cadenceArray[i] || null,
                                 distance: distanceArray[i] || null
                               }));
+
+                              const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                              const isSwim = sportLower.includes('swim');
+                              let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                              if (isSwim && laps.length === 0) {
+                                laps = generateSwimLapsFromRecords(records);
+                              }
                               
                               setTrainingDetail({
                                 ...selectedTraining,
                                 type: 'strava',
                                 records,
-                                laps: detail.laps || [],
+                                laps,
                                 totalElapsedTime: detail.detail.elapsed_time || 0,
                                 totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
                                 totalDistance: detail.detail.distance || 0,
@@ -1156,12 +1387,19 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                         cadence: cadenceArray[i] || null,
                                         distance: distanceArray[i] || null
                                       }));
+
+                                      const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                                      const isSwim = sportLower.includes('swim');
+                                      let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                                      if (isSwim && laps.length === 0) {
+                                        laps = generateSwimLapsFromRecords(records);
+                                      }
                                       
                                       setTrainingDetail({
                                         ...selectedTraining,
                                         type: 'strava',
                                         records,
-                                        laps: detail.laps || [],
+                                        laps,
                                         totalElapsedTime: detail.detail.elapsed_time || 0,
                                         totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
                                         totalDistance: detail.detail.distance || 0,

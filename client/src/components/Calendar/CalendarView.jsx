@@ -882,7 +882,7 @@ export default function CalendarView({
                     {(weekSummary.distanceSwim > 0 || weekSummary.swimSeconds > 0) && (
                       <div className="flex items-center gap-1.5">
                         <img src="/icon/swim.svg" alt="Swim" className="w-4 h-4" />
-                        <span className="text-xs font-semibold text-gray-700">{formatKm(weekSummary.distanceSwim)}</span>
+                        <span className="text-xs font-semibold text-gray-700">{formatDistanceForUser(weekSummary.distanceSwim, user)}</span>
                         <span className="text-xs text-gray-500">•</span>
                         <span className="text-xs font-semibold text-gray-700">{formatHours(weekSummary.swimSeconds)}</span>
                           {weekSummary.tssSwim > 0 && (

@@ -11,6 +11,7 @@ const router = express.Router();
 // Cache for activities endpoint (2 minutes cache)
 const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
+const stravaBackfillLocks = new Set();
 
 // Cache middleware for activities
 const activitiesCacheMiddleware = (req, res, next) => {
@@ -47,6 +48,118 @@ const getStravaRedirectBase = () => {
   if (process.env.NODE_ENV === 'production') return 'https://lachart.onrender.com/api/integrations/strava/callback';
   return null;
 };
+
+// Import all Strava history progressively in background to avoid backend/API spikes.
+function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.now() / 1000)) {
+  const lockKey = String(userId);
+  if (stravaBackfillLocks.has(lockKey)) return;
+  stravaBackfillLocks.add(lockKey);
+
+  const perPage = 100;
+  const maxPagesPerBatch = 3;
+  const delayBetweenPagesMs = 2200;
+  const delayBetweenBatchesMs = 15000;
+
+  const runBatch = async (beforeCursor) => {
+    let nextCursor = beforeCursor;
+    let shouldContinue = true;
+
+    try {
+      const user = await User.findById(userId);
+      if (!user || !user.strava?.accessToken) {
+        shouldContinue = false;
+        return;
+      }
+
+      const token = await getValidStravaToken(user);
+      if (!token) {
+        shouldContinue = false;
+        return;
+      }
+
+      for (let page = 1; page <= maxPagesPerBatch; page += 1) {
+        const resp = await axios.get('https://www.strava.com/api/v3/athlete/activities', {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { per_page: perPage, page: 1, before: nextCursor },
+          timeout: 30000
+        });
+
+        const arr = Array.isArray(resp.data) ? resp.data : [];
+        if (!arr.length) {
+          shouldContinue = false;
+          break;
+        }
+
+        for (const a of arr) {
+          const doc = {
+            userId: user._id.toString(),
+            stravaId: a.id,
+            name: a.name || 'Untitled Activity',
+            sport: a.sport_type || a.type || 'Ride',
+            startDate: new Date(a.start_date_local || a.start_date),
+            elapsedTime: a.elapsed_time || 0,
+            movingTime: a.moving_time || 0,
+            distance: a.distance || 0,
+            averageSpeed: a.average_speed || null,
+            averageHeartRate: a.average_heartrate || null,
+            averagePower: a.average_watts || null,
+            raw: a
+          };
+
+          await StravaActivity.updateOne(
+            { userId: user._id, stravaId: a.id },
+            { $set: doc },
+            { upsert: true }
+          );
+        }
+
+        // Move cursor backwards in time by oldest activity from this page.
+        const oldestUnix = Math.floor(new Date(arr[arr.length - 1].start_date).getTime() / 1000);
+        nextCursor = oldestUnix - 1;
+
+        if (arr.length < perPage) {
+          shouldContinue = false;
+          break;
+        }
+
+        if (page < maxPagesPerBatch) {
+          await delay(delayBetweenPagesMs);
+        }
+      }
+
+      await User.findByIdAndUpdate(user._id, {
+        'strava.lastSyncDate': new Date()
+      });
+    } catch (error) {
+      const status = error?.response?.status;
+      console.error('[StravaBackfill] Batch failed:', status || '', error?.response?.data || error?.message);
+      // On rate limit or transient upstream error, keep backfill alive and retry later.
+      if (status === 429 || (status >= 500 && status < 600)) {
+        shouldContinue = true;
+      } else {
+        shouldContinue = false;
+      }
+    }
+
+    if (shouldContinue) {
+      setTimeout(() => {
+        runBatch(nextCursor).catch((e) => {
+          console.error('[StravaBackfill] Unhandled async error:', e?.message || e);
+          stravaBackfillLocks.delete(lockKey);
+        });
+      }, delayBetweenBatchesMs);
+    } else {
+      stravaBackfillLocks.delete(lockKey);
+    }
+  };
+
+  setTimeout(() => {
+    runBatch(initialBefore).catch((e) => {
+      console.error('[StravaBackfill] Initial async error:', e?.message || e);
+      stravaBackfillLocks.delete(lockKey);
+    });
+  }, 4000);
+}
 
 // GET /api/integrations/strava/auth-url
 router.get('/strava/auth-url', (req, res) => {
@@ -112,14 +225,25 @@ router.get('/strava/callback', async (req, res) => {
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: expires_at,
-      // Preserve existing autoSync setting if it exists, otherwise default to false
-      autoSync: user.strava?.autoSync !== undefined ? user.strava.autoSync : false
+      // Enable auto-sync immediately after successful connect.
+      autoSync: true
     };
-    // Save Strava profile picture if available
-    if (athlete?.profile && athlete.profile !== 'avatar/athlete/large.png') {
-      // Use profile_large if available, otherwise profile_medium, otherwise profile
-      const profilePath = athlete.profile_large || athlete.profile_medium || athlete.profile;
-      // Convert relative path to full URL
+
+    // Refresh athlete profile from Strava API so avatar is always current on connect.
+    let freshAthlete = athlete || null;
+    try {
+      const athleteResp = await axios.get('https://www.strava.com/api/v3/athlete', {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 15000
+      });
+      freshAthlete = athleteResp.data || athlete || null;
+    } catch (profileErr) {
+      console.warn('Strava callback profile refresh failed, using token athlete payload');
+    }
+
+    // Save Strava profile picture if available.
+    if (freshAthlete?.profile && freshAthlete.profile !== 'avatar/athlete/large.png') {
+      const profilePath = freshAthlete.profile_large || freshAthlete.profile_medium || freshAthlete.profile;
       if (profilePath && !profilePath.startsWith('http')) {
         user.avatar = `https://www.strava.com/${profilePath}`;
       } else if (profilePath) {
@@ -127,6 +251,10 @@ router.get('/strava/callback', async (req, res) => {
       }
     }
     await user.save();
+
+    // Start full historical import in background (progressive batches, not one massive sync).
+    startStravaHistoricalBackfill(user._id);
+
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
     // Redirect back to app with a flag
     return res.redirect(`${frontend}/training-calendar?strava=connected`);

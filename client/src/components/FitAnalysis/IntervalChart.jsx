@@ -35,13 +35,16 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   const isSwim = sportLower.includes('swim');
   // Check if power data is available
   const hasPowerData = useMemo(() => {
-    if (isRun || isSwim) return false;
+    // For running we don't show power (pace-based swim/run charts).
+    // For swimming, allow power if backend/intervals actually provide watts.
+    if (isRun) return false;
     if (!laps || laps.length === 0) return false;
     return laps.some(lap => {
-      const power = lap.average_watts || lap.avgPower || 0;
-      return power > 0;
+      const powerRaw = lap.average_watts ?? lap.avgPower ?? lap.averageWatts ?? 0;
+      const power = Number(powerRaw);
+      return Number.isFinite(power) && power > 0;
     });
-  }, [laps, isRun, isSwim]);
+  }, [laps, isRun]);
 
   // For running and swimming, default to pace; for cycling with power data, default to power; otherwise heartRate
   const [selectedMetric, setSelectedMetric] = useState(
@@ -412,6 +415,16 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     if (idx === -1 || idx == null) return;
     setClickedBarIndex(idx);
     setHoveredBar({ bar: chartData.bars[idx], index: idx, widthPercent: 0 });
+
+    // Ensure the selected bar is visible (useful on small screens).
+    const el = barRefs.current?.[idx];
+    if (el && el.scrollIntoView) {
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      } catch {
+        // ignore
+      }
+    }
   }, [selectedLapNumber, chartData]);
 
   // Close "locked" tooltip when clicking/tapping outside the chart
@@ -612,7 +625,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           </button>
           )}
           {/* Only show power button if power data exists and it's not running or swimming */}
-          {hasPowerData && !isRun && !isSwim && (
+          {hasPowerData && !isRun && (
           <button
             onClick={() => setSelectedMetric('power')}
               className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'} font-medium rounded-lg transition-colors ${
@@ -685,15 +698,19 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               }
 
               let topPercent = steps > 0 ? (i / steps) * 100 : 0;
-              // Slightly nudge first/last labels inside the chart so they are not clipped
-              if (i === 0) topPercent += 2;
-              else if (i === steps) topPercent -= 2;
+              // Nudge first/last labels inside the chart so they are not clipped (esp. "Faster" helper)
+              if (i === 0) topPercent += 4;
+              else if (i === steps) topPercent -= 4;
               
               return (
                 <div
                   key={i}
                   className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right absolute right-0`}
-                  style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}
+                  style={{
+                    top: `${topPercent}%`,
+                    // Prevent the first label from being clipped at the top and the last at the bottom
+                    transform: i === 0 ? 'translateY(0%)' : (i === steps ? 'translateY(-100%)' : 'translateY(-50%)')
+                  }}
                 >
                   {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}
                   {((isRun || isSwim) && selectedMetric === 'pace' && (i === 0 || i === steps)) && (
@@ -793,10 +810,19 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
               // For pauses, set minimum height (2px) and gray color
               const barHeight = bar.isPause ? 2 : height;
               
-              // Tooltip title
-              const tooltipTitle = (isRun || isSwim)
-                ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. pace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`
-                : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. Power: ${Math.round(bar.lap.average_watts || bar.lap.avgPower || 0)} W\nAvg. HR: ${Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0)}`;
+              // Tooltip title: depends on the selected metric, not on sport type.
+              const avgHr = Math.round(bar.lap.average_heartrate || bar.lap.avgHeartRate || 0);
+              const avgPower = Math.round(bar.lap.average_watts || bar.lap.avgPower || 0);
+              const avgCadence = Math.round(bar.lap.average_cadence || bar.lap.avgCadence || 0);
+
+              const tooltipTitle =
+                selectedMetric === 'pace'
+                  ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. pace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                  : selectedMetric === 'power'
+                    ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Power: ${avgPower} W\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                    : selectedMetric === 'cadence'
+                      ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Cadence: ${avgCadence}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                      : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`;
               
               return (
                 <div

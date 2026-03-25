@@ -665,6 +665,19 @@ export const getAdminUsers = async () => {
   }
 };
 
+export const getCoachAthletesPage = async (coachId, { limit = 20, offset = 0 } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+    const response = await api.get(`/user/admin/coach-athletes/${coachId}?${params.toString()}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching coach athletes page:', error);
+    throw error;
+  }
+};
+
 export const getAdminStats = async () => {
   try {
     const response = await api.get('/user/admin/stats');

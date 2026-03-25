@@ -56,6 +56,34 @@ class TrainingDao {
     }
   }
 
+  async countByAthleteIds(athleteIds) {
+    try {
+      if (!athleteIds || athleteIds.length === 0) return 0;
+      const athleteIdStrings = athleteIds.map(id => String(id));
+      const count = await this.Training.countDocuments({ athleteId: { $in: athleteIdStrings } });
+      return count;
+    } catch (error) {
+      console.error('Error in countByAthleteIds:', error);
+      throw error;
+    }
+  }
+
+  // Returns a Map: athleteId (string) -> count of trainings
+  async countByAthleteIdsGrouped(athleteIds) {
+    try {
+      if (!athleteIds || athleteIds.length === 0) return new Map();
+      const athleteIdStrings = athleteIds.map(id => String(id));
+      const rows = await this.Training.aggregate([
+        { $match: { athleteId: { $in: athleteIdStrings } } },
+        { $group: { _id: '$athleteId', count: { $sum: 1 } } }
+      ]);
+      return new Map((rows || []).map(r => [String(r._id), Number(r.count || 0)]));
+    } catch (error) {
+      console.error('Error in countByAthleteIdsGrouped:', error);
+      throw error;
+    }
+  }
+
   async createTraining(trainingData) {
     try {
       if (process.env.NODE_ENV !== 'production') {
