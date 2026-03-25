@@ -2,8 +2,21 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 
 const ProtectedRoute = ({ allowedRoles, children }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
   const location = useLocation();
+
+  // During initial auth hydration (refresh), don't redirect to /login yet.
+  // Otherwise we get a visible "bounce" to login and back.
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white/5">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+          <div className="text-sm text-lighterText">Loading session…</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     // Uložíme si původní cestu pro případné přesměrování po přihlášení
@@ -23,21 +36,6 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     if (isTestingRole) {
       // Testing role has access to non-admin pages by default, but must still match explicit allowedRoles.
       if (allowedRoles.includes('admin') && !isAdmin) {
-        // #region agent log
-        fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-          body: JSON.stringify({
-            sessionId: '2e357f',
-            runId: 'precheck',
-            hypothesisId: 'H1',
-            location: 'ProtectedRoute.jsx',
-            message: 'testing-role denied (admin-only)',
-            data: { role: user?.role, allowedRoles },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         return <div className="text-center mt-12 text-xl text-red-500 font-bold">You are not authorized.</div>;
       }
       if (
@@ -45,38 +43,8 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
         !allowedRoles.includes('testing') &&
         !allowedRoles.includes('tester')
       ) {
-        // #region agent log
-        fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-          body: JSON.stringify({
-            sessionId: '2e357f',
-            runId: 'precheck',
-            hypothesisId: 'H1',
-            location: 'ProtectedRoute.jsx',
-            message: 'testing-role denied (allowedRoles mismatch)',
-            data: { role: user?.role, allowedRoles },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         return <div className="text-center mt-12 text-xl text-red-500 font-bold">You are not authorized.</div>;
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-        body: JSON.stringify({
-          sessionId: '2e357f',
-          runId: 'precheck',
-          hypothesisId: 'H1',
-          location: 'ProtectedRoute.jsx',
-          message: 'testing-role allowed',
-          data: { role: user?.role, allowedRoles, isAdmin },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return children;
     }
     // Kontrola pro ostatní role (pokud není admin route)
