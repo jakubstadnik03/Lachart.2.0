@@ -2462,7 +2462,8 @@ router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, r
                 overrides: {
                     promo: true,
                     subject: "Your last lactate test in LaChart – plan your next block",
-                    ignoreEmailPreferences: false
+                    // Admin-triggered reactivation should not be blocked by user notification toggle.
+                    ignoreEmailPreferences: true
                 }
             });
 
