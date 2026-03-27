@@ -5,6 +5,7 @@ import React, { useState, useRef, useEffect, createContext, useContext } from 'r
 import * as math from 'mathjs';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { computeLactateThresholds } from './lactateThresholdSegmented';
 
 // Pomocná funkce pro lineární interpolaci
@@ -2688,8 +2689,12 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     }
     
     const thresholds = calculateThresholds(mockData);
-    const sport = mockData?.sport || 'bike';
-    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
+    let sport = mockData?.sport || 'bike';
+    const sLow = String(sport).toLowerCase();
+    if (sLow === 'cycling' || sLow === 'cycle') sport = 'bike';
+    else if (sLow === 'running') sport = 'run';
+    else if (sLow === 'swimming') sport = 'swim';
+    const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
     const inputMode = getEffectiveLactateInputMode(mockData);
   
     // Seznam metod, včetně Log-log

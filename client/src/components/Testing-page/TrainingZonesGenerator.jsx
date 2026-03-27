@@ -8,6 +8,7 @@ import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
@@ -38,7 +39,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   };
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
-  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
+  const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   const inputMode = getEffectiveLactateInputMode(mockData);
   const selectedTestDate = mockData?.date || mockData?.createdAt || mockData?.timestamp;
 

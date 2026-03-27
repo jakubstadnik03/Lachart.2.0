@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, impersonateUser } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -33,6 +33,12 @@ const AdminDashboard = () => {
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
   const [deleteAthleteLoadingId, setDeleteAthleteLoadingId] = useState(null);
+  const [outreachName, setOutreachName] = useState('');
+  const [outreachEmail, setOutreachEmail] = useState('');
+  const [outreachSending, setOutreachSending] = useState(false);
+  const [outreachLeads, setOutreachLeads] = useState([]);
+  const [outreachLeadsLoading, setOutreachLeadsLoading] = useState(false);
+  const [outreachLeadUpdatingId, setOutreachLeadUpdatingId] = useState(null);
 
   // Lazy-loaded athletes lists inside coach cards (pagination).
   // Key: coachId, Value: { athletes: [], totalLinked: number, totalWithPassword: number }
@@ -83,6 +89,23 @@ const AdminDashboard = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartTimeRange]);
+
+  useEffect(() => {
+    const loadOutreachLeads = async () => {
+      if (activeTab !== 'outreach') return;
+      try {
+        setOutreachLeadsLoading(true);
+        const leads = await getCoachOutreachLeads();
+        setOutreachLeads(Array.isArray(leads) ? leads : []);
+      } catch (err) {
+        const message = err?.response?.data?.error || 'Failed to load outreach leads';
+        addNotification(message, 'error');
+      } finally {
+        setOutreachLeadsLoading(false);
+      }
+    };
+    loadOutreachLeads();
+  }, [activeTab, addNotification]);
 
   const handleLoadMoreCoachAthletes = async (coach) => {
     const coachId = coach?._id;
@@ -603,6 +626,44 @@ const AdminDashboard = () => {
     setSelectedUsersForBulk([]);
   };
 
+  const handleSendCoachOutreachEmail = async () => {
+    const name = outreachName.trim();
+    const email = outreachEmail.trim().toLowerCase();
+    if (!email) {
+      addNotification('Please provide email', 'warning');
+      return;
+    }
+    try {
+      setOutreachSending(true);
+      await sendCoachOutreachEmail({ name, email });
+      addNotification(`Outreach email sent to ${email}`, 'success');
+      setOutreachName('');
+      setOutreachEmail('');
+      const leads = await getCoachOutreachLeads();
+      setOutreachLeads(Array.isArray(leads) ? leads : []);
+    } catch (err) {
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed to send outreach email'}: ${data.reason}` : (data?.error || 'Failed to send outreach email');
+      addNotification(message, 'error');
+      console.error('Coach outreach email error:', err);
+    } finally {
+      setOutreachSending(false);
+    }
+  };
+
+  const handleOutreachLeadToggle = async (leadId, field, value) => {
+    try {
+      setOutreachLeadUpdatingId(`${leadId}:${field}`);
+      const updated = await updateCoachOutreachLead(leadId, { [field]: value });
+      setOutreachLeads((prev) => prev.map((l) => (l._id === leadId ? updated : l)));
+    } catch (err) {
+      const message = err?.response?.data?.error || 'Failed to update outreach lead';
+      addNotification(message, 'error');
+    } finally {
+      setOutreachLeadUpdatingId(null);
+    }
+  };
+
   if (loading) return null;
   if (!currentUser?.admin) {
     return <div className="text-center mt-12 text-xl text-red-500 font-bold">You are not authorized.</div>;
@@ -641,6 +702,7 @@ const AdminDashboard = () => {
     { id: 'overview', name: 'Overview', icon: '📊' },
     { id: 'users', name: 'Users', icon: '👥' },
     { id: 'marketing', name: 'Marketing', icon: '📧' },
+    { id: 'outreach', name: 'Outreach', icon: '🎯' },
     { id: 'analytics', name: 'Analytics', icon: '📈' }
   ];
 
@@ -1781,6 +1843,42 @@ const AdminDashboard = () => {
               </div>
             </div>
 
+            {/* Quick coach outreach */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Quick Coach Outreach</h3>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                Fill name + email and send a ready-made outreach email with a link to https://lachart.net
+              </p>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  value={outreachName}
+                  onChange={(e) => setOutreachName(e.target.value)}
+                  placeholder="Coach name (optional)"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="email"
+                  value={outreachEmail}
+                  onChange={(e) => setOutreachEmail(e.target.value)}
+                  placeholder="coach@example.com"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendCoachOutreachEmail}
+                  disabled={outreachSending || !outreachEmail.trim()}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    outreachSending || !outreachEmail.trim()
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-primary text-white hover:bg-primary-dark'
+                  }`}
+                >
+                  {outreachSending ? 'Sending…' : 'Send Outreach Email'}
+                </button>
+              </div>
+            </div>
+
             {/* Bulk Actions */}
             {selectedUsersForBulk.length > 0 && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 sm:p-6">
@@ -2065,6 +2163,110 @@ const AdminDashboard = () => {
                           </tr>
                         );
                       })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'outreach' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4 sm:space-y-6"
+          >
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Quick Coach Outreach</h3>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                Send outreach email and track follow-up status (responded / registered).
+              </p>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  value={outreachName}
+                  onChange={(e) => setOutreachName(e.target.value)}
+                  placeholder="Coach name (optional)"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="email"
+                  value={outreachEmail}
+                  onChange={(e) => setOutreachEmail(e.target.value)}
+                  placeholder="coach@example.com"
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendCoachOutreachEmail}
+                  disabled={outreachSending || !outreachEmail.trim()}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    outreachSending || !outreachEmail.trim()
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-primary text-white hover:bg-primary-dark'
+                  }`}
+                >
+                  {outreachSending ? 'Sending…' : 'Send Outreach Email'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Outreach Sent List</h3>
+                <span className="text-xs sm:text-sm text-gray-500">{outreachLeads.length} leads</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Sent</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responded</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {outreachLeadsLoading ? (
+                      <tr>
+                        <td colSpan="6" className="px-4 py-8 text-center text-gray-500">Loading outreach leads...</td>
+                      </tr>
+                    ) : outreachLeads.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="px-4 py-8 text-center text-gray-500">No outreach leads yet.</td>
+                      </tr>
+                    ) : (
+                      outreachLeads.map((lead) => (
+                        <tr key={lead._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">{lead.name || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{lead.email}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{lead.sentCount || 0}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {lead.lastSentAt ? new Date(lead.lastSentAt).toLocaleString() : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(lead.responded)}
+                              disabled={outreachLeadUpdatingId === `${lead._id}:responded`}
+                              onChange={(e) => handleOutreachLeadToggle(lead._id, 'responded', e.target.checked)}
+                              className="rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(lead.registered)}
+                              disabled={outreachLeadUpdatingId === `${lead._id}:registered`}
+                              onChange={(e) => handleOutreachLeadToggle(lead._id, 'registered', e.target.checked)}
+                              className="rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>

@@ -38,6 +38,24 @@ export const getUserUnits = (user) => {
 };
 
 /**
+ * Resolve distance unit system robustly from user profile + optional fallback.
+ * Accepts legacy/variant values like "Imperial", "mile", "miles", "us".
+ */
+export const resolveDistanceUnitSystem = (user, fallback = 'metric') => {
+  const normalize = (value) => String(value || '').trim().toLowerCase();
+  const isImperialLike = (value) => {
+    const v = normalize(value);
+    return v === 'imperial' || v === 'us' || v === 'mile' || v === 'miles' || v === 'mi' || v === 'mph';
+  };
+
+  const userDistance = user?.units?.distance;
+  if (isImperialLike(userDistance)) return 'imperial';
+  if (normalize(userDistance) === 'metric' || normalize(userDistance) === 'km') return 'metric';
+
+  return isImperialLike(fallback) ? 'imperial' : 'metric';
+};
+
+/**
  * Convert distance from meters to user's preferred unit
  * @param {Number} meters - Distance in meters
  * @param {String} unitSystem - 'metric' or 'imperial'

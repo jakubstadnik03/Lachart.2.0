@@ -19,6 +19,7 @@ import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
+import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 
 const TestingPage = () => {
   const { athleteId } = useParams();
@@ -834,7 +835,7 @@ const TestingPage = () => {
   };
 
   // Get unitSystem from user profile
-  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
 
   const formatPace = (secondsPerKm) => {
     if (!secondsPerKm || secondsPerKm <= 0) return '-';

@@ -10,8 +10,12 @@ import { Analytics } from "@vercel/analytics/react"
 import { SpeedInsights } from "@vercel/speed-insights/react"
 import { useLocation } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
+import { Capacitor } from '@capacitor/core';
 import './App.css';
 import BuyMeACoffeeWidget from './components/BuyMeACoffeeWidget';
+
+/** Jen nativní iOS appka (Capacitor) — `/` = login. Ve webovém prohlížeči zůstává About jako dřív. */
+const isIosNative = Capacitor.getPlatform() === 'ios';
 
 // Lazy load all pages for code splitting and faster initial load
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -119,7 +123,7 @@ function AppRoutes() {
     >
       <Routes>
         {/* Veřejné routy */}
-        <Route path="/" element={<About />} />
+        <Route path="/" element={isIosNative ? <LoginPage /> : <About />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />

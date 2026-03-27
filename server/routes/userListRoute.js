@@ -25,6 +25,7 @@ const StravaActivity = require("../models/StravaActivity");
 const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
+const CoachOutreachLead = require("../models/CoachOutreachLead");
 const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
 const {
   isCoachLikeRole,
@@ -3130,6 +3131,162 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send Strava reminder email";
         const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
         res.status(500).json({ error: errorTitle, reason });
+    }
+});
+
+// Send custom outreach email to a coach/tester contact (admin only)
+router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER and EMAIL_APP_PASSWORD in server .env to send emails."
+            });
+        }
+
+        const rawName = (req.body?.name || "").toString().trim();
+        const rawEmail = (req.body?.email || "").toString().trim().toLowerCase();
+        if (!rawEmail) {
+            return res.status(400).json({ error: "Email is required." });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(rawEmail)) {
+            return res.status(400).json({ error: "Invalid email format." });
+        }
+
+        const contactName = rawName || "Coach";
+        const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+        const clientUrl = getClientUrl() || 'https://lachart.net';
+        const imageUrl = `${clientUrl}/images/lactate_testing.png`;
+
+        const subject = "Free tool for lactate testing coaches - LaChart";
+        const content = `
+            <p>Hi ${contactName},</p>
+            <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
+            <p style="margin-top: 20px;">
+                LaChart helps you:
+            </p>
+            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                <li>log lactate step tests quickly,</li>
+                <li>auto-calculate <strong>LT1 / LT2</strong> and training zones,</li>
+                <li>generate and send a clear <strong>PDF report</strong>,</li>
+                <li>manage athletes and keep test history in one place.</li>
+            </ul>
+            <p style="margin-top: 20px;">
+                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+            </p>
+            <p style="margin-top: 20px;">
+                If this could be useful for your coaching/testing workflow, I would love your feedback.
+            </p>
+            <p style="margin-top: 20px;">
+                You can try it here: <a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a>
+            </p>
+            <p style="margin-top: 26px;">Best regards,</p>
+            <p><strong>Jakub Stadnik</strong><br/>Creator of LaChart</p>
+        `;
+
+        const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email transporter is not configured.",
+                reason: "Set SMTP_HOST, SMTP_PORT, EMAIL_USER and EMAIL_APP_PASSWORD."
+            });
+        }
+
+        await transporter.sendMail({
+            from: {
+                name: 'Jakub - LaChart',
+                address: process.env.EMAIL_USER
+            },
+            to: rawEmail,
+            subject,
+            html: generateEmailTemplate({
+                title: 'Free Lactate Testing App for Coaches',
+                content,
+                buttonText: 'Open LaChart',
+                buttonUrl: 'https://lachart.net',
+                footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
+            })
+        });
+
+        const now = new Date();
+        await CoachOutreachLead.findOneAndUpdate(
+            { email: rawEmail },
+            {
+                $set: {
+                    name: contactName,
+                    lastSentAt: now,
+                    lastUpdatedBy: currentUser._id
+                },
+                $setOnInsert: {
+                    createdBy: currentUser._id
+                },
+                $inc: { sentCount: 1 }
+            },
+            { upsert: true, new: true }
+        );
+
+        return res.status(200).json({ ok: true, message: "Coach outreach email sent successfully." });
+    } catch (error) {
+        console.error("Error sending coach outreach email:", error);
+        const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
+        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send coach outreach email";
+        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        return res.status(500).json({ error: errorTitle, reason });
+    }
+});
+
+// Get outreach leads list (admin only)
+router.get("/admin/coach-outreach-leads", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+        const leads = await CoachOutreachLead.find({})
+            .sort({ lastSentAt: -1, createdAt: -1 })
+            .lean();
+        return res.status(200).json(leads);
+    } catch (error) {
+        console.error("Error fetching coach outreach leads:", error);
+        return res.status(500).json({ error: "Failed to fetch outreach leads" });
+    }
+});
+
+// Update outreach lead status (admin only)
+router.patch("/admin/coach-outreach-leads/:leadId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const { leadId } = req.params;
+        const { responded, registered, notes, name } = req.body || {};
+        const update = { lastUpdatedBy: currentUser._id };
+        if (typeof responded === "boolean") update.responded = responded;
+        if (typeof registered === "boolean") update.registered = registered;
+        if (typeof notes === "string") update.notes = notes;
+        if (typeof name === "string") update.name = name.trim();
+
+        const lead = await CoachOutreachLead.findByIdAndUpdate(
+            leadId,
+            { $set: update },
+            { new: true }
+        );
+        if (!lead) {
+            return res.status(404).json({ error: "Outreach lead not found" });
+        }
+        return res.status(200).json(lead);
+    } catch (error) {
+        console.error("Error updating coach outreach lead:", error);
+        return res.status(500).json({ error: "Failed to update outreach lead" });
     }
 });
 

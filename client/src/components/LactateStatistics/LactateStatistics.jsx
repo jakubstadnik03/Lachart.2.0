@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones, getZoneHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
+import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 // Power zones definition (based on FTP) - using app colors with different shades
 const POWER_ZONES = [
@@ -32,6 +33,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   const [zoneHistoryLoading, setZoneHistoryLoading] = useState(false);
   const [showZoneHistory, setShowZoneHistory] = useState(false);
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   
   // Detect mobile
   useEffect(() => {
@@ -69,6 +71,18 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
     const secs = Math.round(seconds % 60);
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
+  const formatRunPace = (secondsPerKm) => {
+    if (!secondsPerKm || secondsPerKm === 0 || isNaN(secondsPerKm)) return '';
+    const secPerUnit = unitSystem === 'imperial' ? secondsPerKm * 1.60934 : secondsPerKm;
+    return formatPace(secPerUnit);
+  };
+  const formatSwimPace = (secondsPer100m) => {
+    if (!secondsPer100m || secondsPer100m === 0 || isNaN(secondsPer100m)) return '';
+    const secPerUnit = unitSystem === 'imperial' ? secondsPer100m * 0.9144 : secondsPer100m;
+    return formatPace(secPerUnit);
+  };
+  const runPaceUnit = unitSystem === 'imperial' ? '/mile' : '/km';
+  const swimPaceUnit = unitSystem === 'imperial' ? '/100yd' : '/100m';
 
   const loadTrainings = useCallback(async () => {
     const athleteId = user?.role === 'athlete'
@@ -724,9 +738,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                           <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
                             <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Pace' : 'Avg Pace'}</div>
                             <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'text-xs' : 'text-base'} font-bold text-text leading-tight`}>
-                              <span>{formatPace(month.runningAvgPace)}</span>
+                              <span>{formatRunPace(month.runningAvgPace)}</span>
                               {month.runningMaxPace > 0 && month.runningMaxPace < Infinity && !isNaN(month.runningMaxPace) && !isMobile && (
-                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatPace(month.runningMaxPace)}</span>
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatRunPace(month.runningMaxPace)}</span>
                               )}
                             </div>
                           </div>
@@ -773,9 +787,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                           <div className={`bg-white/10 backdrop-blur-md ${isMobile ? 'rounded p-0.5' : 'rounded-lg p-1.5'} border border-white/15 shadow-sm`}>
                             <div className={`${isMobile ? 'text-[8px]' : 'text-xs'} text-lighterText font-medium ${isMobile ? 'mb-0' : 'mb-0.5'}`}>{isMobile ? 'Pace' : 'Avg Pace'}</div>
                             <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'text-xs' : 'text-base'} font-bold text-text leading-tight`}>
-                              <span>{formatPace(month.swimmingAvgPace)}</span>
+                              <span>{formatSwimPace(month.swimmingAvgPace)}</span>
                               {month.swimmingMaxPace > 0 && month.swimmingMaxPace < Infinity && !isNaN(month.swimmingMaxPace) && !isMobile && (
-                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatPace(month.swimmingMaxPace)}</span>
+                                <span className="text-[10px] text-lighterText font-medium ml-1">Best: {formatSwimPace(month.swimmingMaxPace)}</span>
                               )}
                             </div>
                           </div>
@@ -1201,10 +1215,10 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                               if (zoneDef) {
                                 minDisplay = zoneDef.min === null || zoneDef.min === undefined || isNaN(zoneDef.min)
                                   ? '0:00'
-                                  : formatPace(zoneDef.min);
+                                  : formatRunPace(zoneDef.min);
                                 maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined || isNaN(zoneDef.max)
                                   ? '∞' 
-                                  : formatPace(zoneDef.max);
+                                  : formatRunPace(zoneDef.max);
                               }
                               
                               // Zone labels based on description - shorter on mobile
@@ -1222,7 +1236,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                   <div className="font-semibold text-gray-900">{zoneLabel}</div>
                                   <div className="text-gray-600">Time: {formatDuration(zone.time)}</div>
                                   {zone.avgPace && zone.avgPace > 0 && zone.avgPace !== Infinity && !isNaN(zone.avgPace) && (
-                                    <div className="text-teal-600 font-medium">Avg Pace: {formatPace(zone.avgPace)} /km</div>
+                                    <div className="text-teal-600 font-medium">Avg Pace: {formatRunPace(zone.avgPace)} {runPaceUnit}</div>
                                   )}
                                   <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
                                 </div>
@@ -1233,7 +1247,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                   {/* Zone name and range on the left */}
                                   <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
                                     <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
-                                      {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} /km`}
+                                      {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} ${runPaceUnit}`}
                                 </div>
                                   </div>
                                   
@@ -1317,10 +1331,10 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                             let minDisplay = '0:00';
                             let maxDisplay = '∞';
                             if (zoneDef) {
-                              minDisplay = formatPace(zoneDef.min);
+                              minDisplay = formatSwimPace(zoneDef.min);
                               maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined 
                                 ? '∞' 
-                                : formatPace(zoneDef.max);
+                                : formatSwimPace(zoneDef.max);
                             }
                             
                             // Zone labels based on description - shorter on mobile
@@ -1338,7 +1352,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 <div className="font-semibold text-gray-900">{zoneLabel}</div>
                                 <div className="text-gray-600">Time: {formatDuration(zone.time)}</div>
                                 {zone.avgPace && zone.avgPace > 0 && (
-                                  <div className="text-teal-600 font-medium">Avg Pace: {formatPace(zone.avgPace)} /100m</div>
+                                  <div className="text-teal-600 font-medium">Avg Pace: {formatSwimPace(zone.avgPace)} {swimPaceUnit}</div>
                                 )}
                                 <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
                               </div>
@@ -1349,7 +1363,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 {/* Zone name and range on the left */}
                                 <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
                                   <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
-                                    {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} /100m`}
+                                    {isMobile ? `Z${powerZone.zone}: ${minDisplay}-${maxDisplay}` : `${zoneLabel}: ${minDisplay} – ${maxDisplay} ${swimPaceUnit}`}
                                 </div>
                                 </div>
                                 
@@ -1455,7 +1469,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 </td>
                                 <td className="text-right py-1.5 px-2 text-text text-[10px]">{formatDuration(training.totalTime)}</td>
                                 <td className="text-right py-1.5 px-2 text-text text-[10px]">
-                                  {training.totalDistance > 0 ? `${(training.totalDistance / 1000).toFixed(1)} km` : '-'}
+                                  {training.totalDistance > 0 ? formatDistanceForUser(Number(training.totalDistance), user) : '-'}
                                 </td>
                               </tr>
                             ))}
@@ -1483,7 +1497,10 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                                 </td>
                                 <td className="text-right py-1.5 px-2 text-text text-[10px]">
                                   {selectedTrainings.some(t => t.totalDistance > 0)
-                                    ? `${(selectedTrainings.reduce((sum, t) => sum + (t.totalDistance || 0), 0) / 1000 / selectedTrainings.length).toFixed(1)} km`
+                                    ? formatDistanceForUser(
+                                        selectedTrainings.reduce((sum, t) => sum + (Number(t.totalDistance) || 0), 0) / selectedTrainings.length,
+                                        user
+                                      )
                                     : '-'}
                                 </td>
                               </tr>

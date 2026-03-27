@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSport = 'all' }) => {
   const { user } = useAuth();
@@ -10,7 +11,7 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
   const testsPerPage = 3;
   
   // Get unitSystem from user profile
-  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   
   // Detect mobile
   useEffect(() => {

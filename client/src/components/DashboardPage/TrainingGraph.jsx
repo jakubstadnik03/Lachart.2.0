@@ -13,10 +13,12 @@ import {
 } from "chart.js";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const CustomTooltip = ({ tooltip, datasets, sport }) => {
+const CustomTooltip = ({ tooltip, datasets, sport, unitSystem = 'metric' }) => {
   if (!tooltip?.dataPoints) return null;
 
   const index = tooltip.dataPoints[0]?.dataIndex;
@@ -30,9 +32,10 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
   // Funkce pro formátování času do formátu mm:ss
   const formatPace = (seconds) => {
     if (!seconds) return null;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
+    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
+    const minutes = Math.floor(secPerUnit / 60);
+    const remainingSeconds = Math.floor(secPerUnit % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   };
 
   // Funkce pro formátování vzdálenosti - rozpozná jestli je hodnota v metrech nebo km
@@ -80,12 +83,18 @@ const CustomTooltip = ({ tooltip, datasets, sport }) => {
     // Pokud je hodnota v metrech, převeď na km pro rozhodování
     const distanceInKm = isInMeters ? numDistance / 1000 : numDistance;
     
-    // Pokud je menší než 1 km, zobraz v metrech
+    // Pokud je menší než 1 km, zobraz v metrech/stopách
     if (distanceInKm < 1) {
       const meters = isInMeters ? Math.round(numDistance) : Math.round(distanceInKm * 1000);
+      if (unitSystem === 'imperial') {
+        return `${Math.round(meters * 3.28084)} ft`;
+      }
       return `${meters} m`;
     }
-    // Jinak zobraz v km s 2 desetinnými místy
+    // Jinak zobraz v km/mi
+    if (unitSystem === 'imperial') {
+      return `${(distanceInKm * 0.621371).toFixed(2)} mi`;
+    }
     return `${distanceInKm.toFixed(2)} km`;
   };
 
@@ -223,6 +232,8 @@ const TrainingGraph = ({
   selectedSport,
   setSelectedSport
 }) => {
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   // Get available sports from trainings
   const availableSports = [...new Set(trainingList.map(t => t.sport))].filter(Boolean);
   
@@ -254,9 +265,10 @@ const TrainingGraph = ({
 
   // Funkce pro formátování času do formátu mm:ss
   const formatPace = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}/km`;
+    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
+    const minutes = Math.floor(secPerUnit / 60);
+    const remainingSeconds = Math.floor(secPerUnit % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   };
 
   // Funkce pro formátování hodnoty podle sportu
@@ -757,6 +769,7 @@ const TrainingGraph = ({
               duration: r.moving_time ?? r.totalTimerTime ?? r.duration ?? r.durationSeconds
             }))} 
             sport={currentSelectedSport === 'all' ? selectedTrainingData.sport : currentSelectedSport}
+            unitSystem={unitSystem}
           />
         )}
       </div>

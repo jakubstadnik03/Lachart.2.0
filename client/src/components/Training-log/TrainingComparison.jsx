@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import {
   ComposedChart,
   Line,
@@ -20,6 +22,8 @@ import {
 
 const TrainingComparison = ({ trainings }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const stripUnits = (text) => {
     if (!text || typeof text !== 'string') return text;
     // Keep digits, dot and colon (e.g. "1.25 km" -> "1.25", "00:45" -> "00:45")
@@ -575,6 +579,11 @@ const TrainingComparison = ({ trainings }) => {
     if (dist === undefined || dist === null) return null;
     const meters = typeof dist === 'string' ? Number(dist) : dist;
     if (Number.isNaN(meters) || meters <= 0) return null;
+    if (unitSystem === 'imperial') {
+      const miles = meters / 1609.344;
+      if (miles >= 0.1) return `${miles.toFixed(2)} mi`;
+      return `${Math.round(meters * 3.28084)} ft`;
+    }
     if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
     return `${Math.round(meters)} m`;
   };
@@ -970,7 +979,9 @@ const TrainingComparison = ({ trainings }) => {
                             return 'Power (W)';
                           }
                           // Otherwise check if it's pace or power
-                          return isPaceMetric() ? 'Pace (s)' : 'Power (W) / Pace (s)';
+                          return isPaceMetric()
+                            ? (unitSystem === 'imperial' ? 'Pace (s/mile)' : 'Pace (s/km)')
+                            : 'Power (W) / Pace (s)';
                         }
                         return selectedMetric === 'heartRate'
                           ? 'Heart Rate (bpm)'

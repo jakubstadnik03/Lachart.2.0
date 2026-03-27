@@ -17,6 +17,7 @@ import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } fr
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 ChartJS.register(
     CategoryScale,
@@ -452,7 +453,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   }, []);
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
-  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
+  const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   // Case + nesoulad metadat (speed) vs skutečná data v sekundách po přepnutí jiného testu
   const inputMode = getEffectiveLactateInputMode({ ...mockData, sport: sportKey });
   const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { formatDistanceForUser, formatSpeedForUser } from "../../utils/unitsConverter";
+import { formatDistanceForUser, formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
 
 const maxGraphHeight = 200;
 
@@ -327,11 +327,13 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
   };
 
   const width = getWidth();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
 
   const formatPace = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}/km`;
+    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
+    const minutes = Math.floor(secPerUnit / 60);
+    const remainingSeconds = Math.round(secPerUnit % 60);
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   };
 
   // Parse distance from various formats (1km, 1000m, etc.) to km
@@ -546,7 +548,7 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
                 ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }]
                 : []),
               // For run sport, show Pace instead of Power
-              ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}/km` : formatPace(power), unit: "" }] : []),
+              ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}${unitSystem === 'imperial' ? '/mile' : '/km'}` : formatPace(power), unit: "" }] : []),
               // For other sports, show Power
               ...(sport !== 'run' && power ? [{ label: "Power", value: power, unit: "W" }] : []),
               // Also show distance if explicitly provided (separate from duration)
@@ -579,6 +581,7 @@ function Scale({ values, unit, formatValue, isPace = false }) {
 }
 
 function TrainingComparison({ training, previousTraining, sport, onTrainingClick, user = null }) {
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const getAveragePower = (results) => {
     const powers = results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
     return powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b) / powers.length) : 0;
@@ -608,9 +611,10 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   };
 
   const formatPace = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}/km`;
+    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
+    const minutes = Math.floor(secPerUnit / 60);
+    const remainingSeconds = Math.round(secPerUnit % 60);
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   };
 
   const currentAvgPower = getAveragePower(trainingResultsOf(training));
@@ -718,6 +722,7 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
 
 export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false, user = null }) {
   const navigate = useNavigate();
+  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const trainingsList = useMemo(
     () => (Array.isArray(trainings) ? trainings : []),
     [trainings]
@@ -890,9 +895,10 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   };
 
   const formatPaceValue = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${String(secs).padStart(2, '0')}/km`;
+    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
+    const minutes = Math.floor(secPerUnit / 60);
+    const secs = Math.round(secPerUnit % 60);
+    return `${minutes}:${String(secs).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
   };
 
   // Parse pace from mm:ss format to seconds

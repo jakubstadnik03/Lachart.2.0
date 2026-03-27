@@ -744,6 +744,37 @@ export const sendStravaReminderEmail = async (userId) => {
   }
 };
 
+// Send custom coach outreach email to arbitrary contact (admin only)
+export const sendCoachOutreachEmail = async ({ name, email }) => {
+  try {
+    const response = await api.post('/user/admin/send-coach-outreach-email', { name, email });
+    return response.data;
+  } catch (error) {
+    console.error('Error sending coach outreach email:', error);
+    throw error;
+  }
+};
+
+export const getCoachOutreachLeads = async () => {
+  try {
+    const response = await api.get('/user/admin/coach-outreach-leads');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching coach outreach leads:', error);
+    throw error;
+  }
+};
+
+export const updateCoachOutreachLead = async (leadId, payload) => {
+  try {
+    const response = await api.patch(`/user/admin/coach-outreach-leads/${leadId}`, payload);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating coach outreach lead:', error);
+    throw error;
+  }
+};
+
 export const updateUserAdmin = async (userId, userData) => {
   try {
     const response = await api.put(`/user/admin/users/${userId}`, userData);

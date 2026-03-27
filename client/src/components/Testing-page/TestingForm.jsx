@@ -4,6 +4,7 @@ import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info } from 'lucide
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 
 // Tutorial steps configuration
@@ -135,6 +136,13 @@ const logDataChange = (type, data) => {
 };
 
 function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange, onDelete, demoMode = false, disableInnerScroll = false }) {
+  const normalizeSport = (sport) => {
+    const s = String(sport || '').trim().toLowerCase();
+    if (s === 'running' || s.includes('run')) return 'run';
+    if (s === 'swimming' || s.includes('swim')) return 'swim';
+    if (s === 'cycling' || s === 'cycle' || s.includes('bike')) return 'bike';
+    return s || '';
+  };
   const { addNotification } = useNotification();
   const { user } = useAuth();
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
@@ -144,9 +152,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const [showGlossary, setShowGlossary] = useState(false);
   // Get unitSystem from user profile, fallback to testData or 'metric'
   const getUserUnitSystem = () => {
-    if (user?.units?.distance === 'imperial') return 'imperial';
-    if (testData?.unitSystem) return testData.unitSystem;
-    return 'metric';
+    return resolveDistanceUnitSystem(user, testData?.unitSystem || 'metric');
   };
   const [unitSystem, setUnitSystem] = useState(getUserUnitSystem());
   // RPE Scale: 'rpe' (1-10) or 'borg' (6-20)
@@ -229,7 +235,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     title: testData?.title || '',
     description: testData?.description || '',
     weight: testData?.weight || '',
-    sport: testData?.sport || '',
+    sport: normalizeSport(testData?.sport),
     baseLa: testData?.baseLa !== undefined && testData?.baseLa !== null ? String(testData.baseLa) : (testData?.baseLactate !== undefined && testData?.baseLactate !== null ? String(testData.baseLactate) : ''),
     date: formatDate(testData?.date),
     specifics: testData?.specifics || { specific: '', weather: '' },
@@ -238,13 +244,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   useEffect(() => {
     // Priority: user profile units > testData unitSystem > default 'metric'
-    if (user?.units?.distance === 'imperial') {
-      setUnitSystem('imperial');
-    } else if (testData?.unitSystem) {
-        setUnitSystem(testData.unitSystem);
-    } else {
-      setUnitSystem('metric');
-      }
+    setUnitSystem(resolveDistanceUnitSystem(user, testData?.unitSystem || 'metric'));
     
     if (testData?.inputMode) {
         setInputMode(testData.inputMode);
@@ -255,7 +255,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     } else {
       setRpeScale('rpe'); // Default to RPE if not set
     }
-  }, [testData, user?.units?.distance]);
+  }, [testData, user]);
 
   // Convert display format when switching inputMode/unitSystem (for existing values only)
   useEffect(() => {
@@ -1062,7 +1062,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       title: originalTestData.title || '',
                       description: originalTestData.description || '',
                       weight: originalTestData.weight?.toString() || '',
-                      sport: originalTestData.sport || '',
+                      sport: normalizeSport(originalTestData.sport),
                       baseLa: originalTestData.baseLactate?.toString() || '',
                       date: formatDate(originalTestData.date),
                       specifics: originalTestData.specifics || { specific: '', weather: '' },

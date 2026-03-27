@@ -14,6 +14,7 @@ import { HelpCircle, Info } from 'lucide-react';
 import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -122,7 +123,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   }, []);
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
-  const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : (mockData?.unitSystem || 'metric');
+  const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   const inputMode = mockData?.inputMode || 'pace';
 
   if (!mockData || !mockData.results || mockData.results.length === 0) {

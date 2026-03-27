@@ -8,6 +8,7 @@ import LapsTable from '../FitAnalysis/LapsTable';
 import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
+import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -110,7 +111,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const generateSwimLapsFromRecords = (records = []) => {
     if (!Array.isArray(records) || records.length < 2) return [];
 
-    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+    const unitSystem = resolveDistanceUnitSystem(user, 'metric');
     const stepMeters = unitSystem === 'imperial' ? 91.44 : 100; // 100yd vs 100m
     const MOVING_SPEED_THRESHOLD_MPS = 0.06; // swim speed can be low; use a small threshold
 
@@ -1317,7 +1318,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 )}
                                 {lap.distance != null && (
                                   <span className="text-gray-300">
-                                    Dist: {(lap.distance / 1000).toFixed(2)} km
+                                    Dist: {formatDistanceForUser(Number(lap.distance), user)}
                                   </span>
                                 )}
                                 {lap.avgPower != null && (

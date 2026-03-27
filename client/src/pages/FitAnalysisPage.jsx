@@ -18,6 +18,7 @@ import { useNotification } from '../context/NotificationContext';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
+import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -958,7 +959,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
   if (isMobileTable) {
     const isStravaRun = (selectedStrava?.sport || '').toLowerCase().includes('run');
     const isStravaSwim = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase().includes('swim');
-    const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+    const unitSystem = resolveDistanceUnitSystem(user, 'metric');
     const stravaPaceFmt = (spd) => {
       if (!spd || spd <= 0) return null;
       const seconds = isStravaSwim
@@ -1260,7 +1261,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                       const sportRaw = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
                       const isSwim = sportRaw.includes('swim');
                       const isRun = sportRaw.includes('run') || sportRaw === 'walk' || sportRaw === 'hike';
-                      const unitSystem = user?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+                      const unitSystem = resolveDistanceUnitSystem(user, 'metric');
                       const spd = Number(lap.average_speed || 0);
                       if (!Number.isFinite(spd) || spd <= 0) return '-';
 
