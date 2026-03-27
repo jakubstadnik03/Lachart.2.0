@@ -529,6 +529,144 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return null;
   };
 
+  /**
+   * Bike-only post-processing:
+   * If LT1 lands on the first point of a flat lactate plateau (e.g. +0.1, +0.1)
+   * and only then comes a sharp breakout, move LT1 to the end of that plateau.
+   */
+  const deferEarlyLt1OnPlateauBike = (sortedResults, ltp1Power, ltp1Lactate) => {
+    if (!Array.isArray(sortedResults) || sortedResults.length < 4) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+    if (!Number.isFinite(Number(ltp1Power))) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+
+    const p = sortedResults.map((r) => Number(r.power));
+    const la = sortedResults.map((r) => Number(r.lactate));
+    const isValid = (v) => Number.isFinite(v);
+    if (p.some((v) => !isValid(v)) || la.some((v) => !isValid(v))) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+
+    // If LT1 is already interpolated between measured points, do NOT snap/shift to plateau end.
+    const nearestIdx = p.reduce((bestIdx, value, i) => {
+      const bestDiff = Math.abs(p[bestIdx] - Number(ltp1Power));
+      const curDiff = Math.abs(value - Number(ltp1Power));
+      return curDiff < bestDiff ? i : bestIdx;
+    }, 0);
+    const nearestDiff = Math.abs(p[nearestIdx] - Number(ltp1Power));
+    if (nearestDiff > 0.5) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+
+    // First measured step at/after LT1 power.
+    let idx = p.findIndex((v) => v >= Number(ltp1Power) - 1e-6);
+    if (idx < 0) idx = nearestIdx;
+    if (idx >= la.length - 2) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    // Detect small plateau increments after current LT1 candidate.
+    const d1 = la[idx + 1] - la[idx];
+    const d2 = la[idx + 2] - la[idx + 1];
+    const looksLikePlateau =
+      d1 >= -0.05 && d1 <= 0.2 &&
+      d2 >= -0.05 && d2 <= 0.2 &&
+      (la[idx + 2] - la[idx]) <= 0.35;
+
+    if (!looksLikePlateau) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    // Look for first sharp breakout after the plateau.
+    let breakoutIdx = -1;
+    for (let k = idx + 3; k < la.length; k++) {
+      const jump = la[k] - la[k - 1];
+      if (jump >= 0.6) {
+        breakoutIdx = k;
+        break;
+      }
+    }
+    if (breakoutIdx === -1) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    const plateauEndIdx = breakoutIdx - 1;
+    if (plateauEndIdx <= idx || plateauEndIdx >= sortedResults.length) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+
+    return {
+      power: Number(sortedResults[plateauEndIdx].power),
+      lactate: Number(sortedResults[plateauEndIdx].lactate),
+    };
+  };
+
+  /**
+   * Bike-only guard:
+   * LT1 should not sit on a point that is followed by a meaningful lactate drop.
+   * If it does, move LT1 forward to the first point after the drop where trend is non-decreasing.
+   */
+  const shiftLt1AfterImmediateDropBike = (sortedResults, ltp1Power, ltp1Lactate) => {
+    if (!Array.isArray(sortedResults) || sortedResults.length < 3) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+    if (!Number.isFinite(Number(ltp1Power))) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+    const p = sortedResults.map((r) => Number(r.power));
+    const la = sortedResults.map((r) => Number(r.lactate));
+    if (p.some((v) => !Number.isFinite(v)) || la.some((v) => !Number.isFinite(v))) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+
+    let idx = p.findIndex((v) => v >= Number(ltp1Power) - 1e-6);
+    if (idx < 0) idx = 0;
+    if (idx >= la.length - 1) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    const dropThreshold = 0.12;
+
+    // Find a local drop starting at/after idx, then move LT1 to the trough→rebound segment.
+    // We intentionally anchor to the FIRST rebound after the trough (not later big jumps),
+    // so cases like 2.6 → 2.4 → 2.9 → 4.6 don't push LT1 into 3.7+ mmol/L.
+    let startIdx = idx;
+    while (startIdx < la.length - 1 && !(la[startIdx + 1] < la[startIdx] - dropThreshold)) {
+      startIdx += 1;
+    }
+    if (startIdx >= la.length - 1) {
+      return { power: Number(sortedResults[idx].power), lactate: Number(sortedResults[idx].lactate) };
+    }
+
+    // Walk forward through the drop to find the trough (minimum lactate point).
+    let troughIdx = startIdx + 1;
+    while (troughIdx < la.length - 1 && (la[troughIdx + 1] < la[troughIdx] - 0.04)) {
+      troughIdx += 1;
+    }
+    if (troughIdx >= la.length - 1) {
+      return { power: Number(sortedResults[troughIdx].power), lactate: Number(sortedResults[troughIdx].lactate) };
+    }
+
+    const reboundIdx = troughIdx + 1;
+    const troughP = Number(sortedResults[troughIdx].power);
+    const troughLa = Number(sortedResults[troughIdx].lactate);
+    const reboundP = Number(sortedResults[reboundIdx].power);
+    const reboundLa = Number(sortedResults[reboundIdx].lactate);
+
+    if (!Number.isFinite(troughP) || !Number.isFinite(troughLa) || !Number.isFinite(reboundP) || !Number.isFinite(reboundLa) || reboundP === troughP) {
+      return { power: Number(sortedResults[troughIdx].power), lactate: Number(sortedResults[troughIdx].lactate) };
+    }
+    if (reboundLa <= troughLa + 0.08) {
+      // No meaningful rebound; just keep trough as conservative LT1 anchor.
+      return { power: troughP, lactate: troughLa };
+    }
+
+    // Interpolate LT1 slightly above trough on the immediate rebound segment.
+    // Target is "after the 2.4" rather than mid-way to 4.6.
+    const targetLaRaw = troughLa + 0.25;
+    const targetLa = Math.min(targetLaRaw, reboundLa - 0.05);
+    if (targetLa <= troughLa) {
+      return { power: troughP, lactate: troughLa };
+    }
+    const t = (targetLa - troughLa) / (reboundLa - troughLa);
+    const outP = troughP + t * (reboundP - troughP);
+    return { power: outP, lactate: targetLa };
+  };
+
   const weightedMedian = (entries) => {
     const valid = (entries || [])
       .filter(e => Number.isFinite(Number(e?.x)) && Number.isFinite(Number(e?.w)) && Number(e.w) > 0)
@@ -883,6 +1021,20 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         if (pMeasLt2 != null && Number.isFinite(pMeasLt2)) {
           ltp2Power = pMeasLt2;
         }
+
+        // First: if there's a drop just before the first rise, allow LT1 to be interpolated on the immediate rebound.
+        const shiftedLt1 = shiftLt1AfterImmediateDropBike(sortedResults, ltp1Power, ltp1La);
+        if (Number.isFinite(Number(shiftedLt1.power)) && Number.isFinite(Number(shiftedLt1.lactate))) {
+          ltp1Power = Number(shiftedLt1.power);
+          ltp1La = Number(shiftedLt1.lactate);
+        }
+        // Second: if LT1 is still detected too early on a flat plateau (without the drop pattern), defer it to plateau end.
+        const deferredLt1 = deferEarlyLt1OnPlateauBike(sortedResults, ltp1Power, ltp1La);
+        if (Number.isFinite(Number(deferredLt1.power)) && Number.isFinite(Number(deferredLt1.lactate))) {
+          ltp1Power = Number(deferredLt1.power);
+          ltp1La = Number(deferredLt1.lactate);
+        }
+
         const ltp1Reasonable = ltp1La >= MIN_LTP1_LACTATE && ltp1La <= 5 && ltp1Power > 0;
         const ltp2Reasonable = ltp2Lactate >= 1.5 && ltp2Lactate <= adaptiveLtp2Cap && ltp2Power > 0;
         if (ltp1Reasonable && ltp2Reasonable) {
@@ -986,6 +1138,23 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             ltp2Power = pMeasLt2Poly;
             const hr2m = interpolateHRAtPowerPolyBike(ltp2Power);
             if (hr2m != null) ltp2HR = hr2m;
+          }
+
+          // First: drop→rebound interpolation.
+          const shiftedLt1 = shiftLt1AfterImmediateDropBike(sortedResults, ltp1Power, ltp1Lactate);
+          if (Number.isFinite(Number(shiftedLt1.power)) && Number.isFinite(Number(shiftedLt1.lactate))) {
+            ltp1Power = Number(shiftedLt1.power);
+            ltp1Lactate = Number(shiftedLt1.lactate);
+            const hrShifted = interpolateHRAtPowerPolyBike(ltp1Power);
+            if (hrShifted != null) ltp1HR = hrShifted;
+          }
+          // Second: plateau deferral.
+          const deferredLt1 = deferEarlyLt1OnPlateauBike(sortedResults, ltp1Power, ltp1Lactate);
+          if (Number.isFinite(Number(deferredLt1.power)) && Number.isFinite(Number(deferredLt1.lactate))) {
+            ltp1Power = Number(deferredLt1.power);
+            ltp1Lactate = Number(deferredLt1.lactate);
+            const hrDef = interpolateHRAtPowerPolyBike(ltp1Power);
+            if (hrDef != null) ltp1HR = hrDef;
           }
         }
         const validOrder = isPaceSport ? ltp2Power < ltp1Power : ltp2Power > ltp1Power;

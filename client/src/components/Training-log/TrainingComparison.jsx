@@ -20,6 +20,8 @@ import {
   MinusIcon
 } from '@heroicons/react/24/outline';
 
+const SERIES_COLORS = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
+
 const TrainingComparison = ({ trainings }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -45,6 +47,16 @@ const TrainingComparison = ({ trainings }) => {
   const [monthlyMetric, setMonthlyMetric] = useState(() => {
     const saved = localStorage.getItem('trainingComparison_monthlyMetric');
     return saved || 'power';
+  });
+  const [hasPersistedSnapshotSelection] = useState(() => localStorage.getItem('trainingComparison_snapshotSelectedIds') !== null);
+  const [snapshotSelectedIds, setSnapshotSelectedIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('trainingComparison_snapshotSelectedIds');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
   });
   const [activeSeries, setActiveSeries] = useState(() => {
     // Load saved active series from localStorage
@@ -239,6 +251,9 @@ const TrainingComparison = ({ trainings }) => {
   useEffect(() => {
     localStorage.setItem('trainingComparison_monthlyMetric', monthlyMetric);
   }, [monthlyMetric]);
+  useEffect(() => {
+    localStorage.setItem('trainingComparison_snapshotSelectedIds', JSON.stringify(snapshotSelectedIds));
+  }, [snapshotSelectedIds]);
 
   // Calculate progress statistics
   const progressStats = useMemo(() => {
@@ -284,8 +299,13 @@ const TrainingComparison = ({ trainings }) => {
         const firstAvg = firstValues.reduce((a, b) => a + b, 0) / firstValues.length;
         const lastAvg = lastValues.reduce((a, b) => a + b, 0) / lastValues.length;
         
-        // Check if this is pace (values > 100 are likely seconds/pace)
-        const isPace = metric === 'power' && (firstAvg > 100 || lastAvg > 100);
+        // Determine pace vs power by sport (not by numeric threshold).
+        // For bike/cycling values in "power", higher is better.
+        const firstSport = (firstTraining?.sport || '').toLowerCase();
+        const lastSport = (lastTraining?.sport || '').toLowerCase();
+        const firstIsBike = firstSport.includes('bike') || firstSport.includes('cycle') || firstSport.includes('ride') || firstSport.includes('cycling');
+        const lastIsBike = lastSport.includes('bike') || lastSport.includes('cycle') || lastSport.includes('ride') || lastSport.includes('cycling');
+        const isPace = metric === 'power' && !(firstIsBike && lastIsBike);
         
         stats[metric].first = firstAvg;
         stats[metric].last = lastAvg;
@@ -345,6 +365,24 @@ const TrainingComparison = ({ trainings }) => {
     return value;
   };
 
+  // Axis tick formatter: keep it compact (no trailing "W" on Y axis).
+  const formatMetricAxisTick = (value, metric) => {
+    if (value === null || value === undefined) return '';
+    if (metric === 'power') {
+      // If all trainings are bike, axis should still be numeric only.
+      if (typeof value === 'number' && value > 100 && !areAllTrainingsBike()) {
+        const minutes = Math.floor(value / 60);
+        const seconds = Math.round(value % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+      return `${Math.round(Number(value) || 0)}`;
+    }
+    if (metric === 'heartRate') return `${Math.round(Number(value) || 0)}`;
+    if (metric === 'lactate') return `${Number(value).toFixed(1)}`;
+    if (metric === 'RPE') return `${value}`;
+    return `${value}`;
+  };
+
   const getTrendIcon = (trend) => {
     if (trend === 'up') return <ArrowTrendingUpIcon className="w-5 h-5 text-green-600" />;
     if (trend === 'down') return <ArrowTrendingDownIcon className="w-5 h-5 text-red-600" />;
@@ -357,11 +395,18 @@ const TrainingComparison = ({ trainings }) => {
     return 'text-gray-600';
   };
 
-  const colors = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
-
   const isBikeSport = (sportValue) => {
     const sport = (sportValue || '').toLowerCase();
     return sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
+  };
+  const getTrainingUid = (t) => String(t?._id || t?.id || t?.stravaId || t?.sourceStravaActivityId || t?.createdAt || t?.timestamp || '');
+  const getTrainingDate = (t) => new Date(t?.date || t?.timestamp || t?.createdAt);
+  const formatTrainingLabel = (t) => {
+    const d = getTrainingDate(t);
+    const dateLabel = Number.isNaN(d.getTime()) ? 'Unknown date' : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    const title = t?.title ? String(t.title) : 'Training';
+    const intervals = Array.isArray(t?.results) ? t.results.length : 0;
+    return `${dateLabel} • ${title} • ${intervals} int`;
   };
 
   const normalizeMetricValue = (result, metric) => {
@@ -424,11 +469,47 @@ const TrainingComparison = ({ trainings }) => {
     });
   };
 
-  const sameTrainingSnapshot = useMemo(() => {
-    if (filteredTrainings.length < 2) return null;
+  const snapshotOptions = useMemo(() => {
+    // Use current filtered set (already sorted by date asc)
+    return filteredTrainings
+      .map((t) => ({ id: getTrainingUid(t), training: t }))
+      .filter((x) => x.id);
+  }, [filteredTrainings]);
 
-    const firstTraining = filteredTrainings[0];
-    const lastTraining = filteredTrainings[filteredTrainings.length - 1];
+  // Auto-default selected trainings in snapshot to the latest 2 (only on first run; don't override user's empty selection)
+  useEffect(() => {
+    if (!snapshotOptions.length) return;
+    const ids = new Set(snapshotOptions.map((o) => o.id));
+    const validCurrent = snapshotSelectedIds.filter((id) => ids.has(id));
+    if (validCurrent.length >= 1) {
+      if (validCurrent.length !== snapshotSelectedIds.length) {
+        setSnapshotSelectedIds(validCurrent);
+      }
+      return;
+    }
+    // If user already has persisted selection (even empty), don't auto-seed.
+    if (hasPersistedSnapshotSelection) return;
+    const defaults = snapshotOptions.slice(Math.max(0, snapshotOptions.length - 2)).map((o) => o.id);
+    setSnapshotSelectedIds(defaults);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshotOptions]);
+
+  const snapshotSelectedTrainings = useMemo(() => {
+    if (!snapshotOptions.length) return [];
+    const byId = new Map(snapshotOptions.map((o) => [o.id, o.training]));
+    return snapshotSelectedIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .sort((a, b) => getTrainingDate(a) - getTrainingDate(b));
+  }, [snapshotOptions, snapshotSelectedIds]);
+
+  const sameTrainingSnapshot = useMemo(() => {
+    if (snapshotSelectedTrainings.length < 2) return null;
+
+    const firstTraining = snapshotSelectedTrainings[0];
+    const lastTraining = snapshotSelectedTrainings[snapshotSelectedTrainings.length - 1];
+    if (!firstTraining || !lastTraining) return null;
+
     const firstResults = firstTraining.results || [];
     const lastResults = lastTraining.results || [];
     const maxIntervals = Math.max(firstResults.length, lastResults.length);
@@ -471,7 +552,63 @@ const TrainingComparison = ({ trainings }) => {
       avgProgress,
       isPaceMetricForPair
     };
-  }, [filteredTrainings, selectedMetric]);
+  }, [selectedMetric, snapshotSelectedTrainings]);
+
+  const snapshotSeries = useMemo(() => {
+    return snapshotSelectedTrainings.map((training, idx) => {
+      const date = getTrainingDate(training);
+      const dateLabel = Number.isNaN(date.getTime()) ? `Unknown ${idx + 1}` : date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      return {
+        key: `snapshot_${idx}`,
+        label: dateLabel,
+        training,
+        color: SERIES_COLORS[idx % SERIES_COLORS.length]
+      };
+    });
+  }, [snapshotSelectedTrainings]);
+
+  const sameTrainingChartData = useMemo(() => {
+    if (!snapshotSeries.length) return [];
+    const maxIntervals = Math.max(...snapshotSeries.map((s) => s.training?.results?.length || 0));
+    const rows = [];
+    for (let i = 0; i < maxIntervals; i++) {
+      const row = { interval: i + 1 };
+      snapshotSeries.forEach((series) => {
+        row[series.key] = normalizeMetricValue(series.training?.results?.[i], selectedMetric);
+      });
+      rows.push(row);
+    }
+    return rows;
+  }, [snapshotSeries, selectedMetric]);
+
+  const snapshotYDomain = useMemo(() => {
+    if (!sameTrainingChartData.length || !snapshotSeries.length) return [0, 'auto'];
+    const values = [];
+    sameTrainingChartData.forEach((row) => {
+      snapshotSeries.forEach((series) => {
+        const v = row?.[series.key];
+        if (typeof v === 'number' && Number.isFinite(v)) values.push(v);
+      });
+    });
+    if (!values.length) return [0, 'auto'];
+    let minV = Math.min(...values);
+    let maxV = Math.max(...values);
+    if (minV === maxV) {
+      const pad = Math.max(1, Math.abs(minV) * 0.1);
+      return [minV - pad, maxV + pad];
+    }
+    const range = maxV - minV;
+    const pad = range * 0.15;
+    minV = minV - pad;
+    maxV = maxV + pad;
+    // Keep >=0 for numeric metrics (except pace seconds can be >0 anyway)
+    if (selectedMetric !== 'power') {
+      minV = Math.max(0, minV);
+    } else if (filteredTrainings.every(t => isBikeSport(t.sport))) {
+      minV = Math.max(0, minV);
+    }
+    return [minV, maxV];
+  }, [sameTrainingChartData, snapshotSeries, selectedMetric, filteredTrainings]);
 
   const monthlyTrendData = useMemo(() => {
     if (!filteredTrainings.length) return [];
@@ -990,77 +1127,223 @@ const TrainingComparison = ({ trainings }) => {
           </div>
         )}
 
-        {sameTrainingSnapshot && (
-          <div className="mb-6 p-4 bg-indigo-50/60 rounded-lg border border-indigo-100">
+        {snapshotOptions.length > 0 && (
+          <div className="mb-6 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-md p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">Same-Training Snapshot</h3>
-              <span className="text-xs text-indigo-700 bg-indigo-100 px-2 py-1 rounded-full">
-                {selectedMetric === 'power' && sameTrainingSnapshot.isPaceMetricForPair
+              <div>
+                <h3 className="text-base md:text-lg font-semibold text-gray-900">Same-Training Snapshot</h3>
+                <div className="text-xs text-gray-600">Pick multiple trainings and compare intervals visually.</div>
+              </div>
+              <span className="text-[11px] text-indigo-800 bg-indigo-100/80 px-2 py-1 rounded-full border border-indigo-200">
+                {selectedMetric === 'power' && sameTrainingSnapshot?.isPaceMetricForPair
                   ? 'Pace: lower is better'
                   : 'Higher is better'}
               </span>
             </div>
-            <div className="text-xs text-gray-600 mb-3">
-              Comparing oldest vs newest training in current filters:
-              {' '}
-              <span className="font-medium text-gray-800">
-                {new Date(sameTrainingSnapshot.firstTraining.date || sameTrainingSnapshot.firstTraining.timestamp || sameTrainingSnapshot.firstTraining.createdAt).toLocaleDateString('cs-CZ')}
-              </span>
-              {' '}→{' '}
-              <span className="font-medium text-gray-800">
-                {new Date(sameTrainingSnapshot.lastTraining.date || sameTrainingSnapshot.lastTraining.timestamp || sameTrainingSnapshot.lastTraining.createdAt).toLocaleDateString('cs-CZ')}
-              </span>
+            <div className="bg-white/70 backdrop-blur-md border border-white/40 rounded-2xl p-3 mb-3">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-2">
+                <div className="text-sm font-semibold text-gray-900">Select trainings</div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setSnapshotSelectedIds(snapshotOptions.map((o) => o.id))}
+                    className="text-xs px-2 py-1 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    onClick={() => {
+                      const latestTwo = snapshotOptions.slice(Math.max(0, snapshotOptions.length - 2)).map((o) => o.id);
+                      setSnapshotSelectedIds(latestTwo);
+                    }}
+                    className="text-xs px-2 py-1 rounded-full border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  >
+                    Latest 2
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {snapshotSelectedTrainings.map((t) => {
+                  const id = getTrainingUid(t);
+                  const d = getTrainingDate(t);
+                  const dateLabel = Number.isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                  return (
+                    <button
+                      key={`snap-chip-${id}`}
+                      onClick={() => setSnapshotSelectedIds((prev) => prev.filter((x) => x !== id))}
+                      className="inline-flex items-center gap-2 px-2 py-1 rounded-full text-[11px] bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
+                      title="Remove from snapshot"
+                    >
+                      <span className="font-semibold">{dateLabel}</span>
+                      <span className="text-primary/80 truncate max-w-[180px]">{t?.title || 'Training'}</span>
+                      <span className="text-primary/60">×</span>
+                    </button>
+                  );
+                })}
+                {snapshotSelectedTrainings.length === 0 && (
+                  <div className="text-xs text-gray-600">No trainings selected.</div>
+                )}
+              </div>
+              {snapshotSelectedTrainings.length < 2 && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2">
+                  Select at least <span className="font-semibold">2 trainings</span> to calculate progress (first → last). You can still view the chart with 1 training.
+                </div>
+              )}
+              <div className="max-h-44 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-1">
+                {snapshotOptions.map((opt) => {
+                  const checked = snapshotSelectedIds.includes(opt.id);
+                  return (
+                    <label
+                      key={`snap-option-${opt.id}`}
+                      className={`flex items-center justify-between gap-3 px-2 py-2 rounded-xl border transition ${
+                        checked ? 'bg-primary/10 border-primary/20' : 'bg-white/60 border-white/40 hover:bg-white/80'
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <span className="relative inline-flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setSnapshotSelectedIds((prev) => (
+                                prev.includes(opt.id) ? prev.filter((id) => id !== opt.id) : [...prev, opt.id]
+                              ));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <span
+                            className="h-4 w-4 rounded-md border border-gray-300 bg-white shadow-sm peer-focus:ring-2 peer-focus:ring-primary/40 peer-checked:bg-primary peer-checked:border-primary flex items-center justify-center transition"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              className="h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.704 5.29a1 1 0 010 1.42l-7.07 7.07a1 1 0 01-1.42 0l-3.535-3.536a1 1 0 011.415-1.414l2.828 2.829 6.364-6.364a1 1 0 011.418-.005z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </span>
+                        </span>
+                        <span className="text-xs text-gray-800">{formatTrainingLabel(opt.training)}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const training = opt.training;
+                          const tid = training?._id || training?.id;
+                          const stravaId = training?.stravaId || training?.sourceStravaActivityId || null;
+                          if (stravaId) navigate(`/training-calendar?stravaId=${encodeURIComponent(String(stravaId))}`);
+                          else if (tid) navigate(`/training-calendar?trainingId=${encodeURIComponent(String(tid))}`);
+                        }}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        Open
+                      </button>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
-              <div className="bg-white border border-gray-200 rounded-lg p-2">
-                <div className="text-[11px] text-gray-500">Trainings in set</div>
+              <div className="bg-white/70 backdrop-blur-md border border-white/40 rounded-2xl p-3">
+                <div className="text-[11px] text-gray-500">Trainings in filter</div>
                 <div className="text-sm font-semibold text-gray-900">{filteredTrainings.length}</div>
               </div>
-              <div className="bg-white border border-gray-200 rounded-lg p-2">
+              <div className="bg-white/70 backdrop-blur-md border border-white/40 rounded-2xl p-3">
                 <div className="text-[11px] text-gray-500">Compared intervals</div>
-                <div className="text-sm font-semibold text-gray-900">{sameTrainingSnapshot.rows.length}</div>
+                <div className="text-sm font-semibold text-gray-900">{sameTrainingSnapshot?.rows?.length ?? 0}</div>
               </div>
-              <div className="bg-white border border-gray-200 rounded-lg p-2">
-                <div className="text-[11px] text-gray-500">Average progress</div>
-                <div className={`text-sm font-semibold ${sameTrainingSnapshot.avgProgress > 0 ? 'text-green-600' : sameTrainingSnapshot.avgProgress < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                  {sameTrainingSnapshot.avgProgress === null
+              <div className="bg-white/70 backdrop-blur-md border border-white/40 rounded-2xl p-3">
+                <div className="text-[11px] text-gray-500">Avg progress (first → last)</div>
+                <div className={`text-sm font-semibold ${sameTrainingSnapshot?.avgProgress > 0 ? 'text-green-600' : sameTrainingSnapshot?.avgProgress < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                  {sameTrainingSnapshot?.avgProgress === null || sameTrainingSnapshot?.avgProgress === undefined
                     ? 'N/A'
                     : `${sameTrainingSnapshot.avgProgress > 0 ? '+' : ''}${sameTrainingSnapshot.avgProgress.toFixed(1)}%`}
                 </div>
               </div>
             </div>
 
-            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Interval</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">First</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Last</th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Progress</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sameTrainingSnapshot.rows.map((row) => (
-                    <tr key={`snapshot-row-${row.interval}`} className="border-b border-gray-100 last:border-b-0">
-                      <td className="px-3 py-2 text-xs font-medium text-gray-900">#{row.interval}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{row.firstVal === null ? '-' : formatMetricValue(row.firstVal, selectedMetric)}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{row.lastVal === null ? '-' : formatMetricValue(row.lastVal, selectedMetric)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {row.deltaPct === null ? (
-                          <span className="text-xs text-gray-400">N/A</span>
-                        ) : (
-                          <span className={`text-xs font-semibold ${getTrendColor(row.trend)}`}>
-                            {row.deltaPct > 0 ? '+' : ''}{row.deltaPct.toFixed(1)}%
-                          </span>
-                        )}
-                      </td>
+            {sameTrainingChartData.length > 0 && (
+              <div className="mb-3 w-full h-64 bg-white/70 backdrop-blur-md border border-white/40 rounded-2xl p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={sameTrainingChartData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis dataKey="interval" tick={{ fontSize: 11, fill: '#4B5563' }} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#4B5563' }}
+                      domain={snapshotYDomain}
+                      reversed={Boolean(sameTrainingSnapshot?.isPaceMetricForPair)}
+                      tickFormatter={(v) => formatMetricAxisTick(v, selectedMetric)}
+                      width={46}
+                    />
+                    <Tooltip
+                      formatter={(value, name) => {
+                        if (value === null || value === undefined) return 'N/A';
+                        const meta = snapshotSeries.find((s) => s.key === name);
+                        return [`${formatMetricValue(value, selectedMetric)}`, meta?.label || String(name)];
+                      }}
+                      labelFormatter={(label) => `Interval ${label}`}
+                    />
+                    <Legend />
+                    {snapshotSeries.map((series) => (
+                      <Line
+                        key={series.key}
+                        type="monotone"
+                        dataKey={series.key}
+                        name={series.label}
+                        stroke={series.color}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        connectNulls
+                      />
+                    ))}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {sameTrainingSnapshot && (
+              <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Interval</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                        {new Date(sameTrainingSnapshot.firstTraining.date || sameTrainingSnapshot.firstTraining.timestamp || sameTrainingSnapshot.firstTraining.createdAt).toLocaleDateString('cs-CZ')}
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">
+                        {new Date(sameTrainingSnapshot.lastTraining.date || sameTrainingSnapshot.lastTraining.timestamp || sameTrainingSnapshot.lastTraining.createdAt).toLocaleDateString('cs-CZ')}
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Progress</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sameTrainingSnapshot.rows.map((row) => (
+                      <tr key={`snapshot-row-${row.interval}`} className="border-b border-gray-100 last:border-b-0">
+                        <td className="px-3 py-2 text-xs font-medium text-gray-900">#{row.interval}</td>
+                        <td className="px-3 py-2 text-xs text-gray-700">{row.firstVal === null ? '-' : formatMetricValue(row.firstVal, selectedMetric)}</td>
+                        <td className="px-3 py-2 text-xs text-gray-700">{row.lastVal === null ? '-' : formatMetricValue(row.lastVal, selectedMetric)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {row.deltaPct === null ? (
+                            <span className="text-xs text-gray-400">N/A</span>
+                          ) : (
+                            <span className={`text-xs font-semibold ${getTrendColor(row.trend)}`}>
+                              {row.deltaPct > 0 ? '+' : ''}{row.deltaPct.toFixed(1)}%
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -1162,7 +1445,7 @@ const TrainingComparison = ({ trainings }) => {
               const date = new Date(training.date || training.timestamp || training.createdAt);
               const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
               const trainingLabel = `${dateLabel} (${index + 1})`;
-              const color = colors[index % colors.length];
+              const color = SERIES_COLORS[index % SERIES_COLORS.length];
               const isOn = activeSeries[trainingLabel] !== false;
               const handleOpenInAnalysis = () => {
                 // Log the entire training object to console
@@ -1545,7 +1828,7 @@ const TrainingComparison = ({ trainings }) => {
                           // Get color based on power
                           const barColor = powerValue !== null && powerValue !== undefined && typeof powerValue === 'number'
                             ? getPowerColor(powerValue, minPower, maxPower)
-                            : colors[trainingIndex % colors.length];
+                            : SERIES_COLORS[trainingIndex % SERIES_COLORS.length];
                           
                           // Calculate stroke color (darker for better visibility)
                           const strokeColor = barColor;
@@ -1581,7 +1864,7 @@ const TrainingComparison = ({ trainings }) => {
                     const date = new Date(training.date || training.timestamp || training.createdAt);
                     const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
                     const trainingLabel = `${dateLabel} (${index + 1})`;
-                    const color = colors[index % colors.length];
+                    const color = SERIES_COLORS[index % SERIES_COLORS.length];
                     if (activeSeries[trainingLabel] === false) return null;
                     
                     return (
@@ -1611,7 +1894,7 @@ const TrainingComparison = ({ trainings }) => {
               const dateLabel = date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
               const trainingLabel = `${dateLabel} (${trainingIndex + 1})`;
               const isVisible = activeSeries[trainingLabel] !== false;
-              return { training, trainingIndex, date, dateLabel, trainingLabel, isVisible, color: colors[trainingIndex % colors.length] };
+              return { training, trainingIndex, date, dateLabel, trainingLabel, isVisible, color: SERIES_COLORS[trainingIndex % SERIES_COLORS.length] };
             })
             .filter(item => item.isVisible)
             .sort((a, b) => b.date - a.date); // Sort from newest to oldest (newest on left)

@@ -3159,14 +3159,15 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
             return res.status(400).json({ error: "Invalid email format." });
         }
 
-        const contactName = rawName || "Coach";
+        const contactName = rawName || "";
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl() || 'https://lachart.net';
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
         const subject = "Free tool for lactate testing coaches - LaChart";
+        const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
         const content = `
-            <p>Hi ${contactName},</p>
+            <p>${greeting}</p>
             <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
             <p style="margin-top: 20px;">
                 LaChart helps you:

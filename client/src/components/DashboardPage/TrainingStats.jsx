@@ -1283,6 +1283,35 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         return dist && parseDistanceToMeters(dist) > 0;
                       });
 
+                      // Reference totals across all visible trainings (so equal durations => equal widths across trainings)
+                      const referenceTotals = (() => {
+                        let maxTotalDuration = 0;
+                        let maxTotalDistance = 0;
+                        let anyDistance = false;
+
+                        visibleTrainings.forEach((t) => {
+                          const r = trainingResultsOf(t);
+                          const hasDist = r.some((it) => {
+                            const dist = it.distance || (it.durationType === 'distance' ? it.duration : null);
+                            return dist && parseDistanceToMeters(dist) > 0;
+                          });
+                          const totalDur = r.reduce((sum, it) => sum + parseDuration(it), 0);
+                          const totalDist = r.reduce((sum, it) => {
+                            const dist = it.distance || (it.durationType === 'distance' ? it.duration : null);
+                            return sum + parseDistanceToMeters(dist);
+                          }, 0);
+                          maxTotalDuration = Math.max(maxTotalDuration, totalDur || 0);
+                          maxTotalDistance = Math.max(maxTotalDistance, totalDist || 0);
+                          anyDistance = anyDistance || (hasDist && totalDist > 0);
+                        });
+
+                        return {
+                          anyDistance,
+                          maxTotalDuration: maxTotalDuration || 0,
+                          maxTotalDistance: maxTotalDistance || 0,
+                        };
+                      })();
+
                       // Calculate total duration or distance for this training
                       const totalDuration = results.reduce((sum, result) => {
                         return sum + parseDuration(result);
@@ -1296,6 +1325,9 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       // Use distance if available, otherwise use duration
                       const useDistance = hasDistanceData && totalDistance > 0;
                       const totalValue = useDistance ? totalDistance : totalDuration;
+                      const referenceTotalValue = useDistance
+                        ? (referenceTotals.maxTotalDistance || totalValue)
+                        : (referenceTotals.maxTotalDuration || totalValue);
 
                       // Calculate width percentages and left positions for each interval
                       // Account for gaps between intervals (3px each, N-1 gaps for N intervals)
@@ -1326,13 +1358,15 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
 
                         const value = useDistance ? parsedDistance : durationValue;
                         // Calculate width as percentage of available space (after accounting for gaps)
-                        const widthPercent = totalValue > 0 
-                          ? (value / totalValue) * availableWidthPercent 
+                        const widthPercent = referenceTotalValue > 0 
+                          ? (value / referenceTotalValue) * availableWidthPercent 
                           : (availableWidthPercent / Math.max(results.length, 1));
                         const leftPercent = cumulativeLeft;
                         cumulativeLeft += widthPercent;
                         return { widthPercent, leftPercent };
                       });
+                      const usedWidthPercent = intervalPositions.reduce((sum, p) => sum + (Number(p?.widthPercent) || 0), 0);
+                      const remainingWidthPercent = Math.max(0, availableWidthPercent - usedWidthPercent);
 
                       // Debug: Log widths
                      // console.log('=== DashboardPage TrainingStats Bar Widths ===');
@@ -1367,7 +1401,9 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         colorIndexMap.set(item.index, sortedIndex);
                       });
                       
-                      return results.map((result, resultIndex) => {
+                      return (
+                        <>
+                          {results.map((result, resultIndex) => {
                         let height = 0;
                         if (isRun) {
                           // Power u běhu je pace v mm:ss formátu
@@ -1421,7 +1457,22 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                           trainingResults={results}
                         />
                       );
-                    });
+                          })}
+                          {remainingWidthPercent > 0 && (
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                flexBasis: `${remainingWidthPercent}%`,
+                                width: `${remainingWidthPercent}%`,
+                                minWidth: 0,
+                                height: '1px',
+                                opacity: 0,
+                                pointerEvents: 'none'
+                              }}
+                            />
+                          )}
+                        </>
+                      );
                     })()}
                   </div>
                   <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
