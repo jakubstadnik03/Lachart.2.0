@@ -62,7 +62,7 @@ export const UserDropdown = ({ isOpen, setIsOpen, user: propUser, disabled }) =>
           className="w-8 h-8 rounded-full"
           key={displayUser?._id}
         />
-        <div className="hidden md:block text-left">
+        <div className="hidden lg:block text-left">
           <p className="text-sm font-medium text-gray-700">
             {displayUser?.name || 'Demo'} {displayUser?.surname || 'User'}
           </p>

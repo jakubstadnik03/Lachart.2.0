@@ -762,9 +762,9 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
       </div>
       )}
 
-      {/* Summary cards - Strava-like on mobile, grid on desktop */}
+      {/* Summary cards — mobile: 3 columns, compact; desktop: icon grid */}
       {isMobile ? (
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-1">
+        <div className="grid grid-cols-3 gap-x-1.5 gap-y-1.5 px-0.5">
           {[
             { label: 'Duration', value: formatDuration(totalTime) },
             { label: 'Distance', value: formatDistance(training.totalDistance, user) },
@@ -776,10 +776,10 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
             ...(calculateTSS !== null ? [{ label: 'TSS', value: String(typeof calculateTSS === 'object' ? calculateTSS.value : calculateTSS), sub: calculateIF !== null ? `IF ${calculateIF}` : null }] : []),
             ...(training.totalAscent && training.totalAscent > 0 ? [{ label: 'Elevation', value: `+${Math.round(training.totalAscent)} m` }] : []),
           ].map((item, idx) => (
-            <div key={idx} className="py-1">
-              <div className="text-[11px] text-gray-500 font-medium">{item.label}</div>
-              <div className="text-lg font-bold text-gray-900 leading-tight">{item.value}</div>
-              {item.sub && <div className="text-[10px] text-gray-400">{item.sub}</div>}
+            <div key={idx} className="min-w-0 rounded-lg border border-gray-100 bg-gray-50/90 px-1.5 py-1">
+              <div className="text-[9px] leading-tight text-gray-500 font-medium truncate" title={item.label}>{item.label}</div>
+              <div className="text-xs font-semibold text-gray-900 leading-tight break-words">{item.value}</div>
+              {item.sub && <div className="text-[8px] leading-tight text-gray-400 truncate">{item.sub}</div>}
             </div>
           ))}
         </div>

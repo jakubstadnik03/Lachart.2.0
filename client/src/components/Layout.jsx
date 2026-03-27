@@ -12,6 +12,7 @@ import ProductWalkthrough from "./Onboarding/ProductWalkthrough";
 import api from "../services/api";
 import { useNotification } from "../context/NotificationContext";
 import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
+import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
@@ -43,10 +44,10 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // Ensure menu is open when component mounts (only on desktop, not on mobile)
   useEffect(() => {
-    if (user && window.innerWidth >= 768) {
+    if (user && window.innerWidth >= LAYOUT_DESKTOP_MIN_PX) {
       setIsMenuOpen(true);
-    } else if (user && window.innerWidth < 768) {
-      // On mobile, keep menu closed by default
+    } else if (user && window.innerWidth < LAYOUT_DESKTOP_MIN_PX) {
+      // On mobile / tablet portrait, keep menu closed by default (hamburger)
       setIsMenuOpen(false);
     }
   }, [user, setIsMenuOpen]);
@@ -333,13 +334,13 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         <MemoizedHeader {...headerProps} />
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
-        <main className="flex-1 px-3 sm:px-3 md:px-4 pt-16 md:pt-0 overflow-y-auto">
+        <main className="flex-1 px-3 sm:px-3 md:px-4 pt-16 lg:pt-0 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto flex flex-col min-h-full">
             <div className="flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
             </div>
             {/* Footer na mobilu - na konci obsahu */}
-            <div className="md:hidden">
+            <div className="lg:hidden">
               <MemoizedFooter />
             </div>
           </div>
@@ -352,7 +353,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       </div>
       {isMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30"
+          className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-30"
           onClick={() => setIsMenuOpen(false)}
         />
       )}

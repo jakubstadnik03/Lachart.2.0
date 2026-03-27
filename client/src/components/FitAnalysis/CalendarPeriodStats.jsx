@@ -733,7 +733,7 @@ export default function CalendarPeriodStats({
   if (!period?.label) return null;
 
   const cardCls =
-    'min-w-0 px-3 py-2.5 sm:py-3 rounded-xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-sm';
+    'min-w-0 px-2 py-1.5 sm:px-3 sm:py-3 rounded-lg sm:rounded-xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-sm';
   const Chart = typeof ReactECharts === 'function' ? ReactECharts : null;
   const chartWrap = 'bg-white/5 rounded-xl border border-white/10 p-2 sm:p-3 min-h-[240px]';
 
@@ -789,19 +789,19 @@ export default function CalendarPeriodStats({
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className={`mt-3 grid gap-1.5 sm:gap-2 ${isMobile ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'}`}>
               <div className={cardCls}>
-                <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Current TSS</div>
-                <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">{Math.round(aggregates.totalTss || 0)} </div>
+                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Current TSS</div>
+                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 tabular-nums">{Math.round(aggregates.totalTss || 0)} </div>
               </div>
               <div className={cardCls}>
-                <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Previous TSS</div>
-                <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">{Math.round(weekComparison.prevTss || 0)} </div>
+                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Previous TSS</div>
+                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 tabular-nums">{Math.round(weekComparison.prevTss || 0)} </div>
               </div>
               <div className={cardCls}>
-                <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Delta</div>
+                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Delta</div>
                 <div
-                  className={`text-sm sm:text-base font-bold mt-1 ${
+                  className={`text-xs sm:text-base font-bold mt-0.5 sm:mt-1 tabular-nums ${
                     weekComparison.deltaTss >= 0 ? 'text-greenos' : 'text-red-600'
                   }`}
                 >
@@ -810,8 +810,8 @@ export default function CalendarPeriodStats({
                 </div>
               </div>
               <div className={cardCls}>
-                <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Overload</div>
-                <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">
+                <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Overload</div>
+                <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1">
                   {weekComparison.overload ? (
                     <span className="text-red-600">Risk</span>
                   ) : (
@@ -846,36 +846,42 @@ export default function CalendarPeriodStats({
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,8.5rem),1fr))]">
+        <div
+          className={
+            isMobile
+              ? 'grid grid-cols-3 gap-1.5'
+              : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,8.5rem),1fr))]'
+          }
+        >
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Total time</div>
-            <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">{formatDuration(aggregates.totalSec)}</div>
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Total time</div>
+            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">{formatDuration(aggregates.totalSec)}</div>
           </div>
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Distance</div>
-            <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Distance</div>
+            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">
               {aggregates.totalDist > 0 ? formatDistance(aggregates.totalDist, user) : '—'}
             </div>
           </div>
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Total TSS</div>
-            <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Total TSS</div>
+            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight tabular-nums">
               {aggregates.totalTss > 0 ? Math.round(aggregates.totalTss) : '—'}
             </div>
           </div>
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Avg / activity</div>
-            <div className="text-sm sm:text-base font-bold text-gray-900 mt-1">
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Avg / activity</div>
+            <div className="text-xs sm:text-base font-bold text-gray-900 mt-0.5 sm:mt-1 leading-tight">
               {aggregates.count > 0 ? formatDuration(Math.round(aggregates.totalSec / aggregates.count)) : '—'}
             </div>
           </div>
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Longest</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-900 mt-1 leading-snug line-clamp-2">
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Longest</div>
+            <div className="text-[11px] sm:text-sm font-bold text-gray-900 mt-0.5 sm:mt-1 leading-snug line-clamp-2">
               {aggregates.maxDurAct ? (
                 <>
                   {formatDuration(actDurationSec(aggregates.maxDurAct))}
-                  <span className="block text-[10px] font-normal text-gray-500 truncate">{aggregates.maxDurAct.title}</span>
+                  <span className="block text-[8px] sm:text-[10px] font-normal text-gray-500 truncate">{aggregates.maxDurAct.title}</span>
                 </>
               ) : (
                 '—'
@@ -883,12 +889,12 @@ export default function CalendarPeriodStats({
             </div>
           </div>
           <div className={cardCls}>
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">Peak TSS</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-900 mt-1 leading-snug line-clamp-2">
+            <div className="text-[9px] sm:text-xs uppercase tracking-wide text-gray-500 leading-tight">Peak TSS</div>
+            <div className="text-[11px] sm:text-sm font-bold text-gray-900 mt-0.5 sm:mt-1 leading-snug line-clamp-2 tabular-nums">
               {aggregates.maxTssAct ? (
                 <>
                   {Math.round(Number(aggregates.maxTssAct.tss || aggregates.maxTssAct.TSS || aggregates.maxTssAct.totalTSS || 0))}
-                  <span className="block text-[10px] font-normal text-gray-500 truncate">{aggregates.maxTssAct.title}</span>
+                  <span className="block text-[8px] sm:text-[10px] font-normal text-gray-500 truncate">{aggregates.maxTssAct.title}</span>
                 </>
               ) : (
                 '—'

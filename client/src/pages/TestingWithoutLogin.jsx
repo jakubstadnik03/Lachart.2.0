@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthProvider';
 import { saveUserToStorage } from '../utils/userStorage';
 import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../config/api.config';
+import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 
@@ -160,7 +161,7 @@ const LactateCurveCalculatorPage = () => {
     useEffect(() => {
         if (isInitialMount.current) {
             const handleResize = () => {
-                if (window.innerWidth >= 768) {
+                if (window.innerWidth >= LAYOUT_DESKTOP_MIN_PX) {
                     setIsMenuOpen(true);
                 } else {
                     setIsMenuOpen(false);
@@ -887,7 +888,7 @@ const LactateCurveCalculatorPage = () => {
                 `}</script>
             </Helmet>
             {/* Left Menu - Desktop: always visible, Mobile: animated */}
-            <div className="menu-container hidden md:block fixed top-0 left-0 h-screen overflow-y-auto z-40" ref={menuRef}>
+            <div className="menu-container hidden lg:block fixed top-0 left-0 h-screen overflow-y-auto z-40" ref={menuRef}>
             <Menu 
                     isMenuOpen={true} 
                     setIsMenuOpen={() => {}}
@@ -897,7 +898,7 @@ const LactateCurveCalculatorPage = () => {
             </div>
             
             {/* Mobile Menu */}
-            <div className="menu-container md:hidden fixed top-0 left-0 h-screen overflow-y-auto z-40">
+            <div className="menu-container lg:hidden fixed top-0 left-0 h-screen overflow-y-auto z-40">
                 <Menu 
                     isMenuOpen={isMenuOpen} 
                     setIsMenuOpen={setIsMenuOpen}
@@ -907,7 +908,7 @@ const LactateCurveCalculatorPage = () => {
             </div>
 
             {/* Main Content Container */}
-            <div className="flex-1 flex flex-col min-h-screen w-full overflow-x-hidden overflow-y-auto md:ml-64 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="flex-1 flex flex-col min-h-screen w-full overflow-x-hidden overflow-y-auto lg:ml-64 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {/* Header */}
                 <Header 
                     isMenuOpen={isMenuOpen} 
@@ -917,7 +918,7 @@ const LactateCurveCalculatorPage = () => {
 
                 {/* Main Content */}
           {/* Main Content */}
-          <main className="flex-1 px-4 py-8 pt-16 md:pt-8 overflow-x-hidden overflow-y-visible w-full max-w-full">
+          <main className="flex-1 px-4 py-8 pt-16 lg:pt-8 overflow-x-hidden overflow-y-visible w-full max-w-full">
                     <div className="max-w-[1600px] mx-auto space-y-8 overflow-x-hidden overflow-y-hidden w-full">
                         {/* Page Header – modern hero */}
                         <section className="w-full bg-white rounded-3xl shadow-sm border border-gray-100 mb-10 overflow-hidden relative">

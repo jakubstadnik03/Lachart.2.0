@@ -3706,7 +3706,7 @@ const FitAnalysisPage = () => {
                           </div>
                         </div>
                         {showCreateLapButton && selectionStats && (
-                          <div className="mb-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-2xl p-4 md:p-6 shadow-lg">
+                          <div className={`mb-4 bg-gradient-to-r from-primary/10 to-secondary/10 backdrop-blur-sm border-2 border-primary/30 rounded-2xl shadow-lg ${isMobile ? 'p-2.5' : 'p-4 md:p-6'}`}>
                             <div className="flex items-center justify-between mb-3 md:mb-4">
                               <h4 className="text-base md:text-lg font-semibold text-gray-900">Selected Interval Statistics</h4>
                               <button
@@ -3720,48 +3720,48 @@ const FitAnalysisPage = () => {
                                 ✕
                               </button>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                              <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                <div className="text-xs md:text-sm text-gray-600 mb-1">Duration</div>
-                                <div className="text-base md:text-lg font-bold text-primary">{formatDuration(selectionStats.duration)}</div>
+                            <div className={`grid ${isMobile ? 'grid-cols-3 gap-1.5' : 'grid-cols-2 md:grid-cols-4 gap-3 md:gap-4'}`}>
+                              <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Duration</div>
+                                <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{formatDuration(selectionStats.duration)}</div>
                               </div>
                               {selectionStats.totalDistance && (
-                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Distance</div>
-                                  <div className="text-base md:text-lg font-bold text-primary">{formatDistance(selectionStats.totalDistance, user)}</div>
+                                <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Distance</div>
+                                  <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{formatDistance(selectionStats.totalDistance, user)}</div>
                                 </div>
                               )}
                               {selectionStats.avgSpeed != null && (
-                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Speed</div>
-                                  <div className="text-base md:text-lg font-bold text-primary">{selectionStats.avgSpeed} km/h</div>
+                                <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Speed</div>
+                                  <div className={`font-bold text-primary ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgSpeed} km/h</div>
                                   {selectionStats.maxSpeed != null && (
-                                    <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxSpeed} km/h</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxSpeed} km/h</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgHeartRate && (
-                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg HR</div>
-                                  <div className="text-base md:text-lg font-bold text-red-600">{selectionStats.avgHeartRate} bpm</div>
+                                <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg HR</div>
+                                  <div className={`font-bold text-red-600 ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgHeartRate} bpm</div>
                                   {selectionStats.maxHeartRate && (
-                                    <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxHeartRate} bpm</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxHeartRate} bpm</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgPower && (
-                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Power</div>
-                                  <div className="text-base md:text-lg font-bold text-primary-dark">{selectionStats.avgPower} W</div>
+                                <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Power</div>
+                                  <div className={`font-bold text-primary-dark ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgPower} W</div>
                                   {selectionStats.maxPower && (
-                                    <div className="text-xs text-gray-500 mt-1">Max: {selectionStats.maxPower} W</div>
+                                    <div className={`text-gray-500 ${isMobile ? 'text-[9px] mt-0.5' : 'text-xs mt-1'}`}>Max: {selectionStats.maxPower} W</div>
                                   )}
                                 </div>
                               )}
                               {selectionStats.avgCadence && (
-                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-primary/30 shadow-sm">
-                                  <div className="text-xs md:text-sm text-gray-600 mb-1">Avg Cadence</div>
-                                  <div className="text-base md:text-lg font-bold text-greenos">{selectionStats.avgCadence} rpm</div>
+                                <div className={`bg-white/80 backdrop-blur-sm border border-primary/30 shadow-sm ${isMobile ? 'rounded-lg p-2' : 'rounded-xl p-3 md:p-4'}`}>
+                                  <div className={`text-gray-600 ${isMobile ? 'text-[10px] mb-0.5' : 'text-xs md:text-sm mb-1'}`}>Avg Cadence</div>
+                                  <div className={`font-bold text-greenos ${isMobile ? 'text-xs' : 'text-base md:text-lg'}`}>{selectionStats.avgCadence} rpm</div>
                                 </div>
                               )}
                             </div>
@@ -4783,15 +4783,15 @@ const FitAnalysisPage = () => {
                   ];
                   return (
                     <div>
-                      <div className="grid w-full gap-3 px-1 [grid-template-columns:repeat(auto-fill,minmax(min(100%,10.5rem),1fr))]">
+                      <div className="grid w-full grid-cols-3 gap-1.5 px-0.5">
                         {items.map((item, idx) => (
                           <div
                             key={idx}
-                            className="min-w-0 py-1 p-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-sm"
+                            className="min-w-0 rounded-lg border border-white/20 bg-white/10 px-1.5 py-1 shadow-sm backdrop-blur-xl sm:rounded-xl sm:p-2"
                           >
-                            <div className="text-[11px] text-gray-500 font-medium">{item.label}</div>
-                            <div className="text-lg font-bold text-gray-900 leading-tight">{item.value}</div>
-                            {item.sub && <div className="text-[10px] text-gray-400">{item.sub}</div>}
+                            <div className="truncate text-[9px] font-medium leading-tight text-gray-500" title={item.label}>{item.label}</div>
+                            <div className="text-xs font-semibold leading-tight text-gray-900 sm:text-sm sm:font-bold">{item.value}</div>
+                            {item.sub && <div className="truncate text-[8px] leading-tight text-gray-400">{item.sub}</div>}
                           </div>
                         ))}
                       </div>
@@ -5209,7 +5209,7 @@ const FitAnalysisPage = () => {
                       ✕
                     </button>
                 </div>
-                  <div className={`grid ${isMobile ? 'grid-cols-2 gap-1' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3'}`}>
+                  <div className={`grid ${isMobile ? 'grid-cols-3 gap-1' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3'}`}>
                     <div className={`bg-white/90 border border-primary/20 ${isMobile ? 'rounded-md p-1.5' : 'rounded-xl sm:rounded-2xl p-2 sm:p-3 md:p-4'} shadow-sm`}>
                       <div className="flex items-center justify-between">
                         <div>

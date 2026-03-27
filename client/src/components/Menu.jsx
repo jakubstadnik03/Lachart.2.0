@@ -4,13 +4,14 @@ import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
+import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 
 const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
   // FIRST: all hooks
   const { user: authUser, token: authToken, logout, loading } = useAuth();
   const [athletes, setAthletes] = useState([]);
   const [loadingAthletes, setLoadingAthletes] = useState(true);
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= LAYOUT_DESKTOP_MIN_PX);
   const menuRef = useRef(null);
   const menuDebugLastRef = useRef({ role: null, path: null });
   const navigate = useNavigate();
@@ -50,7 +51,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setIsDesktop(window.innerWidth >= LAYOUT_DESKTOP_MIN_PX);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -58,7 +59,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   useEffect(() => {
     // Close menu on mobile when pathname changes
-    if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
+    if (window.innerWidth < LAYOUT_DESKTOP_MIN_PX && typeof setIsMenuOpen === 'function') {
       // Use setTimeout to ensure menu closes after navigation
       const timer = setTimeout(() => {
       setIsMenuOpen(false);
@@ -116,14 +117,14 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
 
   const handleMenuItemClick = (e) => {
     // Close menu immediately on mobile when clicking any link
-    if (window.innerWidth < 768 && typeof setIsMenuOpen === 'function') {
+    if (window.innerWidth < LAYOUT_DESKTOP_MIN_PX && typeof setIsMenuOpen === 'function') {
       setIsMenuOpen(false);
     }
   };
 
   const handleAthleteClick = async (athleteId) => {
     try {
-      if (window.innerWidth < 768) {
+      if (window.innerWidth < LAYOUT_DESKTOP_MIN_PX) {
         setIsMenuOpen(false);
       }
 
@@ -305,7 +306,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           damping: 30,
           opacity: { duration: 0.2 }
         }}
-        className={`fixed md:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden`}
+        className={`fixed lg:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden`}
       >
         <div 
           className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0"
@@ -335,13 +336,13 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           initial={false}
           animate={{ opacity: 1 }}
           transition={{ duration: 0 }}
-          className="p-4 pt-0 flex-1 lg:flex-[3] overflow-y-auto min-h-0"
+          className="p-3 pt-0 sm:p-4 sm:pt-0 flex-1 lg:flex-[3] overflow-y-auto min-h-0 [touch-action:pan-y]"
           style={{ 
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain'
           }}
         >
-          <h2 className="text-lg pt-4 text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Menu</h2>
+          <h2 className="text-base sm:text-lg pt-2 sm:pt-4 text-gray-700 mb-2 sm:mb-3 sticky top-0 bg-white pb-1 sm:pb-2 z-10">Menu</h2>
           {!user?.role ? (
             <ul className="space-y-2 pb-2">
               {[
@@ -362,7 +363,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                     onClick={handleMenuItemClick}
                     className={({ isActive }) => {
                       const base =
-                        'flex items-center text-sm font-medium p-3 rounded-lg transition-colors duration-150';
+                        'flex items-center text-sm font-medium py-2 px-2 sm:p-3 rounded-lg transition-colors duration-150';
                       if (item.variant === 'primary') {
                         return `${base} ${
                           isActive
@@ -414,7 +415,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                       to={item.getPath ? item.getPath(effectiveAthleteId) : item.path}
                       onClick={handleMenuItemClick}
                       className={({ isActive }) =>
-                        `flex items-center text-sm font-medium p-3 rounded-lg ${
+                        `flex items-center text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
                           isActive
                             ? "bg-primary text-white"
                             : "text-gray-700 hover:bg-gray-100"
@@ -426,7 +427,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                           <img
                             src={isActive ? item.iconWhite : item.icon}
                             alt={item.name}
-                            className="w-5 h-5 mr-3"
+                            className="w-5 h-5 mr-2 sm:mr-3 flex-shrink-0"
                           />
                           {item.name}
                         </>
@@ -441,7 +442,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         {["coach", "tester", "testing"].includes(user?.role) && (
           <div
             data-tour="tour-athletes-sidebar"
-            className="p-4 pt-0 border-t border-gray-200 flex-1 lg:flex-[2] overflow-y-auto min-h-0 max-h-[40vh] lg:max-h-none"
+            className="p-3 pt-0 sm:p-4 border-t border-gray-200 max-lg:max-h-[min(32vh,14rem)] max-lg:flex-none lg:flex-1 lg:flex-[2] overflow-y-auto min-h-0 lg:max-h-none [touch-action:pan-y]"
             style={{ 
               WebkitOverflowScrolling: 'touch',
               overscrollBehavior: 'contain'
@@ -481,23 +482,23 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         )}
 
         <div
-          className="mt-auto flex-shrink-0"
+          className="mt-auto flex-shrink-0 border-t border-gray-200 bg-white lg:bg-transparent"
         >
           {!user?.role ? (
-            <div className="p-4 border-t border-gray-200">
-              <div className="text-center text-sm text-gray-500">
+            <div className="p-3 sm:p-4">
+              <div className="text-center text-xs sm:text-sm text-gray-500">
                 <p>© 2026 LaChart</p>
-                <p className="mt-1">All rights reserved</p>
+                <p className="mt-0.5 sm:mt-1">All rights reserved</p>
               </div>
             </div>
           ) : (
-            <div className="p-4 border-t border-gray-200">
-              <ul className="space-y-2">
-                <li data-tour="tour-menu-settings">
+            <div className="px-2 py-2 sm:p-4 sm:pt-3">
+              <ul className="grid max-lg:grid-cols-2 max-lg:gap-1 lg:space-y-2">
+                <li data-tour="tour-menu-settings" className="min-w-0">
                   <NavLink
                     to="/settings"
                     className={({ isActive }) =>
-                      `flex items-center text-sm font-medium p-3 rounded-lg ${
+                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
                         isActive
                           ? "bg-primary text-white"
                           : "text-gray-700 hover:bg-gray-100"
@@ -508,19 +509,19 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                       <>
                         <img
                           src={isActive ? "/icon/settings-white.svg" : "/icon/settings.svg"}
-                          alt="Settings"
-                          className="w-5 h-5 mr-3"
+                          alt=""
+                          className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-3 flex-shrink-0"
                         />
-                        Settings
+                        <span className="truncate">Settings</span>
                       </>
                     )}
                   </NavLink>
                 </li>
-                <li>
+                <li className="min-w-0">
                   <NavLink
                     to="/support"
                     className={({ isActive }) =>
-                      `flex items-center text-sm font-medium p-3 rounded-lg ${
+                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
                         isActive
                           ? "bg-primary text-white"
                           : "text-gray-700 hover:bg-gray-100"
@@ -531,10 +532,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                       <>
                         <img
                           src={isActive ? "/icon/support-white.svg" : "/icon/support.svg"}
-                          alt="Support"
-                          className="w-5 h-5 mr-3"
+                          alt=""
+                          className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-3 flex-shrink-0"
                         />
-                        Support
+                        <span className="truncate">Support</span>
                       </>
                     )}
                   </NavLink>
@@ -544,29 +545,29 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           )}
 
           <div 
-            className="p-4 border-t border-gray-200"
-            style={{ paddingTop: '0.35rem', paddingBottom: '0.35rem' }}
+            className="px-2 pb-2 pt-0 sm:p-4 sm:pt-1 border-t border-gray-100 sm:border-t-0"
           >
             {!user?.role ? (
               <div
-                className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-gray-400 cursor-not-allowed"
+                className="flex items-center w-full text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg text-gray-400 cursor-not-allowed"
               >
                 <img
                   src="/icon/logout.svg"
-                  alt="Logout"
-                  className="w-5 h-5 mr-3 opacity-50"
+                  alt=""
+                  className="w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3 opacity-50 flex-shrink-0"
                 />
                 Log out
               </div>
             ) : (
               <button
+                type="button"
                 onClick={handleLogout}
-                className="flex items-center w-full text-sm font-medium p-3 rounded-lg text-red-600 hover:bg-red-50"
+                className="flex items-center w-full text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg text-red-600 hover:bg-red-50"
               >
                 <img
                   src="/icon/logout.svg"
-                  alt="Logout"
-                  className="w-5 h-5 mr-3"
+                  alt=""
+                  className="w-4 h-4 sm:w-5 sm:h-5 mr-2 sm:mr-3 flex-shrink-0"
                 />
                 Log out
               </button>
@@ -582,7 +583,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black bg-opacity-50 md:hidden z-30 backdrop-blur-sm"
+            className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-30 backdrop-blur-sm"
             onClick={() => setIsMenuOpen(false)}
           />
         )}
