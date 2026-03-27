@@ -1250,9 +1250,24 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
               .filter((v) => Number.isFinite(Number(v)))
               .map((v) => Number(v))
               .filter((v) => v - ltp1Power >= MIN_LT2_LT1_GAP_W);
-            if (candidates.length) {
+          if (candidates.length) {
               ltp2Power = Math.min(...candidates);
-              const laAdj = Number(polyFit.polyFn(ltp2Power));
+              // For bike, keep LT2 lactate tied to measured/interpolated segments, not polynomial value.
+              const laAdj = interpolatePowerAtLactateBike(minLt2LaBike) != null
+                ? (() => {
+                    for (let i = 0; i < sortedResults.length - 1; i++) {
+                      const a = sortedResults[i];
+                      const b = sortedResults[i + 1];
+                      const pa = Number(a.power);
+                      const pb = Number(b.power);
+                      if (ltp2Power >= Math.min(pa, pb) && ltp2Power <= Math.max(pa, pb) && pa !== pb) {
+                        const t = (ltp2Power - pa) / (pb - pa);
+                        return Number(a.lactate) + t * (Number(b.lactate) - Number(a.lactate));
+                      }
+                    }
+                    return Number(ltp2Lactate);
+                  })()
+                : Number(ltp2Lactate);
               if (Number.isFinite(laAdj)) ltp2Lactate = laAdj;
               const hrAdj = interpolateHRAtPowerPolyBike(ltp2Power);
               if (hrAdj != null) ltp2HR = hrAdj;
@@ -1864,7 +1879,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     }
 
     // Dopočítat power/pace a lactate z polynomické křivky (ne z měřeného bodu), pokud máme fit
-    if (polyFit && ltp1Point && ltp2Point) {
+    if (polyFit && ltp1Point && ltp2Point && isPaceSport) {
       const { polyFn, fitMinX, fitMaxX } = polyFit;
       const xLTP1 = findXForLactate(polyFn, fitMinX, fitMaxX, ltp1Point.lactate, isPaceSport, true);
       const xLTP2 = findXForLactate(polyFn, fitMinX, fitMaxX, ltp2Point.lactate, isPaceSport, false);
@@ -2432,12 +2447,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       }
     }
 
-    // Final UI-level guard for bike: enforce LT2 >= LT1 + MIN_LT2_LT1_GAP_W
-    // This runs on final thresholds object so table/chart cannot show too-small gap.
+    // Final UI-level guard for bike:
+    // - LT1 should not lock too early on long flat low-lactate segments.
+    // - LT2 must keep both power separation and physiological lactate floor.
     if (sport === 'bike' && Number.isFinite(Number(thresholds['LTP1'])) && Number.isFinite(Number(thresholds['LTP2']))) {
-      const minLt2Power = Number(thresholds['LTP1']) + MIN_LT2_LT1_GAP_W;
-      if (Number(thresholds['LTP2']) < minLt2Power) {
-        let adjustedPoint = null;
+      const interpolateAtPower = (targetPower) => {
         for (let i = 0; i < sortedResults.length - 1; i++) {
           const a = sortedResults[i];
           const b = sortedResults[i + 1];
@@ -2445,19 +2459,68 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           const pb = Number(b.power);
           const lo = Math.min(pa, pb);
           const hi = Math.max(pa, pb);
-          if (minLt2Power >= lo && minLt2Power <= hi && pa !== pb) {
-            const t = (minLt2Power - pa) / (pb - pa);
+          if (targetPower >= lo && targetPower <= hi && pa !== pb) {
+            const t = (targetPower - pa) / (pb - pa);
             const la = Number(a.lactate);
             const lb = Number(b.lactate);
             const ha = a.heartRate != null ? Number(a.heartRate) : null;
             const hb = b.heartRate != null ? Number(b.heartRate) : null;
-            adjustedPoint = {
-              power: minLt2Power,
-              lactate: Number.isFinite(la) && Number.isFinite(lb) ? la + t * (lb - la) : Number(thresholds.lactates['LTP2']),
-              heartRate: (ha != null && hb != null) ? ha + t * (hb - ha) : (ha ?? hb ?? thresholds.heartRates['LTP2'] ?? null)
+            return {
+              power: targetPower,
+              lactate: Number.isFinite(la) && Number.isFinite(lb) ? la + t * (lb - la) : null,
+              heartRate: (ha != null && hb != null) ? ha + (hb - ha) * t : (ha ?? hb ?? null)
             };
-            break;
           }
+        }
+        return null;
+      };
+      const interpolatePowerAtLactate = (targetLa) => {
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const a = sortedResults[i];
+          const b = sortedResults[i + 1];
+          const la = Number(a.lactate);
+          const lb = Number(b.lactate);
+          if ((la <= targetLa && lb >= targetLa) || (la >= targetLa && lb <= targetLa)) {
+            const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (targetLa - la) / (lb - la);
+            return Number(a.power) + t * (Number(b.power) - Number(a.power));
+          }
+        }
+        return null;
+      };
+
+      // LT1 floor for bike: keep it near first meaningful rise, not at minimal 1.5 plateau.
+      const lt1LaFloorBike = Math.min(MAX_LTP1_LACTATE, Math.max(1.7, Number(effectiveBaseLactate) + 0.5));
+      const currentLt1La = Number(thresholds.lactates['LTP1']);
+      if (Number.isFinite(currentLt1La) && currentLt1La < lt1LaFloorBike) {
+        const pAtFloor = interpolatePowerAtLactate(lt1LaFloorBike);
+        if (Number.isFinite(Number(pAtFloor))) {
+          const lt1Point = interpolateAtPower(Number(pAtFloor));
+          if (lt1Point) {
+            thresholds['LTP1'] = lt1Point.power;
+            thresholds.lactates['LTP1'] = lt1LaFloorBike;
+            thresholds.heartRates['LTP1'] = lt1Point.heartRate;
+          }
+        }
+      }
+
+      const minLt2Power = Number(thresholds['LTP1']) + MIN_LT2_LT1_GAP_W;
+      const minLt2LaBike = 3.2;
+      const currentLt2Power = Number(thresholds['LTP2']);
+      const currentLt2La = Number(thresholds.lactates['LTP2']);
+      if (currentLt2Power < minLt2Power || !Number.isFinite(currentLt2La) || currentLt2La < minLt2LaBike) {
+        let adjustedPoint = null;
+        const pAt32 = interpolatePowerAtLactate(minLt2LaBike);
+        const pAt35 = interpolatePowerAtLactate(OBLA_LT2_LOW_MMOL);
+        const pAt40 = interpolatePowerAtLactate(OBLA_LT2_HIGH_MMOL);
+        const candidatePowers = [pAt32, pAt35, pAt40]
+          .filter((v) => Number.isFinite(Number(v)))
+          .map((v) => Number(v))
+          .filter((p) => p >= minLt2Power);
+        if (candidatePowers.length > 0) {
+          adjustedPoint = interpolateAtPower(Math.min(...candidatePowers));
+        }
+        if (!adjustedPoint) {
+          adjustedPoint = interpolateAtPower(minLt2Power);
         }
         if (!adjustedPoint) {
           const higher = sortedResults.find((r) => Number(r.power) >= minLt2Power);
@@ -2469,7 +2532,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           };
         }
         thresholds['LTP2'] = adjustedPoint.power;
-        thresholds.lactates['LTP2'] = adjustedPoint.lactate;
+        thresholds.lactates['LTP2'] = Number.isFinite(Number(adjustedPoint.lactate))
+          ? Math.max(minLt2LaBike, Number(adjustedPoint.lactate))
+          : minLt2LaBike;
         thresholds.heartRates['LTP2'] = adjustedPoint.heartRate;
       }
     }
@@ -2807,6 +2872,127 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           if (hr != null && Number.isFinite(hr)) thresholds.heartRates[ltpKey] = hr;
         }
       });
+    }
+
+    // Absolute last-mile guard for bike thresholds (must run right before return).
+    // Prevents any previous step from leaving LT1/LT2 too low on "drop then rise" curves.
+    if (sport === 'bike' && Number.isFinite(Number(thresholds['LTP1'])) && Number.isFinite(Number(thresholds['LTP2']))) {
+      const interpolateAtPowerFinal = (targetPower) => {
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const a = sortedResults[i];
+          const b = sortedResults[i + 1];
+          const pa = Number(a.power);
+          const pb = Number(b.power);
+          if (targetPower >= Math.min(pa, pb) && targetPower <= Math.max(pa, pb) && pa !== pb) {
+            const t = (targetPower - pa) / (pb - pa);
+            const la = Number(a.lactate);
+            const lb = Number(b.lactate);
+            return {
+              power: targetPower,
+              lactate: Number.isFinite(la) && Number.isFinite(lb) ? la + t * (lb - la) : null,
+              heartRate:
+                (a.heartRate != null && b.heartRate != null)
+                  ? Number(a.heartRate) + t * (Number(b.heartRate) - Number(a.heartRate))
+                  : (a.heartRate ?? b.heartRate ?? null)
+            };
+          }
+        }
+        return null;
+      };
+      const interpolatePowerAtLactateFinal = (targetLa) => {
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const a = sortedResults[i];
+          const b = sortedResults[i + 1];
+          const la = Number(a.lactate);
+          const lb = Number(b.lactate);
+          if ((la <= targetLa && lb >= targetLa) || (la >= targetLa && lb <= targetLa)) {
+            const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (targetLa - la) / (lb - la);
+            return {
+              power: Number(a.power) + t * (Number(b.power) - Number(a.power)),
+              heartRate:
+                (a.heartRate != null && b.heartRate != null)
+                  ? Number(a.heartRate) + t * (Number(b.heartRate) - Number(a.heartRate))
+                  : (a.heartRate ?? b.heartRate ?? null)
+            };
+          }
+        }
+        return null;
+      };
+
+      const lt1LaFloorFinal = Math.min(MAX_LTP1_LACTATE, Math.max(1.7, Number(effectiveBaseLactate) + 0.5));
+      const curLt1La = Number(thresholds.lactates['LTP1']);
+      if (!Number.isFinite(curLt1La) || curLt1La < lt1LaFloorFinal) {
+        const pAtFloor = interpolatePowerAtLactateFinal(lt1LaFloorFinal);
+        if (pAtFloor && Number.isFinite(Number(pAtFloor.power))) {
+          thresholds['LTP1'] = Number(pAtFloor.power);
+          thresholds.lactates['LTP1'] = lt1LaFloorFinal;
+          thresholds.heartRates['LTP1'] = pAtFloor.heartRate != null ? Number(pAtFloor.heartRate) : thresholds.heartRates['LTP1'];
+        }
+      }
+
+      const minLt2PowerFinal = Number(thresholds['LTP1']) + MIN_LT2_LT1_GAP_W;
+      const minLt2LaFinal = 3.2;
+      const curLt2Power = Number(thresholds['LTP2']);
+      const curLt2La = Number(thresholds.lactates['LTP2']);
+      if (!Number.isFinite(curLt2Power) || curLt2Power < minLt2PowerFinal || !Number.isFinite(curLt2La) || curLt2La < minLt2LaFinal) {
+        const pAt32 = interpolatePowerAtLactateFinal(minLt2LaFinal);
+        const pAt35 = interpolatePowerAtLactateFinal(OBLA_LT2_LOW_MMOL);
+        const pAt40 = interpolatePowerAtLactateFinal(OBLA_LT2_HIGH_MMOL);
+        const candidates = [pAt32, pAt35, pAt40]
+          .filter((x) => x && Number.isFinite(Number(x.power)) && Number(x.power) >= minLt2PowerFinal)
+          .sort((a, b) => Number(a.power) - Number(b.power));
+        const chosen = candidates[0] || pAt32 || pAt35 || pAt40;
+        if (chosen && Number.isFinite(Number(chosen.power))) {
+          thresholds['LTP2'] = Number(chosen.power);
+          thresholds.lactates['LTP2'] = Math.max(minLt2LaFinal, Number.isFinite(Number(chosen.lactate)) ? Number(chosen.lactate) : minLt2LaFinal);
+          thresholds.heartRates['LTP2'] = chosen.heartRate != null ? Number(chosen.heartRate) : thresholds.heartRates['LTP2'];
+        }
+      }
+
+      // Contradiction fallback:
+      // if there is any higher-load point with lower lactate than current LT1 lactate,
+      // use baseline-relative thresholds (Bsln+0.5 / Bsln+1.5).
+      const currentLt1Power = Number(thresholds['LTP1']);
+      const currentLt1La = Number(thresholds.lactates['LTP1']);
+      const hasHigherPowerLowerLa = Number.isFinite(currentLt1Power) && Number.isFinite(currentLt1La)
+        ? sortedResults.some((r) => Number(r.power) > currentLt1Power && Number(r.lactate) < currentLt1La - 0.05)
+        : false;
+      if (hasHigherPowerLowerLa) {
+        const targetLt1La = Math.min(MAX_LTP1_LACTATE, Math.max(MIN_LTP1_LACTATE, Number(effectiveBaseLactate) + 0.5));
+        const targetLt2La = Math.max(targetLt1La + 0.4, Number(effectiveBaseLactate) + 1.5);
+        const pLt1 = interpolatePowerAtLactateFinal(targetLt1La);
+        if (pLt1 && Number.isFinite(Number(pLt1.power))) {
+          thresholds['LTP1'] = Number(pLt1.power);
+          thresholds.lactates['LTP1'] = targetLt1La;
+          thresholds.heartRates['LTP1'] = pLt1.heartRate != null ? Number(pLt1.heartRate) : thresholds.heartRates['LTP1'];
+        }
+
+        const minLt2PowerFromLt1 = Number(thresholds['LTP1']) + MIN_LT2_LT1_GAP_W;
+        const pLt2Base = interpolatePowerAtLactateFinal(targetLt2La);
+        let finalLt2 = null;
+        if (pLt2Base && Number.isFinite(Number(pLt2Base.power)) && Number(pLt2Base.power) >= minLt2PowerFromLt1) {
+          finalLt2 = pLt2Base;
+        } else {
+          finalLt2 = interpolateAtPowerFinal(minLt2PowerFromLt1);
+          if (!finalLt2) {
+            const higher = sortedResults.find((r) => Number(r.power) >= minLt2PowerFromLt1);
+            if (higher) {
+              finalLt2 = {
+                power: Number(higher.power),
+                lactate: Number(higher.lactate),
+                heartRate: higher.heartRate != null ? Number(higher.heartRate) : null
+              };
+            }
+          }
+        }
+        if (finalLt2 && Number.isFinite(Number(finalLt2.power))) {
+          thresholds['LTP2'] = Number(finalLt2.power);
+          thresholds.lactates['LTP2'] = Number.isFinite(Number(finalLt2.lactate))
+            ? Math.max(targetLt2La, Number(finalLt2.lactate))
+            : targetLt2La;
+          thresholds.heartRates['LTP2'] = finalLt2.heartRate != null ? Number(finalLt2.heartRate) : thresholds.heartRates['LTP2'];
+        }
+      }
     }
   
     return thresholds;
