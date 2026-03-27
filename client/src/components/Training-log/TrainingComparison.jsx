@@ -42,6 +42,10 @@ const TrainingComparison = ({ trainings }) => {
     const saved = localStorage.getItem('trainingComparison_metric');
     return saved || 'power';
   });
+  const [monthlyMetric, setMonthlyMetric] = useState(() => {
+    const saved = localStorage.getItem('trainingComparison_monthlyMetric');
+    return saved || 'power';
+  });
   const [activeSeries, setActiveSeries] = useState(() => {
     // Load saved active series from localStorage
     const saved = localStorage.getItem('trainingComparison_activeSeries');
@@ -232,6 +236,10 @@ const TrainingComparison = ({ trainings }) => {
     localStorage.setItem('trainingComparison_showBars', showBars.toString());
   }, [showBars]);
 
+  useEffect(() => {
+    localStorage.setItem('trainingComparison_monthlyMetric', monthlyMetric);
+  }, [monthlyMetric]);
+
   // Calculate progress statistics
   const progressStats = useMemo(() => {
     if (filteredTrainings.length < 2) return null;
@@ -351,6 +359,31 @@ const TrainingComparison = ({ trainings }) => {
 
   const colors = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
 
+  const isBikeSport = (sportValue) => {
+    const sport = (sportValue || '').toLowerCase();
+    return sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
+  };
+
+  const normalizeMetricValue = (result, metric) => {
+    if (!result) return null;
+    let value = null;
+    if (metric === 'power') value = result.power;
+    if (metric === 'heartRate') value = result.heartRate;
+    if (metric === 'lactate') value = result.lactate;
+    if (metric === 'RPE') value = result.RPE;
+    if (value === null || value === undefined || value === '') return null;
+
+    if (metric === 'power' && typeof value === 'string' && value.includes(':')) {
+      const [min, sec] = value.split(':').map(Number);
+      if (Number.isFinite(min) && Number.isFinite(sec)) return min * 60 + sec;
+      return null;
+    }
+
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric;
+  };
+
   // Get color based on power value (gradient from low to high)
   const getPowerColor = (powerValue, minPower, maxPower) => {
     if (!powerValue || powerValue === null || powerValue === undefined) return '#9CA3AF';
@@ -387,10 +420,115 @@ const TrainingComparison = ({ trainings }) => {
   // Check if all trainings are bike
   const areAllTrainingsBike = () => {
     return filteredTrainings.every(t => {
-      const sport = (t.sport || '').toLowerCase();
-      return sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
+      return isBikeSport(t.sport);
     });
   };
+
+  const sameTrainingSnapshot = useMemo(() => {
+    if (filteredTrainings.length < 2) return null;
+
+    const firstTraining = filteredTrainings[0];
+    const lastTraining = filteredTrainings[filteredTrainings.length - 1];
+    const firstResults = firstTraining.results || [];
+    const lastResults = lastTraining.results || [];
+    const maxIntervals = Math.max(firstResults.length, lastResults.length);
+    const bothBike = isBikeSport(firstTraining.sport) && isBikeSport(lastTraining.sport);
+    const isPaceMetricForPair = selectedMetric === 'power' && !bothBike;
+    const rows = [];
+
+    for (let i = 0; i < maxIntervals; i++) {
+      const firstVal = normalizeMetricValue(firstResults[i], selectedMetric);
+      const lastVal = normalizeMetricValue(lastResults[i], selectedMetric);
+      if (firstVal === null && lastVal === null) continue;
+
+      let deltaPct = null;
+      let trend = 'same';
+      if (Number.isFinite(firstVal) && Number.isFinite(lastVal) && firstVal !== 0) {
+        deltaPct = isPaceMetricForPair
+          ? ((firstVal - lastVal) / firstVal) * 100
+          : ((lastVal - firstVal) / firstVal) * 100;
+        trend = deltaPct > 0 ? 'up' : deltaPct < 0 ? 'down' : 'same';
+      }
+
+      rows.push({
+        interval: i + 1,
+        firstVal,
+        lastVal,
+        deltaPct,
+        trend
+      });
+    }
+
+    const comparedRows = rows.filter(r => r.deltaPct !== null);
+    const avgProgress = comparedRows.length
+      ? comparedRows.reduce((sum, r) => sum + r.deltaPct, 0) / comparedRows.length
+      : null;
+
+    return {
+      firstTraining,
+      lastTraining,
+      rows,
+      avgProgress,
+      isPaceMetricForPair
+    };
+  }, [filteredTrainings, selectedMetric]);
+
+  const monthlyTrendData = useMemo(() => {
+    if (!filteredTrainings.length) return [];
+    const byMonth = new Map();
+
+    filteredTrainings.forEach((training) => {
+      const date = new Date(training.date || training.timestamp || training.createdAt);
+      if (Number.isNaN(date.getTime())) return;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      if (!byMonth.has(monthKey)) {
+        byMonth.set(monthKey, {
+          monthKey,
+          monthLabel,
+          powerValues: [],
+          speedValues: [],
+          trainings: 0
+        });
+      }
+      const bucket = byMonth.get(monthKey);
+      bucket.trainings += 1;
+
+      if (isBikeSport(training.sport)) {
+        const values = (training.results || [])
+          .map((r) => {
+            const v = r?.power;
+            if (typeof v === 'string' && v.includes(':')) return null;
+            const n = Number(v);
+            return Number.isFinite(n) && n > 0 ? n : null;
+          })
+          .filter((v) => v !== null);
+        if (values.length) {
+          bucket.powerValues.push(values.reduce((a, b) => a + b, 0) / values.length);
+        }
+      }
+
+      const avgSpeedMps = Number(training.avgSpeed || 0);
+      if (Number.isFinite(avgSpeedMps) && avgSpeedMps > 0) {
+        const speed = unitSystem === 'imperial' ? avgSpeedMps * 2.236936 : avgSpeedMps * 3.6;
+        bucket.speedValues.push(speed);
+      }
+    });
+
+    return Array.from(byMonth.values())
+      .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+      .map((item) => ({
+        monthKey: item.monthKey,
+        monthLabel: item.monthLabel,
+        trainings: item.trainings,
+        power: item.powerValues.length
+          ? item.powerValues.reduce((a, b) => a + b, 0) / item.powerValues.length
+          : null,
+        speed: item.speedValues.length
+          ? item.speedValues.reduce((a, b) => a + b, 0) / item.speedValues.length
+          : null
+      }));
+  }, [filteredTrainings, unitSystem]);
 
   // Check if we're displaying pace (values > 100 are likely seconds/pace)
   // But NOT if all trainings are bike (bike always uses power in W)
@@ -538,6 +676,15 @@ const TrainingComparison = ({ trainings }) => {
       ...prev,
       [label]: !prev[label]
     }));
+  };
+  const setAllSeriesVisible = (visible) => {
+    setActiveSeries((prev) => {
+      const next = { ...prev };
+      Object.keys(trainingMeta).forEach((label) => {
+        next[label] = visible;
+      });
+      return next;
+    });
   };
 
   const formatIntervalDuration = (result) => {
@@ -843,14 +990,171 @@ const TrainingComparison = ({ trainings }) => {
           </div>
         )}
 
+        {sameTrainingSnapshot && (
+          <div className="mb-6 p-4 bg-indigo-50/60 rounded-lg border border-indigo-100">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Same-Training Snapshot</h3>
+              <span className="text-xs text-indigo-700 bg-indigo-100 px-2 py-1 rounded-full">
+                {selectedMetric === 'power' && sameTrainingSnapshot.isPaceMetricForPair
+                  ? 'Pace: lower is better'
+                  : 'Higher is better'}
+              </span>
+            </div>
+            <div className="text-xs text-gray-600 mb-3">
+              Comparing oldest vs newest training in current filters:
+              {' '}
+              <span className="font-medium text-gray-800">
+                {new Date(sameTrainingSnapshot.firstTraining.date || sameTrainingSnapshot.firstTraining.timestamp || sameTrainingSnapshot.firstTraining.createdAt).toLocaleDateString('cs-CZ')}
+              </span>
+              {' '}→{' '}
+              <span className="font-medium text-gray-800">
+                {new Date(sameTrainingSnapshot.lastTraining.date || sameTrainingSnapshot.lastTraining.timestamp || sameTrainingSnapshot.lastTraining.createdAt).toLocaleDateString('cs-CZ')}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+              <div className="bg-white border border-gray-200 rounded-lg p-2">
+                <div className="text-[11px] text-gray-500">Trainings in set</div>
+                <div className="text-sm font-semibold text-gray-900">{filteredTrainings.length}</div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-2">
+                <div className="text-[11px] text-gray-500">Compared intervals</div>
+                <div className="text-sm font-semibold text-gray-900">{sameTrainingSnapshot.rows.length}</div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-2">
+                <div className="text-[11px] text-gray-500">Average progress</div>
+                <div className={`text-sm font-semibold ${sameTrainingSnapshot.avgProgress > 0 ? 'text-green-600' : sameTrainingSnapshot.avgProgress < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                  {sameTrainingSnapshot.avgProgress === null
+                    ? 'N/A'
+                    : `${sameTrainingSnapshot.avgProgress > 0 ? '+' : ''}${sameTrainingSnapshot.avgProgress.toFixed(1)}%`}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Interval</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">First</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Last</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Progress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sameTrainingSnapshot.rows.map((row) => (
+                    <tr key={`snapshot-row-${row.interval}`} className="border-b border-gray-100 last:border-b-0">
+                      <td className="px-3 py-2 text-xs font-medium text-gray-900">#{row.interval}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.firstVal === null ? '-' : formatMetricValue(row.firstVal, selectedMetric)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.lastVal === null ? '-' : formatMetricValue(row.lastVal, selectedMetric)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {row.deltaPct === null ? (
+                          <span className="text-xs text-gray-400">N/A</span>
+                        ) : (
+                          <span className={`text-xs font-semibold ${getTrendColor(row.trend)}`}>
+                            {row.deltaPct > 0 ? '+' : ''}{row.deltaPct.toFixed(1)}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {monthlyTrendData.length > 0 && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Monthly Trend</h3>
+              <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setMonthlyMetric('power')}
+                  className={`px-3 py-1 text-xs ${monthlyMetric === 'power' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                >
+                  Power
+                </button>
+                <button
+                  onClick={() => setMonthlyMetric('speed')}
+                  className={`px-3 py-1 text-xs ${monthlyMetric === 'speed' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                >
+                  Speed
+                </button>
+              </div>
+            </div>
+
+            {monthlyTrendData.some((d) => d[monthlyMetric] !== null) ? (
+              <div className="w-full h-64 bg-white border border-gray-200 rounded-xl p-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={monthlyTrendData} margin={{ top: 10, right: 15, left: 0, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: '#4B5563' }} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#4B5563' }}
+                      label={{
+                        value: monthlyMetric === 'power'
+                          ? 'Power (W)'
+                          : `Speed (${unitSystem === 'imperial' ? 'mph' : 'km/h'})`,
+                        angle: -90,
+                        position: 'insideLeft',
+                        fill: '#4B5563',
+                        fontSize: 10
+                      }}
+                    />
+                    <Tooltip
+                      formatter={(value) => {
+                        if (value === null || value === undefined) return 'N/A';
+                        return monthlyMetric === 'power'
+                          ? `${Math.round(value)} W`
+                          : `${Number(value).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`;
+                      }}
+                      labelFormatter={(label, payload) => {
+                        const count = payload?.[0]?.payload?.trainings || 0;
+                        return `${label} (${count} trainings)`;
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={monthlyMetric}
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: '#2563eb', stroke: '#fff', strokeWidth: 1.5 }}
+                      connectNulls={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 bg-white border border-gray-200 rounded-xl p-4">
+                No monthly {monthlyMetric} data in current filter.
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Training List */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Trainings ({filteredTrainings.length})
-            </h3>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Trainings ({filteredTrainings.length})
+              </h3>
+              <button
+                onClick={() => setAllSeriesVisible(true)}
+                className="text-xs px-2 py-1 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+              >
+                Show all
+              </button>
+              <button
+                onClick={() => setAllSeriesVisible(false)}
+                className="text-xs px-2 py-1 rounded-full border border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Hide all
+              </button>
+            </div>
             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-              Tap legend badges to hide/show a series
+              Tick trainings you want to compare
             </span>
           </div>
           <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -912,20 +1216,20 @@ const TrainingComparison = ({ trainings }) => {
                     <span className="text-sm text-gray-600">
                       {training.results?.length || 0} intervals
                     </span>
-                    <button
+                    <label
                       onClick={(e) => {
                         e.stopPropagation();
-                        e.preventDefault();
-                        toggleSeries(trainingLabel);
                       }}
-                      className={`text-xs px-2 py-1 rounded-full border ${
-                        isOn
-                          ? 'bg-white text-gray-800 border-gray-200 hover:border-gray-300'
-                          : 'bg-gray-200 text-gray-600 border-gray-300'
-                      }`}
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 px-2 py-1 rounded-full"
                     >
-                      {isOn ? 'Hide' : 'Show'}
-                    </button>
+                      <input
+                        type="checkbox"
+                        checked={isOn}
+                        onChange={() => toggleSeries(trainingLabel)}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span>{isOn ? 'Shown' : 'Hidden'}</span>
+                    </label>
                   </div>
                 </div>
               );
