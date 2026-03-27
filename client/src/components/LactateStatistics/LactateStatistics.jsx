@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones, getZoneHistory } from '../../services/api';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import api, { getTrainingsWithLactate, getMonthlyPowerAnalysis, getLatestPowerZones, getZoneHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDuration } from '../../utils/fitAnalysisUtils';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
@@ -12,6 +12,48 @@ const POWER_ZONES = [
   { zone: 4, label: 'Zone 4', description: 'Threshold', color: '#0f425a' }, // Darkest
   { zone: 5, label: 'Zone 5', description: 'VO2max', color: '#08263a' } // Darkest shade
 ];
+
+/** Profile stores zone1..zone5; monthly API uses numeric keys — normalize for display. */
+function normalizeProfileCyclingZonesForDisplay(cycling) {
+  if (!cycling) return null;
+  const out = {};
+  for (let z = 1; z <= 5; z++) {
+    const block = cycling[`zone${z}`];
+    if (
+      block &&
+      ((block.min !== undefined && block.min !== null) ||
+        (block.max !== undefined && block.max !== null))
+    ) {
+      const max = block.max;
+      out[z] = {
+        min: Number(block.min) || 0,
+        max: max === Infinity || max === null || max === undefined ? Infinity : Number(max)
+      };
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function pickZoneDef(powerZonesMap, zoneNum) {
+  if (!powerZonesMap) return null;
+  return powerZonesMap[zoneNum] ?? powerZonesMap[String(zoneNum)];
+}
+
+function pickZoneBucket(zonesMap, zoneNum) {
+  if (!zonesMap) return null;
+  return zonesMap[zoneNum] ?? zonesMap[String(zoneNum)];
+}
+
+/** Sum of bike power zone times (Z1–Z5) — use as % denominator so bars match distribution (bikeTime can differ). */
+function sumBikePowerZoneTimes(month) {
+  if (!month?.zones) return 0;
+  let s = 0;
+  for (let z = 1; z <= 5; z++) {
+    const b = pickZoneBucket(month.zones, z);
+    s += Number(b?.time) || 0;
+  }
+  return s;
+}
 
 const LactateStatistics = ({ selectedAthleteId = null }) => {
   const { user } = useAuth();
@@ -33,7 +75,38 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   const [zoneHistoryLoading, setZoneHistoryLoading] = useState(false);
   const [showZoneHistory, setShowZoneHistory] = useState(false);
+  const [athleteProfileForZones, setAthleteProfileForZones] = useState(null);
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
+
+  /** Cycling power zone bounds from the athlete’s saved profile (stable across months). */
+  const profileCyclingZonesNumeric = useMemo(() => {
+    if (user?.role === 'coach' && selectedAthleteId && athleteProfileForZones?.powerZones?.cycling) {
+      return normalizeProfileCyclingZonesForDisplay(athleteProfileForZones.powerZones.cycling);
+    }
+    if (user?.role === 'athlete' || user?.role === 'coach') {
+      return normalizeProfileCyclingZonesForDisplay(user?.powerZones?.cycling);
+    }
+    return null;
+  }, [user?.role, user?.powerZones, selectedAthleteId, athleteProfileForZones]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (user?.role === 'coach' && selectedAthleteId) {
+        try {
+          const { data } = await api.get(`/user/athlete/${selectedAthleteId}/profile`);
+          if (!cancelled) setAthleteProfileForZones(data || null);
+        } catch {
+          if (!cancelled) setAthleteProfileForZones(null);
+        }
+      } else if (!cancelled) {
+        setAthleteProfileForZones(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role, selectedAthleteId]);
   
   // Detect mobile
   useEffect(() => {
@@ -421,7 +494,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
         // Calculate bike vs run data
         const bikeTrainings = month.trainings - (month.runningTrainings || 0) - (month.swimmingTrainings || 0);
         const bikeTime = month.totalTime - (month.runningTime || 0) - (month.swimmingTime || 0);
-        const hasBikeData = bikeTrainings > 0 && bikeTime > 0 && month.powerZones;
+        const hasBikeData =
+          bikeTrainings > 0 && bikeTime > 0 && (month.powerZones || profileCyclingZonesNumeric);
         const hasRunData = (month.runningTrainings && month.runningTrainings > 0) || month.runningZones || month.runningZoneTimes;
         
         // Auto-select based on available data (only on first load)
@@ -443,12 +517,12 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
           setSelectedZoneType('running');
         } else if (month.swimmingZones || month.swimmingZoneTimes) {
           setSelectedZoneType('swimming');
-        } else if (month.powerZones) {
+        } else if (month.powerZones || profileCyclingZonesNumeric) {
           setSelectedZoneType('power');
         }
       }
     }
-  }, [selectedMonth, loadedMonths]);
+  }, [selectedMonth, loadedMonths, profileCyclingZonesNumeric]);
   
   // Reset zone type initialization when month changes
   useEffect(() => {
@@ -575,6 +649,14 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
           ) : selectedMonth && loadedMonths.has(selectedMonth) ? (
             (() => {
               const month = loadedMonths.get(selectedMonth);
+
+              const displayPowerZones = profileCyclingZonesNumeric ?? month.powerZones;
+              const cyclingLt2FromProfile =
+                user?.role === 'coach' && selectedAthleteId
+                  ? athleteProfileForZones?.powerZones?.cycling?.lt2
+                  : user?.powerZones?.cycling?.lt2;
+              const displayUsesProfilePowerZones =
+                !!profileCyclingZonesNumeric || month.usesProfileZones;
               
               // Debug logging for month data
               // console.log('=== MONTH DATA DEBUG ===', {
@@ -820,7 +902,7 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                     <div className="mb-1.5 flex items-center gap-1.5">
                       <span className="text-xs font-medium text-lighterText uppercase tracking-wide">Zones:</span>
                       <div className="flex gap-1 flex-wrap">
-                        {month.powerZones && (
+                        {(displayPowerZones || month.powerZones) && (
                           <button
                             onClick={() => setSelectedZoneType('power')}
                             className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
@@ -885,22 +967,31 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                   )}
 
                   {/* Power Zones - Bike */}
-                  {selectedZoneType === 'power' && month.powerZones && (
+                  {selectedZoneType === 'power' && displayPowerZones && (
                     <div className="mb-2 p-2 bg-white/10 backdrop-blur-xl rounded-lg border border-white/20 shadow-md">
                       <h4 className="text-xs font-semibold text-text mb-2">
                         Time in Power Zone
-                        {month.usesProfileZones ? ' (profile)' : bikeMaxPower > 0 ? ` (FTP: ${Math.round(estimatedFTP)}W)` : ' (default)'}
+                        {displayUsesProfilePowerZones
+                          ? (cyclingLt2FromProfile
+                            ? ` (profile · LT2 ${Math.round(cyclingLt2FromProfile)}W)`
+                            : ' (profile)')
+                          : bikeMaxPower > 0
+                            ? ` (est. FTP: ${Math.round(estimatedFTP)}W)`
+                            : ' (default)'}
                       </h4>
                       <div className="space-y-2">
-                        {POWER_ZONES.map(powerZone => {
-                          const zone = month.zones[powerZone.zone];
-                          const zoneDef = month.powerZones[powerZone.zone];
-                          if (!zone || !zoneDef) return null;
-                          
-                          // Use bikeTime from backend (already calculated)
+                        {(() => {
                           const bikeTimeForZones = Number(month.bikeTime) || 0;
-                          const percentage = bikeTimeForZones > 0 
-                            ? (zone.time / bikeTimeForZones) * 100 
+                          const sumZoneTime = sumBikePowerZoneTimes(month);
+                          const pctDenominator = sumZoneTime > 0 ? sumZoneTime : bikeTimeForZones;
+                          return POWER_ZONES.map(powerZone => {
+                          const zoneRaw = pickZoneBucket(month.zones, powerZone.zone);
+                          const zoneDef = pickZoneDef(displayPowerZones, powerZone.zone);
+                          if (!zoneDef) return null;
+                          const zone = zoneRaw || { time: 0, avgPower: 0, predictedLactate: 0, powerCount: 0 };
+                          
+                          const percentage = pctDenominator > 0
+                            ? ((Number(zone.time) || 0) / pctDenominator) * 100
                             : 0;
                           
                           const maxDisplay = zoneDef.max === Infinity || zoneDef.max === null || zoneDef.max === undefined 
@@ -924,7 +1015,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                               {zone.avgPower > 0 && (
                                 <div className="text-purple-600 font-medium">Avg Power: {Math.round(zone.avgPower)} W</div>
                               )}
-                              <div className="text-gray-600">Percentage: {percentage.toFixed(1)}%</div>
+                              <div className="text-gray-600">
+                                Share: {percentage.toFixed(1)}% (of time in Z1–Z5 with power)
+                              </div>
                               {zone.predictedLactate > 0 && (
                                 <div className="text-blue-600 font-medium">Lactate: {zone.predictedLactate.toFixed(1)} mmol/L</div>
                               )}
@@ -934,8 +1027,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                           return (
                             <div key={powerZone.zone} className={`flex items-center ${isMobile ? 'gap-1' : 'gap-3'}`}>
                               {/* Zone name and range on the left */}
-                              <div className={`${isMobile ? 'w-16' : 'w-48'} flex-shrink-0`}>
-                                <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} font-medium text-text`}>
+                              <div className={`${isMobile ? 'min-w-[5.25rem] max-w-[42%]' : 'w-48'} flex-shrink-0`}>
+                                <div className={`${isMobile ? 'text-[9px] leading-tight' : 'text-xs'} font-medium text-text`}>
                                   {isMobile ? `Z${powerZone.zone}: ${Math.round(zoneDef.min)}-${maxDisplay}W` : `${zoneLabel}: ${Math.round(zoneDef.min)} – ${maxDisplay} W`}
                               </div>
                               </div>
@@ -979,7 +1072,8 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
                               </div>
                             </div>
                           );
-                        })}
+                        });
+                        })()}
                       </div>
                     </div>
                   )}

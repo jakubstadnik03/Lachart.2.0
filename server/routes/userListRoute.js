@@ -16,6 +16,7 @@ const { JWT_SECRET } = require("../config/jwt.config");
 const { OAuth2Client } = require('google-auth-library');
 
 const { saveRegistrationLocation } = require("../utils/geoip");
+const { resolveSignupMethodForProfile, publicRegistrationLocation } = require("../utils/signupMethod");
 
 const userDao = new UserDao();
 const trainingDao = new TrainingDao();
@@ -386,6 +387,7 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
             name,
             surname,
             password: hashedPassword,
+            signupMethod: 'coach_invite',
             role: 'athlete',
             dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
             address: address || undefined,
@@ -1028,6 +1030,9 @@ router.get("/profile", verifyToken, async (req, res) => {
             console.log('Loading user profile - strava.autoSync from DB:', user.strava?.autoSync);
         }
 
+        const signup = resolveSignupMethodForProfile(user);
+        const regLoc = publicRegistrationLocation(user);
+
         // Return data without sensitive information
         const userResponse = {
             _id: user._id,
@@ -1036,6 +1041,10 @@ router.get("/profile", verifyToken, async (req, res) => {
             email: user.email,
             role: user.role,
             admin: user.admin,
+            createdAt: user.createdAt || null,
+            signupMethod: signup.method,
+            signupMethodSource: signup.source,
+            registrationLocation: regLoc,
             dateOfBirth: user.dateOfBirth,
             address: user.address,
             phone: user.phone,
@@ -1896,6 +1905,7 @@ router.post("/google-auth", async (req, res) => {
                 name: given_name,
                 surname: family_name,
                 googleId,
+                signupMethod: 'google',
                 role: normalizedRole,
                 athletes: normalizedRole === 'coach' ? [] : undefined,
                 isRegistrationComplete: true,

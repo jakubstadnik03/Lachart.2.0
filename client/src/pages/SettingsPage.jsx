@@ -4,10 +4,49 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, garminLogin } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
+
+const SIGNUP_METHOD_LABELS = {
+  email: 'Email and password',
+  google: 'Google',
+  facebook: 'Facebook',
+  coach_invite: 'Coach invitation',
+  unknown: 'Unknown'
+};
+
+function formatAccountCreatedAt(iso) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return null;
+  }
+}
+
+function formatRegistrationLocationLine(loc) {
+  if (!loc || typeof loc !== 'object') return null;
+  const parts = [loc.city, loc.region, loc.country].filter(Boolean);
+  const place = parts.length ? parts.join(', ') : null;
+  const extras = [];
+  if (loc.timezone) extras.push(loc.timezone);
+  if (loc.resolvedAt) {
+    try {
+      const r = new Date(loc.resolvedAt);
+      if (!Number.isNaN(r.getTime())) {
+        extras.push(`recorded ${r.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  if (!place && extras.length === 0) return null;
+  return [place, extras.length ? `(${extras.join(' · ')})` : null].filter(Boolean).join(' ');
+}
 
 const SettingsPage = () => {
   const { user, logout } = useAuth();
@@ -1140,6 +1179,50 @@ const SettingsPage = () => {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'} border border-slate-100`}>
+              <div className="flex gap-3 min-w-0">
+                <div className={`shrink-0 rounded-lg bg-slate-50 p-2 text-slate-600 ${isMobile ? 'mt-0.5' : ''}`}>
+                  <Globe className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900`}>Account origin</h3>
+                  <div className={`${isMobile ? 'text-[10px] space-y-1' : 'text-sm space-y-1.5'} text-gray-700`}>
+                    <p>
+                      <span className="font-medium text-gray-800">Sign-up: </span>
+                      {SIGNUP_METHOD_LABELS[user?.signupMethod] || SIGNUP_METHOD_LABELS.unknown}
+                      {user?.signupMethodSource === 'inferred' && (
+                        <span className="text-gray-500"> — estimated from your login method (not stored for some older accounts)</span>
+                      )}
+                      {user?.signupMethodSource === 'unknown' && (
+                        <span className="text-gray-500"> — not enough information on file</span>
+                      )}
+                    </p>
+                    {formatAccountCreatedAt(user?.createdAt) && (
+                      <p>
+                        <span className="font-medium text-gray-800">Account created: </span>
+                        {formatAccountCreatedAt(user.createdAt)}
+                      </p>
+                    )}
+                    {(() => {
+                      const locLine = formatRegistrationLocationLine(user?.registrationLocation);
+                      if (!locLine) return null;
+                      return (
+                        <p>
+                          <span className="font-medium text-gray-800">Approximate location when recorded: </span>
+                          {locLine}
+                        </p>
+                      );
+                    })()}
+                    {!user?.registrationLocation && user?.signupMethodSource !== 'unknown' && (
+                      <p className="text-gray-500">
+                        Registration location is only saved for newer sign-ups; older accounts may not show a place.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

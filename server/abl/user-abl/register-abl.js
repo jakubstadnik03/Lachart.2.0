@@ -52,6 +52,7 @@ class RegisterAbl {
             const userData = {
                 email: email.toLowerCase(),
                 password: hashedPassword,
+                signupMethod: 'email',
                 name,
                 surname,
                 role: role || 'athlete',

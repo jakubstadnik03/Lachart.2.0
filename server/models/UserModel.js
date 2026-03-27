@@ -271,6 +271,14 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  /**
+   * How the account was first created (set for new signups; null for legacy users → inferred in API).
+   */
+  signupMethod: {
+    type: String,
+    enum: ['email', 'google', 'facebook', 'coach_invite'],
+    default: null
+  },
   // Geolocation captured at registration time
   registrationLocation: {
     ip: { type: String, default: null },

@@ -1009,23 +1009,28 @@ async function analyzeTrainingsByMonth(req, res) {
     const targetAthleteIdStr = targetAthleteId ? String(targetAthleteId) : String(userId);
     console.log('Target athlete ID:', targetAthleteIdStr);
     
-    // Check if specific month is requested
     const monthKeyParam = req.query.monthKey;
     const onlyMetadata = !monthKeyParam; // If no monthKey, return only metadata (list of months)
     
     console.log('Request params:', { monthKey: monthKeyParam, onlyMetadata });
     
-    // Get user's power zones from profile
+    // Zones must come from the athlete whose trainings we analyze (not the coach's profile).
+    // Skip DB load for metadata-only requests (no monthKey).
+    let zoneProfile = null;
     let userPowerZones = null;
-    if (user.powerZones?.cycling && user.powerZones.cycling.lastUpdated) {
-      userPowerZones = user.powerZones.cycling;
-      console.log('Using power zones from profile:', {
-        lt1: userPowerZones.lt1,
-        lt2: userPowerZones.lt2,
-        lastUpdated: userPowerZones.lastUpdated
-      });
-    } else {
-      console.log('No power zones in profile, will estimate from data');
+    if (!onlyMetadata) {
+      zoneProfile = await User.findById(targetAthleteIdStr).select('powerZones heartRateZones').lean();
+      const cyclingZones = zoneProfile?.powerZones?.cycling;
+      if (cyclingZones && cyclingZones.zone1 && cyclingZones.zone1.min !== undefined) {
+        userPowerZones = cyclingZones;
+        console.log('Using athlete cycling power zones from profile:', {
+          lt1: userPowerZones.lt1,
+          lt2: userPowerZones.lt2,
+          lastUpdated: userPowerZones.lastUpdated
+        });
+      } else {
+        console.log('No cycling power zones in athlete profile (missing zone bounds), will estimate from max power');
+      }
     }
     
     // Get FIT trainings with records (sekundu po sekundě data) - POUZE FIT SOUBORY
@@ -1132,8 +1137,8 @@ async function analyzeTrainingsByMonth(req, res) {
 
     // Define heart rate zones - use from profile if available, otherwise estimate from max HR
     const getHeartRateZones = (maxHeartRate, sportType = 'cycling') => {
-      // Try to get HR zones from profile first
-      const userHrZones = user?.heartRateZones?.[sportType];
+      // Try to get HR zones from athlete profile first
+      const userHrZones = zoneProfile?.heartRateZones?.[sportType];
       if (userHrZones && userHrZones.zone1 && userHrZones.zone1.min !== undefined) {
         return {
           1: { min: userHrZones.zone1.min || 0, max: userHrZones.zone1.max || Infinity },
@@ -1189,7 +1194,7 @@ async function analyzeTrainingsByMonth(req, res) {
 
     // Define running pace zones - use from profile if available, otherwise use default zones
     const getRunningPaceZones = (avgPace = null) => {
-      const userRunningZones = user?.powerZones?.running;
+      const userRunningZones = zoneProfile?.powerZones?.running;
       if (userRunningZones && userRunningZones.zone1 && userRunningZones.zone1.min !== undefined) {
         return {
           1: { min: userRunningZones.zone1.min || 0, max: userRunningZones.zone1.max || Infinity },
@@ -1217,7 +1222,7 @@ async function analyzeTrainingsByMonth(req, res) {
 
     // Define swimming pace zones - use from profile if available
     const getSwimmingPaceZones = () => {
-      const userSwimmingZones = user?.powerZones?.swimming;
+      const userSwimmingZones = zoneProfile?.powerZones?.swimming;
       if (userSwimmingZones && userSwimmingZones.zone1 && userSwimmingZones.zone1.min !== undefined) {
         return {
           1: { min: userSwimmingZones.zone1.min || 0, max: userSwimmingZones.zone1.max || Infinity },
@@ -1228,6 +1233,34 @@ async function analyzeTrainingsByMonth(req, res) {
         };
       }
       return null;
+    };
+
+    // Peak bike power per month from FIT files — fallback FTP zones must stay fixed during classification (no profile).
+    const monthPeakBikePowerFit = {};
+    if (!onlyMetadata && fitTrainings.length) {
+      for (const training of fitTrainings) {
+        if (!training.timestamp || !training.records || training.records.length === 0) continue;
+        const trainingDate = new Date(training.timestamp);
+        const monthKey = `${trainingDate.getFullYear()}-${String(trainingDate.getMonth() + 1).padStart(2, '0')}`;
+        if (monthKeyParam && monthKey !== monthKeyParam) continue;
+        const trainingSport = training.sport || 'generic';
+        if (trainingSport !== 'cycling') continue;
+        for (const record of training.records) {
+          const p = Number(record.power || 0);
+          if (p > 0) {
+            monthPeakBikePowerFit[monthKey] = Math.max(monthPeakBikePowerFit[monthKey] || 0, p);
+          }
+        }
+      }
+    }
+
+    // Profile cycling zones must not use growing month.maxPower (that changes every record and shifts boundaries).
+    const stableBikePowerZonesFromProfile = userPowerZones ? getPowerZones(0) : null;
+    const monthPeakBikePower = { ...monthPeakBikePowerFit };
+    const resolveBikePowerZonesForMonth = (monthKey) => {
+      if (stableBikePowerZonesFromProfile) return stableBikePowerZonesFromProfile;
+      const peak = monthPeakBikePower[monthKey] || 0;
+      return getPowerZones(peak);
     };
 
     // Group trainings by month and analyze
@@ -1510,8 +1543,8 @@ async function analyzeTrainingsByMonth(req, res) {
           monthlyAnalysis[monthKey].maxPower = Math.max(monthlyAnalysis[monthKey].maxPower, power);
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
 
-          // Determine zone - use global FTP estimate
-          const zones = getPowerZones(monthlyAnalysis[monthKey].maxPower);
+          // Fixed zone bounds for this month (profile or pre-scanned peak — not growing maxPower)
+          const zones = resolveBikePowerZonesForMonth(monthKey);
           
           let zone = 1;
           if (power >= zones[5].min) zone = 5;
@@ -2081,6 +2114,17 @@ async function analyzeTrainingsByMonth(req, res) {
       // Determine which stream to use based on sport
       const dataStream = isStravaCycling ? powerStream : speedStream;
       const streamLength = Math.max(powerStream.length, speedStream.length);
+
+      let stravaBikeZonesForActivity = null;
+      if (isStravaCycling && powerStream && powerStream.length) {
+        let streamPeak = 0;
+        for (let si = 0; si < powerStream.length; si++) {
+          const p = powerStream[si] || 0;
+          if (p > 0) streamPeak = Math.max(streamPeak, p);
+        }
+        monthPeakBikePower[monthKey] = Math.max(monthPeakBikePower[monthKey] || 0, streamPeak);
+        stravaBikeZonesForActivity = resolveBikePowerZonesForMonth(monthKey);
+      }
       
       // Projdeme každý datový bod v streams (sekundu po sekundě)
       for (let i = 0; i < streamLength; i++) {
@@ -2117,13 +2161,13 @@ async function analyzeTrainingsByMonth(req, res) {
           monthlyAnalysis[monthKey].totalTime += timeIncrement;
           stravaTotalTime += timeIncrement;
 
-          // Determine zone
-          const zones = getPowerZones(monthlyAnalysis[monthKey].maxPower);
+          // Same fixed bounds as FIT (stravaBikeZonesForActivity set before this loop)
+          const zones = stravaBikeZonesForActivity;
           let zone = 1;
-          if (power >= zones[5].min) zone = 5;
-          else if (power >= zones[4].min) zone = 4;
-          else if (power >= zones[3].min) zone = 3;
-          else if (power >= zones[2].min) zone = 2;
+          if (zones && power >= zones[5].min) zone = 5;
+          else if (zones && power >= zones[4].min) zone = 4;
+          else if (zones && power >= zones[3].min) zone = 3;
+          else if (zones && power >= zones[2].min) zone = 2;
 
           // Add time to zone (sekundu po sekundě)
           monthlyAnalysis[monthKey].zones[zone].time += timeIncrement;
@@ -2337,8 +2381,8 @@ async function analyzeTrainingsByMonth(req, res) {
         // Calculate bikeTime (total - running - swimming)
         month.bikeTime = Math.max(0, month.totalTime - month.runningTime - month.swimmingTime);
 
-        // Get zones (from lactate test profile)
-        const zones = getPowerZones(month.maxPower);
+        // Same bounds as used when classifying power (profile or fixed monthly peak — not raw month.maxPower alone)
+        const zones = resolveBikePowerZonesForMonth(monthKey);
         month.powerZones = zones;
         month.usesProfileZones = !!userPowerZones;
         
@@ -2356,7 +2400,7 @@ async function analyzeTrainingsByMonth(req, res) {
         
         // Get running pace zones from profile or use default
         // Load zones if we have pace data OR if user has profile zones (even without pace data)
-        const userRunningZones = user?.powerZones?.running;
+        const userRunningZones = zoneProfile?.powerZones?.running;
         const hasProfileRunningZones = !!(userRunningZones && userRunningZones.zone1 && userRunningZones.zone1.min !== undefined);
         
         if (month.runningPaceCount > 0 || hasProfileRunningZones) {
@@ -2560,7 +2604,7 @@ async function analyzeTrainingsByMonth(req, res) {
       let swimmingTSS = 0;
       if (month.swimmingTime > 0 && month.swimmingAvgPace > 0) {
         // For swimming, we use threshold pace (LTP2) as reference, or fallback to avg pace
-        const userSwimmingZones = user?.powerZones?.swimming;
+        const userSwimmingZones = zoneProfile?.powerZones?.swimming;
         const thresholdPace = userSwimmingZones?.lt2; // Threshold pace in seconds per 100m
         let referencePace = thresholdPace;
         // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
