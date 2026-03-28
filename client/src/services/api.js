@@ -376,11 +376,18 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('token');
-      if (api.defaults?.headers?.common) delete api.defaults.headers.common.Authorization;
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      // Neodhlašovat globálně u přihlášení/registrace — vracejí 401 při špatných údajích;
+      // axios defaults mohou mít pořád starý Bearer, takže by se jinak smazala platná relace.
+      const reqUrl = String(error.config?.url || '');
+      const isCredentialAuthEndpoint =
+        /\/user\/(login|register)(\?|$|\/)/.test(reqUrl);
+      if (!isCredentialAuthEndpoint) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('token');
+        if (api.defaults?.headers?.common) delete api.defaults.headers.common.Authorization;
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        }
       }
     }
     return Promise.reject(error);
