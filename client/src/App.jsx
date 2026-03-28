@@ -1,4 +1,4 @@
-import React, { useState, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useMemo, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthProvider';
@@ -6,8 +6,6 @@ import { NotificationProvider } from './context/NotificationContext';
 import { TrainingProvider } from './context/TrainingContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
-import { Analytics } from "@vercel/analytics/react"
-import { SpeedInsights } from "@vercel/speed-insights/react"
 import { useLocation } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import { Capacitor } from '@capacitor/core';
@@ -61,6 +59,48 @@ const PageLoader = () => (
     </div>
   </div>
 );
+
+/** Load Vercel trackers after idle so they do not compete with first paint / main bundle parse. */
+function DeferredVercelTrackers() {
+  const [mods, setMods] = useState(null);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') return undefined;
+    let cancelled = false;
+    let idleId;
+    let timeoutId;
+    const load = () => {
+      Promise.all([
+        import('@vercel/analytics/react'),
+        import('@vercel/speed-insights/react')
+      ])
+        .then(([a, s]) => {
+          if (cancelled) return;
+          setMods({ Analytics: a.Analytics, SpeedInsights: s.SpeedInsights });
+        })
+        .catch(() => {});
+    };
+    if (typeof requestIdleCallback !== 'undefined') {
+      idleId = requestIdleCallback(() => load(), { timeout: 8000 });
+    } else {
+      timeoutId = setTimeout(load, 4000);
+    }
+    return () => {
+      cancelled = true;
+      if (idleId != null) cancelIdleCallback(idleId);
+      if (timeoutId != null) clearTimeout(timeoutId);
+    };
+  }, []);
+
+  if (!mods) return null;
+  const { Analytics, SpeedInsights } = mods;
+  return (
+    <>
+      <Analytics />
+      <SpeedInsights />
+    </>
+  );
+}
 
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -264,8 +304,7 @@ function App() {
               {/* Only initialize analytics & Vercel tracking in production to avoid noisy dev logs */}
               {isProd && initAnalytics('G-HNHPQH30BL')}
               <AppRoutes />
-              {isProd && <Analytics />}
-              {isProd && <SpeedInsights />}
+              {isProd && <DeferredVercelTrackers />}
               <BuyMeACoffeeWidget />
             </TrainingProvider>
           </AuthProvider>

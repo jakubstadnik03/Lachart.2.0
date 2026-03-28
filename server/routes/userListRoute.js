@@ -1882,18 +1882,40 @@ router.get('/verify-coach-invitation-token/:token', verifyToken, async (req, res
 // Google authentication endpoint
 router.post("/google-auth", async (req, res) => {
     try {
+        const googleClientId = process.env.GOOGLE_CLIENT_ID;
+        if (!googleClientId) {
+            console.error("Google auth: GOOGLE_CLIENT_ID is not set");
+            return res.status(503).json({
+                error: "Google sign-in is not configured on the server (missing GOOGLE_CLIENT_ID)."
+            });
+        }
+
         const { credential, role } = req.body;
+        if (!credential) {
+            return res.status(400).json({ error: "Missing Google credential" });
+        }
 
         const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
         
         // Verify Google token
         const ticket = await client.verifyIdToken({
             idToken: credential,
-            audience: process.env.GOOGLE_CLIENT_ID
+            audience: googleClientId
         });
         
         const payload = ticket.getPayload();
         const { email, name, given_name, family_name, sub: googleId } = payload;
+
+        if (!email || !googleId) {
+            return res.status(400).json({ error: "Invalid Google token payload (missing email or subject)" });
+        }
+
+        // UserModel requires name/surname; Google may omit given_name/family_name
+        const firstName = (given_name && String(given_name).trim()) || (name && String(name).split(/\s+/)[0]) || "User";
+        const restFromFull = name && String(name).trim().includes(" ")
+            ? String(name).trim().slice(String(name).trim().indexOf(" ") + 1).trim()
+            : "";
+        const lastName = (family_name && String(family_name).trim()) || restFromFull || "-";
 
         // Find or create user
         let user = await userDao.findByEmail(email);
@@ -1902,8 +1924,8 @@ router.post("/google-auth", async (req, res) => {
             // Create new user if doesn't exist
             user = await userDao.createUser({
                 email,
-                name: given_name,
-                surname: family_name,
+                name: firstName,
+                surname: lastName,
                 googleId,
                 signupMethod: 'google',
                 role: normalizedRole,
@@ -1925,10 +1947,10 @@ router.post("/google-auth", async (req, res) => {
 
         // Role is only applied on first Google registration creation.
 
-        // Generate JWT token
+        // Use same secret as verifyToken (jwt.config fallback). process.env.JWT_SECRET alone is often unset on Render → jwt.sign throws → 500.
         const token = jwt.sign(
-            { userId: user._id, role: user.role },
-            process.env.JWT_SECRET,
+            { userId: String(user._id), role: user.role },
+            JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -1949,8 +1971,15 @@ router.post("/google-auth", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Google auth error:", error);
-        res.status(500).json({ error: "Google authentication failed" });
+        console.error("Google auth error:", error?.message || error, error?.stack);
+        const msg = error?.message || String(error);
+        const isGoogleVerify =
+            /audience|Token used too late|expired|Invalid token|Wrong number of segments/i.test(msg);
+        res.status(500).json({
+            error: "Google authentication failed",
+            code: isGoogleVerify ? "GOOGLE_TOKEN_INVALID" : "GOOGLE_AUTH_ERROR",
+            details: process.env.NODE_ENV === "development" ? msg : undefined
+        });
     }
 });
 

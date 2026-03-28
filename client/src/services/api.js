@@ -1169,15 +1169,28 @@ export const updateAvatarFromStrava = async () => {
   return data; // { success, avatar, message }
 };
 
+/** Route param for /strava/activities/:id — 24-char Mongo _id or numeric Strava id. Calendar/UI often uses `strava-<id>`. */
+export const normalizeStravaActivityRouteId = (id) => {
+  if (id == null || id === '') return id;
+  const s = String(id).trim();
+  if (/^[a-f0-9]{24}$/i.test(s)) return s;
+  const stripped = s.replace(/^strava-/i, '');
+  if (/^\d+$/.test(stripped)) return stripped;
+  const n = parseInt(stripped, 10);
+  return Number.isFinite(n) && n >= 1 ? String(n) : stripped;
+};
+
 export const getStravaActivityDetail = async (stravaId, athleteId = null) => {
   const params = athleteId ? { athleteId } : {};
-  const { data } = await api.get(`/api/integrations/strava/activities/${stravaId}`, { params });
+  const id = normalizeStravaActivityRouteId(stravaId);
+  const { data } = await api.get(`/api/integrations/strava/activities/${encodeURIComponent(id)}`, { params });
   return data; // { detail, streams, laps, titleManual, description }
 };
 
 export const updateStravaActivity = async (stravaId, { title, description, category }) => {
   try {
-    const response = await api.put(`/api/integrations/strava/activities/${stravaId}`, {
+    const id = normalizeStravaActivityRouteId(stravaId);
+    const response = await api.put(`/api/integrations/strava/activities/${encodeURIComponent(id)}`, {
       title,
       description,
       category
@@ -1191,7 +1204,8 @@ export const updateStravaActivity = async (stravaId, { title, description, categ
 
 export const updateStravaLactateValues = async (stravaId, lactateValues) => {
   try {
-    const response = await api.put(`/api/integrations/strava/activities/${stravaId}/lactate`, {
+    const id = normalizeStravaActivityRouteId(stravaId);
+    const response = await api.put(`/api/integrations/strava/activities/${encodeURIComponent(id)}/lactate`, {
       lactateValues
     });
     return response.data;
@@ -1203,7 +1217,8 @@ export const updateStravaLactateValues = async (stravaId, lactateValues) => {
 
 export const createStravaLap = async (stravaId, { startTime, endTime }) => {
   try {
-    const response = await api.post(`/api/integrations/strava/activities/${stravaId}/laps`, {
+    const id = normalizeStravaActivityRouteId(stravaId);
+    const response = await api.post(`/api/integrations/strava/activities/${encodeURIComponent(id)}/laps`, {
       startTime,
       endTime
     });
@@ -1216,7 +1231,8 @@ export const createStravaLap = async (stravaId, { startTime, endTime }) => {
 
 export const createStravaLapsBulk = async (stravaId, intervals = []) => {
   try {
-    const response = await api.post(`/api/integrations/strava/activities/${stravaId}/laps/bulk`, {
+    const id = normalizeStravaActivityRouteId(stravaId);
+    const response = await api.post(`/api/integrations/strava/activities/${encodeURIComponent(id)}/laps/bulk`, {
       intervals
     });
     return response.data;
@@ -1228,7 +1244,8 @@ export const createStravaLapsBulk = async (stravaId, intervals = []) => {
 
 export const deleteStravaLap = async (stravaId, lapIndex) => {
   try {
-    const response = await api.delete(`/api/integrations/strava/activities/${stravaId}/laps/${lapIndex}`);
+    const id = normalizeStravaActivityRouteId(stravaId);
+    const response = await api.delete(`/api/integrations/strava/activities/${encodeURIComponent(id)}/laps/${lapIndex}`);
     return response.data;
   } catch (error) {
     console.error('Error deleting Strava lap:', error);

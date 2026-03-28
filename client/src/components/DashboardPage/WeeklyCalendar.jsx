@@ -85,6 +85,11 @@ function categoryLabel(category) {
 
 const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
   const { user } = useAuth();
+  const stravaDetailAthleteId = useMemo(() => {
+    const role = String(user?.role || '').toLowerCase();
+    if (!['coach', 'tester', 'testing'].includes(role)) return null;
+    return selectedAthleteId ?? null;
+  }, [user?.role, selectedAthleteId]);
   const [currentWeek, setCurrentWeek] = useState(startOfWeek(new Date()));
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [trainingDetail, setTrainingDetail] = useState(null);
@@ -533,7 +538,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
           setTrainingDetail(activity);
           return;
         }
-        const detail = await getStravaActivityDetail(stravaId);
+        const detail = await getStravaActivityDetail(stravaId, stravaDetailAthleteId);
         // Convert Strava detail to training format (same as FitAnalysisPage)
         if (detail.detail && detail.streams) {
           const startDate = new Date(detail.detail.start_date);
@@ -875,7 +880,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                               await updateStravaActivity(trainingDetail.id, { title });
                               // Reload Strava activity detail
-                              const detail = await getStravaActivityDetail(trainingDetail.id);
+                              const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
                               // Convert Strava detail to training format
                               if (detail.detail && detail.streams) {
                                 const startDate = new Date(detail.detail.start_date);
@@ -1034,7 +1039,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
                                 await updateStravaActivity(trainingDetail.id, { category: category || null });
                                 // Reload Strava activity detail
-                                const detail = await getStravaActivityDetail(trainingDetail.id);
+                                const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
                                 // Convert Strava detail to training format
                                 if (detail.detail && detail.streams) {
                                   const startDate = new Date(detail.detail.start_date);
@@ -1194,7 +1199,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           const detail = await getFitTraining(trainingDetail._id);
                           setTrainingDetail({ ...detail, type: 'fit' });
                         } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                          const detail = await getStravaActivityDetail(trainingDetail.id);
+                          const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
                           // Convert Strava detail to training format
                           if (detail.detail && detail.streams) {
                             const startDate = new Date(detail.detail.start_date);
@@ -1369,7 +1374,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   const detail = await getFitTraining(trainingDetail._id);
                                   setTrainingDetail({ ...detail, type: 'fit' });
                                 } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
-                                  const detail = await getStravaActivityDetail(trainingDetail.id);
+                                  const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
                                   if (detail.detail && detail.streams) {
                                     const startDate = new Date(detail.detail.start_date);
                                     const timeArray = detail.streams.time?.data || detail.streams.time || [];

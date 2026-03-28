@@ -6,6 +6,12 @@ import { formatDistanceForUser, formatSpeedForUser, resolveDistanceUnitSystem } 
 
 const maxGraphHeight = 200;
 
+/** Y from top of graph (px) where tick i of `count` should sit — matches bar scale (max at top, min at bottom). */
+function axisTickYPx(index, count, height = maxGraphHeight) {
+  if (count <= 1) return height / 2;
+  return (index / (count - 1)) * height;
+}
+
 /** Interval rows for a training — API or merged objects may omit `results`. */
 function trainingResultsOf(training) {
   return Array.isArray(training?.results) ? training.results : [];
@@ -563,19 +569,28 @@ function VerticalBar({ height, color, power, pace, distance, heartRate, lactate,
   );
 }
 
-function Scale({ values, unit, formatValue, isPace = false }) {
-  // For pace: fastest (smallest) at top, slowest (largest) at bottom
-  // values array: [minPace, ..., maxPace] -> display: [minPace, ..., maxPace] (no reverse)
-  const displayValues = values;
-  
+function Scale({ values, unit, formatValue, isPace = false, graphHeight = maxGraphHeight }) {
+  const n = values.length;
+
   return (
-    <div className="relative flex flex-col justify-between py-2 sm:py-2 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap min-h-[150px] sm:min-h-[200px] text-zinc-500">
-      {displayValues.map((value, index) => (
-        <div key={`scale-${unit}-${index}`} className="relative flex items-center w-full">
-          <div className="absolute left-0 right-0 h-px border-t border-dashed border-gray-200" />
-          <span className="relative z-10 bg-white px-0.5 sm:px-1">{formatValue ? formatValue(value) : `${value}${unit}`}</span>
-        </div>
-      ))}
+    <div
+      className="relative shrink-0 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap text-zinc-500"
+      style={{ height: graphHeight, minHeight: graphHeight, maxHeight: graphHeight }}
+    >
+      {values.map((value, index) => {
+        const y = axisTickYPx(index, n, graphHeight);
+        return (
+          <div
+            key={`scale-${unit}-${index}`}
+            className="absolute right-0 left-0 flex items-center justify-end pr-0.5 sm:pr-1"
+            style={{ top: `${y}px`, transform: 'translateY(-50%)' }}
+          >
+            <span className="relative z-10 bg-white pl-0.5 sm:pl-1">
+              {formatValue ? formatValue(value) : `${value}${unit}`}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -806,18 +821,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
     }
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
-  useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
-      }
-    };
-
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
-
   const trainingOptions = useMemo(() => {
     const uniqueTitles = [...new Set(
       trainingsList
@@ -861,6 +864,30 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   const visibleTrainings = useMemo(() => {
     return filteredTrainings.slice(visibleTrainingIndex, visibleTrainingIndex + displayCount);
   }, [filteredTrainings, visibleTrainingIndex, displayCount]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+    const el = containerRef.current;
+    const ro = typeof ResizeObserver !== 'undefined' && el
+      ? new ResizeObserver(() => updateWidth())
+      : null;
+    if (ro && el) {
+      ro.observe(el);
+    }
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      window.removeEventListener('resize', updateWidth);
+      if (ro && el) {
+        ro.unobserve(el);
+      }
+    };
+  }, [visibleTrainings.length, filteredTrainings.length, visibleTrainingIndex, displayCount]);
 
   const canNavigateLeft = visibleTrainingIndex > 0;
   const canNavigateRight = visibleTrainingIndex + displayCount < filteredTrainings.length;
@@ -1049,8 +1076,12 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
   
   const barColors = ["bg-violet-700", "bg-violet-600", "bg-violet-500", "bg-violet-400", "bg-violet-300"];
 
-
-
+  const chartColumnCount = Math.max(visibleTrainings.length, 1);
+  const chartInnerWidthPx = containerWidth > 0 ? containerWidth : 320;
+  const perColumnInnerWidthPx = Math.max(
+    36,
+    chartInnerWidthPx / chartColumnCount - (chartColumnCount > 1 ? 6 : 0)
+  );
 
   return (
     <div className="flex flex-col p-3 sm:p-5 bg-white relative h-full bg-white rounded-2xl p-4 shadow-lg">
@@ -1154,60 +1185,59 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         </div>
       </div>
 
-      <div className="flex gap-1 sm:gap-2 items-stretch px-1 sm:px-1.5 relative w-full" 
-           style={{ height: `${maxGraphHeight + 30}px` }}>
+      <div
+        className="flex gap-1 sm:gap-2 items-stretch w-full min-w-0"
+        style={{ minHeight: `${maxGraphHeight + 28}px` }}
+      >
         {isRun ? (
-          <Scale values={paceValues} unit="" formatValue={formatPaceValue} isPace={true} />
+          <Scale values={paceValues} unit="" formatValue={formatPaceValue} isPace={true} graphHeight={maxGraphHeight} />
         ) : (
-          <Scale values={powerValues} unit="W" formatValue={null} />
+          <Scale values={powerValues} unit="W" formatValue={null} graphHeight={maxGraphHeight} />
         )}
         
-        <div ref={containerRef} className="relative flex-1 flex items-stretch justify-between min-w-0" style={{ overflow: 'visible' }}>
-          {/* Grid lines */}
-          <div className="absolute inset-0">
-            {(isRun ? paceValues : powerValues).map((value, index) => {
-              // For pace: fastest (index 0 = minPace) at top, slowest (last index = maxPace) at bottom
-              // For power: normal order (highest at top)
-              const displayIndex = index;
+        <div
+          ref={containerRef}
+          className="relative flex min-w-0 flex-1 flex-col"
+          style={{ overflow: 'visible' }}
+        >
+          {/* Only the graph band (maxGraphHeight) — not the date row — so lines match Scale + bar tops */}
+          <div
+            className="pointer-events-none absolute left-0 right-0 top-0 z-0"
+            style={{ height: maxGraphHeight }}
+          >
+            {(isRun ? paceValues : powerValues).map((_, index, arr) => {
+              const y = axisTickYPx(index, arr.length, maxGraphHeight);
               return (
-                <div key={`grid-line-${index}`} 
-                     className="border-t border-dashed border-gray-200" 
-                     style={{
-                       top: `${(displayIndex * maxGraphHeight) / ((isRun ? paceValues : powerValues).length - 1) + 15}px`,
-                       position: 'absolute',
-                       width: '100%',
-                       zIndex: 10
-                     }}
+                <div
+                  key={`grid-line-${index}`}
+                  className="absolute left-0 right-0 border-t border-dashed border-gray-200"
+                  style={{ top: `${y}px`, height: 0 }}
                 />
               );
             })}
           </div>
 
-
-          {/* Bars */}
-          <div className="relative flex justify-start w-full z-10 items-end px-2 sm:px-4" style={{ overflow: 'visible' }}>
+          {/* Bars: equal flex columns; date labels sit below this row without stretching the grid */}
+          <div
+            className="relative z-10 flex w-full items-stretch gap-1 sm:gap-1.5"
+            style={{ minHeight: `${maxGraphHeight}px`, overflow: 'visible' }}
+          >
             {visibleTrainings.map((training, trainingIndex) => {
-              const columnWidth = `${100 / visibleTrainings.length}%`;
               const results = trainingResultsOf(training);
 
               return (
-                <div 
-                  key={`training-${training._id || training.id || trainingIndex}`} 
-                  className="flex flex-col relative"
-                  style={{ 
-                    width: columnWidth,
-                    height: `${maxGraphHeight}px`,
-                    padding: '0 2px',
-                    overflow: 'visible'
-                  }}
+                <div
+                  key={`training-${training._id || training.id || trainingIndex}`}
+                  className="flex min-w-0 flex-1 basis-0 flex-col items-stretch overflow-visible"
                 >
-                  <div 
-                    className="relative h-full w-full flex items-end" 
-                    style={{ 
+                  <div
+                    className="relative flex w-full min-w-0 items-end"
+                    style={{
+                      height: `${maxGraphHeight}px`,
+                      minHeight: `${maxGraphHeight}px`,
                       gap: '3px',
-                      overflowX: 'auto',
-                      overflowY: 'visible',
-                      minWidth: 0 // Allow flex shrinking
+                      overflowX: 'hidden',
+                      overflowY: 'visible'
                     }}
                   >
                     {(() => {
@@ -1283,35 +1313,6 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         return dist && parseDistanceToMeters(dist) > 0;
                       });
 
-                      // Reference totals across all visible trainings (so equal durations => equal widths across trainings)
-                      const referenceTotals = (() => {
-                        let maxTotalDuration = 0;
-                        let maxTotalDistance = 0;
-                        let anyDistance = false;
-
-                        visibleTrainings.forEach((t) => {
-                          const r = trainingResultsOf(t);
-                          const hasDist = r.some((it) => {
-                            const dist = it.distance || (it.durationType === 'distance' ? it.duration : null);
-                            return dist && parseDistanceToMeters(dist) > 0;
-                          });
-                          const totalDur = r.reduce((sum, it) => sum + parseDuration(it), 0);
-                          const totalDist = r.reduce((sum, it) => {
-                            const dist = it.distance || (it.durationType === 'distance' ? it.duration : null);
-                            return sum + parseDistanceToMeters(dist);
-                          }, 0);
-                          maxTotalDuration = Math.max(maxTotalDuration, totalDur || 0);
-                          maxTotalDistance = Math.max(maxTotalDistance, totalDist || 0);
-                          anyDistance = anyDistance || (hasDist && totalDist > 0);
-                        });
-
-                        return {
-                          anyDistance,
-                          maxTotalDuration: maxTotalDuration || 0,
-                          maxTotalDistance: maxTotalDistance || 0,
-                        };
-                      })();
-
                       // Calculate total duration or distance for this training
                       const totalDuration = results.reduce((sum, result) => {
                         return sum + parseDuration(result);
@@ -1325,55 +1326,32 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                       // Use distance if available, otherwise use duration
                       const useDistance = hasDistanceData && totalDistance > 0;
                       const totalValue = useDistance ? totalDistance : totalDuration;
-                      const referenceTotalValue = useDistance
-                        ? (referenceTotals.maxTotalDistance || totalValue)
-                        : (referenceTotals.maxTotalDuration || totalValue);
 
-                      // Calculate width percentages and left positions for each interval
-                      // Account for gaps between intervals (3px each, N-1 gaps for N intervals)
-                      // With flexbox gap, we need to ensure bars fit within container
-                      // Approach: calculate widthPercent accounting for gap space
+                      // Widths within each column sum to 100% of the column (minus flex gaps): shorter
+                      // trainings no longer leave empty space on the right; proportions between intervals stay.
                       const numIntervals = results.length;
-                      
-                      // For flexbox with gap, we'll calculate widthPercent as:
-                      // widthPercent = (value/totalValue) * (100% - gapPercentage)
-                      // where gapPercentage accounts for all gaps
-                      
-                      // Calculate gap percentage based on actual container width
-                      // Get container width from ref if available, otherwise estimate
-                      const containerWidthPx = containerWidth || 300; // Fallback to 300px
-                      const gapSizePx = 3; // pixels per gap
+
+                      const columnWidthPx = perColumnInnerWidthPx;
+                      const gapSizePx = 3;
                       const gapCount = Math.max(0, numIntervals - 1);
                       const totalGapWidthPx = gapCount * gapSizePx;
-                      const gapPercent = containerWidthPx > 0 
-                        ? Math.min(20, (totalGapWidthPx / containerWidthPx) * 100) // Cap at 20%
-                        : Math.min(15, gapCount * 1.5); // Fallback estimate
-                      const availableWidthPercent = Math.max(50, 100 - gapPercent); // Ensure at least 50% available
-                      
-                      let cumulativeLeft = 0;
-                      const intervalPositions = results.map((result, index) => {
+                      const gapPercent = columnWidthPx > 0 && gapCount > 0
+                        ? Math.min(35, (totalGapWidthPx / columnWidthPx) * 100)
+                        : 0;
+                      const availableWidthPercent = Math.max(55, 100 - gapPercent);
+
+                      const equalShare = availableWidthPercent / Math.max(results.length, 1);
+                      const intervalPositions = results.map((result) => {
                         const durationValue = parseDuration(result);
                         const distanceValue = result.distance || (result.durationType === 'distance' ? result.duration : null);
                         const parsedDistance = parseDistanceToMeters(distanceValue);
 
                         const value = useDistance ? parsedDistance : durationValue;
-                        // Calculate width as percentage of available space (after accounting for gaps)
-                        const widthPercent = referenceTotalValue > 0 
-                          ? (value / referenceTotalValue) * availableWidthPercent 
-                          : (availableWidthPercent / Math.max(results.length, 1));
-                        const leftPercent = cumulativeLeft;
-                        cumulativeLeft += widthPercent;
-                        return { widthPercent, leftPercent };
+                        const widthPercent = totalValue > 0
+                          ? (value / totalValue) * availableWidthPercent
+                          : equalShare;
+                        return { widthPercent };
                       });
-                      const usedWidthPercent = intervalPositions.reduce((sum, p) => sum + (Number(p?.widthPercent) || 0), 0);
-                      const remainingWidthPercent = Math.max(0, availableWidthPercent - usedWidthPercent);
-
-                      // Debug: Log widths
-                     // console.log('=== DashboardPage TrainingStats Bar Widths ===');
-                      //console.log('Training:', training.title || 'Untitled');
-                     // console.log('Total Value:', totalValue, useDistance ? '(distance in meters)' : '(duration in seconds)');
-                      //console.log('Total Distance:', totalDistance, 'meters');
-                      // Debug logging removed to keep console clean
 
                       // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
                       // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
@@ -1458,24 +1436,11 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
                         />
                       );
                           })}
-                          {remainingWidthPercent > 0 && (
-                            <div
-                              aria-hidden="true"
-                              style={{
-                                flexBasis: `${remainingWidthPercent}%`,
-                                width: `${remainingWidthPercent}%`,
-                                minWidth: 0,
-                                height: '1px',
-                                opacity: 0,
-                                pointerEvents: 'none'
-                              }}
-                            />
-                          )}
                         </>
                       );
                     })()}
                   </div>
-                  <div className="text-[10px] sm:text-xs text-zinc-500 whitespace-nowrap text-center">
+                  <div className="mt-1 w-full shrink-0 px-0.5 text-center text-[10px] sm:text-xs text-zinc-500 leading-tight">
                     {new Date(training.date).toLocaleDateString('en-US', {
                       day: 'numeric',
                       month: 'numeric',

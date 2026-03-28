@@ -4,19 +4,17 @@ import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
-import BasicProfileModal from "./Profile/BasicProfileModal";
-import UnitsPreferencesModal from "./Profile/UnitsPreferencesModal";
-import TrainingZonesModal from "./Profile/TrainingZonesModal";
-import StravaConnectModal from "./Onboarding/StravaConnectModal";
-import ProductWalkthrough from "./Onboarding/ProductWalkthrough";
-import api from "../services/api";
+import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
 import { useNotification } from "../context/NotificationContext";
-import { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
-// Lazy load TestingWithoutLogin to reduce initial bundle size
+const BasicProfileModal = lazy(() => import("./Profile/BasicProfileModal"));
+const UnitsPreferencesModal = lazy(() => import("./Profile/UnitsPreferencesModal"));
+const TrainingZonesModal = lazy(() => import("./Profile/TrainingZonesModal"));
+const StravaConnectModal = lazy(() => import("./Onboarding/StravaConnectModal"));
+const ProductWalkthrough = lazy(() => import("./Onboarding/ProductWalkthrough"));
 const TestingWithoutLogin = lazy(() => import("../pages/TestingWithoutLogin"));
 
 // Memoize heavy components to prevent unnecessary re-renders
@@ -177,91 +175,69 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, hasCheckedProfile, location.pathname]);
 
-  // Auto-sync Strava activities if enabled (runs on app load)
-  // Only sync once per session to avoid rate limiting
+  // Strava then Garmin (sequential) — avoids two heavy backend jobs at once after login.
   useEffect(() => {
-    if (!user?._id || !user?.strava?.autoSync || !user?.strava?.athleteId) {
-      return;
-    }
+    if (!user?._id || user?.role === 'coach') return undefined;
 
-    // Only auto-sync for the current user (not for coach viewing athlete)
-    if (user?.role === 'coach') {
-      return; // Coaches sync is handled in DashboardPage
-    }
+    const hasStrava = !!(user?.strava?.autoSync && user?.strava?.athleteId);
+    const hasGarmin = !!(user?.garmin?.autoSync && user?.garmin?.accessToken);
+    if (!hasStrava && !hasGarmin) return undefined;
 
-    // Check if we've already synced in this session
-    const syncKey = `strava_auto_sync_${user._id}`;
-    const lastSync = sessionStorage.getItem(syncKey);
-    const now = Date.now();
-    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
-      return;
-    }
+    let cancelled = false;
 
-    // Auto-sync on mount with a delay to avoid blocking page load
-    const performAutoSync = async () => {
+    const runStrava = async () => {
+      const syncKey = `strava_auto_sync_${user._id}`;
+      const now = Date.now();
+      const lastSync = sessionStorage.getItem(syncKey);
+      if (lastSync && now - parseInt(lastSync, 10) < 60000) return;
       try {
         const result = await autoSyncStravaActivities();
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
-          // Dispatch event to reload data in other components
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
         }
       } catch (error) {
-        // 429 errors are already handled in autoSyncStravaActivities
         console.log('Auto-sync failed on app load:', error);
-        // Silent fail - don't show errors to user
       }
     };
 
-    // Delay auto-sync slightly to avoid blocking page load (reduced from 3000ms to 2000ms)
-    const timeoutId = setTimeout(performAutoSync, 2000);
-    
-    return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.strava?.autoSync, user?.strava?.athleteId, user?.role]);
-
-  // Auto-sync Garmin activities if enabled (runs on app load)
-  // Only sync once per session to avoid rate limiting
-  useEffect(() => {
-    if (!user?._id || !user?.garmin?.autoSync || !user?.garmin?.accessToken) {
-      return;
-    }
-
-    // Only auto-sync for the current user (not for coach viewing athlete)
-    if (user?.role === 'coach') {
-      return; // Coaches sync is handled in DashboardPage
-    }
-
-    // Check if we've already synced in this session
-    const syncKey = `garmin_auto_sync_${user._id}`;
-    const lastSync = sessionStorage.getItem(syncKey);
-    const now = Date.now();
-    if (lastSync && (now - parseInt(lastSync)) < 60000) { // Don't sync more than once per minute
-      return;
-    }
-
-    // Auto-sync on mount with a delay to avoid blocking page load
-    const performAutoSync = async () => {
+    const runGarmin = async () => {
+      const syncKey = `garmin_auto_sync_${user._id}`;
+      const now = Date.now();
+      const lastSync = sessionStorage.getItem(syncKey);
+      if (lastSync && now - parseInt(lastSync, 10) < 60000) return;
       try {
         const result = await autoSyncGarminActivities();
         sessionStorage.setItem(syncKey, now.toString());
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Garmin auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
-          // Dispatch event to reload data in other components
           window.dispatchEvent(new CustomEvent('garminSyncComplete', { detail: result }));
         }
       } catch (error) {
-        // 429 errors are already handled in autoSyncGarminActivities
         console.log('Garmin auto-sync failed on app load:', error);
-        // Silent fail - don't show errors to user
       }
     };
 
-    // Delay auto-sync slightly to avoid blocking page load (reduced from 4000ms to 2500ms)
-    const timeoutId = setTimeout(performAutoSync, 2500);
-    
-    return () => clearTimeout(timeoutId);
-  }, [user?._id, user?.garmin?.autoSync, user?.garmin?.accessToken, user?.role]);
+    const run = async () => {
+      await new Promise((r) => setTimeout(r, 3500));
+      if (cancelled) return;
+      if (hasStrava) await runStrava();
+      await new Promise((r) => setTimeout(r, 4500));
+      if (cancelled) return;
+      if (hasGarmin) await runGarmin();
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [
+    user?._id,
+    user?.role,
+    user?.strava?.autoSync,
+    user?.strava?.athleteId,
+    user?.garmin?.autoSync,
+    user?.garmin?.accessToken
+  ]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)
   useEffect(() => {
@@ -358,6 +334,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
       )}
 
+      <Suspense fallback={null}>
       {/* Basic Profile Modal - first step */}
       {user && (
         <BasicProfileModal
@@ -513,6 +490,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
           userRole={user.role}
         />
       )}
+      </Suspense>
     </div>
   );
 };

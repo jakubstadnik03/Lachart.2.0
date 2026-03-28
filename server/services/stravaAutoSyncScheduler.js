@@ -14,11 +14,10 @@ function startStravaAutoSyncScheduler() {
   // Interval in milliseconds (default: 30 minutes)
   const intervalMs = Number(process.env.STRAVA_AUTO_SYNC_INTERVAL_MS || 30 * 60 * 1000);
   
-  // Batch size - how many users to sync per tick (default: 10)
-  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 10);
-  
-  // Delay between users in ms (default: 5 seconds)
-  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 5000);
+  // Smaller default batch reduces peak memory / Strava load on small Render instances
+  const batchSize = Number(process.env.STRAVA_AUTO_SYNC_BATCH_SIZE || 4);
+
+  const delayBetweenUsers = Number(process.env.STRAVA_AUTO_SYNC_DELAY_BETWEEN_USERS_MS || 8000);
 
   const tick = async () => {
     try {

@@ -216,8 +216,8 @@ async function syncStravaForUser(user) {
 /**
  * Sync Strava activities for all users with auto-sync enabled
  * @param {Object} options - Options for batch sync
- * @param {number} options.batchSize - Maximum number of users to sync in one batch (default: 10)
- * @param {number} options.delayBetweenUsers - Delay in ms between users (default: 5000)
+ * @param {number} options.batchSize - Maximum number of users to sync in one batch (scheduler default: 4)
+ * @param {number} options.delayBetweenUsers - Delay in ms between users (scheduler default: 8000)
  * @returns {Promise<{total: number, synced: number, skipped: number, errors: number, results: Array}>}
  */
 async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 } = {}) {
@@ -227,7 +227,10 @@ async function syncStravaForAllUsers({ batchSize = 10, delayBetweenUsers = 5000 
       'strava.accessToken': { $exists: true, $ne: null },
       'strava.autoSync': true,
       isActive: { $ne: false }
-    }).select('_id strava email name').limit(batchSize);
+    })
+      .select('_id strava email name')
+      .limit(batchSize)
+      .lean();
     
     if (users.length === 0) {
       console.log('[StravaAutoSync] No users with auto-sync enabled found');

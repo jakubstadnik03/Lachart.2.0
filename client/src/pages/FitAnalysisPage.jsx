@@ -1739,8 +1739,8 @@ const FitAnalysisPage = () => {
   const loadStravaDetail = useCallback(async (id, { overrideTitle = null } = {}) => {
     try {
       setDetailLoading(true);
-      // For coach, pass selectedAthleteId to get athlete's Strava token
-      const athleteId = user?.role === 'coach' ? selectedAthleteId : null;
+      const role = String(user?.role || '').toLowerCase();
+      const athleteId = ['coach', 'tester', 'testing'].includes(role) ? selectedAthleteId : null;
       const data = await getStravaActivityDetail(id, athleteId);
       
       const rawLaps = Array.isArray(data.laps) ? data.laps : [];
@@ -1785,14 +1785,11 @@ const FitAnalysisPage = () => {
         detailWithMeta.linkedTrainingTitle = linkedTitle.trim(); // Store linked training title separately
       }
       
-      // Ensure streams data is properly set
-      if (!data.streams) {
-        console.warn('No streams data received from API');
-        return;
-      }
-      
+      // Streams can be empty if Strava rejects stream keys for this activity; still show detail & laps
+      const streamsPayload =
+        data.streams && typeof data.streams === 'object' ? data.streams : {};
       setSelectedStrava(detailWithMeta);
-      setSelectedStravaStreams(data.streams);
+      setSelectedStravaStreams(streamsPayload);
       setSelectedTraining(null);
       // Persist selection to localStorage
       localStorage.setItem('fitAnalysis_selectedStravaId', String(id));
@@ -1812,6 +1809,17 @@ const FitAnalysisPage = () => {
         console.error('Strava token expired or invalid. Please reconnect your Strava account.');
         addNotification('Strava token expired. Please reconnect your Strava account in Settings.', 'error');
         // Don't clear state - user might want to see cached data
+        setDetailLoading(false);
+        return;
+      }
+
+      if (e.response?.status === 400) {
+        const d = e.response?.data;
+        const msg =
+          (typeof d?.message === 'string' && d.message) ||
+          (typeof d?.error === 'string' && d.error) ||
+          'Strava request failed. Try reconnecting Strava in Settings.';
+        addNotification(msg, 'error');
         setDetailLoading(false);
         return;
       }

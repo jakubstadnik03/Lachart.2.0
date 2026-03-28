@@ -17,6 +17,7 @@ import TestSelector from "../components/Testing-page/TestSelector";
 import DateSelector from "../components/DateSelector";
 import LactateStatistics from "../components/LactateStatistics/LactateStatistics";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
+import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import { motion } from 'framer-motion';
 //import { useNotification } from '../context/NotificationContext';
 // import { 
@@ -39,7 +40,7 @@ function normalizeApiList(payload) {
   return [];
 }
 
-const DashboardPage = () => {
+export default function DashboardPage() {
   const { athleteId } = useParams();
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
@@ -91,7 +92,9 @@ const DashboardPage = () => {
   const [tests, setTests] = useState([]);
   const navigate = useNavigate();
   const [selectedTests, setSelectedTests] = useState([]);
-  
+  /** Avoid flashing the empty-state hero while API/cache is still settling */
+  const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
+
   // Check Strava connection status
   useEffect(() => {
     const checkStravaConnection = async () => {
@@ -829,6 +832,25 @@ const DashboardPage = () => {
     }
   }, [selectedSport, recentTrainings, selectedTitle]);
 
+  useEffect(() => {
+    const noTrainings = !recentTrainings || recentTrainings.length === 0;
+    const noCalendar = !calendarData || calendarData.length === 0;
+    if (!noTrainings || !noCalendar) {
+      setShowEmptyWelcomeDelayed(false);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setShowEmptyWelcomeDelayed(true), 500);
+    return () => clearTimeout(t);
+  }, [recentTrainings, calendarData]);
+
+  const showAthleteEmptyWelcome =
+    !isTestingRole &&
+    user?.role === 'athlete' &&
+    String(selectedAthleteId || '') === String(user._id || '') &&
+    showEmptyWelcomeDelayed &&
+    (!recentTrainings || recentTrainings.length === 0) &&
+    (!calendarData || calendarData.length === 0);
+
   // Filter tests based on selected sport
   const filteredTests = selectedSport === 'all' 
     ? tests 
@@ -911,8 +933,17 @@ const DashboardPage = () => {
         </motion.div>
       )}
       
+      {showAthleteEmptyWelcome && (
+        <DashboardEmptyWelcome
+          user={user}
+          stravaConnected={stravaConnected}
+          onConnectStrava={handleConnectStrava}
+          hasTests={Array.isArray(tests) && tests.length > 0}
+        />
+      )}
+
       {/* Strava Connection Banner */}
-      {!isTestingRole && showStravaBanner && !stravaConnected && user?.role === 'athlete' && (
+      {!isTestingRole && showStravaBanner && !stravaConnected && user?.role === 'athlete' && !showAthleteEmptyWelcome && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -968,6 +999,8 @@ const DashboardPage = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {!isTestingRole && (
+          <>
+        {!showAthleteEmptyWelcome && (
           <>
         {/* Form & Fitness Chart */}
         <motion.div 
@@ -1108,6 +1141,20 @@ const DashboardPage = () => {
           </>
         )}
 
+        {showAthleteEmptyWelcome && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="lg:col-span-5 md:col-span-2 rounded-xl border border-dashed border-slate-200 bg-white/60 px-4 py-8 text-center"
+          >
+            <p className="text-sm text-slate-600 max-w-lg mx-auto">
+              Form &amp; Fitness, weekly load, calendar, and training charts will appear here after you add activities (upload FIT or sync from Strava).
+            </p>
+          </motion.div>
+        )}
+          </>
+        )}
+
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1139,8 +1186,22 @@ const DashboardPage = () => {
                 )}
               </>
             ) : (
-              <div className="text-center py-4 text-gray-500">
-                No tests available{selectedSport !== 'all' ? ` for ${selectedSport}` : ''}
+              <div className="text-center py-8 px-4 rounded-xl border border-slate-100 bg-slate-50/50 text-slate-600">
+                <p className="text-sm font-medium text-slate-800">No lactate tests yet</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {showAthleteEmptyWelcome
+                    ? 'When you log a test under Testing, charts and comparisons show up here.'
+                    : `No tests available${selectedSport !== 'all' ? ` for ${selectedSport}` : ''}.`}
+                </p>
+                {showAthleteEmptyWelcome && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/testing')}
+                    className="mt-4 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Open Testing
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1148,6 +1209,4 @@ const DashboardPage = () => {
       </div>
     </motion.div>
   );
-};
-
-export default DashboardPage;
+}

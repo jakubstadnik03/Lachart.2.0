@@ -8,6 +8,12 @@ const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
 const router = express.Router();
 
+/** UI/calendar uses `strava-<numericId>`; routes expect numeric Strava id or Mongo _id. */
+function stripStravaActivityIdPrefix(id) {
+  if (id == null) return id;
+  return String(id).replace(/^strava-/i, '');
+}
+
 // Cache for activities endpoint (2 minutes cache)
 const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
@@ -281,20 +287,32 @@ router.post('/strava/disconnect', verifyToken, async (req, res) => {
   }
 });
 
+function stravaExpiresAtSeconds(expiresAt) {
+  if (expiresAt == null) return null;
+  if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) return expiresAt;
+  if (expiresAt instanceof Date && !Number.isNaN(expiresAt.getTime())) {
+    return Math.floor(expiresAt.getTime() / 1000);
+  }
+  const n = Number(expiresAt);
+  return Number.isFinite(n) ? n : null;
+}
+
 async function getValidStravaToken(user) {
   if (!user?.strava?.accessToken) return null;
   const now = Math.floor(Date.now() / 1000);
-  if (user.strava.expiresAt && user.strava.expiresAt - 60 > now) return user.strava.accessToken;
+  const exp = stravaExpiresAtSeconds(user.strava.expiresAt);
+  if (exp != null && exp - 60 > now) return user.strava.accessToken;
   // refresh
   const client_id = process.env.STRAVA_CLIENT_ID;
   const client_secret = process.env.STRAVA_CLIENT_SECRET;
   if (!client_id || !client_secret) {
     console.error('Strava credentials missing for token refresh');
-    return null;
+    // Still try current access token (may work briefly after deploy / clock skew)
+    return user.strava.accessToken;
   }
   if (!user.strava.refreshToken) {
     console.error('No refresh token available for user');
-    return null;
+    return user.strava.accessToken;
   }
   try {
   const resp = await axios.post('https://www.strava.com/oauth/token', {
@@ -310,14 +328,56 @@ async function getValidStravaToken(user) {
   return user.strava.accessToken;
   } catch (error) {
     console.error('Error refreshing Strava token:', error.response?.data || error.message);
-    // If refresh token is invalid, clear Strava connection
+    const body = error.response?.data;
+    const msg = typeof body?.message === 'string' ? body.message.toLowerCase() : '';
+    const invalidGrant =
+      msg.includes('invalid') && (msg.includes('grant') || msg.includes('refresh'));
+    const errors = Array.isArray(body?.errors) ? body.errors : [];
+    const refreshRevoked = errors.some(
+      (e) =>
+        String(e?.field || '') === 'refresh_token' &&
+        String(e?.code || '').toLowerCase().includes('invalid')
+    );
     if (error.response?.status === 401 || error.response?.status === 400) {
-      console.log('Refresh token invalid, clearing Strava connection for user');
-      user.strava = null;
-      await user.save();
+      if (invalidGrant || refreshRevoked) {
+        console.log('Strava refresh token rejected; clearing Strava connection for user');
+        user.strava = undefined;
+        await user.save();
+        return null;
+      }
+      console.warn('Strava token refresh failed (transient?); keeping tokens, returning current access token');
     }
-    return null;
+    return user.strava.accessToken || null;
   }
+}
+
+/**
+ * Streams often fail with 400 for some activity types or stream key combos; detail still loads.
+ */
+async function fetchStravaActivityStreams(token, stravaId) {
+  const url = `https://www.strava.com/api/v3/activities/${stravaId}/streams`;
+  const base = { headers: { Authorization: `Bearer ${token}` }, timeout: 45000 };
+  const variants = [
+    { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true },
+    { keys: 'time,heartrate,watts,velocity_smooth', key_by_type: true },
+    { keys: 'time,distance,heartrate,watts', key_by_type: true },
+    { keys: 'time,heartrate', key_by_type: true },
+    { keys: 'time', key_by_type: true }
+  ];
+  for (const params of variants) {
+    try {
+      const r = await axios.get(url, { ...base, params });
+      if (r.data != null) return r.data;
+    } catch (e) {
+      const st = e.response?.status;
+      if (st === 400 || st === 404) {
+        console.warn(`[Strava] streams attempt failed (${st}) keys=${params.keys}`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  return {};
 }
 
 // Helper function to delay requests to respect rate limits
@@ -1190,7 +1250,10 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    const id = req.params.id;
+    let id = req.params.id;
+    if (typeof id === 'string') {
+      id = id.replace(/^strava-/i, '');
+    }
     const detailRequesterRole = String(user.role || '').toLowerCase();
     
     // Determine which userId to use (for coach viewing athlete's activities)
@@ -1225,8 +1288,10 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
         testActivity = await StravaActivity.findOne({ _id: id });
       } else {
-        const testStravaIdNum = parseInt(id);
-        testActivity = await StravaActivity.findOne({ stravaId: testStravaIdNum });
+        const testStravaIdNum = parseInt(id, 10);
+        if (Number.isFinite(testStravaIdNum) && testStravaIdNum > 0) {
+          testActivity = await StravaActivity.findOne({ stravaId: testStravaIdNum });
+        }
       }
       
       if (testActivity) {
@@ -1273,8 +1338,11 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       
       stravaId = savedActivity.stravaId;
     } else {
-      // It's a stravaId (number)
-      stravaId = parseInt(id);
+      // It's a stravaId (numeric)
+      stravaId = parseInt(id, 10);
+      if (!Number.isFinite(stravaId) || stravaId < 1) {
+        return res.status(400).json({ error: 'Invalid Strava activity id', id: String(id) });
+      }
       // First try to find with targetUserId (if we already determined it)
       savedActivity = await StravaActivity.findOne({ 
         userId: targetUserId, 
@@ -1331,53 +1399,52 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       });
     }
     
-    let detailResp, streamsResp;
+    let detailResp;
     try {
       detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
+        timeout: 30000
       });
     } catch (apiError) {
-      // If we get 401, try refreshing token once more
       if (apiError.response?.status === 401) {
-        console.log('Got 401 from Strava API, attempting token refresh...');
-        // Reload target user to get fresh data
+        console.log('Got 401 from Strava activity detail, attempting token refresh...');
         const refreshedTargetUser = await User.findById(targetUserId);
         token = await getValidStravaToken(refreshedTargetUser);
         if (token) {
           try {
-            // Retry with refreshed token
             detailResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            streamsResp = await axios.get(`https://www.strava.com/api/v3/activities/${stravaId}/streams`, {
               headers: { Authorization: `Bearer ${token}` },
-              params: { keys: 'time,velocity_smooth,heartrate,watts,altitude', key_by_type: true }
+              timeout: 30000
             });
           } catch (retryError) {
-            console.error('Strava API error after token refresh:', retryError.response?.data || retryError.message);
-            return res.status(retryError.response?.status || 500).json({ 
+            console.error('Strava activity detail after refresh:', retryError.response?.data || retryError.message);
+            return res.status(retryError.response?.status || 500).json({
               error: 'Failed to fetch activity from Strava after token refresh',
-              details: retryError.response?.data || retryError.message 
+              details: retryError.response?.data || retryError.message
             });
           }
         } else {
-          console.error('Could not refresh Strava token after 401 error');
-          return res.status(400).json({ 
+          console.error('Could not refresh Strava token after 401 on activity detail');
+          return res.status(400).json({
             error: 'Strava token expired and could not be refreshed. Please reconnect your Strava account.',
             requiresReconnect: true
           });
         }
       } else {
-      console.error('Strava API error:', apiError.response?.data || apiError.message);
-      return res.status(apiError.response?.status || 500).json({ 
-        error: 'Failed to fetch activity from Strava',
-        details: apiError.response?.data || apiError.message 
-      });
+        console.error('Strava activity detail error:', apiError.response?.data || apiError.message);
+        return res.status(apiError.response?.status || 500).json({
+          error: 'Failed to fetch activity from Strava',
+          details: apiError.response?.data || apiError.message
+        });
       }
+    }
+
+    let streamsData = {};
+    try {
+      streamsData = await fetchStravaActivityStreams(token, stravaId);
+    } catch (streamErr) {
+      console.warn('[Strava] streams failed (detail already loaded):', streamErr.response?.status || streamErr.message);
+      streamsData = {};
     }
     // Laps (intervals)
     let laps = [];
@@ -1573,7 +1640,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     
     res.json({ 
       detail: detailResp.data, 
-      streams: streamsResp.data, 
+      streams: streamsData, 
       laps: mergedLaps,
       titleManual: savedActivity?.titleManual || null,
       description: savedActivity?.description || null,
@@ -1593,8 +1660,8 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    const stravaId = parseInt(req.params.id);
-    if (isNaN(stravaId)) {
+    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
+    if (!Number.isFinite(stravaId) || stravaId < 1) {
       return res.status(400).json({ error: 'Invalid Strava activity ID' });
     }
     
@@ -1685,7 +1752,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
 router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const stravaId = parseInt(req.params.id);
+    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     const { lactateValues } = req.body; // [{ lapIndex: number, lactate: number }]
 
     const activity = await StravaActivity.findOne({
@@ -1761,7 +1828,7 @@ router.put('/strava/activities/:id/lactate', verifyToken, async (req, res) => {
 router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const stravaId = parseInt(req.params.id);
+    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     const { startTime, endTime } = req.body; // startTime and endTime in seconds from activity start
 
     const activity = await StravaActivity.findOne({
@@ -1888,7 +1955,7 @@ router.post('/strava/activities/:id/laps', verifyToken, async (req, res) => {
 router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const stravaId = parseInt(req.params.id);
+    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     const intervals = Array.isArray(req.body.intervals) ? req.body.intervals : [];
     
     if (!intervals.length) {
@@ -2098,7 +2165,7 @@ router.post('/strava/activities/:id/laps/bulk', verifyToken, async (req, res) =>
 router.delete('/strava/activities/:id/laps/:lapIndex', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
-    const stravaId = parseInt(req.params.id);
+    const stravaId = parseInt(stripStravaActivityIdPrefix(req.params.id), 10);
     const lapIndex = parseInt(req.params.lapIndex);
 
     const activity = await StravaActivity.findOne({

@@ -73,19 +73,29 @@ router.post('/upload', verifyToken, upload.single('file'), fitUploadController.u
 
 // Cache middleware for slow endpoints (5 minutes cache)
 const cache = require('node-cache');
-const routeCache = new cache({ stdTTL: 300 }); // 5 minutes cache
+// maxKeys + useClones:false limit RAM on Render; full monthly-analysis payloads are huge per user.
+const routeCache = new cache({
+  stdTTL: 300,
+  maxKeys: 400,
+  useClones: false
+});
 
 const routeCacheMiddleware = (req, res, next) => {
+  const path = req.path || req.url || '';
+  const q = req.query || {};
+  // Never cache full month analysis — multi-MB JSON per key exhausts memory quickly.
+  if (path.includes('monthly-analysis') && q.monthKey) {
+    return next();
+  }
   const userId = req.user?.userId || 'anon';
-  const cacheKey = `${userId}:${req.originalUrl || req.url}?${JSON.stringify(req.query)}`;
+  const cacheKey = `${userId}:${req.originalUrl || req.url}?${JSON.stringify(q)}`;
   const cachedResponse = routeCache.get(cacheKey);
-  
+
   if (cachedResponse) {
     res.set('X-Cache', 'HIT');
     return res.json(cachedResponse);
   }
-  
-  // Store original json method
+
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     routeCache.set(cacheKey, body);
