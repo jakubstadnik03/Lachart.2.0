@@ -337,7 +337,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     
     const token = await getValidStravaToken(user);
     if (!token) {
-      return res.status(401).json({ error: 'Invalid Strava token' });
+      // Not app JWT failure — avoid 401 so the client does not log the user out.
+      return res.status(400).json({ error: 'Invalid or expired Strava token. Reconnect Strava in Settings.' });
     }
     
     const per_page = 100;
@@ -521,8 +522,15 @@ router.post('/strava/auto-sync', verifyToken, async (req, res) => {
     const { syncStravaForUser } = require('../services/stravaAutoSyncService');
     const result = await syncStravaForUser(user);
     
+    // Never use HTTP 401 here — the app treats 401 as "JWT invalid" and logs the user out.
+    // Strava token / refresh failures are upstream auth issues; return 200 + error body (same as catch below).
     if (result.error && result.error !== 'Auto-sync is disabled') {
-      return res.status(401).json({ error: result.error });
+      return res.status(200).json({
+        imported: result.imported ?? 0,
+        updated: result.updated ?? 0,
+        error: result.error,
+        stravaReconnectNeeded: true
+      });
     }
     
     res.json({ imported: result.imported, updated: result.updated, message: result.message });
@@ -635,7 +643,7 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
       await testClient.login(); // Verify credentials work
     } catch (loginError) {
       console.error('Garmin login verification failed:', loginError);
-      return res.status(401).json({ error: 'Invalid Garmin credentials. Please check your username and password.' });
+      return res.status(400).json({ error: 'Invalid Garmin credentials. Please check your username and password.' });
     }
     
     // Store credentials (base64 encoded)
@@ -1314,7 +1322,8 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
     // This is critical: coach must use athlete's Strava token, not their own
     let token = await getValidStravaToken(targetUser);
     if (!token) {
-      return res.status(401).json({ 
+      // 401 would trigger app-wide logout; this is Strava OAuth state, not LaChart JWT.
+      return res.status(400).json({ 
         error: 'Strava not connected or token invalid',
         message: targetUserId === user._id.toString() 
           ? 'Your Strava account is not connected or token expired. Please reconnect in Settings.'
@@ -1357,7 +1366,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           }
         } else {
           console.error('Could not refresh Strava token after 401 error');
-          return res.status(401).json({ 
+          return res.status(400).json({ 
             error: 'Strava token expired and could not be refreshed. Please reconnect your Strava account.',
             requiresReconnect: true
           });
@@ -2140,7 +2149,7 @@ router.post('/strava/update-avatar', verifyToken, async (req, res) => {
 
     const token = await getValidStravaToken(user);
     if (!token) {
-      return res.status(401).json({ error: 'Strava not connected' });
+      return res.status(400).json({ error: 'Strava not connected or token invalid. Reconnect in Settings.' });
     }
 
     // Get athlete profile from Strava
