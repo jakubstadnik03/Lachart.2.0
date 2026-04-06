@@ -76,19 +76,19 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="mb-8 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 shadow-sm overflow-hidden"
+      className="mb-8 overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-white via-custom-gray to-primary/5 shadow-lg"
     >
       <div className="px-5 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-md">
               <SparklesIcon className="h-7 w-7" aria-hidden />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+              <h2 className="text-xl font-bold tracking-tight text-text sm:text-2xl">
                 {firstName ? `Welcome, ${firstName}!` : 'Welcome to LaChart'}
               </h2>
-              <p className="mt-1 text-sm sm:text-base text-slate-600 max-w-2xl">
+              <p className="mt-1 max-w-2xl text-sm text-lighterText sm:text-base">
                 Your dashboard is ready. Follow these steps to load trainings, charts, and stats — usually only takes a few minutes.
               </p>
             </div>
@@ -96,42 +96,42 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
           <button
             type="button"
             onClick={() => navigate('/settings')}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-text shadow-sm transition-colors hover:bg-primary/5"
           >
-            <Cog6ToothIcon className="h-5 w-5 text-slate-500" aria-hidden />
+            <Cog6ToothIcon className="h-5 w-5 text-lighterText" aria-hidden />
             Settings
           </button>
         </div>
 
-        <ul className="grid gap-3 sm:gap-4 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 sm:gap-4">
           {steps.map((step, index) => {
             const Icon = step.Icon;
             const isDone = step.done;
             return (
               <li
                 key={step.key}
-                className={`relative flex flex-col rounded-xl border p-4 sm:p-5 transition-colors ${
+                className={`relative flex flex-col rounded-xl border p-4 transition-colors sm:p-5 ${
                   isDone
-                    ? 'border-emerald-200/80 bg-emerald-50/40'
-                    : 'border-slate-200/90 bg-white/80 hover:border-indigo-200 hover:bg-white'
+                    ? 'border-greenos/25 bg-greenos/10'
+                    : 'border-primary/15 bg-white/90 hover:border-primary/30 hover:bg-white'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-bold text-slate-600">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Icon className={`h-5 w-5 shrink-0 ${isDone ? 'text-emerald-600' : 'text-indigo-600'}`} aria-hidden />
-                      <h3 className="font-semibold text-slate-900">{step.title}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Icon className={`h-5 w-5 shrink-0 ${isDone ? 'text-greenos' : 'text-primary'}`} aria-hidden />
+                      <h3 className="font-semibold text-text">{step.title}</h3>
                       {isDone && (
-                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-700">
+                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-greenos">
                           <CheckCircleIcon className="h-4 w-4" aria-hidden />
                           Done
                         </span>
                       )}
                     </div>
-                    <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{step.body}</p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-lighterText">{step.body}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {step.onClick && (
                         <button
@@ -140,8 +140,8 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
                           onClick={step.onClick}
                           className={`inline-flex items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold shadow-sm transition-colors ${
                             isDone && step.key === 'strava'
-                              ? 'bg-emerald-100 text-emerald-800 cursor-default'
-                              : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                              ? 'cursor-default bg-greenos/20 text-text'
+                              : 'bg-primary text-white hover:bg-primary-dark'
                           }`}
                         >
                           {step.cta}
@@ -151,7 +151,7 @@ export default function DashboardEmptyWelcome({ user, stravaConnected, onConnect
                         <button
                           type="button"
                           onClick={step.secondary.onClick}
-                          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                          className="inline-flex items-center justify-center rounded-lg border border-primary/20 bg-white px-3.5 py-2 text-sm font-medium text-text transition-colors hover:bg-primary/5"
                         >
                           {step.secondary.label}
                         </button>
