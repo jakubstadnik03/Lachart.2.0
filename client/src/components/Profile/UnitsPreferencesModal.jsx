@@ -25,12 +25,12 @@ const UnitsPreferencesModal = ({ isOpen, onClose, onSubmit, userData }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Units Preferences">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <p className="text-sm text-gray-600 mb-4">
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+        <p className="mb-3 text-xs leading-relaxed text-gray-600 sm:mb-4 sm:text-sm">
           Choose your preferred units for distance, weight, and temperature.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 min-w-0 md:grid-cols-3 md:gap-6">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Distance</label>
             <div className="flex flex-col gap-2">
@@ -116,17 +116,17 @@ const UnitsPreferencesModal = ({ isOpen, onClose, onSubmit, userData }) => {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:justify-end sm:gap-3 sm:pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 sm:w-auto sm:px-6 sm:py-3"
           >
             Skip for now
           </button>
           <button
             type="submit"
-            className="px-6 py-3 text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-dark shadow-md hover:shadow-lg transition-all"
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg sm:w-auto sm:px-6 sm:py-3"
           >
             Continue
           </button>

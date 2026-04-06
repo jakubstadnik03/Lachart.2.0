@@ -612,21 +612,21 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={zonesOnly ? "Set Training Zones" : "Edit Profile"}>
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
         {error && (
-          <div className="p-4 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 sm:p-4 sm:text-sm">
             {error}
           </div>
         )}
 
-        {!zonesOnly && <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+        {!zonesOnly && <div className="grid grid-cols-1 gap-3 min-w-0 md:grid-cols-2 md:gap-6">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Date of Birth</label>
             <input
               type="date"
               value={formData.dateOfBirth || ''}
               onChange={handleDateChange}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             />
           </div>
           
@@ -636,7 +636,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               type="text"
               value={formData.address || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="Enter your address"
             />
           </div>
@@ -647,7 +647,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               type="tel"
               value={formData.phone || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="+420 123 456 789"
             />
           </div>
@@ -658,7 +658,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               type="number"
               value={formData.height || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, height: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="175"
               min="0"
             />
@@ -670,7 +670,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               type="number"
               value={formData.weight || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, weight: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="70"
               min="0"
             />
@@ -681,7 +681,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             <select
               value={formData.sport || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, sport: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             >
               <option value="">Select sport</option>
               <option value="triathlon">Triathlon</option>
@@ -696,7 +696,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             <select
               value={formData.gender || 'male'}
               onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -709,7 +709,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               type="text"
               value={formData.specialization || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, specialization: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="e.g. Long distance, Sprint..."
             />
           </div>
@@ -720,15 +720,15 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               value={formData.bio || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
               rows={4}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none"
+              className="min-w-0 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="Tell us about yourself..."
             />
           </div>
         </div>}
 
-        {!zonesOnly && <div className="mt-8 pt-6 border-t border-gray-200">
-          <h3 className="text-xl font-bold text-gray-900 mb-6">Units Preferences</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {!zonesOnly && <div className="mt-6 border-t border-gray-200 pt-4 sm:mt-8 sm:pt-6">
+          <h3 className="mb-4 text-lg font-bold text-gray-900 sm:mb-6 sm:text-xl">Units Preferences</h3>
+          <div className="grid grid-cols-1 gap-4 min-w-0 md:grid-cols-3 md:gap-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Distance</label>
               <div className="flex flex-col gap-2">
@@ -834,14 +834,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         </div>}
 
         {/* Power Zones Section */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <h3 className="text-xl font-bold text-gray-900">Training Zones</h3>
-            <div className="flex gap-2 flex-wrap">
+        <div className="mt-6 border-t border-gray-200 pt-4 sm:mt-8 sm:pt-6">
+          <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <h3 className="text-lg font-bold text-gray-900 sm:text-xl">Training Zones</h3>
+            <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedSport('cycling')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
                   selectedSport === 'cycling'
                     ? 'bg-primary text-white shadow-md'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -852,7 +852,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               <button
                 type="button"
                 onClick={() => setSelectedSport('running')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
                   selectedSport === 'running'
                     ? 'bg-primary text-white shadow-md'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -863,7 +863,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               <button
                 type="button"
                 onClick={() => setSelectedSport('swimming')}
-                className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm ${
                   selectedSport === 'swimming'
                     ? 'bg-primary text-white shadow-md'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -874,7 +874,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             </div>
           </div>
           
-          <p className="text-sm text-gray-600 mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
+          <p className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-gray-600 sm:mb-6 sm:p-4 sm:text-sm">
             {selectedSport === 'cycling' 
               ? 'Set LTP1 and LTP2 (in watts) to automatically generate power zones, or set zones manually.'
               : selectedSport === 'running'
@@ -882,11 +882,11 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
               : 'Set LTP1 and LTP2 (LTP2 is threshold pace, in seconds per 100m, e.g., 90 for 1:30/100m) to automatically generate pace zones, or set zones manually. You can also enter Max Heart Rate to generate heart rate zones.'}
           </p>
           
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* LTP1, LTP2 and Max Heart Rate */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
+            <div className="grid grid-cols-1 gap-3 min-w-0 md:grid-cols-3 md:gap-4">
+              <div className="min-w-0 space-y-2">
+                <label className="block text-sm font-semibold leading-snug text-gray-700 break-words">
                   LTP1 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 240 for 4:00/km)' : '(seconds per 100m, e.g., 90 for 1:30/100m)'}
                 </label>
                 <input
@@ -902,7 +902,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                       }
                     }
                   }))}
-                  className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
                   placeholder={selectedSport === 'cycling' ? 'e.g. 200' : selectedSport === 'running' ? 'e.g. 240' : 'e.g. 90'}
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt1 && (
@@ -916,8 +916,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                   </p>
                 )}
               </div>
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
+              <div className="min-w-0 space-y-2">
+                <label className="block text-sm font-semibold leading-snug text-gray-700 break-words">
                   LTP2 (Threshold) {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 200 for 3:20/km)' : '(seconds per 100m, e.g., 75 for 1:15/100m)'}
                 </label>
                 <input
@@ -933,7 +933,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                       }
                     }
                   }))}
-                  className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
                   placeholder={selectedSport === 'cycling' ? 'e.g. 280' : selectedSport === 'running' ? 'e.g. 200' : 'e.g. 75'}
                 />
                 {selectedSport === 'running' && formData.powerZones?.running?.lt2 && (
@@ -947,7 +947,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                   </p>
                 )}
               </div>
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <label className="block text-sm font-semibold text-gray-700">
                   Max Heart Rate (BPM)
                 </label>
@@ -964,25 +964,25 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                       }
                     }
                   }))}
-                  className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
                   placeholder="e.g. 190"
                 />
               </div>
             </div>
 
             {/* Generate Zones Buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-2 min-w-0 md:grid-cols-2 md:gap-4">
               <button
                 type="button"
                 onClick={() => generateZones(selectedSport)}
-                className="w-full px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary-dark font-semibold shadow-md hover:shadow-lg transition-all"
+                className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg sm:px-6 sm:py-3"
               >
                 Generate Zones from LTP1 & LTP2
               </button>
               <button
                 type="button"
                 onClick={() => generateHeartRateZones(selectedSport)}
-                className="w-full px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold shadow-md hover:shadow-lg transition-all"
+                className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg sm:px-6 sm:py-3"
               >
                 Generate HR Zones from Max HR
               </button>
@@ -991,9 +991,9 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             {/* Combined Zone inputs - Power/Pace and Heart Rate together */}
             <div className="space-y-1">
               {[1, 2, 3, 4, 5].map(zoneNum => (
-                <div key={zoneNum} className="p-2 bg-gray-50 rounded-md border border-gray-200">
-                  <div className="flex items-start gap-3">
-                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full font-bold text-xs flex-shrink-0 mt-1 ${
+                <div key={zoneNum} className="rounded-lg border border-gray-200 bg-gray-50 p-2 sm:rounded-md">
+                  <div className="flex flex-col gap-2 min-[400px]:flex-row min-[400px]:items-start min-[400px]:gap-3">
+                    <span className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center self-start rounded-full text-xs font-bold min-[400px]:mt-1 ${
                       zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
                       zoneNum === 2 ? 'bg-green-100 text-green-700' :
                       zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
@@ -1002,7 +1002,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                     }`}>
                       {zoneNum}
                     </span>
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="min-w-0 flex-1 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
                       {/* Power/Pace Zones */}
                       <div className="space-y-2">
                         <div className="text-xs font-semibold text-gray-700 mb-1">
@@ -1193,17 +1193,17 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
         </div>
 
 
-        <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:justify-end sm:gap-3 sm:pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 sm:w-auto sm:px-6 sm:py-3"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-6 py-3 text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-dark shadow-md hover:shadow-lg transition-all"
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg sm:w-auto sm:px-6 sm:py-3"
           >
             Save Changes
           </button>

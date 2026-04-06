@@ -55,6 +55,22 @@ const getStravaRedirectBase = () => {
   return null;
 };
 
+/** Must match the redirect_uri sent to Strava /oauth/authorize (required on token exchange too). */
+function resolveStravaOAuthRedirectUri(req) {
+  let redirectUri = getStravaRedirectBase();
+  if (!redirectUri && req) {
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || 'localhost:8000';
+    const isTunnel = /\.rtfd|\.ngrok|\.loca\.lt|\.trycloudflare\.com/i.test(host);
+    if (isTunnel) {
+      redirectUri = 'https://lachart.onrender.com/api/integrations/strava/callback';
+    } else {
+      redirectUri = `${protocol}://${host}/api/integrations/strava/callback`;
+    }
+  }
+  return redirectUri || null;
+}
+
 // Import all Strava history progressively in background to avoid backend/API spikes.
 function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.now() / 1000)) {
   const lockKey = String(userId);
@@ -171,16 +187,9 @@ function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.n
 router.get('/strava/auth-url', (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID || 'STRAVA_CLIENT_ID';
   
-  let redirectUri = getStravaRedirectBase();
+  const redirectUri = resolveStravaOAuthRedirectUri(req);
   if (!redirectUri) {
-    const protocol = req.protocol || 'https';
-    const host = req.get('host') || 'localhost:8000';
-    const isTunnel = /\.rtfd|\.ngrok|\.loca\.lt|\.trycloudflare\.com/i.test(host);
-    if (isTunnel) {
-      redirectUri = 'https://lachart.onrender.com/api/integrations/strava/callback';
-    } else {
-      redirectUri = `${protocol}://${host}/api/integrations/strava/callback`;
-    }
+    return res.status(500).json({ error: 'Strava redirect URI could not be determined; set STRAVA_REDIRECT_URI or BACKEND_URL.' });
   }
   
   const scope = 'activity:read_all,profile:read_all,read_all';
@@ -217,11 +226,16 @@ router.get('/strava/callback', async (req, res) => {
     if (!client_id || !client_secret) {
       return res.status(500).json({ error: 'Strava credentials missing' });
     }
+    const redirectUri = resolveStravaOAuthRedirectUri(req);
+    if (!redirectUri) {
+      return res.status(500).json({ error: 'Strava redirect URI not configured' });
+    }
     const tokenResp = await axios.post('https://www.strava.com/oauth/token', {
       client_id,
       client_secret,
       code,
-      grant_type: 'authorization_code'
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
     });
     const { access_token, refresh_token, expires_at, athlete } = tokenResp.data || {};
     const user = await User.findById(decoded.userId);
@@ -265,8 +279,17 @@ router.get('/strava/callback', async (req, res) => {
     // Redirect back to app with a flag
     return res.redirect(`${frontend}/training-calendar?strava=connected`);
   } catch (err) {
-    console.error('Strava callback error', err.response?.data || err.message);
-    res.status(500).json({ error: 'Strava callback failed' });
+    const stravaBody = err.response?.data;
+    const stravaStatus = err.response?.status;
+    console.error('Strava callback error', stravaStatus || '', stravaBody || err.message);
+    if (stravaStatus && stravaBody != null) {
+      return res.status(502).json({
+        error: 'Strava token exchange failed',
+        stravaStatus,
+        details: stravaBody
+      });
+    }
+    res.status(500).json({ error: 'Strava callback failed', message: err.message });
   }
 });
 

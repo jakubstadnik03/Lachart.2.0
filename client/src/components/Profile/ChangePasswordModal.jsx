@@ -68,60 +68,60 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Change Password">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
         {error && (
-          <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+          <div className="rounded-lg bg-red-50 p-3 text-xs text-red-600 sm:text-sm">
             {error}
           </div>
         )}
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-medium text-gray-700">Current Password</label>
           <input
             type="password"
             value={formData.currentPassword}
             onChange={(e) => setFormData(prev => ({ ...prev, currentPassword: e.target.value }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+            className="mt-1 min-w-0 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             required
           />
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-medium text-gray-700">New Password</label>
           <input
             type="password"
             value={formData.newPassword}
             onChange={(e) => setFormData(prev => ({ ...prev, newPassword: e.target.value }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+            className="mt-1 min-w-0 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             required
             minLength={6}
           />
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
           <input
             type="password"
             value={formData.confirmPassword}
             onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+            className="mt-1 min-w-0 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             required
             minLength={6}
           />
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end sm:gap-3 sm:pt-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
             disabled={isLoading}
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-primary-dark disabled:opacity-50"
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50 sm:w-auto"
             disabled={isLoading}
           >
             {isLoading ? 'Changing...' : 'Change Password'}

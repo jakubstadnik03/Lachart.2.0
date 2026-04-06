@@ -9,7 +9,6 @@ const UserDao = require("../dao/userDao");
 const TrainingDao = require("../dao/trainingDao");
 const forgotPasswordAbl = require("../abl/user-abl/forgot-password-abl");
 const bcrypt = require("bcrypt");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config/jwt.config");
@@ -36,42 +35,8 @@ const {
   athleteCoachIdSet,
 } = require("../utils/athleteCoachAccess");
 
-function createEmailTransporter() {
-    const user = process.env.EMAIL_USER;
-    const pass = process.env.EMAIL_APP_PASSWORD;
-    if (!user || !pass) return null;
-
-    const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_SMTP_HOST;
-    const smtpPortRaw = process.env.SMTP_PORT || process.env.EMAIL_SMTP_PORT;
-    const smtpPort = smtpPortRaw ? Number(smtpPortRaw) : null;
-    const smtpSecure =
-        typeof process.env.SMTP_SECURE !== 'undefined'
-            ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
-            : null;
-
-    // If explicit SMTP host/port provided -> use generic SMTP (works for Zoho and others).
-    if (smtpHost && smtpPort) {
-        return nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpSecure === null ? smtpPort === 465 : smtpSecure, // common default
-            auth: { user, pass },
-        });
-    }
-
-    // Optional: allow service override.
-    const smtpService = process.env.SMTP_SERVICE || process.env.EMAIL_SMTP_SERVICE;
-    if (smtpService) {
-        return nodemailer.createTransport({
-            service: smtpService,
-            auth: { user, pass },
-        });
-    }
-
-    // If no explicit SMTP settings are provided, don't guess a provider.
-    // This keeps email sending consistent (Zoho SMTP when SMTP_HOST/PORT are set).
-    return null;
-}
+/** Shared transporter: defaults to Zoho when only EMAIL_USER + APP_PASSWORD are set (avoids null transport). */
+const { createEmailTransporter } = require("../utils/createEmailTransporter");
 
 /** Load linked coaches for an athlete (legacy coachId + coachIds). */
 async function getAthleteCoachesPayload(athleteId) {
@@ -2665,6 +2630,12 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         `;
 
         const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER, EMAIL_APP_PASSWORD, and optionally SMTP_HOST/SMTP_PORT (or rely on default Zoho service)."
+            });
+        }
 
         await transporter.sendMail({
             from: {
@@ -2697,8 +2668,20 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         console.error("Error sending thank you email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const isDbValidation = error && error.name === 'ValidationError';
+        const isNetwork =
+            /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET|socket|timeout/i.test(rawMessage) ||
+            (error.code && /^(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET)$/i.test(String(error.code)));
         const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send thank you email";
-        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        let reason = isAuthError
+            ? rawMessage
+            : isDbValidation
+              ? "Saving user after send failed (validation). Check server logs."
+              : isNetwork
+                ? "SMTP connection issue (timeout or network). Retry in a moment."
+                : process.env.NODE_ENV === 'development'
+                  ? rawMessage
+                  : "Check server logs. Common: invalid EMAIL_APP_PASSWORD, SMTP blocked, or transient provider errors.";
         if (isAuthError) {
             return res.status(400).json({
                 error: 'SMTP authentication failed',
@@ -3136,6 +3119,12 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         `;
 
         const transporter = createEmailTransporter();
+        if (!transporter) {
+            return res.status(503).json({
+                error: "Email is not configured on the server.",
+                reason: "Set EMAIL_USER, EMAIL_APP_PASSWORD, and optionally SMTP_HOST/SMTP_PORT (or default Zoho service)."
+            });
+        }
 
         await transporter.sendMail({
             from: {
@@ -3168,8 +3157,26 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         console.error("Error sending Strava reminder email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
         const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const isDbValidation = error && error.name === 'ValidationError';
+        const isNetwork =
+            /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET|socket|timeout/i.test(rawMessage) ||
+            (error.code && /^(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET)$/i.test(String(error.code)));
         const errorTitle = isAuthError ? "Email credentials invalid. Check EMAIL_APP_PASSWORD (Zoho app password)." : "Failed to send Strava reminder email";
-        const reason = isAuthError ? rawMessage : (process.env.NODE_ENV === 'development' ? rawMessage : "Check server logs. Common: missing/invalid EMAIL_USER or EMAIL_APP_PASSWORD.");
+        const reason = isAuthError
+            ? rawMessage
+            : isDbValidation
+              ? "Saving user after send failed (validation). Check server logs."
+              : isNetwork
+                ? "SMTP connection issue (timeout or network). Retry in a moment."
+                : process.env.NODE_ENV === 'development'
+                  ? rawMessage
+                  : "Check server logs. Common: invalid EMAIL_APP_PASSWORD, SMTP blocked, or transient provider errors.";
+        if (isAuthError) {
+            return res.status(400).json({
+                error: 'SMTP authentication failed',
+                reason: errorTitle
+            });
+        }
         res.status(500).json({ error: errorTitle, reason });
     }
 });

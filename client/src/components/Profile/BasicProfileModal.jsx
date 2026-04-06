@@ -78,25 +78,25 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Complete Your Profile">
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
         {error && (
-          <div className="p-4 text-sm text-red-700 bg-red-50 rounded-xl border border-red-200">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 sm:p-4 sm:text-sm">
             {error}
           </div>
         )}
 
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="mb-3 text-xs leading-relaxed text-gray-600 sm:mb-4 sm:text-sm">
           Let's start by completing your basic profile information.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 gap-3 min-w-0 md:grid-cols-2 md:gap-6">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Date of Birth *</label>
             <input
               type="date"
               value={formData.dateOfBirth || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               required
             />
           </div>
@@ -107,7 +107,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               type="text"
               value={formData.address || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="Enter your address"
             />
           </div>
@@ -118,7 +118,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               type="tel"
               value={formData.phone || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="+420 123 456 789"
             />
           </div>
@@ -129,7 +129,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               type="number"
               value={formData.height || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, height: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="175"
               min="0"
             />
@@ -141,7 +141,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               type="number"
               value={formData.weight || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, weight: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="70"
               min="0"
             />
@@ -152,7 +152,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
             <select
               value={formData.sport || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, sport: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               required
             >
               <option value="">Select sport</option>
@@ -168,7 +168,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
             <select
               value={formData.gender || 'male'}
               onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -181,7 +181,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               type="text"
               value={formData.specialization || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, specialization: e.target.value }))}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              className="min-w-0 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="e.g. Long distance, Sprint..."
             />
           </div>
@@ -192,23 +192,23 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
               value={formData.bio || ''}
               onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
               rows={4}
-              className="w-full px-4 py-3 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none"
+              className="min-w-0 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary sm:px-4 sm:py-3"
               placeholder="Tell us about yourself..."
             />
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:justify-end sm:gap-3 sm:pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 sm:w-auto sm:px-6 sm:py-3"
           >
             Skip for now
           </button>
           <button
             type="submit"
-            className="px-6 py-3 text-sm font-semibold text-white bg-primary rounded-xl hover:bg-primary-dark shadow-md hover:shadow-lg transition-all"
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg sm:w-auto sm:px-6 sm:py-3"
           >
             Continue
           </button>

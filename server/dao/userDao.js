@@ -117,12 +117,27 @@ class UserDao {
           user[key] = updateData[key];
           
           // Mark nested objects as modified so Mongoose saves them properly
-          if (key === 'powerZones' || key === 'heartRateZones' || key === 'units' || key === 'notifications' || key === 'thankYouEmail' || key === 'onboarding') {
+          if (
+            key === 'powerZones' ||
+            key === 'heartRateZones' ||
+            key === 'units' ||
+            key === 'notifications' ||
+            key === 'thankYouEmail' ||
+            key === 'reactivationEmail' ||
+            key === 'featureAnnouncementEmail' ||
+            key === 'stravaReminderEmail' ||
+            key === 'onboarding'
+          ) {
             user.markModified(key);
             console.log(`Marked ${key} as modified`);
           }
         }
       });
+
+      // Legacy DB: signupMethod null breaks enum validation on save (thank-you email updates, etc.)
+      if (user.signupMethod === null) {
+        user.set('signupMethod', undefined);
+      }
 
       // Save the document to persist nested object changes
       const savedUser = await user.save();

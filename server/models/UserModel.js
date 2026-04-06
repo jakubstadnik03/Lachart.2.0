@@ -273,11 +273,18 @@ const userSchema = new mongoose.Schema({
   },
   /**
    * How the account was first created (set for new signups; null for legacy users → inferred in API).
+   * Must allow null: Mongoose enum does not treat null as “unset”, and legacy DB rows have null.
    */
   signupMethod: {
     type: String,
-    enum: ['email', 'google', 'facebook', 'coach_invite'],
-    default: null
+    required: false,
+    default: null,
+    validate: {
+      validator(v) {
+        return v == null || ['email', 'google', 'facebook', 'coach_invite'].includes(v);
+      },
+      message: 'Invalid signupMethod'
+    }
   },
   // Geolocation captured at registration time
   registrationLocation: {
@@ -302,6 +309,14 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true
+});
+
+// Legacy rows / partial updates can leave signupMethod as null; Mongoose enum rejects null on save().
+userSchema.pre('validate', function normalizeSignupMethod(next) {
+  if (this.signupMethod === null) {
+    this.set('signupMethod', undefined);
+  }
+  next();
 });
 
 // Odstranění starého indexu, pokud existuje; oprava email indexu na sparse (umožní více uživatelů bez emailu)
