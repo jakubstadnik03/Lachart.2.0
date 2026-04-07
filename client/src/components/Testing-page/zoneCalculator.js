@@ -100,7 +100,8 @@ export const calculateZonesFromTest = (testData) => {
       zone2: { min: fmt(lt1_sec / 0.90), max: fmt(lt1_sec / 1.00) },
       zone3: { min: fmt(lt1_sec / 1.00), max: fmt(lt2_sec / 0.95) },
       zone4: { min: fmt(lt2_sec / 0.96), max: fmt(lt2_sec / 1.04) },
-      zone5: { min: fmt(lt2_sec / 1.05), max: fmt(lt2_sec / 1.30) },
+      // Rychlý okraj Z5: užší fialový pás (dřív 1.30 → 1.16 → 1.10)
+      zone5: { min: fmt(lt2_sec / 1.05), max: fmt(lt2_sec / 1.10) },
     },
     heartRate: heartRateZones
   };

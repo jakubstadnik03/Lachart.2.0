@@ -12,7 +12,12 @@ import {
   Tooltip,
   Legend as ChartLegend,
 } from 'chart.js';
-import DataTable, { calculateThresholds, calculatePolynomialRegression, calculatePolynomialRegressionLactateToHR } from './DataTable';
+import DataTable, {
+  calculateThresholds,
+  calculatePolynomialRegression,
+  calculatePolynomialRegressionLactateToHR,
+  isThresholdDebugEnabled,
+} from './DataTable';
 import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
@@ -412,6 +417,307 @@ const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
   }
 };
 
+/** Zóny + LT1/LT2 tooltipy — musí být v Chart.register + options.plugins (react-chartjs-2 ignoruje změny plugins z props po mountu). */
+const lactateZoneLtpOverlayPlugin = {
+  id: 'lactateZoneLtpOverlay',
+  beforeDraw(chart) {
+    const opts = chart.options.plugins?.lactateZoneLtpOverlay;
+    if (!opts) return;
+
+    const ctx = chart.ctx;
+    const chartArea = chart.chartArea;
+    const xScale = chart.scales.x;
+    const cv = opts.chartViewRef?.current ?? 'power';
+    const { zonesVisibleRef, ltpLinesVisibleRef } = opts;
+    const sportKey = opts.sportKey;
+    const isPaceSport = opts.isPaceSport;
+    const inputMode = opts.inputMode;
+    const isSwimming = opts.isSwimming;
+    const unitSystem = opts.unitSystem;
+
+    if (zonesVisibleRef?.current) {
+      const zoneDatasets = chart.data.datasets.filter((ds) => ds.zoneKey);
+
+      zoneDatasets.forEach((dataset) => {
+        if (!dataset.zoneKey) return;
+
+        ctx.save();
+        ctx.fillStyle = dataset.backgroundColor;
+
+        const minX =
+          dataset.minX !== undefined ? dataset.minX : dataset.data?.[0]?.x;
+        const maxX =
+          dataset.maxX !== undefined ? dataset.maxX : dataset.data?.[1]?.x;
+
+        if (minX === undefined || maxX === undefined) {
+          ctx.restore();
+          return;
+        }
+
+        const x1 = xScale.getPixelForValue(minX);
+        const x2 = xScale.getPixelForValue(maxX);
+        const y1 = chartArea.top;
+        const y2 = chartArea.bottom;
+
+        const leftX = Math.min(x1, x2);
+        const rightX = Math.max(x1, x2);
+        const width = rightX - leftX;
+
+        ctx.fillRect(leftX, y1, width, y2 - y1);
+        ctx.restore();
+      });
+    }
+
+    if (
+      (cv === 'power' || cv === 'hr') &&
+      ltpLinesVisibleRef?.current
+    ) {
+      const ltp1Dataset = chart.data.datasets.find((ds) => ds.label === 'LTP1');
+      const ltp2Dataset = chart.data.datasets.find((ds) => ds.label === 'LTP2');
+
+      const ltp1Index = ltp1Dataset
+        ? chart.data.datasets.findIndex((ds) => ds.label === 'LTP1')
+        : -1;
+      const ltp2Index = ltp2Dataset
+        ? chart.data.datasets.findIndex((ds) => ds.label === 'LTP2')
+        : -1;
+      const yAxisTitle = String(
+        chart?.options?.scales?.y?.title?.text || ''
+      ).toLowerCase();
+      const isHRView =
+        yAxisTitle.includes('heart rate') || yAxisTitle.includes('tepy');
+
+      const labels = [];
+
+      if (isHRView) {
+        [
+          { dataset: ltp1Dataset, key: 'LTP1', chartDsIndex: ltp1Index },
+          { dataset: ltp2Dataset, key: 'LTP2', chartDsIndex: ltp2Index },
+        ].forEach(({ dataset, key, chartDsIndex }) => {
+          if (!dataset || !dataset.data || dataset.data.length === 0) return;
+          if (
+            chartDsIndex >= 0 &&
+            typeof chart.isDatasetVisible === 'function' &&
+            !chart.isDatasetVisible(chartDsIndex)
+          ) {
+            return;
+          }
+
+          const x = Number(dataset.data[0]?.x);
+          if (!Number.isFinite(x)) return;
+          const xPixel = xScale.getPixelForValue(x);
+          const lineColor = colorMap[key] || '#2196F3';
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = lineColor;
+          ctx.moveTo(xPixel, chartArea.top);
+          ctx.lineTo(xPixel, chartArea.bottom);
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
+
+      [
+        { dataset: ltp1Dataset, index: 0, chartDsIndex: ltp1Index },
+        { dataset: ltp2Dataset, index: 1, chartDsIndex: ltp2Index },
+      ].forEach(({ dataset, index, chartDsIndex }) => {
+        if (!dataset || !dataset.data || dataset.data.length === 0) return;
+
+        if (
+          chartDsIndex >= 0 &&
+          typeof chart.isDatasetVisible === 'function' &&
+          !chart.isDatasetVisible(chartDsIndex)
+        ) {
+          return;
+        }
+
+        const point = dataset.data[0];
+        const xPixel = xScale.getPixelForValue(point.x);
+        const label = index === 0 ? 'LT1' : 'LT2';
+
+        let valueText = '';
+        let lactateText = '';
+
+        if (isHRView) {
+          lactateText = `Lactate: ${Number(point.x).toFixed(2)} mmol/L`;
+          valueText = `HR: ${Math.round(Number(point.y))} bpm`;
+        } else {
+          const isBikeSport = sportKey === 'bike';
+          const useSpeedLabel = isPaceSport && inputMode === 'speed';
+
+          if (isPaceSport && useSpeedLabel) {
+            const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
+            valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
+          } else if (isPaceSport) {
+            const paceStr = formatSecondsToMMSS(point.x);
+            const unit = isSwimming
+              ? unitSystem === 'imperial'
+                ? '/100yd'
+                : '/100m'
+              : unitSystem === 'imperial'
+                ? '/mile'
+                : '/km';
+            valueText = `Pace: ${paceStr}${unit}`;
+          } else if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
+            valueText = `Power: ${Math.round(point.x)}W`;
+          } else {
+            valueText = `Power: ${Math.round(point.x)}W`;
+          }
+          lactateText = `${Number(point.y).toFixed(2)} mmol/L`;
+        }
+
+        labels.push({
+          xPixel,
+          label,
+          valueText,
+          lactateText,
+          fullLabel: isHRView
+            ? `${label}: ${lactateText} | ${valueText}`
+            : `${label}: ${valueText} | ${lactateText}`,
+          isHRView,
+        });
+      });
+
+      if (labels.length > 0) {
+        ctx.save();
+
+        const padXBox = 10;
+        const padYBox = 7;
+        const lineGap = 3;
+        const fontPrimary =
+          '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        const fontSecondary =
+          '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+        const topMargin = 6;
+        const accentStripH = 3;
+
+        const drawTooltip = (labelData, boxTop) => {
+          const isLt1 = labelData.label === 'LT1';
+          const line1 = labelData.isHRView
+            ? `${labelData.label}: ${labelData.lactateText}`
+            : labelData.valueText;
+          const line2 = labelData.isHRView
+            ? labelData.valueText
+            : labelData.lactateText;
+
+          const accent =
+            labelData.label === 'LT1'
+              ? colorMap['LTP1'] || '#16a34a'
+              : colorMap['LTP2'] || '#dc2626';
+
+          ctx.font = fontPrimary;
+          const w1 = ctx.measureText(line1).width;
+          ctx.font = fontSecondary;
+          const w2 = ctx.measureText(line2).width;
+          const boxW = Math.ceil(Math.max(w1, w2) + padXBox * 2 + 4);
+          const line1H = 13;
+          const line2H = 12;
+          const contentH =
+            accentStripH + padYBox + line1H + lineGap + line2H + padYBox;
+
+          const margin = 4;
+          const gapFromLine = 10;
+          let bx;
+          if (isLt1) {
+            bx = labelData.xPixel - gapFromLine - boxW;
+          } else {
+            bx = labelData.xPixel + gapFromLine;
+          }
+          bx = Math.max(
+            chartArea.left + margin,
+            Math.min(bx, chartArea.right - boxW - margin)
+          );
+          const by = boxTop;
+          const lineX = labelData.xPixel;
+          const r = 8;
+
+          ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
+          ctx.shadowBlur = 10;
+          ctx.shadowOffsetY = 2;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+          ctx.strokeStyle = 'rgba(15, 23, 42, 0.1)';
+          ctx.lineWidth = 1;
+
+          ctx.beginPath();
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(bx, by, boxW, contentH, r);
+          } else {
+            const rr = r;
+            ctx.moveTo(bx + rr, by);
+            ctx.arcTo(bx + boxW, by, bx + boxW, by + contentH, rr);
+            ctx.arcTo(bx + boxW, by + contentH, bx, by + contentH, rr);
+            ctx.arcTo(bx, by + contentH, bx, by, rr);
+            ctx.arcTo(bx, by, bx + boxW, by, rr);
+            ctx.closePath();
+          }
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.stroke();
+
+          ctx.fillStyle = accent;
+          ctx.fillRect(bx + r * 0.35, by + 0.5, boxW - r * 0.7, accentStripH);
+
+          const textX = isLt1 ? bx + boxW - padXBox : bx + padXBox;
+          let ty = by + accentStripH + padYBox + line1H - 2;
+          ctx.textBaseline = 'alphabetic';
+          ctx.textAlign = isLt1 ? 'right' : 'left';
+          ctx.font = fontPrimary;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+          ctx.fillText(line1, textX, ty);
+          ty += lineGap + line2H;
+          ctx.font = fontSecondary;
+          ctx.fillStyle = 'rgba(71, 85, 105, 0.95)';
+          ctx.fillText(line2, textX, ty);
+
+          // Boční šipka k svislé čáře: LT1 box vlevo → šipka z pravého okraje k čáře; LT2 box vpravo → z levého okraje k čáře
+          const midY = by + contentH / 2;
+          const halfBase = 6;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+          ctx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
+          ctx.lineWidth = 1;
+          if (isLt1) {
+            const baseX = bx + boxW;
+            const tipX = lineX - 3;
+            if (tipX > baseX) {
+              ctx.beginPath();
+              ctx.moveTo(baseX, midY - halfBase);
+              ctx.lineTo(baseX, midY + halfBase);
+              ctx.lineTo(tipX, midY);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+          } else {
+            const baseX = bx;
+            const tipX = lineX + 3;
+            if (tipX < baseX) {
+              ctx.beginPath();
+              ctx.moveTo(baseX, midY - halfBase);
+              ctx.lineTo(baseX, midY + halfBase);
+              ctx.lineTo(tipX, midY);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+        };
+
+        const boxTop = chartArea.top + topMargin;
+        labels.forEach((labelData) => {
+          drawTooltip(labelData, boxTop);
+        });
+
+        ctx.restore();
+      }
+    }
+  },
+};
+
+ChartJS.register(lactateZoneLtpOverlayPlugin);
 
 const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
@@ -429,6 +735,10 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const zonesVisibleRef = useRef(true); // Ref for plugin access
   const ltpLinesVisibleRef = useRef(true); // Ref for plugin access to ltpLinesVisible state
   const [chartView, setChartView] = useState('power'); // 'power' = power/pace vs lactate, 'hr' = heart rate vs lactate
+  const chartViewRef = useRef(chartView);
+  useEffect(() => {
+    chartViewRef.current = chartView;
+  }, [chartView]);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   // Align with DataTable.calculateThresholds: API may send cycling|running|swimming
   const sportKey = (() => {
@@ -665,6 +975,14 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   };
 
   const thresholds = calculateThresholds(mockData);
+  if (isThresholdDebugEnabled()) {
+    console.log('[LactateCurveCalculator] thresholds (tabulka + graf)', {
+      LTP1_W: thresholds['LTP1'],
+      LTP2_W: thresholds['LTP2'],
+      LTP1_La: thresholds.lactates?.['LTP1'],
+      LTP2_La: thresholds.lactates?.['LTP2'],
+    });
+  }
   const results = mockData.results;
   
   // Calculate training zones for visualization
@@ -1365,10 +1683,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             // Same logic as speed mode but with reverse axis
             if (zoneKey === 'zone1') {
               // Jen kousíček pomaleji než baseline / první krok (~10 %), ne celá modelová Z1
-              zoneMinX =
+              const modelLeft =
                 slowNibbleX != null
                   ? Math.min(minPace, Math.max(maxPace, slowNibbleX))
                   : minPace;
+              // Omezit levý okraj Z1: nesahat daleko za nejpomalejší naměřený krok (symetrický pocit s pravým okrajem)
+              const zoneSpan = Math.max(maxXForZones - minXForZones, 1e-9);
+              const z1SlowCap =
+                maxXForZones + Math.max(zoneSpan * 0.04, 12);
+              zoneMinX = Math.min(modelLeft, z1SlowCap);
+              zoneMinX = Math.max(zoneMinX, maxPace + 1e-6);
             } else {
               // Other zones start where previous zone ended
               zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
@@ -1514,6 +1838,24 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       .filter(ds => ds !== null)
       .flatMap(ds => ds.data.map(d => d.x)),
   ].filter(x => !isNaN(x) && isFinite(x));
+
+  // Pace + reverse: zahrnout „rychlý“ okraj Z5, ať není úzký pruh a osa sahá až k modelové hranici
+  if (isPaceSport && inputMode === 'pace' && isReverse && zones?.pace?.zone5?.max) {
+    const raw = zones.pace.zone5.max;
+    let z5fast =
+      typeof raw === 'string' && raw.includes(':')
+        ? (() => {
+            const p = raw.split(':');
+            if (p.length === 2) {
+              return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+            }
+            return parseFloat(raw);
+          })()
+        : raw;
+    if (typeof z5fast === 'number' && !isNaN(z5fast) && isFinite(z5fast)) {
+      allXValues.push(z5fast);
+    }
+  }
   
   if (allXValues.length === 0) {
     console.warn('[LactateCurveCalculator] No valid X values for axis');
@@ -1525,7 +1867,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const dataXRange = Math.max(dataMaxX - dataMinX, 1e-9);
   // Malý okraj jen u „rychlé“ strany dat (bez velké bílé díry / přetékání)
   const padOuter = Math.max(dataXRange * 0.02, 1e-6);
-  const z1SlowExtent = slowNibbleX;
+  const z1ZoneForAxis = zoneDatasets.find(d => d.zoneKey === 'zone1');
+  const z1SlowExtent = z1ZoneForAxis ? z1ZoneForAxis.minX : slowNibbleX;
 
   let xScaleMin;
   let xScaleMax;
@@ -1534,13 +1877,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     xScaleMin = Math.max(dataMinX - padOuter, 0);
     const extendSlow = z1SlowExtent != null && z1SlowExtent > dataMaxX;
     const slowBound = extendSlow ? z1SlowExtent : dataMaxX;
-    // Po prodloužení k nibblu už nepřidávat padding — jinak bílá mezera vlevo
-    xScaleMax = extendSlow ? slowBound : slowBound + padOuter;
+    // Stejný datový okraj na pomalé straně jako na rychlé (dřív se při extendSlow vynechával vlevo)
+    xScaleMax = slowBound + padOuter;
   } else {
     // Speed / power: pomalejší = menší X vlevo
     const extendSlow = z1SlowExtent != null && z1SlowExtent < dataMinX;
     const slowBound = extendSlow ? z1SlowExtent : dataMinX;
-    xScaleMin = extendSlow ? slowBound : Math.max(slowBound - padOuter, 0);
+    xScaleMin = Math.max(slowBound - padOuter, 0);
     xScaleMax = dataMaxX + padOuter;
   }
 
@@ -1680,10 +2023,29 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     
     return null;
   };
+
+  const lactateZoneLtpOverlayOpts = {
+    zonesVisibleRef,
+    ltpLinesVisibleRef,
+    chartViewRef,
+    sportKey,
+    isPaceSport,
+    inputMode,
+    isSwimming,
+    unitSystem,
+  };
   
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        left: 8,
+        right: 8,
+        top: 4,
+        bottom: 4,
+      },
+    },
     scales: {
       x: {
         type: 'linear',
@@ -1801,6 +2163,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       } : {}),
     },
     plugins: {
+      lactateZoneLtpOverlay: lactateZoneLtpOverlayOpts,
       legend: { display: false },
       tooltip: {
         enabled: true,
@@ -2040,8 +2403,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     interaction: { mode: 'nearest', intersect: false },
     layout: {
       padding: {
-        right: 20 // Add padding on right for HR view
-      }
+        left: 8,
+        right: 8,
+        top: 4,
+        bottom: 4,
+      },
     },
     scales: {
       x: {
@@ -2063,6 +2429,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       },
     },
     plugins: {
+      lactateZoneLtpOverlay: lactateZoneLtpOverlayOpts,
       legend: { display: false },
       tooltip: {
         enabled: true,
@@ -2234,198 +2601,6 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               ref={chartRef} 
               data={finalData} 
               options={finalOptions}
-              plugins={[{
-                id: 'zonePlugin',
-                beforeDraw: (chart) => {
-                  const ctx = chart.ctx;
-                  const chartArea = chart.chartArea;
-                  const xScale = chart.scales.x;
-                  
-                  // Draw zones if they are visible
-                  if (zonesVisibleRef.current) {
-                  // Find zone datasets
-                  const zoneDatasets = chart.data.datasets.filter(ds => ds.zoneKey);
-                  
-                  zoneDatasets.forEach((dataset) => {
-                    if (!dataset.zoneKey) return;
-                    
-                    ctx.save();
-                    ctx.fillStyle = dataset.backgroundColor;
-                    
-                    // Get zone boundaries
-                    const minX = dataset.minX !== undefined ? dataset.minX : (dataset.data?.[0]?.x);
-                    const maxX = dataset.maxX !== undefined ? dataset.maxX : (dataset.data?.[1]?.x);
-                    
-                    if (minX === undefined || maxX === undefined) {
-                      ctx.restore();
-                      return;
-                    }
-                    
-                    // Convert values to pixel positions
-                    // Chart.js handles reverse axis automatically in getPixelForValue
-                    const x1 = xScale.getPixelForValue(minX);
-                    const x2 = xScale.getPixelForValue(maxX);
-                    const y1 = chartArea.top;
-                    const y2 = chartArea.bottom;
-                    
-                    // Ensure x1 < x2 for proper rectangle drawing
-                    // (Chart.js reverse axis may return x1 > x2, so we need to handle that)
-                    const leftX = Math.min(x1, x2);
-                    const rightX = Math.max(x1, x2);
-                    const width = rightX - leftX;
-                    
-                    // Draw rectangle
-                    ctx.fillRect(leftX, y1, width, y2 - y1);
-                    ctx.restore();
-                  });
-                  }
-                  
-                  // Draw labels for LTP1 and LTP2 thresholds.
-                  // In power view: X-axis is Power/Pace/Speed, Y-axis is Lactate.
-                  // In HR view:     X-axis is Lactate,   Y-axis is HR.
-                  if ((chartView === 'power' || chartView === 'hr') && ltpLinesVisibleRef.current) {
-                    const ltp1Dataset = chart.data.datasets.find(ds => ds.label === 'LTP1');
-                    const ltp2Dataset = chart.data.datasets.find(ds => ds.label === 'LTP2');
-                    
-                    const ltp1Index = ltp1Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP1') : -1;
-                    const ltp2Index = ltp2Dataset ? chart.data.datasets.findIndex(ds => ds.label === 'LTP2') : -1;
-                    // Detect actual rendered mode from chart scales (more reliable than React closure/state inside plugin).
-                    const yAxisTitle = String(chart?.options?.scales?.y?.title?.text || '').toLowerCase();
-                    const isHRView = yAxisTitle.includes('heart rate') || yAxisTitle.includes('tepy');
-                    
-                    const labels = [];
-
-                    // In HR view we don't have dedicated LTP*_line datasets,
-                    // so draw dashed vertical lines directly from visible LT points.
-                    if (isHRView) {
-                      [
-                        { dataset: ltp1Dataset, key: 'LTP1', chartDsIndex: ltp1Index },
-                        { dataset: ltp2Dataset, key: 'LTP2', chartDsIndex: ltp2Index }
-                      ].forEach(({ dataset, key, chartDsIndex }) => {
-                        if (!dataset || !dataset.data || dataset.data.length === 0) return;
-                        if (chartDsIndex >= 0 && typeof chart.isDatasetVisible === 'function' && !chart.isDatasetVisible(chartDsIndex)) {
-                          return;
-                        }
-
-                        const x = Number(dataset.data[0]?.x);
-                        if (!Number.isFinite(x)) return;
-                        const xPixel = xScale.getPixelForValue(x);
-                        const lineColor = colorMap[key] || '#2196F3';
-
-                        ctx.save();
-                        ctx.beginPath();
-                        ctx.setLineDash([5, 5]);
-                        ctx.lineWidth = 2;
-                        ctx.strokeStyle = lineColor;
-                        ctx.moveTo(xPixel, chartArea.top);
-                        ctx.lineTo(xPixel, chartArea.bottom);
-                        ctx.stroke();
-                        ctx.restore();
-                      });
-                    }
-                    
-                    // Collect label data
-                    [
-                      { dataset: ltp1Dataset, index: 0, chartDsIndex: ltp1Index },
-                      { dataset: ltp2Dataset, index: 1, chartDsIndex: ltp2Index }
-                    ].forEach(({ dataset, index, chartDsIndex }) => {
-                      if (!dataset || !dataset.data || dataset.data.length === 0) return;
-
-                      // Respect HRLegend/Legend toggles
-                      if (chartDsIndex >= 0 && typeof chart.isDatasetVisible === 'function' && !chart.isDatasetVisible(chartDsIndex)) {
-                        return;
-                      }
-                      
-                      const point = dataset.data[0];
-                      const xPixel = xScale.getPixelForValue(point.x);
-                      const label = index === 0 ? 'LT1' : 'LT2';
-                      
-                      let valueText = '';
-                      let lactateText = '';
-
-                      if (isHRView) {
-                        // HR view: point.x = lactate, point.y = HR
-                        lactateText = `Lactate: ${Number(point.x).toFixed(2)} mmol/L`;
-                        valueText = `HR: ${Math.round(Number(point.y))} bpm`;
-                      } else {
-                        // Power view: point.x = Power/Pace/Speed, point.y = lactate
-                        const isBikeSport = sportKey === 'bike';
-                        // When axis is Speed (km/h), point.x is in 0.5–30 (run) or 0.5–8 (swim). When axis is Pace, point.x is seconds (e.g. 180–600).
-                        // Pouze podle efektivního inputMode — heuristika x<100 kazila rychlé tempa v sekundách
-                        const useSpeedLabel = isPaceSport && inputMode === 'speed';
-
-                        // Pace sporty + rychlost nejdřív — ať „Power“ nevyhraje kvůli case / edge case v sportKey
-                        if (isPaceSport && useSpeedLabel) {
-                          const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
-                          valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
-                        } else if (isPaceSport) {
-                          const paceStr = formatSecondsToMMSS(point.x);
-                          const unit = isSwimming
-                            ? (unitSystem === 'imperial' ? '/100yd' : '/100m')
-                            : (unitSystem === 'imperial' ? '/mile' : '/km');
-                          valueText = `Pace: ${paceStr}${unit}`;
-                        } else if (isBikeSport || (!isPaceSport && point.x >= 20 && point.x <= 1000)) {
-                          valueText = `Power: ${Math.round(point.x)}W`;
-                        } else {
-                          valueText = `Power: ${Math.round(point.x)}W`;
-                        }
-                        lactateText = `${Number(point.y).toFixed(2)} mmol/L`;
-                      }
-                      
-                      labels.push({
-                        xPixel,
-                        label,
-                        valueText,
-                        lactateText,
-                        fullLabel: isHRView
-                          ? `${label}: ${lactateText} | ${valueText}`
-                          : `${label}: ${valueText} | ${lactateText}`
-                      });
-                    });
-                    
-                    // Draw labels with collision detection
-                    if (labels.length > 0) {
-                      ctx.save();
-                      ctx.font = '11px sans-serif'; // Smaller font
-                      ctx.fillStyle = '#000000'; // Black text
-                      ctx.textAlign = 'left'; // Align to left (text will be to the right of line)
-                      ctx.textBaseline = 'middle';
-                      
-                      // Measure text width to detect overlaps
-                      const minSpacing = 150; // Minimum spacing between labels in pixels
-                      const labelHeight = 14; // Height of each label line
-                      
-                      labels.forEach((labelData, index) => {
-                        let labelX = labelData.xPixel + 8; // 8px offset from line
-                        let labelY = chartArea.top + 15; // Near top
-                        
-                        // Check if labels are too close together
-                        if (labels.length === 2 && index === 1) {
-                          const prevLabel = labels[0];
-                          const prevLabelX = prevLabel.xPixel + 8;
-                          
-                          // If labels would overlap, stack them vertically
-                          if (Math.abs(labelData.xPixel - prevLabel.xPixel) < minSpacing) {
-                            // Stack vertically - second label below first
-                            labelY = chartArea.top + 15 + labelHeight;
-                            // Try to align X positions if they're very close
-                            if (Math.abs(labelData.xPixel - prevLabel.xPixel) < 50) {
-                              labelX = prevLabelX; // Align X positions when very close
-                            }
-                          } else {
-                            // Labels are far enough apart, can use same Y
-                            labelY = chartArea.top + 15;
-                          }
-                        }
-                        
-                        ctx.fillText(labelData.fullLabel, labelX, labelY);
-                      });
-                      
-                      ctx.restore();
-                    }
-                  }
-                }
-              }]}
             />
             )}
           </div>
