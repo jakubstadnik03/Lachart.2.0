@@ -618,6 +618,8 @@ const AdminDashboard = () => {
           await sendThankYouEmail(userId);
         } else if (marketingEmailType === 'reactivation') {
           await sendReactivationEmail(userId);
+        } else if (marketingEmailType === 'googleLoginFix') {
+          await sendFeatureAnnouncementEmail(userId, 'googleLoginFix');
         } else {
           await sendFeatureAnnouncementEmail(userId, featureAnnouncementEmailType);
         }
@@ -727,6 +729,9 @@ const AdminDashboard = () => {
       </div>
     );
   }
+
+  const isFeatureAnnouncementMode =
+    marketingEmailType === 'featureAnnouncement' || marketingEmailType === 'googleLoginFix';
 
   const tabs = [
     { id: 'overview', name: 'Overview', icon: '📊' },
@@ -1871,6 +1876,7 @@ const AdminDashboard = () => {
                       <option value="thankYou">Thank You Email</option>
                       <option value="reactivation">Reactivation Email</option>
                       <option value="featureAnnouncement">Feature Announcement</option>
+                      <option value="googleLoginFix">Google Login Fix + New Features</option>
                     </select>
                     {marketingEmailType === 'featureAnnouncement' && (
                       <select
@@ -1951,7 +1957,7 @@ const AdminDashboard = () => {
                       {selectedUsersForBulk.length} user{selectedUsersForBulk.length !== 1 ? 's' : ''} selected
                     </h4>
                     <p className="text-xs sm:text-sm text-blue-700 mt-1">
-                      Ready to send {marketingEmailType === 'thankYou' ? 'thank you' : 'reactivation'} emails
+                      Ready to send {marketingEmailType === 'thankYou' ? 'thank you' : marketingEmailType === 'reactivation' ? 'reactivation' : 'feature update'} emails
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -2030,6 +2036,7 @@ const AdminDashboard = () => {
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                   {marketingEmailType === 'thankYou' ? 'Thank You Email' : 
                    marketingEmailType === 'reactivation' ? 'Reactivation Email' :
+                   marketingEmailType === 'googleLoginFix' ? 'Google Login Fix + New Features Email' :
                    'Feature Announcement Email'} Recipients
                 </h3>
               </div>
@@ -2153,7 +2160,7 @@ const AdminDashboard = () => {
                                     Not sent
                                   </span>
                                 )
-                              ) : marketingEmailType === 'featureAnnouncement' ? (
+                              ) : isFeatureAnnouncementMode ? (
                                 user.featureAnnouncementSent ? (
                                   <div>
                                     <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
@@ -2191,7 +2198,7 @@ const AdminDashboard = () => {
                                 type="button"
                                 disabled={
                                   (marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
-                                   marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                   isFeatureAnnouncementMode ? featureAnnouncementEmailLoadingUserId :
                                    emailLoadingUserId) === user._id
                                 }
                                 onClick={() => {
@@ -2199,24 +2206,26 @@ const AdminDashboard = () => {
                                     handleSendThankYouEmail(user);
                                   } else if (marketingEmailType === 'reactivation') {
                                     handleSendReactivationEmail(user);
+                                  } else if (marketingEmailType === 'googleLoginFix') {
+                                    handleSendFeatureAnnouncementEmail(user, 'googleLoginFix');
                                   } else {
                                     handleSendFeatureAnnouncementEmail(user);
                                   }
                                 }}
                                 className={`text-xs ${
                                   (marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
-                                   marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                   isFeatureAnnouncementMode ? featureAnnouncementEmailLoadingUserId :
                                    emailLoadingUserId) === user._id
                                     ? 'text-gray-400 cursor-wait'
                                     : marketingEmailType === 'thankYou'
                                     ? 'text-green-600 hover:text-green-700'
-                                    : marketingEmailType === 'featureAnnouncement'
+                                    : isFeatureAnnouncementMode
                                     ? 'text-blue-600 hover:text-blue-700'
                                     : 'text-emerald-600 hover:text-emerald-700'
                                 }`}
                               >
                                 {(marketingEmailType === 'thankYou' ? thankYouEmailLoadingUserId : 
-                                  marketingEmailType === 'featureAnnouncement' ? featureAnnouncementEmailLoadingUserId :
+                                  isFeatureAnnouncementMode ? featureAnnouncementEmailLoadingUserId :
                                   emailLoadingUserId) === user._id
                                   ? 'Sending…'
                                   : 'Send Now'
