@@ -1888,6 +1888,10 @@ router.post("/google-auth", async (req, res) => {
         let user = await userDao.findByEmail(email);
         
         if (!user) {
+            const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+            const emailVerificationTokenExpires = new Date();
+            emailVerificationTokenExpires.setHours(emailVerificationTokenExpires.getHours() + 24);
+
             // Create new user if doesn't exist
             user = await userDao.createUser({
                 email,
@@ -1895,6 +1899,9 @@ router.post("/google-auth", async (req, res) => {
                 surname: lastName,
                 googleId,
                 signupMethod: 'google',
+                emailVerified: false,
+                emailVerificationToken,
+                emailVerificationTokenExpires,
                 role: normalizedRole,
                 athletes: normalizedRole === 'coach' ? [] : undefined,
                 isRegistrationComplete: true,
@@ -1907,6 +1914,17 @@ router.post("/google-auth", async (req, res) => {
             });
             // Save registration location (fire-and-forget)
             saveRegistrationLocation(userDao, user._id, req);
+
+            // Send verification email (best effort, should not block Google login).
+            try {
+                const { sendEmailVerificationEmail } = require("../services/emailVerificationService");
+                const emailResult = await sendEmailVerificationEmail(user, emailVerificationToken);
+                if (!emailResult?.sent) {
+                    console.warn("Google signup verification email not sent:", emailResult?.reason);
+                }
+            } catch (emailError) {
+                console.error("Google signup verification email error:", emailError);
+            }
         } else if (!user.googleId) {
             // Link Google account to existing user
             user = await userDao.updateUser(user._id, { googleId });

@@ -29,6 +29,7 @@ const AdminDashboard = () => {
   const [chartGroupBy, setChartGroupBy] = useState('day'); // 'day' or 'week'
   const [marketingEmailType, setMarketingEmailType] = useState('thankYou'); // 'thankYou', 'reactivation', or 'featureAnnouncement'
   const [marketingFilter, setMarketingFilter] = useState('all'); // 'all', 'notSent', 'sent', 'recommended'
+  const [marketingSearchQuery, setMarketingSearchQuery] = useState('');
   const [selectedUsersForBulk, setSelectedUsersForBulk] = useState([]);
   const [bulkSending, setBulkSending] = useState(false);
   const [deleteLoadingUserId, setDeleteLoadingUserId] = useState(null);
@@ -565,8 +566,17 @@ const AdminDashboard = () => {
       }
     }
 
+    if (marketingSearchQuery.trim()) {
+      const query = marketingSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter((u) => {
+        const name = `${u.name || ''} ${u.surname || ''}`.toLowerCase();
+        const email = (u.email || '').toLowerCase();
+        return name.includes(query) || email.includes(query);
+      });
+    }
+
     return filtered;
-  }, [marketingUsers, marketingFilter, marketingEmailType]);
+  }, [marketingUsers, marketingFilter, marketingEmailType, marketingSearchQuery]);
 
   const emailCampaignStats = useMemo(() => {
     const totalUsers = users.length;
@@ -1908,6 +1918,19 @@ const AdminDashboard = () => {
                       <option value="recommended">Recommended</option>
                     </select>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600">Search:</label>
+                    <input
+                      type="text"
+                      value={marketingSearchQuery}
+                      onChange={(e) => {
+                        setMarketingSearchQuery(e.target.value);
+                        setSelectedUsersForBulk([]);
+                      }}
+                      placeholder="Name or email..."
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -2039,6 +2062,9 @@ const AdminDashboard = () => {
                    marketingEmailType === 'googleLoginFix' ? 'Google Login Fix + New Features Email' :
                    'Feature Announcement Email'} Recipients
                 </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Showing {filteredMarketingUsers.length} of {marketingUsers.length} eligible users
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">

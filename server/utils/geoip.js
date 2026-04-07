@@ -54,8 +54,14 @@ async function saveRegistrationLocation(userDao, userId, req) {
     if (location) {
       await userDao.updateUser(userId, { registrationLocation: location });
     } else if (ip) {
-      // At least save the raw IP even if geo lookup failed
-      await userDao.updateUser(userId, { 'registrationLocation.ip': ip });
+      // At least save the raw IP even if geo lookup failed.
+      // Use full object update because userDao.updateUser doesn't support dotted paths.
+      await userDao.updateUser(userId, {
+        registrationLocation: {
+          ip,
+          resolvedAt: new Date(),
+        },
+      });
     }
   } catch (err) {
     console.error('[GeoIP] Failed to save registration location:', err.message);
