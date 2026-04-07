@@ -2890,7 +2890,7 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
         }
 
         const { userId } = req.params;
-        const { emailType = 'newFeatures' } = req.body; // 'newFeatures', 'improvements', 'tips', 'community'
+        const { emailType = 'newFeatures' } = req.body; // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community'
         
         const targetUser = await userDao.findById(userId);
         if (!targetUser) {
@@ -2940,6 +2940,32 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
                     <p style="margin-top: 20px;">I'd love to hear your feedback on these new features!</p>
                     <p style="margin-top: 30px;">Thanks for being part of the LaChart community!</p>
                     <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            case 'googleLoginFix':
+                title = 'Google Login Fix + New Features in LaChart';
+                subject = 'Google Login issue fixed + New Features in LaChart';
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>Quick update: the recent <strong>Google login issue has been fixed</strong> and should work normally now.</p>
+                    <p style="margin-top: 30px;">
+                        <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 20px 0;" />
+                    </p>
+                    <h3 style="margin-top: 30px; color: #767EB5;">What's new</h3>
+                    <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>Generate PDF from test:</strong> export a complete report directly from the lactate curve.</li>
+                        <li><strong>Better swim support:</strong> improved pace units and interval handling.</li>
+                        <li><strong>Smoother auth flow:</strong> less redirect flicker and better login feedback.</li>
+                        <li><strong>More stable Strava sync:</strong> improved token handling and autosync reliability.</li>
+                    </ul>
+                    <p style="margin-top: 22px; margin-bottom: 10px;"><strong>Quick actions</strong></p>
+                    <div style="margin: 10px 0 24px 0;">
+                        <a href="${clientUrl}/login" style="display:inline-block;background:#767EB5;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px;margin-bottom:8px;">Login</a>
+                        <a href="${clientUrl}/testing" style="display:inline-block;background:#1f8f55;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px;margin-bottom:8px;">Generate PDF from test</a>
+                        <a href="${clientUrl}/settings" style="display:inline-block;background:#fc4c02;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-bottom:8px;">Connect Strava</a>
+                    </div>
+                    <p>Thanks for using LaChart${userRole === 'coach' ? ' with your athletes' : ''} - more updates are coming soon.</p>
+                    <p style="margin-top: 30px;"><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
                 `;
                 break;
             case 'improvements':

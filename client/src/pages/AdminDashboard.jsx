@@ -21,7 +21,7 @@ const AdminDashboard = () => {
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
-  const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'improvements', 'tips', 'community'
+  const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community'
   const [stravaReminderEmailLoadingUserId, setStravaReminderEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
@@ -244,6 +244,7 @@ const AdminDashboard = () => {
       await sendFeatureAnnouncementEmail(targetUser._id, typeToSend);
       const emailTypeNames = {
         'newFeatures': 'New Features',
+        'googleLoginFix': 'Google Login Fix',
         'improvements': 'Improvements',
         'tips': 'Tips',
         'community': 'Community'
@@ -566,6 +567,35 @@ const AdminDashboard = () => {
 
     return filtered;
   }, [marketingUsers, marketingFilter, marketingEmailType]);
+
+  const emailCampaignStats = useMemo(() => {
+    const totalUsers = users.length;
+    const emailEligibleUsers = users.filter(u => u.email && u.notifications?.emailNotifications !== false).length;
+
+    const sentUsersThankYou = users.filter(u => u.thankYouEmail?.sent).length;
+    const sentUsersFeature = users.filter(u => u.featureAnnouncementEmail?.sent).length;
+    const sentUsersReactivation = users.filter(u => u.reactivationEmail?.sent).length;
+    const sentUsersStravaReminder = users.filter(u => u.stravaReminderEmail?.sent).length;
+
+    const totalSentThankYou = users.reduce((sum, u) => sum + (u.thankYouEmail?.sentCount || 0), 0);
+    const totalSentFeature = users.reduce((sum, u) => sum + (u.featureAnnouncementEmail?.sentCount || 0), 0);
+    const totalSentReactivation = users.reduce((sum, u) => sum + (u.reactivationEmail?.sentCount || 0), 0);
+    const totalSentStravaReminder = users.reduce((sum, u) => sum + (u.stravaReminderEmail?.sentCount || 0), 0);
+
+    const byType = [
+      { type: 'Thank You', sentUsers: sentUsersThankYou, totalSent: totalSentThankYou },
+      { type: 'Feature', sentUsers: sentUsersFeature, totalSent: totalSentFeature },
+      { type: 'Reactivation', sentUsers: sentUsersReactivation, totalSent: totalSentReactivation },
+      { type: 'Strava Reminder', sentUsers: sentUsersStravaReminder, totalSent: totalSentStravaReminder }
+    ];
+
+    return {
+      totalUsers,
+      emailEligibleUsers,
+      totalCampaignSends: totalSentThankYou + totalSentFeature + totalSentReactivation + totalSentStravaReminder,
+      byType
+    };
+  }, [users]);
 
   const handleBulkSend = async () => {
     if (selectedUsersForBulk.length === 0) {
@@ -1788,6 +1818,38 @@ const AdminDashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4 sm:space-y-6"
           >
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Email Campaign Stats</h3>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">Overview of sent campaign emails and reach.</p>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
+                  <div className="text-xs text-gray-600">Total users</div>
+                  <div className="text-2xl font-bold text-gray-900 mt-1">{emailCampaignStats.totalUsers}</div>
+                </div>
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
+                  <div className="text-xs text-gray-600">Email eligible users</div>
+                  <div className="text-2xl font-bold text-primary mt-1">{emailCampaignStats.emailEligibleUsers}</div>
+                </div>
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
+                  <div className="text-xs text-gray-600">Total campaign sends</div>
+                  <div className="text-2xl font-bold text-emerald-600 mt-1">{emailCampaignStats.totalCampaignSends}</div>
+                </div>
+              </div>
+              <div className="mt-6" style={{ height: 300 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={emailCampaignStats.byType}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="type" tick={{ fontSize: 12 }} />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="sentUsers" fill="#767EB5" name="Users reached" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="totalSent" fill="#22c55e" name="Total sent count" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
             {/* Marketing Controls */}
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1817,6 +1879,7 @@ const AdminDashboard = () => {
                         className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         <option value="newFeatures">New Features</option>
+                        <option value="googleLoginFix">Google Login Fix + New Features</option>
                         <option value="improvements">Improvements</option>
                         <option value="tips">Tips</option>
                         <option value="community">Community</option>
