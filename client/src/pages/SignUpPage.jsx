@@ -34,6 +34,7 @@ const SignUpPage = () => {
   const [showGoogleRoleModal, setShowGoogleRoleModal] = useState(false);
   const [pendingGoogleCredential, setPendingGoogleCredential] = useState(null);
   const [googleRoleChoice, setGoogleRoleChoice] = useState('athlete');
+  const [googleModalAcceptedTerms, setGoogleModalAcceptedTerms] = useState(false);
   const { addNotification } = useNotification();
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -76,12 +77,8 @@ const SignUpPage = () => {
 
   const handleGoogleSuccess = async (response) => {
     try {
-      if (!acceptedTerms) {
-        setError('You must accept the Terms and Privacy Policy.');
-        return;
-      }
-
-      // Ask for role before finalizing google signup.
+      setError(null);
+      setGoogleModalAcceptedTerms(false);
       setPendingGoogleCredential(response.credential);
       setGoogleRoleChoice(formData.role || 'athlete');
       setShowGoogleRoleModal(true);
@@ -94,6 +91,10 @@ const SignUpPage = () => {
   const finalizeGoogleSignup = async () => {
     try {
       if (!pendingGoogleCredential) return;
+      if (!googleModalAcceptedTerms) {
+        addNotification('Please accept the Terms & Conditions and Privacy Policy to continue.', 'error');
+        return;
+      }
 
       const res = await fetch(`${API_ENDPOINTS.AUTH}/google-auth`, {
         method: 'POST',
@@ -116,6 +117,7 @@ const SignUpPage = () => {
 
         setShowGoogleRoleModal(false);
         setPendingGoogleCredential(null);
+        setGoogleModalAcceptedTerms(false);
 
         // Redirect to login flow (LoginPage handles onboarding modals).
         navigate('/login', { replace: true });
@@ -459,7 +461,11 @@ const SignUpPage = () => {
                 </div>
               </div>
 
-              <div className="mt-6 flex justify-center">
+              <p className="text-xs text-center text-gray-500 mt-2">
+                After Google sign-in you&apos;ll choose your role and accept the Terms &amp; Privacy Policy.
+              </p>
+
+              <div className="mt-4 flex justify-center">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
                   onError={() => addNotification('Google authentication failed', 'error')}
@@ -509,60 +515,130 @@ const SignUpPage = () => {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white max-w-md w-full p-8 rounded-xl shadow-xl relative"
+              className="bg-white max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 rounded-xl shadow-xl relative"
               onClick={(e) => e.stopPropagation()}
             >
               <button
-                className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg"
-                onClick={() => setShowGoogleRoleModal(false)}
+                className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg z-10"
+                onClick={() => {
+                  setShowGoogleRoleModal(false);
+                  setPendingGoogleCredential(null);
+                  setGoogleModalAcceptedTerms(false);
+                }}
                 type="button"
               >
                 &times;
               </button>
-              <h2 className="text-2xl font-bold mb-2 text-primary">Choose your role</h2>
-              <p className="text-sm text-gray-600 mb-6">This helps us tailor your dashboard.</p>
+              <h2 className="text-2xl font-bold mb-2 text-primary pr-8">Choose your role</h2>
+              <p className="text-sm text-gray-600 mb-5">
+                Pick how you&apos;ll use LaChart. You can change details later in your profile.
+              </p>
 
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 text-gray-900 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="googleRole"
-                    value="athlete"
-                    checked={googleRoleChoice === 'athlete'}
-                    onChange={() => setGoogleRoleChoice('athlete')}
-                  />
-                  Athlete
+              <div className="space-y-3">
+                <label
+                  className={`block rounded-xl border-2 p-4 cursor-pointer transition-colors ${
+                    googleRoleChoice === 'athlete'
+                      ? 'border-primary bg-violet-50/80'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="googleRole"
+                      value="athlete"
+                      checked={googleRoleChoice === 'athlete'}
+                      onChange={() => setGoogleRoleChoice('athlete')}
+                      className="mt-1 h-4 w-4 text-primary"
+                    />
+                    <div>
+                      <span className="font-semibold text-gray-900">Athlete</span>
+                      <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                        For your own training and testing. You can create and manage your lactate tests, view curves and
+                        results, set up training zones, and keep everything in one place. Ideal if you&apos;re testing
+                        yourself and tracking your progress over time.
+                      </p>
+                    </div>
+                  </div>
                 </label>
 
-                <label className="flex items-center gap-3 text-gray-900 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="googleRole"
-                    value="coach"
-                    checked={googleRoleChoice === 'coach'}
-                    onChange={() => setGoogleRoleChoice('coach')}
-                  />
-                  Coach
+                <label
+                  className={`block rounded-xl border-2 p-4 cursor-pointer transition-colors ${
+                    googleRoleChoice === 'coach'
+                      ? 'border-primary bg-violet-50/80'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="googleRole"
+                      value="coach"
+                      checked={googleRoleChoice === 'coach'}
+                      onChange={() => setGoogleRoleChoice('coach')}
+                      className="mt-1 h-4 w-4 text-primary"
+                    />
+                    <div>
+                      <span className="font-semibold text-gray-900">Coach</span>
+                      <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                        For coaches and practitioners working with athletes. You can create athletes, assign tests, follow
+                        their profiles and results, send test outcomes by email, generate PDF reports, and keep a clear
+                        overview of each athlete&apos;s lactate data.
+                      </p>
+                    </div>
+                  </div>
                 </label>
               </div>
 
-              <div className="mt-6 flex gap-2">
-                <button
-                  type="button"
-                  onClick={finalizeGoogleSignup}
-                  className="flex-1 px-5 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark"
-                >
-                  Continue
-                </button>
+              <div className="mt-5 flex items-start gap-2 text-sm text-gray-600 border-t border-gray-100 pt-5">
+                <input
+                  type="checkbox"
+                  id="googleModalAcceptTerms"
+                  checked={googleModalAcceptedTerms}
+                  onChange={(e) => setGoogleModalAcceptedTerms(e.target.checked)}
+                  className="h-4 w-4 mt-0.5 accent-primary shrink-0"
+                />
+                <label htmlFor="googleModalAcceptTerms" className="leading-snug">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    className="underline text-primary hover:text-primary-dark"
+                    onClick={() => setShowTermsModal(true)}
+                  >
+                    Terms &amp; Conditions
+                  </button>{' '}
+                  and{' '}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-primary hover:text-primary-dark"
+                  >
+                    Privacy Policy
+                  </a>
+                  .
+                </label>
+              </div>
+
+              <div className="mt-6 flex flex-col-reverse sm:flex-row gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setShowGoogleRoleModal(false);
                     setPendingGoogleCredential(null);
+                    setGoogleModalAcceptedTerms(false);
                   }}
-                  className="px-5 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300"
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={finalizeGoogleSignup}
+                  disabled={!googleModalAcceptedTerms}
+                  className="flex-1 px-5 py-2.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continue
                 </button>
               </div>
             </m.div>
@@ -578,7 +654,7 @@ const SignUpPage = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] bg-black/50 flex items-center justify-center px-3"
+            className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center px-3"
             onClick={() => setShowTermsModal(false)}
           >
             <m.div
@@ -606,7 +682,11 @@ const SignUpPage = () => {
               <div className="flex justify-end gap-2">
                 <button
                   className="px-5 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark"
-                  onClick={() => { setAcceptedTerms(true); setShowTermsModal(false); }}
+                  onClick={() => {
+                    setAcceptedTerms(true);
+                    if (showGoogleRoleModal) setGoogleModalAcceptedTerms(true);
+                    setShowTermsModal(false);
+                  }}
                 >
                   I Accept
                 </button>
