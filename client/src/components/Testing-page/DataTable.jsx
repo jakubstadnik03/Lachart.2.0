@@ -3680,7 +3680,20 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       return `${Math.round(value)} W`;
     } else if (sport === 'run' || sport === 'swim') {
       if (inputMode === 'pace') {
-        const paceStr = formatSecondsToMMSS(value);
+        // Canonical storage:
+        // - running: sec/km
+        // - swimming: sec/100m
+        // Convert to imperial display if needed.
+        const KM_PER_MILE = 1.609344;
+        const M_PER_YARD = 0.9144;
+        const canonicalSeconds = Number(value);
+        const displaySeconds =
+          unitSystem !== 'imperial'
+            ? canonicalSeconds
+            : sport === 'swim'
+              ? canonicalSeconds * M_PER_YARD // sec/100yd
+              : canonicalSeconds * KM_PER_MILE; // sec/mile
+        const paceStr = formatSecondsToMMSS(displaySeconds);
         if (sport === 'swim') {
           const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
           return `${paceStr}${unit}`;

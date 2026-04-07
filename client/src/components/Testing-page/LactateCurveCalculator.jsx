@@ -405,16 +405,37 @@ const formatSecondsToMMSS = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
-  // Převede tempo na rychlost
-  if (!seconds) return 0;
-  if (unitSystem === 'imperial') {
-    // Pro imperial: tempo (sekundy na míli) na rychlost (mph)
-    return 3600 / seconds;
-  } else {
-    // Pro metric: tempo (sekundy na km) na rychlost (km/h)
-    return 3600 / seconds;
+const KM_PER_MILE = 1.609344;
+const M_PER_YARD = 0.9144;
+
+const paceSecondsToDisplaySeconds = (seconds, { isSwimming, unitSystem }) => {
+  // Canonical storage for pace sports in this app:
+  // - running pace is stored as seconds per km
+  // - swimming pace is stored as seconds per 100m
+  // UI converts to:
+  // - imperial run: seconds per mile
+  // - imperial swim: seconds per 100yd
+  if (seconds == null || !Number.isFinite(Number(seconds))) return seconds;
+  const s = Number(seconds);
+  if (unitSystem !== 'imperial') return s;
+  if (isSwimming) {
+    // 100yd = 91.44m => sec/100yd = sec/100m * 0.9144
+    return s * M_PER_YARD;
   }
+  // sec/mile = sec/km * 1.609344
+  return s * KM_PER_MILE;
+};
+
+const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
+  // Convert canonical pace seconds -> speed
+  // - canonical is sec/km for running; for speed display we still treat input as sec/km (km/h), then convert
+  if (!seconds || !Number.isFinite(Number(seconds))) return 0;
+  const secPerKm = Number(seconds);
+  const kmh = 3600 / secPerKm;
+  if (unitSystem === 'imperial') {
+    return kmh * 0.621371; // mph
+  }
+  return kmh; // km/h
 };
 
 /** Zóny + LT1/LT2 tooltipy — musí být v Chart.register + options.plugins (react-chartjs-2 ignoruje změny plugins z props po mountu). */
@@ -552,7 +573,8 @@ const lactateZoneLtpOverlayPlugin = {
             const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
             valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
           } else if (isPaceSport) {
-            const paceStr = formatSecondsToMMSS(point.x);
+            const displaySec = paceSecondsToDisplaySeconds(point.x, { isSwimming, unitSystem });
+            const paceStr = formatSecondsToMMSS(displaySec);
             const unit = isSwimming
               ? unitSystem === 'imperial'
                 ? '/100yd'
@@ -2117,7 +2139,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             if (isPaceSport) {
               if (inputMode === 'pace') {
                 // value is already pace seconds - round to whole seconds for cleaner display
-                const totalSeconds = Math.round(value);
+                const displaySec = paceSecondsToDisplaySeconds(value, { isSwimming, unitSystem });
+                const totalSeconds = Math.round(displaySec);
                 const minutes = Math.floor(totalSeconds / 60);
                 const seconds = totalSeconds % 60;
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
@@ -2251,7 +2274,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
               formattedValue = `${Number(xVal).toFixed(1)}${unit}`;
             } else if (isPaceSport) {
-                const paceStr = formatSecondsToMMSS(xVal);
+                const displaySec = paceSecondsToDisplaySeconds(xVal, { isSwimming, unitSystem });
+                const paceStr = formatSecondsToMMSS(displaySec);
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
               formattedValue = `${paceStr}${unit}`;
               } else {
@@ -2667,7 +2691,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                     LT1 (analysis):{' '}
                     <span className="font-medium">
                       {isPaceSport && inputMode === 'pace'
-                        ? formatSecondsToMMSS(thresholds.testAnalysis.lt1.power)
+                        ? formatSecondsToMMSS(
+                            paceSecondsToDisplaySeconds(thresholds.testAnalysis.lt1.power, {
+                              isSwimming,
+                              unitSystem,
+                            })
+                          )
                         : isPaceSport && inputMode === 'speed'
                           ? `${Number(thresholds.testAnalysis.lt1.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
                           : `${Math.round(thresholds.testAnalysis.lt1.power)} W`}
@@ -2688,7 +2717,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                     LT2 (analysis @ 4.0 mmol):{' '}
                     <span className="font-medium">
                       {isPaceSport && inputMode === 'pace'
-                        ? formatSecondsToMMSS(thresholds.testAnalysis.lt2.power)
+                        ? formatSecondsToMMSS(
+                            paceSecondsToDisplaySeconds(thresholds.testAnalysis.lt2.power, {
+                              isSwimming,
+                              unitSystem,
+                            })
+                          )
                         : isPaceSport && inputMode === 'speed'
                           ? `${Number(thresholds.testAnalysis.lt2.power).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`
                           : `${Math.round(thresholds.testAnalysis.lt2.power)} W`}
