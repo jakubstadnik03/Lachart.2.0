@@ -71,7 +71,7 @@ async function syncStravaForUser(user) {
       return { imported: 0, updated: 0, message: 'Auto-sync is disabled' };
     }
     
-    const token = await getValidStravaToken(user);
+    let token = await getValidStravaToken(user);
     if (!token) {
       return { imported: 0, updated: 0, error: 'Invalid Strava token' };
     }

@@ -26,9 +26,16 @@ class LoginAbl {
                 return res.status(401).json({ error: "Neplatné přihlašovací údaje" });
             }
 
-            console.log("Login attempt with password:", password); // POZOR: Pouze pro debug!
-            console.log("Stored hash in DB:", user.password);
-            
+            // Some users were created via Google sign-in and may not have a local password set.
+            // bcrypt.compare would throw if hash is missing/invalid -> caused 500 and prevented recovery.
+            if (!user.password || typeof user.password !== "string" || user.password.trim() === "") {
+                return res.status(401).json({
+                    error: "Tento účet nemá nastavené heslo. Přihlas se přes Google nebo si nastav heslo přes 'Forgot password' (reset přes email).",
+                    reason: "no_password_set",
+                    signupMethod: user.signupMethod || (user.googleId ? "google" : undefined)
+                });
+            }
+
             const isValidPassword = await bcrypt.compare(password, user.password);
             console.log("Password comparison result:", isValidPassword);
 

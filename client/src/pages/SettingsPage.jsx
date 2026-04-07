@@ -71,6 +71,7 @@ const SettingsPage = () => {
   const [stravaAutoSync, setStravaAutoSync] = useState(false);
   const [garminAutoSync, setGarminAutoSync] = useState(false);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
+  const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
   const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
@@ -134,14 +135,22 @@ const SettingsPage = () => {
 
   const fetchMyCoaches = useCallback(async () => {
     try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (!token) {
+        setMyCoaches([]);
+        return;
+      }
       const response = await fetch(API_ENDPOINTS.MY_COACHES, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       if (response.ok) {
         const data = await response.json();
-        const list = Array.isArray(data.coaches) ? data.coaches : [];
+        // Backward-compatible parsing: some responses may return `coach` only.
+        const list = Array.isArray(data.coaches)
+          ? data.coaches
+          : (data.coach ? [data.coach] : []);
         setMyCoaches(list);
       } else {
         setMyCoaches([]);
@@ -683,12 +692,20 @@ const SettingsPage = () => {
   };
 
   const handleToggleAutoSync = async (enabled) => {
+    if (isTogglingStravaAutoSync) return;
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    if (!token) {
+      addNotification('Missing auth token, please log in again', 'error');
+      return;
+    }
+
     try {
+      setIsTogglingStravaAutoSync(true);
       const response = await fetch(`${API_BASE_URL}/api/integrations/strava/auto-sync`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ autoSync: enabled })
       });
@@ -702,7 +719,7 @@ const SettingsPage = () => {
         try {
           const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
+              'Authorization': `Bearer ${token}`
             }
           });
           if (profileResponse.ok) {
@@ -739,6 +756,8 @@ const SettingsPage = () => {
     } catch (error) {
       console.error('Error updating auto-sync:', error);
       addNotification('Failed to update auto-sync setting', 'error');
+    } finally {
+      setIsTogglingStravaAutoSync(false);
     }
   };
 
@@ -1816,6 +1835,7 @@ const SettingsPage = () => {
                               type="checkbox"
                               checked={stravaAutoSync}
                               onChange={(e) => handleToggleAutoSync(e.target.checked)}
+                              disabled={isTogglingStravaAutoSync}
                               className="sr-only peer"
                             />
                             <div className={[

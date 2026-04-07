@@ -813,6 +813,19 @@ router.put("/coach/edit-athlete/:athleteId", verifyToken, async (req, res) => {
     }
 });
 
+// List coaches linked to the athlete (supports multiple coaches)
+// NOTE: Must be declared before dynamic /athlete/:athleteId routes.
+// Otherwise "/athlete/my-coaches" is interpreted as athleteId="my-coaches" and returns 403.
+router.get("/athlete/my-coaches", verifyToken, async (req, res) => {
+    try {
+        const { coaches, coach } = await getAthleteCoachesPayload(req.user.userId);
+        res.json({ coaches, coach });
+    } catch (error) {
+        console.error("Error listing coaches:", error);
+        res.status(500).json({ error: "Error listing coaches" });
+    }
+});
+
 // Get athlete's trainings
 router.get("/athlete/:athleteId/trainings", verifyToken, async (req, res) => {
     try {
@@ -1549,17 +1562,6 @@ router.get("/user/:userId", verifyToken, async (req, res) => {
     }
 });
 
-// List coaches linked to the athlete (supports multiple coaches)
-router.get("/athlete/my-coaches", verifyToken, async (req, res) => {
-    try {
-        const { coaches, coach } = await getAthleteCoachesPayload(req.user.userId);
-        res.json({ coaches, coach });
-    } catch (error) {
-        console.error("Error listing coaches:", error);
-        res.status(500).json({ error: "Error listing coaches" });
-    }
-});
-
 // Get coach profile for athlete (backward compatible: single `coach` + full `coaches` array)
 router.get("/coach/profile", verifyToken, async (req, res) => {
     try {
@@ -1968,6 +1970,14 @@ router.post("/change-password", verifyToken, async (req, res) => {
         const user = await userDao.findById(userId);
         if (!user) {
             return res.status(404).json({ error: "User not found" });
+        }
+
+        // If user has no password set (e.g., Google signup), they must use reset-password via email.
+        if (!user.password || typeof user.password !== 'string' || user.password.trim() === '') {
+            return res.status(400).json({
+                error: "This account does not have a password set. Use 'Forgot password' to set a password via email.",
+                reason: "no_password_set"
+            });
         }
 
         // Verify current password

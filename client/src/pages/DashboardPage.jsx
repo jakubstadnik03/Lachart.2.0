@@ -1186,9 +1186,9 @@ export default function DashboardPage() {
                 )}
               </>
             ) : (
-              <div className="text-center py-8 px-4 rounded-xl border border-slate-100 bg-slate-50/50 text-slate-600">
-                <p className="text-sm font-medium text-slate-800">No lactate tests yet</p>
-                <p className="mt-1 text-sm text-slate-600">
+              <div className="text-center py-8 px-4 rounded-xl border border-white/15 bg-white/10 backdrop-blur-md text-lighterText">
+                <p className="text-sm font-semibold text-text">No lactate tests yet</p>
+                <p className="mt-1 text-sm text-lighterText">
                   {showAthleteEmptyWelcome
                     ? 'When you log a test under Testing, charts and comparisons show up here.'
                     : `No tests available${selectedSport !== 'all' ? ` for ${selectedSport}` : ''}.`}
@@ -1197,7 +1197,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => navigate('/testing')}
-                    className="mt-4 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                    className="mt-4 inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-colors"
                   >
                     Open Testing
                   </button>

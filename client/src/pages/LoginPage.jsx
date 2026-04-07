@@ -172,7 +172,11 @@ const LoginPage = () => {
         if (error.response.status === 429) {
           errorMessage = "Too many login attempts. Please wait a few minutes before trying again.";
         } else {
-          errorMessage = error.response.data.message || "Login failed";
+          errorMessage = error.response.data?.error || error.response.data?.message || "Login failed";
+          // Friendly hint for Google-created accounts that don't have a password yet.
+          if (error.response.data?.reason === 'no_password_set') {
+            errorMessage = "Tenhle účet nemá heslo (byl vytvořen přes Google). Klikni na 'Forgot password' a nastav si heslo přes email, nebo se přihlas přes Google.";
+          }
         }
       } else if (error.request || error.code === "ERR_NETWORK") {
         console.log("No response received:", error.request);
@@ -285,7 +289,10 @@ const LoginPage = () => {
       
       if (error.response) {
         console.log("Error response:", error.response);
-        errorMessage = error.response.data.message || "Google login failed";
+        errorMessage = error.response.data?.error || error.response.data?.message || "Google login failed";
+        if (error.response.status === 503) {
+          errorMessage = "Google login je teď na serveru vypnutý / špatně nakonfigurovaný. Zkus to později nebo se přihlas přes email+heslo (případně 'Forgot password').";
+        }
       } else if (error.request) {
         console.log("No response received:", error.request);
         errorMessage = "No response from server. Please check your internet connection.";
