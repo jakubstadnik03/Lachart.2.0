@@ -26,9 +26,10 @@ const TestingPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
-  const isTestingRole = role === 'testing' || role === 'tester';
+  const isTestingRole = role === 'testing';
+  const isTesterRole = role === 'tester';
   // Coach-like roles operate on selected athlete's data (zones + tests).
-  const isCoachLikeRole = role === 'coach' || role === 'testing' || role === 'tester';
+  const isCoachLikeRole = role === 'coach' || isTestingRole || isTesterRole;
   const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
@@ -73,11 +74,12 @@ const TestingPage = () => {
    * plain athletes always use user._id (selectedAthleteId state stays null for them).
    */
   const effectiveTargetAthleteId = useMemo(() => {
+    if (isTestingRole) return user?._id ?? null;
     if (isCoachLikeRole) {
       return selectedAthleteId || (user?.role === 'coach' ? user._id : null);
     }
     return user?._id ?? null;
-  }, [isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
+  }, [isTestingRole, isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
 
   /** Current effective athlete for data loads — used to drop stale / out-of-order list responses */
   const effectiveAthleteIdRef = useRef(effectiveTargetAthleteId);
@@ -123,7 +125,9 @@ const TestingPage = () => {
         }),
       }).catch(() => {});
       // #endregion
-      const response = await api.get(`/test/list/${testId}`);
+      const response = isTestingRole
+        ? await api.get('/test')
+        : await api.get(`/test/list/${testId}`);
       
       const testsData = Array.isArray(response.data) ? response.data : [];
       
@@ -251,6 +255,7 @@ const TestingPage = () => {
     // Validate selected athlete - if profile fails to load, reset to safe state
     const validateAthlete = async () => {
       if (!user || !selectedAthleteId || selectedAthleteId === user._id || !isAuthenticated) return;
+      if (isTestingRole) return;
       
       try {
         // Try to load athlete profile - if it fails, athlete might be deleted/problematic
@@ -273,7 +278,7 @@ const TestingPage = () => {
     if (isAuthenticated && user) {
       validateAthlete();
     }
-  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole]);
+  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole, isTestingRole]);
 
   // Load test by ID from URL if present (before loading all tests)
   useEffect(() => {
@@ -311,7 +316,7 @@ const TestingPage = () => {
         const isOwnTest = testAthleteId === currentUserId;
         const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
         const currentRole = String(user.role || '').toLowerCase();
-        const isTester = currentRole === 'tester' || currentRole === 'testing'; // testing/tester sees all tests; others scoped by ownership/coach relation
+        const isTester = currentRole === 'testing'; // testing sees all tests; others scoped by ownership/coach relation
         
         if (!isOwnTest && !isAthleteTest && !isTester) {
           // Avoid console spam in loops; notify once and remove testId from URL

@@ -2463,7 +2463,33 @@ const FitAnalysisPage = () => {
       // Ensure regularTrainings are loaded first so calendar can find the activity
       await loadRegularTrainings();
       
-      const response = await getTrainingById(trainingId);
+      let response;
+      try {
+        response = await getTrainingById(trainingId);
+      } catch (apiError) {
+        // Some stale IDs in localStorage may point to a removed Training model item.
+        // Try FIT fallback before giving up, then clear stale storage keys.
+        if (apiError?.response?.status === 404) {
+          try {
+            const fitTraining = await getFitTraining(trainingId);
+            if (fitTraining?.laps && Array.isArray(fitTraining.laps)) {
+              fitTraining.laps = deduplicateFitTrainingLaps(fitTraining.laps);
+            }
+            setSelectedTraining(fitTraining);
+            setSelectedStrava(null);
+            localStorage.setItem('fitAnalysis_selectedTrainingId', trainingId);
+            localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+            localStorage.removeItem('fitAnalysis_selectedStravaId');
+            return;
+          } catch (fitFallbackError) {
+            localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
+            localStorage.removeItem('fitAnalysis_selectedTrainingId');
+            console.warn('Training not found in both Training and FIT models; cleared stale selection.');
+            return;
+          }
+        }
+        throw apiError;
+      }
       const data = response.data || response; // Handle both response formats
       
       if (!data) {
@@ -3076,12 +3102,14 @@ const FitAnalysisPage = () => {
       return;
     }
     
-    // Format date
+    // Format date safely (avoid RangeError: Invalid time value)
     const activityDate = selectedStrava?.start_date_local || 
                        selectedStrava?.start_date || 
                        selectedStrava?.startDate || 
                        new Date();
-    const dateStr = new Date(activityDate).toISOString().slice(0, 16);
+    const parsedActivityDate = new Date(activityDate);
+    const safeActivityDate = Number.isNaN(parsedActivityDate.getTime()) ? new Date() : parsedActivityDate;
+    const dateStr = safeActivityDate.toISOString().slice(0, 16);
     
     // Prepare form data with all intervals (user can edit/remove in form)
     const formData = {
@@ -3415,7 +3443,8 @@ const FitAnalysisPage = () => {
                     }
                     
                     // Calculate TSS and IF
-                    const trainingDate = selectedTraining.timestamp ? new Date(selectedTraining.timestamp) : new Date();
+                    const parsedTrainingDate = selectedTraining.timestamp ? new Date(selectedTraining.timestamp) : new Date();
+                    const trainingDate = Number.isNaN(parsedTrainingDate.getTime()) ? new Date() : parsedTrainingDate;
                     const sport = selectedTraining.sport || 'cycling';
                     const isRun = sport.toLowerCase().includes('run');
                     const avgSpeed = selectedTraining.avgSpeed || null;
@@ -4994,7 +5023,8 @@ const FitAnalysisPage = () => {
                   selectedStrava?.start_date || 
                   selectedStrava?.raw?.start_date || 
                   selectedStrava?.startDate;
-                const activityStartTime = activityStartDate ? new Date(activityStartDate).getTime() : Date.now();
+                const parsedStartTime = activityStartDate ? new Date(activityStartDate).getTime() : NaN;
+                const activityStartTime = Number.isFinite(parsedStartTime) ? parsedStartTime : Date.now();
                 
                 // Convert streams to records
                 const records = timeArray.map((time, index) => {
@@ -5002,7 +5032,7 @@ const FitAnalysisPage = () => {
                   const distance = distanceArray[index] || (index > 0 ? distanceArray[index - 1] : 0);
                   
                   return {
-                    timestamp: timestamp.toISOString(),
+                    timestamp: Number.isNaN(timestamp.getTime()) ? new Date(activityStartTime).toISOString() : timestamp.toISOString(),
                     timeFromStart: time,
                     distance: distance,
                     speed: speedArray[index] || null,
@@ -5157,14 +5187,15 @@ const FitAnalysisPage = () => {
                     selectedStrava?.start_date || 
                     selectedStrava?.raw?.start_date || 
                     selectedStrava?.startDate;
-                  const activityStartTime = activityStartDate ? new Date(activityStartDate).getTime() : Date.now();
+                  const parsedStartTime = activityStartDate ? new Date(activityStartDate).getTime() : NaN;
+                  const activityStartTime = Number.isFinite(parsedStartTime) ? parsedStartTime : Date.now();
                   
                   trainingRecords = timeArray.map((time, index) => {
                     const timestamp = new Date(activityStartTime + (time * 1000));
                     const distance = distanceArray[index] || (index > 0 ? distanceArray[index - 1] : 0);
                     
                     return {
-                      timestamp: timestamp.toISOString(),
+                      timestamp: Number.isNaN(timestamp.getTime()) ? new Date(activityStartTime).toISOString() : timestamp.toISOString(),
                       timeFromStart: time,
                       distance: distance,
                       speed: speedArray[index] ? speedArray[index] * 3.6 : null, // Convert m/s to km/h

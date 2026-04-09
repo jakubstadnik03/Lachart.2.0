@@ -131,7 +131,9 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return "—";
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return "—";
     return date.toLocaleDateString('en-US', {
       day: '2-digit',
       month: '2-digit',
@@ -142,11 +144,13 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const sortData = (trainings, config) => {
     return [...trainings].sort((a, b) => {
       if (config.key === 'date') {
-        const dateA = new Date(a[config.key]);
-        const dateB = new Date(b[config.key]);
+        const dateA = new Date(a[config.key] || a.timestamp || a.startDate || 0);
+        const dateB = new Date(b[config.key] || b.timestamp || b.startDate || 0);
+        const tsA = Number.isNaN(dateA.getTime()) ? 0 : dateA.getTime();
+        const tsB = Number.isNaN(dateB.getTime()) ? 0 : dateB.getTime();
         return config.direction === "asc" 
-          ? dateA - dateB 
-          : dateB - dateA;
+          ? tsA - tsB 
+          : tsB - tsA;
       }
 
       const aValue = a[config.key] ?? "";
@@ -158,12 +162,36 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     });
   };
 
-  const sortedTrainings = sortData(trainings, sortConfig);
+  const hasLactateData = (training) => {
+    if (!training) return false;
+    if (training.lactate !== null && training.lactate !== undefined && training.lactate !== '') return true;
+    if (Array.isArray(training.results) && training.results.some((r) => r?.lactate !== null && r?.lactate !== undefined && r?.lactate !== '')) return true;
+    if (Array.isArray(training.laps) && training.laps.some((lap) => lap?.lactate !== null && lap?.lactate !== undefined && lap?.lactate !== '')) return true;
+    return false;
+  };
+
+  const isCuratedTraining = (training) => {
+    if (!training) return false;
+    const hasCategory = Boolean(training.category);
+    const hasLactate = hasLactateData(training);
+    const isExported = Boolean(
+      training.sourceStravaActivityId ||
+      training.linkedTrainingId ||
+      training.isFromTrainingModel
+    );
+    const hasManualTitle = Boolean(training.titleManual || training.customTitle);
+    return hasCategory || hasLactate || isExported || hasManualTitle;
+  };
+
+  const curatedTrainings = trainings.filter(isCuratedTraining);
+  const sortedTrainings = sortData(curatedTrainings, sortConfig);
 
   const filteredTrainings = sortedTrainings.filter((training) =>
-    (training.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    training.sport?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    training.specifics?.specific?.toLowerCase().includes(searchQuery.toLowerCase()))
+    (
+      training.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      training.sport?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (training.specifics?.specific || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
 
   const handleSort = (key) => {
@@ -258,6 +286,14 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
     return <div className="text-center text-lg font-semibold mt-5">No trainings available.</div>;
   }
 
+  if (curatedTrainings.length === 0) {
+    return (
+      <div className="text-center text-lg font-semibold mt-5">
+        No exported or categorized trainings available.
+      </div>
+    );
+  }
+
   return (
     <div className="training-table rounded-2xl shadow-lg mx-auto bg-white m-5 max-w-[1600px] p-4 sm:p-5">
       <div className="mb-4 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
@@ -293,7 +329,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
             <TrainingItem 
               training={{
                 ...training,
-                date: formatDate(training.date)
+                date: formatDate(training.date || training.timestamp || training.startDate)
               }}
               isExpanded={expandedItems[training._id] || false}
               onToggleExpand={() => toggleExpand(training._id)}

@@ -14,7 +14,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config/jwt.config");
 const { OAuth2Client } = require('google-auth-library');
 
-const { saveRegistrationLocation } = require("../utils/geoip");
+const { saveRegistrationLocation, saveLoginLocation } = require("../utils/geoip");
 const { resolveSignupMethodForProfile, publicRegistrationLocation } = require("../utils/signupMethod");
 
 const userDao = new UserDao();
@@ -1023,6 +1023,7 @@ router.get("/profile", verifyToken, async (req, res) => {
             signupMethod: signup.method,
             signupMethodSource: signup.source,
             registrationLocation: regLoc,
+            lastLoginLocation: user.lastLoginLocation || null,
             dateOfBirth: user.dateOfBirth,
             address: user.address,
             phone: user.phone,
@@ -1939,8 +1940,13 @@ router.post("/google-auth", async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // Update lastLogin timestamp
-        await userDao.updateUser(user._id, { lastLogin: new Date() });
+        // Update lastLogin + loginCount for all Google sign-ins (existing + new users)
+        await userDao.update(user._id, {
+            $set: { lastLogin: new Date() },
+            $inc: { loginCount: 1 }
+        });
+        // Save login location and backfill registration location when missing.
+        saveLoginLocation(userDao, user, req);
 
         // Return token and user data
         res.json({
@@ -2218,12 +2224,18 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                     lastSent: null
                 },
                 featureAnnouncementEmail: user.featureAnnouncementEmail || { sent: false, sentCount: 0, lastSent: null },
+                stravaReminderEmail: user.stravaReminderEmail || {
+                    sent: false,
+                    sentCount: 0,
+                    lastSent: null
+                },
                 trainingCount: finalTrainingCount,
                 testCount: finalTestCount,
                 athletes: user.role === 'coach' ? athletesList : undefined,
                 athletesCount: user.role === 'coach' ? athletesWithPasswordCount : undefined,
                 athletesLinkedCount: user.role === 'coach' ? athletesLinkedCount : undefined,
-                registrationLocation: user.registrationLocation || null
+                registrationLocation: user.registrationLocation || null,
+                lastLoginLocation: user.lastLoginLocation || null
             };
         }));
 

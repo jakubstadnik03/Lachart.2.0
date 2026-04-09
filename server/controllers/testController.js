@@ -23,8 +23,11 @@ const testController = {
             const user = await User.findById(req.user.userId);
             
             const role = String(user?.role || '').toLowerCase();
-            const isTester = role === 'tester' || role === 'testing';
-            if (user && isTester) {
+            if (user && role === 'testing') {
+                const allTests = await Test.find({}).sort({ date: -1 });
+                return res.json(allTests);
+            }
+            if (user && role === 'tester') {
                 const t0 = Date.now();
                 const athletes = await User.find({ coachId: user._id }).select('_id');
                 const athleteIds = (athletes || []).map(a => String(a._id));
@@ -85,7 +88,13 @@ const testController = {
             const isCoachLike = role === 'coach' || role === 'tester' || role === 'testing';
             const isTesterRole = role === 'tester' || role === 'testing';
             const isAdmin = role === 'admin';
+            const isTestingRole = role === 'testing';
             const isOwnAllowed = isOwnTest && !isTesterRole;
+
+            // testing role is for internal QA/debugging and can inspect any test in DB
+            if (isTestingRole) {
+                return res.json(test);
+            }
 
             // Coach/tester/testing can view tests only for their own athletes; admin can view all.
             let isAthleteTest = false;

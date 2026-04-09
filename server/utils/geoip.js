@@ -68,4 +68,33 @@ async function saveRegistrationLocation(userDao, userId, req) {
   }
 }
 
-module.exports = { getClientIp, resolveIpLocation, saveRegistrationLocation };
+/**
+ * Save login location to profile and backfill registration location if missing.
+ * Fire-and-forget friendly; errors are logged and swallowed.
+ */
+async function saveLoginLocation(userDao, user, req) {
+  try {
+    const ip = getClientIp(req);
+    if (!ip) return;
+
+    const resolved = await resolveIpLocation(ip);
+    const location = resolved || { ip, resolvedAt: new Date() };
+    const updateData = { lastLoginLocation: location };
+
+    const hasRegistrationLocation =
+      Boolean(user?.registrationLocation?.country) ||
+      Boolean(user?.registrationLocation?.ip);
+    if (!hasRegistrationLocation) {
+      updateData.registrationLocation = location;
+    }
+
+    const targetUserId = user?._id || user?.id || user;
+    if (targetUserId) {
+      await userDao.updateUser(targetUserId, updateData);
+    }
+  } catch (err) {
+    console.error('[GeoIP] Failed to save login location:', err.message);
+  }
+}
+
+module.exports = { getClientIp, resolveIpLocation, saveRegistrationLocation, saveLoginLocation };

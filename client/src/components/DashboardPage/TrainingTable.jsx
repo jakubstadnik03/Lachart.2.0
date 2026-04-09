@@ -2,6 +2,33 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
 
+const isCyclingSport = (sportRaw) => {
+  const sport = String(sportRaw || '').toLowerCase();
+  return (
+    sport === 'cycling' ||
+    sport === 'bike' ||
+    sport === 'ride' ||
+    sport === 'virtualride' ||
+    sport === 'mountainbikeride' ||
+    sport === 'mountainbike' ||
+    sport === 'gravelride' ||
+    sport === 'ebikeride'
+  );
+};
+
+const getSportDisplayName = (sportRaw) => {
+  const sport = String(sportRaw || '').toLowerCase();
+  if (sport === 'cycling') return 'Cycling';
+  if (sport === 'running') return 'Running';
+  if (sport === 'swimming') return 'Swimming';
+  if (sport === 'highintensityintervaltraining') return 'HIIT';
+  if (sport === 'mountainbikeride') return 'Mountain Bike Ride';
+  if (sport === 'virtualride') return 'Virtual Ride';
+  if (sport === 'gravelride') return 'Gravel Ride';
+  if (sport === 'ebikeride') return 'E-Bike Ride';
+  return sportRaw ? String(sportRaw).charAt(0).toUpperCase() + String(sportRaw).slice(1) : '-';
+};
+
 function TrainingRow({ training, activity, trainingId, sport, date, averagePace, status, onTrainingClick }) {
   // Omezíme délku názvu tréninku na 20 znaků
   const truncatedTraining = training.length > 18 ? training.substring(0, 18) + '..' : training;
@@ -45,7 +72,7 @@ function TrainingRow({ training, activity, trainingId, sport, date, averagePace,
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto whitespace-nowrap basis-0">
         <div className="self-stretch px-1 sm:px-4 py-1.5 sm:py-2.5 w-full border-b text-center border-gray-200 text-xs sm:text-sm">
-          {sport ? sport.charAt(0).toUpperCase() + sport.slice(1) : '-'}
+          {getSportDisplayName(sport)}
         </div>
       </div>
       <div className="flex flex-col flex-1 shrink justify-center self-stretch my-auto basis-0">
@@ -81,7 +108,7 @@ function TableHeader({ selectedSport }) {
   const getHeaderLabel = () => {
     if (selectedSport === 'all') return "Avg pace";
     const sport = selectedSport?.toLowerCase() || '';
-    if (sport === 'cycling' || sport === 'bike' || sport === 'ride' || sport === 'virtualride') {
+    if (isCyclingSport(sport)) {
       return "Watts";
     } else if (sport === 'running' || sport === 'run') {
       return "Avg pace";
@@ -108,7 +135,7 @@ function convertPowerToPace(seconds, sport) {
   const sportLower = sport.toLowerCase();
   
   // Cycling - show watts
-  if (sportLower === "cycling" || sportLower === "bike" || sportLower === "ride" || sportLower === "virtualride") {
+  if (isCyclingSport(sportLower)) {
     return `${seconds} W`;
   }
 
@@ -141,7 +168,7 @@ export default function TrainingTable({
     if (!sport) return null;
     const sportLower = sport.toLowerCase();
     // Cycling variants
-    if (sportLower === 'cycling' || sportLower === 'bike' || sportLower === 'ride' || sportLower === 'virtualride') {
+    if (isCyclingSport(sportLower)) {
       return 'cycling';
     }
     // Running variants
@@ -593,10 +620,7 @@ export default function TrainingTable({
                             )}
                             {availableSports.map((sport) => (
                               <option key={sport} value={sport}>
-                                {sport === 'cycling' ? 'Cycling' : 
-                                 sport === 'running' ? 'Running' : 
-                                 sport === 'swimming' ? 'Swimming' :
-                                 sport.charAt(0).toUpperCase() + sport.slice(1)}
+                                {getSportDisplayName(sport)}
                               </option>
                             ))}
                           </select>

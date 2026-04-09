@@ -1116,7 +1116,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       })
       .sort({ startDate: -1 })
         .limit(activityLimit)
-      .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate averagePower')
+      .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower')
         .lean(),
       GarminActivity.find({ 
         userId: targetUserId.toString(),
@@ -1175,10 +1175,34 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       return true;
     };
     
+    // Keep preferred source (Strava), but don't lose useful metrics from Garmin fallback.
+    const mergePreferredActivity = (preferred, secondary) => {
+      if (!preferred || !secondary) return preferred || secondary;
+      const merged = { ...preferred };
+      const pick = (primaryVal, secondaryVal) => (primaryVal == null ? secondaryVal : primaryVal);
+      merged.averageHeartRate = pick(preferred.averageHeartRate, secondary.averageHeartRate);
+      merged.averagePower = pick(preferred.averagePower, secondary.averagePower);
+      merged.averageSpeed = pick(preferred.averageSpeed, secondary.averageSpeed);
+      merged.elapsedTime = pick(preferred.elapsedTime, secondary.elapsedTime);
+      merged.movingTime = pick(preferred.movingTime, secondary.movingTime);
+      merged.distance = pick(preferred.distance, secondary.distance);
+      return merged;
+    };
+
     // Combine and normalize activities
     const allActs = [
-      ...stravaActs.map(a => ({ ...a, source: 'strava', sourceId: a.stravaId })),
-      ...garminActs.map(a => ({ ...a, source: 'garmin', sourceId: a.garminId }))
+      ...stravaActs.map(a => ({
+        ...a,
+        averageHeartRate: a.averageHeartRate ?? a.average_heartrate ?? null,
+        source: 'strava',
+        sourceId: a.stravaId
+      })),
+      ...garminActs.map(a => ({
+        ...a,
+        averageHeartRate: a.averageHeartRate ?? a.averageHR ?? null,
+        source: 'garmin',
+        sourceId: a.garminId
+      }))
     ].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     
     // Optimized deduplication: use Map for O(1) lookups instead of O(n²) nested loops
@@ -1191,13 +1215,22 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       // Check if we've already seen this exact key
       if (dedupMap.has(key)) {
         const existing = dedupMap.get(key);
-        // If existing is Garmin and new is Strava, replace it
+        // If existing is Garmin and new is Strava, replace it but keep missing metrics from Garmin
         if (existing.source === 'garmin' && act.source === 'strava') {
-          dedupMap.set(key, act);
+          const merged = mergePreferredActivity(act, existing);
+          dedupMap.set(key, merged);
           // Update in array
           const existingIndex = deduplicatedActs.findIndex(a => a === existing);
           if (existingIndex >= 0) {
-            deduplicatedActs[existingIndex] = act;
+            deduplicatedActs[existingIndex] = merged;
+          }
+        } else if (existing.source === 'strava' && act.source === 'garmin') {
+          // Keep Strava identity, but enrich with Garmin metrics when Strava values are missing
+          const merged = mergePreferredActivity(existing, act);
+          dedupMap.set(key, merged);
+          const existingIndex = deduplicatedActs.findIndex(a => a === existing);
+          if (existingIndex >= 0) {
+            deduplicatedActs[existingIndex] = merged;
           }
         }
         // Otherwise keep existing (Strava or already preferred)
@@ -1219,12 +1252,20 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
             isDuplicate = true;
             // If existing is Garmin and new is Strava, replace it
             if (seenAct.source === 'garmin' && act.source === 'strava') {
+              const merged = mergePreferredActivity(act, seenAct);
               dedupMap.delete(seenKey);
-              dedupMap.set(key, act);
+              dedupMap.set(key, merged);
               // Update in array
               const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
               if (existingIndex >= 0) {
-                deduplicatedActs[existingIndex] = act;
+                deduplicatedActs[existingIndex] = merged;
+              }
+            } else if (seenAct.source === 'strava' && act.source === 'garmin') {
+              const merged = mergePreferredActivity(seenAct, act);
+              dedupMap.set(seenKey, merged);
+              const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
+              if (existingIndex >= 0) {
+                deduplicatedActs[existingIndex] = merged;
               }
             }
             break;

@@ -2,6 +2,7 @@ const UserDao = require("../../dao/userDao");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../../config/jwt.config");
+const { saveLoginLocation } = require("../../utils/geoip");
 
 class LoginAbl {
     constructor() {
@@ -61,6 +62,9 @@ class LoginAbl {
                 $set: { lastLogin: new Date() },
                 $inc: { loginCount: 1 }
             });
+            // Save last login location and backfill registration location when missing.
+            // Do not block login on geo lookup/network issues.
+            saveLoginLocation(this.userDao, user, req);
 
             res.status(200).json({
                 token,

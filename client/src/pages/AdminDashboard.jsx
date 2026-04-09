@@ -279,7 +279,8 @@ const AdminDashboard = () => {
             : u
         )
       );
-      addNotification(`Strava reminder email sent to ${targetUser.email}`, 'success');
+      const sentAtText = new Date(nowIso).toLocaleString();
+      addNotification(`Strava reminder email sent to ${targetUser.email} at ${sentAtText}`, 'success');
     } catch (err) {
       const message = err?.response?.data?.error || 'Failed to send Strava reminder email';
       addNotification(message, 'error');
@@ -1330,6 +1331,11 @@ const AdminDashboard = () => {
                             {user.registrationLocation.city || user.registrationLocation.country}
                           </span>
                         )}
+                        {user.lastLoginLocation?.country && (
+                          <span className="inline-flex px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-800">
+                            Last login from: {user.lastLoginLocation.city || user.lastLoginLocation.country}
+                          </span>
+                        )}
                         <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold ${
                           user.stravaConnected ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600'
                         }`}>
@@ -1637,22 +1643,29 @@ const AdminDashboard = () => {
                             )}
                           </td>
                           <td className="p-2 text-sm">
-                            {user.registrationLocation?.country ? (
+                            {user.registrationLocation?.country || user.lastLoginLocation?.country ? (
                               <div className="flex flex-col">
-                                <span className="text-sm font-medium text-gray-900" title={user.registrationLocation.ip}>
-                                  {user.registrationLocation.countryCode && (
+                                <span className="text-sm font-medium text-gray-900" title={user.registrationLocation?.ip || user.lastLoginLocation?.ip}>
+                                  {(user.registrationLocation?.countryCode || user.lastLoginLocation?.countryCode) && (
                                     <img
-                                      src={`https://flagcdn.com/16x12/${user.registrationLocation.countryCode.toLowerCase()}.png`}
-                                      alt={user.registrationLocation.countryCode}
+                                      src={`https://flagcdn.com/16x12/${String(user.registrationLocation?.countryCode || user.lastLoginLocation?.countryCode).toLowerCase()}.png`}
+                                      alt={user.registrationLocation?.countryCode || user.lastLoginLocation?.countryCode}
                                       className="inline mr-1 align-baseline"
                                       width="16"
                                       height="12"
                                     />
                                   )}
-                                  {user.registrationLocation.country}
+                                  {user.registrationLocation?.country || user.lastLoginLocation?.country}
                                 </span>
-                                {user.registrationLocation.city && (
-                                  <span className="text-xs text-gray-500">{user.registrationLocation.city}</span>
+                                {(user.registrationLocation?.city || user.lastLoginLocation?.city) && (
+                                  <span className="text-xs text-gray-500">
+                                    {user.registrationLocation?.city || user.lastLoginLocation?.city}
+                                  </span>
+                                )}
+                                {user.lastLoginLocation?.resolvedAt && (
+                                  <span className="text-[11px] text-indigo-500">
+                                    Last login loc: {new Date(user.lastLoginLocation.resolvedAt).toLocaleDateString()} {new Date(user.lastLoginLocation.resolvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
                                 )}
                               </div>
                             ) : (

@@ -833,7 +833,13 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                   <tbody>
                     {tableData.map((row, index) => {
                       const periodText = comparePeriod === '90days' ? 'past 90 days' : comparePeriod === '30days' ? 'past 30 days' : '';
-                      const improvement = row.improvement;
+                      // Use displayed values (period vs all-time) to avoid inverted messaging from stale/backfilled improvements.
+                      const diffVsAllTime = (Number(row.compareValue || 0) - Number(row.allTimeValue || 0));
+                      const pctVsAllTime = row.allTimeValue > 0 ? Math.round((diffVsAllTime / row.allTimeValue) * 100) : 0;
+                      const improvement = {
+                        improvement: diffVsAllTime,
+                        percentage: pctVsAllTime,
+                      };
                       const pr = row.pr;
                       
                       const handleTrainingClick = (trainingId, trainingType, stravaId, metricKey, claimedWatts) => {
@@ -920,7 +926,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
                                   In the {periodText}, your {row.label} power {improvement.improvement > 0 ? 'increased' : 'decreased'} by{' '}
                                   <span className="font-semibold">{Math.abs(improvement.improvement)}W</span>
                                   {improvement.percentage !== 0 && (
-                                    <span> ({improvement.percentage > 0 ? '+' : ''}{improvement.percentage}%)</span>
+                                    <span> ({improvement.percentage > 0 ? '+' : ''}{improvement.percentage}% vs All Time)</span>
                                   )}
                     </div>
                               )}

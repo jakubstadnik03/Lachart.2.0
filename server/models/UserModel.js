@@ -296,6 +296,16 @@ const userSchema = new mongoose.Schema({
     timezone: { type: String, default: null },
     resolvedAt: { type: Date, default: null }
   },
+  // Last resolved login location (updated on successful sign-in)
+  lastLoginLocation: {
+    ip: { type: String, default: null },
+    country: { type: String, default: null },
+    countryCode: { type: String, default: null },
+    city: { type: String, default: null },
+    region: { type: String, default: null },
+    timezone: { type: String, default: null },
+    resolvedAt: { type: Date, default: null }
+  },
   // Mobile push notification tokens (Expo)
   expoPushTokens: {
     type: [String],

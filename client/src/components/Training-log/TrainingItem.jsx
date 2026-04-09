@@ -7,18 +7,34 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
 
   if (!training) return null;
   const { date, title, specifics, comments, results, sport, description } = training;
+  const safeSpecifics = specifics || {};
   
   // Ensure results is an array to prevent undefined errors
   const safeResults = Array.isArray(results) ? results : [];
 
   const getSportIcon = (sport) => {
-    switch (sport) {
+    const s = String(sport || '').toLowerCase();
+    if (s === 'run' || s === 'running') {
+      return '/icon/run.svg';
+    }
+    if (
+      s === 'bike' ||
+      s === 'cycling' ||
+      s === 'ride' ||
+      s === 'virtualride' ||
+      s === 'mountainbikeride' ||
+      s === 'mountainbike' ||
+      s === 'gravelride' ||
+      s === 'ebikeride'
+    ) {
+      return '/icon/bike.svg';
+    }
+    if (s === 'swim' || s === 'swimming') {
+      return '/icon/swim.svg';
+    }
+    switch (s) {
       case 'run':
         return '/icon/run.svg';
-      case 'bike':
-        return '/icon/bike.svg';
-      case 'swim':
-        return '/icon/swim.svg';
       default:
         return '/icon/default.svg';
     }
@@ -199,8 +215,8 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
         <div className="hidden sm:flex col-span-3 items-center justify-center">
           {safeResults.length} intervals
         </div>
-        <div className="hidden sm:block truncate">{specifics?.specific || ''}</div>
-        <div className="hidden sm:block truncate">{specifics?.weather || ''}</div>
+        <div className="hidden sm:block truncate">{safeSpecifics.specific || ''}</div>
+        <div className="hidden sm:block truncate">{safeSpecifics.weather || ''}</div>
       </div>
 
       {/* Expandovaný obsah */}
@@ -238,11 +254,11 @@ const TrainingItem = ({ training, isExpanded = false, onToggleExpand }) => {
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="font-medium">Terrain/Pool:</span>
-              <span>{specifics.specific}</span>
+              <span>{safeSpecifics.specific || '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="font-medium">Weather:</span>
-              <span>{specifics.weather}</span>
+              <span>{safeSpecifics.weather || '—'}</span>
             </div>
             {comments && (
               <div className="flex flex-col">

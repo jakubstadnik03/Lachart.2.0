@@ -228,6 +228,13 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
         const requesterUserId = String(user?._id);
         const targetAthleteId = String(athleteId);
 
+        // testing role = internal QA observer; can list all tests from DB
+        if (role === 'testing') {
+            const Test = require('../models/test');
+            const allTests = await Test.find({}).sort({ date: -1 });
+            return res.status(200).json(allTests);
+        }
+
         // Own profile: athletes (and tester/testing viewing their own account) may list their tests.
         // tester/testing accessing another athlete follow coach-like rules below.
 
