@@ -785,6 +785,69 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   };
 
   /**
+   * Bike-only: pokud je vypočtené LT1 La níž než naměřená „držící“ hladina (např. poly/interpolace dá 1.6 mmol/L,
+   * ale na dalších krocích je 1.8 → 1.7 mmol/L), posuň LT1 na konec této elevace — aerobní práh má odpovídat
+   * stabilně vyššímu laktátu, ne prvnímu překročení 1.5 mmol/L na segmentu.
+   */
+  const snapLt1ToSustainedMeasuredElevationBike = (sortedResults, ltp1Power, ltp1Lactate) => {
+    if (!Array.isArray(sortedResults) || sortedResults.length < 3) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+    const p = sortedResults.map((r) => Number(r.power));
+    const la = sortedResults.map((r) => Number(r.lactate));
+    if (p.some((v) => !Number.isFinite(v)) || la.some((v) => !Number.isFinite(v))) {
+      return { power: ltp1Power, lactate: ltp1Lactate };
+    }
+    const laRef = Number(ltp1Lactate);
+    if (!Number.isFinite(laRef)) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    const ELEVATION_EPS = 0.11; // measurably above computed LT1 lactate
+    const PLATEAU_WIGGLE = 0.16; // max drop from running peak while lactate „still holds“
+    const BREAKOUT_JUMP = 0.48; // next clear rise → end of LT1 plateau
+
+    let idx = p.findIndex((v) => v >= Number(ltp1Power) - 1e-6);
+    if (idx < 0) {
+      idx = p.reduce((best, v, i) => (Math.abs(v - Number(ltp1Power)) < Math.abs(p[best] - Number(ltp1Power)) ? i : best), 0);
+    }
+    if (idx >= la.length - 1) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    let start = -1;
+    for (let i = idx; i < la.length - 1; i++) {
+      const a = la[i];
+      const b = la[i + 1];
+      const pairHigh = a >= laRef + ELEVATION_EPS && b >= laRef + ELEVATION_EPS * 0.7;
+      const pairPlateau =
+        a >= laRef + ELEVATION_EPS * 0.55 &&
+        b >= laRef + ELEVATION_EPS * 0.55 &&
+        Math.abs(a - b) <= PLATEAU_WIGGLE;
+      if (pairHigh || pairPlateau) {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    let peak = Math.max(la[start], la[start + 1]);
+    let end = start + 1;
+    for (let j = start + 2; j < la.length; j++) {
+      const step = la[j] - la[j - 1];
+      if (step >= BREAKOUT_JUMP) break;
+      if (la[j] < peak - PLATEAU_WIGGLE) break;
+      peak = Math.max(peak, la[j]);
+      end = j;
+    }
+
+    if (p[end] <= Number(ltp1Power) + 2) return { power: ltp1Power, lactate: ltp1Lactate };
+
+    let laOut = la[end];
+    laOut = Math.min(Math.max(laOut, MIN_LTP1_LACTATE), MAX_LTP1_LACTATE);
+    return {
+      power: p[end],
+      lactate: laOut,
+    };
+  };
+
+  /**
    * Bike-only guard:
    * LT1 should not sit on a point that is followed by a meaningful lactate drop.
    * If it does, move LT1 forward to the first point after the drop where trend is non-decreasing.
@@ -1355,6 +1418,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           ltp1Power = Number(deferredLt1.power);
           ltp1La = Number(deferredLt1.lactate);
         }
+        const snappedElevationLt1 = snapLt1ToSustainedMeasuredElevationBike(sortedResults, ltp1Power, ltp1La);
+        if (Number.isFinite(Number(snappedElevationLt1.power)) && Number.isFinite(Number(snappedElevationLt1.lactate))) {
+          ltp1Power = Number(snappedElevationLt1.power);
+          ltp1La = Number(snappedElevationLt1.lactate);
+        }
         const anchoredLt1 = anchorLt1ToBreakStartBike(sortedResults, ltp1Power, ltp1La);
         if (Number.isFinite(Number(anchoredLt1.power)) && Number.isFinite(Number(anchoredLt1.lactate))) {
           ltp1Power = Number(anchoredLt1.power);
@@ -1538,6 +1606,13 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             ltp1Lactate = Number(deferredLt1.lactate);
             const hrDef = interpolateHRAtPowerPolyBike(ltp1Power);
             if (hrDef != null) ltp1HR = hrDef;
+          }
+          const snappedElevationLt1 = snapLt1ToSustainedMeasuredElevationBike(sortedResults, ltp1Power, ltp1Lactate);
+          if (Number.isFinite(Number(snappedElevationLt1.power)) && Number.isFinite(Number(snappedElevationLt1.lactate))) {
+            ltp1Power = Number(snappedElevationLt1.power);
+            ltp1Lactate = Number(snappedElevationLt1.lactate);
+            const hrSnap = interpolateHRAtPowerPolyBike(ltp1Power);
+            if (hrSnap != null) ltp1HR = hrSnap;
           }
           const anchoredLt1 = anchorLt1ToBreakStartBike(sortedResults, ltp1Power, ltp1Lactate);
           if (Number.isFinite(Number(anchoredLt1.power)) && Number.isFinite(Number(anchoredLt1.lactate))) {

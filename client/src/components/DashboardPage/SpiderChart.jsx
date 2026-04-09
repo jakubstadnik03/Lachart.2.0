@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Radar } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
@@ -17,6 +17,16 @@ import {
 
 // Register Chart.js plugins once
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+
+const POWER_INTERVAL_KEYS = ['sprint5s', 'attack1min', 'vo2max5min', 'threshold20min', 'endurance60min'];
+
+/** API must return allTime with each interval present (object or number). */
+function isUsablePowerMetricsPayload(m) {
+  if (!m || typeof m !== 'object') return false;
+  if (typeof m.error === 'string' && m.error) return false;
+  if (!m.allTime || typeof m.allTime !== 'object') return false;
+  return POWER_INTERVAL_KEYS.every((k) => m.allTime[k] !== undefined && m.allTime[k] !== null);
+}
 
 export default function SpiderChart({ trainings = [], userTrainings = [], selectedSport, setSelectedSport, calendarData = [], athleteId = null }) {
   const navigate = useNavigate();
@@ -92,9 +102,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   // Stable "all time" reference used for normalization so the max doesn't jump
   // when user changes compare period / selected months.
   const [allTimeRef, setAllTimeRef] = useState(null);
+  const allTimeRequestIdRef = useRef(0);
 
   useEffect(() => {
     const loadAllTimeRef = async () => {
+      const reqId = ++allTimeRequestIdRef.current;
       const CACHE_DURATION = 60 * 60 * 1000; // 1h
       const athletePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
       const cacheKey = `powerRadar_allTimeRef_v2${athletePart}`;
@@ -106,7 +118,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         if (cached && ts && (now - ts) < CACHE_DURATION) {
           try {
             const parsed = JSON.parse(cached);
-            if (parsed?.allTime && typeof parsed.allTime === 'object') {
+            if (isUsablePowerMetricsPayload(parsed)) {
               setAllTimeRef(parsed);
             }
           } catch {
@@ -119,9 +131,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         if (targetAthleteId) {
           paramsAllTime.append('athleteId', targetAthleteId);
         }
-        const resp = await api.get(`/api/fit/power-metrics?${paramsAllTime.toString()}`);
+        // Bypass api.js global GET cache (long TTL) so dashboard is not stuck on stale zeros.
+        const resp = await api.get(`/api/fit/power-metrics?${paramsAllTime.toString()}`, { noCache: true });
+        if (reqId !== allTimeRequestIdRef.current) return;
         const metrics = resp.data;
-        if (metrics?.allTime && typeof metrics.allTime === 'object') {
+        if (isUsablePowerMetricsPayload(metrics)) {
           setAllTimeRef(metrics);
           try {
             localStorage.setItem(cacheKey, JSON.stringify(metrics));
@@ -138,9 +152,12 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     loadAllTimeRef();
   }, [targetAthleteId]);
   
+  const metricsRequestIdRef = useRef(0);
+
   // Load power metrics from backend or cache
   useEffect(() => {
     const loadPowerMetrics = async () => {
+      const reqId = ++metricsRequestIdRef.current;
       // Include athleteId in cache so coach switching athletes gets correct data
       const athleteCachePart = targetAthleteId ? `_athlete_${targetAthleteId}` : '';
       const cacheKey = `powerRadar_metrics_v3_${comparePeriod}_${selectedMonths.join(',')}${athleteCachePart}`;
@@ -157,31 +174,28 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         
         // Use cache for fast paint, but still revalidate via API (stale-while-revalidate)
         if (cachedData && cacheTimestamp) {
-          const cacheAge = now - parseInt(cacheTimestamp);
+          const cacheAge = now - parseInt(cacheTimestamp, 10);
           if (cacheAge < CACHE_DURATION) {
             try {
               const parsed = JSON.parse(cachedData);
-              // Validate that parsed data has the expected structure
-              if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
+              if (isUsablePowerMetricsPayload(parsed)) {
                 setPowerMetrics(parsed);
                 setLoadError(null);
                 usedCachedData = true;
-                console.log('[SpiderChart] Using cached power metrics (valid)');
               } else {
                 console.warn('[SpiderChart] Cached data has invalid structure, loading from API');
               }
             } catch (e) {
               console.error('[SpiderChart] Error parsing cached power metrics:', e);
             }
-    } else {
+          } else {
             // Cache exists but is expired - use it as fallback while loading
             try {
               const parsed = JSON.parse(cachedData);
-              if (parsed && parsed.allTime && typeof parsed.allTime === 'object') {
+              if (isUsablePowerMetricsPayload(parsed)) {
                 setPowerMetrics(parsed);
                 setLoadError(null);
                 usedCachedData = true;
-                console.log('[SpiderChart] Using expired cache as fallback');
               }
             } catch (e) {
               // Ignore parse errors
@@ -194,7 +208,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           setLoading(false);
           setRefreshing(true);
         } else {
-        setLoading(true);
+          setLoading(true);
           setRefreshing(false);
         }
         
@@ -209,11 +223,13 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
         }
         
         setLoadError(null);
-        const response = await api.get(`/api/fit/power-metrics?${params.toString()}`);
+        const response = await api.get(`/api/fit/power-metrics?${params.toString()}`, { noCache: true });
+        if (reqId !== metricsRequestIdRef.current) return;
         const metrics = response.data;
 
         // HTTP 200 s tělem { error: 'Access denied' } apod.
         if (metrics && typeof metrics.error === 'string' && metrics.error) {
+          if (reqId !== metricsRequestIdRef.current) return;
           const emptyCompare = {
             sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
             attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
@@ -236,32 +252,14 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           return;
         }
         
-        // Validate API response (ensure compare exists so table/chart don't crash)
-        const hasAllTime = metrics?.allTime && typeof metrics.allTime === 'object';
-        const hasCompare = metrics?.compare && typeof metrics.compare === 'object';
-        if (!metrics || !hasAllTime) {
-          console.warn('[SpiderChart] Invalid API response structure (using empty chart):', metrics);
-          const emptyCompare = {
-            sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            attack1min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            vo2max5min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            threshold20min: { value: 0, trainingId: null, trainingType: null, stravaId: null },
-            endurance60min: { value: 0, trainingId: null, trainingType: null, stravaId: null }
-          };
-          const emptyVal = { value: 0, trainingId: null, trainingType: null, stravaId: null };
-          setLoadError('No power metrics available');
-          setPowerMetrics({
-            allTime: { sprint5s: emptyVal, attack1min: emptyVal, vo2max5min: emptyVal, threshold20min: emptyVal, endurance60min: emptyVal },
-            compare: emptyCompare,
-            personalRecords: {},
-            improvements: {},
-            monthlyMetrics: {},
-            trainingsCount: 0
-          });
-          setLoading(false);
-          setRefreshing(false);
+        // Validate full shape (avoid wiping UI on truncated/cached HTML/error payloads)
+        if (!isUsablePowerMetricsPayload(metrics)) {
+          if (reqId !== metricsRequestIdRef.current) return;
+          console.warn('[SpiderChart] Invalid API response structure (keeping previous chart data):', metrics);
+          setLoadError('Could not load power metrics (unexpected response).');
           return;
         }
+        const hasCompare = metrics?.compare && typeof metrics.compare === 'object';
         if (!hasCompare) {
           metrics.compare = {
             sprint5s: { value: 0, trainingId: null, trainingType: null, stravaId: null },
@@ -272,19 +270,21 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           };
         }
         
-        // Cache the result
+        // Cache the result (only well-formed payloads)
         try {
           const metricsCacheData = JSON.stringify(metrics);
-          if (metricsCacheData.length < 50000) { // Only cache if < 50KB
+          if (metricsCacheData.length < 50000) {
             localStorage.setItem(cacheKey, metricsCacheData);
             localStorage.setItem(cacheTimestampKey, now.toString());
           }
         } catch (e) {
           // Ignore cache errors
-      }
-        
+        }
+
+        if (reqId !== metricsRequestIdRef.current) return;
         setPowerMetrics(metrics);
       } catch (error) {
+        if (reqId !== metricsRequestIdRef.current) return;
         const status = error.response?.status;
         const isNotFoundOrForbidden = status === 404 || status === 403;
         if (isNotFoundOrForbidden) {
@@ -315,7 +315,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             const cachedData = localStorage.getItem(cacheKey);
             if (cachedData) {
               const cachedMetrics = JSON.parse(cachedData);
-              if (cachedMetrics && cachedMetrics.allTime && typeof cachedMetrics.allTime === 'object') {
+              if (isUsablePowerMetricsPayload(cachedMetrics)) {
                 setPowerMetrics(cachedMetrics);
                 setLoadError(null);
                 setLoading(false);
@@ -326,7 +326,6 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           } catch (e) {
             // Ignore cache parse errors
           }
-          // If no cached data available, keep existing data
           setLoading(false);
           setRefreshing(false);
           return;
