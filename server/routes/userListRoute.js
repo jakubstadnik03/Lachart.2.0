@@ -2920,7 +2920,7 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
         }
 
         const { userId } = req.params;
-        const { emailType = 'newFeatures' } = req.body; // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community'
+        const { emailType = 'newFeatures' } = req.body; // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community', 'thresholdLogicUpdate'
         
         const targetUser = await userDao.findById(userId);
         if (!targetUser) {
@@ -2947,6 +2947,8 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
         let emailContent = '';
         let subject = '';
         let title = '';
+        let buttonText = 'Open LaChart';
+        let buttonUrl = clientUrl;
 
         switch (emailType) {
             case 'newFeatures':
@@ -3065,6 +3067,120 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
                     <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
                 `;
                 break;
+            case 'thresholdLogicUpdate': {
+                title = 'More precise LT1/LT2 + zone generation';
+                subject = 'LaChart update: more precise LT1/LT2 and training zones';
+                buttonText = 'Login and check previous test';
+                buttonUrl = `${clientUrl}/testing`;
+
+                const latestTest = await Test.findOne({ athleteId: String(targetUser._id) })
+                    .sort({ date: -1, createdAt: -1 })
+                    .lean();
+                const previousTest = latestTest
+                    ? await Test.findOne({
+                        athleteId: String(targetUser._id),
+                        _id: { $ne: latestTest._id },
+                        sport: latestTest.sport
+                      })
+                        .sort({ date: -1, createdAt: -1 })
+                        .lean()
+                    : null;
+
+                const { calculateThresholds } = require('../utils/lactateThresholds');
+                const { buildLactateCurveSvg } = require('../utils/lactateReportSvgs');
+
+                const safeNum = (v, d = 2) => (Number.isFinite(Number(v)) ? Number(v).toFixed(d) : '—');
+                const fmtDate = (v) => {
+                    try {
+                        return new Date(v).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    } catch {
+                        return '—';
+                    }
+                };
+                const fmtIntensity = (sport, v) => {
+                    const n = Number(v);
+                    if (!Number.isFinite(n)) return '—';
+                    if (sport === 'bike') return `${Math.round(n)} W`;
+                    const sec = Math.max(0, Math.round(n));
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return `${m}:${String(s).padStart(2, '0')}${sport === 'swim' ? '/100m' : '/km'}`;
+                };
+
+                let latestBlock = `
+                  <div style="margin-top:16px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;color:#6b7280;">
+                    No lactate test found yet for this athlete.
+                  </div>
+                `;
+
+                if (latestTest && Array.isArray(latestTest.results) && latestTest.results.length >= 3) {
+                    const thr = calculateThresholds(latestTest) || {};
+                    const lt1 = Number(thr?.LTP1);
+                    const lt2 = Number(thr?.LTP2);
+                    const la1 = Number(thr?.lactates?.LTP1);
+                    const la2 = Number(thr?.lactates?.LTP2);
+                    const hr1 = Number(thr?.heartRates?.LTP1);
+                    const hr2 = Number(thr?.heartRates?.LTP2);
+
+                    const curveSvg = buildLactateCurveSvg({
+                        results: latestTest.results,
+                        sportLabel: `${(latestTest.sport || 'sport').toUpperCase()} • ${fmtDate(latestTest.date || latestTest.createdAt)}`,
+                        xLabel: latestTest.sport === 'bike' ? 'Power (W)' : 'Pace',
+                        sport: latestTest.sport || 'bike',
+                        unitSystem: latestTest.unitSystem || 'metric',
+                        inputMode: latestTest.inputMode || 'pace',
+                        lt1: Number.isFinite(lt1) ? { x: lt1, label: 'LT1', color: '#16a34a' } : null,
+                        lt2: Number.isFinite(lt2) ? { x: lt2, label: 'LT2', color: '#dc2626' } : null
+                    });
+
+                    latestBlock = `
+                      <div style="margin-top:18px;padding:14px;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;">
+                        <div style="font-weight:700;color:#111827;margin-bottom:8px;">Your latest test snapshot</div>
+                        <div style="color:#6b7280;font-size:13px;margin-bottom:10px;">
+                          ${fmtDate(latestTest.date || latestTest.createdAt)} • ${String(latestTest.sport || '').toUpperCase()}
+                        </div>
+                        <div style="margin:8px 0 14px 0;">${curveSvg || ''}</div>
+                        <table role="presentation" style="width:100%;border-collapse:collapse;font-size:13px;">
+                          <tr>
+                            <td style="padding:6px 0;border-bottom:1px solid #eef2f7;font-weight:700;color:#111827;">LT1</td>
+                            <td style="padding:6px 0;border-bottom:1px solid #eef2f7;color:#111827;">${fmtIntensity(latestTest.sport, lt1)}</td>
+                            <td style="padding:6px 0;border-bottom:1px solid #eef2f7;color:#111827;text-align:right;">HR ${safeNum(hr1, 0)} • La ${safeNum(la1, 2)}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding:6px 0;font-weight:700;color:#111827;">LT2</td>
+                            <td style="padding:6px 0;color:#111827;">${fmtIntensity(latestTest.sport, lt2)}</td>
+                            <td style="padding:6px 0;color:#111827;text-align:right;">HR ${safeNum(hr2, 0)} • La ${safeNum(la2, 2)}</td>
+                          </tr>
+                        </table>
+                      </div>
+                    `;
+                }
+
+                const prevHint = previousTest
+                    ? `<p style="margin-top:14px;">Previous ${String(previousTest.sport || '').toUpperCase()} test: <strong>${fmtDate(previousTest.date || previousTest.createdAt)}</strong>. Compare it with the latest one after login.</p>`
+                    : `<p style="margin-top:14px;">You have one test saved now. After your next test, comparison to previous test will be available immediately.</p>`;
+
+                emailContent = `
+                    <p>Hi ${userName},</p>
+                    <p>I shipped an update to improve <strong>LT1/LT2 detection</strong> and <strong>training zone generation</strong> in LaChart.</p>
+                    <p style="margin-top:10px;">What changed:</p>
+                    <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+                        <li><strong>LT1 detection:</strong> better handling of early rise vs. delayed jump, so LT1 is less likely to be overestimated.</li>
+                        <li><strong>Zone generation:</strong> zones now align better with measured lactate response and threshold positions.</li>
+                        <li><strong>Stability:</strong> noisy points and false starts have lower impact on final LT values.</li>
+                    </ul>
+                    <p style="margin-top:14px;">Result: your thresholds and generated zones should be more precise and more usable for daily training.</p>
+                    ${latestBlock}
+                    ${prevHint}
+                    <div style="margin: 16px 0 8px 0;">
+                        <a href="${clientUrl}/login" style="display:inline-block;background:#767EB5;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-right:8px;margin-bottom:8px;">Login</a>
+                        <a href="${clientUrl}/testing" style="display:inline-block;background:#1f8f55;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;margin-bottom:8px;">Open Tests & Compare</a>
+                    </div>
+                    <p style="margin-top: 24px;">Thanks for testing LaChart and helping improve the calculations.</p>
+                    <p><strong>Jakub Stádník</strong><br/>Creator of LaChart<br/><a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                `;
+                break;
+            }
             default:
                 title = 'Update from LaChart 📧';
                 subject = 'Update from LaChart 📧';
@@ -3093,8 +3209,8 @@ router.post("/admin/send-feature-announcement-email/:userId", verifyToken, async
             html: generateEmailTemplate({
                 title: title,
                 content: emailContent,
-                buttonText: 'Open LaChart',
-                buttonUrl: clientUrl,
+                buttonText,
+                buttonUrl,
                 footerText: 'From the creator Jakub Stádník. I am trying to create a useful tool for coaches and athletes. Please let me know if you are using the app as a coach or as an athlete and if you understand the tools or need some more explanation.'
             })
         });

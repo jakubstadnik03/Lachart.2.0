@@ -41,7 +41,7 @@ function formatIntensityTick(value, { sport, unitSystem, inputMode }) {
   return inputMode === 'speed' ? v.toFixed(1) : String(Math.round(v));
 }
 
-function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, inputMode }) {
+function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, inputMode, lt1 = null, lt2 = null }) {
   const pts = (Array.isArray(results) ? results : [])
     .map(r => ({ x: Number(r.power), y: Number(r.lactate) }))
     .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
@@ -79,6 +79,21 @@ function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, 
   const sy = (y) => padT + (1 - ((y - minY) / (maxY - minY || 1))) * innerH;
 
   const linePoints = pts.map(p => `${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(' ');
+
+  const thresholdLines = [lt1, lt2]
+    .filter(Boolean)
+    .filter((t) => Number.isFinite(Number(t.x)))
+    .map((t) => {
+      const x = sx(Number(t.x)).toFixed(1);
+      const color = escapeHtml(t.color || '#111827');
+      const label = escapeHtml(t.label || '');
+      return `
+        <line x1="${x}" y1="${padT}" x2="${x}" y2="${H - padB}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.95"/>
+        <rect x="${(Number(x) - 18).toFixed(1)}" y="${(padT + 4).toFixed(1)}" width="36" height="14" rx="4" fill="#ffffff" opacity="0.92"/>
+        <text x="${x}" y="${(padT + 14).toFixed(1)}" text-anchor="middle" font-size="10" fill="${color}" font-weight="700">${label}</text>
+      `.trim();
+    })
+    .join('');
 
   const yGrid = [];
   const yTicks = [];
@@ -124,6 +139,7 @@ function buildLactateCurveSvg({ results, sportLabel, xLabel, sport, unitSystem, 
     <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="#111827" stroke-width="1.2"/>
     ${yTicks.join('')}
     ${xTicks}
+    ${thresholdLines}
     <polyline points="${linePoints}" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${circles}
     <text x="${padL}" y="${padT - 4}" font-size="12" fill="#111827" font-weight="700">${escapeHtml(sportLabel || 'Test')}</text>

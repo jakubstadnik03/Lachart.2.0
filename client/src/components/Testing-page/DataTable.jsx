@@ -541,6 +541,10 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         minIdx = i;
       }
     }
+    // Pace sports often rise in two smaller steps (e.g. +0.20 then +0.30).
+    // We want LT1 at the onset of that rise, not only at the later larger jump.
+    const DIRECT_RISE_MIN = 0.24;
+    const COMBINED_RISE_MIN = 0.32;
     for (let j = minIdx + 1; j < n; j++) {
       const prev = sorted[j - 1];
       const curr = sorted[j];
@@ -548,7 +552,15 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       const la1 = Number(curr.lactate);
       if (!Number.isFinite(la0) || !Number.isFinite(la1)) continue;
       const inc = la1 - la0;
-      if (inc < 0.32) continue;
+      const la2 = j + 1 < n ? Number(sorted[j + 1].lactate) : NaN;
+      const nextInc = Number.isFinite(la2) ? (la2 - la1) : -Infinity;
+      const sustainedRise =
+        inc >= DIRECT_RISE_MIN &&
+        (
+          nextInc >= 0.08 ||
+          (inc + Math.max(0, nextInc)) >= COMBINED_RISE_MIN
+        );
+      if (!sustainedRise) continue;
       if (isLtp1FalseStartRise(sorted, j)) continue;
       const laOut = Math.min(Math.max(la1, MIN_LTP1_LACTATE), MAX_LTP1_LACTATE_PACE);
       const pOut = Number(curr.power);

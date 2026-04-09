@@ -21,7 +21,7 @@ const AdminDashboard = () => {
   const [emailLoadingUserId, setEmailLoadingUserId] = useState(null);
   const [thankYouEmailLoadingUserId, setThankYouEmailLoadingUserId] = useState(null);
   const [featureAnnouncementEmailLoadingUserId, setFeatureAnnouncementEmailLoadingUserId] = useState(null);
-  const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community'
+  const [featureAnnouncementEmailType, setFeatureAnnouncementEmailType] = useState('newFeatures'); // 'newFeatures', 'googleLoginFix', 'improvements', 'tips', 'community', 'thresholdLogicUpdate'
   const [stravaReminderEmailLoadingUserId, setStravaReminderEmailLoadingUserId] = useState(null);
   const [sendingToAll, setSendingToAll] = useState(false);
   const [usersLimit, setUsersLimit] = useState(20);
@@ -248,7 +248,8 @@ const AdminDashboard = () => {
         'googleLoginFix': 'Google Login Fix',
         'improvements': 'Improvements',
         'tips': 'Tips',
-        'community': 'Community'
+        'community': 'Community',
+        'thresholdLogicUpdate': 'LT1/LT2 + Zones Update'
       };
       addNotification(`${emailTypeNames[typeToSend] || 'Feature announcement'} email sent to ${targetUser.email}`, 'success');
     } catch (err) {
@@ -1912,6 +1913,7 @@ const AdminDashboard = () => {
                         <option value="improvements">Improvements</option>
                         <option value="tips">Tips</option>
                         <option value="community">Community</option>
+                        <option value="thresholdLogicUpdate">LT1/LT2 + Zones Update</option>
                       </select>
                     )}
                   </div>
