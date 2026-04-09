@@ -354,6 +354,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
   const MIN_LTP2_LACTATE_REASONABLE = 2.5;
   /** Minimální odstup LT2 od LT1 (W pro kolo), aby zóny dávaly smysl */
   const MIN_LT2_LT1_GAP_W = 25;
+  /** Minimální odstup LT2 od LT1 u běhu/plavání (sekundy tempa): při menší mezeře posuneme LT1 na nižší La (dřívější aerobní práh). */
+  const MIN_LT2_LT1_GAP_PACE_SEC = 22;
 
   const getAdaptiveLtp2Cap = (points) => {
     const vals = (points || [])
@@ -639,6 +641,57 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       hrMid = h1 ?? h0;
     }
     return { power: pMid, lactate: laOut, heartRate: hrMid };
+  };
+
+  /** Interpolace tempa (power v sekundách) při cílovém laktátu; sortedDesc = pomalý → rychlý. */
+  const interpolatePowerAtLactatePace = (sortedDesc, targetLa) => {
+    if (!sortedDesc || sortedDesc.length < 2) return null;
+    const tLa = Number(targetLa);
+    if (!Number.isFinite(tLa)) return null;
+    for (let i = 0; i < sortedDesc.length - 1; i++) {
+      const la = Number(sortedDesc[i].lactate);
+      const lb = Number(sortedDesc[i + 1].lactate);
+      const pa = Number(sortedDesc[i].power);
+      const pb = Number(sortedDesc[i + 1].power);
+      if (!Number.isFinite(la) || !Number.isFinite(lb) || !Number.isFinite(pa) || !Number.isFinite(pb)) continue;
+      if ((la <= tLa && lb >= tLa) || (la >= tLa && lb <= tLa)) {
+        const t = Math.abs(lb - la) < 1e-9 ? 0.5 : (tLa - la) / (lb - la);
+        return pa + t * (pb - pa);
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Když jsou LT1 a LT2 v tempu téměř na sobě, posuň LT1 na nižší laktát (typicky ~2.0 mmol/L),
+   * aby aerobní práh neležel u anaerobního — vychází z naměřených segmentů, ne z „natvrdo“ 2.5.
+   */
+  const relaxPaceLt1IfSqueezedAgainstLt2 = (sortedDesc, ltp1Power, ltp1Lactate, ltp2Power) => {
+    const p1 = Number(ltp1Power);
+    const p2 = Number(ltp2Power);
+    if (!Number.isFinite(p1) || !Number.isFinite(p2)) return null;
+    const gap = p1 - p2;
+    if (gap >= MIN_LT2_LT1_GAP_PACE_SEC) return null;
+
+    const tryLas = [1.85, 1.9, 1.95, 2.0, 2.05, 2.1];
+    for (const targetLa of tryLas) {
+      if (targetLa < MIN_LTP1_LACTATE - 1e-9 || targetLa > MAX_LTP1_LACTATE_PACE + 1e-9) continue;
+      const p = interpolatePowerAtLactatePace(sortedDesc, targetLa);
+      if (p == null || !Number.isFinite(p)) continue;
+      if (p > p2 + MIN_LT2_LT1_GAP_PACE_SEC) {
+        return { power: p, lactate: targetLa };
+      }
+    }
+
+    const logPt = calculateLogLogThreshold(sortedDesc);
+    if (logPt && Number.isFinite(Number(logPt.power)) && Number.isFinite(Number(logPt.lactate))) {
+      const p = Number(logPt.power);
+      const la = Number(logPt.lactate);
+      if (la >= MIN_LTP1_LACTATE && la <= MAX_LTP1_LACTATE_PACE && p > p2 + MIN_LT2_LT1_GAP_PACE_SEC) {
+        return { power: p, lactate: la };
+      }
+    }
+    return null;
   };
 
   // LT1 helper: first sustained rise above baseline + delta, confirmed by next point.
@@ -1405,6 +1458,13 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
               const h2 = interpolateHRAtPowerPoly(ltp2Power);
               if (h2 != null) ltp2HR = h2;
             }
+          }
+          const relaxedLt1 = relaxPaceLt1IfSqueezedAgainstLt2(sortedResults, ltp1Power, ltp1Lactate, ltp2Power);
+          if (relaxedLt1) {
+            ltp1Power = relaxedLt1.power;
+            ltp1Lactate = relaxedLt1.lactate;
+            const hR = interpolateHRAtPowerPoly(ltp1Power);
+            if (hR != null) ltp1HR = hR;
           }
         } else {
           const interpolatePowerAtLactateBike = (targetLa) => {

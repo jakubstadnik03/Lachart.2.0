@@ -406,6 +406,52 @@ function calculateThresholds(testData) {
     if (hrVal != null) thresholds.heartRates['LTP2'] = hrVal;
   }
 
+  // Pace: pokud jsou LT1 a LT2 příliš blízko v sekundách tempa, posunout LT1 na nižší laktát (soulad s client DataTable)
+  const MIN_LT2_LT1_GAP_PACE_SEC = 22;
+  const MIN_LTP1_LA_PACE = 1.5;
+  const MAX_LTP1_LA_PACE = 2.5;
+  if (isPaceSport && thresholds['LTP1'] != null && thresholds['LTP2'] != null) {
+    const gapPace = thresholds['LTP1'] - thresholds['LTP2'];
+    if (gapPace < MIN_LT2_LT1_GAP_PACE_SEC) {
+      const tryLas = [1.85, 1.9, 1.95, 2.0, 2.05, 2.1];
+      let fixed = false;
+      for (const targetLa of tryLas) {
+        if (targetLa < MIN_LTP1_LA_PACE || targetLa > MAX_LTP1_LA_PACE) continue;
+        let pAt = null;
+        for (let i = 0; i < sortedResults.length - 1; i++) {
+          const la = Number(sortedResults[i].lactate);
+          const lb = Number(sortedResults[i + 1].lactate);
+          const pa = Number(sortedResults[i].power);
+          const pb = Number(sortedResults[i + 1].power);
+          if (!Number.isFinite(la) || !Number.isFinite(lb) || !Number.isFinite(pa) || !Number.isFinite(pb)) continue;
+          if ((la <= targetLa && lb >= targetLa) || (la >= targetLa && lb <= targetLa)) {
+            pAt = interpolate(pa, la, pb, lb, targetLa);
+            break;
+          }
+        }
+        if (pAt != null && Number.isFinite(pAt) && pAt > thresholds['LTP2'] + MIN_LT2_LT1_GAP_PACE_SEC) {
+          thresholds['LTP1'] = pAt;
+          thresholds.lactates['LTP1'] = targetLa;
+          thresholds.heartRates['LTP1'] = interpolateHR(pAt, sortedResults, sport);
+          fixed = true;
+          break;
+        }
+      }
+      if (!fixed && logLog && Number.isFinite(Number(logLog.power)) && Number.isFinite(Number(logLog.lactate))) {
+        const p = Number(logLog.power);
+        const la = Number(logLog.lactate);
+        if (la >= MIN_LTP1_LA_PACE && la <= MAX_LTP1_LA_PACE && p > thresholds['LTP2'] + MIN_LT2_LT1_GAP_PACE_SEC) {
+          thresholds['LTP1'] = p;
+          thresholds.lactates['LTP1'] = la;
+          thresholds.heartRates['LTP1'] =
+            logLog.heartRate != null && Number.isFinite(Number(logLog.heartRate))
+              ? Number(logLog.heartRate)
+              : interpolateHR(p, sortedResults, sport);
+        }
+      }
+    }
+  }
+
   // Bike: pokud je LTP2 příliš blízko LTP1 nebo s příliš nízkým laktátem, použít OBLA 3.5
   const MIN_LTP2_LACTATE = 2.5;
   const MIN_LT2_LT1_GAP_W = 25;

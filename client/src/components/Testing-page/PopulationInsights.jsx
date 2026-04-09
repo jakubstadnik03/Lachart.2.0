@@ -1,6 +1,182 @@
 import React, { useState, useEffect } from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceLine,
+  CartesianGrid,
+} from 'recharts';
 import api from '../../services/api';
+
+const formatTooltipAxisLabel = (label, decimals = 2) => {
+  const n = Number(label);
+  return Number.isFinite(n) ? n.toFixed(decimals) : String(label ?? '—');
+};
+
+/** Human-readable % of athletes in one histogram bin (tooltip). */
+const formatSampleShare = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value ?? '—');
+  const rounded = Math.round(n * 10) / 10;
+  return rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(1);
+};
+
+/**
+ * API returns `distribution` as number[] (histogram bin heights, % of sample per bin).
+ * Recharts AreaChart expects rows with `x` (value axis) and `y` (density).
+ */
+const histogramToChartPoints = (metric, { xScale = 1 } = {}) => {
+  if (!metric?.distribution?.length) return [];
+  const min = Number(metric.min);
+  const max = Number(metric.max);
+  const distribution = metric.distribution;
+  const bins = distribution.length;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || bins <= 0) return [];
+
+  const span = max - min;
+  if (span <= 0) {
+    const y0 = Number(distribution[0]);
+    return [{ x: min * xScale, y: Number.isFinite(y0) ? y0 : 0 }];
+  }
+
+  const binWidth = span / bins;
+  return distribution.map((raw, i) => ({
+    x: (min + (i + 0.5) * binWidth) * xScale,
+    y: Number(raw) || 0,
+  }));
+};
+
+const CHART_COLORS = {
+  bar: '#6366f1',
+  you: '#ef4444',
+};
+
+/**
+ * Histogram: % of the selected group in each value range (binned on the server).
+ * Bars match the underlying data better than a smooth area curve.
+ */
+const PopulationHistogram = ({
+  data,
+  xTickDecimals,
+  xAxisLabel,
+  tooltipTitle,
+  referenceX,
+  showReference,
+  count,
+  footerStats,
+  chartHeightClass = 'h-48',
+}) => {
+  const tickFmt = (v) => formatTooltipAxisLabel(v, xTickDecimals);
+  const smallSample = count < 30;
+
+  return (
+    <div>
+      <div className={`${chartHeightClass} min-h-[11rem] w-full`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            margin={{ top: 4, right: 6, left: 2, bottom: 4 }}
+            barCategoryGap="12%"
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+            <XAxis
+              type="number"
+              dataKey="x"
+              domain={['dataMin', 'dataMax']}
+              tick={{ fontSize: 10 }}
+              tickFormatter={tickFmt}
+              label={{
+                value: xAxisLabel,
+                position: 'insideBottom',
+                offset: -2,
+                style: { fontSize: 10, fill: '#6b7280' },
+              }}
+            />
+            <YAxis
+              tick={{ fontSize: 10 }}
+              width={36}
+              tickFormatter={(v) => `${formatSampleShare(v)}%`}
+              label={{
+                value: '% of group',
+                angle: -90,
+                position: 'insideLeft',
+                style: { fontSize: 9, fill: '#9ca3af' },
+                offset: 4,
+              }}
+            />
+            <Tooltip
+              cursor={{ fill: 'rgba(99, 102, 241, 0.06)' }}
+              formatter={(value) => [`${formatSampleShare(value)}%`, 'Share of group']}
+              labelFormatter={(label) => `${tooltipTitle}: ${tickFmt(label)}`}
+              contentStyle={{
+                fontSize: 12,
+                borderRadius: 8,
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
+              }}
+            />
+            <Bar
+              dataKey="y"
+              fill={CHART_COLORS.bar}
+              radius={[3, 3, 0, 0]}
+              maxBarSize={48}
+              isAnimationActive={false}
+            />
+            {showReference && referenceX != null && Number.isFinite(Number(referenceX)) && (
+              <ReferenceLine
+                x={referenceX}
+                stroke={CHART_COLORS.you}
+                strokeWidth={2}
+                strokeDasharray="4 3"
+                label={{
+                  value: 'You',
+                  position: 'top',
+                  fill: CHART_COLORS.you,
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
+              />
+            )}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-600">
+          {footerStats.map(({ label, value }) => (
+            <span key={label}>
+              <span className="text-gray-400">{label}</span>{' '}
+              <span className="font-medium text-gray-800">{value}</span>
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 text-[10px]">
+          <span className="flex items-center gap-1.5 text-gray-500">
+            <span className="inline-block h-2 w-3 rounded-sm" style={{ background: CHART_COLORS.bar }} />
+            Group
+          </span>
+          {showReference && (
+            <span className="flex items-center gap-1.5 text-gray-500">
+              <span
+                className="inline-block h-0 w-4 border-t-2 border-dashed"
+                style={{ borderColor: CHART_COLORS.you }}
+              />
+              You
+            </span>
+          )}
+        </div>
+      </div>
+      {smallSample && (
+        <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-900 ring-1 ring-amber-200/80">
+          <span className="font-medium">Small sample ({count}).</span> This is a rough spread, not a smooth
+          &ldquo;population curve&rdquo; — it will look steadier as more athletes appear in this group.
+        </p>
+      )}
+    </div>
+  );
+};
 
 const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
   const [stats, setStats] = useState(null);
@@ -72,7 +248,8 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
     const zones = athleteProfile.powerZones[selectedSport === 'bike' ? 'cycling' : 'running'];
     if (!zones?.lt1 || !zones?.lt2) return null;
     
-    const ratio = (zones.lt1 / zones.lt2) * 100;
+    // Decimal LT1/LT2 (same units as population API stats for percentiles & chart)
+    const ratio = zones.lt1 / zones.lt2;
     const lt1Wkg = selectedSport === 'bike' && athleteProfile.weight ? zones.lt1 / athleteProfile.weight : null;
     const lt2Wkg = selectedSport === 'bike' && athleteProfile.weight ? zones.lt2 / athleteProfile.weight : null;
     
@@ -104,7 +281,7 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
   const formatValue = (value, type) => {
     if (value === null || value === undefined) return '-';
     if (type === 'ratio') {
-      return `${value.toFixed(1)}%`;
+      return `${(value * 100).toFixed(1)}%`;
     }
     if (type === 'wkg') {
       return `${value.toFixed(2)} W/kg`;
@@ -155,176 +332,134 @@ const PopulationInsights = ({ athleteProfile, selectedSport = 'bike' }) => {
         </div>
       </div>
 
+      <div className="mb-5 rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/90 to-white px-3 py-2.5 text-xs leading-relaxed text-gray-700 ring-1 ring-indigo-100/80">
+        <p className="font-medium text-indigo-950">How to read these charts</p>
+        <p className="mt-1 text-gray-600">
+          Each bar is a <span className="font-medium text-gray-800">range of values</span> (split into 20 buckets from min to max in this group).
+          Height = <span className="font-medium text-gray-800">what % of athletes</span> in this gender group fall in that range — not a training score.
+          The dashed red line is <span className="font-medium text-gray-800">your</span> value when we have it.
+        </p>
+      </div>
+
       {/* W/kg graphs for bike */}
       {selectedSport === 'bike' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-          {/* LT1 W/kg */}
           {hasData(sportStats.lt1Wkg) && (
-            <div>
-              <div className="text-xs font-semibold text-gray-700 mb-2">
-                LT1 (W/kg)
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm ring-1 ring-gray-100">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900">LT1 (W/kg)</h4>
+                  <p className="mt-0.5 text-[11px] text-gray-500">First lactate threshold, relative to body weight</p>
+                </div>
                 {currentValues?.lt1Wkg && (
-                  <span className="ml-2 text-primary">
-                    You: {formatValue(currentValues.lt1Wkg, 'wkg')}
-                    {calculatePercentile(currentValues.lt1Wkg, sportStats.lt1Wkg) && (
-                      <span className="text-gray-500"> ({calculatePercentile(currentValues.lt1Wkg, sportStats.lt1Wkg).toFixed(1)}th percentile)</span>
+                  <div className="text-right text-xs">
+                    <span className="font-medium text-primary">
+                      You {formatValue(currentValues.lt1Wkg, 'wkg')}
+                    </span>
+                    {calculatePercentile(currentValues.lt1Wkg, sportStats.lt1Wkg) != null && (
+                      <span className="block text-gray-500">
+                        ~{calculatePercentile(currentValues.lt1Wkg, sportStats.lt1Wkg).toFixed(0)}th percentile vs group
+                      </span>
                     )}
-                  </span>
+                  </div>
                 )}
               </div>
               {!currentValues?.lt1Wkg && (
-                <p className="text-xs text-amber-600 mb-2">Set your weight in profile to see your W/kg value</p>
+                <p className="mb-3 text-xs text-amber-700">Add weight in your profile to compare W/kg and see your line.</p>
               )}
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={sportStats.lt1Wkg.distribution}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis 
-                      dataKey="x" 
-                      tick={{ fontSize: 9 }}
-                      label={{ value: 'W/kg', position: 'insideBottom', offset: -5, style: { fontSize: 9 } }}
-                    />
-                    <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip 
-                      formatter={(value) => [value.toFixed(4), 'Density']}
-                      labelFormatter={(label) => `LT1: ${label.toFixed(2)} W/kg`}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="y" 
-                      stroke="#3b82f6" 
-                      fill="#3b82f6" 
-                      fillOpacity={0.3}
-                    />
-                    {currentValues?.lt1Wkg && (
-                      <ReferenceLine 
-                        x={currentValues.lt1Wkg} 
-                        stroke="#ef4444" 
-                        strokeWidth={2}
-                        label={{ value: 'You', position: 'top', fill: '#ef4444', fontSize: 9 }}
-                      />
-                    )}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="text-[10px] text-gray-500 mt-1">
-                Avg: {formatValue(sportStats.lt1Wkg.mean, 'wkg')} | 
-                Median: {formatValue(sportStats.lt1Wkg.median, 'wkg')} | 
-                Count: {sportStats.lt1Wkg.count}
-              </div>
+              <PopulationHistogram
+                data={histogramToChartPoints(sportStats.lt1Wkg)}
+                xTickDecimals={2}
+                xAxisLabel="W/kg"
+                tooltipTitle="LT1"
+                referenceX={currentValues?.lt1Wkg}
+                showReference={!!currentValues?.lt1Wkg}
+                count={sportStats.lt1Wkg.count}
+                footerStats={[
+                  { label: 'Avg', value: formatValue(sportStats.lt1Wkg.mean, 'wkg') },
+                  { label: 'Median', value: formatValue(sportStats.lt1Wkg.median, 'wkg') },
+                  { label: 'n', value: String(sportStats.lt1Wkg.count) },
+                ]}
+              />
             </div>
           )}
 
-          {/* LT2 W/kg */}
           {hasData(sportStats.lt2Wkg) && (
-            <div>
-              <div className="text-xs font-semibold text-gray-700 mb-2">
-                LT2 (W/kg)
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm ring-1 ring-gray-100">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900">LT2 (W/kg)</h4>
+                  <p className="mt-0.5 text-[11px] text-gray-500">Second threshold (MLSS), relative to body weight</p>
+                </div>
                 {currentValues?.lt2Wkg && (
-                  <span className="ml-2 text-primary">
-                    You: {formatValue(currentValues.lt2Wkg, 'wkg')}
-                    {calculatePercentile(currentValues.lt2Wkg, sportStats.lt2Wkg) && (
-                      <span className="text-gray-500"> ({calculatePercentile(currentValues.lt2Wkg, sportStats.lt2Wkg).toFixed(1)}th percentile)</span>
+                  <div className="text-right text-xs">
+                    <span className="font-medium text-primary">
+                      You {formatValue(currentValues.lt2Wkg, 'wkg')}
+                    </span>
+                    {calculatePercentile(currentValues.lt2Wkg, sportStats.lt2Wkg) != null && (
+                      <span className="block text-gray-500">
+                        ~{calculatePercentile(currentValues.lt2Wkg, sportStats.lt2Wkg).toFixed(0)}th percentile vs group
+                      </span>
                     )}
-                  </span>
+                  </div>
                 )}
               </div>
               {!currentValues?.lt2Wkg && (
-                <p className="text-xs text-amber-600 mb-2">Set your weight in profile to see your W/kg value</p>
+                <p className="mb-3 text-xs text-amber-700">Add weight in your profile to compare W/kg and see your line.</p>
               )}
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={sportStats.lt2Wkg.distribution}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis 
-                      dataKey="x" 
-                      tick={{ fontSize: 9 }}
-                      label={{ value: 'W/kg', position: 'insideBottom', offset: -5, style: { fontSize: 9 } }}
-                    />
-                    <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip 
-                      formatter={(value) => [value.toFixed(4), 'Density']}
-                      labelFormatter={(label) => `LT2: ${label.toFixed(2)} W/kg`}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="y" 
-                      stroke="#3b82f6" 
-                      fill="#3b82f6" 
-                      fillOpacity={0.3}
-                    />
-                    {currentValues?.lt2Wkg && (
-                      <ReferenceLine 
-                        x={currentValues.lt2Wkg} 
-                        stroke="#ef4444" 
-                        strokeWidth={2}
-                        label={{ value: 'You', position: 'top', fill: '#ef4444', fontSize: 9 }}
-                      />
-                    )}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="text-[10px] text-gray-500 mt-1">
-                Avg: {formatValue(sportStats.lt2Wkg.mean, 'wkg')} | 
-                Median: {formatValue(sportStats.lt2Wkg.median, 'wkg')} | 
-                Count: {sportStats.lt2Wkg.count}
-              </div>
+              <PopulationHistogram
+                data={histogramToChartPoints(sportStats.lt2Wkg)}
+                xTickDecimals={2}
+                xAxisLabel="W/kg"
+                tooltipTitle="LT2"
+                referenceX={currentValues?.lt2Wkg}
+                showReference={!!currentValues?.lt2Wkg}
+                count={sportStats.lt2Wkg.count}
+                footerStats={[
+                  { label: 'Avg', value: formatValue(sportStats.lt2Wkg.mean, 'wkg') },
+                  { label: 'Median', value: formatValue(sportStats.lt2Wkg.median, 'wkg') },
+                  { label: 'n', value: String(sportStats.lt2Wkg.count) },
+                ]}
+              />
             </div>
           )}
         </div>
       )}
 
-      {/* LT1/LT2 Ratio graph */}
       {hasData(sportStats.lt1Lt2Ratio) && (
-        <div className="mb-4">
-          <div className="text-xs font-semibold text-gray-700 mb-2">
-            LT1/LT2 Ratio (%)
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm ring-1 ring-gray-100">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900">LT1 / LT2 ratio</h4>
+              <p className="mt-0.5 text-[11px] text-gray-500">
+                Lower % = wider gap between thresholds (often more room for endurance vs threshold work)
+              </p>
+            </div>
             {currentValues?.ratio && (
-              <span className="ml-2 text-primary">
-                You: {formatValue(currentValues.ratio, 'ratio')}
-                {calculatePercentile(currentValues.ratio, sportStats.lt1Lt2Ratio) && (
-                  <span className="text-gray-500"> ({calculatePercentile(currentValues.ratio, sportStats.lt1Lt2Ratio).toFixed(1)}th percentile)</span>
+              <div className="text-right text-xs">
+                <span className="font-medium text-primary">You {formatValue(currentValues.ratio, 'ratio')}</span>
+                {calculatePercentile(currentValues.ratio, sportStats.lt1Lt2Ratio) != null && (
+                  <span className="block text-gray-500">
+                    ~{calculatePercentile(currentValues.ratio, sportStats.lt1Lt2Ratio).toFixed(0)}th percentile vs group
+                  </span>
                 )}
-              </span>
+              </div>
             )}
           </div>
-          <div className="h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sportStats.lt1Lt2Ratio.distribution}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis 
-                  dataKey="x" 
-                  tick={{ fontSize: 9 }}
-                  label={{ value: 'Ratio (%)', position: 'insideBottom', offset: -5, style: { fontSize: 9 } }}
-                />
-                <YAxis tick={{ fontSize: 9 }} />
-                <Tooltip 
-                  formatter={(value) => [value.toFixed(4), 'Density']}
-                  labelFormatter={(label) => `Ratio: ${label.toFixed(1)}%`}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="y" 
-                  stroke="#3b82f6" 
-                  fill="#3b82f6" 
-                  fillOpacity={0.3}
-                />
-                {currentValues?.ratio && (
-                  <ReferenceLine 
-                    x={currentValues.ratio} 
-                    stroke="#ef4444" 
-                    strokeWidth={2}
-                    label={{ value: 'You', position: 'top', fill: '#ef4444', fontSize: 9 }}
-                  />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="text-[10px] text-gray-500 mt-1">
-            Avg: {formatValue(sportStats.lt1Lt2Ratio.mean, 'ratio')} | 
-            Median: {formatValue(sportStats.lt1Lt2Ratio.median, 'ratio')} | 
-            Count: {sportStats.lt1Lt2Ratio.count}
-          </div>
+          <PopulationHistogram
+            data={histogramToChartPoints(sportStats.lt1Lt2Ratio, { xScale: 100 })}
+            xTickDecimals={1}
+            xAxisLabel="Ratio (%)"
+            tooltipTitle="LT1/LT2"
+            referenceX={currentValues?.ratio != null ? currentValues.ratio * 100 : undefined}
+            showReference={!!currentValues?.ratio}
+            count={sportStats.lt1Lt2Ratio.count}
+            footerStats={[
+              { label: 'Avg', value: formatValue(sportStats.lt1Lt2Ratio.mean, 'ratio') },
+              { label: 'Median', value: formatValue(sportStats.lt1Lt2Ratio.median, 'ratio') },
+              { label: 'n', value: String(sportStats.lt1Lt2Ratio.count) },
+            ]}
+          />
         </div>
       )}
 
