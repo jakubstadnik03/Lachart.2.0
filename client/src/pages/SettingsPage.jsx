@@ -578,11 +578,26 @@ const SettingsPage = () => {
     try {
       setIsSyncingStrava(true);
       const res = await syncStravaActivities();
+      if (res?.status === 'in_progress') {
+        addNotification('Strava sync is already running in background. Please wait a moment.', 'info');
+        return;
+      }
       addNotification(`Strava sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       await handleSyncComplete();
     } catch (e) {
       console.error('Strava sync error:', e);
-      addNotification('Failed to sync Strava activities', 'error');
+      if (e?.response?.status === 429) {
+        const retryAfter = Number(e?.response?.data?.retryAfter || 0);
+        const minutes = retryAfter > 0 ? Math.max(1, Math.ceil(retryAfter / 60)) : null;
+        addNotification(
+          minutes
+            ? `Strava rate limit reached. Try again in about ${minutes} min.`
+            : 'Strava rate limit reached. Please try again later.',
+          'warning'
+        );
+      } else {
+        addNotification(e?.response?.data?.message || 'Failed to sync Strava activities', 'error');
+      }
     } finally {
       setIsSyncingStrava(false);
     }

@@ -1057,6 +1057,9 @@ export const syncStravaActivities = async (since=null) => {
   const { data } = await api.post('/api/integrations/strava/sync', { since }, {
     timeout: 600000 // 10 minutes timeout for large syncs (200 pages × 2 seconds = ~6-7 minutes max)
   });
+  if (data?.status === 'in_progress') {
+    return { imported: 0, updated: 0, status: 'in_progress', message: data?.message || 'Strava sync already in progress' };
+  }
   return data; // { imported, updated }
 };
 

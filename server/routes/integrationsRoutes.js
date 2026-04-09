@@ -18,6 +18,7 @@ function stripStravaActivityIdPrefix(id) {
 const cache = require('node-cache');
 const activitiesCache = new cache({ stdTTL: 120 }); // 2 minutes cache
 const stravaBackfillLocks = new Set();
+const stravaManualSyncLocks = new Set();
 
 // Cache middleware for activities
 const activitiesCacheMiddleware = (req, res, next) => {
@@ -411,8 +412,20 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
   let imported = 0;
   let updated = 0;
   let total = 0;
+  const lockKey = String(req.user?.userId || '');
   
   try {
+    if (stravaManualSyncLocks.has(lockKey)) {
+      return res.status(200).json({
+        imported: 0,
+        updated: 0,
+        totalFetched: 0,
+        status: 'in_progress',
+        message: 'Strava sync already in progress'
+      });
+    }
+    stravaManualSyncLocks.add(lockKey);
+
     const user = await User.findById(req.user.userId);
     if (!user || !user.strava?.accessToken) {
       return res.status(400).json({ error: 'Strava not connected' });
@@ -590,6 +603,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
       message: err.response?.data?.message || err.message || 'Unknown error',
       details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
+  } finally {
+    if (lockKey) stravaManualSyncLocks.delete(lockKey);
   }
 });
 
