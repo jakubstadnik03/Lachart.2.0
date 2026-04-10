@@ -18,12 +18,26 @@ const allowedOrigins = [
   'http://localhost:3001',
   'https://lachart-bc.vercel.app',
   'https://lachart.net',
-  'https://www.lachart.net'
+  'https://www.lachart.net',
+  // Capacitor / Cordova WebView (iOS/Android) — without these, login/API fails with Axios ERR_NETWORK
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost'
 ];
 
 // On Render: set ALLOW_LOCALHOST_ORIGIN=true to allow localhost (any port) for local dev against prod API
 const allowLocalhostInProduction = process.env.ALLOW_LOCALHOST_ORIGIN === 'true';
 const isLocalhostOrigin = (o) => o && (o.startsWith('http://localhost:') || o.startsWith('http://127.0.0.1:'));
+/** Native app shells (Capacitor 3+ often capacitor://localhost; some builds use ionic:// or https://localhost) */
+const isNativeAppShellOrigin = (o) => {
+  if (!o || typeof o !== 'string') return false;
+  return (
+    o.startsWith('capacitor://') ||
+    o.startsWith('ionic://') ||
+    o === 'https://localhost' ||
+    o === 'http://localhost'
+  );
+};
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -31,6 +45,9 @@ const corsOptions = {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
+      return callback(null, origin);
+    }
+    if (isNativeAppShellOrigin(origin)) {
       return callback(null, origin);
     }
     if (process.env.NODE_ENV !== 'production' && isLocalhostOrigin(origin)) {
@@ -68,6 +85,7 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowed = origin && (
     allowedOrigins.includes(origin) ||
+    isNativeAppShellOrigin(origin) ||
     (process.env.NODE_ENV !== 'production' && isLocalhostOrigin(origin)) ||
     (allowLocalhostInProduction && isLocalhostOrigin(origin))
   );
