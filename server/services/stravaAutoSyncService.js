@@ -189,6 +189,14 @@ async function syncStravaForUser(user) {
     }
     
     console.log(`[StravaAutoSync] Completed for user ${user._id}: ${imported} imported, ${updated} updated`);
+
+    if (imported > 0) {
+      const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
+      notifyUserStravaActivitiesImported(user._id, imported).catch((e) =>
+        console.error('[StravaAutoSync] push notify:', e.message || e)
+      );
+    }
+
     return { imported, updated };
   } catch (error) {
     // Ensure we never crash the server - catch all errors

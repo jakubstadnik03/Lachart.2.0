@@ -5,6 +5,7 @@ import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
 import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../services/api";
+import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalNotification";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 
@@ -196,6 +197,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         if (result.imported > 0 || result.updated > 0) {
           console.log(`Auto-sync completed on app load: ${result.imported} imported, ${result.updated} updated`);
           window.dispatchEvent(new CustomEvent('stravaSyncComplete', { detail: result }));
+          if (result.imported > 0) {
+            maybeNotifyStravaActivitiesImported(result.imported, user?.notifications);
+          }
         }
       } catch (error) {
         console.log('Auto-sync failed on app load:', error);
@@ -236,7 +240,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     user?.strava?.autoSync,
     user?.strava?.athleteId,
     user?.garmin?.autoSync,
-    user?.garmin?.accessToken
+    user?.garmin?.accessToken,
+    user?.notifications
   ]);
 
   // First-time product tour (after onboarding modals — delay so they don't stack)

@@ -14,6 +14,7 @@ import UnitsPreferencesModal from '../components/Profile/UnitsPreferencesModal';
 import TrainingZonesModal from '../components/Profile/TrainingZonesModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const LoginPage = () => {
   const [formData, setFormData] = useState({
@@ -486,6 +487,7 @@ const LoginPage = () => {
               )}
             </motion.button>
 
+            {!isCapacitorNative() && (
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -522,6 +524,7 @@ const LoginPage = () => {
                 />
               </div>
             </motion.div>
+            )}
           </motion.form>
 
           <motion.p 

@@ -13,6 +13,7 @@ import EditProfileModal from '../components/Profile/EditProfileModal';
 import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import api from '../services/api';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -446,6 +447,7 @@ const SignUpPage = () => {
               </button>
             </motion.div>
 
+            {!isCapacitorNative() && (
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -485,6 +487,7 @@ const SignUpPage = () => {
                 />
               </div>
             </motion.div>
+            )}
           </motion.form>
 
           <motion.p 

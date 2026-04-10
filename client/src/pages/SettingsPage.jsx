@@ -8,6 +8,18 @@ import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as 
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, garminLogin } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
+import { isCapacitorNative } from '../utils/isNativeApp';
+import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
+import { cancelScheduledLactateTestNotifications } from '../utils/lactateTestLocalNotifications';
+
+const DEFAULT_NOTIFICATION_PREFS = {
+  emailNotifications: true,
+  trainingReminders: true,
+  weeklyReports: true,
+  achievementAlerts: true,
+  pushStravaImport: true,
+  pushLactateTest: true
+};
 
 const SIGNUP_METHOD_LABELS = {
   email: 'Email and password',
@@ -87,12 +99,7 @@ const SettingsPage = () => {
     temperature: 'celsius' // 'celsius' or 'fahrenheit'
   });
 
-  const [notifications, setNotifications] = useState({
-    emailNotifications: true,
-    trainingReminders: true,
-    weeklyReports: true,
-    achievementAlerts: true
-  });
+  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATION_PREFS);
 
   const [formData, setFormData] = useState({
     currentPassword: '',
@@ -322,6 +329,9 @@ const SettingsPage = () => {
               if (syncResult.imported > 0 || syncResult.updated > 0) {
                 addNotification(`Strava sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
               }
+              if (syncResult.imported > 0) {
+                maybeNotifyStravaActivitiesImported(syncResult.imported, user?.notifications);
+              }
 
               // Reload user profile to reflect autoSync + avatar updates
               try {
@@ -431,7 +441,7 @@ const SettingsPage = () => {
     // Notifications still use localStorage
     // Notifications: prefer user profile, fallback to localStorage (backward compatibility)
     if (user?.notifications) {
-      setNotifications(user.notifications);
+      setNotifications({ ...DEFAULT_NOTIFICATION_PREFS, ...user.notifications });
     } else {
       const savedNotifications = localStorage.getItem('userNotifications');
       if (savedNotifications) {
@@ -520,6 +530,9 @@ const SettingsPage = () => {
 
   const saveNotifications = async (newNotifications) => {
     try {
+      if (newNotifications.pushLactateTest === false && notifications.pushLactateTest !== false) {
+        cancelScheduledLactateTestNotifications().catch(() => {});
+      }
       setNotifications(newNotifications);
       // Save to backend
       await saveNotificationsToBackend(newNotifications);
@@ -583,10 +596,17 @@ const SettingsPage = () => {
         return;
       }
       addNotification(`Strava sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
+      if ((res.imported || 0) > 0) {
+        maybeNotifyStravaActivitiesImported(res.imported, user?.notifications);
+      }
       await handleSyncComplete();
     } catch (e) {
       console.error('Strava sync error:', e);
       if (e?.response?.status === 429) {
+        const imp = Number(e?.response?.data?.imported);
+        if (imp > 0) {
+          maybeNotifyStravaActivitiesImported(imp, user?.notifications);
+        }
         const retryAfter = Number(e?.response?.data?.retryAfter || 0);
         const minutes = retryAfter > 0 ? Math.max(1, Math.ceil(retryAfter / 60)) : null;
         addNotification(
@@ -1497,6 +1517,51 @@ const SettingsPage = () => {
               </div>
             </div>
 
+            <div className={`${isMobile ? 'mt-4' : 'mt-8'} border-t ${isMobile ? 'pt-3' : 'pt-6'}`}>
+              <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                Push notifications
+              </h3>
+              <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                Mobile app (Expo / iOS Android). You may need to allow notifications in system settings.
+              </p>
+              <div className={`${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'} border-b`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Strava imports</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>When new activities sync from Strava</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.pushStravaImport !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, pushStravaImport: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+                <div className={`flex items-center justify-between ${isMobile ? 'py-1.5' : 'py-3'}`}>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <label className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-900`}>Lactate tests</label>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>When you save a test and follow-up reminders</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifications.pushLactateTest !== false}
+                      onChange={(e) =>
+                        saveNotifications({ ...notifications, pushLactateTest: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
             {(user?.admin || user?.role === 'admin') && (
               <div className={`${isMobile ? 'mt-3' : 'mt-6'} border-t pt-4`}>
                 <h4 className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-900 ${isMobile ? 'mb-2' : 'mb-3'}`}>Admin Tools</h4>
@@ -1781,6 +1846,10 @@ const SettingsPage = () => {
                   </div>
                   {linkedAccounts.google ? (
                     <span className={`${isMobile ? 'text-xs' : ''} text-green-500`}>Connected</span>
+                  ) : isCapacitorNative() ? (
+                    <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
+                      Link Google on lachart.net in a browser
+                    </span>
                   ) : (
                     <div className={isMobile ? 'w-full' : ''}>
                     <GoogleLogin

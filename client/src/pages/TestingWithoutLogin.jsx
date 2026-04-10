@@ -24,6 +24,7 @@ import { API_BASE_URL } from '../config/api.config';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 import { logUserRegistration, logTestCreated } from '../utils/eventLogger';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 // Animation variants
 const fadeInUpVariants = {
@@ -1253,7 +1254,8 @@ const LactateCurveCalculatorPage = () => {
                                     Create a free account and we'll send your test results to your email. You'll also be able to save and track your tests over time.
                                 </p>
 
-                                {/* Google Sign Up Button */}
+                                {/* Google Sign Up — web only (gsi script does not load in Capacitor WebView) */}
+                                {!isCapacitorNative() ? (
                                 <div className="mb-4">
                                     <GoogleLogin
                                         onSuccess={handleGoogleSuccess}
@@ -1266,6 +1268,11 @@ const LactateCurveCalculatorPage = () => {
                                         disabled={isSendingEmail}
                                     />
                                 </div>
+                                ) : (
+                                <p className="mb-4 text-sm text-gray-500">
+                                    Sign up with email below, or use Google on lachart.net in a browser.
+                                </p>
+                                )}
 
                                 <div className="relative mb-4">
                                     <div className="absolute inset-0 flex items-center">

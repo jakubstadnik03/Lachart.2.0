@@ -136,7 +136,9 @@ const lactateSessionSchema = new mongoose.Schema({
   },
   startedAt: Date,
   completedAt: Date,
-  duration: Number // total session duration in seconds
+  duration: Number, // total session duration in seconds
+  /** Set when server follow-up Expo push was sent or skipped (one shot per session). */
+  followUpPushSentAt: { type: Date, default: null }
 }, {
   timestamps: true
 });

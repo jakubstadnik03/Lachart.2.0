@@ -407,6 +407,15 @@ async function fetchStravaActivityStreams(token, stravaId) {
 // Helper function to delay requests to respect rate limits
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+function notifyStravaImportedPush(userId, imported) {
+  const n = Number(imported);
+  if (!userId || !Number.isFinite(n) || n < 1) return;
+  const { notifyUserStravaActivitiesImported } = require('../utils/expoPushNotifications');
+  notifyUserStravaActivitiesImported(userId, n).catch((e) =>
+    console.error('[Strava sync push]', e.message || e)
+  );
+}
+
 // POST /api/integrations/strava/sync (basic history fetch)
 router.post('/strava/sync', verifyToken, async (req, res) => {
   let imported = 0;
@@ -535,6 +544,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
             total
           });
           
+          notifyStravaImportedPush(user._id, imported);
           return res.status(429).json({
             error: 'Strava rate limit exceeded',
             message: `Strava API rate limit has been exceeded. Please try again in ${Math.ceil(retryAfter / 60)} minutes.`,
@@ -565,6 +575,8 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
         'strava.lastSyncDate': new Date()
       });
     }
+
+    notifyStravaImportedPush(user._id, imported);
     
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
@@ -575,6 +587,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     if (err.response?.status === 429 || 
         (err.response?.data?.message && err.response.data.message.includes('Rate Limit'))) {
       const retryAfter = err.response?.headers?.['retry-after'] || 900;
+      notifyStravaImportedPush(user?._id || req.user?.userId, imported);
       return res.status(429).json({
         error: 'Strava rate limit exceeded',
         message: `Strava API rate limit has been exceeded. Please try again in ${Math.ceil(retryAfter / 60)} minutes.`,
@@ -588,6 +601,7 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
     
     // Return partial results if we have any
     if (total > 0) {
+      notifyStravaImportedPush(user._id, imported);
       return res.json({
         imported,
         updated,

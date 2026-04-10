@@ -234,6 +234,10 @@ const userSchema = new mongoose.Schema({
     trainingReminders: { type: Boolean, default: true },
     weeklyReports: { type: Boolean, default: true },
     achievementAlerts: { type: Boolean, default: true },
+    /** Mobile push when Strava sync imports new activities (Expo token + optional local notification on Capacitor) */
+    pushStravaImport: { type: Boolean, default: true },
+    /** Mobile push + scheduled local reminders around lactate tests (Expo / Capacitor) */
+    pushLactateTest: { type: Boolean, default: true },
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },

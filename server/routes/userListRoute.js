@@ -38,6 +38,16 @@ const {
 /** Shared transporter: defaults to Zoho when only EMAIL_USER + APP_PASSWORD are set (avoids null transport). */
 const { createEmailTransporter } = require("../utils/createEmailTransporter");
 
+/** Safe subset of Nodemailer/SMTP errors for admin-only responses (no secrets). */
+function smtpDiagFromError(err) {
+    if (!err || typeof err !== "object") return undefined;
+    const code = err.code != null ? String(err.code) : undefined;
+    const command = err.command != null ? String(err.command) : undefined;
+    const responseCode = err.responseCode != null ? Number(err.responseCode) : undefined;
+    if (!code && !command && responseCode == null) return undefined;
+    return { code, command, responseCode };
+}
+
 /** Load linked coaches for an athlete (legacy coachId + coachIds). */
 async function getAthleteCoachesPayload(athleteId) {
     const athlete = await userDao.findById(athleteId);
@@ -2693,21 +2703,32 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
             })
         });
 
-        // Update tracking information
-        const updateData = {
-            thankYouEmail: {
-                sent: true,
-                sentCount: (targetUser.thankYouEmail?.sentCount || 0) + 1,
-                lastSent: new Date()
+        // Update tracking only (atomic $set). Avoid userDao.updateUser + full document save — legacy
+        // user docs can fail Mongoose validation on unrelated fields and surface as 500 after a successful send.
+        const nextThankYouCount = (targetUser.thankYouEmail?.sentCount || 0) + 1;
+        const trackResult = await User.updateOne(
+            { _id: targetUser._id },
+            {
+                $set: {
+                    'thankYouEmail.sent': true,
+                    'thankYouEmail.sentCount': nextThankYouCount,
+                    'thankYouEmail.lastSent': new Date()
+                }
             }
-        };
-        await userDao.updateUser(userId, updateData);
+        );
+        if (trackResult.matchedCount === 0) {
+            console.warn('[thank-you-email] tracking update matched no document', userId);
+        }
 
         res.status(200).json({ ok: true, message: "Thank you email sent" });
     } catch (error) {
         console.error("Error sending thank you email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";
-        const isAuthError = /invalid login|EAUTH|username and password|authentication failed/i.test(rawMessage) || (error.code && String(error.code).toUpperCase().includes('EAUTH'));
+        const rc = error && error.responseCode != null ? Number(error.responseCode) : null;
+        const isAuthError =
+            /invalid login|EAUTH|username and password|authentication failed|535|534/i.test(rawMessage) ||
+            (error.code && String(error.code).toUpperCase().includes('EAUTH')) ||
+            (rc != null && rc >= 530 && rc < 540);
         const isDbValidation = error && error.name === 'ValidationError';
         const isNetwork =
             /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ESOCKET|socket|timeout/i.test(rawMessage) ||
@@ -2725,10 +2746,11 @@ router.post("/admin/send-thank-you-email/:userId", verifyToken, async (req, res)
         if (isAuthError) {
             return res.status(400).json({
                 error: 'SMTP authentication failed',
-                reason: errorTitle
+                reason: errorTitle,
+                smtp: smtpDiagFromError(error)
             });
         }
-        res.status(500).json({ error: errorTitle, reason });
+        res.status(500).json({ error: errorTitle, reason, smtp: smtpDiagFromError(error) });
     }
 });
 
@@ -2866,15 +2888,17 @@ router.post("/admin/send-thank-you-email/all", verifyToken, async (req, res) => 
                     html: emailHtml
                 });
 
-                // Update tracking information
-                const updateData = {
-                    thankYouEmail: {
-                        sent: true,
-                        sentCount: (user.thankYouEmail?.sentCount || 0) + 1,
-                        lastSent: new Date()
+                const nextCount = (user.thankYouEmail?.sentCount || 0) + 1;
+                await User.updateOne(
+                    { _id: user._id },
+                    {
+                        $set: {
+                            'thankYouEmail.sent': true,
+                            'thankYouEmail.sentCount': nextCount,
+                            'thankYouEmail.lastSent': new Date()
+                        }
                     }
-                };
-                await userDao.updateUser(user._id, updateData);
+                );
 
                 successCount++;
                 
@@ -3356,10 +3380,11 @@ router.post("/admin/send-strava-reminder-email/:userId", verifyToken, async (req
         if (isAuthError) {
             return res.status(400).json({
                 error: 'SMTP authentication failed',
-                reason: errorTitle
+                reason: errorTitle,
+                smtp: smtpDiagFromError(error)
             });
         }
-        res.status(500).json({ error: errorTitle, reason });
+        res.status(500).json({ error: errorTitle, reason, smtp: smtpDiagFromError(error) });
     }
 });
 

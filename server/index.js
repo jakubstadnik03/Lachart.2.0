@@ -187,6 +187,7 @@ const workoutClusteringRoutes = require("./routes/workoutClusteringRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
+const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
 
 // Routes
 app.use("/test", testRoutes);
@@ -205,6 +206,8 @@ startWeeklyReportsScheduler();
 
 // Strava auto-sync scheduler (periodic sync for all users with auto-sync enabled)
 startStravaAutoSyncScheduler();
+
+startLactateTestFollowUpScheduler();
 
 // Simple trainer test API (demo - no auth required)
 // In-memory storage for demo purposes

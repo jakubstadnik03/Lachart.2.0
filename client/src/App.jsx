@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import { Capacitor } from '@capacitor/core';
+import { isCapacitorNative } from './utils/isNativeApp';
 import './App.css';
 import BuyMeACoffeeWidget from './components/BuyMeACoffeeWidget';
 
@@ -65,7 +66,7 @@ function DeferredVercelTrackers() {
   const [mods, setMods] = useState(null);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') return undefined;
+    if (isCapacitorNative() || process.env.NODE_ENV !== 'production') return undefined;
     let cancelled = false;
     let idleId;
     let timeoutId;
@@ -92,7 +93,7 @@ function DeferredVercelTrackers() {
     };
   }, []);
 
-  if (!mods) return null;
+  if (isCapacitorNative() || !mods) return null;
   const { Analytics, SpeedInsights } = mods;
   return (
     <>
@@ -295,21 +296,26 @@ function App() {
     nonce: crypto.randomUUID()
   }), []);
 
+  const coreApp = (
+    <NotificationProvider>
+      <AuthProvider>
+        <TrainingProvider>
+          {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
+          <AppRoutes />
+          {isProd && <DeferredVercelTrackers />}
+          {!isCapacitorNative() && <BuyMeACoffeeWidget />}
+        </TrainingProvider>
+      </AuthProvider>
+    </NotificationProvider>
+  );
+
   return (
     <Router>
-      <GoogleOAuthProvider {...googleOAuthConfig}>
-        <NotificationProvider>
-          <AuthProvider>
-            <TrainingProvider>
-              {/* Only initialize analytics & Vercel tracking in production to avoid noisy dev logs */}
-              {isProd && initAnalytics('G-HNHPQH30BL')}
-              <AppRoutes />
-              {isProd && <DeferredVercelTrackers />}
-              <BuyMeACoffeeWidget />
-            </TrainingProvider>
-          </AuthProvider>
-        </NotificationProvider>
-      </GoogleOAuthProvider>
+      {isCapacitorNative() ? (
+        coreApp
+      ) : (
+        <GoogleOAuthProvider {...googleOAuthConfig}>{coreApp}</GoogleOAuthProvider>
+      )}
     </Router>
   );
 }

@@ -199,6 +199,11 @@ const lactateSessionController = {
       }
       
       await session.save();
+
+      const { notifyUserLactateTestCompleted } = require('../utils/expoPushNotifications');
+      notifyUserLactateTestCompleted(session.athleteId).catch((e) =>
+        console.error('[completeSession] lactate push:', e.message || e)
+      );
       
       // Automatically save power zones to user profile if this is a cycling test with zones
       if (session.sport === 'bike' && session.trainingZones && session.trainingZones.length > 0) {

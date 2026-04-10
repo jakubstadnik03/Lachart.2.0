@@ -9,6 +9,7 @@ import LactateEntryModal from '../components/LactateTesting/LactateEntryModal';
 import LactateChart from '../components/LactateTesting/LactateChart';
 import ProtocolEditModal from '../components/LactateTesting/ProtocolEditModal';
 import { saveLactateSession, getLactateSessions, getLactateSessionById, completeLactateSession, downloadLactateSessionFit } from '../services/api';
+import { scheduleLactateTestLocalNotifications } from '../utils/lactateTestLocalNotifications';
 import deviceConnectivity from '../services/deviceConnectivity';
 import { useTrainer } from '../trainer/react/useTrainer.js';
 import { TrainerConnectModal } from '../trainer/react/TrainerConnectModal.jsx';
@@ -1179,6 +1180,7 @@ const LactateTestingPage = () => {
         // Then complete the session with FIT file data
         try {
           await completeLactateSession(sessionId, { fitFileData });
+          scheduleLactateTestLocalNotifications(user?.notifications);
           setTimeout(() => {
             addNotification('Test session saved successfully with FIT file', 'success');
           }, 0);
