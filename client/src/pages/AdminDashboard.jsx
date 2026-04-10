@@ -1237,6 +1237,11 @@ const AdminDashboard = () => {
                       }`}>
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
+                      {user.premium && (
+                        <span className="inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
+                          Premium (manual)
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2 mt-1.5">
                       <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${
@@ -1756,11 +1761,18 @@ const AdminDashboard = () => {
                             </div>
                           </td>
                           <td className="px-4 lg:px-6 py-4 hidden lg:table-cell">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                            }`}>
-                              {user.isActive ? 'Active' : 'Inactive'}
-                            </span>
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              }`}>
+                                {user.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                              {user.premium && (
+                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-900">
+                                  Premium
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 lg:px-6 py-4 text-sm font-medium space-y-2">
                             <button
@@ -2586,7 +2598,8 @@ const AdminDashboard = () => {
                 email: formData.get('email'),
                 role: formData.get('role'),
                 admin: formData.get('admin') === 'on',
-                isActive: formData.get('isActive') === 'on'
+                isActive: formData.get('isActive') === 'on',
+                premium: formData.get('premium') === 'on'
               });
             }}>
               <div className="space-y-3 sm:space-y-4">
@@ -2649,6 +2662,20 @@ const AdminDashboard = () => {
                   />
                   <label className="ml-2 block text-xs sm:text-sm text-gray-900">Active</label>
                 </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    name="premium"
+                    defaultChecked={!!editingUser.premium}
+                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                  <label className="ml-2 block text-xs sm:text-sm text-gray-900">
+                    Premium access (manual)
+                  </label>
+                </div>
+                <p className="text-[10px] sm:text-xs text-gray-500">
+                  Grants paid features without Stripe. Effective access also includes active Pro+ subscriptions.
+                </p>
               </div>
               <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2 sm:space-x-3">
                 <button

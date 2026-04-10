@@ -1159,9 +1159,9 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7 }}
-          className="lg:col-span-5 md:col-span-2"
+          className="lg:col-span-5 md:col-span-2 overflow-visible min-h-0"
         >
-          <div className="space-y-6">
+          <div className="space-y-6 overflow-visible">
             {/* Lactate Statistics Component */}
             <LactateStatistics selectedAthleteId={selectedAthleteId} />
             

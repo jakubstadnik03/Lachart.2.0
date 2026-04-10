@@ -320,6 +320,14 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subscription',
     default: null
+  },
+  /**
+   * Manual premium access (comp accounts, testing, support).
+   * Effective premium = premium === true OR active paid Subscription (see server/utils/premiumAccess.js).
+   */
+  premium: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

@@ -25,6 +25,7 @@ const StravaActivity = require("../models/StravaActivity");
 const LactateSession = require("../models/lactateSession");
 const Event = require("../models/Event");
 const User = require("../models/UserModel");
+const { resolvePremiumForUserDocument } = require("../utils/premiumAccess");
 const CoachOutreachLead = require("../models/CoachOutreachLead");
 const { sendLactateTestReportEmail } = require("../services/lactateTestReportEmailService");
 const {
@@ -655,6 +656,8 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
+        const premiumState = await resolvePremiumForUserDocument(updatedUser);
+
         // Return updated data without sensitive information
         const userResponse = {
             _id: updatedUser._id,
@@ -663,6 +666,9 @@ router.put("/edit-profile", verifyToken, async (req, res) => {
             email: updatedUser.email,
             role: updatedUser.role,
             admin: updatedUser.admin,
+            premium: updatedUser.premium === true,
+            isPremium: premiumState.isPremium,
+            premiumSource: premiumState.source,
             dateOfBirth: updatedUser.dateOfBirth,
             address: updatedUser.address,
             phone: updatedUser.phone,
@@ -1021,6 +1027,8 @@ router.get("/profile", verifyToken, async (req, res) => {
         const signup = resolveSignupMethodForProfile(user);
         const regLoc = publicRegistrationLocation(user);
 
+        const premiumState = await resolvePremiumForUserDocument(user);
+
         // Return data without sensitive information
         const userResponse = {
             _id: user._id,
@@ -1029,6 +1037,9 @@ router.get("/profile", verifyToken, async (req, res) => {
             email: user.email,
             role: user.role,
             admin: user.admin,
+            premium: user.premium === true,
+            isPremium: premiumState.isPremium,
+            premiumSource: premiumState.source,
             createdAt: user.createdAt || null,
             signupMethod: signup.method,
             signupMethodSource: signup.source,
@@ -2210,6 +2221,7 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 email: user.email,
                 role: user.role,
                 admin: user.admin,
+                premium: user.premium === true,
                 dateOfBirth: user.dateOfBirth,
                 sport: user.sport,
                 createdAt: user.createdAt,
@@ -3554,7 +3566,7 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
         }
 
         const { userId } = req.params;
-        const { name, surname, email, role, admin, isActive } = req.body;
+        const { name, surname, email, role, admin, isActive, premium } = req.body;
 
         const updateData = {};
         if (name !== undefined) updateData.name = name;
@@ -3563,6 +3575,7 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
         if (role !== undefined) updateData.role = role;
         if (admin !== undefined) updateData.admin = admin;
         if (isActive !== undefined) updateData.isActive = isActive;
+        if (premium !== undefined) updateData.premium = Boolean(premium);
 
         const updatedUser = await userDao.updateUser(userId, updateData);
         if (!updatedUser) {
@@ -3578,7 +3591,8 @@ router.put("/admin/users/:userId", verifyToken, async (req, res) => {
                 email: updatedUser.email,
                 role: updatedUser.role,
                 admin: updatedUser.admin,
-                isActive: updatedUser.isActive
+                isActive: updatedUser.isActive,
+                premium: updatedUser.premium === true
             }
         });
     } catch (error) {

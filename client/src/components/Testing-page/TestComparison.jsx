@@ -32,7 +32,7 @@ const TestComparison = ({ tests = [] }) => {
   // Early return if no tests or tests array is empty
   if (!tests || !Array.isArray(tests) || tests.length === 0) {
     return (
-      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg">
+      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
         <div className="text-center py-4 text-gray-500">
           No tests selected for comparison
         </div>
@@ -55,7 +55,7 @@ const TestComparison = ({ tests = [] }) => {
 
   if (validTests.length === 0) {
     return (
-      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg">
+      <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
         <div className="text-center py-4 text-gray-500">
           No valid test data available for comparison
         </div>
@@ -376,7 +376,7 @@ const TestComparison = ({ tests = [] }) => {
   };
 
   return (
-    <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-x-auto">
+    <div className="w-full p-2 sm:p-4 bg-white rounded-2xl shadow-lg overflow-visible">
       <div className="flex items-center justify-end gap-2 mb-2 flex-wrap">
         <button
           type="button"
@@ -401,7 +401,9 @@ const TestComparison = ({ tests = [] }) => {
           {showThresholdPoints ? 'Hide threshold points' : 'Show threshold points'}
         </button>
       </div>
-      <div className="relative w-full h-[350px] sm:h-[600px] md:h-[400px]">
+      {/* Horizontal scroll only around the chart — avoid root overflow-x-auto (forces overflow-y: auto and can clip content below). */}
+      <div className="relative w-full min-h-0 overflow-x-auto -mx-1 px-1">
+      <div className="relative w-full h-[350px] sm:h-[500px] md:h-[450px] min-w-[280px]">
         {showHeartRateGraph && !hasAnyHRData ? (
           <div className="h-full flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-center p-6">
             <p className="text-gray-600">No heart rate data in selected tests. Add HR (bpm) to at least 2 steps per test to see heart rate vs lactate.</p>
@@ -462,7 +464,8 @@ const TestComparison = ({ tests = [] }) => {
           />
         )}
       </div>
-      
+      </div>
+
       {/* Zones Comparison Table */}
       {validTests.length > 0 && (() => {
         const zonesForTests = validTests.map(test => calculateZonesFromTest(test));
@@ -529,7 +532,7 @@ const TestComparison = ({ tests = [] }) => {
         };
 
         return (
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-6 overflow-x-auto pb-2">
             <h3 className="text-lg font-semibold mb-4">Training Zones Comparison</h3>
             <p className="text-xs text-gray-500 mb-2">
               <span className="inline-flex items-center gap-1"><span className="text-emerald-600 font-medium">↑ improvement</span></span>

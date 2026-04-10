@@ -407,7 +407,7 @@ const PreviousTestingComponent = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="mt-6"
+            className="mt-6 overflow-visible"
           >
             <TestComparison tests={selectedTests} />
           </motion.div>

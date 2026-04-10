@@ -4,6 +4,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
   : null;
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
+const { resolvePremiumAccess } = require('../utils/premiumAccess');
 
 // Available subscription plans (exported for use in middleware)
 const PLANS = {
@@ -117,7 +118,13 @@ exports.getCurrentSubscription = async (req, res) => {
     }
 
     const plan = PLANS[subscription.plan] || PLANS.free;
-    
+
+    const subPlain =
+      subscription && typeof subscription.toObject === 'function'
+        ? subscription.toObject()
+        : subscription;
+    const premiumState = resolvePremiumAccess(user, subPlain);
+
     res.json({
       subscription: {
         id: subscription._id,
@@ -129,7 +136,10 @@ exports.getCurrentSubscription = async (req, res) => {
         isActive: subscription.isActive(),
         planDetails: plan,
         systemEnabled: process.env.SUBSCRIPTION_ENABLED === 'true'
-      }
+      },
+      premium: user.premium === true,
+      isPremium: premiumState.isPremium,
+      premiumSource: premiumState.source
     });
   } catch (error) {
     console.error('Error fetching subscription:', error);

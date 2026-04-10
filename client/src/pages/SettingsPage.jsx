@@ -1594,47 +1594,78 @@ const SettingsPage = () => {
           </div>
         );
 
-      case 'subscription':
+      case 'subscription': {
+        const hasPremium = user?.isPremium === true;
+        const manualPremium = user?.premium === true && user?.premiumSource === 'manual';
         return (
           <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
             <div className={`text-center ${isMobile ? 'mb-2' : 'mb-6'}`}>
               <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 uppercase tracking-wide ${isMobile ? 'mb-0.5' : 'mb-2'}`}>Your Membership</p>
-              <h3 className={`${isMobile ? 'text-base' : 'text-3xl'} font-bold text-gray-900`}>LaChart Free</h3>
+              <h3 className={`${isMobile ? 'text-base' : 'text-3xl'} font-bold text-gray-900`}>
+                {hasPremium ? 'LaChart Premium' : 'LaChart Free'}
+              </h3>
+              {hasPremium && user?.premiumSource && (
+                <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 mt-1`}>
+                  {user.premiumSource === 'manual'
+                    ? 'Complimentary / admin access'
+                    : user.premiumSource === 'subscription'
+                      ? 'Active subscription'
+                      : ''}
+                </p>
+              )}
             </div>
             
             <div className={`${isMobile ? 'w-full' : 'max-w-md'} mx-auto bg-white border border-gray-200 ${isMobile ? 'rounded-md p-2' : 'rounded-lg p-6'}`}>
               <div className={`text-center ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
-                <span className={`inline-block ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-3 py-1 text-xs'} bg-gray-500 text-white font-semibold ${isMobile ? 'rounded-full mb-1.5' : 'rounded-full mb-3'}`}>
-                  FREE
+                <span className={`inline-block ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-3 py-1 text-xs'} ${hasPremium ? 'bg-primary text-white' : 'bg-gray-500 text-white'} font-semibold ${isMobile ? 'rounded-full mb-1.5' : 'rounded-full mb-3'}`}>
+                  {hasPremium ? 'PREMIUM' : 'FREE'}
                 </span>
-                <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-2'}`}>Free Plan</h4>
-                <div className={`${isMobile ? 'text-lg' : 'text-4xl'} font-bold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>$0.00</div>
-                <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>USD / MONTH</p>
+                <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-2'}`}>
+                  {hasPremium ? 'Premium access' : 'Free Plan'}
+                </h4>
+                <div className={`${isMobile ? 'text-lg' : 'text-4xl'} font-bold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>
+                  {hasPremium && !manualPremium ? '—' : '$0.00'}
+                </div>
+                <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
+                  {hasPremium && !manualPremium ? 'Billed via subscription' : 'USD / MONTH'}
+                </p>
               </div>
               
               <div className={`border-t border-gray-200 ${isMobile ? 'pt-1.5 mt-1.5' : 'pt-4 mt-4'}`}>
                 <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 text-center`}>
-                  You are currently on the free plan
+                  {hasPremium
+                    ? 'You have access to premium features.'
+                    : 'You are currently on the free plan'}
                 </p>
               </div>
             </div>
 
             <div className={`${isMobile ? 'mt-2' : 'mt-6'} ${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
               <div className="text-center">
-                <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
-                  Premium features coming soon! Upgrade to unlock advanced analytics, unlimited data storage, and priority support.
-                </p>
-                <button 
-                  className={`${isMobile ? 'px-3 py-1 text-[10px]' : 'px-6 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-                  disabled
-                  title="Coming soon"
-                >
-                  Upgrade to Premium
-                </button>
+                {!hasPremium ? (
+                  <>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
+                      Premium features coming soon! Upgrade to unlock advanced analytics, unlimited data storage, and priority support.
+                    </p>
+                    <button 
+                      className={`${isMobile ? 'px-3 py-1 text-[10px]' : 'px-6 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+                      disabled
+                      title="Coming soon"
+                    >
+                      Upgrade to Premium
+                    </button>
+                  </>
+                ) : (
+                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600`}>
+                    Paid checkout will appear here when billing is enabled.
+                  </p>
+                )}
               </div>
               
               <div className={`${isMobile ? 'mt-2 pt-2' : 'mt-6 pt-6'} border-t border-gray-200`}>
-                <h4 className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-900 ${isMobile ? 'mb-1.5' : 'mb-3'}`}>Premium Features (Coming Soon)</h4>
+                <h4 className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-900 ${isMobile ? 'mb-1.5' : 'mb-3'}`}>
+                  {hasPremium ? 'Premium features' : 'Premium Features (Coming Soon)'}
+                </h4>
                 <ul className={`${isMobile ? 'space-y-1 text-[9px]' : 'space-y-2 text-sm'} text-gray-600`}>
                   <li className="flex items-center gap-2">
                     <span className="text-primary">✓</span>
@@ -1661,6 +1692,7 @@ const SettingsPage = () => {
             </div>
           </div>
         );
+      }
 
       case 'account':
         return (
