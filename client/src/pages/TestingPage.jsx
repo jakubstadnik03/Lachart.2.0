@@ -170,7 +170,7 @@ const TestingPage = () => {
         lastLoadedTestsForAthleteRef.current = null;
       }
     }
-  }, [user, addNotification, isTestingRole]);
+  }, [addNotification, isTestingRole]);
 
   // If backend says the selected test doesn't exist anymore, the UI might be holding a stale testId.
   // Reload the test list, clear the URL param and localStorage selection.
