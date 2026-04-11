@@ -6,15 +6,13 @@ import { NotificationProvider } from './context/NotificationContext';
 import { TrainingProvider } from './context/TrainingContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
-import { Capacitor } from '@capacitor/core';
 import { isCapacitorNative } from './utils/isNativeApp';
 import './App.css';
 import BuyMeACoffeeWidget from './components/BuyMeACoffeeWidget';
 
-/** Jen nativní iOS appka (Capacitor) — `/` = login. Ve webovém prohlížeči zůstává About jako dřív. */
-const isIosNative = Capacitor.getPlatform() === 'ios';
+/** Nativní Capacitor (iOS/Android) — `/` = login. Ve webovém prohlížeči zůstává About. */
 
 // Lazy load all pages for code splitting and faster initial load
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -106,6 +104,13 @@ function DeferredVercelTrackers() {
 function AppRoutes() {
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const goSettings = () => navigate('/settings?tab=subscription');
+    window.addEventListener('app:premium-required', goSettings);
+    return () => window.removeEventListener('app:premium-required', goSettings);
+  }, [navigate]);
 
   // Memoize the Layout component to prevent unnecessary re-renders
   const LayoutWithProps = useMemo(() => (
@@ -164,7 +169,7 @@ function AppRoutes() {
     >
       <Routes>
         {/* Veřejné routy */}
-        <Route path="/" element={isIosNative ? <LoginPage /> : <About />} />
+        <Route path="/" element={isCapacitorNative() ? <LoginPage /> : <About />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
@@ -284,6 +289,20 @@ function AppRoutes() {
 
 function App() {
   const isProd = process.env.NODE_ENV === 'production';
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isCapacitorNative()) return undefined;
+    import('./native/initCapacitorShell')
+      .then((m) => {
+        if (!cancelled) return m.initCapacitorShell();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Memoize the GoogleOAuthProvider configuration
   const googleOAuthConfig = useMemo(() => ({
     clientId: process.env.REACT_APP_GOOGLE_CLIENT_ID,

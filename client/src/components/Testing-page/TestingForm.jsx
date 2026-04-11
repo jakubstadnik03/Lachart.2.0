@@ -160,6 +160,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     if (testData?.rpeScale) return testData.rpeScale;
     return 'rpe'; // Default to RPE scale
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -752,24 +753,40 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           return hasPower && hasLactate;
         })
     };
-    if (onSave) {
-      try {
-        await Promise.resolve(onSave(updatedTest));
-        addNotification('Test data saved successfully', 'success');
-        trackEvent('test_saved', {
-          sport: formData.sport,
-          intervals: rows.length,
-          isNewTest: isNewTest
-        });
-        setIsEditMode(false);
-        setOriginalTestData(null); // Clear original data after successful save
-      } catch (error) {
-        console.error('Error saving test data:', error);
-        addNotification(
-          error?.response?.data?.message || error?.message || 'Failed to save test data',
-          'error'
-        );
-      }
+
+    if (!updatedTest.results || updatedTest.results.length === 0) {
+      addNotification(
+        'Add at least one interval with power (or pace) and lactate before saving.',
+        'error'
+      );
+      return;
+    }
+
+    if (!onSave) {
+      addNotification('Save is not available in this view.', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await onSave(updatedTest);
+      addNotification('Test data saved successfully', 'success');
+      trackEvent('test_saved', {
+        sport: formData.sport,
+        intervals: rows.length,
+        isNewTest: isNewTest
+      });
+      setIsEditMode(false);
+      setOriginalTestData(null); // Clear original data after successful save
+    } catch (error) {
+      console.error('Error saving test data:', error);
+      const apiMsg = error?.response?.data?.error || error?.response?.data?.message;
+      addNotification(
+        apiMsg || error?.message || 'Failed to save test data',
+        'error'
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -988,7 +1005,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const isBaseLaInvalid = !baseLaTrimmed || Number.isNaN(baseLaParsed) || baseLaParsed <= 0;
 
   return (
-    <div className="flex flex-col max-w-lg mx-auto p-1 sm:px-1 sm:py-4 bg-gray-50 rounded-lg relative h-full">
+    <div className="flex flex-col w-full p-2 sm:p-4 bg-white rounded-xl relative h-full">
       {/* keyframes moved to global CSS (index.css) */}
 
       {/* Single Tutorial Message Portal */}
@@ -1557,14 +1574,17 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
             {!demoMode && (
             <button
+                type="button"
                 data-tour="tour-save-test"
+                disabled={isSaving}
                 onClick={() => {
                   logClick('Save Button', { isNewTest });
-                  handleSaveChanges();
+                  void handleSaveChanges();
                 }}
-                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors"
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none"
             >
-                <Save size={14} /> {isNewTest ? 'Save Test' : 'Save Changes'}
+                <Save size={14} />{' '}
+                {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
             </button>
             )}
             </div>

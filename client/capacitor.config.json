@@ -7,5 +7,15 @@
   },
   "ios": {
     "contentInset": "automatic"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#ffffff",
+      "androidScaleType": "CENTER_CROP"
+    }
   }
 }

@@ -24,9 +24,9 @@ const NewTestingComponent = ({ selectedSport, onSubmit }) => {
     };
 
     const handleSaveFromForm = (formData) => {
-      // This will be called from TestingForm when user clicks save
+      // Return the promise so TestingForm can await API success/failure
       console.log('Saving from form:', formData);
-      onSubmit(formData);
+      return onSubmit(formData);
     };
 
   

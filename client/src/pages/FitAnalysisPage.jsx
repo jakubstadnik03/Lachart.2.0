@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
-import { prepareTrainingChartData, formatDuration, formatDistance } from '../utils/fitAnalysisUtils';
+import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw } from '../utils/fitAnalysisUtils';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -1163,44 +1163,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
               const endTime = cumulativeTime + (lap.elapsed_time || 0);
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
-              const lapDurationSec = Number(lap?.elapsed_time || lap?.elapsedTime || 0);
 
-              // Some sources provide distance with wrong magnitude (e.g. meters off by x1000).
-              // If lap is short but distance is huge, normalize by /1000 so UI shows meters/km correctly.
-              const normalizeLapDistance = (distance) => {
-                const d = Number(distance);
-                if (!Number.isFinite(d) || d <= 0) return distance;
-                if (d > 100000 && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
-                  return d / 1000;
-                }
-
-                // If distance is a meter value with decimals (e.g. 664.59 m),
-                // our `formatDistance()` heuristic may treat it as km and show "664.59 km".
-                // We detect that by comparing distance implied by avg speed (m/s) with the raw value.
-                const speedMps = Number(lap?.average_speed ?? lap?.avgSpeed ?? lap?.speed ?? null);
-                if (Number.isFinite(speedMps) && speedMps > 0 && Number.isFinite(lapDurationSec) && lapDurationSec > 0) {
-                  const expectedMeters = speedMps * lapDurationSec;
-                  if (expectedMeters > 0) {
-                    const errMeters = Math.abs(d - expectedMeters) / expectedMeters;
-                    const errKilometers = Math.abs(d * 1000 - expectedMeters) / expectedMeters;
-
-                    // If raw number fits meters better than kilometers.
-                    if (errMeters <= errKilometers) {
-                      // `formatDistance()` interprets decimals in [1..999] as km.
-                      // Convert meter-decimals (<1000) into km-fraction (<1) so it becomes meters again.
-                      if (d < 1000 && !Number.isInteger(d)) return d / 1000;
-                      return d; // already meters (>=1000 or integer meters)
-                    }
-                  }
-                }
-
-                // Fallback: for short intervals, decimals in [1..999] are very likely meters.
-                if (d < 1000 && d >= 1 && !Number.isInteger(d) && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
-                  return d / 1000;
-                }
-                return distance;
-              };
-              
               return (
                 <tr 
                   key={index}
@@ -1254,7 +1217,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
-                    {formatDistance(normalizeLapDistance(lap.distance), user)}
+                    {formatDistance(normalizeStravaLapDistanceRaw(lap), user)}
                   </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                     {(() => {
@@ -5198,7 +5161,8 @@ const FitAnalysisPage = () => {
                       timestamp: Number.isNaN(timestamp.getTime()) ? new Date(activityStartTime).toISOString() : timestamp.toISOString(),
                       timeFromStart: time,
                       distance: distance,
-                      speed: speedArray[index] ? speedArray[index] * 3.6 : null, // Convert m/s to km/h
+                      // Strava velocity_smooth is m/s — keep m/s so IntervalChart / lap math match FIT records and TrainingChart streams
+                      speed: speedArray[index] != null && speedArray[index] !== '' ? Number(speedArray[index]) : null,
                       heartRate: hrArray[index] || null,
                       power: powerArray[index] || null,
                       cadence: cadenceArray[index] || null
@@ -5225,6 +5189,7 @@ const FitAnalysisPage = () => {
                           selectedLapNumber={selectedLapNumber}
                           onSelectLapNumber={setSelectedLapNumber}
                           highlightMetric={highlightMetric}
+                          lapTimeSource="strava"
                         />
                       </div>
                     ) : null}

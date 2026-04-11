@@ -694,44 +694,12 @@ export default function DashboardPage() {
         
         // Testing role: dashboard is focused on tests only (no training widgets/calendar).
         if (isTestingRole) {
-          // #region agent log
-          fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-            body: JSON.stringify({
-              sessionId: '2e357f',
-              runId: 'precheck',
-              hypothesisId: 'H3',
-              location: 'DashboardPage.jsx',
-              message: 'testing dashboard load start',
-              data: { selectedAthleteId: targetAthleteId, sport: selectedSport },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          const t0 = Date.now();
           const athleteData = await loadAthlete(targetAthleteId);
-          const testsData = await loadTests(targetAthleteId);
+          await loadTests(targetAthleteId);
           if (athleteData && athleteData._id !== selectedAthleteId) {
             setSelectedAthleteId(athleteData._id);
           }
 
-          // #region agent log
-          fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-            body: JSON.stringify({
-              sessionId: '2e357f',
-              runId: 'precheck',
-              hypothesisId: 'H3',
-              location: 'DashboardPage.jsx',
-              message: 'testing dashboard load end',
-              data: { durationMs: Date.now() - t0, testsCount: Array.isArray(testsData) ? testsData.length : null },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           return;
         }
 

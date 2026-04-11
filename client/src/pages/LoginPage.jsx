@@ -82,10 +82,12 @@ const LoginPage = () => {
       console.log("Sending login request to:", API_ENDPOINTS.AUTH + "/login");
       console.log("Login data:", { email: formData.email, password: "***" });
 
-      const result = await api.post(API_ENDPOINTS.AUTH + "/login", {
-        email: formData.email,
-        password: formData.password
-      });
+      // Render (and similar) cold start + DB connect can exceed default 60s — allow longer wait for login only
+      const result = await api.post(
+        API_ENDPOINTS.AUTH + "/login",
+        { email: formData.email, password: formData.password },
+        { timeout: 120000 }
+      );
       
       if (result.data.token) {
         console.log("Login successful, token received");
@@ -167,8 +169,12 @@ const LoginPage = () => {
     } catch (error) {
       console.error("Login error:", error);
       let errorMessage = "Login failed";
-      
-      if (error.response) {
+
+      if (error.code === "ECONNABORTED") {
+        errorMessage =
+          "Server neodpověděl včas (timeout). Na Renderu často první požadavek po pauze „probouzí“ službu a může trvat i 1–2 minuty — zkus to znovu. " +
+          "Ověř v prohlížeči https://lachart.onrender.com/health . Pro vývoj proti lokálnímu API nastav v client/.env REACT_APP_API_URL=http://localhost:PORT.";
+      } else if (error.response) {
         console.log("Error response:", error.response);
         if (error.response.status === 429) {
           errorMessage = "Too many login attempts. Please wait a few minutes before trying again.";

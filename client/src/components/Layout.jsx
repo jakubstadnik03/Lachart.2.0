@@ -24,7 +24,7 @@ const MemoizedHeader = memo(Header);
 const MemoizedFooter = memo(Footer);
 
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
-  const { user } = useAuth();
+  const { user, premiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
   const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
@@ -313,6 +313,18 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       <div className="flex-1 flex flex-col h-full ml-0 overflow-hidden">
         {/* Header */}
         <MemoizedHeader {...headerProps} />
+
+        {premiumPreviewNoAccess && (
+          <div
+            className="shrink-0 z-20 bg-amber-100 border-b border-amber-300 px-3 py-2 text-center text-xs sm:text-sm text-amber-950"
+            role="status"
+          >
+            <strong>Náhled bez premium</strong>
+            {' — '}
+            UI se tváří jako free účet (jen tento prohlížeč). Vypnout v{' '}
+            <span className="whitespace-nowrap">Nastavení → Subscription</span>.
+          </div>
+        )}
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
         <main className="flex-1 px-3 sm:px-3 md:px-4 pt-16 lg:pt-0 overflow-y-auto">

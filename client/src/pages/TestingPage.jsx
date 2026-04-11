@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
-import api, { invalidateCache } from '../services/api';
+import api, { invalidateCache, addTest } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
@@ -69,6 +69,12 @@ const TestingPage = () => {
   const navigate = useNavigate();
   const lastLoadedTestIdFromUrlRef = useRef(null);
   const lastLoadedTestsForAthleteRef = useRef(null);
+  const addNotificationRef = useRef(addNotification);
+  addNotificationRef.current = addNotification;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const userRef = useRef(user);
+  userRef.current = user;
   /**
    * Same rule as DashboardPage: coach/tester use selected athlete (or coach self);
    * plain athletes always use user._id (selectedAthleteId state stays null for them).
@@ -108,23 +114,7 @@ const TestingPage = () => {
     try {
       setError(null);
       const testId = targetId;
-      const t0 = Date.now();
 
-      // #region agent log
-      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-        body: JSON.stringify({
-          sessionId: '2e357f',
-          runId: 'precheck',
-          hypothesisId: 'H4',
-          location: 'TestingPage.jsx',
-          message: 'loadTests start',
-          data: { role: user?.role, athleteId: targetId, testId, isTestingRole },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       const response = isTestingRole
         ? await api.get('/test')
         : await api.get(`/test/list/${testId}`);
@@ -171,22 +161,6 @@ const TestingPage = () => {
       }
 
       setTests(limitedTests);
-
-      // #region agent log
-      fetch('http://127.0.0.1:7486/ingest/9f05e821-ae3c-4b9e-a4b9-ee5e90c3fa82', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2e357f' },
-        body: JSON.stringify({
-          sessionId: '2e357f',
-          runId: 'precheck',
-          hypothesisId: 'H4',
-          location: 'TestingPage.jsx',
-          message: 'loadTests end',
-          data: { testsCount: Array.isArray(limitedTests) ? limitedTests.length : null, durationMs: Date.now() - t0 },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     } catch (err) {
       console.error('Error loading tests:', err);
       setError('Failed to load tests');
@@ -282,19 +256,26 @@ const TestingPage = () => {
 
   // Load test by ID from URL if present (before loading all tests)
   useEffect(() => {
-    if (!isAuthenticated || !user || !testIdFromUrl) return;
+    const u = userRef.current;
+    if (!isAuthenticated || !u || !testIdFromUrl) return;
     // Guard: avoid reloading the same testId (helps with dev StrictMode + rerenders)
     if (String(lastLoadedTestIdFromUrlRef.current) === String(testIdFromUrl)) return;
+
+    const ac = new AbortController();
+    const notify = (...args) => addNotificationRef.current(...args);
 
     const loadTestFromUrl = async () => {
       try {
         console.log('[TestingPage] Loading test from URL:', testIdFromUrl);
-        const response = await api.get(`/test/${testIdFromUrl}`);
+        const response = await api.get(`/test/${testIdFromUrl}`, {
+          signal: ac.signal,
+          timeout: 120000,
+        });
         const test = response.data;
         
         if (!test || !test._id) {
           console.warn('[TestingPage] Test from URL not found or invalid');
-          addNotification('Test not found', 'error');
+          notify('Test not found', 'error');
           // Remove testId from URL if test doesn't exist
           setSearchParams(prev => {
             const newParams = new URLSearchParams(prev);
@@ -312,15 +293,15 @@ const TestingPage = () => {
 
         // Check permissions: test must belong to current user or their athlete
         const testAthleteId = String(test.athleteId);
-        const currentUserId = String(user._id);
+        const currentUserId = String(u._id);
         const isOwnTest = testAthleteId === currentUserId;
-        const isAthleteTest = user.role === 'coach' && user.athletes?.some(a => String(a._id || a) === testAthleteId);
-        const currentRole = String(user.role || '').toLowerCase();
+        const isAthleteTest = u.role === 'coach' && u.athletes?.some(a => String(a._id || a) === testAthleteId);
+        const currentRole = String(u.role || '').toLowerCase();
         const isTester = currentRole === 'testing'; // testing sees all tests; others scoped by ownership/coach relation
         
         if (!isOwnTest && !isAthleteTest && !isTester) {
           // Avoid console spam in loops; notify once and remove testId from URL
-          addNotification('You do not have permission to view this test', 'error');
+          notify('You do not have permission to view this test', 'error');
           // Remove testId from URL
           setSearchParams(prev => {
             const newParams = new URLSearchParams(prev);
@@ -348,13 +329,24 @@ const TestingPage = () => {
         // Load all tests for this athlete (will trigger loadTests)
         // The test will be selected by PreviousTestingComponent based on testIdFromUrl
       } catch (error) {
+        if (ac.signal.aborted || error?.code === 'ERR_CANCELED') return;
+        const isTimeout =
+          error?.code === 'ECONNABORTED' ||
+          (typeof error?.message === 'string' && error.message.includes('timeout'));
+        if (isTimeout) {
+          console.warn('[TestingPage] Timeout loading test from URL (server slow or overloaded):', testIdFromUrl);
+          notify(
+            'Loading the test timed out. The list may still load from cache — try refreshing in a moment.',
+            'warning'
+          );
+          return;
+        }
         console.error('[TestingPage] Error loading test from URL:', error);
         if (error.response?.status === 404) {
-          addNotification('Test not found', 'error');
+          notify('Test not found', 'error');
         } else {
-          addNotification('Failed to load test', 'error');
+          notify('Failed to load test', 'error');
         }
-        // Remove testId from URL on error
         setSearchParams(prev => {
           const newParams = new URLSearchParams(prev);
           newParams.delete('testId');
@@ -364,7 +356,8 @@ const TestingPage = () => {
     };
 
     loadTestFromUrl();
-  }, [testIdFromUrl, isAuthenticated, user, selectedAthleteId, addNotification, setSearchParams]);
+    return () => ac.abort();
+  }, [testIdFromUrl, isAuthenticated, user?._id, selectedAthleteId, setSearchParams]);
 
   // Načtení dat při prvním načtení stránky nebo změně atleta
   useEffect(() => {
@@ -466,53 +459,62 @@ const TestingPage = () => {
 
   // Load zones/profile + Strava/FIT summary data for recommendations
   useEffect(() => {
+    const ac = new AbortController();
+    const notify = (...args) => addNotificationRef.current(...args);
+    const nav = (to, opts) => navigateRef.current(to, opts);
+
     const loadAdvisor = async () => {
-      if (!isAuthenticated || !user) return;
+      const u = userRef.current;
+      if (!isAuthenticated || !u) return;
       const targetId = effectiveTargetAthleteId;
       if (!targetId) return;
-      
+
       try {
         setAdvisorLoading(true);
 
         // 1) Athlete profile (zones + units) - with error handling
         try {
-        if (isCoachLikeRole && String(targetId) !== String(user._id)) {
-          const { data } = await api.get(`/user/athlete/${targetId}/profile`);
-          setAthleteProfile(data);
-        } else {
-          const { data } = await api.get('/user/profile');
-          setAthleteProfile(data);
+          if (isCoachLikeRole && String(targetId) !== String(u._id)) {
+            const { data } = await api.get(`/user/athlete/${targetId}/profile`, { signal: ac.signal });
+            if (ac.signal.aborted) return;
+            setAthleteProfile(data);
+          } else {
+            const { data } = await api.get('/user/profile', { signal: ac.signal });
+            if (ac.signal.aborted) return;
+            setAthleteProfile(data);
           }
         } catch (profileError) {
+          if (ac.signal.aborted || profileError?.code === 'ERR_CANCELED') return;
           console.error('Failed to load athlete profile:', profileError);
-          // If athlete profile fails to load, clear selection to prevent freeze
-          if (isCoachLikeRole && String(targetId) !== String(user._id)) {
+          if (isCoachLikeRole && String(targetId) !== String(u._id)) {
             console.warn('Clearing problematic athlete selection');
             try {
               localStorage.removeItem('global_selectedAthleteId');
               localStorage.removeItem(`testing_recommendations_open_${targetId}`);
             } catch {}
-            setSelectedAthleteId(user?.role === 'coach' ? user._id : null);
-            navigate('/testing', { replace: true });
-            addNotification('Failed to load athlete data. Please try again.', 'error');
+            setSelectedAthleteId(u?.role === 'coach' ? u._id : null);
+            nav('/testing', { replace: true });
+            notify('Failed to load athlete data. Please try again.', 'error');
             return;
           }
           setAthleteProfile(null);
         }
 
-        // 2) External activities (Strava/Garmin normalized list) - with error handling
-        // For HR test plan, we need more activities (up to 5000, last 180 days)
-        // If Strava is not connected, skip loading external activities entirely
+        // 2) External activities — large `hrTestPlan` payloads can exceed 60s; use longer timeout + abort on unmount
         try {
-          const status = await getIntegrationStatus();
+          const status = await getIntegrationStatus({ signal: ac.signal, timeout: 30000 });
+          if (ac.signal.aborted) return;
           const isConnected = Boolean(status.stravaConnected);
           if (!isConnected) {
             setExternalActivities([]);
           } else {
             const params = isCoachLikeRole ? { athleteId: targetId, hrTestPlan: 'true' } : { hrTestPlan: 'true' };
-            const acts = await listExternalActivities(params);
+            const acts = await listExternalActivities(params, {
+              signal: ac.signal,
+              timeout: 180000,
+            });
+            if (ac.signal.aborted) return;
             const activitiesArray = Array.isArray(acts) ? acts : [];
-            // Limit to prevent memory issues
             const limitedActivities = activitiesArray.slice(0, MAX_EXTERNAL_ACTIVITIES);
             if (activitiesArray.length > MAX_EXTERNAL_ACTIVITIES) {
               console.warn(`[TestingPage] Limited ${activitiesArray.length} activities to ${MAX_EXTERNAL_ACTIVITIES} to prevent memory issues`);
@@ -521,22 +523,36 @@ const TestingPage = () => {
             setExternalActivities(limitedActivities);
           }
         } catch (activitiesError) {
-          console.error('Failed to load external activities:', activitiesError);
+          if (ac.signal.aborted || activitiesError?.code === 'ERR_CANCELED') return;
+          const isTimeout =
+            activitiesError?.code === 'ECONNABORTED' ||
+            (typeof activitiesError?.message === 'string' && activitiesError.message.includes('timeout'));
+          if (isTimeout) {
+            console.warn('[TestingPage] External activities request timed out — HR recommendations may be limited.');
+          } else {
+            console.warn('Failed to load external activities:', activitiesError?.message || activitiesError);
+          }
           setExternalActivities([]);
         }
 
-        // 3) Bike power metrics (includes Strava streams when possible) - with error handling
+        // 3) Bike power metrics
         try {
-        const params = new URLSearchParams();
-        if (isCoachLikeRole) params.set('athleteId', targetId);
-        params.set('comparePeriod', '90days');
-        const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`);
-        setBikePowerMetrics(resp.data || null);
+          const params = new URLSearchParams();
+          if (isCoachLikeRole) params.set('athleteId', targetId);
+          params.set('comparePeriod', '90days');
+          const resp = await api.get(`/api/fit/power-metrics?${params.toString()}`, {
+            signal: ac.signal,
+            timeout: 120000,
+          });
+          if (ac.signal.aborted) return;
+          setBikePowerMetrics(resp.data || null);
         } catch (metricsError) {
-          console.error('Failed to load power metrics:', metricsError);
+          if (ac.signal.aborted || metricsError?.code === 'ERR_CANCELED') return;
+          console.warn('Failed to load power metrics:', metricsError?.message || metricsError);
           setBikePowerMetrics(null);
         }
       } catch (e) {
+        if (ac.signal.aborted || e?.code === 'ERR_CANCELED') return;
         console.error('Failed to load testing advisor data:', e);
         setBikePowerMetrics(null);
         setAthleteProfile(null);
@@ -547,7 +563,8 @@ const TestingPage = () => {
     };
 
     loadAdvisor();
-  }, [user, isAuthenticated, effectiveTargetAthleteId, navigate, addNotification, isCoachLikeRole]);
+    return () => ac.abort();
+  }, [isAuthenticated, effectiveTargetAthleteId, isCoachLikeRole, user?._id, user?.role]);
 
   // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
@@ -1094,9 +1111,30 @@ const TestingPage = () => {
 
   const handleAddTest = async (newTest) => {
     try {
+      const role = String(user?.role || '').toLowerCase();
+      let athleteIdForSave;
+      if (role === 'athlete') {
+        athleteIdForSave = user._id;
+      } else if (role === 'coach') {
+        athleteIdForSave = selectedAthleteId || user._id;
+      } else if (role === 'tester' || role === 'testing') {
+        if (!selectedAthleteId || String(selectedAthleteId) === String(user._id)) {
+          throw new Error(
+            'Select an athlete in the header before saving a test (tester/testing accounts cannot save a test to their own user).'
+          );
+        }
+        athleteIdForSave = selectedAthleteId;
+      } else {
+        athleteIdForSave = selectedAthleteId || user._id;
+      }
+
+      if (!athleteIdForSave) {
+        throw new Error('Could not determine which athlete this test belongs to.');
+      }
+
       const processedTest = {
         ...newTest,
-        athleteId: selectedAthleteId || user._id,
+        athleteId: athleteIdForSave,
         results: newTest.results.map(result => ({
           ...result,
           power: Number(result.power) || 0,
@@ -1107,7 +1145,7 @@ const TestingPage = () => {
         }))
       };
 
-      const response = await api.post('/test', processedTest);
+      const response = await addTest(processedTest);
       const testId = response.data._id;
       setTests(prev => [...prev, response.data]);
       setShowNewTesting(false);
@@ -1144,7 +1182,8 @@ const TestingPage = () => {
       }
     } catch (err) {
       console.error('Error adding test:', err);
-      setError('Failed to add test. Please try again.');
+      // Must rethrow so TestingForm does not show a false "saved successfully" toast after a failed POST
+      throw err;
     }
   };
 

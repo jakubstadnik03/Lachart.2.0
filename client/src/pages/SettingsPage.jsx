@@ -61,7 +61,7 @@ function formatRegistrationLocationLine(loc) {
 }
 
 const SettingsPage = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('profile');
@@ -181,6 +181,7 @@ const SettingsPage = () => {
       const q = new URLSearchParams(location.search || '');
       const tab = q.get('tab');
       if (tab === 'integrations') setActiveTab('integrations');
+      if (tab === 'subscription') setActiveTab('subscription');
     } catch {
       // ignore
     }
@@ -1599,6 +1600,20 @@ const SettingsPage = () => {
         const manualPremium = user?.premium === true && user?.premiumSource === 'manual';
         return (
           <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
+            <div className={`mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 ${isMobile ? 'text-[10px]' : 'text-sm'} text-amber-950`}>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!premiumPreviewNoAccess}
+                  onChange={(e) => setPremiumPreviewNoAccess(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary"
+                />
+                <span>
+                  <span className="font-semibold block mb-0.5">Náhled jako uživatel bez premium</span>
+                  Zapne se jen u tebe v prohlížeči (localStorage). Stránky, které čtou stav z účtu, uvidí Free plán — API na serveru se nemění, dokud tam nemáš zapnutý REQUIRE_PREMIUM_ACCESS.
+                </span>
+              </label>
+            </div>
             <div className={`text-center ${isMobile ? 'mb-2' : 'mb-6'}`}>
               <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 uppercase tracking-wide ${isMobile ? 'mb-0.5' : 'mb-2'}`}>Your Membership</p>
               <h3 className={`${isMobile ? 'text-base' : 'text-3xl'} font-bold text-gray-900`}>

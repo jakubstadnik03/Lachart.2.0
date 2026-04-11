@@ -19,7 +19,7 @@ export const formatDuration = (seconds) => {
  * Normalize distance to meters. API (FIT, Strava) typically sends meters.
  * Heuristic: >= 1000 → meters; 0 < value < 1 → km; 1–99 integer → km (e.g. 10 km); 100–999 integer → meters (e.g. 400 m); decimals 1–999 → km.
  */
-function distanceToMeters(distance) {
+export function distanceToMeters(distance) {
   if (distance == null || (typeof distance !== 'number' && typeof distance !== 'string')) return 0;
   if (typeof distance === 'string') {
     const clean = distance.trim().toLowerCase();
@@ -81,6 +81,79 @@ export const formatPace = (mps) => {
   }
   return `${minutes}:${seconds.toString().padStart(2, '0')}/km`;
 };
+
+/**
+ * Same numeric distance fix as Strava intervals table (FitAnalysisPage) before formatDistance().
+ * Keeps IntervalChart bar widths / totals aligned with the table.
+ */
+export function normalizeStravaLapDistanceRaw(lap) {
+  const distance = lap?.distance;
+  const d = Number(distance);
+  const lapDurationSec = Number(lap?.elapsed_time ?? lap?.elapsedTime ?? lap?.moving_time ?? 0);
+
+  if (!Number.isFinite(d) || d <= 0) return distance;
+
+  if (d > 100000 && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
+    return d / 1000;
+  }
+
+  const speedMps = Number(lap?.average_speed ?? lap?.avgSpeed ?? lap?.speed ?? null);
+  if (Number.isFinite(speedMps) && speedMps > 0 && Number.isFinite(lapDurationSec) && lapDurationSec > 0) {
+    const expectedMeters = speedMps * lapDurationSec;
+    if (expectedMeters > 0) {
+      const errMeters = Math.abs(d - expectedMeters) / expectedMeters;
+      const errKilometers = Math.abs(d * 1000 - expectedMeters) / expectedMeters;
+      if (errMeters <= errKilometers) {
+        if (d < 1000 && !Number.isInteger(d)) return d / 1000;
+        return d;
+      }
+    }
+  }
+
+  if (d < 1000 && d >= 1 && !Number.isInteger(d) && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
+    return d / 1000;
+  }
+  return distance;
+}
+
+export function stravaLapDistanceMeters(lap) {
+  return distanceToMeters(normalizeStravaLapDistanceRaw(lap));
+}
+
+/**
+ * @param {'strava' | 'fit'} source — Strava UI table uses elapsed_time; FIT LapsTable prefers moving_time.
+ */
+export function lapDurationSecondsForChart(lap, source = 'fit') {
+  if (source === 'strava') {
+    const n = Number(
+      lap?.elapsed_time ??
+      lap?.elapsedTime ??
+      lap?.moving_time ??
+      lap?.totalTimerTime ??
+      lap?.total_elapsed_time ??
+      lap?.totalElapsedTime ??
+      0
+    );
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  const n = Number(
+    lap?.moving_time ??
+    lap?.totalTimerTime ??
+    lap?.totalElapsedTime ??
+    lap?.total_elapsed_time ??
+    lap?.elapsed_time ??
+    lap?.elapsedTime ??
+    0
+  );
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/** Speed in m/s for pace — matches Strava intervals table (average_speed first). */
+export function lapSpeedMpsForChart(lap) {
+  const spd = Number(lap?.average_speed ?? lap?.avgSpeed ?? lap?.speed ?? 0);
+  if (!Number.isFinite(spd) || spd <= 0) return 0;
+  return spd > 12 ? spd / 3.6 : spd;
+}
 
 /**
  * Prepare data for SVG training chart

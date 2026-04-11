@@ -91,162 +91,194 @@ const Zone2CalculatorPage = () => {
         <Header isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} user={demoUser} />
 
         <main className="flex-1 px-4 py-8 pt-16 md:pt-8">
-          <div className="max-w-[1200px] mx-auto space-y-10">
-            {/* Hero / SEO copy */}
-            <section className="bg-gradient-to-r from-emerald-50 via-white to-sky-50 rounded-3xl border border-emerald-100 shadow-sm px-4 sm:px-8 py-10 relative overflow-hidden">
-              <div className="absolute -right-20 -top-16 w-64 h-64 bg-emerald-200/40 rounded-full blur-3xl pointer-events-none" />
-              <div className="relative z-10">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
-                  Zone 2 Calculator
-                </h1>
-                <p className="text-lg sm:text-xl text-gray-700 max-w-3xl mb-4">
-                  Find your **easy endurance** range in seconds. Enter your FTP or threshold heart rate and we&apos;ll estimate
-                  practical Zone 2 power and heart rate bands for your daily training.
-                </p>
-                <p className="text-sm sm:text-base text-gray-600 max-w-3xl">
-                  Zone 2 is the foundation of aerobic fitness – long, conversational sessions that build mitochondria and
-                  durability without excessive fatigue. Use this free calculator as a starting point, and refine your zones with
-                  proper lactate testing inside LaChart.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/signup')}
-                    className="px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold shadow hover:bg-primary-dark transition-colors"
-                  >
-                    Sign up for free to save your zones
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/lactate-curve-calculator')}
-                    className="px-5 py-2.5 rounded-full bg-white/80 border border-gray-200 text-sm font-medium text-gray-800 hover:bg-white shadow-sm transition-colors"
-                  >
-                    Calculate lactate-based zones →
-                  </button>
+          <div className="max-w-[1200px] mx-auto space-y-8">
+
+            {/* Hero */}
+            <section className="relative bg-white rounded-3xl border border-gray-100 shadow-sm px-4 sm:px-8 py-10 overflow-hidden">
+              <div className="absolute -right-24 -top-20 w-80 h-80 bg-emerald-200/30 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -left-16 bottom-0 w-60 h-60 bg-sky-200/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col lg:flex-row gap-8 items-start lg:items-center">
+                <div className="flex-1 min-w-0">
+                  <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] sm:text-xs font-semibold text-emerald-700 mb-4">
+                    🌿 Aerobic Base Building
+                  </div>
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight mb-4">
+                    <span className="text-gray-900">Zone 2 </span>
+                    <span className="bg-gradient-to-r from-emerald-500 to-sky-500 bg-clip-text text-transparent">Calculator</span>
+                  </h1>
+                  <p className="text-base sm:text-lg text-gray-600 max-w-2xl mb-6">
+                    Find your easy endurance range in seconds. Enter your FTP or threshold heart rate to get practical
+                    Zone 2 power and heart rate bands for long aerobic sessions.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/signup')}
+                      className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-sky-500 shadow-sm hover:shadow-md hover:opacity-90 transition-all"
+                    >
+                      Save your zones – free
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/lactate-curve-calculator')}
+                      className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+                    >
+                      Lactate-based zones →
+                    </button>
+                  </div>
+                </div>
+                {/* Zone 2 benefits card */}
+                <div className="lg:w-64 flex-shrink-0 w-full">
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                    <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-3">Why Zone 2 matters</div>
+                    <div className="space-y-2">
+                      {[
+                        'Builds mitochondrial density',
+                        'Improves fat oxidation',
+                        'Enables high weekly volume',
+                        'Low fatigue, high adaptation',
+                      ].map(b => (
+                        <div key={b} className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                          <span className="text-xs text-emerald-900">{b}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
 
-            {/* Calculator */}
-            <section className="grid lg:grid-cols-2 gap-6 items-start">
+            {/* Calculator + education */}
+            <section className="grid lg:grid-cols-5 gap-6 items-start">
+              {/* Calculator */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6"
+                className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-7"
               >
-                <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-1">Estimate your Zone 2</h2>
-                <p className="text-sm text-gray-600 mb-4">
-                  You can use power, heart rate, or both. The more accurate your FTP/threshold HR, the better the estimate.
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Estimate your Zone 2</h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Enter FTP, threshold HR, or both. The more accurate your inputs, the better the estimate.
                 </p>
 
-                <div className="space-y-4">
+                <div className="grid sm:grid-cols-2 gap-4 mb-6">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      FTP / LT2 (watts) <span className="text-gray-400">(optional)</span>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      FTP / LT2 (watts)
+                      <span className="ml-1 font-normal text-gray-400">– optional</span>
                     </label>
                     <input
                       type="number"
                       min="0"
                       value={ftpInput}
                       onChange={(e) => setFtpInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
                       placeholder="e.g. 260"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Threshold heart rate (bpm) <span className="text-gray-400">(optional)</span>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Threshold heart rate (bpm)
+                      <span className="ml-1 font-normal text-gray-400">– optional</span>
                     </label>
                     <input
                       type="number"
                       min="0"
                       value={hrThresholdInput}
                       onChange={(e) => setHrThresholdInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
                       placeholder="e.g. 170"
                     />
                   </div>
                 </div>
 
-                <div className="mt-5 grid sm:grid-cols-2 gap-4">
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Zone 2 power (approx.)</div>
-                    <div className="text-2xl font-bold text-emerald-700">
-                      {ftp && z2LowW && z2HighW ? `${z2LowW}–${z2HighW} W` : '—'}
+                {/* Results */}
+                <div className="grid sm:grid-cols-2 gap-4 mb-6">
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-5">
+                    <div className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider mb-2">Zone 2 Power</div>
+                    <div className="text-3xl font-extrabold text-gray-900">
+                      {ftp && z2LowW && z2HighW ? `${z2LowW}–${z2HighW}` : '—'}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">≈55–75 % of FTP.</p>
+                    <div className="text-sm text-gray-500 mt-0.5">{ftp && z2LowW ? 'watts' : 'enter FTP above'}</div>
+                    <p className="text-[11px] text-gray-400 mt-2">≈ 55–75% of FTP</p>
                   </div>
-                  <div className="rounded-xl bg-sky-50 border border-sky-100 p-3">
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Zone 2 heart rate (approx.)</div>
-                    <div className="text-2xl font-bold text-sky-700">
-                      {thrHr && z2LowHr && z2HighHr ? `${z2LowHr}–${z2HighHr} bpm` : '—'}
+                  <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-100 p-5">
+                    <div className="text-[11px] font-semibold text-sky-600 uppercase tracking-wider mb-2">Zone 2 Heart Rate</div>
+                    <div className="text-3xl font-extrabold text-gray-900">
+                      {thrHr && z2LowHr && z2HighHr ? `${z2LowHr}–${z2HighHr}` : '—'}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">≈76–86 % of threshold HR.</p>
+                    <div className="text-sm text-gray-500 mt-0.5">{thrHr && z2LowHr ? 'bpm' : 'enter threshold HR above'}</div>
+                    <p className="text-[11px] text-gray-400 mt-2">≈ 76–86% of threshold HR</p>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={handleCopySummary}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-gray-900 text-white hover:bg-black transition-colors"
+                    className="px-4 py-2 text-xs sm:text-sm rounded-xl bg-gray-900 text-white hover:bg-black transition-colors"
                   >
                     Copy Zone 2 summary
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFtpInput('');
-                      setHrThresholdInput('');
-                    }}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                    onClick={() => { setFtpInput(''); setHrThresholdInput(''); }}
+                    className="px-4 py-2 text-xs sm:text-sm rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                   >
                     Reset
                   </button>
                 </div>
               </motion.div>
 
-              {/* Education / SEO text */}
+              {/* Education */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-4 text-sm sm:text-base text-gray-700"
+                transition={{ delay: 0.1 }}
+                className="lg:col-span-2 space-y-4"
               >
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center mb-3">
+                    <span className="text-lg">🌿</span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-2">
                     Why Zone 2 training works
                   </h2>
-                  <p className="mb-2">
-                    Zone 2 is a low‑intensity endurance zone, usually just below your first lactate threshold. You should be
-                    able to speak full sentences, breathe mostly through the nose, and finish the session feeling pleasantly
-                    tired – not smashed.
+                  <p className="text-sm text-gray-600 mb-3">
+                    Zone 2 is just below your first lactate threshold. You should be able to speak full sentences,
+                    breathe through the nose, and finish pleasantly tired – not smashed.
                   </p>
-                  <ul className="list-disc pl-5 space-y-1 text-gray-700">
-                    <li>builds aerobic engine and mitochondrial density,</li>
-                    <li>improves fat oxidation and efficiency,</li>
-                    <li>allows high weekly volume without burning out,</li>
-                    <li>pairs perfectly with 1–2 hard sessions per week.</li>
+                  <ul className="space-y-1.5 text-sm text-gray-600">
+                    {[
+                      'Builds aerobic engine and mitochondrial density',
+                      'Improves fat oxidation and metabolic efficiency',
+                      'Allows high weekly volume without excessive fatigue',
+                      'Pairs perfectly with 1–2 hard sessions per week',
+                    ].map(item => (
+                      <li key={item} className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
                   </ul>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                    <span className="text-lg">🧪</span>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900 mb-2">
                     Make Zone 2 truly personal with LaChart
                   </h3>
-                  <p className="mb-2">
-                    This calculator gives **generic percentage ranges**. In LaChart, we use your real lactate tests and daily
-                    training data (power, pace, HR) to calculate LT1/LT2, track fatigue and automatically adjust training zones
-                    over time.
-                  </p>
-                  <p className="mb-3">
-                    Coaches can store multiple athletes, attach lactate to intervals and send professional test reports with one
-                    click.
+                  <p className="text-sm text-gray-600 mb-3">
+                    This calculator gives generic percentage ranges. In LaChart, your real lactate tests and daily
+                    training data pinpoint LT1/LT2 precisely, and zones update automatically as your fitness changes.
                   </p>
                   <button
                     type="button"
                     onClick={() => navigate('/about')}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
+                    className="inline-flex items-center px-4 py-2 text-xs sm:text-sm rounded-xl bg-primary text-white hover:bg-primary-dark transition-colors"
                   >
                     Learn more about LaChart →
                   </button>
@@ -263,4 +295,3 @@ const Zone2CalculatorPage = () => {
 };
 
 export default Zone2CalculatorPage;
-

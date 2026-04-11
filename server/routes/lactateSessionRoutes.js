@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const verifyToken = require('../middleware/verifyToken');
+const { requirePremiumIfEnabled } = require('../middleware/requirePremium');
 const lactateSessionController = require('../controllers/lactateSessionController');
 
 /**
@@ -41,7 +42,7 @@ const lactateSessionController = require('../controllers/lactateSessionControlle
  *       401:
  *         description: Unauthorized
  */
-router.post('/', verifyToken, lactateSessionController.createSession);
+router.post('/', verifyToken, requirePremiumIfEnabled, lactateSessionController.createSession);
 
 /**
  * @swagger
@@ -64,7 +65,7 @@ router.post('/', verifyToken, lactateSessionController.createSession);
  *       401:
  *         description: Unauthorized
  */
-router.get('/athlete/:athleteId', verifyToken, lactateSessionController.getSessions);
+router.get('/athlete/:athleteId', verifyToken, requirePremiumIfEnabled, lactateSessionController.getSessions);
 
 /**
  * @swagger
@@ -89,7 +90,7 @@ router.get('/athlete/:athleteId', verifyToken, lactateSessionController.getSessi
  *       401:
  *         description: Unauthorized
  */
-router.get('/:id', verifyToken, lactateSessionController.getSessionById);
+router.get('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.getSessionById);
 
 /**
  * @swagger
@@ -132,7 +133,7 @@ router.get('/:id', verifyToken, lactateSessionController.getSessionById);
  *       401:
  *         description: Unauthorized
  */
-router.put('/:id', verifyToken, lactateSessionController.updateSession);
+router.put('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.updateSession);
 
 /**
  * @swagger
@@ -168,7 +169,7 @@ router.put('/:id', verifyToken, lactateSessionController.updateSession);
  *       401:
  *         description: Unauthorized
  */
-router.post('/:id/complete', verifyToken, lactateSessionController.completeSession);
+router.post('/:id/complete', verifyToken, requirePremiumIfEnabled, lactateSessionController.completeSession);
 
 /**
  * @swagger
@@ -193,7 +194,7 @@ router.post('/:id/complete', verifyToken, lactateSessionController.completeSessi
  *       401:
  *         description: Unauthorized
  */
-router.post('/:id/mock-fit', verifyToken, lactateSessionController.generateMockFitFile);
+router.post('/:id/mock-fit', verifyToken, requirePremiumIfEnabled, lactateSessionController.generateMockFitFile);
 
 /**
  * @swagger
@@ -223,7 +224,7 @@ router.post('/:id/mock-fit', verifyToken, lactateSessionController.generateMockF
  *       401:
  *         description: Unauthorized
  */
-router.get('/:id/download-fit', verifyToken, lactateSessionController.downloadFitFile);
+router.get('/:id/download-fit', verifyToken, requirePremiumIfEnabled, lactateSessionController.downloadFitFile);
 
 /**
  * @swagger
@@ -248,7 +249,7 @@ router.get('/:id/download-fit', verifyToken, lactateSessionController.downloadFi
  *       401:
  *         description: Unauthorized
  */
-router.delete('/:id', verifyToken, lactateSessionController.deleteSession);
+router.delete('/:id', verifyToken, requirePremiumIfEnabled, lactateSessionController.deleteSession);
 
 /**
  * @swagger
@@ -264,7 +265,7 @@ router.delete('/:id', verifyToken, lactateSessionController.deleteSession);
  *       401:
  *         description: Unauthorized
  */
-router.get('/zones/latest', verifyToken, lactateSessionController.getLatestZones);
+router.get('/zones/latest', verifyToken, requirePremiumIfEnabled, lactateSessionController.getLatestZones);
 
 /**
  * @swagger
@@ -289,6 +290,6 @@ router.get('/zones/latest', verifyToken, lactateSessionController.getLatestZones
  *       401:
  *         description: Unauthorized
  */
-router.post('/zones/save', verifyToken, lactateSessionController.saveZonesToProfile);
+router.post('/zones/save', verifyToken, requirePremiumIfEnabled, lactateSessionController.saveZonesToProfile);
 
 module.exports = router;

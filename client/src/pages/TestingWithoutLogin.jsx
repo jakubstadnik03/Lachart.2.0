@@ -376,7 +376,6 @@ const LactateCurveCalculatorPage = () => {
             stages: data.results.length,
             hasResults: true
         });
-        addNotification('Test data was processed successfully', 'success');
         console.log('Processed test data:', processedData);
     };
 

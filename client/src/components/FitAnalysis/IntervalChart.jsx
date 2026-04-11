@@ -1,5 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { formatDuration } from '../../utils/fitAnalysisUtils';
+import {
+  formatDuration,
+  stravaLapDistanceMeters,
+  lapDurationSecondsForChart,
+  lapSpeedMpsForChart
+} from '../../utils/fitAnalysisUtils';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistance } from '../../utils/unitsConverter';
 
@@ -9,7 +14,78 @@ const RUN_PAUSE_PACE_SECONDS = 20 * 60;
 // Minimum speed to count as "moving" (m/s) – below this, time is not counted (stopped/pause).
 const MOVING_SPEED_THRESHOLD_MPS = 0.14; // ~0.5 km/h
 
-const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null, selectedLapNumber = null, onSelectLapNumber = null, highlightMetric = null }) => {
+/**
+ * Strava/Garmin sometimes store lap.distance as cumulative end-of-split position (1km, 2km, …).
+ * Summing those as segment lengths inflates total (e.g. 45 km for a 9 km run). Convert to per-lap meters.
+ */
+function resolveLapSegmentDistancesMeters(laps, records, isRun, lapTimeSource = 'fit') {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const raw = laps.map((l) => {
+    if (lapTimeSource === 'strava') {
+      return stravaLapDistanceMeters(l);
+    }
+    const d = Number(
+      l.totalDistance ??
+      l.total_distance ??
+      l.distance ??
+      l.distanceMeters ??
+      l.distance_meters ??
+      0
+    );
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  });
+  if (!isRun) return raw;
+
+  const n = raw.length;
+  const sumRaw = raw.reduce((a, b) => a + b, 0);
+  const lastRaw = raw[n - 1] || 0;
+  const streamTotal =
+    Array.isArray(records) && records.length > 0
+      ? Number(records[records.length - 1]?.distance) || 0
+      : 0;
+
+  const strictlyIncreasing = n >= 2 && raw.every((d, i) => i === 0 || d > raw[i - 1]);
+
+  // Classic auto-lap km splits: lap.distance = end position 1km, 2km, …, n km → sum = 1000*(1+2+…+n) = last * (n+1) / 2.
+  // Nine ~1 km segments instead: each ~1000 m → sum ≈ n * last (if last lap also ~1km) or sum >> triangular — never matches.
+  let treatAsCumulative = false;
+  if (strictlyIncreasing && lastRaw >= 400 && n >= 2) {
+    const expectedTriangular = (lastRaw * (n + 1)) / 2;
+    const tol = lastRaw * 0.08 + n * 120;
+    if (Math.abs(sumRaw - expectedTriangular) <= tol) {
+      treatAsCumulative = true;
+    }
+  }
+  if (!treatAsCumulative && streamTotal > 250 && lastRaw >= streamTotal * 0.65 && sumRaw > streamTotal * 1.2) {
+    treatAsCumulative = true;
+  }
+  if (!treatAsCumulative && n >= 2 && streamTotal > 250 && sumRaw > streamTotal * 1.35) {
+    treatAsCumulative = true;
+  }
+  if (!treatAsCumulative && strictlyIncreasing && lastRaw > 1500 && sumRaw > lastRaw * 1.4) {
+    treatAsCumulative = true;
+  }
+
+  if (!treatAsCumulative) return raw;
+
+  return raw.map((d, i) => {
+    if (i === 0) return Math.max(0, d);
+    const delta = d - raw[i - 1];
+    return delta > 0 ? delta : 0;
+  });
+}
+
+const IntervalChart = ({
+  laps = [],
+  sport = 'cycling',
+  records = [],
+  user = null,
+  selectedLapNumber = null,
+  onSelectLapNumber = null,
+  highlightMetric = null,
+  /** 'strava' = same duration/distance rules as Strava intervals table; 'fit' = LapsTable (moving_time first) */
+  lapTimeSource = 'fit'
+}) => {
   const { user: authUser } = useAuth();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hoveredBar, setHoveredBar] = useState(null);
@@ -60,29 +136,18 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   
   // Debug log
 
-  // Create kilometer intervals for running if no laps or if laps don't have distance-based intervals
+  // Running: use the same laps as the intervals table whenever they exist. Only synthesize ~1 km splits
+  // from streams when there are zero laps (otherwise e.g. 3 Strava laps get replaced by 8+ km bars and wrong totals).
   const processedLaps = useMemo(() => {
-    if (!isRun || !records || records.length === 0) return laps;
-    
-    // For running, always create km intervals if there are no laps, or if laps don't have km-based intervals
-    // Check if laps already have distance-based intervals (km splits)
-    const hasKmIntervals = laps.length > 0 && laps.some(lap => {
-      const distance = lap.distance || 0;
-      // Check if distance is close to a round km (within 50m)
-      return distance > 0 && Math.abs(distance % 1000) < 50;
-    });
-    
-    // If we have km intervals in laps, use them
-    if (hasKmIntervals) return laps;
-    
-    // If we have laps but they're not km intervals, still create km intervals from records
-    // (This ensures km intervals are always shown for running)
-    
-    // Helper: get speed in m/s for a record (record.speed may be m/s or km/h)
+    if (!isRun) return laps;
+    if (laps.length > 0) return laps;
+    if (!records || records.length === 0) return laps;
+
+    // FIT uploads and Strava stream records use speed in m/s (same as velocity_smooth).
     const speedMps = (r) => {
-      const s = r.speed || 0;
-      if (s <= 0) return 0;
-      return s > 10 ? s / 3.6 : s; // If speed > 10 assume km/h
+      const s = Number(r.speed);
+      if (!Number.isFinite(s) || s <= 0) return 0;
+      return s;
     };
     // Compute moving time (seconds) from consecutive records – only count intervals where speed > threshold
     const movingTimeFromRecords = (recs) => {
@@ -121,24 +186,24 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         if (currentKmRecords.length > 0) {
           const movingTimeSec = movingTimeFromRecords(currentKmRecords);
           const movingRecs = movingRecords(currentKmRecords);
+          const segStartDist = currentKmRecords[0].distance ?? 0;
+          const segEndDist = currentKmRecords[currentKmRecords.length - 1].distance ?? 0;
+          const segmentMeters = Math.max(0, segEndDist - segStartDist);
           // Stats only from moving records so pace/speed don't include stopped time
-          const speeds = movingRecs.map(r => {
-            const s = r.speed || 0;
-            return s > 0 ? (s > 10 ? s : s * 3.6) : 0;
-          }).filter(v => v > 0);
+          const speeds = movingRecs.map((r) => speedMps(r)).filter((v) => v > 0);
           const heartRates = movingRecs.map(r => r.heartRate).filter(v => v && v > 0);
           const cadences = movingRecs.map(r => r.cadence).filter(v => v && v > 0);
           
-          const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+          const avgSpeedMps = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
           const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : 0;
           const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
           
           kmLaps.push({
-            distance: kmNumber * 1000, // meters
+            distance: segmentMeters,
             elapsed_time: movingTimeSec,
             moving_time: movingTimeSec,
-            average_speed: avgSpeed / 3.6,
-            avgSpeed: avgSpeed,
+            average_speed: avgSpeedMps,
+            avgSpeed: avgSpeedMps * 3.6,
             average_heartrate: avgHeartRate,
             avgHeartRate: avgHeartRate,
             average_cadence: avgCadence,
@@ -162,23 +227,22 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       if (lastDistance >= (kmNumber - 1) * 1000 + 500) {
         const movingTimeSec = movingTimeFromRecords(currentKmRecords);
         const movingRecs = movingRecords(currentKmRecords);
-        const speeds = movingRecs.map(r => {
-          const s = r.speed || 0;
-          return s > 0 ? (s > 10 ? s : s * 3.6) : 0;
-        }).filter(v => v > 0);
+        const segStartDist = currentKmRecords[0].distance ?? 0;
+        const segmentMeters = Math.max(0, lastDistance - segStartDist);
+        const speeds = movingRecs.map((r) => speedMps(r)).filter((v) => v > 0);
         const heartRates = movingRecs.map(r => r.heartRate).filter(v => v && v > 0);
         const cadences = movingRecs.map(r => r.cadence).filter(v => v && v > 0);
         
-        const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+        const avgSpeedMps = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
         const avgHeartRate = heartRates.length > 0 ? Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length) : 0;
         const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : 0;
         
         kmLaps.push({
-          distance: lastDistance,
+          distance: segmentMeters,
           elapsed_time: movingTimeSec,
           moving_time: movingTimeSec,
-          average_speed: avgSpeed / 3.6,
-          avgSpeed: avgSpeed,
+          average_speed: avgSpeedMps,
+          avgSpeed: avgSpeedMps * 3.6,
           average_heartrate: avgHeartRate,
           avgHeartRate: avgHeartRate,
           average_cadence: avgCadence,
@@ -204,6 +268,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
       return power >= 30;
     });
 
+    const segmentDistancesM = resolveLapSegmentDistancesMeters(filteredLaps, records, isRun, lapTimeSource);
+
     const bars = filteredLaps.map((lap, originalIndex) => {
       // Prefer explicit lapNumber if available; otherwise fall back to array index
       const displayIndex = (lap?.lapNumber ?? lap?.lap_number ?? null) ?? (originalIndex + 1);
@@ -220,23 +286,24 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           value = lap.average_heartrate || lap.avgHeartRate || 0;
           unit = 'bpm';
           break;
-        case 'speed':
-          const speed = lap.average_speed || lap.avgSpeed || 0;
+        case 'speed': {
+          const mps = lapSpeedMpsForChart(lap);
           if (unitSystem === 'imperial') {
-            value = speed * 3.6 * 0.621371; // Convert m/s to mph
+            value = mps * 3.6 * 0.621371;
             unit = 'mph';
           } else {
-            value = speed * 3.6; // Convert m/s to km/h
+            value = mps * 3.6;
             unit = 'km/h';
           }
           break;
+        }
         case 'cadence':
           value = lap.average_cadence || lap.avgCadence || 0;
           unit = 'rpm';
           break;
-        case 'pace':
-          // Calculate pace from speed (m/s)
-          const speedMps = lap.average_speed || (lap.avgSpeed ? lap.avgSpeed / 3.6 : 0) || 0;
+        case 'pace': {
+          // Same m/s as intervals table (Strava: average_speed)
+          const speedMps = lapSpeedMpsForChart(lap);
           if (speedMps > 0) {
             if (isSwim) {
               if (unitSystem === 'imperial') {
@@ -251,8 +318,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                 value = Math.round(1609.34 / speedMps); // seconds per mile for running
                 unit = 's/mile';
               } else {
-                value = Math.round(1000 / speedMps); // seconds per km for running
-                unit = 's/km';
+                value = Math.round(1000 / speedMps); // seconds per km internally (axis shows M:SS)
+                unit = unitSystem === 'imperial' ? 'min/mi' : 'min/km';
               }
             }
           } else {
@@ -260,7 +327,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             if (isSwim) {
               unit = unitSystem === 'imperial' ? 's/100yd' : 's/100m';
             } else {
-              unit = unitSystem === 'imperial' ? 's/mile' : 's/km';
+              unit = unitSystem === 'imperial' ? 'min/mi' : 'min/km';
             }
           }
           // For running: if pace is slower than threshold, treat as pause (value=0)
@@ -269,12 +336,14 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
             value = 0;
           }
           break;
+        }
         default:
           value = 0;
       }
 
-      // Get distance for width calculation (prefer per-lap distance in meters)
+      // Bar width & tooltips: true segment length (fixes cumulative Strava lap.distance)
       const distance =
+        segmentDistancesM[originalIndex] ??
         lap.distance ??
         lap.totalDistance ??
         lap.total_distance ??
@@ -282,9 +351,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         lap.distance_meters ??
         0;
       
-      // Check if this is a pause (speed = 0 or very low, pace treated as 0)
-      const speedMps = lap.average_speed || (lap.avgSpeed ? lap.avgSpeed / 3.6 : 0) || 0;
-      const isPause = speedMps <= 0.1 || value === 0 || (selectedMetric === 'pace' && value === 0);
+      const speedMpsPause = lapSpeedMpsForChart(lap);
+      const isPause = speedMpsPause <= 0.1 || value === 0 || (selectedMetric === 'pace' && value === 0);
       
       // Get max heart rate for this interval
       const maxHeartRate = lap.max_heartrate || lap.maxHeartRate || lap.average_heartrate || lap.avgHeartRate || 0;
@@ -339,7 +407,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     });
 
     return { bars, maxValue, minValue, totalDistance, groups };
-  }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem]);
+  }, [processedLaps, selectedMetric, isRun, isSwim, unitSystem, records, lapTimeSource]);
 
   // Determine which bar corresponds to selectedLapNumber (after chartData is defined)
   const selectedBarIndex = useMemo(() => {
@@ -358,7 +426,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
     bars.forEach((bar, index) => {
       const lap = bar.lap || {};
       const avgWatts = Number(lap.average_watts || lap.avgPower || 0);
-      const durationSec = Number(lap.moving_time || lap.totalTimerTime || lap.total_timer_time || lap.elapsed_time || lap.totalElapsedTime || 0);
+      const durationSec = lapDurationSecondsForChart(lap, lapTimeSource);
 
       if (!avgWatts || avgWatts <= 0) return;
 
@@ -406,7 +474,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
         onSelectLapNumber(bestBar.lapNumber);
       }
     }
-  }, [highlightMetric, chartData, onSelectLapNumber]);
+  }, [highlightMetric, chartData, onSelectLapNumber, lapTimeSource]);
 
   // If parent selects a lap (e.g., click in LapsTable), highlight it here
   useEffect(() => {
@@ -582,16 +650,8 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
   // Calculate total time for X-axis labels – use moving time only (exclude stopped time)
   const totalTime = useMemo(() => {
     if (!processedLaps || processedLaps.length === 0) return 0;
-    return processedLaps.reduce((sum, lap) => sum + (
-      lap.moving_time ||
-      lap.totalTimerTime ||
-      lap.total_timer_time ||
-      lap.elapsed_time ||
-      lap.totalElapsedTime ||
-      lap.total_elapsed_time ||
-      0
-    ), 0);
-  }, [processedLaps]);
+    return processedLaps.reduce((sum, lap) => sum + lapDurationSecondsForChart(lap, lapTimeSource), 0);
+  }, [processedLaps, lapTimeSource]);
 
   if (!processedLaps || processedLaps.length === 0) {
     return (
@@ -755,44 +815,26 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                   ? ((adjustedMaxValue - bar.value) / (adjustedMaxValue - adjustedMinValue)) * 100
                   : ((bar.value - adjustedMinValue) / (adjustedMaxValue - adjustedMinValue)) * 100
                 : 0;
-              // Calculate speed based on unit system
-              // Normalize speed: support average_speed (m/s), avg_speed (m/s), avgSpeed (km/h)
-              const rawSpeed =
-                bar.lap.average_speed ??
-                bar.lap.avg_speed ??
-                (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) ??
-                0;
-              const speedMps = rawSpeed > 10 ? rawSpeed / 3.6 : rawSpeed;
+              const speedMps = lapSpeedMpsForChart(bar.lap);
               const avgSpeed = speedMps > 0 
                 ? (unitSystem === 'imperial' 
                   ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
                   : (speedMps * 3.6).toFixed(1) + ' km/h')
                 : '-';
               
-              // Calculate pace for running/swimming
               let paceSeconds = 0;
               if ((isRun || isSwim) && speedMps > 0) {
                 if (isSwim) {
                   paceSeconds = unitSystem === 'imperial' 
-                    ? Math.round(109.361 / speedMps) // seconds per 100yd
-                    : Math.round(100 / speedMps); // seconds per 100m
+                    ? Math.round(109.361 / speedMps)
+                    : Math.round(100 / speedMps);
                 } else {
                   paceSeconds = unitSystem === 'imperial'
-                    ? Math.round(1609.34 / speedMps) // seconds per mile
-                    : Math.round(1000 / speedMps); // seconds per km
-                }
-              } else if ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0) {
-                const avgSpeedMps = bar.lap.avgSpeed / 3.6;
-                if (isSwim) {
-                  paceSeconds = unitSystem === 'imperial'
-                    ? Math.round(109.361 / avgSpeedMps)
-                    : Math.round(100 / avgSpeedMps);
-                } else {
-                  paceSeconds = unitSystem === 'imperial'
-                    ? Math.round(1609.34 / avgSpeedMps)
-                    : Math.round(1000 / avgSpeedMps);
+                    ? Math.round(1609.34 / speedMps)
+                    : Math.round(1000 / speedMps);
                 }
               }
+              const lapDur = lapDurationSecondsForChart(bar.lap, lapTimeSource);
               const paceMinutes = Math.floor(paceSeconds / 60);
               const paceSecs = paceSeconds % 60;
               const paceUnit = isSwim 
@@ -817,12 +859,12 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
 
               const tooltipTitle =
                 selectedMetric === 'pace'
-                  ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. pace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                  ? `Lap ${bar.lapNumber}\nTime: ${formatDuration(lapDur)}\nAvg. pace: ${paceFormatted}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
                   : selectedMetric === 'power'
-                    ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Power: ${avgPower} W\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                    ? `Lap ${bar.lapNumber}\nTime: ${formatDuration(lapDur)}\nAvg. Power: ${avgPower} W\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
                     : selectedMetric === 'cadence'
-                      ? `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Cadence: ${avgCadence}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
-                      : `Lap ${bar.lapNumber}\nMoving Time: ${formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`;
+                      ? `Lap ${bar.lapNumber}\nTime: ${formatDuration(lapDur)}\nAvg. Cadence: ${avgCadence}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`
+                      : `Lap ${bar.lapNumber}\nTime: ${formatDuration(lapDur)}\nAvg. Speed: ${avgSpeed}\nAvg. HR: ${avgHr}`;
               
               return (
                 <div
@@ -875,7 +917,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                       backgroundColor: barColor,
                       minHeight: bar.isPause ? '2px' : (bar.value > 0 ? '2px' : '0')
                     }}
-                    title={tooltipTitle}
+                    title={isMobile ? tooltipTitle : undefined}
                   />
                   {/* Selected underline (bottom highlight) */}
                   <div
@@ -903,43 +945,26 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
           
           if (!activeBar || !activeBar.bar) return null;
           const bar = activeBar.bar;
-          // Calculate speed based on unit system
-          const rawSpeed =
-            bar.lap.average_speed ??
-            bar.lap.avg_speed ??
-            (bar.lap.avgSpeed ? bar.lap.avgSpeed / 3.6 : 0) ??
-            0;
-          const speedMps = rawSpeed > 10 ? rawSpeed / 3.6 : rawSpeed;
+          const speedMps = lapSpeedMpsForChart(bar.lap);
           const avgSpeed = speedMps > 0 
             ? (unitSystem === 'imperial' 
               ? (speedMps * 3.6 * 0.621371).toFixed(1) + ' mph'
               : (speedMps * 3.6).toFixed(1) + ' km/h')
             : '-';
           
-          // Calculate pace for running/swimming
           let paceSeconds = 0;
           if ((isRun || isSwim) && speedMps > 0) {
             if (isSwim) {
               paceSeconds = unitSystem === 'imperial' 
-                ? Math.round(109.361 / speedMps) // seconds per 100yd
-                : Math.round(100 / speedMps); // seconds per 100m
+                ? Math.round(109.361 / speedMps)
+                : Math.round(100 / speedMps);
             } else {
               paceSeconds = unitSystem === 'imperial'
-                ? Math.round(1609.34 / speedMps) // seconds per mile
-                : Math.round(1000 / speedMps); // seconds per km
-            }
-          } else if ((isRun || isSwim) && bar.lap.avgSpeed && bar.lap.avgSpeed > 0) {
-            const avgSpeedMps = bar.lap.avgSpeed / 3.6;
-            if (isSwim) {
-              paceSeconds = unitSystem === 'imperial'
-                ? Math.round(109.361 / avgSpeedMps)
-                : Math.round(100 / avgSpeedMps);
-            } else {
-              paceSeconds = unitSystem === 'imperial'
-                ? Math.round(1609.34 / avgSpeedMps)
-                : Math.round(1000 / avgSpeedMps);
+                ? Math.round(1609.34 / speedMps)
+                : Math.round(1000 / speedMps);
             }
           }
+          const lapDurTooltip = lapDurationSecondsForChart(bar.lap, lapTimeSource);
           const paceMinutes = Math.floor(paceSeconds / 60);
           const paceSecs = paceSeconds % 60;
           const paceUnit = isSwim 
@@ -1056,7 +1081,7 @@ const IntervalChart = ({ laps = [], sport = 'cycling', records = [], user = null
                           Distance: {bar.distance > 0 ? formatDistance(bar.distance, unitSystem).formatted : '-'}
                         </div>
                         <div className="text-gray-600">
-                          Moving Time: {formatDuration(bar.lap.moving_time || bar.lap.totalTimerTime || bar.lap.elapsed_time || bar.lap.totalElapsedTime || 0)}
+                          Time: {formatDuration(lapDurTooltip)}
                         </div>
                         {(isRun || isSwim) ? (
                           <>

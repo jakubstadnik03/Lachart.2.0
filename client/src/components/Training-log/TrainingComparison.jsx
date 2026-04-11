@@ -399,6 +399,12 @@ const TrainingComparison = ({ trainings }) => {
     const sport = (sportValue || '').toLowerCase();
     return sport.includes('bike') || sport.includes('cycle') || sport.includes('ride') || sport.includes('cycling');
   };
+
+  /** Run / walk / hike / swim use pace (s/km or s/100m) on the Power/Pace metric — faster = smaller number, belongs at top of Y axis */
+  const isPaceSport = (sportValue) => {
+    const s = (sportValue || '').toLowerCase();
+    return s.includes('run') || s === 'walk' || s === 'hike' || s.includes('swim');
+  };
   const getTrainingUid = (t) => String(t?._id || t?.id || t?.stravaId || t?.sourceStravaActivityId || t?.createdAt || t?.timestamp || '');
   const getTrainingDate = (t) => new Date(t?.date || t?.timestamp || t?.createdAt);
   const formatTrainingLabel = (t) => {
@@ -503,6 +509,13 @@ const TrainingComparison = ({ trainings }) => {
       .sort((a, b) => getTrainingDate(a) - getTrainingDate(b));
   }, [snapshotOptions, snapshotSelectedIds]);
 
+  // Y-axis: pace increases downward (faster/smaller s at top). No bike in selection + at least one run/swim.
+  const snapshotShowsPaceAxis =
+    selectedMetric === 'power' &&
+    snapshotSelectedTrainings.length > 0 &&
+    !snapshotSelectedTrainings.some((t) => isBikeSport(t.sport)) &&
+    snapshotSelectedTrainings.some((t) => isPaceSport(t.sport));
+
   const sameTrainingSnapshot = useMemo(() => {
     if (snapshotSelectedTrainings.length < 2) return null;
 
@@ -513,8 +526,7 @@ const TrainingComparison = ({ trainings }) => {
     const firstResults = firstTraining.results || [];
     const lastResults = lastTraining.results || [];
     const maxIntervals = Math.max(firstResults.length, lastResults.length);
-    const bothBike = isBikeSport(firstTraining.sport) && isBikeSport(lastTraining.sport);
-    const isPaceMetricForPair = selectedMetric === 'power' && !bothBike;
+    const isPaceMetricForPair = snapshotShowsPaceAxis;
     const rows = [];
 
     for (let i = 0; i < maxIntervals; i++) {
@@ -552,7 +564,7 @@ const TrainingComparison = ({ trainings }) => {
       avgProgress,
       isPaceMetricForPair
     };
-  }, [selectedMetric, snapshotSelectedTrainings]);
+  }, [selectedMetric, snapshotSelectedTrainings, snapshotShowsPaceAxis]);
 
   const snapshotSeries = useMemo(() => {
     return snapshotSelectedTrainings.map((training, idx) => {
@@ -667,26 +679,25 @@ const TrainingComparison = ({ trainings }) => {
       }));
   }, [filteredTrainings, unitSystem]);
 
-  // Check if we're displaying pace (values > 100 are likely seconds/pace)
-  // But NOT if all trainings are bike (bike always uses power in W)
-  const isPaceMetric = () => {
+  // Pace on Y: smaller s/km at top (reversed axis). Prefer sport; fallback if sport missing but values look like s/km.
+  const paceYAxisReversed = useMemo(() => {
     if (selectedMetric !== 'power') return false;
-    // If all trainings are bike, it's always power, not pace
-    if (areAllTrainingsBike()) return false;
+    if (!filteredTrainings.length) return false;
+    if (filteredTrainings.every((t) => isBikeSport(t.sport))) return false;
+    if (filteredTrainings.some((t) => isPaceSport(t.sport))) return true;
     if (!chartData.length) return false;
     const values = [];
-    chartData.forEach(row => {
+    chartData.forEach((row) => {
       Object.entries(row).forEach(([key, val]) => {
         if (key === 'interval' || val === null || val === undefined) return;
-        if (!activeSeries[key]) return;
-        if (typeof val === 'number' && !Number.isNaN(val)) values.push(val);
+        if (activeSeries[key] === false) return;
+        if (typeof val === 'number' && Number.isFinite(val)) values.push(val);
       });
     });
     if (!values.length) return false;
-    // If most values are > 100, it's likely pace (in seconds)
-    const paceCount = values.filter(v => v > 100).length;
+    const paceCount = values.filter((v) => v > 100).length;
     return paceCount > values.length * 0.5;
-  };
+  }, [selectedMetric, filteredTrainings, chartData, activeSeries]);
 
   // Compute dynamic Y domain: use original values, but start from minValue - 100W
   const getYDomain = () => {
@@ -1135,8 +1146,8 @@ const TrainingComparison = ({ trainings }) => {
                 <div className="text-xs text-gray-600">Pick multiple trainings and compare intervals visually.</div>
               </div>
               <span className="text-[11px] text-indigo-800 bg-indigo-100/80 px-2 py-1 rounded-full border border-indigo-200">
-                {selectedMetric === 'power' && sameTrainingSnapshot?.isPaceMetricForPair
-                  ? 'Pace: lower is better'
+                {selectedMetric === 'power' && snapshotShowsPaceAxis
+                  ? 'Pace: faster (smaller) at top'
                   : 'Higher is better'}
               </span>
             </div>
@@ -1278,7 +1289,7 @@ const TrainingComparison = ({ trainings }) => {
                     <YAxis
                       tick={{ fontSize: 11, fill: '#4B5563' }}
                       domain={snapshotYDomain}
-                      reversed={Boolean(sameTrainingSnapshot?.isPaceMetricForPair)}
+                      reversed={snapshotShowsPaceAxis}
                       tickFormatter={(v) => formatMetricAxisTick(v, selectedMetric)}
                       width={46}
                     />
@@ -1555,7 +1566,7 @@ const TrainingComparison = ({ trainings }) => {
                     tickFormatter={formatYAxisTick}
                     tick={{ fontSize: 10, fill: '#4B5563' }}
                     allowDecimals={false}
-                    reversed={isPaceMetric()}
+                    reversed={paceYAxisReversed}
                     interval={0}
                     width={40}
                     label={{
@@ -1566,7 +1577,7 @@ const TrainingComparison = ({ trainings }) => {
                             return 'Power (W)';
                           }
                           // Otherwise check if it's pace or power
-                          return isPaceMetric()
+                          return paceYAxisReversed
                             ? (unitSystem === 'imperial' ? 'Pace (s/mile)' : 'Pace (s/km)')
                             : 'Power (W) / Pace (s)';
                         }
@@ -1647,7 +1658,7 @@ const TrainingComparison = ({ trainings }) => {
                       // In recharts, X-axis is ALWAYS at the bottom of the chart, regardless of Y-axis reversal
                       const yDomain = getYDomain();
                       const domainMin = yDomain[0];
-                      const isReversed = isPaceMetric();
+                      const isReversed = paceYAxisReversed;
                       let xAxisY = chartBottom; // X-axis is always at bottom
                       if (yAxis.scale && typeof yAxis.scale === 'function') {
                         // For normal axis: domainMin is at bottom, so X-axis is at domainMin position
@@ -1792,7 +1803,7 @@ const TrainingComparison = ({ trainings }) => {
                               // In recharts, Y=0 is at top, Y=height is at bottom
                               // So: y = chartTop + (1 - normalized) * chartHeight for normal axis
                               // Or: y = chartTop + normalized * chartHeight for reversed axis
-                              const isReversed = isPaceMetric();
+                              const isReversed = paceYAxisReversed;
                               if (isReversed) {
                                 yValuePos = chartTop + normalizedValue * chartHeight;
                               } else {

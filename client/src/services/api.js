@@ -371,7 +371,11 @@ api.interceptors.response.use(
           '[API] Network or CORS error. If running on localhost, set ALLOW_LOCALHOST_ORIGIN=true on the server or use the same origin.'
         );
       }
-    } else if (error.response?.status !== 429) {
+    } else if (
+      error.code !== 'ERR_CANCELED' &&
+      error.name !== 'CanceledError' &&
+      error.response?.status !== 429
+    ) {
       console.error('API Error:', error);
     }
 
@@ -390,6 +394,18 @@ api.interceptors.response.use(
         }
       }
     }
+
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.code === 'PREMIUM_REQUIRED' &&
+      typeof window !== 'undefined' &&
+      window.dispatchEvent
+    ) {
+      window.dispatchEvent(
+        new CustomEvent('app:premium-required', { detail: error.response.data })
+      );
+    }
+
     return Promise.reject(error);
   }
 );
@@ -1157,13 +1173,26 @@ export const garminLogin = async (credentials) => {
   return data; // { success, message }
 };
 
-export const listExternalActivities = async (params={}) => {
-  const { data } = await api.get('/api/integrations/activities', { params });
+/**
+ * @param {Record<string, unknown>} [params] query params
+ * @param {{ signal?: AbortSignal; timeout?: number }} [requestOpts] large activity lists may need timeout above default 60s
+ */
+export const listExternalActivities = async (params = {}, requestOpts = {}) => {
+  const { signal, timeout } = requestOpts;
+  const cfg = { params };
+  if (signal) cfg.signal = signal;
+  if (timeout != null) cfg.timeout = timeout;
+  const { data } = await api.get('/api/integrations/activities', cfg);
   return data; // normalized activities
 };
 
-export const getIntegrationStatus = async () => {
-  const { data } = await api.get('/api/integrations/status');
+/** @param {{ signal?: AbortSignal; timeout?: number }} [opts] */
+export const getIntegrationStatus = async (opts = {}) => {
+  const { signal, timeout } = opts;
+  const cfg = {};
+  if (signal) cfg.signal = signal;
+  if (timeout != null) cfg.timeout = timeout;
+  const { data } = await api.get('/api/integrations/status', cfg);
   return data; // { stravaConnected, garminConnected }
 };
 

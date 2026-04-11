@@ -1,9 +1,15 @@
 "use client";
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api, { clearApiCache } from '../services/api';
 import WelcomeModal from '../components/WelcomeModal';
 import { saveUserToStorage } from '../utils/userStorage';
+import {
+  PREMIUM_PREVIEW_NO_ACCESS_KEY,
+  readPremiumPreviewNoAccess,
+  writePremiumPreviewNoAccess,
+  userWithPremiumPreviewApplied,
+} from '../utils/premiumPreview';
 
 const AuthContext = createContext(null);
 
@@ -13,8 +19,25 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  /** UI-only: pretend the account has no premium (localStorage, this browser only). */
+  const [premiumPreviewNoAccess, setPremiumPreviewNoAccessState] = useState(readPremiumPreviewNoAccess);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const setPremiumPreviewNoAccess = useCallback((enabled) => {
+    writePremiumPreviewNoAccess(Boolean(enabled));
+    setPremiumPreviewNoAccessState(Boolean(enabled));
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === PREMIUM_PREVIEW_NO_ACCESS_KEY || e.key === null) {
+        setPremiumPreviewNoAccessState(readPremiumPreviewNoAccess());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const removeToken = useCallback(() => {
     // Základní auth údaje
@@ -81,6 +104,8 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
+    writePremiumPreviewNoAccess(false);
+    setPremiumPreviewNoAccessState(false);
   }, []);
 
   // Run only once on mount – avoid re-running on pathname change so we never overwrite
@@ -279,6 +304,11 @@ export const AuthProvider = ({ children }) => {
     }
   }, [removeToken, saveToken]);
 
+  const userForUi = useMemo(
+    () => userWithPremiumPreviewApplied(user, premiumPreviewNoAccess),
+    [user, premiumPreviewNoAccess]
+  );
+
   const logout = useCallback(async () => {
     try {
       // Fire-and-forget – nečekáme na pomalý server, UX zůstane rychlé
@@ -300,12 +330,14 @@ export const AuthProvider = ({ children }) => {
   }, [navigate, removeToken]);
 
   const value = {
-    user,
+    user: userForUi,
     token,
     isAuthenticated,
     loading,
     login,
     logout,
+    premiumPreviewNoAccess,
+    setPremiumPreviewNoAccess,
   };
 
   return (

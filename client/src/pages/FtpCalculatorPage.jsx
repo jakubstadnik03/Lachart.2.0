@@ -85,72 +85,90 @@ const FtpCalculatorPage = () => {
         <Header isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} user={demoUser} />
 
         <main className="flex-1 px-4 py-8 pt-16 md:pt-8">
-          <div className="max-w-[1200px] mx-auto space-y-10">
-            {/* Hero / SEO copy */}
-            <section className="bg-gradient-to-r from-orange-50 via-white to-pink-50 rounded-3xl border border-orange-100 shadow-sm px-4 sm:px-8 py-10 relative overflow-hidden">
-              <div className="absolute -right-20 -top-16 w-64 h-64 bg-orange-200/40 rounded-full blur-3xl pointer-events-none" />
-              <div className="relative z-10">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
-                  FTP Calculator
-                </h1>
-                <p className="text-lg sm:text-xl text-gray-700 max-w-3xl mb-4">
-                  Quickly estimate your **Functional Threshold Power (FTP)** from a single 20‑minute all‑out effort and see your
-                  power‑to‑weight ratio in W/kg.
-                </p>
-                <p className="text-sm sm:text-base text-gray-600 max-w-3xl">
-                  FTP is a popular metric in cycling and triathlon, but it&apos;s still just an estimate. LaChart goes further by
-                  combining FTP with **lactate testing, training load and heart rate** to give you a complete picture of fitness,
-                  fatigue and form.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/signup')}
-                    className="px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold shadow hover:bg-primary-dark transition-colors"
-                  >
-                    Sign up for free to track FTP over time
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/lactate-curve-calculator')}
-                    className="px-5 py-2.5 rounded-full bg-white/80 border border-gray-200 text-sm font-medium text-gray-800 hover:bg-white shadow-sm transition-colors"
-                  >
-                    Generate lactate-based thresholds →
-                  </button>
+          <div className="max-w-[1200px] mx-auto space-y-8">
+
+            {/* Hero */}
+            <section className="relative bg-white rounded-3xl border border-gray-100 shadow-sm px-4 sm:px-8 py-10 overflow-hidden">
+              {/* Background orbs */}
+              <div className="absolute -right-24 -top-20 w-80 h-80 bg-orange-200/30 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -left-16 bottom-0 w-60 h-60 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col lg:flex-row gap-8 items-start lg:items-center">
+                <div className="flex-1 min-w-0">
+                  <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-[11px] sm:text-xs font-semibold text-orange-700 mb-4">
+                    ⚡ Cycling & Triathlon
+                  </div>
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight mb-4">
+                    <span className="text-gray-900">FTP </span>
+                    <span className="bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent">Calculator</span>
+                  </h1>
+                  <p className="text-base sm:text-lg text-gray-600 max-w-2xl mb-6">
+                    Estimate your Functional Threshold Power from a single 20‑minute all‑out effort and see your
+                    power‑to‑weight ratio in W/kg. Perfect for cyclists and triathletes.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/signup')}
+                      className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-pink-500 shadow-sm hover:shadow-md hover:opacity-90 transition-all"
+                    >
+                      Track FTP over time – free
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/lactate-curve-calculator')}
+                      className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+                    >
+                      Lactate-based thresholds →
+                    </button>
+                  </div>
+                </div>
+                {/* Quick stats */}
+                <div className="grid grid-cols-2 gap-3 lg:w-64 flex-shrink-0">
+                  {[
+                    { label: 'Cat 4/5 men', value: '2.5–3.2 W/kg', color: 'bg-gray-50 border-gray-200' },
+                    { label: 'Cat 3 men', value: '3.2–3.8 W/kg', color: 'bg-blue-50 border-blue-100' },
+                    { label: 'Cat 1/2 men', value: '4.0–5.0 W/kg', color: 'bg-primary/5 border-primary/20' },
+                    { label: 'Pro level', value: '5.0+ W/kg', color: 'bg-orange-50 border-orange-100' },
+                  ].map(s => (
+                    <div key={s.label} className={`rounded-xl border p-3 ${s.color}`}>
+                      <div className="text-[10px] text-gray-500 mb-0.5">{s.label}</div>
+                      <div className="text-sm font-bold text-gray-800">{s.value}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </section>
 
             {/* Calculator + education */}
-            <section className="grid lg:grid-cols-2 gap-6 items-start">
+            <section className="grid lg:grid-cols-5 gap-6 items-start">
+              {/* Calculator — wider */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6"
+                className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-7"
               >
-                <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-1">Estimate your FTP</h2>
-                <p className="text-sm text-gray-600 mb-4">
-                  Perform a **20‑minute maximal test** and enter your average power below. We&apos;ll estimate 60‑minute FTP and
-                  power‑to‑weight. Use a smart trainer, power meter or consistent indoor setup for best results.
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Estimate your FTP</h2>
+                <p className="text-sm text-gray-500 mb-6">
+                  Ride 20 minutes as hard as you can sustain evenly and enter your average power below.
                 </p>
 
-                <div className="space-y-4">
+                <div className="grid sm:grid-cols-2 gap-4 mb-6">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Best 20‑minute average power (W)
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Best 20‑min average power (W)
                     </label>
                     <input
                       type="number"
                       min="0"
                       value={best20MinPower}
                       onChange={(e) => setBest20MinPower(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
                       placeholder="e.g. 280"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Weight (kg) <span className="text-gray-400">(optional, for W/kg)</span>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Body weight (kg) <span className="font-normal text-gray-400">– optional, for W/kg</span>
                     </label>
                     <input
                       type="number"
@@ -158,36 +176,40 @@ const FtpCalculatorPage = () => {
                       step="0.1"
                       value={weight}
                       onChange={(e) => setWeight(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
                       placeholder="e.g. 72"
                     />
                   </div>
                 </div>
 
-                <div className="mt-5 grid sm:grid-cols-3 gap-4">
-                  <div className="rounded-xl bg-primary/5 border border-primary/20 p-3">
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Estimated FTP</div>
-                    <div className="text-2xl font-bold text-primary">{ftp ? `${ftp} W` : '—'}</div>
-                    <p className="text-xs text-gray-500 mt-1">≈95 % z 20‑minutového výkonu.</p>
+                {/* Results */}
+                <div className="grid sm:grid-cols-3 gap-4 mb-6">
+                  <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-pink-50 border border-orange-100 p-4">
+                    <div className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-2">Estimated FTP</div>
+                    <div className="text-3xl font-extrabold text-gray-900">{ftp ? `${ftp}` : '—'}</div>
+                    <div className="text-sm text-gray-500 mt-0.5">{ftp ? 'watts' : 'enter power above'}</div>
+                    <p className="text-[11px] text-gray-400 mt-2">95% of 20-min power</p>
                   </div>
-                  <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Power‑to‑weight</div>
-                    <div className="text-2xl font-bold text-amber-700">{wkg ? `${wkg} W/kg` : '—'}</div>
-                    <p className="text-xs text-gray-500 mt-1">Skvělý quick‑check pro lezení a výkon v kopcích.</p>
+                  <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-100 p-4">
+                    <div className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider mb-2">Power-to-weight</div>
+                    <div className="text-3xl font-extrabold text-gray-900">{wkg ? wkg : '—'}</div>
+                    <div className="text-sm text-gray-500 mt-0.5">{wkg ? 'W/kg' : 'add weight above'}</div>
+                    <p className="text-[11px] text-gray-400 mt-2">key for climbing & races</p>
                   </div>
-                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs text-gray-600 flex items-center">
-                    This FTP is a **rule‑of‑thumb estimate**. For precise training zones and race pacing, combine it with
-                    lactate testing and daily training data in LaChart.
+                  <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4 flex flex-col justify-center">
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      FTP is a rule‑of‑thumb estimate. For precise zones and race pacing, combine it with lactate testing in LaChart.
+                    </p>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={handleCopySummary}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-gray-900 text-white hover:bg-black transition-colors"
+                    className="px-4 py-2 text-xs sm:text-sm rounded-xl bg-gray-900 text-white hover:bg-black transition-colors"
                   >
-                    Copy FTP summary
+                    Copy summary
                   </button>
                   <button
                     type="button"
@@ -195,49 +217,53 @@ const FtpCalculatorPage = () => {
                       setBest20MinPower('');
                       setWeight('');
                     }}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2 text-xs sm:text-sm rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                   >
                     Reset
                   </button>
                 </div>
               </motion.div>
 
+              {/* Education — narrower */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-4 text-sm sm:text-base text-gray-700"
+                transition={{ delay: 0.1 }}
+                className="lg:col-span-2 space-y-4"
               >
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">
-                    How to perform a 20‑minute FTP test
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center mb-3">
+                    <span className="text-lg">🚴</span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-2">
+                    How to run a 20‑min FTP test
                   </h2>
-                  <ol className="list-decimal pl-5 space-y-1 text-gray-700 mb-2">
-                    <li>Warm up for 15–20 minutes with a few short efforts close to threshold.</li>
-                    <li>Ride 20 minutes **as hard as you can sustain evenly** – avoid sprinting at the start.</li>
-                    <li>Use your power meter or smart trainer to record average power for the 20 minutes.</li>
-                    <li>Enter that value above. We estimate FTP as 95 % of this 20‑minute power.</li>
+                  <ol className="list-decimal pl-4 space-y-1.5 text-sm text-gray-600">
+                    <li>Warm up for 15–20 min including a few short efforts near threshold.</li>
+                    <li>Ride 20 minutes as hard as you can sustain evenly — avoid sprinting at the start.</li>
+                    <li>Record average power from your power meter or smart trainer.</li>
+                    <li>Enter the value above — we estimate FTP as 95% of this figure.</li>
                   </ol>
-                  <p className="text-xs text-gray-500">
-                    Tip: repeat the test on similar terrain & conditions (indoor vs outdoor) to compare like‑for‑like.
+                  <p className="text-xs text-gray-400 mt-3">
+                    Tip: repeat on the same course/setup for comparable results.
                   </p>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
-                    Track FTP and lactate thresholds in LaChart
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
+                    <span className="text-lg">📈</span>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900 mb-2">
+                    Track FTP + lactate together in LaChart
                   </h3>
-                  <p className="mb-2">
-                    LaChart lets you **store FTP tests, lactate tests and daily workouts** in one place. We calculate training
-                    load (TSS), form, fitness and fatigue, and generate exportable reports for athletes and coaches.
-                  </p>
-                  <p className="mb-3">
-                    Instead of a single FTP number, you get a full picture: how your LT1/LT2, FTP and real‑world performance
-                    evolve across the season.
+                  <p className="text-sm text-gray-600 mb-3">
+                    Store FTP tests, lactate curves and daily workouts in one place. LaChart shows how LT1/LT2, FTP and
+                    real‑world performance evolve across the season.
                   </p>
                   <button
                     type="button"
                     onClick={() => navigate('/about')}
-                    className="px-4 py-2 text-xs sm:text-sm rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
+                    className="inline-flex items-center px-4 py-2 text-xs sm:text-sm rounded-xl bg-primary text-white hover:bg-primary-dark transition-colors"
                   >
                     Learn more about LaChart →
                   </button>
@@ -254,4 +280,3 @@ const FtpCalculatorPage = () => {
 };
 
 export default FtpCalculatorPage;
-
