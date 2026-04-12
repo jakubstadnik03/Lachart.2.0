@@ -18,6 +18,8 @@ import DateSelector from "../components/DateSelector";
 import LactateStatistics from "../components/LactateStatistics/LactateStatistics";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
+import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
+import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
 import { motion } from 'framer-motion';
 //import { useNotification } from '../context/NotificationContext';
 // import { 
@@ -1033,13 +1035,32 @@ export default function DashboardPage() {
           />
         </motion.div>
 
-        <motion.div 
+        {/* LT2 Trend Sparkline + Zone Distribution — side by side on large screens */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.32 }}
+          className="lg:col-span-3 md:col-span-2 flex flex-col"
+        >
+          <LT2TrendSparkline tests={tests} sport={selectedSport} />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.34 }}
+          className="lg:col-span-2 md:col-span-2 flex flex-col"
+        >
+          <ZoneDistributionChart trainings={trainings} period="90d" />
+        </motion.div>
+
+        <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
           className="lg:col-span-3 md:col-span-2"
         >
-          <TrainingTable 
+          <TrainingTable
             trainings={recentTrainings}
             calendarData={calendarData}
             selectedSport={selectedSport}

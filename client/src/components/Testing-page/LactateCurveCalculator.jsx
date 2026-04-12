@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import api from '../../services/api';
 import { calculateZonesFromTest } from './zoneCalculator';
+import { downloadLactateReportPdf } from './LactateReportPdf';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -751,6 +752,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [emailTo, setEmailTo] = useState('');
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [pdfStatus, setPdfStatus] = useState(null); // { type: 'success'|'error', message: string }
+  const [athleteProfile, setAthleteProfile] = useState(null);
   const [zoneOverride, setZoneOverride] = useState(null);
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
@@ -784,6 +786,21 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
+  // Fetch athlete profile for PDF report
+  useEffect(() => {
+    const athleteId = mockData?.athleteId;
+    if (!athleteId) {
+      // If no separate athlete, use the current user's profile
+      setAthleteProfile(user || null);
+      return;
+    }
+    let cancelled = false;
+    api.get(`/user/athlete/${athleteId}/profile`)
+      .then(res => { if (!cancelled) setAthleteProfile(res.data); })
+      .catch(() => { if (!cancelled) setAthleteProfile(user || null); });
+    return () => { cancelled = true; };
+  }, [mockData?.athleteId, user]);
+
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
   // Case + nesoulad metadat (speed) vs skutečná data v sekundách po přepnutí jiného testu
@@ -870,92 +887,34 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   };
 
   const handleDownloadPdf = async () => {
-    const testId = mockData?._id;
-    if (!testId) {
-      setPdfStatus({ type: 'error', message: 'Missing test id.' });
+    if (!mockData) {
+      setPdfStatus({ type: 'error', message: 'Missing test data.' });
       return;
     }
     try {
       setDownloadingPdf(true);
       setPdfStatus(null);
-      const overrides = {
-        thresholds,
-        zones: zoneOverride || zones,
+
+      // Build a merged test object with any zone/threshold overrides applied
+      const testForPdf = {
+        ...mockData,
         inputMode,
-        unitSystem
+        unitSystem,
       };
-      const { data } = await api.post(`/test/${testId}/report-pdf`, { overrides }, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `lactate-report-${testId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+
+      await downloadLactateReportPdf({
+        test:           testForPdf,
+        athlete:        athleteProfile,
+        thresholds:     thresholds,
+        zones:          zoneOverride || zones,
+        prevTest:       null,
+        prevThresholds: null,
+      });
+
       setPdfStatus({ type: 'success', message: 'PDF downloaded.' });
     } catch (e) {
-      const status = e?.response?.status;
-      let reason = e?.response?.data?.error || e?.response?.data?.reason;
-      if (e?.response?.data?.constructor?.name === 'Blob') {
-        try {
-          const text = await e.response.data.text();
-          const j = JSON.parse(text);
-          reason = j.error || j.reason;
-        } catch {
-          reason = status === 503 ? 'pdf_not_available' : 'failed';
-        }
-      }
-
-      // If backend returns JSON { error: 'test_not_found' }, reason will be that string.
-      // If the endpoint is missing (route mismatch), reason is often empty/undefined.
-      const isTestNotFound = reason === 'test_not_found';
-      const isLikelyRouteMissing = status === 404 && !reason;
-
-      // Fallback: try GET without overrides (some deployments only support GET).
-      if (isLikelyRouteMissing) {
-        try {
-          const { data } = await api.get(`/test/${testId}/report-pdf`, { responseType: 'blob' });
-          const url = window.URL.createObjectURL(new Blob([data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `lactate-report-${testId}.pdf`);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          window.URL.revokeObjectURL(url);
-          setPdfStatus({ type: 'success', message: 'PDF downloaded (fallback GET).' });
-          return;
-        } catch {
-          // Fall through to shared error handling below
-        }
-      }
-
-      if (isTestNotFound) {
-        // Notify parent to reload tests list and clear stale selection.
-        try {
-          window.dispatchEvent(
-            new CustomEvent('lachart:testNotFound', {
-              detail: {
-                testId: testId || null,
-                athleteId: mockData?.athleteId || null,
-              },
-            })
-          );
-        } catch {
-          // ignore
-        }
-      }
-      const msg =
-        reason === 'pdf_not_available' || reason === 'pdf_generation_failed' || status === 503
-          ? 'PDF generation is not available on this server.'
-          : reason === 'forbidden' || status === 403
-            ? 'You do not have access to this report.'
-            : isTestNotFound
-              ? `Test not found (testId: ${testId}). The UI selection may be stale.`
-              : isLikelyRouteMissing
-                ? `PDF endpoint missing on server (404).`
-              : (e?.response?.data?.message || 'Failed to download PDF.');
+      console.error('[handleDownloadPdf]', e);
+      const msg = e?.message || 'Failed to generate PDF.';
       setPdfStatus({ type: 'error', message: msg });
     } finally {
       setDownloadingPdf(false);

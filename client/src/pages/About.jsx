@@ -3,11 +3,12 @@ import { trackEvent } from '../utils/analytics';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination, EffectCoverflow } from 'swiper/modules';
+import { Navigation, Pagination, EffectCoverflow, Autoplay } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import 'swiper/css/effect-coverflow';
+import 'swiper/css/autoplay';
 import ContactUs from '../components/ContactUs';
 
 // ─── FAQ Accordion ────────────────────────────────────────────────────────────
@@ -124,11 +125,51 @@ const BrowserFrame = ({ children, label }) => (
 );
 
 // ─── Video Tutorial Section data ──────────────────────────────────────────────
+const TutorialIcon = ({ id }) => {
+  const icons = {
+    'add-testing': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v11.5a3.5 3.5 0 007 0V3M9 3h6M9 3H7M15 3h2M5 20h14" />
+      </svg>
+    ),
+    'compare-previous-test': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l4-8 4 5 3-3 4 6" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l4-5 4 4 3-4 4 5" strokeOpacity="0.4" />
+      </svg>
+    ),
+    'training-page': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h7" />
+      </svg>
+    ),
+    'training-calendar': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18" />
+      </svg>
+    ),
+    'dashboard-page': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13l4-4 4 4 4-6 4 3" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 20h18" />
+      </svg>
+    ),
+    'coach-add-athlete': (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+        <circle cx="9" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+      </svg>
+    ),
+  };
+  return icons[id] ?? null;
+};
+
 const videoTutorials = [
   {
     id: 'add-testing',
     label: '1. Add a Lactate Test',
-    icon: '🧪',
     title: 'How to enter a lactate test',
     description: 'Create a new test, select your sport, enter each stage — power/pace, heart rate and lactate — and save. The curve generates instantly.',
     steps: [
@@ -145,7 +186,6 @@ const videoTutorials = [
   {
     id: 'compare-previous-test',
     label: '2. Compare Tests',
-    icon: '📈',
     title: 'Compare previous tests',
     description: 'Overlay multiple lactate tests on one chart to see how your fitness is evolving. Watch your curve shift right as you get fitter.',
     steps: [
@@ -162,7 +202,6 @@ const videoTutorials = [
   {
     id: 'training-page',
     label: '3. Training Log',
-    icon: '🏋️',
     title: 'Training log & workouts',
     description: 'Browse your full training history, analyse individual sessions with power and heart rate graphs, and track intervals automatically.',
     steps: [
@@ -179,7 +218,6 @@ const videoTutorials = [
   {
     id: 'training-calendar',
     label: '4. Training Calendar',
-    icon: '📅',
     title: 'Training calendar',
     description: 'See your whole training week at a glance, plan future sessions and track daily load across the month.',
     steps: [
@@ -196,7 +234,6 @@ const videoTutorials = [
   {
     id: 'dashboard-page',
     label: '5. Dashboard',
-    icon: '📊',
     title: 'Reading your fitness dashboard',
     description: 'Understand CTL, ATL and TSB — your fitness, fatigue and form — and use the chart to time your best performances.',
     steps: [
@@ -213,7 +250,6 @@ const videoTutorials = [
   {
     id: 'coach-add-athlete',
     label: '6. Coach — Add Athlete',
-    icon: '👥',
     title: 'Add an athlete as a coach',
     description: 'Invite athletes to your coaching workspace, assign them a plan and monitor their training and lactate tests from one dashboard.',
     steps: [
@@ -383,15 +419,14 @@ const VideoTutorialsSection = () => {
             <button
               key={t.id}
               onClick={() => setActiveId(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full border text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all ${
                 activeId === t.id
                   ? 'border-primary bg-primary text-white shadow-sm'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 bg-white'
               }`}
             >
-              <span>{t.icon}</span>
-              <span className="hidden sm:inline">{t.label}</span>
-              <span className="sm:hidden">{t.id === activeId ? t.label : t.icon}</span>
+              <TutorialIcon id={t.id} />
+              <span>{t.label}</span>
             </button>
           ))}
         </div>
@@ -568,7 +603,7 @@ const About = () => {
       <nav className="w-full bg-white border-b border-gray-100 py-4 px-6 flex items-center justify-between z-20 relative">
         <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
           <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-          <span className="text-xl font-bold text-gray-900 tracking-tight">LaChart</span>
+          <span className="text-xl font-bold text-primary text-gray-900 tracking-tight">LaChart</span>
         </a>
         <div className="flex items-center gap-3">
           <a href="/login" className="text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm px-3 py-2">Login</a>
@@ -589,7 +624,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
             <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-10" />
-            <span className="text-lg font-bold text-gray-900">LaChart</span>
+            <span className="text-lg font-bold text-primary">LaChart</span>
           </a>
           <div className="hidden lg:flex items-center gap-1">
             {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
@@ -746,8 +781,8 @@ const About = () => {
               {/* Main image */}
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/60 w-full max-w-lg lg:max-w-none">
                 <img
-                  src="/images/lactate_testing.png"
-                  alt="Lactate testing with LaChart"
+                  src="/images/lactate_curve_calculator_lachart.jpg"
+                  alt="Lactate curve calculator — LaChart"
                   className="w-full object-cover"
                 />
               </div>
@@ -1141,9 +1176,20 @@ const About = () => {
           <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Gallery</p>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">More views of LaChart</h2>
         </div>
-        <Swiper effect={'coverflow'} grabCursor centeredSlides initialSlide={2} slidesPerView={'auto'}
+        <Swiper
+          effect="coverflow"
+          grabCursor
+          centeredSlides
+          loop
+          initialSlide={2}
+          slidesPerView="auto"
           coverflowEffect={{ rotate: 0, stretch: 0, depth: 100, modifier: 2.5, slideShadows: false }}
-          pagination={{ clickable: true }} navigation modules={[EffectCoverflow, Pagination, Navigation]} className="mySwiper !pb-12">
+          autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+          pagination={{ clickable: true }}
+          navigation
+          modules={[EffectCoverflow, Pagination, Navigation, Autoplay]}
+          className="mySwiper !pb-12"
+        >
           {[
             { src: '/screenshots/dashboard-home.png', alt: 'Dashboard Form & Fitness', title: 'Dashboard · CTL / ATL / TSB' },
             { src: '/screenshots/lactate-testing-page.png', alt: 'Lactate Testing', title: 'Lactate Testing & LT Trends' },
@@ -1396,7 +1442,7 @@ const About = () => {
             <div className="md:col-span-2">
               <a href="/" className="flex items-center gap-2 mb-4">
                 <img src="/images/LaChart.png" alt="LaChart" className="h-9 w-11" />
-                <span className="text-xl font-bold text-gray-900">LaChart</span>
+                <span className="text-xl font-bold text-primary">LaChart</span>
               </a>
               <p className="text-gray-500 text-sm leading-relaxed max-w-xs">Advanced lactate testing and training analysis for endurance athletes and coaches.</p>
             </div>

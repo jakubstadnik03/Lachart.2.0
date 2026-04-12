@@ -16,6 +16,17 @@ import StravaConnectModal from '../components/Onboarding/StravaConnectModal';
 import AuthSideCarousel from '../components/Auth/AuthSideCarousel';
 import { isCapacitorNative } from '../utils/isNativeApp';
 
+/** Shown after Google sign-in errors so users can recover without Google (same email in LaChart). */
+function withGoogleLoginPasswordHint(message) {
+  if (message == null || typeof message !== 'string') return message;
+  if (/forgot\s+password|obnovit\s+heslo|reset.*password|email\+heslo/i.test(message)) return message;
+  const hint =
+    ' If you already have a LaChart account on this email, use “Forgot password?” above to set or reset your password and sign in with email.';
+  const trimmed = message.trim();
+  if (!trimmed) return hint.trim();
+  return /[.!?…]$/.test(trimmed) ? `${trimmed}${hint}` : `${trimmed}.${hint}`;
+}
+
 const LoginPage = () => {
   const [formData, setFormData] = useState({
     email: '',
@@ -29,6 +40,7 @@ const LoginPage = () => {
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
+  const [googleAuthError, setGoogleAuthError] = useState(null);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,6 +88,7 @@ const LoginPage = () => {
     if (isLoading) return; // Prevent multiple submissions
 
     setIsLoading(true);
+    setGoogleAuthError(null);
     addNotification("Attempting to log in...", "info");
 
     try {
@@ -205,6 +218,7 @@ const LoginPage = () => {
   const handleGoogleSuccess = async (credentialResponse) => {
     if (isLoading) return;
     setIsLoading(true);
+    setGoogleAuthError(null);
     addNotification("Attempting to log in with Google...", "info");
 
     try {
@@ -287,8 +301,16 @@ const LoginPage = () => {
           }
         } catch (loginError) {
           console.error("Error updating auth state:", loginError);
-          addNotification("Error during login process", "error");
+          const msg = withGoogleLoginPasswordHint("Error during login process");
+          addNotification(msg, "error");
+          setGoogleAuthError(msg);
         }
+      } else {
+        const msg = withGoogleLoginPasswordHint(
+          "Google sign-in did not return a valid session. Please try again."
+        );
+        addNotification(msg, "error");
+        setGoogleAuthError(msg);
       }
     } catch (error) {
       console.error("Google login error:", error);
@@ -308,7 +330,9 @@ const LoginPage = () => {
         errorMessage = "Error setting up Google login request.";
       }
       
-      addNotification(errorMessage, "error");
+      const fullMsg = withGoogleLoginPasswordHint(errorMessage);
+      addNotification(fullMsg, "error");
+      setGoogleAuthError(fullMsg);
     } finally {
       setIsLoading(false);
     }
@@ -316,7 +340,11 @@ const LoginPage = () => {
 
   const handleGoogleError = () => {
     console.error("Google login error occurred");
-    addNotification("Google login failed", "error");
+    const msg = withGoogleLoginPasswordHint(
+      "Google sign-in was cancelled or could not start."
+    );
+    addNotification(msg, "error");
+    setGoogleAuthError(msg);
   };
 
   return (
@@ -509,7 +537,7 @@ const LoginPage = () => {
                 </div>
               </div>
 
-              <div className="mt-6 flex justify-center">
+              <div className="mt-6 flex flex-col items-center">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
                   onError={handleGoogleError}
@@ -528,6 +556,18 @@ const LoginPage = () => {
                   context="signin"
                   disabled={isLoading}
                 />
+                {googleAuthError && (
+                  <p className="mt-3 max-w-sm text-center text-sm text-gray-600">
+                    <span className="text-gray-700 font-medium">Can’t use Google?</span>{' '}
+                    <Link
+                      to="/forgot-password"
+                      className="text-primary font-semibold hover:text-primary-dark underline"
+                    >
+                      Reset or set your password by email
+                    </Link>
+                    {' — '}then sign in with email above.
+                  </p>
+                )}
               </div>
             </motion.div>
             )}

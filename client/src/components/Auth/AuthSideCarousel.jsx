@@ -1,32 +1,43 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 
 const DEFAULT_SLIDES = [
   {
     src: '/images/lachart_training.png',
+    tag: 'Training',
     title: 'Training analysis',
     subtitle: 'Understand sessions in seconds with clear charts & intervals.',
+    accent: 'from-blue-500/30 to-primary/20',
   },
   {
-    src: '/images/lachart3.jpeg',
+    src: '/images/lactate_curve_calculator_lachart.jpg',
+    tag: 'Lactate Testing',
     title: 'Progress, not guesswork',
-    subtitle: 'Track improvements and stay consistent with structure.',
+    subtitle: 'Track improvements and stay consistent with science-based structure.',
+    accent: 'from-primary/30 to-secondary/20',
+    stat: { label: 'LT2 Threshold', value: '340 W' },
   },
   {
     src: '/images/lactate_testing.png',
+    tag: 'Thresholds',
     title: 'Lactate testing',
-    subtitle: 'Turn data into actionable thresholds and zones.',
+    subtitle: 'Turn data into actionable thresholds and training zones.',
+    accent: 'from-violet-500/25 to-primary/20',
   },
   {
     src: '/images/lachart5.jpeg',
+    tag: 'Coaching',
     title: 'Coach + athlete workflow',
     subtitle: 'Share insights and keep everything in one place.',
+    accent: 'from-secondary/30 to-teal-500/20',
   },
   {
-    src: '/images/testing.png',
+    src: '/images/lactate_curve.jpg',
+    tag: 'Zones',
     title: 'Better workouts',
     subtitle: 'Make every interval count with the right intensity.',
+    accent: 'from-emerald-500/25 to-secondary/20',
+    stat: { label: 'Zone 2 pace', value: '4:45 /km' },
   },
 ];
 
@@ -34,13 +45,11 @@ export default function AuthSideCarousel({
   slides = DEFAULT_SLIDES,
   autoMs = 5500,
   className = '',
-  overlay = true,
 }) {
   const safeSlides = useMemo(() => (Array.isArray(slides) && slides.length ? slides : DEFAULT_SLIDES), [slides]);
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  // Preload slide images to avoid "white flash" during transitions
   useEffect(() => {
     try {
       safeSlides.forEach((s) => {
@@ -48,123 +57,165 @@ export default function AuthSideCarousel({
         const img = new Image();
         img.src = s.src;
       });
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }, [safeSlides]);
 
   useEffect(() => {
     if (paused || safeSlides.length <= 1) return;
-    const t = window.setInterval(() => {
-      setIdx((i) => (i + 1) % safeSlides.length);
-    }, autoMs);
+    const t = window.setInterval(() => setIdx((i) => (i + 1) % safeSlides.length), autoMs);
     return () => window.clearInterval(t);
   }, [paused, autoMs, safeSlides.length]);
 
   const go = (nextIdx) => {
     const n = safeSlides.length;
-    if (n <= 0) return;
-    const normalized = ((nextIdx % n) + n) % n;
-    setIdx(normalized);
+    setIdx(((nextIdx % n) + n) % n);
   };
 
   const current = safeSlides[idx] || safeSlides[0];
 
   return (
     <div
-      className={[
-        // Dark base prevents bright flashes between images
-        // NOTE: children are absolutely positioned, so we must give the container an explicit height
-        // otherwise it can collapse to 0px and appear "invisible".
-        'relative w-full overflow-hidden rounded-3xl border border-white/20 bg-gray-900 shadow-2xl h-[600px] max-h-[600px] min-h-[420px]',
-        className,
-      ].join(' ')}
+      className={['relative w-full overflow-hidden rounded-3xl bg-gray-950 shadow-2xl h-[600px] max-h-[600px] min-h-[420px]', className].join(' ')}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
+      {/* ── Image layer ── */}
       <AnimatePresence mode="wait">
         <motion.div
           key={current?.src || idx}
-          initial={{ opacity: 0, scale: 1.03 }}
+          initial={{ opacity: 0, scale: 1.04 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.99 }}
-          transition={{ duration: 0.45, ease: 'easeOut' }}
-          className="absolute inset-0 bg-gray-900"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="absolute inset-0"
         >
           <img
             src={current?.src}
             alt={current?.title || 'LaChart'}
-            className="w-full h-full object-cover bg-gray-900"
+            className="w-full h-full object-cover"
             loading="eager"
             draggable={false}
           />
-          {overlay && (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/35 to-black/70" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.22),transparent_40%)]" />
-            </>
-          )}
+          {/* Multi-layer gradient for depth */}
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-gray-950/10" />
+          <div className="absolute inset-0 bg-gradient-to-r from-gray-950/50 to-transparent" />
         </motion.div>
       </AnimatePresence>
 
-      {/* Top brand */}
-      <div className="absolute left-5 top-5 flex items-center gap-2">
+      {/* ── Accent glow matching slide colour ── */}
+      <motion.div
+        key={`glow-${idx}`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6 }}
+        className={`absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t ${current.accent} blur-2xl opacity-60`}
+      />
+
+      {/* ── Top brand ── */}
+      <div className="absolute left-6 top-6 flex items-center gap-2.5 z-10">
         <div className="h-9 w-9 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg">
           <img src="/images/LaChart.png" alt="LaChart" className="h-6 w-6 object-contain" draggable={false} />
         </div>
         <div className="text-white">
-          <div className="text-sm font-semibold tracking-tight">LaChart</div>
-          <div className="text-[11px] text-white/75">Testing • Zones • Training</div>
+          <div className="text-sm font-bold tracking-tight">LaChart</div>
+          <div className="text-[10px] text-white/60 tracking-wide uppercase">Lactate · Zones · Training</div>
         </div>
       </div>
 
-      {/* Copy */}
-      <div className="absolute left-6 right-6 bottom-6">
-        <div className="rounded-2xl border border-white/15 bg-white/10 backdrop-blur-md p-4 shadow-xl">
-          <div className="text-white text-base font-semibold leading-tight">{current?.title}</div>
-          {current?.subtitle && <div className="mt-1 text-white/80 text-sm leading-snug">{current.subtitle}</div>}
+      {/* ── Floating stat badge (optional per slide) ── */}
+      <AnimatePresence>
+        {current.stat && (
+          <motion.div
+            key={`stat-${idx}`}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+            className="absolute top-6 right-6 z-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-4 py-2.5 shadow-xl"
+          >
+            <div className="text-[10px] text-white/60 uppercase tracking-wider mb-0.5">{current.stat.label}</div>
+            <div className="text-white font-extrabold text-lg leading-none">{current.stat.value}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {/* Dots */}
-          {safeSlides.length > 1 && (
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5">
+      {/* ── Bottom content ── */}
+      <div className="absolute left-6 right-6 bottom-6 z-10">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`copy-${idx}`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4 }}
+          >
+            {/* Tag pill */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-white text-[11px] font-semibold uppercase tracking-widest mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+              {current.tag}
+            </div>
+
+            {/* Title */}
+            <h3 className="text-white text-2xl font-extrabold leading-tight tracking-tight mb-1.5">
+              {current.title}
+            </h3>
+
+            {/* Subtitle */}
+            <p className="text-white/70 text-sm leading-relaxed mb-4">{current.subtitle}</p>
+
+            {/* Progress + arrows */}
+            <div className="flex items-center justify-between gap-3">
+              {/* Progress bar style indicator */}
+              <div className="flex items-center gap-1.5 flex-1">
                 {safeSlides.map((_, i) => (
                   <button
                     key={i}
                     type="button"
                     aria-label={`Go to slide ${i + 1}`}
                     onClick={() => go(i)}
-                    className={[
-                      'h-2.5 rounded-full transition-all',
-                      i === idx ? 'w-7 bg-white' : 'w-2.5 bg-white/40 hover:bg-white/60',
-                    ].join(' ')}
-                  />
+                    className="relative h-1 rounded-full bg-white/25 overflow-hidden transition-all duration-300"
+                    style={{ width: i === idx ? '2rem' : '0.5rem' }}
+                  >
+                    {i === idx && (
+                      <motion.div
+                        className="absolute inset-0 bg-white rounded-full"
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: 1 }}
+                        transition={{ duration: autoMs / 1000, ease: 'linear' }}
+                        style={{ transformOrigin: 'left' }}
+                      />
+                    )}
+                  </button>
                 ))}
               </div>
 
-              <div className="flex items-center gap-1.5">
+              {/* Arrows */}
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  aria-label="Previous slide"
                   onClick={() => go(idx - 1)}
-                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/90 transition-colors"
+                  className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-colors"
+                  aria-label="Previous"
                 >
-                  <ChevronLeftIcon className="w-4 h-4" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  aria-label="Next slide"
                   onClick={() => go(idx + 1)}
-                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/90 transition-colors"
+                  className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-colors"
+                  aria-label="Next"
                 >
-                  <ChevronRightIcon className="w-4 h-4" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
 }
-

@@ -332,8 +332,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             <div className="flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
             </div>
-            {/* Footer na mobilu - na konci obsahu */}
-            <div className="lg:hidden">
+            {/* Footer na mobilu — jen pod breakpointem md; od md výše jen sticky patička (jinak 768–1023px dvě patičky) */}
+            <div className="md:hidden">
               <MemoizedFooter />
             </div>
           </div>

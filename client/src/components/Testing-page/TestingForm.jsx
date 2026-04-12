@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info } from 'lucide-react';
+import { Trash, Plus, X, Save, HelpCircle, ArrowRight, Edit, Info, Settings2 } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthProvider';
 import { trackEvent } from '../../utils/analytics';
@@ -340,6 +340,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
 
   const [showGlucose, setShowGlucose] = useState(true);
   const [showVO2, setShowVO2] = useState(true);
+  const [showFormSettings, setShowFormSettings] = useState(false);
+  const formSettingsRef = useRef(null);
   const rowsScrollRef = useRef(null);
   const [rowsCanScroll, setRowsCanScroll] = useState(false);
   const [rowsAtTop, setRowsAtTop] = useState(true);
@@ -471,6 +473,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       window.removeEventListener('resize', updateRowsScrollState);
     };
   }, [rows.length, hasGlucoseData, hasVO2Data, formData.sport, inputMode, isEditMode, isNewTest]);
+
+  useEffect(() => {
+    if (!showFormSettings) return;
+    const onPointerDown = (e) => {
+      if (formSettingsRef.current && !formSettingsRef.current.contains(e.target)) {
+        setShowFormSettings(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setShowFormSettings(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showFormSettings]);
 
   const handleValueChange = (rowIndex, field, value) => {
     console.log('Input change:', { rowIndex, field, value });
@@ -1018,12 +1038,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
       )}
 
-      {/* Top-right actions (kept inside component padding; prevents overlap) */}
-      <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+      {/* Corner actions: absolute inside card padding — no extra row; title row reserves horizontal space */}
+      <div className="absolute z-20 top-1.5 right-1.5 sm:top-2 sm:right-2 flex items-center gap-0.5">
         {demoMode && (
           <button
             onClick={() => setCurrentTutorialStep(0)}
-            className="text-primary hover:text-primary-dark transition-colors"
+            className="text-primary hover:text-primary-dark transition-colors p-1 rounded-lg hover:bg-gray-100"
             aria-label="Start tutorial"
             title="Tutorial"
             type="button"
@@ -1032,22 +1052,156 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </button>
         )}
 
+        <div className="relative" ref={formSettingsRef}>
+          <button
+            type="button"
+            onClick={() => setShowFormSettings((v) => !v)}
+            className={`text-gray-600 hover:text-gray-900 transition-colors p-1 rounded-lg hover:bg-gray-100 ${showFormSettings ? 'bg-gray-100 text-gray-900' : ''}`}
+            aria-label="Form display settings"
+            aria-expanded={showFormSettings}
+            title="Display settings"
+          >
+            <Settings2 size={20} />
+          </button>
+          {showFormSettings && (
+            <div
+              className="absolute right-0 top-full mt-1 z-50 w-[min(calc(100vw-2rem),18rem)] rounded-xl border border-gray-200 bg-white shadow-lg p-3 space-y-3"
+              role="dialog"
+              aria-label="Test form display settings"
+            >
+              {(formData.sport === 'run' || formData.sport === 'swim') && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Input mode</label>
+                    <div className="bg-gray-100 rounded-lg p-1 flex shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setInputMode('pace')}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'pace' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                        disabled={!isNewTest && !isEditMode}
+                      >
+                        Pace
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInputMode('speed')}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'speed' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                        disabled={!isNewTest && !isEditMode}
+                      >
+                        Speed
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Unit system</label>
+                    <div className="bg-gray-100 rounded-lg p-1 flex shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setUnitSystem('metric')}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'metric' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                        disabled={!isNewTest && !isEditMode}
+                      >
+                        {inputMode === 'pace' ? 'pace/km' : 'km/h'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUnitSystem('imperial')}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'imperial' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                        disabled={!isNewTest && !isEditMode}
+                      >
+                        {inputMode === 'pace' ? 'pace/mile' : 'mph'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(!hasGlucoseData || !hasVO2Data) && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Show columns</label>
+                  <div className="bg-gray-100 rounded-lg p-1 inline-flex flex-wrap gap-0 shadow-sm">
+                    {!hasGlucoseData && (
+                      <button
+                        type="button"
+                        onClick={() => setShowGlucose(!showGlucose)}
+                        disabled={!isNewTest && !isEditMode}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                      >
+                        Glucose
+                      </button>
+                    )}
+                    {!hasVO2Data && (
+                      <button
+                        type="button"
+                        onClick={() => setShowVO2(!showVO2)}
+                        disabled={!isNewTest && !isEditMode}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                      >
+                        VO₂
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">RPE scale</label>
+                <div className="bg-gray-100 rounded-lg p-1 flex flex-col sm:flex-row shadow-sm gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRpeScale('rpe');
+                      onTestDataChange({
+                        ...testData,
+                        rpeScale: 'rpe',
+                        results: rows
+                      });
+                    }}
+                    className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'rpe' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    disabled={!isNewTest && !isEditMode}
+                  >
+                    RPE (1–10)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRpeScale('borg');
+                      onTestDataChange({
+                        ...testData,
+                        rpeScale: 'borg',
+                        results: rows
+                      });
+                    }}
+                    className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'borg' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
+                    disabled={!isNewTest && !isEditMode}
+                  >
+                    Borg (6–20)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <button
           onClick={() => setShowGlossary(true)}
-          className="text-gray-500 hover:text-gray-700 transition-colors"
+          className="text-gray-500 hover:text-gray-700 transition-colors p-1 rounded-lg hover:bg-gray-100"
           aria-label="Show glossary"
           title="Training Glossary"
           type="button"
-          style={{ marginRight: '-20px', marginTop: '-20px' }}
         >
           <Info size={20} />
         </button>
       </div>
 
       <div data-tour="tour-test-details" className="flex flex-col gap-2 flex-shrink-0">
-        {/* Title and Edit Button Row */}
-        <div className="flex items-center gap-2 justify-between">
-          <div className="flex-1">
+        {/* Title and Edit Button Row — pr-* keeps text/Edit clear of corner icon cluster */}
+        <div
+          className={`flex items-center gap-2 justify-between min-w-0 ${
+            demoMode ? 'pr-[6.5rem] sm:pr-32' : 'pr-[5rem] sm:pr-24'
+          }`}
+        >
+          <div className="flex-1 min-w-0">
             <input 
               ref={el => inputRefs.current['title'] = el}
               type="text"
@@ -1140,7 +1294,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 }
                 setIsEditMode(!isEditMode);
               }}
-              className={`px-2 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
+              className={`w-24 shrink-0 justify-center px-2 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
                 isEditMode 
                   ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
                   : 'bg-primary hover:bg-primary-dark text-white'
@@ -1285,120 +1439,6 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
         </div>
 
-        {/* Unit System Controls */}
-        {(formData.sport === 'run' || formData.sport === 'swim') && (
-          <div className="grid grid-cols-2 gap-2 flex-shrink-0">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Input Mode</label>
-              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
-                <button
-                  onClick={() => setInputMode('pace')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'pace' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  Pace
-                </button>
-                <button
-                  onClick={() => setInputMode('speed')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${inputMode === 'speed' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  Speed
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Unit System</label>
-              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
-                <button
-                  onClick={() => setUnitSystem('metric')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'metric' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  {inputMode === 'pace' ? 'pace/km' : 'km/h'}
-                </button>
-                <button
-                  onClick={() => setUnitSystem('imperial')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${unitSystem === 'imperial' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  {inputMode === 'pace' ? 'pace/mile' : 'mph'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Column Visibility & RPE Scale Controls - All in one row */}
-        <div className="flex flex-col gap-2 flex-shrink-0">
-          <div className="flex items-end gap-3 flex-wrap">
-            {/* Column Visibility Controls */}
-            {/* Only show controls if columns can be toggled (no data) */}
-            {(!hasGlucoseData || !hasVO2Data) && (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Show Columns</label>
-                <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
-                  {!hasGlucoseData && (
-                    <button
-                      onClick={() => setShowGlucose(!showGlucose)}
-                      disabled={!isNewTest && !isEditMode}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showGlucose ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                    >
-                      Glucose
-                    </button>
-                  )}
-                  {!hasVO2Data && (
-                    <button
-                      onClick={() => setShowVO2(!showVO2)}
-                      disabled={!isNewTest && !isEditMode}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${showVO2 ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                    >
-                      VO₂
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* RPE Scale Controls */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">RPE Scale</label>
-              <div className="bg-gray-100 rounded-lg p-1 inline-flex shadow-sm">
-                <button
-                  onClick={() => {
-                    setRpeScale('rpe');
-                    const updatedTestData = {
-                      ...testData,
-                      rpeScale: 'rpe',
-                      results: rows
-                    };
-                    onTestDataChange(updatedTestData);
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'rpe' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  RPE (1-10)
-                </button>
-                <button
-                  onClick={() => {
-                    setRpeScale('borg');
-                    const updatedTestData = {
-                      ...testData,
-                      rpeScale: 'borg',
-                      results: rows
-                    };
-                    onTestDataChange(updatedTestData);
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${rpeScale === 'borg' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}
-                  disabled={!isNewTest && !isEditMode}
-                >
-                  Borg (6-20)
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
@@ -1464,7 +1504,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               gridTemplateCols.push('1fr'); // All flexible columns same width
             }
             if (isNewTest || isEditMode) {
-              gridTemplateCols.push('32px'); // Delete button (fixed width)
+              gridTemplateCols.push('32px'); // Delete column only when rows can be removed
             }
             
             const gridTemplateColumns = gridTemplateCols.join(' ');
@@ -1483,7 +1523,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
                   {(hasVO2Data || showVO2) && <div className="text-center min-w-0 overflow-hidden">VO₂</div>}
                   {(hasRPEData || true) && <div className="text-center min-w-0 overflow-hidden">RPE</div>}
-                  {(isNewTest || isEditMode) && <div className="text-center min-w-0 overflow-hidden">Del</div>}
+                  {(isNewTest || isEditMode) && (
+                    <div className="text-center min-w-0 overflow-hidden">Del</div>
+                  )}
                 </div>
                 <div className="relative flex-1 min-h-0 max-h-full">
                 <div
@@ -1508,8 +1550,9 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                       {(hasVO2Data || showVO2) && renderInput(index, 'vo2', row.vo2, 'ml/kg/min')}
                       {(hasRPEData || true) && renderInput(index, 'RPE', row.RPE, rpeScale === 'borg' ? '6-20' : '1-10')}
                       {(isNewTest || isEditMode) && (
-                        <div className="flex justify-center min-w-0 overflow-hidden">
-        <button 
+                        <div className="flex justify-center items-center min-w-0 overflow-hidden min-h-[1.5rem]">
+                          <button
+                            type="button"
                             onClick={() => {
                               logClick('Delete Row Button', { rowIndex: index });
                               handleDeleteRow(index);
@@ -1517,7 +1560,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                             className="p-0.5 text-red-600 hover:text-red-800 transition-colors"
                           >
                             <Trash size={14} />
-        </button>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1545,11 +1588,12 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           })()}
         </div>
 
-        {/* Action Buttons */}
+        {/* Action buttons only when editing — view mode gives full height to the measurements table */}
         {(isNewTest || isEditMode) && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 flex-shrink-0">
             <button
               data-tour="tour-add-interval"
+              type="button"
               onClick={() => {
                 logClick('Add Interval Button');
                 handleAddRow();
@@ -1559,9 +1603,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               <Plus size={14} /> Add Interval
             </button>
 
-          <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto">
               {!isNewTest && !demoMode && (
-            <button 
+                <button
+                  type="button"
                   onClick={() => {
                     logClick('Delete Test Button', { testId: testData._id });
                     handleDeleteTest();
@@ -1569,24 +1614,24 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
                 >
                   <Trash size={14} /> Delete Test
-            </button>
+                </button>
               )}
 
-            {!demoMode && (
-            <button
-                type="button"
-                data-tour="tour-save-test"
-                disabled={isSaving}
-                onClick={() => {
-                  logClick('Save Button', { isNewTest });
-                  void handleSaveChanges();
-                }}
-                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none"
-            >
-                <Save size={14} />{' '}
-                {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
-            </button>
-            )}
+              {!demoMode && (
+                <button
+                  type="button"
+                  data-tour="tour-save-test"
+                  disabled={isSaving}
+                  onClick={() => {
+                    logClick('Save Button', { isNewTest });
+                    void handleSaveChanges();
+                  }}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-white bg-primary rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                >
+                  <Save size={14} />{' '}
+                  {isSaving ? 'Saving…' : isNewTest ? 'Save Test' : 'Save Changes'}
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -6,6 +6,7 @@ import api from '../services/api';
 import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 import { getAthleteAvatar } from '../utils/avatarUtils';
+import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';
 
 const AthletesPage = () => {
   const { user } = useAuth();
@@ -33,6 +34,7 @@ const AthletesPage = () => {
     notes: '',
   });
   const { addNotification } = useNotification();
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'overview'
 
   useEffect(() => {
     const loadAthletes = async () => {
@@ -378,9 +380,32 @@ const AthletesPage = () => {
                   >
                     Add Existing Athlete
                   </motion.button>
+                  <div className="flex bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
+                    <button
+                      onClick={() => setViewMode('cards')}
+                      className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Cards
+                    </button>
+                    <button
+                      onClick={() => setViewMode('overview')}
+                      className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'overview' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Overview
+                    </button>
+                  </div>
                 </div>
               </div>
 
+              {viewMode === 'overview' ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                >
+                  <CoachAthleteOverview athletes={filteredAthletes} />
+                </motion.div>
+              ) : (
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -481,6 +506,7 @@ const AthletesPage = () => {
                   </motion.div>
                 ))}
               </motion.div>
+              )}
             </motion.div>
           </motion.div>
         </motion.div>

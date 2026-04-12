@@ -48,6 +48,7 @@ const Zone2CalculatorPage = lazy(() => import('./pages/Zone2CalculatorPage'));
 const FtpCalculatorPage = lazy(() => import('./pages/FtpCalculatorPage'));
 const TssCalculatorPage = lazy(() => import('./pages/TssCalculatorPage'));
 const TrainingZonesCalculatorPage = lazy(() => import('./pages/TrainingZonesCalculatorPage'));
+const RacePredictorPage = lazy(() => import('./pages/RacePredictorPage'));
 
 // Loading component for Suspense fallback
 const PageLoader = () => (
@@ -180,6 +181,7 @@ function AppRoutes() {
         <Route path="/ftp-calculator" element={<FtpCalculatorPage />} />
         <Route path="/tss-calculator" element={<TssCalculatorPage />} />
         <Route path="/training-zones-calculator" element={<TrainingZonesCalculatorPage />} />
+        <Route path="/race-predictor" element={<RacePredictorPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email/:token" element={<VerifyEmailPage />} />

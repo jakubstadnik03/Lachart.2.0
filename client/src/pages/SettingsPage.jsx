@@ -61,7 +61,7 @@ function formatRegistrationLocationLine(loc) {
 }
 
 const SettingsPage = () => {
-  const { user, logout, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
+  const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const { addNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('profile');
@@ -973,33 +973,31 @@ const SettingsPage = () => {
         }),
       });
 
+      const authData = await authResult.json().catch(() => ({}));
       if (!authResult.ok) {
-        throw new Error('Google authentication failed');
+        addNotification(authData.error || 'Google authentication failed', 'error');
+        return;
       }
 
-      const linkResult = await fetch(`${API_ENDPOINTS.AUTH}/link-social`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          provider: 'google',
-          providerId: response.credential
-        }),
-      });
-
-      if (linkResult.ok) {
-        const currentUser = JSON.parse(localStorage.getItem('user'));
-        const updatedUser = { ...currentUser, googleId: response.credential };
-        saveUserToStorage(updatedUser);
-        
-        setLinkedAccounts(prev => ({ ...prev, google: true }));
-        addNotification('Google account linked successfully', 'success');
-      } else {
-        const errorData = await linkResult.json();
-        addNotification(errorData.message || 'Failed to link Google account', 'error');
+      const { token, user: googleUser } = authData;
+      if (!token || !googleUser) {
+        addNotification('Google authentication failed', 'error');
+        return;
       }
+
+      // Server links Google on POST /user/google-auth; there is no separate link-social route.
+      const prev = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('user') || '{}');
+        } catch {
+          return {};
+        }
+      })();
+      const merged = { ...prev, ...googleUser };
+
+      await login(null, null, token, merged);
+      setLinkedAccounts(prevState => ({ ...prevState, google: !!merged.googleId }));
+      addNotification('Google account linked successfully', 'success');
     } catch (error) {
       console.error('Link Google error:', error);
       addNotification('Failed to link Google account', 'error');
