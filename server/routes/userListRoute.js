@@ -3557,6 +3557,68 @@ router.patch("/admin/coach-outreach-leads/:leadId", verifyToken, async (req, res
     }
 });
 
+// ── Retention email test-send (admin only) ────────────────────────────────────
+// POST /user/admin/send-retention-email/:userId
+// Body: { type: 'weekly' | 'monthly' | 'testReminder' | 'reEngagement' |
+//               'milestone_firstTest' | 'milestone_fiveTests' | 'milestone_tenTests' |
+//               'anniversary_6' | 'anniversary_12' | 'lt2Improvement' }
+router.post("/admin/send-retention-email/:userId", verifyToken, async (req, res) => {
+    try {
+        const currentUser = await userDao.findById(req.user.userId);
+        if (!currentUser || !currentUser.admin) {
+            return res.status(403).json({ error: "Access denied. Admin privileges required." });
+        }
+
+        const targetUser = await User.findById(req.params.userId).lean();
+        if (!targetUser) return res.status(404).json({ error: "User not found." });
+        if (!targetUser.email) return res.status(400).json({ error: "User has no email address." });
+
+        const { type } = req.body;
+        if (!type) return res.status(400).json({ error: "Missing 'type' field in request body." });
+
+        const {
+            sendWeeklyProgressEmail,
+            sendMonthlyReportEmail,
+            sendTestReminderEmail,
+            sendReengagementEmail,
+            sendMilestoneEmail,
+            sendAnniversaryEmail,
+            sendLT2ImprovementEmail,
+            estimateLT2,
+            getRecentTests,
+        } = require('../services/retentionEmailService');
+
+        let ok = false;
+
+        if (type === 'weekly')        ok = await sendWeeklyProgressEmail(targetUser);
+        else if (type === 'monthly')  ok = await sendMonthlyReportEmail(targetUser);
+        else if (type === 'testReminder') ok = await sendTestReminderEmail(targetUser);
+        else if (type === 'reEngagement') ok = await sendReengagementEmail(targetUser);
+        else if (type === 'anniversary_6')  ok = await sendAnniversaryEmail(targetUser, 6);
+        else if (type === 'anniversary_12') ok = await sendAnniversaryEmail(targetUser, 12);
+        else if (type.startsWith('milestone_')) {
+            const key = type.replace('milestone_', '');
+            ok = await sendMilestoneEmail(targetUser, key);
+        } else if (type === 'lt2Improvement') {
+            const tests = await getRecentTests(targetUser._id, 5);
+            const lt2   = tests.length ? estimateLT2(tests[0]) : null;
+            if (!lt2) return res.status(400).json({ error: "User has no tests with valid LT2 data." });
+            ok = await sendLT2ImprovementEmail(targetUser, 8, lt2.value, lt2.sport);
+        } else {
+            return res.status(400).json({ error: `Unknown email type: ${type}` });
+        }
+
+        if (ok) {
+            return res.status(200).json({ success: true, message: `Retention email "${type}" sent to ${targetUser.email}.` });
+        } else {
+            return res.status(500).json({ error: "Email send returned false — check server SMTP logs." });
+        }
+    } catch (error) {
+        console.error("[admin/send-retention-email] error:", error);
+        return res.status(500).json({ error: "Failed to send retention email.", detail: error.message });
+    }
+});
+
 // Update user (admin only)
 router.put("/admin/users/:userId", verifyToken, async (req, res) => {
     try {

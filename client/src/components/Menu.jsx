@@ -337,7 +337,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                     onClick={handleMenuItemClick}
                     className={({ isActive }) => {
                       const base =
-                        'flex items-center text-sm font-medium py-2 px-2 sm:p-3 rounded-lg transition-colors duration-150';
+                        'flex items-center text-sm font-medium py-3 px-3 sm:p-3 rounded-lg transition-colors duration-150 touch-manipulation';
                       if (item.variant === 'primary') {
                         return `${base} ${
                           isActive
@@ -389,7 +389,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                       to={item.getPath ? item.getPath(effectiveAthleteId) : item.path}
                       onClick={handleMenuItemClick}
                       className={({ isActive }) =>
-                        `flex items-center text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
+                        `flex items-center text-sm font-medium py-3 px-3 sm:p-3 rounded-lg touch-manipulation ${
                           isActive
                             ? "bg-primary text-white"
                             : "text-gray-700 hover:bg-gray-100"
@@ -433,7 +433,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   >
                     <button
                       onClick={() => handleAthleteClick(athlete._id)}
-                      className={`w-full text-left flex items-center p-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
+                      className={`w-full text-left flex items-center py-2.5 px-2 rounded-lg text-sm font-medium transition-colors duration-200 touch-manipulation ${
                         effectiveAthleteId === athlete._id && currentPath !== 'athletes'
                           ? "bg-violet-100 text-violet-700"
                           : "text-gray-700 hover:bg-gray-100"

@@ -19,11 +19,12 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
 
   return (
     <div className="flex flex-col w-full fixed lg:sticky top-0 bg-zinc-50 z-50">
-      <div className="flex relative justify-between items-center px-6 w-full border-b border-solid border-b-stone-300 custom-padding">
+      <div className="flex relative justify-between items-center px-3 sm:px-6 w-full border-b border-solid border-b-stone-300 custom-padding">
         {/* Menu Toggle Button */}
         <button
           onClick={handleMenuToggle}
-          className="p-2 rounded-lg hover:bg-gray-100 lg:hidden"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 lg:hidden active:bg-gray-200 touch-manipulation"
+          aria-label="Toggle menu"
         >
           {isMenuOpen ? (
             <XMarkIcon className="h-6 w-6 text-gray-600" />
@@ -33,11 +34,11 @@ const Header = ({ isMenuOpen, setIsMenuOpen, user: propUser }) => {
         </button>
 
         {/* Search and User Info */}
-        <div className="flex-1 flex gap-4 items-center justify-end">
+        <div className="flex-1 flex gap-2 sm:gap-4 items-center justify-end">
           <div className="hidden lg:block flex-1 max-w-xl">
             <SearchInput />
           </div>
-          <UserDropdown 
+          <UserDropdown
             isOpen={isDropdownOpen}
             setIsOpen={setIsDropdownOpen}
             user={user}

@@ -5,6 +5,18 @@
 
 body{
     background-color: #F6F6F6;
+    /* Prevent scroll chaining on iOS */
+    overscroll-behavior: contain;
+}
+
+/* Improve tap responsiveness across the app */
+button, a, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent double-tap zoom on interactive elements */
+.touch-manipulation {
+    touch-action: manipulation;
 }
 
 @media (min-width: 768px){

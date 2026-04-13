@@ -23,7 +23,7 @@ const FAQItem = ({ icon, question, answer }) => {
   };
   return (
     <motion.div className="group border border-gray-200 rounded-2xl bg-white hover:border-primary/40 hover:shadow-md transition-all duration-300 overflow-hidden" initial={false}>
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full p-5 flex items-center justify-between gap-4 text-left focus:outline-none">
+      <button onClick={() => setIsOpen(!isOpen)} className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left focus:outline-none min-h-[56px] touch-manipulation">
         <div className="flex items-start gap-4 flex-1 min-w-0">
           <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
             <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,7 +41,7 @@ const FAQItem = ({ icon, question, answer }) => {
       <AnimatePresence>
         {isOpen && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: 'easeInOut' }} className="overflow-hidden">
-            <div className="px-5 pb-5 pl-16">
+            <div className="px-4 sm:px-5 pb-4 sm:pb-5 pl-4 sm:pl-16">
               <p className="text-gray-600 leading-relaxed text-sm sm:text-base">{answer}</p>
             </div>
           </motion.div>
@@ -351,7 +351,7 @@ const TutorialPlayer = ({ tutorial }) => {
             {/* Progress bar */}
             <div
               ref={progressRef}
-              className="w-full h-1.5 bg-white/30 rounded-full cursor-pointer mb-2 group"
+              className="w-full h-2 sm:h-1.5 bg-white/30 rounded-full cursor-pointer mb-2 group touch-manipulation"
               onClick={seek}
             >
               <div
@@ -419,7 +419,7 @@ const VideoTutorialsSection = () => {
             <button
               key={t.id}
               onClick={() => setActiveId(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm font-medium transition-all touch-manipulation min-h-[44px] ${
                 activeId === t.id
                   ? 'border-primary bg-primary text-white shadow-sm'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 bg-white'
@@ -600,14 +600,14 @@ const About = () => {
       </Helmet>
 
       {/* ── Top Navbar ─────────────────────────────────────────────────────── */}
-      <nav className="w-full bg-white border-b border-gray-100 py-4 px-6 flex items-center justify-between z-20 relative">
+      <nav className="w-full bg-white border-b border-gray-100 py-2 sm:py-4 px-4 sm:px-6 flex items-center justify-between z-20 relative">
         <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-          <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-          <span className="text-xl font-bold text-primary text-gray-900 tracking-tight">LaChart</span>
+          <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 sm:h-9 w-auto" />
+          <span className="text-lg sm:text-xl font-bold text-primary tracking-tight">LaChart</span>
         </a>
-        <div className="flex items-center gap-3">
-          <a href="/login" className="text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm px-3 py-2">Login</a>
-          <a href="/signup" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors text-sm shadow-sm">Get Started</a>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <a href="/login" className="hidden sm:block text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm min-h-[44px] px-3 inline-flex items-center touch-manipulation">Login</a>
+          <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark active:opacity-90 transition-colors text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
         </div>
       </nav>
 
@@ -628,27 +628,27 @@ const About = () => {
           </a>
           <div className="hidden lg:flex items-center gap-1">
             {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-primary transition-colors">{label}</button>
+              <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary transition-colors touch-manipulation">{label}</button>
             ))}
           </div>
           <div className="hidden lg:flex items-center gap-3">
-            <a href="/login" className="text-gray-600 hover:text-gray-900 font-medium text-sm">Login</a>
-            <a href="/signup" className="px-4 py-1.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark text-sm shadow-sm">Get Started</a>
+            <a href="/login" className="text-gray-600 hover:text-gray-900 font-medium text-sm min-h-[44px] inline-flex items-center px-2">Login</a>
+            <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
           </div>
-          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden p-2 text-gray-600 hover:text-gray-900">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 touch-manipulation">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {isMobileMenuOpen ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /> : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />}
             </svg>
           </button>
         </div>
         {isMobileMenuOpen && (
-          <div className="lg:hidden border-t border-gray-100 px-4 py-3 flex flex-col gap-1 bg-white">
+          <div className="lg:hidden border-t border-gray-100 px-4 py-2 flex flex-col gap-0.5 bg-white">
             {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
-              <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-2 text-sm text-gray-600 hover:text-primary">{label}</button>
+              <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-3 text-sm text-gray-600 hover:text-primary active:bg-gray-50 rounded-lg touch-manipulation">{label}</button>
             ))}
             <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
-              <a href="/login" className="flex-1 text-center py-2 text-sm text-gray-600">Login</a>
-              <a href="/signup" className="flex-1 text-center py-2 text-sm bg-primary text-white rounded-lg font-semibold">Get Started</a>
+              <a href="/login" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm text-gray-600 touch-manipulation">Login</a>
+              <a href="/signup" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm bg-primary text-white rounded-lg font-semibold touch-manipulation">Get Started</a>
             </div>
           </div>
         )}
@@ -660,8 +660,8 @@ const About = () => {
         {/* ── Background: gradient mesh + chart grid ── */}
         <div className="absolute inset-0 pointer-events-none">
           {/* Soft colour blobs */}
-          <div className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px]" />
+          <div className="absolute top-[-10%] left-[-5%] w-[280px] sm:w-[600px] h-[280px] sm:h-[600px] bg-primary/10 rounded-full blur-[80px] sm:blur-[120px]" />
+          <div className="absolute bottom-[-10%] right-[-5%] w-[240px] sm:w-[500px] h-[240px] sm:h-[500px] bg-secondary/10 rounded-full blur-[60px] sm:blur-[100px]" />
           <div className="absolute top-[30%] right-[20%] w-[300px] h-[300px] bg-purple-300/8 rounded-full blur-[80px]" />
 
           {/* Chart-style grid lines — very subtle, references lactate graph aesthetic */}

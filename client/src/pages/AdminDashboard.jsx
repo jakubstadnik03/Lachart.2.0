@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
-import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser } from '../services/api';
+import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser, sendRetentionEmailPreview } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -40,6 +40,12 @@ const AdminDashboard = () => {
   const [outreachLeads, setOutreachLeads] = useState([]);
   const [outreachLeadsLoading, setOutreachLeadsLoading] = useState(false);
   const [outreachLeadUpdatingId, setOutreachLeadUpdatingId] = useState(null);
+
+  // ── Retention email preview ──────────────────────────────────────────────────
+  const [retentionSearch,    setRetentionSearch]    = useState('');
+  const [retentionEmailType, setRetentionEmailType] = useState('weekly');
+  const [retentionSending,   setRetentionSending]   = useState(null);
+  const [retentionResult,    setRetentionResult]    = useState(null);
 
   // Lazy-loaded athletes lists inside coach cards (pagination).
   // Key: coachId, Value: { athletes: [], totalLinked: number, totalWithPassword: number }
@@ -326,6 +332,14 @@ const AdminDashboard = () => {
     const never = users.filter(u => !u.lastLogin).length;
     return { last24h, last7d, last30d, never };
   }, [users]);
+
+  const retentionFilteredUsers = useMemo(() => {
+    const q = retentionSearch.toLowerCase();
+    return users
+      .filter(u => u.email && u.isActive !== false)
+      .filter(u => !q || u.email?.toLowerCase().includes(q) || `${u.name} ${u.surname}`.toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [users, retentionSearch]);
 
   // Prepare login, tests, and registrations chart data
   const loginChartData = useMemo(() => {
@@ -746,12 +760,40 @@ const AdminDashboard = () => {
     marketingEmailType === 'featureAnnouncement' || marketingEmailType === 'googleLoginFix';
 
   const tabs = [
-    { id: 'overview', name: 'Overview', icon: '📊' },
-    { id: 'users', name: 'Users', icon: '👥' },
-    { id: 'marketing', name: 'Marketing', icon: '📧' },
-    { id: 'outreach', name: 'Outreach', icon: '🎯' },
-    { id: 'analytics', name: 'Analytics', icon: '📈' }
+    { id: 'overview',   name: 'Overview',   icon: '📊' },
+    { id: 'users',      name: 'Users',      icon: '👥' },
+    { id: 'marketing',  name: 'Marketing',  icon: '📧' },
+    { id: 'retention',  name: 'Retention',  icon: '🔁' },
+    { id: 'outreach',   name: 'Outreach',   icon: '🎯' },
+    { id: 'analytics',  name: 'Analytics',  icon: '📈' },
   ];
+
+  const RETENTION_TYPES = [
+    { value: 'weekly',            label: '📊 Weekly Progress'        },
+    { value: 'monthly',           label: '📈 Monthly Report'          },
+    { value: 'testReminder',      label: '🧪 Test Reminder'           },
+    { value: 'reEngagement',      label: '👋 Re-engagement'           },
+    { value: 'milestone_firstTest',   label: '🎯 Milestone · 1st test'   },
+    { value: 'milestone_fiveTests',   label: '🏅 Milestone · 5 tests'    },
+    { value: 'milestone_tenTests',    label: '🏆 Milestone · 10 tests'   },
+    { value: 'anniversary_6',     label: '🎉 Anniversary · 6 months'  },
+    { value: 'anniversary_12',    label: '🏆 Anniversary · 1 year'    },
+    { value: 'lt2Improvement',    label: '⚡ LT2 Improvement'         },
+  ];
+
+  const handleSendRetentionPreview = async (userId) => {
+    setRetentionSending(userId);
+    setRetentionResult(null);
+    try {
+      const data = await sendRetentionEmailPreview(userId, retentionEmailType);
+      setRetentionResult({ ok: true, msg: data.message || 'Sent!' });
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to send.';
+      setRetentionResult({ ok: false, msg });
+    } finally {
+      setRetentionSending(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -2577,6 +2619,138 @@ const AdminDashboard = () => {
                       </p>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'retention' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4 sm:space-y-6"
+          >
+            {/* Header card */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1">
+                🔁 Retention Email Preview
+              </h3>
+              <p className="text-sm text-gray-500">
+                Send a test retention email to any user so you can preview exactly how it looks in their inbox.
+              </p>
+            </div>
+
+            {/* Controls */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6 space-y-4">
+              {/* Email type selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email type</label>
+                <select
+                  value={retentionEmailType}
+                  onChange={(e) => setRetentionEmailType(e.target.value)}
+                  className="w-full sm:w-80 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {RETENTION_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* User search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Search user</label>
+                <input
+                  type="text"
+                  placeholder="Name or email…"
+                  value={retentionSearch}
+                  onChange={(e) => { setRetentionSearch(e.target.value); setRetentionResult(null); }}
+                  className="w-full sm:w-80 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Result feedback */}
+              {retentionResult && (
+                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                  retentionResult.ok
+                    ? 'bg-green-50 text-green-700 border border-green-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  <span>{retentionResult.ok ? '✅' : '❌'}</span>
+                  {retentionResult.msg}
+                </div>
+              )}
+            </div>
+
+            {/* User list */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-4 sm:px-6 py-3 border-b border-gray-200 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-700">
+                  Users ({retentionFilteredUsers.length}{retentionFilteredUsers.length === 40 ? '+' : ''})
+                </h4>
+                <span className="text-xs text-gray-400">Showing active users with email</span>
+              </div>
+
+              {retentionFilteredUsers.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">No users match your search.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Email</th>
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Last login</th>
+                        <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {retentionFilteredUsers.map((u) => (
+                        <tr key={u._id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 sm:px-6 py-3">
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm flex-shrink-0">
+                                {(u.name?.[0] || u.email?.[0] || '?').toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {u.name} {u.surname}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate sm:hidden">{u.email}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 sm:px-6 py-3 hidden sm:table-cell">
+                            <span className="text-sm text-gray-600">{u.email}</span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-3 hidden md:table-cell">
+                            <span className="text-sm text-gray-500">
+                              {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-6 py-3 text-right">
+                            <button
+                              onClick={() => handleSendRetentionPreview(u._id)}
+                              disabled={retentionSending === u._id}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs sm:text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              {retentionSending === u._id ? (
+                                <>
+                                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                                  </svg>
+                                  Sending…
+                                </>
+                              ) : (
+                                <>📨 Send preview</>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

@@ -327,7 +327,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         )}
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
-        <main className="flex-1 px-3 sm:px-3 md:px-4 pt-16 lg:pt-0 overflow-y-auto">
+        <main className="flex-1 px-3 sm:px-3 md:px-4 pt-14 lg:pt-0 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto flex flex-col min-h-full">
             <div className="flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}

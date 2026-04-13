@@ -849,6 +849,17 @@ export const getZoneHistory = async () => {
 };
 
 // Impersonate a user as admin (login as another user without knowing their password)
+// Send a specific retention email to a user for preview/testing (admin only)
+export const sendRetentionEmailPreview = async (userId, type) => {
+  try {
+    const response = await api.post(`/user/admin/send-retention-email/${userId}`, { type });
+    return response.data;
+  } catch (error) {
+    console.error('Error sending retention email preview:', error);
+    throw error;
+  }
+};
+
 export const impersonateUser = async (userId) => {
   try {
     const response = await api.post(`/user/admin/impersonate/${userId}`);

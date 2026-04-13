@@ -190,6 +190,7 @@ const protocolTemplateRoutes = require('./routes/protocolTemplateRoutes');
 const { startWeeklyReportsScheduler } = require('./services/weeklyReportScheduler');
 const { startStravaAutoSyncScheduler } = require('./services/stravaAutoSyncScheduler');
 const { startLactateTestFollowUpScheduler } = require('./services/lactateTestFollowUpScheduler');
+const { startRetentionScheduler } = require('./services/retentionScheduler');
 
 // Routes
 app.use("/test", testRoutes);
@@ -212,6 +213,9 @@ startWeeklyReportsScheduler();
 startStravaAutoSyncScheduler();
 
 startLactateTestFollowUpScheduler();
+
+// Retention & lifecycle emails (weekly progress, monthly reports, milestones, re-engagement)
+startRetentionScheduler();
 
 // Simple trainer test API (demo - no auth required)
 // In-memory storage for demo purposes

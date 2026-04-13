@@ -241,6 +241,24 @@ const userSchema = new mongoose.Schema({
     // Used to avoid duplicate weekly report sends
     weeklyReportsLastSentWeekStart: { type: Date, default: null }
   },
+  // Retention email tracking (sent dates prevent duplicates)
+  retentionEmails: {
+    weeklyProgressLastSent:  { type: Date, default: null },
+    monthlyReportLastSent:   { type: Date, default: null },
+    testReminderLastSent:    { type: Date, default: null },
+    reengagementLastSent:    { type: Date, default: null },
+    milestones: {
+      firstTestSent:              { type: Boolean, default: false },
+      fiveTestsSent:              { type: Boolean, default: false },
+      tenTestsSent:               { type: Boolean, default: false },
+      twentyFiveTestsSent:        { type: Boolean, default: false },
+      anniversarySixMonthsSent:   { type: Boolean, default: false },
+      anniversaryOneYearSent:     { type: Boolean, default: false },
+      lt2ImprovementBaseline:     { type: Number,  default: null  },
+      lt2Improvement5Sent:        { type: Boolean, default: false },
+      lt2Improvement10Sent:       { type: Boolean, default: false },
+    }
+  },
   // Thank you email tracking
   thankYouEmail: {
     sent: { type: Boolean, default: false },

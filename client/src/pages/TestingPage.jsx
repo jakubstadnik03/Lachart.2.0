@@ -832,13 +832,6 @@ const TestingPage = () => {
     localStorage.setItem(key, String(showRecommendations));
   }, [showRecommendations, selectedAthleteId, user?._id]);
 
-  // If user opens "New testing", make sure recommendations panel is visible above it
-  useEffect(() => {
-    if (showNewTesting) {
-      setShowRecommendations(true);
-    }
-  }, [showNewTesting]);
-
   const formatDateShort = (dateLike) => {
     if (!dateLike) return '';
     try {
