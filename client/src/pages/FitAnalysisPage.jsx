@@ -1703,7 +1703,9 @@ const FitAnalysisPage = () => {
     try {
       setDetailLoading(true);
       const role = String(user?.role || '').toLowerCase();
-      const athleteId = ['coach', 'tester', 'testing'].includes(role) ? selectedAthleteId : null;
+      const athleteId = ['coach', 'tester', 'testing'].includes(role)
+        ? (role === 'coach' ? (selectedAthleteId || user?._id) : selectedAthleteId)
+        : null;
       const data = await getStravaActivityDetail(id, athleteId);
       
       const rawLaps = Array.isArray(data.laps) ? data.laps : [];
@@ -1801,16 +1803,20 @@ const FitAnalysisPage = () => {
 
   const loadExternalActivities = useCallback(async () => {
     try {
-      // For athlete, don't send athleteId (backend will use their own userId)
-      // For coach, send athleteId if selected, otherwise don't load activities (coach should select an athlete)
-      const athleteId = user?.role === 'athlete' ? null : selectedAthleteId;
-      
-      // If coach but no athlete selected, don't load activities
-      if (user?.role === 'coach' && !athleteId) {
+      const role = String(user?.role || '').toLowerCase();
+      // Athlete: own data without query param. Coach: explicit athlete or self (own Strava/FIT).
+      const athleteId =
+        role === 'athlete'
+          ? null
+          : role === 'coach'
+            ? (selectedAthleteId || user?._id)
+            : selectedAthleteId;
+
+      if (role === 'coach' && !athleteId) {
         setExternalActivities([]);
         return;
       }
-      
+
       const params = athleteId ? { athleteId } : {};
       const acts = normalizeApiList(await listExternalActivities(params));
       setExternalActivities(acts);
@@ -2205,16 +2211,19 @@ const FitAnalysisPage = () => {
 
   const loadTrainings = useCallback(async () => {
     try {
-      // For athlete, don't send athleteId (backend will use their own userId)
-      // For coach, send athleteId if selected, otherwise don't load trainings (coach should select an athlete)
-      const athleteId = user?.role === 'athlete' ? null : selectedAthleteId;
-      
-      // If coach but no athlete selected, don't load trainings
-      if (user?.role === 'coach' && !athleteId) {
+      const role = String(user?.role || '').toLowerCase();
+      const athleteId =
+        role === 'athlete'
+          ? null
+          : role === 'coach'
+            ? (selectedAthleteId || user?._id)
+            : selectedAthleteId;
+
+      if (role === 'coach' && !athleteId) {
         setTrainings([]);
         return;
       }
-      
+
       const raw = await getFitTrainings(athleteId);
       const data = normalizeApiList(raw);
       if (raw != null && !Array.isArray(raw) && data.length === 0) {
@@ -2268,18 +2277,21 @@ const FitAnalysisPage = () => {
   // Load regular trainings from /training route
   const loadRegularTrainings = useCallback(async () => {
     try {
-      // For athlete, use their own ID
-      // For coach, use selectedAthleteId (must be selected, don't use coach's own ID)
-      const athleteId = user?.role === 'athlete' ? user._id : selectedAthleteId;
-      
-      // If coach but no athlete selected, don't load trainings
-      if (user?.role === 'coach' && !athleteId) {
+      const role = String(user?.role || '').toLowerCase();
+      const athleteId =
+        role === 'athlete'
+          ? user._id
+          : role === 'coach'
+            ? (selectedAthleteId || user._id)
+            : selectedAthleteId;
+
+      if (role === 'coach' && !athleteId) {
         setRegularTrainings([]);
         return;
       }
-      
+
       if (!athleteId) {
-        return; // Skip if no athleteId
+        return;
       }
       
       const response = await api.get(`/user/athlete/${athleteId}/trainings`);

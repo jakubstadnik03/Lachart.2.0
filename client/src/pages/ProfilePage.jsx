@@ -377,34 +377,27 @@ const ProfilePage = () => {
         heartRateZonesHistory: historyData?.heartRateZonesHistory || []
       });
 
-      // Trenér nemá vlastní „atletní“ tréninky na profilu; ostatní role načtou svá data
-      if (profileData.role !== 'coach') {
-        const athleteKey = String(profileData._id);
-        try {
-          const [trainingsResponse, testsResponse] = await Promise.all([
-            api.get(`/user/athlete/${athleteKey}/trainings`),
-            api.get(`/test/list/${athleteKey}`)
-          ]);
-          setTrainings(Array.isArray(trainingsResponse.data) ? trainingsResponse.data : []);
-          setTests(Array.isArray(testsResponse.data) ? testsResponse.data : []);
-        } catch (loadErr) {
-          const status = loadErr?.response?.status;
-          if (status === 403 || status === 404) {
-            console.warn('[ProfilePage] Trainings/tests not available:', status, loadErr?.response?.data?.error);
-          } else {
-            console.error('[ProfilePage] Error loading trainings/tests:', loadErr);
-          }
-          setTrainings([]);
-          setTests([]);
+      // Vlastní FIT / Strava / tréninky v kalendáři — i pro trenéra (propojená Strava patří jeho účtu)
+      const athleteKey = String(profileData._id);
+      try {
+        const [trainingsResponse, testsResponse] = await Promise.all([
+          api.get(`/user/athlete/${athleteKey}/trainings`),
+          api.get(`/test/list/${athleteKey}`)
+        ]);
+        setTrainings(Array.isArray(trainingsResponse.data) ? trainingsResponse.data : []);
+        setTests(Array.isArray(testsResponse.data) ? testsResponse.data : []);
+      } catch (loadErr) {
+        const status = loadErr?.response?.status;
+        if (status === 403 || status === 404) {
+          console.warn('[ProfilePage] Trainings/tests not available:', status, loadErr?.response?.data?.error);
+        } else {
+          console.error('[ProfilePage] Error loading trainings/tests:', loadErr);
         }
-
-        // Načti kalendář na pozadí – neblokuj celou stránku
-        loadCalendarData(profileData._id);
-      } else {
         setTrainings([]);
         setTests([]);
-        setCalendarData([]);
       }
+
+      loadCalendarData(profileData._id);
 
     } catch (error) {
       console.error('Error loading profile data:', error);
@@ -1221,8 +1214,7 @@ const ProfilePage = () => {
         </motion.div>
       )}
 
-      {userInfo.role !== 'coach' && (
-        <>
+      <>
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1286,8 +1278,7 @@ const ProfilePage = () => {
               athleteId={userInfo._id}
             />
           </motion.div>
-        </>
-      )}
+      </>
 
       <AnimatePresence>
         {isEditModalOpen && (

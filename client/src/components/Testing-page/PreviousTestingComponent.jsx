@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
@@ -224,68 +224,50 @@ const PreviousTestingComponent = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredTests, selectedSport, tests.length, selectedTestId]);
 
-  const handleDateSelectorTestSelect = (testId) => {
+  const handleDateSelectorTestSelect = useCallback((testId) => {
     const selectedTest = filteredTests.find(test => test._id === testId);
     if (selectedTest) {
       setCurrentTest(selectedTest);
       setSelectedTests([]);
       lastRestoredTestIdRef.current = selectedTest._id;
-      // Save with sport-specific key
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, selectedTest._id);
       localStorage.setItem('lachart:lastTestId', selectedTest._id);
-
-      if (typeof onSelectTestId === 'function') {
-        onSelectTestId(selectedTest._id);
-      }
+      if (typeof onSelectTestId === 'function') onSelectTestId(selectedTest._id);
     }
-  };
+  }, [filteredTests, selectedSport, onSelectTestId]);
 
-  const handleTestSelect = (newSelectedTests) => {
+  const handleTestSelect = useCallback((newSelectedTests) => {
     setSelectedTests(newSelectedTests);
     if (newSelectedTests.length > 0) {
       setCurrentTest(newSelectedTests[0]);
       lastRestoredTestIdRef.current = newSelectedTests[0]._id;
-      // Save with sport-specific key
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, newSelectedTests[0]._id);
       localStorage.setItem('lachart:lastTestId', newSelectedTests[0]._id);
-
-       if (typeof onSelectTestId === 'function') {
-         onSelectTestId(newSelectedTests[0]._id);
-       }
+      if (typeof onSelectTestId === 'function') onSelectTestId(newSelectedTests[0]._id);
     } else {
-      if (typeof onSelectTestId === 'function') {
-        onSelectTestId(null);
-      }
+      if (typeof onSelectTestId === 'function') onSelectTestId(null);
     }
-  };
+  }, [selectedSport, onSelectTestId]);
 
-  const handleTestUpdate = async (updatedTest) => {
+  const handleTestUpdate = useCallback(async (updatedTest) => {
     try {
-      console.log('Updating test with data:', updatedTest);
       const response = await updateTest(updatedTest._id, updatedTest);
-      console.log('API response:', response.data);
-      setTests(prev => prev.map(t => 
-        t._id === updatedTest._id ? response.data : t
-      ));
+      setTests(prev => prev.map(t => t._id === updatedTest._id ? response.data : t));
       setCurrentTest(response.data);
       lastRestoredTestIdRef.current = response.data._id;
-      // Save with sport-specific key
       const testKey = `lachart:lastTestId:${selectedSport}`;
       localStorage.setItem(testKey, response.data._id);
       localStorage.setItem('lachart:lastTestId', response.data._id);
-      // Update selected tests if they include the updated test
-      setSelectedTests(prev => prev.map(t => 
-        t._id === updatedTest._id ? response.data : t
-      ));
+      setSelectedTests(prev => prev.map(t => t._id === updatedTest._id ? response.data : t));
     } catch (err) {
       console.error('Error updating test:', err);
       throw err;
     }
-  };
+  }, [selectedSport, setTests]);
 
-  const handleTestDelete = async (testToDelete) => {
+  const handleTestDelete = useCallback(async (testToDelete) => {
     try {
       await deleteTest(testToDelete._id);
       setTests(prev => prev.filter(t => t._id !== testToDelete._id));
@@ -294,7 +276,7 @@ const PreviousTestingComponent = ({
     } catch (err) {
       console.error('Error deleting test:', err);
     }
-  };
+  }, [setTests]);
 
   const handleGlucoseColumnChange = (hidden) => {
     setGlucoseColumnHidden(hidden);
@@ -337,26 +319,18 @@ const PreviousTestingComponent = ({
             transition={{ duration: 0.3 }}
             className="flex flex-col lg:flex-row justify-center gap-6 mt-5"
           >
-            <motion.div 
-              className={`${glucoseColumnHidden ? 'lg:flex-[2]' : 'lg:flex-[2.5]'} w-full`}
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.2 }}
-            >
-            <LactateCurve mockData={currentTest} />
-            </motion.div>
-            <motion.div 
-              className={`${glucoseColumnHidden ? 'lg:flex-1' : 'lg:flex-1'} w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2 h-[600px] flex flex-col`}
-              whileHover={{ scale: 1.02 }}
-              transition={{ duration: 0.2 }}
-            >
-            <TestingForm 
-              testData={currentTest}
-              onSave={handleTestUpdate}
-              onTestDataChange={() => {}} // (disable live change updates)
-              onGlucoseColumnChange={handleGlucoseColumnChange}
-              onDelete={handleTestDelete}
-            />
-            </motion.div>
+            <div className={`${glucoseColumnHidden ? 'lg:flex-[2]' : 'lg:flex-[2.5]'} w-full`}>
+              <LactateCurve mockData={currentTest} />
+            </div>
+            <div className={`lg:flex-1 w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2 min-h-[420px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden`}>
+              <TestingForm
+                testData={currentTest}
+                onSave={handleTestUpdate}
+                onTestDataChange={() => {}}
+                onGlucoseColumnChange={handleGlucoseColumnChange}
+                onDelete={handleTestDelete}
+              />
+            </div>
           </motion.div>
       )}
       </AnimatePresence>

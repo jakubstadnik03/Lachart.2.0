@@ -177,8 +177,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }, [user, hasCheckedProfile, location.pathname]);
 
   // Strava then Garmin (sequential) — avoids two heavy backend jobs at once after login.
+  // Coaches who connect Strava use the same user-scoped tokens; sync must run for them too.
   useEffect(() => {
-    if (!user?._id || user?.role === 'coach') return undefined;
+    if (!user?._id) return undefined;
 
     const hasStrava = !!(user?.strava?.autoSync && user?.strava?.athleteId);
     const hasGarmin = !!(user?.garmin?.autoSync && user?.garmin?.accessToken);

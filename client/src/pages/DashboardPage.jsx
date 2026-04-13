@@ -97,10 +97,10 @@ export default function DashboardPage() {
   /** Avoid flashing the empty-state hero while API/cache is still settling */
   const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
 
-  // Check Strava connection status
+  // Check Strava connection status (athletes + coaches — own Strava / profile photo)
   useEffect(() => {
     const checkStravaConnection = async () => {
-      if (!user || user.role === 'coach') return; // Only show for athletes
+      if (!user) return;
       const hasLocalStravaConnection = Boolean(user?.strava?.accessToken || user?.strava?.athleteId);
 
       // Trust local profile first to avoid false banner flashes on slow/intermittent API.
@@ -913,7 +913,7 @@ export default function DashboardPage() {
       )}
 
       {/* Strava Connection Banner */}
-      {!isTestingRole && showStravaBanner && !stravaConnected && user?.role === 'athlete' && !showAthleteEmptyWelcome && (
+      {!isTestingRole && showStravaBanner && !stravaConnected && (user?.role === 'athlete' || user?.role === 'coach') && !showAthleteEmptyWelcome && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}

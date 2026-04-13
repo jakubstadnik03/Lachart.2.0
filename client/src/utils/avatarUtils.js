@@ -4,14 +4,22 @@
  * @returns {String} Avatar URL
  */
 export const getAvatarBySportAndGender = (user) => {
-  // Coach always gets coach avatar (never show athlete/Strava URL in menu/header)
-  if (user?.role === 'coach') {
-    return '/images/coach-avatar.webp';
+  const av = user?.avatar;
+  if (av && typeof av === 'string') {
+    const a = av.trim();
+    // Strava / CDN / uploaded file under public path
+    if (
+      a.startsWith('http://') ||
+      a.startsWith('https://') ||
+      a.startsWith('/')
+    ) {
+      return a;
+    }
   }
 
-  // If user has a Strava avatar (URL starting with http/https), use it
-  if (user?.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://'))) {
-    return user.avatar;
+  // Coach without a custom photo: branded default (menu/header/profile)
+  if (user?.role === 'coach') {
+    return '/images/coach-avatar.webp';
   }
 
   // Default gender to 'male' if not specified

@@ -30,13 +30,15 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    // Only re-render auth context for the specific premium-preview key (not every localStorage change)
+    let debounceTimer;
     const onStorage = (e) => {
-      if (e.key === PREMIUM_PREVIEW_NO_ACCESS_KEY || e.key === null) {
-        setPremiumPreviewNoAccessState(readPremiumPreviewNoAccess());
-      }
+      if (e.key !== PREMIUM_PREVIEW_NO_ACCESS_KEY && e.key !== null) return;
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setPremiumPreviewNoAccessState(readPremiumPreviewNoAccess()), 80);
     };
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return () => { window.removeEventListener('storage', onStorage); clearTimeout(debounceTimer); };
   }, []);
 
   const removeToken = useCallback(() => {
@@ -135,10 +137,11 @@ export const AuthProvider = ({ children }) => {
         const tokenAtStart = storedToken;
         try {
           api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
-          // Use a shorter timeout for this specific request (8 seconds)
-          const response = await api.get('/user/profile', { 
-            noCache: true, 
-            timeout: 8000 // 8 second timeout
+          // Capacitor on slow 3G can need up to 12s; web uses 8s
+          const isNative = typeof window !== 'undefined' && !!(window.Capacitor?.isNativePlatform?.());
+          const response = await api.get('/user/profile', {
+            noCache: true,
+            timeout: isNative ? 12000 : 8000,
           });
 
           clearTimeout(timeoutId);
@@ -260,38 +263,34 @@ export const AuthProvider = ({ children }) => {
       // Krátké zpoždění, aby se stihlo vyčistit localStorage a cache
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      if (token && user) {
-        setToken(token);
-        setUser(user);
-        saveToken(token);
-        saveUserToStorage(user);
-        setIsAuthenticated(true);
-        if (!sessionStorage.getItem('welcomed')) {
-          setTimeout(() => {
-            setShowWelcome(true);
-            sessionStorage.setItem('welcomed', '1');
-          }, 10000); // show after 10 seconds
-        }
-        clearApiCache();
-        window.location.reload();
-        return Promise.resolve({ success: true });
-      } else {
-        const response = await api.post("/user/login", { email, password });
-        const { token: loginToken, user: loginUser } = response.data;
-
+      const applyLogin = (loginToken, loginUser) => {
         setToken(loginToken);
         setUser(loginUser);
         saveToken(loginToken);
         saveUserToStorage(loginUser);
         setIsAuthenticated(true);
+        clearApiCache();
         if (!sessionStorage.getItem('welcomed')) {
           setTimeout(() => {
             setShowWelcome(true);
             sessionStorage.setItem('welcomed', '1');
-          }, 10000); // show after 10 seconds
+          }, 10000);
         }
-        clearApiCache();
-        window.location.reload();
+        // Navigate to dashboard (or last route) without full reload — preserves in-memory cache
+        const lastRoute = localStorage.getItem('lastRoute');
+        const target = lastRoute && lastRoute !== '/' && lastRoute !== '/login' && lastRoute !== '/signup'
+          ? lastRoute
+          : '/dashboard';
+        navigate(target, { replace: true });
+      };
+
+      if (token && user) {
+        applyLogin(token, user);
+        return Promise.resolve({ success: true });
+      } else {
+        const response = await api.post("/user/login", { email, password });
+        const { token: loginToken, user: loginUser } = response.data;
+        applyLogin(loginToken, loginUser);
         return Promise.resolve({ success: true });
       }
     } catch (error) {
@@ -319,13 +318,9 @@ export const AuthProvider = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       removeToken();
-      // Při odhlášení přesměrujeme na login stránku a uděláme full reload,
-      // aby se vyčistil veškerý in‑memory stav (proti „prolínání“ dat mezi účty).
+      // Navigate to login — no reload needed; removeToken() clears all localStorage cache
+      // and React state (setUser(null), setToken(null)) resets the in-memory state cleanly.
       navigate('/login', { replace: true });
-      // Malé zpoždění, aby react-router stihl přepsat URL.
-      setTimeout(() => {
-        window.location.reload();
-      }, 0);
     }
   }, [navigate, removeToken]);
 

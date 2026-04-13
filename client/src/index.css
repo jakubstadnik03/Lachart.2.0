@@ -7,6 +7,23 @@ body{
     background-color: #F6F6F6;
     /* Prevent scroll chaining on iOS */
     overscroll-behavior: contain;
+    /* Safe-area insets for Capacitor / iPhone notch / Dynamic Island */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    /* Note: top inset handled per-component (Header) to avoid double padding */
+}
+
+/* Fixed header + sidebar get top safe-area so content sits below notch */
+.safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* iOS momentum scrolling on all scroll containers */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Improve tap responsiveness across the app */

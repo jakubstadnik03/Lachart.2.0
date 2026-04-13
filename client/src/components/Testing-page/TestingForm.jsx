@@ -1010,7 +1010,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
           }}
           disabled={!isNewTest && !isEditMode}
-          className={`w-full min-w-0 p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
+          className={`w-full min-w-0 max-w-full box-border p-0.5 text-xs border rounded-lg text-center focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${
             (!isNewTest && !isEditMode) ? 'bg-gray-50' : ''
           } ${isTutorialField ? 'ring-2 ring-primary border-primary' : ''}`}
           placeholder={placeholder}
@@ -1025,7 +1025,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
   const isBaseLaInvalid = !baseLaTrimmed || Number.isNaN(baseLaParsed) || baseLaParsed <= 0;
 
   return (
-    <div className="flex flex-col w-full p-2 sm:p-4 bg-white rounded-xl relative h-full">
+    <div className="flex flex-col w-full min-w-0 max-w-full overflow-x-hidden p-2 sm:p-4 bg-white rounded-xl relative h-full">
       {/* keyframes moved to global CSS (index.css) */}
 
       {/* Single Tutorial Message Portal */}
@@ -1194,7 +1194,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         </button>
       </div>
 
-      <div data-tour="tour-test-details" className="flex flex-col gap-2 flex-shrink-0">
+      <div data-tour="tour-test-details" className="flex flex-col gap-2 flex-shrink-0 min-w-0 w-full">
         {/* Title and Edit Button Row — pr-* keeps text/Edit clear of corner icon cluster */}
         <div
           className={`flex items-center gap-2 justify-between min-w-0 ${
@@ -1324,8 +1324,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           rows={2}
       />
 
-        <div className="grid grid-cols-4 gap-2">
-          <div className="relative">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
+          <div className="relative min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Date</label>
         <input 
               ref={el => inputRefs.current['date'] = el}
@@ -1339,7 +1339,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
         />
           </div>
 
-          <div className="relative">
+          <div className="relative min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weight</label>
         <input 
               ref={el => inputRefs.current['weight'] = el}
@@ -1354,7 +1354,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             />
           </div>
 
-          <div className="relative">
+          <div className="relative min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">
               Base La
               {isBaseLaInvalid && (
@@ -1391,7 +1391,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">
               Sport
               {!formData.sport && (
@@ -1439,8 +1439,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
+          <div className="min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Conditions</label>
         <input 
               ref={el => inputRefs.current['specifics'] = el}
@@ -1457,7 +1457,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
               placeholder="e.g., Indoor"
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs font-medium text-gray-700 mb-0.5">Weather</label>
         <input 
               ref={el => inputRefs.current['specifics'] = el}
@@ -1478,7 +1478,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       </div>
 
         {/* Data Table */}
-      <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div data-tour="tour-measurements-table" className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {(() => {
             // Calculate columns: Int + Power + HR + La + (Glu?) + (VO2?) + RPE + (Del?)
             // Count actual visible columns - must match header and row structure exactly
@@ -1498,10 +1498,10 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
             flexibleColCount += 1; // RPE (always shown)
             
-            // All flexible columns get equal width (1fr)
+            // minmax(0,1fr) so tracks can shrink on narrow viewports (no horizontal scroll)
             const gridTemplateCols = ['32px']; // Int (fixed width)
             for (let i = 0; i < flexibleColCount; i++) {
-              gridTemplateCols.push('1fr'); // All flexible columns same width
+              gridTemplateCols.push('minmax(0, 1fr)');
             }
             if (isNewTest || isEditMode) {
               gridTemplateCols.push('32px'); // Delete column only when rows can be removed
@@ -1510,33 +1510,33 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             const gridTemplateColumns = gridTemplateCols.join(' ');
             
             return (
-              <div className="flex flex-col flex-1 min-h-0">
-                <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0 flex-shrink-0" style={{ gridTemplateColumns, maxWidth: '100%', overflowX: 'auto' }}>
-                  <div className="text-center min-w-0 overflow-hidden">Int.</div>
-                  <div className="text-center min-w-0 overflow-hidden">
-  {formData.sport === 'bike' ? 'Power' :
-    (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'Pace' :
-    (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? 'Speed' : 'Power'}
-</div>
-                  <div className="text-center min-w-0 overflow-hidden">HR</div>
-                  <div className="text-center min-w-0 overflow-hidden">La</div>
-                  {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 overflow-hidden">Glu</div>}
-                  {(hasVO2Data || showVO2) && <div className="text-center min-w-0 overflow-hidden">VO₂</div>}
-                  {(hasRPEData || true) && <div className="text-center min-w-0 overflow-hidden">RPE</div>}
-                  {(isNewTest || isEditMode) && (
-                    <div className="text-center min-w-0 overflow-hidden">Del</div>
-                  )}
+              <div className="flex flex-col flex-1 min-h-0 min-w-0">
+                <div className="w-full min-w-0 max-w-full flex-shrink-0 overflow-x-hidden touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  <div className="grid gap-0.5 items-center p-1 text-xs font-semibold bg-gray-100 rounded-lg w-full min-w-0" style={{ gridTemplateColumns }}>
+                    <div className="text-center min-w-0 truncate">Int.</div>
+                    <div className="text-center min-w-0 truncate">
+                      {formData.sport === 'bike' ? 'Power' :
+                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'pace' ? 'Pace' :
+                        (formData.sport === 'run' || formData.sport === 'swim') && inputMode === 'speed' ? 'Speed' : 'Power'}
+                    </div>
+                    <div className="text-center min-w-0 truncate">HR</div>
+                    <div className="text-center min-w-0 truncate">La</div>
+                    {(hasGlucoseData || showGlucose) && <div className="text-center min-w-0 truncate">Glu</div>}
+                    {(hasVO2Data || showVO2) && <div className="text-center min-w-0 truncate">VO₂</div>}
+                    {(hasRPEData || true) && <div className="text-center min-w-0 truncate">RPE</div>}
+                    {(isNewTest || isEditMode) && <div className="text-center min-w-0 truncate">Del</div>}
+                  </div>
                 </div>
-                <div className="relative flex-1 min-h-0 max-h-full">
+                <div className="relative flex-1 min-h-0 min-w-0 max-h-full overflow-x-hidden touch-manipulation" style={{ WebkitOverflowScrolling: 'touch' }}>
                 <div
                   ref={rowsScrollRef}
-                  className={`h-full overflow-y-auto overflow-x-auto ${rowsCanScroll ? 'pr-1' : ''}`}
+                  className={`h-full w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden ${rowsCanScroll ? 'pr-1' : ''}`}
                 >
                   {rows.map((row, index) => (
                     <div
                       key={index}
-                      className="grid gap-0.5 items-center mt-0.5 p-1 bg-white rounded-lg w-full min-w-0 hover:bg-gray-50 transition-colors"
-                      style={{ gridTemplateColumns, maxWidth: '100%' }}
+                      className="grid gap-0.5 items-center mt-0.5 p-0.5 sm:p-1 bg-white rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors w-full min-w-0 max-w-full"
+                      style={{ gridTemplateColumns }}
                     >
                       <div className="text-center text-xs min-w-0 overflow-hidden">{index + 1}</div>
                       {renderInput(index, 'power', row.power,
@@ -1575,7 +1575,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                     <button
                       type="button"
                       onClick={handleScrollHintClick}
-                      className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-gray-600 bg-white/95 px-2 py-0.5 rounded-full border border-gray-200 hover:bg-white hover:text-gray-800 transition-colors"
+                      className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-gray-600 bg-white/95 px-2 py-0.5 rounded-full border border-gray-200 hover:bg-white hover:text-gray-800 transition-colors"
                       title="Scroll down"
                     >
                       Scroll for more rows

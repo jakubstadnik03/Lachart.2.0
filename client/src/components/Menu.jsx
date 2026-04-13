@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
@@ -28,25 +28,25 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   // Note: Auto-opening menu is now handled by parent components (like TestingWithoutLogin)
   // This allows parent to control menu state, especially on mobile
 
-  useEffect(() => {
-    const loadAthletes = async () => {
-      if (["coach", "tester", "testing"].includes(user?.role)) {
-        try {
-          setLoadingAthletes(true);
-          const response = await api.get('/user/coach/athletes');
-          setAthletes(response.data);
-        } catch (error) {
-          console.error('Error loading athletes:', error);
-        } finally {
-          setLoadingAthletes(false);
-        }
-      }
-    };
-    // Only load athletes if we have a token (not in demo mode)
-    if (user && token) {
-      loadAthletes();
+  const loadAthletes = useCallback(async () => {
+    if (!["coach", "tester", "testing"].includes(user?.role) || !token) {
+      setLoadingAthletes(false);
+      return;
     }
-  }, [user, token]);
+    try {
+      setLoadingAthletes(true);
+      const response = await api.get('/user/coach/athletes');
+      setAthletes(response.data);
+    } catch (error) {
+      console.error('Error loading athletes:', error);
+    } finally {
+      setLoadingAthletes(false);
+    }
+  }, [user?.role, user?._id, token]); // Only re-run if actual identity changes
+
+  useEffect(() => {
+    loadAthletes();
+  }, [loadAthletes]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -280,7 +280,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           damping: 30,
           opacity: { duration: 0.2 }
         }}
-        className={`fixed lg:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden`}
+        className={`fixed lg:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden safe-top`}
       >
         <div 
           className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0"
@@ -424,7 +424,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           >
             <h2 className="text-sm font-bold pt-4 text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Athletes</h2>
             {loadingAthletes ? (
-              <div className="text-sm text-gray-500 pb-2">Loading athletes...</div>
+              <div className="flex items-center gap-2 text-sm text-gray-500 pb-2">
+                <span className="inline-block w-3 h-3 border-2 border-primary border-r-transparent rounded-full animate-spin flex-shrink-0" />
+                Loading athletes…
+              </div>
             ) : athletes.length > 0 ? (
               <ul className="space-y-2 pb-2">
                 {athletes.map((athlete) => (
@@ -472,7 +475,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   <NavLink
                     to="/settings"
                     className={({ isActive }) =>
-                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
+                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium min-h-[44px] px-3 sm:p-3 rounded-lg touch-manipulation ${
                         isActive
                           ? "bg-primary text-white"
                           : "text-gray-700 hover:bg-gray-100"
@@ -495,7 +498,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                   <NavLink
                     to="/support"
                     className={({ isActive }) =>
-                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg ${
+                      `flex items-center justify-center gap-1.5 sm:justify-start text-xs sm:text-sm font-medium min-h-[44px] px-3 sm:p-3 rounded-lg touch-manipulation ${
                         isActive
                           ? "bg-primary text-white"
                           : "text-gray-700 hover:bg-gray-100"
@@ -523,7 +526,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           >
             {!user?.role ? (
               <div
-                className="flex items-center w-full text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg text-gray-400 cursor-not-allowed"
+                className="flex items-center w-full text-xs sm:text-sm font-medium min-h-[44px] px-3 sm:p-3 rounded-lg text-gray-400 cursor-not-allowed"
               >
                 <img
                   src="/icon/logout.svg"
@@ -536,7 +539,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex items-center w-full text-xs sm:text-sm font-medium py-2 px-2 sm:p-3 rounded-lg text-red-600 hover:bg-red-50"
+                className="flex items-center w-full text-xs sm:text-sm font-medium min-h-[44px] px-3 sm:p-3 rounded-lg text-red-600 hover:bg-red-50 active:bg-red-100 touch-manipulation"
               >
                 <img
                   src="/icon/logout.svg"
@@ -566,4 +569,10 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   );
 };
 
-export default Menu;
+// Memoized: only re-renders if isMenuOpen, user identity, or token changes
+export default React.memo(Menu, (prev, next) =>
+  prev.isMenuOpen === next.isMenuOpen &&
+  prev.token === next.token &&
+  prev.user?._id === next.user?._id &&
+  prev.user?.role === next.user?.role
+);

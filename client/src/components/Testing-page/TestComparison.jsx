@@ -522,7 +522,7 @@ const TestComparison = ({ tests = [] }) => {
                   {sport === 'bike' ? `${formatChangeValue(changeMin)} / ${formatChangeValue(changeMax)} W` : `${formatChangeValue(changeMin, true)} / ${formatChangeValue(changeMax, true)}`}
                 </div>
                 {hrChangeMin != null && (hrChangeMin !== 0 || hrChangeMax !== 0) && (
-                  <div className={hrImprove ? 'text-emerald-600 text-[10px]' : 'text-red-600 text-[10px]'}>
+                  <div className={hrImprove ? 'text-emerald-600 text-xs' : 'text-red-600 text-xs'}>
                     <span aria-hidden>{hrImprove ? '↑' : '↓'}</span> HR {formatChangeValue(hrChangeMin)} / {formatChangeValue(hrChangeMax)}
                   </div>
                 )}
@@ -562,7 +562,7 @@ const TestComparison = ({ tests = [] }) => {
                   <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600 border-r border-gray-200"></th>
                   {validTests.map((_, i) => (
                     <React.Fragment key={i}>
-                      {i > 0 && <th className="px-2 py-1 text-center text-[10px] font-medium text-gray-500 bg-gray-50 border-r border-gray-200">vs prev.</th>}
+                      {i > 0 && <th className="px-2 py-1 text-center text-xs font-medium text-gray-500 bg-gray-50 border-r border-gray-200">vs prev.</th>}
                       <th className="px-2 py-1 text-left text-xs font-medium text-gray-600 border-r border-gray-200">{sport === 'bike' ? 'Power (W)' : 'Pace'}</th>
                       <th className="px-2 py-1 text-left text-xs font-medium text-gray-600 border-r border-gray-200">HR</th>
                     </React.Fragment>
