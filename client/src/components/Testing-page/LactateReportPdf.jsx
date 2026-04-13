@@ -6,7 +6,7 @@
 import React from 'react';
 import {
   Document, Page, View, Text, Svg, Path, Line, Rect, Circle,
-  StyleSheet, Font, pdf,
+  StyleSheet, pdf,
 } from '@react-pdf/renderer';
 
 // ── Brand ──────────────────────────────────────────────────────────────────────
@@ -119,7 +119,6 @@ const s = StyleSheet.create({
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-const fmt = (v, unit = '') => (v == null || !Number.isFinite(Number(v))) ? '—' : `${Number(v).toFixed(unit === 'W' ? 0 : 1)} ${unit}`.trim();
 const fmtDate = (d) => { try { return new Date(d).toLocaleDateString('cs-CZ', { day:'2-digit', month:'2-digit', year:'numeric' }); } catch { return '—'; } };
 const sportLabel = (s) => ({ bike:'Cycling', run:'Running', swim:'Swimming' }[s] || s || 'Sport');
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
@@ -138,13 +137,6 @@ function fmtIntensity(val, sport, inputMode) {
   if (sport === 'bike') return `${Math.round(v)} W`;
   if (inputMode === 'pace') return `${fmtPace(v)} /km`;
   return `${v.toFixed(1)} km/h`;
-}
-
-function deltaStyle(cur, prev, higherIsBetter = true) {
-  if (cur == null || prev == null) return {};
-  const diff = Number(cur) - Number(prev);
-  const good = higherIsBetter ? diff > 0 : diff < 0;
-  return good ? s.deltaPositive : s.deltaNegative;
 }
 
 // ── Lactate Curve SVG ──────────────────────────────────────────────────────────
