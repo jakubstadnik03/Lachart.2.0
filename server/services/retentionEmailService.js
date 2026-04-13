@@ -513,7 +513,7 @@ async function sendTestReminderEmail(user) {
     body,
     cta: 'Log a New Test',
     ctaUrl: `${CLIENT_URL}/testing`,
-    footer: 'Test reminders are sent when you haven't tested in 6+ weeks. Update preferences in Settings.'
+    footer: "Test reminders are sent when you haven't tested in 6+ weeks. Update preferences in Settings."
   });
 
   const ok = await send({
