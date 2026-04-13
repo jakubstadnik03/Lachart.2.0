@@ -114,6 +114,18 @@ const s = StyleSheet.create({
   deltaBig:      { fontSize: 16, fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   deltaCards:    { flexDirection: 'row', gap: 10, marginTop: 4 },
   deltaCard:     { flex: 1, borderWidth: 1, borderColor: C.midGray, borderRadius: 8, padding: 12, alignItems: 'center' },
+
+  // Trend table (3-test comparison)
+  trendTable:     { borderWidth: 1, borderColor: C.midGray, borderRadius: 6, overflow: 'hidden', marginTop: 14 },
+  trendHead:      { flexDirection: 'row', backgroundColor: C.primaryDark, paddingVertical: 6, paddingHorizontal: 10 },
+  trendHeadCell:  { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 1, textAlign: 'center' },
+  trendHeadFirst: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: C.white, flex: 1.6 },
+  trendRow:       { flexDirection: 'row', paddingVertical: 5.5, paddingHorizontal: 10, borderTopWidth: 1, borderTopColor: C.lightGray },
+  trendRowAlt:    { backgroundColor: '#F9FAFB' },
+  trendCellDate:  { fontSize: 8, color: C.gray, flex: 1.6 },
+  trendCellVal:   { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: C.dark, flex: 1, textAlign: 'center' },
+  trendBadge:     { fontSize: 6.5, color: C.white, backgroundColor: C.primary, borderRadius: 3,
+                    paddingHorizontal: 4, paddingVertical: 1.5, marginLeft: 4 },
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -466,7 +478,7 @@ const SectionHeader = ({ title }) => (
 );
 
 // ── Main Document ───────────────────────────────────────────────────────────────
-export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, customNote }) {
+export default function LactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
   if (!test) return null;
 
   const sport       = test.sport || 'bike';
@@ -484,12 +496,18 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
   const lt1Hr = thresholds?.heartRates?.['LTP1'];
   const lt2Hr = thresholds?.heartRates?.['LTP2'];
 
-  // Previous test
+  // Previous test (primary comparison)
   const prevLt2    = prevThresholds?.['LTP2'];
   const prevLt1    = prevThresholds?.['LTP1'];
   const prevLt2Hr  = prevThresholds?.heartRates?.['LTP2'];
   const hasPrev    = !!(prevTest && prevThresholds && Array.isArray(prevTest.results) && prevTest.results.length >= 2);
   const prevDate   = hasPrev ? fmtDate(prevTest.date) : null;
+
+  // Second comparison test (optional, for 3-test trend)
+  const prevLt2_2    = prevThresholds2?.['LTP2'];
+  const prevLt1_2    = prevThresholds2?.['LTP1'];
+  const hasPrev2     = !!(prevTest2 && prevThresholds2 && Array.isArray(prevTest2.results) && prevTest2.results.length >= 2);
+  const prevDate2    = hasPrev2 ? fmtDate(prevTest2.date) : null;
 
   // Zones
   const zoneData = zones?.power || zones?.pace || null;
@@ -764,9 +782,9 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 
           {/* ── Comparison with previous test ── */}
           {hasPrev && <>
-            <SectionHeader title={`Comparison vs Previous Test · ${prevDate}`} />
+            <SectionHeader title={hasPrev2 ? `Progress Trend · ${prevDate2} → ${prevDate} → ${testDate}` : `Comparison vs Previous Test · ${prevDate}`} />
 
-            {/* Overlaid dual-curve chart */}
+            {/* Overlaid dual-curve chart (primary comparison only) */}
             <ComparisonCurveSvg
               currentResults={results}
               prevResults={prevTest.results}
@@ -778,7 +796,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
               prevDate={prevDate}
             />
 
-            {/* Delta cards */}
+            {/* Delta cards (current vs primary comparison) */}
             <View style={[s.deltaCards, { marginTop: 12 }]}>
               {[
                 { label: 'LT1 change', cur: lt1,   prev: prevLt1,   unit: isBike ? 'W' : 's', better: isBike },
@@ -805,6 +823,43 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 );
               })}
             </View>
+
+            {/* ── 3-test trend table (shown when a second comparison test is also selected) ── */}
+            {hasPrev2 && (
+              <View style={s.trendTable}>
+                {/* Header */}
+                <View style={s.trendHead}>
+                  <Text style={s.trendHeadFirst}>Test date</Text>
+                  <Text style={s.trendHeadCell}>LT1</Text>
+                  <Text style={s.trendHeadCell}>LT2</Text>
+                  <Text style={s.trendHeadCell}>LT2 HR</Text>
+                </View>
+                {/* Oldest comparison test */}
+                <View style={[s.trendRow, s.trendRowAlt]}>
+                  <Text style={s.trendCellDate}>{prevDate2}</Text>
+                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt1_2, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt2_2, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{prevThresholds2?.heartRates?.['LTP2'] ? `${Math.round(prevThresholds2.heartRates['LTP2'])} bpm` : '—'}</Text>
+                </View>
+                {/* More recent comparison test */}
+                <View style={s.trendRow}>
+                  <Text style={s.trendCellDate}>{prevDate}</Text>
+                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt1, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{fmtIntensity(prevLt2, sport, inputMode)}</Text>
+                  <Text style={s.trendCellVal}>{prevLt2Hr ? `${Math.round(prevLt2Hr)} bpm` : '—'}</Text>
+                </View>
+                {/* Current test (highlighted) */}
+                <View style={[s.trendRow, { backgroundColor: '#EEF0FA' }]}>
+                  <View style={{ flex: 1.6, flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[s.trendCellDate, { color: C.primary, fontFamily: 'Helvetica-Bold' }]}>{testDate}</Text>
+                    <Text style={s.trendBadge}>NOW</Text>
+                  </View>
+                  <Text style={[s.trendCellVal, { color: C.primary }]}>{fmtIntensity(lt1, sport, inputMode)}</Text>
+                  <Text style={[s.trendCellVal, { color: C.primary }]}>{fmtIntensity(lt2, sport, inputMode)}</Text>
+                  <Text style={[s.trendCellVal, { color: C.primary }]}>{lt2Hr ? `${Math.round(lt2Hr)} bpm` : '—'}</Text>
+                </View>
+              </View>
+            )}
           </>}
         </View>
 
@@ -815,7 +870,7 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
 }
 
 // ── Download helper ─────────────────────────────────────────────────────────────
-export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, customNote }) {
+export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
   const doc = (
     <LactateReportPdf
       test={test}
@@ -824,14 +879,16 @@ export async function generatePdfBlob({ test, athlete, thresholds, zones, prevTe
       zones={zones}
       prevTest={prevTest}
       prevThresholds={prevThresholds}
+      prevTest2={prevTest2}
+      prevThresholds2={prevThresholds2}
       customNote={customNote}
     />
   );
   return pdf(doc).toBlob();
 }
 
-export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, customNote }) {
-  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, customNote });
+export async function downloadLactateReportPdf({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote }) {
+  const blob = await generatePdfBlob({ test, athlete, thresholds, zones, prevTest, prevThresholds, prevTest2, prevThresholds2, customNote });
   const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
   const date = test?.date ? new Date(test.date).toISOString().slice(0,10) : 'report';

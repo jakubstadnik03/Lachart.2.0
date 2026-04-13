@@ -19,7 +19,7 @@ import DataTable, {
   calculatePolynomialRegressionLactateToHR,
   isThresholdDebugEnabled,
 } from './DataTable';
-import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
+import { InformationCircleIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, EnvelopeIcon, DocumentArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon, CheckIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
@@ -758,6 +758,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [prevTestData, setPrevTestData] = useState(null);
+  const [allPrevTests, setAllPrevTests] = useState([]);       // all previous same-sport tests (desc)
+  const [selectedCompareIds, setSelectedCompareIds] = useState([]); // up to 2 test IDs for PDF comparison
   const [zoneOverride, setZoneOverride] = useState(null);
   const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
@@ -805,13 +807,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return () => { cancelled = true; };
   }, [mockData?.athleteId, user]);
 
-  // Fetch previous test (same sport, chronologically before current) for PDF comparison
+  // Fetch all previous tests (same sport, before current) for PDF comparison selector
   useEffect(() => {
     const athleteId = mockData?.athleteId || user?._id || user?.id;
     const currentId   = mockData?._id;
     const currentDate = mockData?.date;
     const currentSport = mockData?.sport;
-    if (!athleteId || !currentId || !currentDate) { setPrevTestData(null); return; }
+    if (!athleteId || !currentId || !currentDate) {
+      setPrevTestData(null);
+      setAllPrevTests([]);
+      setSelectedCompareIds([]);
+      return;
+    }
     let cancelled = false;
     api.get(`/test/list/${athleteId}`)
       .then(res => {
@@ -824,9 +831,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           new Date(t.date) < new Date(currentDate)
         );
         sameSport.sort((a, b) => new Date(b.date) - new Date(a.date));
-        setPrevTestData(sameSport[0] || null);
+        setAllPrevTests(sameSport);
+        // Default: select the most recent test
+        const defaultFirst = sameSport[0] || null;
+        setPrevTestData(defaultFirst);
+        setSelectedCompareIds(defaultFirst ? [defaultFirst._id] : []);
       })
-      .catch(() => { if (!cancelled) setPrevTestData(null); });
+      .catch(() => {
+        if (!cancelled) {
+          setPrevTestData(null);
+          setAllPrevTests([]);
+          setSelectedCompareIds([]);
+        }
+      });
     return () => { cancelled = true; };
   }, [mockData?._id, mockData?.athleteId, mockData?.date, mockData?.sport, user]);
 
@@ -915,18 +932,39 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     }
   };
 
+  // Toggle a test ID in/out of selectedCompareIds (max 2)
+  const toggleCompareId = (id) => {
+    setSelectedCompareIds(prev => {
+      if (prev.includes(id)) {
+        const next = prev.filter(x => x !== id);
+        // Keep prevTestData in sync with first selection
+        const primary = allPrevTests.find(t => t._id === next[0]) || null;
+        setPrevTestData(primary);
+        return next;
+      }
+      const next = prev.length >= 2 ? [prev[0], id] : [...prev, id];
+      const primary = allPrevTests.find(t => t._id === next[0]) || null;
+      setPrevTestData(primary);
+      return next;
+    });
+  };
+
   // Build the shared PDF params object
   const buildPdfParams = (note = pdfCustomNote) => {
     const testForPdf = { ...mockData, inputMode, unitSystem };
-    const prevThresholdsForPdf = prevTestData ? calculateThresholds(prevTestData) : null;
+    // Resolve the 1–2 selected comparison tests from allPrevTests
+    const compTest1 = allPrevTests.find(t => t._id === selectedCompareIds[0]) ?? prevTestData ?? null;
+    const compTest2 = allPrevTests.find(t => t._id === selectedCompareIds[1]) ?? null;
     return {
-      test:           testForPdf,
-      athlete:        athleteProfile,
+      test:            testForPdf,
+      athlete:         athleteProfile,
       thresholds,
-      zones:          zoneOverride || zones,
-      prevTest:       prevTestData || null,
-      prevThresholds: prevThresholdsForPdf,
-      customNote:     note,
+      zones:           zoneOverride || zones,
+      prevTest:        compTest1,
+      prevThresholds:  compTest1 ? calculateThresholds(compTest1) : null,
+      prevTest2:       compTest2,
+      prevThresholds2: compTest2 ? calculateThresholds(compTest2) : null,
+      customNote:      note,
     };
   };
 
@@ -2542,14 +2580,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 <button
                   onClick={openEmailModal}
                   disabled={sendingEmail}
-                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap ${
+                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-2 ${
                     sendingEmail
                       ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                       : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
                   }`}
                   title="Send report to email"
                 >
-                  {sendingEmail ? 'Sending…' : '📧 Email'}
+                  <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
+                  {sendingEmail ? 'Sending…' : 'Email'}
                 </button>
                 {emailStatus?.message && (
                   <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2561,14 +2600,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 <button
                   onClick={handleDownloadPdf}
                   disabled={pdfPreviewLoading || downloadingPdf}
-                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap ${
+                  className={`min-h-[44px] px-4 py-2 text-xs sm:text-sm rounded-lg border transition-colors touch-manipulation whitespace-nowrap flex items-center gap-2 ${
                     (pdfPreviewLoading || downloadingPdf)
                       ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                       : 'bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-900 border-gray-200'
                   }`}
                   title="Preview and download full report as PDF"
                 >
-                  {pdfPreviewLoading ? 'Preparing…' : '📄 PDF'}
+                  <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
+                  {pdfPreviewLoading ? 'Preparing…' : 'PDF Report'}
                 </button>
                 {pdfStatus?.message && (
                   <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2953,6 +2993,44 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                     />
                   </div>
 
+                  {/* Previous test comparison selector */}
+                  {allPrevTests.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Compare with previous tests</label>
+                      <p className="text-xs text-gray-400 mb-2">Select up to 2 tests to compare in the report.</p>
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                        {allPrevTests.map((t) => {
+                          const isSelected = selectedCompareIds.includes(t._id);
+                          const selIdx = selectedCompareIds.indexOf(t._id);
+                          return (
+                            <button
+                              key={t._id}
+                              onClick={() => toggleCompareId(t._id)}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg border transition-colors text-left touch-manipulation ${
+                                isSelected
+                                  ? 'border-primary bg-primary/5 text-primary'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center font-bold border transition-colors ${
+                                isSelected
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'border-gray-300 bg-white text-transparent'
+                              }`}>
+                                {isSelected ? (selIdx === 0 ? '1' : '2') : ''}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="font-semibold truncate">{formatDate(t.date)}</div>
+                                <div className="text-gray-400 truncate">{t.title || t.name || t.sport || '—'}</div>
+                              </div>
+                              {isSelected && <CheckIcon className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Zone overrides */}
                   {zoneOverride && (
                     <div>
@@ -3013,16 +3091,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   <button
                     onClick={handleRegeneratePdfPreview}
                     disabled={pdfPreviewLoading}
-                    className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition-colors touch-manipulation"
+                    className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition-colors touch-manipulation flex items-center justify-center gap-2"
                   >
-                    {pdfPreviewLoading ? 'Updating…' : '🔄 Update Preview'}
+                    <ArrowPathIcon className={`w-4 h-4 flex-shrink-0 ${pdfPreviewLoading ? 'animate-spin' : ''}`} />
+                    {pdfPreviewLoading ? 'Updating…' : 'Update Preview'}
                   </button>
                   <button
                     onClick={handleFinalDownload}
                     disabled={downloadingPdf || pdfPreviewLoading}
-                    className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-primary bg-primary text-white hover:opacity-90 active:opacity-80 disabled:opacity-50 transition-colors font-medium touch-manipulation"
+                    className="flex-1 md:flex-none min-h-[44px] px-3 py-2 text-sm rounded-lg border border-primary bg-primary text-white hover:opacity-90 active:opacity-80 disabled:opacity-50 transition-colors font-medium touch-manipulation flex items-center justify-center gap-2"
                   >
-                    {downloadingPdf ? 'Downloading…' : '⬇ Download PDF'}
+                    <ArrowDownTrayIcon className="w-4 h-4 flex-shrink-0" />
+                    {downloadingPdf ? 'Downloading…' : 'Download PDF'}
                   </button>
                 </div>
               </div>

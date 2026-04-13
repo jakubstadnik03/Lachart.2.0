@@ -769,16 +769,34 @@ const AdminDashboard = () => {
   ];
 
   const RETENTION_TYPES = [
-    { value: 'weekly',            label: '📊 Weekly Progress'        },
-    { value: 'monthly',           label: '📈 Monthly Report'          },
-    { value: 'testReminder',      label: '🧪 Test Reminder'           },
-    { value: 'reEngagement',      label: '👋 Re-engagement'           },
-    { value: 'milestone_firstTest',   label: '🎯 Milestone · 1st test'   },
-    { value: 'milestone_fiveTests',   label: '🏅 Milestone · 5 tests'    },
-    { value: 'milestone_tenTests',    label: '🏆 Milestone · 10 tests'   },
-    { value: 'anniversary_6',     label: '🎉 Anniversary · 6 months'  },
-    { value: 'anniversary_12',    label: '🏆 Anniversary · 1 year'    },
-    { value: 'lt2Improvement',    label: '⚡ LT2 Improvement'         },
+    // ── Tests & Performance ──
+    { value: 'weekly',              label: '📊 Weekly Progress'          },
+    { value: 'monthly',             label: '📈 Monthly Report'            },
+    { value: 'testReminder',        label: '🧪 Test Reminder'             },
+    { value: 'lt2Improvement',      label: '⚡ LT2 Improvement'           },
+    { value: 'thresholdInsight',    label: '🔬 Threshold Insight'         },
+    // ── Training ──
+    { value: 'trainingWeekSummary', label: '🏃 Training Week Summary'     },
+    { value: 'trainingTips',        label: '💡 Training Tips'             },
+    { value: 'zoneTraining',        label: '🎯 Zone Training Guide'       },
+    { value: 'recoveryReminder',    label: '😴 Recovery & Rest Reminder'  },
+    { value: 'periodization',       label: '📅 Periodization Guide'       },
+    // ── Nutrition ──
+    { value: 'nutritionTips',       label: '🥗 Nutrition & Fueling Tips'  },
+    { value: 'raceNutrition',       label: '🍌 Race-Day Nutrition Guide'  },
+    { value: 'hydrationTips',       label: '💧 Hydration Tips'            },
+    // ── Strava & Integrations ──
+    { value: 'stravaIntegration',   label: '🔗 Strava Integration Tips'   },
+    { value: 'stravaWeekStats',     label: '📍 Strava Weekly Highlights'  },
+    // ── Milestones & Anniversaries ──
+    { value: 'milestone_firstTest', label: '🎯 Milestone · 1st test'      },
+    { value: 'milestone_fiveTests', label: '🏅 Milestone · 5 tests'       },
+    { value: 'milestone_tenTests',  label: '🏆 Milestone · 10 tests'      },
+    { value: 'anniversary_6',       label: '🎉 Anniversary · 6 months'    },
+    { value: 'anniversary_12',      label: '🏆 Anniversary · 1 year'      },
+    // ── Re-engagement ──
+    { value: 'reEngagement',        label: '👋 Re-engagement'             },
+    { value: 'inactiveReminder',    label: '🔔 Inactive Athlete Reminder' },
   ];
 
   const handleSendRetentionPreview = async (userId) => {
