@@ -374,7 +374,8 @@ api.interceptors.response.use(
     } else if (
       error.code !== 'ERR_CANCELED' &&
       error.name !== 'CanceledError' &&
-      error.response?.status !== 429
+      error.response?.status !== 429 &&
+      !error.config?.suppressErrorLog
     ) {
       console.error('API Error:', error);
     }
@@ -714,10 +715,12 @@ export const getAdminStats = async () => {
 // Send reactivation email with latest lactate test to a specific user (admin only)
 export const sendReactivationEmail = async (userId) => {
   try {
-    const response = await api.post(`/user/admin/send-reactivation-email/${userId}`);
+    const response = await api.post(`/user/admin/send-reactivation-email/${userId}`, null, {
+      // 400 is often an expected business outcome here (e.g., email notifications OFF).
+      suppressErrorLog: true,
+    });
     return response.data;
   } catch (error) {
-    console.error('Error sending reactivation email:', error);
     throw error;
   }
 };
