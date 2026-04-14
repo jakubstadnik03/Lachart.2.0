@@ -2605,14 +2605,22 @@ router.post("/admin/send-reactivation-email/:userId", verifyToken, async (req, r
         console.error("Error sending reactivation email:", error);
       const code = error?.code ? String(error.code) : '';
       const rawMessage = error?.message ? String(error.message) : String(error);
-      // SMTP auth problems are client-side config issues, not server failures.
+      const reason = rawMessage || 'Unknown server error';
+
+      // SMTP auth problems are configuration issues, not generic server failures.
       if (code === 'EAUTH' || rawMessage.includes('535 Authentication Failed')) {
         return res.status(400).json({
           error: 'SMTP authentication failed',
           reason: 'Check EMAIL_APP_PASSWORD for Zoho SMTP (must be the Zoho SMTP app password).'
         });
       }
-      return res.status(500).json({ error: "Failed to send reactivation email" });
+
+      // Surface server-side reason to admin UI so failures are actionable.
+      return res.status(500).json({
+        error: "Failed to send reactivation email",
+        reason,
+        code: code || undefined
+      });
     }
 });
 

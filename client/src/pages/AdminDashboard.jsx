@@ -215,7 +215,16 @@ const AdminDashboard = () => {
       addNotification(`Reactivation email sent to ${targetUser.email}`, 'success');
     } catch (err) {
       const data = err?.response?.data;
-      const message = data?.reason ? `${data.error || 'Failed to send reactivation email'}: ${data.reason}` : (data?.error || 'Failed to send reactivation email');
+      let message;
+      if (err?.response?.status >= 500) {
+        message = data?.reason
+          ? `Server error while sending reactivation email: ${data.reason}`
+          : 'Server error while sending reactivation email. Please try again in a moment.';
+      } else {
+        message = data?.reason
+          ? `${data.error || 'Failed to send reactivation email'}: ${data.reason}`
+          : (data?.error || 'Failed to send reactivation email');
+      }
       addNotification(message, 'error');
       console.error('Reactivation email error:', err);
     } finally {
