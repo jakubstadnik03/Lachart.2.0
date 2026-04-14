@@ -301,7 +301,7 @@ export const AuthProvider = ({ children }) => {
         error: error.response?.data?.message || "Login failed" 
       });
     }
-  }, [removeToken, saveToken]);
+  }, [removeToken, saveToken, navigate]);
 
   const userForUi = useMemo(
     () => userWithPremiumPreviewApplied(user, premiumPreviewNoAccess),

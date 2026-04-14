@@ -1799,7 +1799,7 @@ const FitAnalysisPage = () => {
       setSelectedStravaStreams(null);
       setDetailLoading(false);
     }
-  }, [selectedAthleteId, user?.role, addNotification, regularTrainings]);
+  }, [selectedAthleteId, user?.role, user?._id, addNotification, regularTrainings]);
 
   const loadExternalActivities = useCallback(async () => {
     try {
@@ -1846,7 +1846,7 @@ const FitAnalysisPage = () => {
       console.error('Error loading external activities:', e);
       setExternalActivities([]);
     }
-  }, [selectedAthleteId, user?.role, selectedStrava, loadStravaDetail]);
+  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {

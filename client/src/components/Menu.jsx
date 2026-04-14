@@ -42,7 +42,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     } finally {
       setLoadingAthletes(false);
     }
-  }, [user?.role, user?._id, token]); // Only re-run if actual identity changes
+  }, [user?.role, token]); // Only re-run if role/token changes
 
   useEffect(() => {
     loadAthletes();

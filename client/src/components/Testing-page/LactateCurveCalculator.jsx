@@ -2633,7 +2633,13 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         </div>
         
         <div className="flex flex-col lg:flex-row gap-4">
-          <div className={showDataTable ? "flex-1 min-w-0" : "w-full"} style={{ height: 'clamp(260px, 40vw, 400px)', minHeight: '220px' }}>
+          <div
+            className={showDataTable ? "flex-1 min-w-0" : "w-full"}
+            style={{
+              height: isMobile ? 'clamp(320px, 68vw, 460px)' : 'clamp(260px, 40vw, 400px)',
+              minHeight: isMobile ? '300px' : '220px',
+            }}
+          >
             {showHRViewPlaceholder ? (
               <div className="h-full flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-center p-6">
                 <div>
