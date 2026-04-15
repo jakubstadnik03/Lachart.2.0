@@ -37,6 +37,11 @@ const TestingWithoutLogin = lazy(() => import('./pages/TestingWithoutLogin'));
 const About = lazy(() => import('./pages/About'));
 const Documentation = lazy(() => import('./pages/Documentation'));
 const LactateGuide = lazy(() => import('./pages/LactateGuide'));
+const BlogIndex = lazy(() => import('./pages/blog/BlogIndex'));
+const HowLaChartCalculates = lazy(() => import('./pages/blog/HowLaChartCalculates'));
+const LactateTestingProtocolGuide = lazy(() => import('./pages/blog/LactateTestingProtocolGuide'));
+const Lt1VsLt2TrainingZones = lazy(() => import('./pages/blog/Lt1VsLt2TrainingZones'));
+const OblaDmaxIatMethodsCompared = lazy(() => import('./pages/blog/OblaDmaxIatMethodsCompared'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const FitAnalysisPage = lazy(() => import('./pages/FitAnalysisPage'));
 const LactateTestingPage = lazy(() => import('./pages/LactateTestingPage'));
@@ -181,6 +186,7 @@ function AppRoutes() {
     const isPublicRoute = publicRoutes.some(route => 
       location.pathname === route || 
       location.pathname.startsWith('/reset-password/') ||
+      location.pathname.startsWith('/blog/') ||
       location.pathname.startsWith('/verify-email/') ||
       location.pathname === '/resend-verification' ||
       location.pathname.startsWith('/complete-registration/') ||
@@ -222,7 +228,12 @@ function AppRoutes() {
         <Route path="/accept-invitation/:token" element={<AcceptInvitationPage />} />
         <Route path="/accept-coach-invitation/:token" element={<AcceptCoachInvitation />} />
         <Route path="/documentation" element={<Documentation />} />
-        <Route path="/lactate-guide" element={<LactateGuide />} />
+        <Route path="/lactate-guide" element={<BlogIndex />} />
+        <Route path="/lactate-guide/classic" element={<LactateGuide />} />
+        <Route path="/blog/how-lachart-calculates-lt1-lt2" element={<HowLaChartCalculates />} />
+        <Route path="/blog/lactate-testing-protocol-guide" element={<LactateTestingProtocolGuide />} />
+        <Route path="/blog/lt1-vs-lt2-training-zones" element={<Lt1VsLt2TrainingZones />} />
+        <Route path="/blog/obla-dmax-iat-methods-compared" element={<OblaDmaxIatMethodsCompared />} />
 
         {/* Chráněné routy s Layoutem */}
         <Route
