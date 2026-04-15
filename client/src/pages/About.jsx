@@ -820,7 +820,7 @@ const About = () => {
                 <picture>
                   <source
                     type="image/webp"
-                    srcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
+                    srcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-768.webp 768w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
                     sizes="(min-width: 1024px) 42rem, 100vw"
                   />
                   <img
@@ -1019,7 +1019,7 @@ const About = () => {
               <picture>
                 <source
                   type="image/webp"
-                  srcSet="/images/lactate_curve-640.webp 640w, /images/lactate_curve-960.webp 960w, /images/lactate_curve-1280.webp 1280w"
+                  srcSet="/images/lactate_curve-640.webp 640w, /images/lactate_curve-768.webp 768w, /images/lactate_curve-960.webp 960w, /images/lactate_curve-1280.webp 1280w"
                   sizes="(min-width: 1024px) 665px, 100vw"
                 />
                 <img
@@ -1039,7 +1039,7 @@ const About = () => {
               <picture>
                 <source
                   type="image/webp"
-                  srcSet="/images/zones-generator-640.webp 640w, /images/zones-generator-960.webp 960w, /images/zones-generator-1280.webp 1280w"
+                  srcSet="/images/zones-generator-640.webp 640w, /images/zones-generator-768.webp 768w, /images/zones-generator-960.webp 960w, /images/zones-generator-1280.webp 1280w"
                   sizes="(min-width: 1024px) 665px, 100vw"
                 />
                 <img
