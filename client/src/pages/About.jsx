@@ -592,6 +592,7 @@ const About = () => {
     '@context': 'https://schema.org', '@type': 'FAQPage',
     mainEntity: faqItems.map(item => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
   };
+  const deferredSectionStyle = { contentVisibility: 'auto', containIntrinsicSize: '1px 900px' };
 
   return (
     <main className="min-h-screen bg-white">
@@ -723,14 +724,14 @@ const About = () => {
             {/* ── Left: text ── */}
             <div className="flex flex-col justify-center">
               {/* Badge */}
-              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+              <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/8 text-primary-dark text-xs sm:text-sm font-semibold mb-7 self-start">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                 Science-based lactate analysis
               </motion.div>
 
               {/* Headline */}
-              <motion.h1 initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.05 }}
+              <motion.h1 initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-extrabold text-gray-900 leading-[1.06] tracking-tight mb-6">
                 Train smarter<br />
                 with{' '}
@@ -744,13 +745,13 @@ const About = () => {
                 </span>
               </motion.h1>
 
-              <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}
+              <motion.p initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="text-base sm:text-lg text-gray-500 max-w-lg mb-8 leading-relaxed">
                 Generate lactate curves, calculate LT1 &amp; LT2, build training zones, and track your performance — all in one platform for athletes and coaches.
               </motion.p>
 
               {/* CTAs */}
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
+              <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="flex flex-col sm:flex-row gap-3 mb-10">
                 <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'hero_signup' })}
                   className="inline-flex items-center justify-center gap-2 bg-primary-dark text-white font-bold px-7 py-3.5 rounded-xl shadow-lg shadow-primary/30 hover:bg-primary transition-all hover:-translate-y-0.5 text-sm sm:text-base">
@@ -764,7 +765,7 @@ const About = () => {
               </motion.div>
 
               {/* Stat pills */}
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7, delay: 0.3 }}
+              <motion.div initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
                 className="flex flex-wrap gap-3">
                 {[
                   {
@@ -885,7 +886,7 @@ const About = () => {
       </section>
 
       {/* ── Social proof strip ─────────────────────────────────────────────── */}
-      <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="border-y border-gray-100 bg-gray-50 py-4">
+      <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="border-y border-gray-100 bg-gray-50 py-4" style={deferredSectionStyle}>
         <div className="max-w-5xl mx-auto px-4 flex flex-wrap justify-center gap-x-10 gap-y-2 text-sm text-gray-500">
           {['Cycling · Running · Triathlon · Swimming', 'LT1, LT2, OBLA, IAT, D-max, Log-log', 'Strava & FIT file sync', 'PDF reports in seconds', 'Coach & athlete workspace'].map(item => (
             <span key={item} className="flex items-center gap-2">
@@ -897,7 +898,7 @@ const About = () => {
       </motion.div>
 
       {/* ── Features Grid ──────────────────────────────────────────────────── */}
-      <section id="features" className="py-10 lg:py-16 bg-white scroll-mt-20">
+      <section id="features" className="py-10 lg:py-16 bg-white scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Platform Features</p>
@@ -931,7 +932,7 @@ const About = () => {
       </section>
 
       {/* ── 1 — Lactate Curve (text left, image right) ─────────────────────── */}
-      <section className="py-10 lg:py-20 bg-white border-t border-gray-100">
+      <section className="py-10 lg:py-20 bg-white border-t border-gray-100" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
@@ -960,7 +961,7 @@ const About = () => {
       </section>
 
       {/* ── 2 — Connect (image left, text right) ───────────────────────────── */}
-      <section id="connect" className="py-10 lg:py-20 bg-gray-50 border-t border-gray-100 scroll-mt-20">
+      <section id="connect" className="py-10 lg:py-20 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
@@ -995,7 +996,7 @@ const About = () => {
       </section>
 
       {/* ── Feature deep-dives ─────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-white border-t border-gray-100">
+      <section className="py-10 lg:py-16 bg-white border-t border-gray-100" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-28">
 
           {/* 3 — Historical Test (text left, image right) */}
@@ -1100,7 +1101,7 @@ const About = () => {
       </section>
 
       {/* ── Solutions ──────────────────────────────────────────────────────── */}
-      <section id="solutions" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
+      <section id="solutions" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="mb-12">
             <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Solutions</p>
@@ -1124,7 +1125,7 @@ const About = () => {
       </section>
 
       {/* ── PDF Reports ────────────────────────────────────────────────────── */}
-      <section id="lactate-testing-pdf" className="py-10 lg:py-16 bg-white border-t border-gray-100 scroll-mt-20">
+      <section id="lactate-testing-pdf" className="py-10 lg:py-16 bg-white border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
@@ -1169,7 +1170,7 @@ const About = () => {
       </section>
 
       {/* ── Lactate Guide ──────────────────────────────────────────────────── */}
-      <section id="guide" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
+      <section id="guide" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }} className="order-2 lg:order-1">
@@ -1210,7 +1211,7 @@ const About = () => {
       </section>
 
       {/* ── Real App Screenshots ───────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100">
+      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100" style={deferredSectionStyle}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-14">
             <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Real App · Live screenshots</p>
@@ -1298,7 +1299,7 @@ const About = () => {
         </div>
       </section>
 
-      <Suspense fallback={<section className="py-20 bg-white border-t border-gray-100" aria-hidden="true" />}>
+      <Suspense fallback={<section className="py-20 bg-white border-t border-gray-100" aria-hidden="true" style={deferredSectionStyle} />}>
         <AboutGallerySection BrowserFrame={BrowserFrame} LazyImage={LazyImage} />
       </Suspense>
 
