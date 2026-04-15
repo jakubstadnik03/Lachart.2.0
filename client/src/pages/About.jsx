@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, Suspense } from 'react';
 import { trackEvent } from '../utils/analytics';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import ContactUs from '../components/ContactUs';
 
@@ -541,11 +541,21 @@ const About = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  );
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !localStorage.getItem('cookiesAccepted')) {
       setTimeout(() => setShowCookieBar(true), 1500);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileViewport(window.innerWidth < 1024);
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
@@ -605,6 +615,12 @@ const About = () => {
     mainEntity: faqItems.map(item => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
   };
   const deferredSectionStyle = { contentVisibility: 'auto', containIntrinsicSize: '1px 900px' };
+  const disableScrollAnimations = prefersReducedMotion || isMobileViewport;
+  const revealProps = (initial, whileInView, transition, viewport = { once: true }) => (
+    disableScrollAnimations
+      ? { initial: false, animate: whileInView, transition: { duration: 0.2 } }
+      : { initial, whileInView, transition, viewport }
+  );
 
   return (
     <main className="min-h-screen bg-white">
@@ -1325,7 +1341,7 @@ const About = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {audiences.map((a, i) => (
-              <motion.div key={a.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1 }}
+              <motion.div key={a.title} {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 })}
                 className="group rounded-2xl border border-gray-200 bg-white p-6 text-center hover:border-primary/40 hover:shadow-md transition-all">
                 <div className="text-4xl mb-4">{a.icon}</div>
                 <h3 className="text-xl font-bold text-gray-900 mb-3">{a.title}</h3>
@@ -1350,7 +1366,7 @@ const About = () => {
               { quote: "I hired a coach who dialed in my training, and at the age of 52, I had my strongest, most successful season yet.", author: "Marc", role: "Cyclist" },
               { quote: "It's worth every penny, and it gives me a huge competitive advantage. Makes you want to keep it as a secret weapon.", author: "Maciej", role: "Triathlete" },
             ].map((t, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1 }}
+              <motion.div key={i} {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 })}
                 className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col shadow-sm">
                 <div className="flex gap-1 mb-4">
                   {[...Array(5)].map((_, j) => <svg key={j} className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
@@ -1367,10 +1383,10 @@ const About = () => {
       </section>
 
       {/* ── Why LaChart ────────────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100">
+      <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 overflow-x-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-start">
-            <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-start min-w-0">
+            <motion.div {...revealProps({ opacity: 0, x: -40 }, { opacity: 1, x: 0 }, { duration: 0.6 }, { once: true, margin: '-60px' })} className="min-w-0">
               <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Why LaChart</p>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-8 tracking-tight">Everything in one platform</h2>
               <div className="space-y-4">
@@ -1384,7 +1400,7 @@ const About = () => {
                 ))}
               </div>
             </motion.div>
-            <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="flex justify-center">
+            <motion.div {...revealProps({ opacity: 0, x: 40 }, { opacity: 1, x: 0 }, { duration: 0.6, delay: 0.1 }, { once: true, margin: '-60px' })} className="flex justify-center min-w-0">
               <picture>
                 <source
                   type="image/webp"
@@ -1405,14 +1421,14 @@ const About = () => {
       </section>
 
       {/* ── Coach workspace ────────────────────────────────────────────────── */}
-      <section className="py-10 lg:py-16 bg-white border-t border-gray-100">
+      <section className="py-10 lg:py-16 bg-white border-t border-gray-100 overflow-x-hidden">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-12">
+          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
             <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Collaboration</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Coach &amp; athlete workspace</h2>
           </motion.div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <motion.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-w-0">
+            <motion.div {...revealProps({ opacity: 0, x: -30 }, { opacity: 1, x: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm min-w-0">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-8 h-8 rounded-lg bg-primary/8 flex items-center justify-center">
                   <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -1429,7 +1445,7 @@ const About = () => {
                 </div>
               ))}
             </motion.div>
-            <motion.div initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5, delay: 0.1 }} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm">
+            <motion.div {...revealProps({ opacity: 0, x: 30 }, { opacity: 1, x: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm min-w-0">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-8 h-8 rounded-lg bg-secondary/8 flex items-center justify-center">
                   <svg className="w-4 h-4 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -1457,7 +1473,7 @@ const About = () => {
       {/* ── Latest Updates ─────────────────────────────────────────────────── */}
       <section className="py-20 bg-gray-50 border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-10">
+          <motion.div {...revealProps({ opacity: 0, y: 24 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-10">
             <div>
               <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-2">Changelog</p>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">What's new in LaChart</h2>
@@ -1466,7 +1482,7 @@ const About = () => {
           </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {updates.map((item, i) => (
-              <motion.div key={item.title} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.4, delay: i * 0.1 }} className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col hover:border-primary/40 hover:shadow-md transition-all">
+              <motion.div key={item.title} {...revealProps({ opacity: 0, y: 24 }, { opacity: 1, y: 0 }, { duration: 0.4, delay: i * 0.1 }, { once: true, margin: '-40px' })} className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col hover:border-primary/40 hover:shadow-md transition-all">
                 <p className="text-xs text-primary uppercase tracking-wider font-semibold mb-2">{item.date}</p>
                 <h3 className="text-lg font-bold text-gray-900 mb-3">{item.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed mb-5 flex-1">{item.summary}</p>
@@ -1485,7 +1501,7 @@ const About = () => {
       {/* ── Try Demo ───────────────────────────────────────────────────────── */}
       <section className="py-20 bg-gray-50 border-t border-gray-100">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5 p-8 sm:p-12 flex flex-col md:flex-row items-center gap-10">
+          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5 p-8 sm:p-12 flex flex-col md:flex-row items-center gap-10">
             <div className="flex-1">
               <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Free Demo</p>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">Try the Lactate Test Demo</h2>
@@ -1514,12 +1530,12 @@ const About = () => {
       {/* ── FAQ ────────────────────────────────────────────────────────────── */}
       <section id="faq" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-12">
+          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
             <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">FAQ</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Frequently Asked Questions</h2>
             <p className="text-gray-500">Everything you need to know about lactate threshold testing and LaChart</p>
           </motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: 0.5, delay: 0.1 }} className="space-y-3">
+          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="space-y-3">
             {faqItems.map(item => <FAQItem key={item.question} {...item} />)}
           </motion.div>
         </div>
@@ -1527,7 +1543,7 @@ const About = () => {
 
       {/* ── Contact ────────────────────────────────────────────────────────── */}
       <section id="contact" className="bg-white border-t border-gray-100 scroll-mt-20">
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+        <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5 })}>
           <ContactUs />
         </motion.div>
       </section>
@@ -1536,15 +1552,15 @@ const About = () => {
       <section className="py-32 bg-gradient-to-br from-primary via-primary to-purple-600 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
         <div className="relative max-w-4xl mx-auto px-4 text-center">
-          <motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
+          <motion.h2 {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6 })}
             className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight">
             Ready to go all in?
           </motion.h2>
-          <motion.p initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.1 }}
+          <motion.p {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6, delay: 0.1 })}
             className="text-xl text-purple-100 mb-10 max-w-2xl mx-auto leading-relaxed">
             Supercharge your training data and cut through the noise with LaChart. Bring it all under one roof.
           </motion.p>
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.2 }}
+          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.6, delay: 0.2 })}
             className="flex flex-col sm:flex-row gap-4 justify-center">
             <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'footer_get_started' })}
               className="inline-flex items-center justify-center gap-2 px-10 py-4 rounded-xl bg-white text-primary font-bold text-lg hover:bg-gray-50 transition-all hover:-translate-y-0.5 shadow-xl">

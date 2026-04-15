@@ -10,7 +10,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { initAnalytics, trackPageView, trackAdsConversionKontakt } from './utils/analytics';
 import { isCapacitorNative } from './utils/isNativeApp';
 import './App.css';
-import BuyMeACoffeeWidget from './components/BuyMeACoffeeWidget';
 
 /** Nativní Capacitor (iOS/Android) — `/` = login. Ve webovém prohlížeči zůstává About. */
 
@@ -100,6 +99,39 @@ function DeferredVercelTrackers() {
       <SpeedInsights />
     </>
   );
+}
+
+/** Defer third-party BuyMeACoffee widget until idle. */
+function DeferredBuyMeACoffeeWidget() {
+  const [Widget, setWidget] = useState(null);
+
+  useEffect(() => {
+    if (isCapacitorNative() || process.env.NODE_ENV !== 'production') return undefined;
+    let cancelled = false;
+    let idleId;
+    let timeoutId;
+    const load = () => {
+      import('./components/BuyMeACoffeeWidget')
+        .then((m) => {
+          if (!cancelled) setWidget(() => m.default);
+        })
+        .catch(() => {});
+    };
+
+    if (typeof requestIdleCallback !== 'undefined') {
+      idleId = requestIdleCallback(() => load(), { timeout: 12000 });
+    } else {
+      timeoutId = setTimeout(load, 7000);
+    }
+    return () => {
+      cancelled = true;
+      if (idleId != null) cancelIdleCallback(idleId);
+      if (timeoutId != null) clearTimeout(timeoutId);
+    };
+  }, []);
+
+  if (!Widget) return null;
+  return <Widget />;
 }
 
 function AppRoutes() {
@@ -324,7 +356,7 @@ function App() {
           {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
           <AppRoutes />
           {isProd && <DeferredVercelTrackers />}
-          {!isCapacitorNative() && <BuyMeACoffeeWidget />}
+          {isProd && <DeferredBuyMeACoffeeWidget />}
         </TrainingProvider>
       </AuthProvider>
     </NotificationProvider>
