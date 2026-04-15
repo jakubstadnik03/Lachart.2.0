@@ -1,6 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
+const RESPONSIVE_SOURCES = {
+  '/images/lactate_curve_calculator_lachart.jpg': {
+    webpSrcSet: '/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w',
+    srcSet: '/images/lactate_curve_calculator_lachart.jpg 1536w',
+  },
+  '/images/lactate_curve.jpg': {
+    webpSrcSet: '/images/lactate_curve-640.webp 640w, /images/lactate_curve-960.webp 960w, /images/lactate_curve-1280.webp 1280w',
+    srcSet: '/images/lactate_curve.jpg 1536w',
+  },
+  '/images/lachart_training.png': {
+    webpSrcSet: '/images/lachart_training-640.webp 640w, /images/lachart_training-960.webp 960w, /images/lachart_training-1280.webp 1280w',
+  },
+  '/images/lactate_testing.png': {
+    webpSrcSet: '/images/lactate_testing-640.webp 640w, /images/lactate_testing-960.webp 960w, /images/lactate_testing-1280.webp 1280w',
+  },
+  '/images/lachart5.jpeg': {
+    webpSrcSet: '/images/lachart5-640.webp 640w, /images/lachart5-960.webp 960w, /images/lachart5-1280.webp 1280w',
+  },
+};
+
+const CAROUSEL_SIZES = '(min-width: 1280px) 42rem, (min-width: 1024px) 38rem, 100vw';
+
 const DEFAULT_SLIDES = [
   {
     src: '/images/lachart_training.png',
@@ -72,6 +94,7 @@ export default function AuthSideCarousel({
   };
 
   const current = safeSlides[idx] || safeSlides[0];
+  const currentSources = RESPONSIVE_SOURCES[current?.src] || {};
 
   return (
     <div
@@ -89,13 +112,26 @@ export default function AuthSideCarousel({
           transition={{ duration: 0.5, ease: 'easeOut' }}
           className="absolute inset-0"
         >
-          <img
-            src={current?.src}
-            alt={current?.title || 'LaChart'}
-            className="w-full h-full object-cover"
-            loading="eager"
-            draggable={false}
-          />
+          <picture>
+            {currentSources.webpSrcSet && (
+              <source
+                type="image/webp"
+                srcSet={currentSources.webpSrcSet}
+                sizes={CAROUSEL_SIZES}
+              />
+            )}
+            <img
+              src={current?.src}
+              srcSet={currentSources.srcSet}
+              sizes={CAROUSEL_SIZES}
+              alt={current?.title || 'LaChart'}
+              className="w-full h-full object-cover"
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              draggable={false}
+            />
+          </picture>
           {/* Multi-layer gradient for depth */}
           <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-gray-950/10" />
           <div className="absolute inset-0 bg-gradient-to-r from-gray-950/50 to-transparent" />
@@ -114,7 +150,14 @@ export default function AuthSideCarousel({
       {/* ── Top brand ── */}
       <div className="absolute left-6 top-6 flex items-center gap-2.5 z-10">
         <div className="h-9 w-9 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg">
-          <img src="/images/LaChart.png" alt="LaChart" className="h-6 w-6 object-contain" draggable={false} />
+          <picture>
+            <source
+              type="image/webp"
+              srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+              sizes="24px"
+            />
+            <img src="/images/LaChart.png" alt="LaChart" className="h-6 w-6 object-contain" draggable={false} />
+          </picture>
         </div>
         <div className="text-white">
           <div className="text-sm font-bold tracking-tight">LaChart</div>

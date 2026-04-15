@@ -176,9 +176,16 @@ const SignUpPage = () => {
           >
             <div className="mx-auto flex items-center gap-2 justify-center">
               <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
-                <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+                    sizes="28px"
+                  />
+                  <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                </picture>
               </div>
-              <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
+              <h1 className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</h1>
             </div>
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
               Sign Up for an Account
@@ -427,10 +434,10 @@ const SignUpPage = () => {
               />
               <label htmlFor="acceptTerms">
                 I agree to the{' '}
-                <button type="button" className="underline text-primary hover:text-primary-dark mr-1" onClick={() => setShowTermsModal(true)}>
+                <button type="button" className="underline text-primary-dark hover:text-primary mr-1" onClick={() => setShowTermsModal(true)}>
                   Terms & Conditions
                 </button>
-                and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline text-primary hover:text-primary-dark">Privacy Policy</a>.
+                and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline text-primary-dark hover:text-primary">Privacy Policy</a>.
               </label>
             </motion.div>
 
@@ -440,7 +447,7 @@ const SignUpPage = () => {
             >
               <button
                 type="submit"
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500"
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-dark hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-violet-500"
                 disabled={!acceptedTerms}
               >
                 Sign Up
@@ -497,7 +504,7 @@ const SignUpPage = () => {
             className="text-center text-sm text-gray-600"
           >
             Already have an account?{' '}
-            <Link to="/login" className="font-medium text-primary hover:text-primary-dark">
+            <Link to="/login" className="font-medium text-primary-dark hover:text-primary">
               Sign In
             </Link>
           </motion.p>
@@ -522,7 +529,7 @@ const SignUpPage = () => {
               onClick={(e) => e.stopPropagation()}
             >
               <button
-                className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg z-10"
+                className="absolute top-3 right-3 text-gray-500 hover:text-primary-dark font-bold text-lg z-10"
                 onClick={() => {
                   setShowGoogleRoleModal(false);
                   setPendingGoogleCredential(null);
@@ -532,7 +539,7 @@ const SignUpPage = () => {
               >
                 &times;
               </button>
-              <h2 className="text-2xl font-bold mb-2 text-primary pr-8">Choose your role</h2>
+              <h2 className="text-2xl font-bold mb-2 text-primary-dark pr-8">Choose your role</h2>
               <p className="text-sm text-gray-600 mb-5">
                 Pick how you&apos;ll use LaChart. You can change details later in your profile.
               </p>
@@ -605,7 +612,7 @@ const SignUpPage = () => {
                   I agree to the{' '}
                   <button
                     type="button"
-                    className="underline text-primary hover:text-primary-dark"
+                    className="underline text-primary-dark hover:text-primary"
                     onClick={() => setShowTermsModal(true)}
                   >
                     Terms &amp; Conditions
@@ -615,7 +622,7 @@ const SignUpPage = () => {
                     href="/privacy"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline text-primary hover:text-primary-dark"
+                    className="underline text-primary-dark hover:text-primary"
                   >
                     Privacy Policy
                   </a>
@@ -639,7 +646,7 @@ const SignUpPage = () => {
                   type="button"
                   onClick={finalizeGoogleSignup}
                   disabled={!googleModalAcceptedTerms}
-                  className="flex-1 px-5 py-2.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-5 py-2.5 rounded-lg bg-primary-dark text-white font-semibold hover:bg-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
                 </button>
@@ -667,24 +674,24 @@ const SignUpPage = () => {
               className="bg-white max-w-xl w-full p-8 rounded-xl shadow-xl relative"
               onClick={e => e.stopPropagation()}
             >
-              <button className="absolute top-3 right-3 text-gray-500 hover:text-primary font-bold text-lg" onClick={() => setShowTermsModal(false)}>&times;</button>
-              <h2 className="text-2xl font-bold mb-4 text-primary">Terms & Conditions</h2>
+              <button className="absolute top-3 right-3 text-gray-500 hover:text-primary-dark font-bold text-lg" onClick={() => setShowTermsModal(false)}>&times;</button>
+              <h2 className="text-2xl font-bold mb-4 text-primary-dark">Terms & Conditions</h2>
               <div className="prose max-w-none text-sm text-gray-700 mb-4 overflow-y-auto max-h-[50vh]">
                 <p><b>Welcome to LaChart!</b> To use our application, you must accept the following Terms and Privacy Policy. Please read carefully:</p>
                 <ol className="list-decimal ml-6">
                   <li><b>Data Storage:</b> Your account and test entries are stored securely. Data is not shared with third parties except as required by law.</li>
-                  <li><b>Privacy:</b> See our <a href="/privacy" className="underline text-primary">Privacy Policy</a> for full details.</li>
+                  <li><b>Privacy:</b> See our <a href="/privacy" className="underline text-primary-dark">Privacy Policy</a> for full details.</li>
                   <li><b>Usage:</b> You agree to use the application for lawful purposes. No abusive, fraudulent, or unauthorized activities are allowed.</li>
                   <li><b>Account:</b> Users are responsible for keeping passwords safe. LaChart is not liable for unauthorized access caused by user negligence.</li>
                   <li><b>Analytics:</b> The app collects anonymous usage stats to improve the product.</li>
                   <li><b>Consent:</b> By signing up, you consent to receive transactional emails (activation, password, notifications).</li>
                 </ol>
-                <p>For more details or concerns, contact us at <a href="mailto:lachart@lachart.net" className="underline text-primary">lachart@lachart.net</a>.</p>
-                <p className="text-xs text-gray-400 mt-2">This is a demo EULA. Your real legal text goes here.</p>
+                <p>For more details or concerns, contact us at <a href="mailto:lachart@lachart.net" className="underline text-primary-dark">lachart@lachart.net</a>.</p>
+                <p className="text-xs text-gray-600 mt-2">This is a demo EULA. Your real legal text goes here.</p>
               </div>
               <div className="flex justify-end gap-2">
                 <button
-                  className="px-5 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark"
+                  className="px-5 py-2 rounded-lg bg-primary-dark text-white font-semibold hover:bg-primary"
                   onClick={() => {
                     setAcceptedTerms(true);
                     if (showGoogleRoleModal) setGoogleModalAcceptedTerms(true);
@@ -762,8 +769,15 @@ const SignUpPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <a href="/" className="flex items-center gap-2">
-                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-                <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+                    sizes="44px"
+                  />
+                  <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                </picture>
+                <span className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</span>
               </a>
               <p className="mt-4 text-gray-600">
                 Advanced lactate testing and analysis for athletes and coaches.
@@ -822,7 +836,7 @@ const SignUpPage = () => {
             </div>
           </div>
           <div className="mt-8 border-t border-gray-200 pt-8 text-center space-y-3">
-            <p className="text-base text-gray-400">
+            <p className="text-base text-gray-600">
               &copy; {new Date().getFullYear()} LaChart. All rights reserved.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
@@ -846,7 +860,7 @@ const SignUpPage = () => {
               Need help or have questions?{" "}
               <a
                 href="/about#contact"
-                className="text-primary hover:text-primary-dark font-medium"
+                className="text-primary-dark hover:text-primary font-medium"
               >
                 Contact us
               </a>

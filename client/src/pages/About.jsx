@@ -52,12 +52,23 @@ const FAQItem = ({ icon, question, answer }) => {
 };
 
 // ─── Lazy Image ───────────────────────────────────────────────────────────────
-const LazyImage = ({ src, alt, className }) => {
+const LazyImage = ({ src, alt, className, webpSrcSet, srcSet, sizes }) => {
   const [isLoading, setIsLoading] = React.useState(true);
   return (
     <div className={`relative ${className}`}>
       {isLoading && <div className="absolute inset-0 bg-gray-100 animate-pulse rounded-xl" />}
-      <img src={src} alt={alt} className={`${className} transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`} onLoad={() => setIsLoading(false)} loading="lazy" />
+      <picture>
+        {webpSrcSet && <source type="image/webp" srcSet={webpSrcSet} sizes={sizes} />}
+        <img
+          src={src}
+          srcSet={srcSet}
+          sizes={sizes}
+          alt={alt}
+          className={`${className} transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+          onLoad={() => setIsLoading(false)}
+          loading="lazy"
+        />
+      </picture>
     </div>
   );
 };
@@ -118,7 +129,7 @@ const BrowserFrame = ({ children, label }) => (
       <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-      {label && <span className="ml-3 text-xs text-gray-400">{label}</span>}
+      {label && <span className="ml-3 text-xs text-gray-600">{label}</span>}
     </div>
     {children}
   </div>
@@ -364,7 +375,11 @@ const TutorialPlayer = ({ tutorial }) => {
 
             {/* Play + time */}
             <div className="flex items-center gap-2">
-              <button onClick={togglePlay} className="text-white hover:text-primary transition-colors">
+              <button
+                onClick={togglePlay}
+                aria-label={playing ? 'Pause tutorial video' : 'Play tutorial video'}
+                className="text-white hover:text-primary transition-colors"
+              >
                 {playing ? (
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
@@ -404,7 +419,7 @@ const VideoTutorialsSection = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-12">
-          <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Video Tutorials</p>
+          <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Video Tutorials</p>
           <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
             Learn LaChart step by step
           </h2>
@@ -421,7 +436,7 @@ const VideoTutorialsSection = () => {
               onClick={() => setActiveId(t.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm font-medium transition-all touch-manipulation min-h-[44px] ${
                 activeId === t.id
-                  ? 'border-primary bg-primary text-white shadow-sm'
+                  ? 'border-primary-dark bg-primary-dark text-white shadow-sm'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 bg-white'
               }`}
             >
@@ -475,7 +490,7 @@ const VideoTutorialsSection = () => {
               <div className="flex flex-col sm:flex-row gap-3">
                 <a
                   href="/lactate-curve-calculator"
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors shadow-sm"
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary-dark text-white text-sm font-semibold hover:bg-primary transition-colors shadow-sm"
                 >
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                   Try it live
@@ -501,7 +516,7 @@ const VideoTutorialsSection = () => {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                   Previous
                 </button>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-600">
                   {videoTutorials.findIndex(t => t.id === activeId) + 1} / {videoTutorials.length}
                 </span>
                 <button
@@ -596,18 +611,32 @@ const About = () => {
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://lachart.net/about" />
         <meta name="twitter:card" content="summary_large_image" />
+        <link
+          rel="preload"
+          as="image"
+          href="/images/lactate_curve_calculator_lachart-960.webp"
+          imageSrcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
+          imageSizes="(min-width: 1024px) 42rem, 100vw"
+        />
         <script type="application/ld+json">{JSON.stringify(faqStructuredData)}</script>
       </Helmet>
 
       {/* ── Top Navbar ─────────────────────────────────────────────────────── */}
       <nav className="w-full bg-white border-b border-gray-100 py-2 sm:py-4 px-4 sm:px-6 flex items-center justify-between z-20 relative">
         <a href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-          <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 sm:h-9 w-auto" />
-          <span className="text-lg sm:text-xl font-bold text-primary tracking-tight">LaChart</span>
+          <picture>
+            <source
+              type="image/webp"
+              srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+              sizes="(min-width: 640px) 99px, 89px"
+            />
+            <img src="/images/LaChart.png" alt="LaChart Logo" className="h-8 sm:h-9 w-auto" />
+          </picture>
+          <span className="text-lg sm:text-xl font-bold text-primary-dark tracking-tight">LaChart</span>
         </a>
         <div className="flex items-center gap-2 sm:gap-3">
           <a href="/login" className="hidden sm:block text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm min-h-[44px] px-3 inline-flex items-center touch-manipulation">Login</a>
-          <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark active:opacity-90 transition-colors text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
+          <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary-dark text-white font-semibold rounded-lg hover:bg-primary active:opacity-90 transition-colors text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
         </div>
       </nav>
 
@@ -623,8 +652,15 @@ const About = () => {
       <nav className={`fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 transition-all duration-300 ${isScrolled ? 'translate-y-0 shadow-md' : '-translate-y-full'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
-            <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-10" />
-            <span className="text-lg font-bold text-primary">LaChart</span>
+            <picture>
+              <source
+                type="image/webp"
+                srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+                sizes="40px"
+              />
+              <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-10" />
+            </picture>
+            <span className="text-lg font-bold text-primary-dark">LaChart</span>
           </a>
           <div className="hidden lg:flex items-center gap-1">
             {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
@@ -633,22 +669,28 @@ const About = () => {
           </div>
           <div className="hidden lg:flex items-center gap-3">
             <a href="/login" className="text-gray-600 hover:text-gray-900 font-medium text-sm min-h-[44px] inline-flex items-center px-2">Login</a>
-            <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
+            <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary-dark text-white font-semibold rounded-lg hover:bg-primary text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
           </div>
-          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 touch-manipulation">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="about-mobile-menu"
+            className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 touch-manipulation"
+          >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {isMobileMenuOpen ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /> : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />}
             </svg>
           </button>
         </div>
         {isMobileMenuOpen && (
-          <div className="lg:hidden border-t border-gray-100 px-4 py-2 flex flex-col gap-0.5 bg-white">
+          <div id="about-mobile-menu" className="lg:hidden border-t border-gray-100 px-4 py-2 flex flex-col gap-0.5 bg-white">
             {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
               <button key={id} onClick={() => scrollToSection(id)} className="text-left px-3 py-3 text-sm text-gray-600 hover:text-primary active:bg-gray-50 rounded-lg touch-manipulation">{label}</button>
             ))}
             <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
               <a href="/login" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm text-gray-600 touch-manipulation">Login</a>
-              <a href="/signup" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm bg-primary text-white rounded-lg font-semibold touch-manipulation">Get Started</a>
+              <a href="/signup" className="flex-1 text-center min-h-[48px] inline-flex items-center justify-center text-sm bg-primary-dark text-white rounded-lg font-semibold touch-manipulation">Get Started</a>
             </div>
           </div>
         )}
@@ -687,7 +729,7 @@ const About = () => {
             <div className="flex flex-col justify-center">
               {/* Badge */}
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/8 text-primary text-xs sm:text-sm font-semibold mb-7 self-start">
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/8 text-primary-dark text-xs sm:text-sm font-semibold mb-7 self-start">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                 Science-based lactate analysis
               </motion.div>
@@ -716,7 +758,7 @@ const About = () => {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
                 className="flex flex-col sm:flex-row gap-3 mb-10">
                 <a href="/signup" onClick={() => trackEvent('cta_click', { label: 'hero_signup' })}
-                  className="inline-flex items-center justify-center gap-2 bg-primary text-white font-bold px-7 py-3.5 rounded-xl shadow-lg shadow-primary/30 hover:bg-primary-dark transition-all hover:-translate-y-0.5 text-sm sm:text-base">
+                  className="inline-flex items-center justify-center gap-2 bg-primary-dark text-white font-bold px-7 py-3.5 rounded-xl shadow-lg shadow-primary/30 hover:bg-primary transition-all hover:-translate-y-0.5 text-sm sm:text-base">
                   Start for Free
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </a>
@@ -732,7 +774,7 @@ const About = () => {
                 {[
                   {
                     label: 'Free to start',
-                    color: 'text-emerald-600',
+                    color: 'text-emerald-700',
                     bg: 'bg-emerald-50 border-emerald-200',
                     icon: (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
@@ -740,7 +782,7 @@ const About = () => {
                   },
                   {
                     label: 'LT1 · LT2 · OBLA',
-                    color: 'text-primary',
+                    color: 'text-primary-dark',
                     bg: 'bg-primary/8 border-primary/20',
                     icon: (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
@@ -748,7 +790,7 @@ const About = () => {
                   },
                   {
                     label: 'PDF reports',
-                    color: 'text-rose-600',
+                    color: 'text-rose-700',
                     bg: 'bg-rose-50 border-rose-200',
                     icon: (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -756,7 +798,7 @@ const About = () => {
                   },
                   {
                     label: 'Strava sync',
-                    color: 'text-orange-600',
+                    color: 'text-orange-700',
                     bg: 'bg-orange-50 border-orange-200',
                     icon: (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -772,7 +814,7 @@ const About = () => {
             </div>
 
             {/* ── Right: hero image with floating badges ── */}
-            <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, delay: 0.2 }}
+            <motion.div initial={false} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.35 }}
               className="relative flex items-center justify-center lg:py-12">
 
               {/* Glow behind image */}
@@ -780,11 +822,22 @@ const About = () => {
 
               {/* Main image */}
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/60 w-full max-w-lg lg:max-w-none">
-                <img
-                  src="/images/lactate_curve_calculator_lachart.jpg"
-                  alt="Lactate curve calculator — LaChart"
-                  className="w-full object-cover"
-                />
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcSet="/images/lactate_curve_calculator_lachart-640.webp 640w, /images/lactate_curve_calculator_lachart-960.webp 960w, /images/lactate_curve_calculator_lachart-1280.webp 1280w"
+                    sizes="(min-width: 1024px) 42rem, 100vw"
+                  />
+                  <img
+                    src="/images/lactate_curve_calculator_lachart.jpg"
+                    alt="Lactate curve calculator — LaChart"
+                    className="w-full object-cover"
+                    srcSet="/images/lactate_curve_calculator_lachart.jpg 1536w"
+                    sizes="(min-width: 1024px) 42rem, 100vw"
+                    fetchPriority="high"
+                    decoding="async"
+                  />
+                </picture>
               </div>
 
               {/* Floating metric badge — top left */}
@@ -796,7 +849,7 @@ const About = () => {
                   <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">LT2 Threshold</p>
+                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">LT2 Threshold</p>
                   <p className="text-sm font-extrabold text-gray-900">340 W</p>
                 </div>
               </motion.div>
@@ -810,7 +863,7 @@ const About = () => {
                   <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Zone 2 Power</p>
+                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">Zone 2 Power</p>
                   <p className="text-sm font-extrabold text-gray-900">187–255 W</p>
                 </div>
               </motion.div>
@@ -824,7 +877,7 @@ const About = () => {
                   <span className="text-sm">🧪</span>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">La baseline</p>
+                  <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wide">La baseline</p>
                   <p className="text-sm font-extrabold text-gray-900">1.2 mmol/L</p>
                 </div>
               </motion.div>
@@ -852,7 +905,7 @@ const About = () => {
       <section id="features" className="py-10 lg:py-16 bg-white scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Platform Features</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Platform Features</p>
             <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">The complete training ecosystem</h2>
             <p className="text-gray-500 text-lg max-w-2xl mx-auto">Everything for lactate-based performance — testing, analysis, tracking, and coaching in one place.</p>
           </div>
@@ -860,7 +913,7 @@ const About = () => {
           <div className="flex flex-wrap justify-center gap-2 mb-10">
             {['All', 'Analysis', 'Management', 'Planning', 'Integration', 'Tools', 'Testing', 'Analytics'].map(cat => (
               <button key={cat} onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${selectedCategory === cat ? 'border-primary bg-primary text-white shadow-sm' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900'}`}>
+                className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${selectedCategory === cat ? 'border-primary-dark bg-primary-dark text-white shadow-sm' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900'}`}>
                 {cat}
               </button>
             ))}
@@ -887,7 +940,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Core Feature</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Core Feature</p>
               <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Lactate Curve Generation</h3>
               <p className="text-gray-500 text-lg leading-relaxed mb-6">Enter your test values — power, heart rate, lactate, or pace — and instantly generate your lactate curve. Calculate all critical thresholds in one clear, interactive graph.</p>
               <div className="flex flex-wrap gap-2">
@@ -915,7 +968,7 @@ const About = () => {
               </BrowserFrame>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Integrations</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Integrations</p>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Sync, Link, and Connect</h2>
               <p className="text-gray-500 text-lg mb-8 leading-relaxed">Connect Strava. Upload FIT files or sync automatically. Import all your training data including power, heart rate, cadence, and speed. Analyze TSS, training load, and performance metrics — all in one platform.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -924,7 +977,7 @@ const About = () => {
                     <div className="w-2 h-2 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                     <div>
                       <p className="text-gray-900 font-semibold text-sm">{name}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{sub}</p>
+                      <p className="text-gray-600 text-xs mt-0.5">{sub}</p>
                     </div>
                   </div>
                 ))}
@@ -956,17 +1009,43 @@ const About = () => {
               </div>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <img src="/images/lactate_curve.jpg" alt="Runners training with lactate curve comparison" className="w-full rounded-2xl shadow-2xl object-cover" />
+              <picture>
+                <source
+                  type="image/webp"
+                  srcSet="/images/lactate_curve-640.webp 640w, /images/lactate_curve-960.webp 960w, /images/lactate_curve-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 665px, 100vw"
+                />
+                <img
+                  src="/images/lactate_curve.jpg"
+                  alt="Runners training with lactate curve comparison"
+                  className="w-full rounded-2xl shadow-2xl object-cover"
+                  srcSet="/images/lactate_curve.jpg 1536w"
+                  sizes="(min-width: 1024px) 665px, 100vw"
+                />
+              </picture>
             </motion.div>
           </div>
 
           {/* 4 — Training Zones (image left, text right) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <img src="/images/zones-generator.png" alt="Runners in mountains with training zones table" className="w-full rounded-2xl shadow-2xl object-cover" />
+              <picture>
+                <source
+                  type="image/webp"
+                  srcSet="/images/zones-generator-640.webp 640w, /images/zones-generator-960.webp 960w, /images/zones-generator-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 665px, 100vw"
+                />
+                <img
+                  src="/images/zones-generator.png"
+                  alt="Runners in mountains with training zones table"
+                  className="w-full rounded-2xl shadow-2xl object-cover"
+                  srcSet="/images/zones-generator.png 1536w"
+                  sizes="(min-width: 1024px) 665px, 100vw"
+                />
+              </picture>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Training Zones</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Training Zones</p>
               <h3 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">5 Personalized Zones from Your Data</h3>
               <p className="text-gray-500 text-lg leading-relaxed mb-6">After your lactate test, LaChart automatically generates five training zones with precise power/pace and heart rate ranges — customized for cycling, running, and swimming.</p>
               <div className="space-y-2.5">
@@ -1011,7 +1090,7 @@ const About = () => {
       <section id="solutions" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="mb-12">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Solutions</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Solutions</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight max-w-2xl">Everything for lactate testing, coaching &amp; planning</h2>
           </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1036,7 +1115,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">PDF Reports</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">PDF Reports</p>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Turn any lactate test into a professional PDF in seconds</h2>
               <p className="text-gray-500 text-lg leading-relaxed mb-8">LaChart generates branded PDF reports with everything a sports scientist or coach needs — no Excel, no manual charting.</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -1055,10 +1134,10 @@ const About = () => {
               </div>
               <div className="flex flex-wrap gap-3 items-center">
                 <a href="/lactate-curve-calculator" onClick={() => trackEvent('cta_click', { label: 'about_pdf_cta' })}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-lg shadow-primary/20">
                   Generate free lactate PDF
                 </a>
-                <p className="text-xs text-gray-400">No card required · Export in seconds</p>
+                <p className="text-xs text-gray-600">No card required · Export in seconds</p>
               </div>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
@@ -1080,7 +1159,7 @@ const About = () => {
               </BrowserFrame>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="order-1 lg:order-2">
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Learn</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Learn</p>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-5 tracking-tight">Master Lactate Threshold Training</h2>
               <p className="text-gray-500 text-lg leading-relaxed mb-8">Discover the science behind lactate, understand what lactate threshold means, and learn how to improve your performance through proper training methods.</p>
               <div className="space-y-5 mb-8">
@@ -1097,7 +1176,7 @@ const About = () => {
                 ))}
               </div>
               <a href="/lactate-guide" onClick={() => trackEvent('cta_click', { label: 'about_guide_section' })}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark transition-colors shadow-sm">
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-sm">
                 Read the Complete Guide
               </a>
             </motion.div>
@@ -1109,7 +1188,7 @@ const About = () => {
       <section className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-14">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Real App · Live screenshots</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Real App · Live screenshots</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight mb-4">See what LaChart looks like inside</h2>
             <p className="text-gray-500 text-base max-w-xl mx-auto">These screenshots are taken directly from a real LaChart account — no mockups.</p>
           </motion.div>
@@ -1119,7 +1198,13 @@ const About = () => {
             {/* Dashboard */}
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
               <BrowserFrame label="lachart.net/dashboard — Form & Fitness">
-                <LazyImage src="/screenshots/dashboard-home.png" alt="LaChart dashboard with Form and Fitness chart" className="w-full object-cover" />
+                <LazyImage
+                  src="/screenshots/dashboard-home.png"
+                  webpSrcSet="/screenshots/dashboard-home-640.webp 640w, /screenshots/dashboard-home-960.webp 960w, /screenshots/dashboard-home-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="LaChart dashboard with Form and Fitness chart"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
               <div className="mt-3 px-1">
                 <p className="text-sm font-semibold text-gray-800">Dashboard · Form &amp; Fitness</p>
@@ -1130,7 +1215,13 @@ const About = () => {
             {/* Testing page */}
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }}>
               <BrowserFrame label="lachart.net/testing — Lactate Testing">
-                <LazyImage src="/screenshots/lactate-testing-page.png" alt="LaChart lactate testing page with LT recommendations and trends" className="w-full object-cover" />
+                <LazyImage
+                  src="/screenshots/lactate-testing-page.png"
+                  webpSrcSet="/screenshots/lactate-testing-page-640.webp 640w, /screenshots/lactate-testing-page-960.webp 960w, /screenshots/lactate-testing-page-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="LaChart lactate testing page with LT recommendations and trends"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
               <div className="mt-3 px-1">
                 <p className="text-sm font-semibold text-gray-800">Lactate Testing · AI Recommendations</p>
@@ -1162,7 +1253,7 @@ const About = () => {
           </div>
 
           <div className="text-center">
-            <a href="/signup" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark transition-colors shadow-sm text-sm">
+            <a href="/signup" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-semibold hover:bg-primary transition-colors shadow-sm text-sm">
               Try it yourself – sign up free
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             </a>
@@ -1173,7 +1264,7 @@ const About = () => {
       {/* ── Screenshots Swiper ─────────────────────────────────────────────── */}
       <section className="py-20 bg-white border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 text-center">
-          <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Gallery</p>
+          <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Gallery</p>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">More views of LaChart</h2>
         </div>
         <Swiper
@@ -1191,8 +1282,20 @@ const About = () => {
           className="mySwiper !pb-12"
         >
           {[
-            { src: '/screenshots/dashboard-home.png', alt: 'Dashboard Form & Fitness', title: 'Dashboard · CTL / ATL / TSB' },
-            { src: '/screenshots/lactate-testing-page.png', alt: 'Lactate Testing', title: 'Lactate Testing & LT Trends' },
+            {
+              src: '/screenshots/dashboard-home.png',
+              webpSrcSet: '/screenshots/dashboard-home-640.webp 640w, /screenshots/dashboard-home-960.webp 960w, /screenshots/dashboard-home-1280.webp 1280w',
+              sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+              alt: 'Dashboard Form & Fitness',
+              title: 'Dashboard · CTL / ATL / TSB'
+            },
+            {
+              src: '/screenshots/lactate-testing-page.png',
+              webpSrcSet: '/screenshots/lactate-testing-page-640.webp 640w, /screenshots/lactate-testing-page-960.webp 960w, /screenshots/lactate-testing-page-1280.webp 1280w',
+              sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+              alt: 'Lactate Testing',
+              title: 'Lactate Testing & LT Trends'
+            },
             { src: '/images/lactate-curve-calculator.png', alt: 'Lactate Curve Calculator', title: 'Lactate Curve Calculator' },
             { src: '/images/Form-fitness-chart.png', alt: 'Form & Fitness Chart', title: 'Form & Fitness Trend' },
             { src: '/images/training-calendar.png', alt: 'Training Calendar', title: 'Training Calendar' },
@@ -1202,7 +1305,13 @@ const About = () => {
               {({ isActive }) => (
                 <div className={`relative transition-all duration-300 ${isActive ? 'scale-100' : 'scale-90 opacity-60'}`}>
                   <BrowserFrame label={image.title}>
-                    <LazyImage src={image.src} alt={image.alt} className="w-full h-[200px] sm:h-[280px] md:h-[360px] object-contain bg-gray-50" />
+                    <LazyImage
+                      src={image.src}
+                      webpSrcSet={image.webpSrcSet}
+                      sizes={image.sizes}
+                      alt={image.alt}
+                      className="w-full h-[200px] sm:h-[280px] md:h-[360px] object-contain bg-gray-50"
+                    />
                   </BrowserFrame>
                 </div>
               )}
@@ -1215,7 +1324,7 @@ const About = () => {
       <section id="coaching" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">For Everyone</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">For Everyone</p>
             <h2 className="text-3xl sm:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">Built for athletes and coaches</h2>
             <p className="text-gray-500 text-lg max-w-2xl mx-auto">Whether you're self-coached or managing a team, LaChart scales to your needs.</p>
           </div>
@@ -1236,7 +1345,7 @@ const About = () => {
       <section id="testimonials" className="py-10 lg:py-16 bg-white border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Testimonials</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Testimonials</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Trusted by endurance athletes</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -1254,7 +1363,7 @@ const About = () => {
                 <p className="text-gray-600 text-sm leading-relaxed flex-1 mb-5">"{t.quote}"</p>
                 <div className="border-t border-gray-100 pt-4">
                   <p className="text-gray-900 font-semibold text-sm">{t.author}</p>
-                  <p className="text-gray-400 text-xs">{t.role}</p>
+                  <p className="text-gray-600 text-xs">{t.role}</p>
                 </div>
               </motion.div>
             ))}
@@ -1267,7 +1376,7 @@ const About = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-start">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Why LaChart</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Why LaChart</p>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-8 tracking-tight">Everything in one platform</h2>
               <div className="space-y-4">
                 {['Generate lactate curves from test data (power, heart rate, lactate, pace)', 'Calculate all critical thresholds: LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA (2.0–3.5)', 'Automatically determine 5 training zones with precise power/pace ranges', 'Compare historical tests and track zone shifts over time', 'Record lactate values to training intervals and categorize workouts', 'Compare same workout types over time to track progress', 'Sync with Strava — analyze TSS and training load automatically', 'Coach management: track multiple athletes from one dashboard', 'Generate professional PDF reports with lactate curve, HR overlay, and zones'].map(item => (
@@ -1281,7 +1390,20 @@ const About = () => {
               </div>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="flex justify-center">
-              <img src="/images/lachart3.png" alt="LaChart analytics" className="w-auto max-w-xs drop-shadow-2xl" />
+              <picture>
+                <source
+                  type="image/webp"
+                  srcSet="/images/lachart3-320.webp 320w, /images/lachart3-560.webp 560w, /images/lachart3-800.webp 800w"
+                  sizes="(min-width: 1024px) 560px, 320px"
+                />
+                <img
+                  src="/images/lachart3.png"
+                  alt="LaChart analytics"
+                  className="w-auto max-w-xs drop-shadow-2xl"
+                  srcSet="/images/lachart3.png 1857w"
+                  sizes="(min-width: 1024px) 560px, 320px"
+                />
+              </picture>
             </motion.div>
           </div>
         </div>
@@ -1291,7 +1413,7 @@ const About = () => {
       <section className="py-10 lg:py-16 bg-white border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-12">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Collaboration</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Collaboration</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Coach &amp; athlete workspace</h2>
           </motion.div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1329,7 +1451,7 @@ const About = () => {
                 </div>
               ))}
               <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-4">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Access control</p>
+                <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Access control</p>
                 <p className="text-gray-600 text-sm">Athletes only see their own data. Coaches switch between athletes, admins manage the entire organization.</p>
               </div>
             </motion.div>
@@ -1342,7 +1464,7 @@ const About = () => {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-10">
             <div>
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-2">Changelog</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-2">Changelog</p>
               <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">What's new in LaChart</h2>
             </div>
             <a href="/changelog" className="text-primary font-semibold hover:text-primary-dark flex items-center gap-1 text-sm">View full changelog <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></a>
@@ -1370,11 +1492,11 @@ const About = () => {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5 p-8 sm:p-12 flex flex-col md:flex-row items-center gap-10">
             <div className="flex-1">
-              <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Free Demo</p>
+              <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Free Demo</p>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">Try the Lactate Test Demo</h2>
               <p className="text-gray-600 leading-relaxed mb-2">Fill in your own test data and the app instantly generates a lactate curve with <strong>LT1</strong>, <strong>LT2</strong>, OBLA, IAT, log-log, and training zones.</p>
-              <p className="text-gray-400 text-sm mb-6">No login required. Your data won't be saved.</p>
-              <a href="/lactate-curve-calculator" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-bold hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">
+              <p className="text-gray-600 text-sm mb-6">No login required. Your data won't be saved.</p>
+              <a href="/lactate-curve-calculator" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-dark text-white font-bold hover:bg-primary transition-colors shadow-lg shadow-primary/20">
                 Try the Demo Now <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </a>
             </div>
@@ -1392,7 +1514,7 @@ const About = () => {
       <section id="faq" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }} className="text-center mb-12">
-            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">FAQ</p>
+            <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">FAQ</p>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Frequently Asked Questions</h2>
             <p className="text-gray-500">Everything you need to know about lactate threshold testing and LaChart</p>
           </motion.div>
@@ -1442,12 +1564,12 @@ const About = () => {
             <div className="md:col-span-2">
               <a href="/" className="flex items-center gap-2 mb-4">
                 <img src="/images/LaChart.png" alt="LaChart" className="h-9 w-11" />
-                <span className="text-xl font-bold text-primary">LaChart</span>
+                <span className="text-xl font-bold text-primary-dark">LaChart</span>
               </a>
               <p className="text-gray-500 text-sm leading-relaxed max-w-xs">Advanced lactate testing and training analysis for endurance athletes and coaches.</p>
             </div>
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Product</h3>
+              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-4">Product</h3>
               <div className="space-y-2">
                 {[['Features', '#features'], ['How to Use', '#how-to-use'], ['Lactate Guide', '/lactate-guide'], ['Documentation', '/documentation'], ['Changelog', '/changelog']].map(([label, href]) => (
                   <a key={label} href={href} className="block text-sm text-gray-500 hover:text-primary transition-colors">{label}</a>
@@ -1455,7 +1577,7 @@ const About = () => {
               </div>
             </div>
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Tools</h3>
+              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-4">Tools</h3>
               <div className="space-y-2">
                 {[['Lactate Calculator', '/lactate-curve-calculator'], ['FTP Calculator', '/ftp-calculator'], ['TSS Calculator', '/tss-calculator'], ['Zone 2 Calculator', '/zone2-calculator'], ['Training Zones', '/training-zones-calculator']].map(([label, href]) => (
                   <a key={label} href={href} className="block text-sm text-gray-500 hover:text-primary transition-colors">{label}</a>
@@ -1464,11 +1586,11 @@ const About = () => {
             </div>
           </div>
           <div className="border-t border-gray-100 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-gray-400">© {new Date().getFullYear()} LaChart. All rights reserved.</p>
+            <p className="text-xs text-gray-600">© {new Date().getFullYear()} LaChart. All rights reserved.</p>
             <div className="flex items-center gap-4">
-              <a href="/privacy" className="text-xs text-gray-400 hover:text-primary transition-colors">Privacy Policy</a>
-              <a href="/terms" className="text-xs text-gray-400 hover:text-primary transition-colors">Terms of Service</a>
-              <a href="/support" className="text-xs text-gray-400 hover:text-primary transition-colors">Support</a>
+              <a href="/privacy" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Privacy Policy</a>
+              <a href="/terms" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Terms of Service</a>
+              <a href="/support" className="text-xs text-gray-600 hover:text-primary-dark transition-colors">Support</a>
             </div>
           </div>
         </div>
@@ -1481,7 +1603,7 @@ const About = () => {
             className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5">
             <p className="text-sm text-gray-600 mb-4">We use cookies to improve your experience. By continuing, you agree to our <a href="/privacy" className="text-primary underline">Privacy Policy</a>.</p>
             <div className="flex gap-2">
-              <button onClick={handleAcceptCookies} className="flex-1 py-2 bg-primary text-white font-semibold text-sm rounded-lg hover:bg-primary-dark transition-colors">Accept</button>
+              <button onClick={handleAcceptCookies} className="flex-1 py-2 bg-primary-dark text-white font-semibold text-sm rounded-lg hover:bg-primary transition-colors">Accept</button>
               <button onClick={() => setShowCookieBar(false)} className="flex-1 py-2 border border-gray-200 text-gray-600 font-semibold text-sm rounded-lg hover:border-gray-300 transition-colors">Decline</button>
             </div>
           </motion.div>

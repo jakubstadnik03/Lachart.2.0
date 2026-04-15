@@ -389,9 +389,16 @@ const LoginPage = () => {
           >
             <div className="mx-auto flex items-center gap-2 justify-center">
               <div className="h-11 w-11 rounded-2xl bg-white/70 border border-white shadow-sm flex items-center justify-center">
-                <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+                    sizes="28px"
+                  />
+                  <img className="h-7 w-7" src="/images/LaChart.png" alt="LaChart" />
+                </picture>
               </div>
-              <h1 className="text-2xl font-bold text-primary tracking-tight">LaChart</h1>
+              <h1 className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</h1>
             </div>
 
             <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
@@ -506,7 +513,7 @@ const LoginPage = () => {
               whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed relative"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-white bg-primary-dark hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed relative"
             >
               {isLoading ? (
                 <>
@@ -785,8 +792,15 @@ const LoginPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <a href="/" className="flex items-center gap-2">
-                <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
-                <span className="text-2xl font-bold text-primary tracking-tight">LaChart</span>
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
+                    sizes="44px"
+                  />
+                  <img src="/images/LaChart.png" alt="LaChart Logo" className="h-9 w-11" />
+                </picture>
+                <span className="text-2xl font-bold text-primary-dark tracking-tight">LaChart</span>
               </a>
               <p className="mt-4 text-gray-600">
                 Advanced lactate testing and analysis for athletes and coaches.
@@ -845,7 +859,7 @@ const LoginPage = () => {
             </div>
           </div>
           <div className="mt-8 border-t border-gray-200 pt-8 text-center space-y-3">
-            <p className="text-base text-gray-400">
+            <p className="text-base text-gray-600">
               &copy; {new Date().getFullYear()} LaChart. All rights reserved.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
@@ -869,7 +883,7 @@ const LoginPage = () => {
               Need help or have questions?{" "}
               <a
                 href="/about#contact"
-                className="text-primary hover:text-primary-dark font-medium"
+                className="text-primary-dark hover:text-primary font-medium"
               >
                 Contact us
               </a>
