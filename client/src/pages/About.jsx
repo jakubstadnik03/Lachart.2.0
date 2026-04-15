@@ -726,8 +726,8 @@ const About = () => {
         {/* ── Background: gradient mesh + chart grid ── */}
         <div className="absolute inset-0 pointer-events-none">
           {/* Soft colour blobs */}
-          <div className="absolute top-[-10%] left-[-5%] w-[280px] sm:w-[600px] h-[280px] sm:h-[600px] bg-primary/10 rounded-full blur-[80px] sm:blur-[120px]" />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[240px] sm:w-[500px] h-[240px] sm:h-[500px] bg-secondary/10 rounded-full blur-[60px] sm:blur-[100px]" />
+          <div className="absolute top-[-10%] left-[-5%] w-[min(60vw,600px)] h-[min(60vw,600px)] bg-primary/10 rounded-full blur-[100px]" />
+          <div className="absolute bottom-[-10%] right-[-5%] w-[min(50vw,500px)] h-[min(50vw,500px)] bg-secondary/10 rounded-full blur-[90px]" />
           <div className="absolute top-[30%] right-[20%] w-[300px] h-[300px] bg-purple-300/8 rounded-full blur-[80px]" />
 
           {/* Chart-style grid lines — very subtle, references lactate graph aesthetic */}
@@ -845,7 +845,7 @@ const About = () => {
               <div className="absolute inset-8 bg-gradient-to-br from-primary/20 via-secondary/15 to-purple-300/10 rounded-3xl blur-3xl" />
 
               {/* Main image */}
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/60 w-full max-w-lg lg:max-w-none">
+              <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/60 w-full max-w-lg lg:max-w-none aspect-[1536/1024]">
                 <picture>
                   <source
                     type="image/webp"
