@@ -113,14 +113,33 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   const [showRPE, setShowRPE] = useState(false);
   const chartRef = useRef(null);
   
-  // Detect mobile
+  // Detect mobile and force chart resize after layout changes.
   useEffect(() => {
+    const forceChartResize = () => {
+      const chart = chartRef.current;
+      if (!chart || typeof chart.resize !== 'function') return;
+      window.requestAnimationFrame(() => chart.resize());
+    };
+
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
+      forceChartResize();
     };
+
+    forceChartResize();
+    const timeoutId = window.setTimeout(forceChartResize, 120);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || typeof chart.resize !== 'function') return;
+    window.requestAnimationFrame(() => chart.resize());
+  }, [isMobile, mockData?.results?.length]);
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');

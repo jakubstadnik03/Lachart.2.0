@@ -76,7 +76,7 @@ export default function AboutGallerySection({ BrowserFrame, LazyImage }) {
         {galleryImages.map(image => (
           <SwiperSlide key={image.alt} className="!w-[300px] sm:!w-[450px] md:!w-[600px]">
             {({ isActive }) => (
-              <div className={`relative transition-all duration-300 ${isActive ? 'scale-100' : 'scale-90 opacity-60'}`}>
+              <div className={`relative transition-all duration-300 ${isActive ? 'scale-100' : 'scale-90'}`}>
                 <BrowserFrame label={image.title}>
                   <LazyImage
                     src={image.src}

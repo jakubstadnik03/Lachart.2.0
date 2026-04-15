@@ -58,6 +58,7 @@ const Zone2CalculatorPage = () => {
       <Helmet>
         <title>Zone 2 Calculator | Heart Rate &amp; Power Ranges for Endurance Training</title>
         <link rel="canonical" href="https://lachart.net/zone2-calculator" />
+        <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
         <meta
           name="description"
           content="Free Zone 2 calculator for runners and cyclists. Estimate Zone 2 heart rate and power from FTP or threshold HR and learn how to use Zone 2 training in your endurance plan."

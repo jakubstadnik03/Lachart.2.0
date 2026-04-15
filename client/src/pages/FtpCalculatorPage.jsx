@@ -52,6 +52,7 @@ const FtpCalculatorPage = () => {
       <Helmet>
         <title>FTP Calculator | Functional Threshold Power from 20-minute Test</title>
         <link rel="canonical" href="https://lachart.net/ftp-calculator" />
+        <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
         <meta
           name="description"
           content="Free FTP calculator for cyclists and triathletes. Estimate your Functional Threshold Power (FTP) from a 20-minute test and get power-to-weight in W/kg."

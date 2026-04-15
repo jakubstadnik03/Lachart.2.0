@@ -68,6 +68,7 @@ const TssCalculatorPage = () => {
       <Helmet>
         <title>TSS Calculator | Training Stress Score from NP, FTP and Duration</title>
         <link rel="canonical" href="https://lachart.net/tss-calculator" />
+        <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
         <meta
           name="description"
           content="Free TSS calculator for cyclists and triathletes. Estimate Training Stress Score from Normalized Power, FTP and ride duration to understand how hard your workout was."

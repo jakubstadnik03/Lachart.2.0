@@ -1,8 +1,4 @@
 User-agent: *
-Allow: /
+Disallow:
 
 Sitemap: https://lachart.net/sitemap.xml
-
-# https://www.robotstxt.org/robotstxt.html
-User-agent: *
-Disallow:

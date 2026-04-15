@@ -862,6 +862,7 @@ const LactateCurveCalculatorPage = () => {
             <Helmet>
                 <title>Lactate Curve Calculator | Free Lactate Testing, LT1, LT2, OBLA &amp; Training Zones Online</title>
                 <link rel="canonical" href="https://lachart.net/lactate-curve-calculator" />
+                <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
                 <meta name="description" content="Calculate zones from lactate effortlessly. Free online lactate curve calculator: analyze test data, determine LT1/LT2/OBLA, and generate training zones for running, cycling, and swimming. No login required." />
                 <meta name="keywords" content="lactate curve calculator, lactate test, LT1, LT2, lactate threshold, OBLA, training zones, running, cycling, endurance, free tool, online, calculator, lactic acid, calculate zones from lactate, calculate training zones from lactate, lactate zones calculator, lactate based training zones" />
                 <meta property="og:title" content="Lactate Curve Calculator – Free Online Test &amp; LT1, LT2 Zones Generator" />
@@ -1081,14 +1082,14 @@ const LactateCurveCalculatorPage = () => {
                         </div>
 
                             {/* Form and Curve Side by Side */}
-                            <div className="flex flex-col lg:flex-row gap-6 items-start  w-full">
+                            <div className="flex flex-col lg:flex-row gap-6 items-stretch lg:items-start w-full">
                                 {/* Lactate Curve Section - Left (Wider) */}
                                 <motion.div 
                                     ref={curveRef}
                                     initial="hidden"
                                     animate={(isCurveInView || hasValidData) ? "visible" : "hidden"}
                                     variants={fadeInUpVariants}
-                                    className="flex-1 lg:flex-none lg:w-2/3 max-w-full "
+                                    className="w-full flex-1 lg:flex-none lg:w-2/3 max-w-full"
                                     whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                                 >
                                             <LactateCurve 
@@ -1103,7 +1104,7 @@ const LactateCurveCalculatorPage = () => {
                                 initial="hidden"
                                 animate={isFormInView ? "visible" : "hidden"}
                                 variants={fadeInUpVariants}
-                                    className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-hidden flex-1 lg:flex-none lg:w-1/3 max-w-full"
+                                    className="w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-hidden flex-1 lg:flex-none lg:w-1/3 max-w-full"
                                 whileHover={{ boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)" }}
                             >
                                 <div className="p-4 sm:p-6">

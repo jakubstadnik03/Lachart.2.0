@@ -69,6 +69,7 @@ const TrainingZonesCalculatorPage = () => {
       <Helmet>
         <title>Training Zones Calculator | Power, Pace &amp; Heart Rate Zones</title>
         <link rel="canonical" href="https://lachart.net/training-zones-calculator" />
+        <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
         <meta
           name="description"
           content="Free training zones calculator for cyclists and runners. Estimate power zones from FTP, running pace zones from threshold pace, and heart rate zones from threshold HR."
