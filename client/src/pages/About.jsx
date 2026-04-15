@@ -1,15 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, Suspense } from 'react';
 import { trackEvent } from '../utils/analytics';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Helmet } from 'react-helmet';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination, EffectCoverflow, Autoplay } from 'swiper/modules';
-import 'swiper/css';
-import 'swiper/css/navigation';
-import 'swiper/css/pagination';
-import 'swiper/css/effect-coverflow';
-import 'swiper/css/autoplay';
 import ContactUs from '../components/ContactUs';
+
+const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
 // ─── FAQ Accordion ────────────────────────────────────────────────────────────
 const FAQItem = ({ icon, question, answer }) => {
@@ -129,7 +124,7 @@ const BrowserFrame = ({ children, label }) => (
       <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-      {label && <span className="ml-3 text-xs text-gray-600">{label}</span>}
+      {label && <span className="ml-3 text-xs text-gray-800">{label}</span>}
     </div>
     {children}
   </div>
@@ -464,7 +459,7 @@ const VideoTutorialsSection = () => {
             {/* Description + steps */}
             <div className="lg:col-span-2 flex flex-col gap-5">
               <div>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary mb-3">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/20 border border-primary/40 text-xs font-semibold text-primary-dark mb-3">
                   {active.tag}
                 </span>
                 <h3 className="text-2xl font-extrabold text-gray-900 mb-2">{active.title}</h3>
@@ -599,7 +594,7 @@ const About = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <main className="min-h-screen bg-white">
       <Helmet>
         <title>Lactate Curve Analyzer, Lactate Threshold Calculator & Lactate Testing PDF Reports | LaChart</title>
         <link rel="canonical" href="https://lachart.net/about" />
@@ -644,7 +639,7 @@ const About = () => {
       <div className="w-full bg-gradient-to-r from-primary to-secondary py-2.5 px-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3">
           <span className="text-white text-sm font-medium text-center">✨ Try calculating lactate thresholds for free — no sign up needed</span>
-          <a href="/lactate-curve-calculator" className="inline-block px-5 py-1.5 rounded-lg bg-white text-primary font-bold text-sm shadow hover:bg-gray-50 transition-all whitespace-nowrap">Try Demo</a>
+          <a href="/lactate-curve-calculator" className="inline-block px-5 py-1.5 rounded-lg bg-white text-primary-dark font-bold text-sm shadow hover:bg-gray-50 transition-all whitespace-nowrap">Try Demo</a>
         </div>
       </div>
 
@@ -717,8 +712,8 @@ const About = () => {
           </svg>
 
           {/* Diagonal accent line — like a curve on a chart */}
-          <svg className="absolute inset-0 w-full h-full opacity-[0.06]" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-            <path d="M 0 80% Q 30% 70% 60% 40% T 100% 10%" fill="none" stroke="#767EB5" strokeWidth="2" strokeDasharray="8 6"/>
+          <svg className="absolute inset-0 w-full h-full opacity-[0.06]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M 0 80 Q 30 70 60 40 T 100 10" fill="none" stroke="#767EB5" strokeWidth="2" strokeDasharray="8 6"/>
           </svg>
         </div>
 
@@ -1261,64 +1256,9 @@ const About = () => {
         </div>
       </section>
 
-      {/* ── Screenshots Swiper ─────────────────────────────────────────────── */}
-      <section className="py-20 bg-white border-t border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 text-center">
-          <p className="text-primary-dark font-semibold tracking-widest text-xs uppercase mb-3">Gallery</p>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">More views of LaChart</h2>
-        </div>
-        <Swiper
-          effect="coverflow"
-          grabCursor
-          centeredSlides
-          loop
-          initialSlide={2}
-          slidesPerView="auto"
-          coverflowEffect={{ rotate: 0, stretch: 0, depth: 100, modifier: 2.5, slideShadows: false }}
-          autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
-          pagination={{ clickable: true }}
-          navigation
-          modules={[EffectCoverflow, Pagination, Navigation, Autoplay]}
-          className="mySwiper !pb-12"
-        >
-          {[
-            {
-              src: '/screenshots/dashboard-home.png',
-              webpSrcSet: '/screenshots/dashboard-home-640.webp 640w, /screenshots/dashboard-home-960.webp 960w, /screenshots/dashboard-home-1280.webp 1280w',
-              sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-              alt: 'Dashboard Form & Fitness',
-              title: 'Dashboard · CTL / ATL / TSB'
-            },
-            {
-              src: '/screenshots/lactate-testing-page.png',
-              webpSrcSet: '/screenshots/lactate-testing-page-640.webp 640w, /screenshots/lactate-testing-page-960.webp 960w, /screenshots/lactate-testing-page-1280.webp 1280w',
-              sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
-              alt: 'Lactate Testing',
-              title: 'Lactate Testing & LT Trends'
-            },
-            { src: '/images/lactate-curve-calculator.png', alt: 'Lactate Curve Calculator', title: 'Lactate Curve Calculator' },
-            { src: '/images/Form-fitness-chart.png', alt: 'Form & Fitness Chart', title: 'Form & Fitness Trend' },
-            { src: '/images/training-calendar.png', alt: 'Training Calendar', title: 'Training Calendar' },
-            { src: '/images/training-analytics.png', alt: 'Training Analytics', title: 'Analytics & TSS' },
-          ].map(image => (
-            <SwiperSlide key={image.alt} className="!w-[300px] sm:!w-[450px] md:!w-[600px]">
-              {({ isActive }) => (
-                <div className={`relative transition-all duration-300 ${isActive ? 'scale-100' : 'scale-90 opacity-60'}`}>
-                  <BrowserFrame label={image.title}>
-                    <LazyImage
-                      src={image.src}
-                      webpSrcSet={image.webpSrcSet}
-                      sizes={image.sizes}
-                      alt={image.alt}
-                      className="w-full h-[200px] sm:h-[280px] md:h-[360px] object-contain bg-gray-50"
-                    />
-                  </BrowserFrame>
-                </div>
-              )}
-            </SwiperSlide>
-          ))}
-        </Swiper>
-      </section>
+      <Suspense fallback={<section className="py-20 bg-white border-t border-gray-100" aria-hidden="true" />}>
+        <AboutGallerySection BrowserFrame={BrowserFrame} LazyImage={LazyImage} />
+      </Suspense>
 
       {/* ── For Athletes & Coaches ─────────────────────────────────────────── */}
       <section id="coaching" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">
@@ -1476,7 +1416,7 @@ const About = () => {
                 <h3 className="text-lg font-bold text-gray-900 mb-3">{item.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed mb-5 flex-1">{item.summary}</p>
                 <a href={item.link} className="inline-flex items-center gap-1.5 text-primary font-semibold text-sm">
-                  Learn more <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  Read update: {item.title} <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </a>
               </motion.div>
             ))}
@@ -1601,7 +1541,7 @@ const About = () => {
         {showCookieBar && (
           <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
             className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5">
-            <p className="text-sm text-gray-600 mb-4">We use cookies to improve your experience. By continuing, you agree to our <a href="/privacy" className="text-primary underline">Privacy Policy</a>.</p>
+            <p className="text-sm text-gray-600 mb-4">We use cookies to improve your experience. By continuing, you agree to our <a href="/privacy" className="text-gray-800 underline font-semibold hover:text-primary-dark">Privacy Policy</a>.</p>
             <div className="flex gap-2">
               <button onClick={handleAcceptCookies} className="flex-1 py-2 bg-primary-dark text-white font-semibold text-sm rounded-lg hover:bg-primary transition-colors">Accept</button>
               <button onClick={() => setShowCookieBar(false)} className="flex-1 py-2 border border-gray-200 text-gray-600 font-semibold text-sm rounded-lg hover:border-gray-300 transition-colors">Decline</button>
@@ -1609,7 +1549,7 @@ const About = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </main>
   );
 };
 
