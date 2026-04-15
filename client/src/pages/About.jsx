@@ -120,11 +120,11 @@ const FeatureIcon = ({ type }) => {
 // ─── Browser Frame ────────────────────────────────────────────────────────────
 const BrowserFrame = ({ children, label }) => (
   <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-xl">
-    <div className="flex items-center gap-1.5 px-4 py-2.5 bg-gray-100 border-b border-gray-200">
+    <div className="flex items-center gap-1.5 px-4 py-2.5 bg-white border-b border-gray-200">
       <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
       <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-      {label && <span className="ml-3 text-xs text-gray-800">{label}</span>}
+      {label && <span className="ml-3 text-xs text-gray-900">{label}</span>}
     </div>
     {children}
   </div>
@@ -459,7 +459,7 @@ const VideoTutorialsSection = () => {
             {/* Description + steps */}
             <div className="lg:col-span-2 flex flex-col gap-5">
               <div>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/20 border border-primary/40 text-xs font-semibold text-primary-dark mb-3">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/25 border border-primary/50 text-sm font-semibold text-gray-900 mb-3">
                   {active.tag}
                 </span>
                 <h3 className="text-2xl font-extrabold text-gray-900 mb-2">{active.title}</h3>
@@ -549,9 +549,21 @@ const About = () => {
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 120);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    let rafId = null;
+    const handleScroll = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(() => {
+        const nextScrolled = window.scrollY > 120;
+        setIsScrolled(prev => (prev === nextScrolled ? prev : nextScrolled));
+        rafId = null;
+      });
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   const scrollToSection = (id) => {
@@ -654,7 +666,7 @@ const About = () => {
                 srcSet="/images/LaChart-96.webp 96w, /images/LaChart-192.webp 192w, /images/LaChart-320.webp 320w"
                 sizes="40px"
               />
-              <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-10" />
+              <img src="/images/LaChart.png" alt="LaChart" className="h-8 w-auto" />
             </picture>
             <span className="text-lg font-bold text-primary-dark">LaChart</span>
           </a>
@@ -1552,7 +1564,7 @@ const About = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
             <div className="md:col-span-2">
               <a href="/" className="flex items-center gap-2 mb-4">
-                <img src="/images/LaChart.png" alt="LaChart" className="h-9 w-11" />
+                <img src="/images/LaChart.png" alt="LaChart" className="h-9 w-auto" />
                 <span className="text-xl font-bold text-primary-dark">LaChart</span>
               </a>
               <p className="text-gray-500 text-sm leading-relaxed max-w-xs">Advanced lactate testing and training analysis for endurance athletes and coaches.</p>
