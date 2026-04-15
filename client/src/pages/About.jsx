@@ -630,7 +630,7 @@ const About = () => {
           <span className="text-lg sm:text-xl font-bold text-primary-dark tracking-tight">LaChart</span>
         </a>
         <div className="flex items-center gap-2 sm:gap-3">
-          <a href="/login" className="hidden sm:block text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm min-h-[44px] px-3 inline-flex items-center touch-manipulation">Login</a>
+          <a href="/login" className="hidden sm:inline-flex text-gray-600 font-medium hover:text-gray-900 transition-colors text-sm min-h-[44px] px-3 items-center touch-manipulation">Login</a>
           <a href="/signup" className="min-h-[44px] px-4 py-2 bg-primary-dark text-white font-semibold rounded-lg hover:bg-primary active:opacity-90 transition-colors text-sm shadow-sm inline-flex items-center touch-manipulation">Get Started</a>
         </div>
       </nav>
@@ -946,7 +946,13 @@ const About = () => {
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
               <BrowserFrame label="Lactate Curve — Power vs Lactate">
-                <LazyImage src="/images/lactate_testing.png" alt="Lactate curve with thresholds" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lactate_testing.png"
+                  webpSrcSet="/images/lactate_testing-640.webp 640w, /images/lactate_testing-960.webp 960w, /images/lactate_testing-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="Lactate curve with thresholds"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </motion.div>
           </div>
@@ -959,7 +965,13 @@ const About = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }}>
               <BrowserFrame>
-                <LazyImage src="/images/lachart_training.png" alt="LaChart training sync" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lachart_training.png"
+                  webpSrcSet="/images/lachart_training-640.webp 640w, /images/lachart_training-960.webp 960w, /images/lachart_training-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="LaChart training sync"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
@@ -1074,7 +1086,13 @@ const About = () => {
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
               <BrowserFrame label="Training Analytics">
-                <LazyImage src="/images/lachart5.jpeg" alt="Lactate recording" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lachart5.jpeg"
+                  webpSrcSet="/images/lachart5-640.webp 640w, /images/lachart5-960.webp 960w, /images/lachart5-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="Lactate recording"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </motion.div>
           </div>
@@ -1137,7 +1155,13 @@ const About = () => {
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }}>
               <BrowserFrame>
-                <LazyImage src="/images/lachart-test.png" alt="Lactate test PDF report" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lachart-test.png"
+                  webpSrcSet="/images/lachart-test-640.webp 640w, /images/lachart-test-960.webp 960w, /images/lachart-test-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="Lactate test PDF report"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </motion.div>
           </div>
@@ -1150,7 +1174,13 @@ const About = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6 }} className="order-2 lg:order-1">
               <BrowserFrame>
-                <LazyImage src="/images/lachart3.jpeg" alt="Lactate analysis" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lachart3.jpeg"
+                  webpSrcSet="/images/lachart3-320.webp 320w, /images/lachart3-560.webp 560w, /images/lachart3-800.webp 800w"
+                  sizes="(min-width: 1024px) 560px, 100vw"
+                  alt="Lactate analysis"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.6, delay: 0.1 }} className="order-1 lg:order-2">
@@ -1229,7 +1259,13 @@ const About = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-10">
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.2 }}>
               <BrowserFrame label="Training Log">
-                <LazyImage src="/screenshots/training-log-page.png" alt="LaChart training log" className="w-full object-cover" />
+                <LazyImage
+                  src="/screenshots/training-log-page.png"
+                  webpSrcSet="/screenshots/training-log-page-640.webp 640w, /screenshots/training-log-page-960.webp 960w, /screenshots/training-log-page-1280.webp 1280w"
+                  sizes="(min-width: 640px) 50vw, 100vw"
+                  alt="LaChart training log"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
               <div className="mt-3 px-1">
                 <p className="text-sm font-semibold text-gray-800">Training Log · Interval Analysis</p>
@@ -1238,7 +1274,13 @@ const About = () => {
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}>
               <BrowserFrame label="Training Calendar">
-                <LazyImage src="/screenshots/training-page.png" alt="LaChart training calendar" className="w-full object-cover" />
+                <LazyImage
+                  src="/screenshots/training-page.png"
+                  webpSrcSet="/screenshots/training-page-640.webp 640w, /screenshots/training-page-960.webp 960w, /screenshots/training-page-1280.webp 1280w"
+                  sizes="(min-width: 640px) 50vw, 100vw"
+                  alt="LaChart training calendar"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
               <div className="mt-3 px-1">
                 <p className="text-sm font-semibold text-gray-800">Training Calendar · Monthly View</p>
@@ -1442,7 +1484,13 @@ const About = () => {
             </div>
             <div className="flex-1 w-full">
               <BrowserFrame>
-                <LazyImage src="/images/lachart-test.png" alt="Lactate Test Demo" className="w-full object-cover" />
+                <LazyImage
+                  src="/images/lachart-test.png"
+                  webpSrcSet="/images/lachart-test-640.webp 640w, /images/lachart-test-960.webp 960w, /images/lachart-test-1280.webp 1280w"
+                  sizes="(min-width: 1024px) 640px, 100vw"
+                  alt="Lactate Test Demo"
+                  className="w-full object-cover"
+                />
               </BrowserFrame>
             </div>
           </motion.div>

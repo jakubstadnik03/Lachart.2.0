@@ -22,10 +22,34 @@ const galleryImages = [
     alt: 'Lactate Testing',
     title: 'Lactate Testing & LT Trends'
   },
-  { src: '/images/lactate-curve-calculator.png', alt: 'Lactate Curve Calculator', title: 'Lactate Curve Calculator' },
-  { src: '/images/Form-fitness-chart.png', alt: 'Form & Fitness Chart', title: 'Form & Fitness Trend' },
-  { src: '/images/training-calendar.png', alt: 'Training Calendar', title: 'Training Calendar' },
-  { src: '/images/training-analytics.png', alt: 'Training Analytics', title: 'Analytics & TSS' },
+  {
+    src: '/images/lactate-curve-calculator.png',
+    webpSrcSet: '/images/lactate-curve-calculator-640.webp 640w, /images/lactate-curve-calculator-960.webp 960w, /images/lactate-curve-calculator-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Lactate Curve Calculator',
+    title: 'Lactate Curve Calculator'
+  },
+  {
+    src: '/images/Form-fitness-chart.png',
+    webpSrcSet: '/images/Form-fitness-chart-640.webp 640w, /images/Form-fitness-chart-960.webp 960w, /images/Form-fitness-chart-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Form & Fitness Chart',
+    title: 'Form & Fitness Trend'
+  },
+  {
+    src: '/images/training-calendar.png',
+    webpSrcSet: '/images/training-calendar-640.webp 640w, /images/training-calendar-960.webp 960w, /images/training-calendar-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Training Calendar',
+    title: 'Training Calendar'
+  },
+  {
+    src: '/images/training-analytics.png',
+    webpSrcSet: '/images/training-analytics-640.webp 640w, /images/training-analytics-960.webp 960w, /images/training-analytics-1280.webp 1280w',
+    sizes: '(min-width: 768px) 600px, (min-width: 640px) 450px, 300px',
+    alt: 'Training Analytics',
+    title: 'Analytics & TSS'
+  },
 ];
 
 export default function AboutGallerySection({ BrowserFrame, LazyImage }) {
