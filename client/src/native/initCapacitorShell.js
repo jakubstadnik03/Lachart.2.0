@@ -18,9 +18,13 @@ export async function initCapacitorShell() {
   try {
     const { StatusBar, Style } = await import('@capacitor/status-bar');
     await StatusBar.setStyle({ style: Style.Light });
-    await StatusBar.setOverlaysWebView({ overlay: false });
+    // iOS: @capacitor/status-bar implements setOverlaysWebView as unimplemented() — do not call.
+    // Android: optional overlay so layout matches CSS safe-area (see Layout + index.css).
+    if (Capacitor.getPlatform() === 'android') {
+      await StatusBar.setOverlaysWebView({ overlay: true });
+    }
   } catch {
-    // iOS/Android version quirks
+    // ignore
   }
 
   try {

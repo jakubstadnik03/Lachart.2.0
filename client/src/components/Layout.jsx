@@ -8,6 +8,7 @@ import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../serv
 import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalNotification";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
+import { isCapacitorNative } from "../utils/isNativeApp";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
@@ -328,7 +329,13 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         )}
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
-        <main className="flex-1 px-3 sm:px-3 md:px-4 pt-14 lg:pt-0 overflow-y-auto">
+        <main
+          className={`flex-1 px-3 sm:px-3 md:px-4 overflow-y-auto ${
+            isCapacitorNative()
+              ? "pt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:pt-0"
+              : "pt-14 lg:pt-0"
+          }`}
+        >
           <div className="max-w-[1600px] mx-auto flex flex-col min-h-full">
             <div className="flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}

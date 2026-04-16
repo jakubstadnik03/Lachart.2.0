@@ -19,6 +19,12 @@ body{
     padding-top: env(safe-area-inset-top, 0px);
 }
 
+/* Capacitor: tighter header row; StatusBar overlays WebView (see initCapacitorShell) */
+html.capacitor-native .custom-padding {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
 /* iOS momentum scrolling on all scroll containers */
 .overflow-y-auto,
 .overflow-x-auto,

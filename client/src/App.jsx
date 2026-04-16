@@ -338,6 +338,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     if (!isCapacitorNative()) return undefined;
+    document.documentElement.classList.add('capacitor-native');
     import('./native/initCapacitorShell')
       .then((m) => {
         if (!cancelled) return m.initCapacitorShell();
