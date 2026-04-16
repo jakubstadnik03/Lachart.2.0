@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { JWT_SECRET } = require('../config/jwt.config');
 const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
@@ -70,6 +71,80 @@ function resolveStravaOAuthRedirectUri(req) {
     }
   }
   return redirectUri || null;
+}
+
+function base64UrlEncode(buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function createPkcePair() {
+  const verifier = base64UrlEncode(crypto.randomBytes(48));
+  const challenge = base64UrlEncode(crypto.createHash('sha256').update(verifier).digest());
+  return { verifier, challenge };
+}
+
+function getFrontendBaseUrl() {
+  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
+function getGarminRedirectBase() {
+  if (process.env.GARMIN_REDIRECT_URI) return process.env.GARMIN_REDIRECT_URI;
+  const backend = process.env.BACKEND_URL || process.env.API_URL || process.env.RENDER_EXTERNAL_URL;
+  if (backend) {
+    const base = backend.replace(/\/$/, '');
+    return `${base}/api/integrations/garmin/callback`;
+  }
+  if (process.env.NODE_ENV === 'production') return 'https://lachart.onrender.com/api/integrations/garmin/callback';
+  return null;
+}
+
+function resolveGarminOAuthRedirectUri(req) {
+  let redirectUri = getGarminRedirectBase();
+  if (!redirectUri && req) {
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || 'localhost:8000';
+    redirectUri = `${protocol}://${host}/api/integrations/garmin/callback`;
+  }
+  return redirectUri || null;
+}
+
+function signGarminOAuthState(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+}
+
+function verifyGarminOAuthState(state) {
+  return jwt.verify(state, JWT_SECRET);
+}
+
+function getGarminAuthorizeUrl() {
+  return process.env.GARMIN_AUTHORIZE_URL || 'https://connect.garmin.com/oauth2Confirm';
+}
+
+function getGarminTokenUrl() {
+  return process.env.GARMIN_TOKEN_URL || process.env.GARMIN_OAUTH_TOKEN_URL || null;
+}
+
+function getGarminApiBaseUrl() {
+  return (process.env.GARMIN_API_BASE_URL || 'https://apis.garmin.com').replace(/\/$/, '');
+}
+
+function getGarminWellnessApiBaseUrl() {
+  return `${getGarminApiBaseUrl()}/wellness-api`;
+}
+
+function getGarminActivityApiBaseUrl() {
+  return `${getGarminApiBaseUrl()}/activity-api`;
+}
+
+const EXTERNAL_SOURCE_PRIORITY = ['strava', 'garmin', 'coros', 'polar', 'fit'];
+
+function getExternalSourcePriority(source) {
+  const idx = EXTERNAL_SOURCE_PRIORITY.indexOf(String(source || '').toLowerCase());
+  return idx === -1 ? EXTERNAL_SOURCE_PRIORITY.length : idx;
 }
 
 // Import all Strava history progressively in background to avoid backend/API spikes.
@@ -720,11 +795,167 @@ router.put('/strava/auto-sync', verifyToken, async (req, res) => {
 // Future improvement: If approved for Garmin Connect Developer Program, migrate to official OAuth API
 
 router.get('/garmin/auth-url', (req, res) => {
-  // Garmin doesn't have public OAuth like Strava
-  // We redirect to settings page where user can enter credentials
-  const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const url = `${frontend}/settings?garmin=connect`;
-  res.json({ url });
+  try {
+    const clientId = process.env.GARMIN_CLIENT_ID;
+    const redirectUri = resolveGarminOAuthRedirectUri(req);
+
+    if (!clientId) {
+      return res.status(500).json({ error: 'Garmin client ID missing' });
+    }
+    if (!redirectUri) {
+      return res.status(500).json({ error: 'Garmin redirect URI could not be determined' });
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const bearer = authHeader.replace('Bearer ', '').trim();
+    if (!bearer) {
+      return res.status(401).json({ error: 'Missing auth token for Garmin connect flow' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(bearer, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Invalid auth token for Garmin connect flow' });
+    }
+
+    const { verifier, challenge } = createPkcePair();
+    const state = signGarminOAuthState({
+      provider: 'garmin',
+      userId: decoded.userId,
+      verifier
+    });
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      response_type: 'code',
+      state,
+      redirect_uri: redirectUri,
+      code_challenge: challenge,
+      code_challenge_method: 'S256'
+    });
+
+    const url = `${getGarminAuthorizeUrl()}?${params.toString()}`;
+    res.json({ url });
+  } catch (error) {
+    console.error('Garmin auth-url error:', error);
+    res.status(500).json({ error: error.message || 'Failed to start Garmin OAuth flow' });
+  }
+});
+
+router.get('/garmin/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query || {};
+    const frontend = getFrontendBaseUrl();
+
+    if (error) {
+      const params = new URLSearchParams({
+        garmin: 'error',
+        message: String(error_description || error)
+      });
+      return res.redirect(`${frontend}/settings?tab=integrations&${params.toString()}`);
+    }
+
+    if (!code || !state) {
+      return res.status(400).json({ error: 'Missing Garmin OAuth code or state' });
+    }
+
+    const clientId = process.env.GARMIN_CLIENT_ID;
+    const clientSecret = process.env.GARMIN_CLIENT_SECRET;
+    const tokenUrl = getGarminTokenUrl();
+    const redirectUri = resolveGarminOAuthRedirectUri(req);
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: 'Garmin client credentials missing' });
+    }
+    if (!tokenUrl) {
+      return res.status(500).json({ error: 'Garmin token URL missing. Set GARMIN_TOKEN_URL.' });
+    }
+    if (!redirectUri) {
+      return res.status(500).json({ error: 'Garmin redirect URI not configured' });
+    }
+
+    let decodedState;
+    try {
+      decodedState = verifyGarminOAuthState(String(state));
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired Garmin OAuth state' });
+    }
+
+    if (decodedState?.provider !== 'garmin' || !decodedState?.userId || !decodedState?.verifier) {
+      return res.status(401).json({ error: 'Malformed Garmin OAuth state' });
+    }
+
+    const tokenBody = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: String(code),
+      redirect_uri: redirectUri,
+      code_verifier: String(decodedState.verifier)
+    });
+
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenResp = await axios.post(tokenUrl, tokenBody.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`
+      },
+      timeout: 30000
+    });
+
+    const tokenData = tokenResp.data || {};
+    const accessToken = tokenData.access_token || tokenData.accessToken || null;
+    const refreshToken = tokenData.refresh_token || tokenData.refreshToken || null;
+    const expiresIn = Number(tokenData.expires_in || tokenData.expiresIn || 0) || null;
+    const tokenType = tokenData.token_type || tokenData.tokenType || 'Bearer';
+
+    if (!accessToken) {
+      return res.status(502).json({ error: 'Garmin token exchange returned no access token', details: tokenData });
+    }
+
+    const user = await User.findById(decodedState.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    let athleteId = user.garmin?.athleteId || null;
+    try {
+      const profileResp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
+        headers: {
+          Authorization: `${tokenType} ${accessToken}`
+        },
+        timeout: 15000
+      });
+      athleteId = String(profileResp.data?.userId || profileResp.data?.id || athleteId || '');
+    } catch (profileError) {
+      console.warn('Garmin profile lookup failed; storing OAuth tokens without athlete id');
+    }
+
+    user.garmin = {
+      athleteId: athleteId || user.garmin?.athleteId || null,
+      accessToken,
+      refreshToken,
+      expiresAt: expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : null,
+      autoSync: true,
+      lastSyncDate: user.garmin?.lastSyncDate || null
+    };
+
+    await user.save();
+
+    const params = new URLSearchParams({ garmin: 'connected' });
+    return res.redirect(`${frontend}/settings?tab=integrations&${params.toString()}`);
+  } catch (err) {
+    const garminBody = err.response?.data;
+    const garminStatus = err.response?.status;
+    console.error('Garmin callback error', garminStatus || '', garminBody || err.message);
+    if (garminStatus && garminBody != null) {
+      return res.status(502).json({
+        error: 'Garmin token exchange failed',
+        garminStatus,
+        details: garminBody
+      });
+    }
+    res.status(500).json({ error: 'Garmin callback failed', message: err.message });
+  }
 });
 
 // Garmin login endpoint (username/password based)
@@ -794,6 +1025,35 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null) {
   try {
+    if (user?.garmin?.refreshToken) {
+      const tokenType = await getValidGarminToken(user);
+      const headers = {
+        Authorization: `${tokenType.tokenType} ${tokenType.accessToken}`
+      };
+      const params = {};
+      if (since) {
+        const d = new Date(since);
+        if (!Number.isNaN(d.getTime())) {
+          params.uploadStartTimeInSeconds = Math.floor(d.getTime() / 1000);
+        }
+      }
+
+      const resp = await axios.get(`${getGarminActivityApiBaseUrl()}/rest/activities`, {
+        headers,
+        params,
+        timeout: 30000
+      });
+
+      const activities = Array.isArray(resp.data)
+        ? resp.data
+        : Array.isArray(resp.data?.activities)
+          ? resp.data.activities
+          : [];
+
+      console.log(`Fetched ${activities.length} Garmin OAuth activities`);
+      return activities;
+    }
+
     const GarminConnect = require('garmin-connect');
     
     // Decode credentials from base64
@@ -879,12 +1139,140 @@ async function getGarminActivities(user, since = null) {
   }
 }
 
-// POST /api/integrations/garmin/sync
-router.post('/garmin/sync', verifyToken, async (req, res) => {
+async function getValidGarminToken(user) {
+  const tokenUrl = getGarminTokenUrl();
+  const clientId = process.env.GARMIN_CLIENT_ID;
+  const clientSecret = process.env.GARMIN_CLIENT_SECRET;
+  const accessToken = user?.garmin?.accessToken || null;
+  const refreshToken = user?.garmin?.refreshToken || null;
+  const expiresAt = Number(user?.garmin?.expiresAt || 0) || null;
+  const now = Math.floor(Date.now() / 1000);
+
+  if (!accessToken) {
+    throw new Error('Garmin access token missing');
+  }
+
+  if (!refreshToken || !expiresAt || expiresAt > now + 60) {
+    return { accessToken, tokenType: 'Bearer' };
+  }
+
+  if (!tokenUrl) {
+    throw new Error('Garmin token URL missing. Set GARMIN_TOKEN_URL.');
+  }
+  if (!clientId || !clientSecret) {
+    throw new Error('Garmin client credentials missing');
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken
+  });
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const tokenResp = await axios.post(tokenUrl, body.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicAuth}`
+    },
+    timeout: 30000
+  });
+
+  const tokenData = tokenResp.data || {};
+  const nextAccessToken = tokenData.access_token || tokenData.accessToken || null;
+  const nextRefreshToken = tokenData.refresh_token || tokenData.refreshToken || refreshToken;
+  const expiresIn = Number(tokenData.expires_in || tokenData.expiresIn || 0) || null;
+  const tokenType = tokenData.token_type || tokenData.tokenType || 'Bearer';
+
+  if (!nextAccessToken) {
+    throw new Error('Garmin token refresh returned no access token');
+  }
+
+  user.garmin = {
+    ...user.garmin,
+    accessToken: nextAccessToken,
+    refreshToken: nextRefreshToken,
+    expiresAt: expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : user.garmin?.expiresAt || null
+  };
+  await user.save();
+
+  return { accessToken: nextAccessToken, tokenType };
+}
+
+function mapGarminSportType(rawSport) {
+  const sportType = String(rawSport || 'running').toLowerCase();
+  const sportMap = {
+    running: 'running',
+    cycling: 'cycling',
+    biking: 'cycling',
+    road_biking: 'cycling',
+    mountain_biking: 'cycling',
+    swimming: 'swimming',
+    pool_swimming: 'swimming',
+    open_water_swimming: 'swimming',
+    triathlon: 'triathlon',
+    walking: 'running',
+    hiking: 'running',
+    trail_running: 'running'
+  };
+  return sportMap[sportType] || 'running';
+}
+
+function mapGarminActivityToDoc(user, a) {
+  const rawId = a.activityId || a.summaryId || a.activityUUID || a.activityUuid || String(a.startTimeInSeconds || a.startTimeGMT || a.startTimeLocal || Date.now());
+  const garminId = String(rawId);
+  const startDate = a.startTimeInSeconds
+    ? new Date(Number(a.startTimeInSeconds) * 1000)
+    : new Date(a.startTimeGMT || a.startTimeLocal || a.startDate || Date.now());
+  const sport = mapGarminSportType(a.activityType?.typeKey || a.activityType || a.sportType?.typeKey || a.sport);
+
+  return {
+    userId: user._id.toString(),
+    garminId,
+    name: a.activityName || a.activityType || a.name || 'Untitled Activity',
+    sport,
+    startDate,
+    elapsedTime: a.durationInSeconds || a.elapsedDuration || a.duration || 0,
+    movingTime: a.movingDurationInSeconds || a.movingDuration || a.durationInSeconds || a.elapsedDuration || 0,
+    distance: a.distanceInMeters || a.distance || 0,
+    averageSpeed: a.averageSpeedInMetersPerSecond || a.averageSpeed || null,
+    averageHeartRate: a.averageHeartRateInBeatsPerMinute || a.averageHR || a.averageHeartRate || null,
+    averagePower: a.averagePowerInWatts || a.averagePower || a.averageWatts || null,
+    raw: a
+  };
+}
+
+async function upsertGarminActivities(user, activities = []) {
   let imported = 0;
   let updated = 0;
   let total = 0;
-  
+
+  for (const a of activities) {
+    try {
+      const doc = mapGarminActivityToDoc(user, a);
+      const resUp = await GarminActivity.updateOne(
+        { userId: user._id, garminId: doc.garminId },
+        { $set: doc },
+        { upsert: true }
+      );
+
+      if (resUp.upsertedCount > 0) imported += 1;
+      else if (resUp.modifiedCount > 0) updated += 1;
+      total += 1;
+    } catch (dbErr) {
+      console.error(`Error saving Garmin activity ${a?.activityId || a?.summaryId || a?.id || 'unknown'}:`, dbErr.message);
+    }
+  }
+
+  if (imported > 0 || updated > 0) {
+    await User.findByIdAndUpdate(user._id, {
+      'garmin.lastSyncDate': new Date()
+    });
+  }
+
+  return { imported, updated, total };
+}
+
+// POST /api/integrations/garmin/sync
+router.post('/garmin/sync', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     if (!user || !user.garmin?.accessToken) {
@@ -899,62 +1287,7 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
     const activities = await getGarminActivities(user, since);
     
     console.log(`Starting Garmin sync for user ${user._id}, found ${activities.length} activities`);
-    
-    // Process activities
-    for (const a of activities) {
-      try {
-        // Map Garmin activity to our schema
-        const garminId = a.activityId || a.activityUUID || String(a.startTimeGMT || a.startTimeLocal || Date.now());
-        const startDate = new Date(a.startTimeGMT || a.startTimeLocal || a.startDate);
-        
-        // Map sport type from Garmin to our format
-        const sportType = a.activityType?.typeKey || a.sportType?.typeKey || a.sport || 'running';
-        const sportMap = {
-          'running': 'running',
-          'cycling': 'cycling',
-          'swimming': 'swimming',
-          'triathlon': 'triathlon',
-          'walking': 'running',
-          'hiking': 'running'
-        };
-        const sport = sportMap[sportType.toLowerCase()] || 'running';
-        
-        const doc = {
-          userId: user._id.toString(),
-          garminId: garminId,
-          name: a.activityName || a.name || 'Untitled Activity',
-          sport: sport,
-          startDate: startDate,
-          elapsedTime: a.elapsedDuration || a.duration || 0,
-          movingTime: a.movingDuration || a.elapsedDuration || 0,
-          distance: a.distance || 0,
-          averageSpeed: a.averageSpeed || null,
-          averageHeartRate: a.averageHR || a.averageHeartRate || null,
-          averagePower: a.averagePower || a.averageWatts || null,
-          raw: a
-        };
-        
-        const resUp = await GarminActivity.updateOne(
-          { userId: user._id, garminId: doc.garminId },
-          { $set: doc },
-          { upsert: true }
-        );
-        
-        if (resUp.upsertedCount > 0) imported += 1;
-        else if (resUp.modifiedCount > 0) updated += 1;
-        total += 1;
-      } catch (dbErr) {
-        console.error(`Error saving Garmin activity ${a.id}:`, dbErr.message);
-      }
-    }
-    
-    // Update last sync date
-    if (imported > 0 || updated > 0) {
-      await User.findByIdAndUpdate(user._id, {
-        'garmin.lastSyncDate': new Date()
-      });
-    }
-    
+    const { imported, updated, total } = await upsertGarminActivities(user, activities);
     console.log(`Garmin sync completed: imported ${imported}, updated ${updated}, total ${total}`);
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
@@ -968,9 +1301,6 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 
 // POST /api/integrations/garmin/auto-sync
 router.post('/garmin/auto-sync', verifyToken, async (req, res) => {
-  let imported = 0;
-  let updated = 0;
-  
   try {
     const user = await User.findById(req.user.userId);
     if (!user || !user.garmin?.accessToken) {
@@ -992,59 +1322,7 @@ router.post('/garmin/auto-sync', verifyToken, async (req, res) => {
     }
     
     const activities = await getGarminActivities(user, since);
-    
-    for (const a of activities) {
-      try {
-        // Map Garmin activity to our schema
-        const garminId = a.activityId || a.activityUUID || String(a.startTimeGMT || a.startTimeLocal || Date.now());
-        const startDate = new Date(a.startTimeGMT || a.startTimeLocal || a.startDate);
-        
-        // Map sport type from Garmin to our format
-        const sportType = a.activityType?.typeKey || a.sportType?.typeKey || a.sport || 'running';
-        const sportMap = {
-          'running': 'running',
-          'cycling': 'cycling',
-          'swimming': 'swimming',
-          'triathlon': 'triathlon',
-          'walking': 'running',
-          'hiking': 'running'
-        };
-        const sport = sportMap[sportType.toLowerCase()] || 'running';
-        
-        const doc = {
-          userId: user._id.toString(),
-          garminId: garminId,
-          name: a.activityName || a.name || 'Untitled Activity',
-          sport: sport,
-          startDate: startDate,
-          elapsedTime: a.elapsedDuration || a.duration || 0,
-          movingTime: a.movingDuration || a.elapsedDuration || 0,
-          distance: a.distance || 0,
-          averageSpeed: a.averageSpeed || null,
-          averageHeartRate: a.averageHR || a.averageHeartRate || null,
-          averagePower: a.averagePower || a.averageWatts || null,
-          raw: a
-        };
-        
-        const resUp = await GarminActivity.updateOne(
-          { userId: user._id, garminId: doc.garminId },
-          { $set: doc },
-          { upsert: true }
-        );
-        
-        if (resUp.upsertedCount > 0) imported += 1;
-        else if (resUp.modifiedCount > 0) updated += 1;
-      } catch (dbErr) {
-        console.error(`Error saving Garmin activity ${a.id}:`, dbErr.message);
-      }
-    }
-    
-    if (imported > 0 || updated > 0) {
-      await User.findByIdAndUpdate(user._id, {
-        'garmin.lastSyncDate': new Date()
-      });
-    }
-    
+    const { imported, updated } = await upsertGarminActivities(user, activities);
     console.log(`Garmin auto-sync completed: ${imported} imported, ${updated} updated`);
     res.json({ imported, updated });
   } catch (error) {
@@ -1220,7 +1498,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       return true;
     };
     
-    // Keep preferred source (Strava), but don't lose useful metrics from Garmin fallback.
+    // Keep preferred source by provider priority, but don't lose useful metrics from fallback providers.
     const mergePreferredActivity = (preferred, secondary) => {
       if (!preferred || !secondary) return preferred || secondary;
       const merged = { ...preferred };
@@ -1232,6 +1510,14 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       merged.movingTime = pick(preferred.movingTime, secondary.movingTime);
       merged.distance = pick(preferred.distance, secondary.distance);
       return merged;
+    };
+
+    const choosePreferredActivity = (existing, candidate) => {
+      const existingPriority = getExternalSourcePriority(existing?.source);
+      const candidatePriority = getExternalSourcePriority(candidate?.source);
+      return candidatePriority < existingPriority
+        ? mergePreferredActivity(candidate, existing)
+        : mergePreferredActivity(existing, candidate);
     };
 
     // Combine and normalize activities
@@ -1253,32 +1539,19 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     // Optimized deduplication: use Map for O(1) lookups instead of O(n²) nested loops
     const dedupMap = new Map(); // key -> activity
     
-    // Deduplicate: prefer Strava over Garmin if duplicate found
+    // Deduplicate: prefer source based on EXTERNAL_SOURCE_PRIORITY.
     for (const act of allActs) {
       const key = createDedupKey(act, act.source);
       
       // Check if we've already seen this exact key
       if (dedupMap.has(key)) {
         const existing = dedupMap.get(key);
-        // If existing is Garmin and new is Strava, replace it but keep missing metrics from Garmin
-        if (existing.source === 'garmin' && act.source === 'strava') {
-          const merged = mergePreferredActivity(act, existing);
-          dedupMap.set(key, merged);
-          // Update in array
-          const existingIndex = deduplicatedActs.findIndex(a => a === existing);
-          if (existingIndex >= 0) {
-            deduplicatedActs[existingIndex] = merged;
-          }
-        } else if (existing.source === 'strava' && act.source === 'garmin') {
-          // Keep Strava identity, but enrich with Garmin metrics when Strava values are missing
-          const merged = mergePreferredActivity(existing, act);
-          dedupMap.set(key, merged);
-          const existingIndex = deduplicatedActs.findIndex(a => a === existing);
-          if (existingIndex >= 0) {
-            deduplicatedActs[existingIndex] = merged;
-          }
+        const merged = choosePreferredActivity(existing, act);
+        dedupMap.set(key, merged);
+        const existingIndex = deduplicatedActs.findIndex(a => a === existing);
+        if (existingIndex >= 0) {
+          deduplicatedActs[existingIndex] = merged;
         }
-        // Otherwise keep existing (Strava or already preferred)
         continue;
       }
       
@@ -1295,23 +1568,17 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           
           if (durationDiff <= 0.1 && distanceDiff <= 0.05) {
             isDuplicate = true;
-            // If existing is Garmin and new is Strava, replace it
-            if (seenAct.source === 'garmin' && act.source === 'strava') {
-              const merged = mergePreferredActivity(act, seenAct);
+            const merged = choosePreferredActivity(seenAct, act);
+            const preferredSourceChanged = merged.source !== seenAct.source;
+            if (preferredSourceChanged) {
               dedupMap.delete(seenKey);
               dedupMap.set(key, merged);
-              // Update in array
-              const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
-              if (existingIndex >= 0) {
-                deduplicatedActs[existingIndex] = merged;
-              }
-            } else if (seenAct.source === 'strava' && act.source === 'garmin') {
-              const merged = mergePreferredActivity(seenAct, act);
+            } else {
               dedupMap.set(seenKey, merged);
-              const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
-              if (existingIndex >= 0) {
-                deduplicatedActs[existingIndex] = merged;
-              }
+            }
+            const existingIndex = deduplicatedActs.findIndex(a => a === seenAct);
+            if (existingIndex >= 0) {
+              deduplicatedActs[existingIndex] = merged;
             }
             break;
           }

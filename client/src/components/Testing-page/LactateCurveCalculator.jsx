@@ -1724,39 +1724,26 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             // Zone 1 (slowest) should be on left (starts at minPace), Zone 5 (fastest) should be on right (ends at maxPace)
             // Same logic as speed mode but with reverse axis
             if (zoneKey === 'zone1') {
-              // Jen kousíček pomaleji než baseline / první krok (~10 %), ne celá modelová Z1
-              const modelLeft =
-                slowNibbleX != null
-                  ? Math.min(minPace, Math.max(maxPace, slowNibbleX))
-                  : minPace;
-              // Omezit levý okraj Z1: nesahat daleko za nejpomalejší naměřený krok (symetrický pocit s pravým okrajem)
-              const zoneSpan = Math.max(maxXForZones - minXForZones, 1e-9);
-              const z1SlowCap =
-                maxXForZones + Math.max(zoneSpan * 0.04, 12);
-              zoneMinX = Math.min(modelLeft, z1SlowCap);
-              zoneMinX = Math.max(zoneMinX, maxPace + 1e-6);
+              zoneMinX = maxXForZones;
             } else {
               // Other zones start where previous zone ended
               zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
             }
             // Zone ends at maxPace (going from slow to fast: minPace -> maxPace)
-            zoneMaxX = maxPace;
-            previousBoundary = maxPace;
+            zoneMaxX = zoneKey === 'zone5' ? minXForZones : maxPace;
+            previousBoundary = zoneMaxX;
           } else {
             // Normal axis (speed mode): Zone 1 (slowest) starts from left side (minX), Zone 5 (fastest) ends at right side (maxX)
             // minPace = lower speed (slower), maxPace = higher speed (faster)
             if (zoneKey === 'zone1') {
-              zoneMinX =
-                slowNibbleX != null
-                  ? Math.min(maxPace, Math.max(minPace, slowNibbleX))
-                  : minPace;
+              zoneMinX = minXForZones;
             } else {
               // Other zones start where previous zone ended
               zoneMinX = previousBoundary !== null ? previousBoundary : minPace;
             }
             // Zone ends at maxPace (faster speed, higher value, right side)
-            zoneMaxX = maxPace;
-            previousBoundary = maxPace;
+            zoneMaxX = zoneKey === 'zone5' ? maxXForZones : maxPace;
+            previousBoundary = zoneMaxX;
           }
           
           // Store zone boundaries for plugin rendering
@@ -1796,21 +1783,19 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           
           // For Zone 1, start from the beginning of the graph
           // For other zones, start where previous zone ended (no gaps)
-          const actualMinX = (zoneKey === 'zone1') 
-            ? Math.max(
-                0,
-                slowNibbleX != null ? Math.max(zone.min, slowNibbleX) : zone.min
-              )
+          const actualMinX = (zoneKey === 'zone1')
+            ? minXForZones
             : (previousMax !== null ? previousMax : zone.min);
+          const actualMaxX = zoneKey === 'zone5' ? maxXForZones : zone.max;
           
-          previousMax = zone.max;
+          previousMax = actualMaxX;
           
           // Store zone boundaries for plugin rendering
           zoneDatasets.push({
             label: zoneNames[zoneKey],
             data: [
               { x: actualMinX, y: 0 },
-              { x: zone.max, y: 0 },
+              { x: actualMaxX, y: 0 },
             ],
             backgroundColor: zoneColors[zoneKey],
             borderColor: 'transparent',
@@ -1825,7 +1810,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               heartRate: zones.heartRate?.[zoneKey] || null,
             },
             minX: actualMinX,
-            maxX: zone.max,
+            maxX: actualMaxX,
           });
         });
       }

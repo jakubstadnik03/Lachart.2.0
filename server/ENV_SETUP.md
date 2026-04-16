@@ -17,17 +17,17 @@ STRAVA_CLIENT_SECRET=
 STRAVA_REDIRECT_URI=http://localhost:8000/api/integrations/strava/callback
 
 # Garmin Integration
-# Note: Garmin has an official Activity API (https://developer.garmin.com/gc-developer-program/activity-api/)
-# but it requires approval as a business developer
-# For regular developers, we use the garmin-connect npm library
-# Users connect their Garmin accounts using their Garmin Connect username/password
-# No API keys or OAuth setup required - credentials are stored encrypted
-# 
-# To use official Garmin API:
-# 1. Apply for Garmin Connect Developer Program at https://developer.garmin.com/gc-developer-program/
-# 2. Get approved as a business developer
-# 3. Configure OAuth credentials (similar to Strava)
-# 4. Update integration to use official API endpoints
+# OAuth redirect should point to your backend callback:
+# https://your-backend/api/integrations/garmin/callback
+# Token URL depends on Garmin Developer Program credentials/environment.
+# Set GARMIN_TOKEN_URL from the Garmin portal/docs for your approved app.
+GARMIN_CLIENT_ID=
+GARMIN_CLIENT_SECRET=
+GARMIN_REDIRECT_URI=http://localhost:8000/api/integrations/garmin/callback
+GARMIN_TOKEN_URL=
+# Optional overrides
+# GARMIN_AUTHORIZE_URL=https://connect.garmin.com/oauth2Confirm
+# GARMIN_API_BASE_URL=https://apis.garmin.com
 
 # Subscription System (PREPARED BUT INACTIVE)
 # Set SUBSCRIPTION_ENABLED=true to enable subscription checks
@@ -47,5 +47,6 @@ SUBSCRIPTION_ENABLED=false
 Notes:
 - STRAVA_REDIRECT_URI must match exactly the Redirect URI configured in your Strava App settings.
 - In production, set `STRAVA_REDIRECT_URI` to `https://your-domain/api/integrations/strava/callback`.
-- **Garmin**: No API keys or OAuth setup required. Users connect directly with their Garmin Connect credentials.
+- **Garmin**: OAuth connect flow now expects `GARMIN_CLIENT_ID`, `GARMIN_CLIENT_SECRET`, `GARMIN_REDIRECT_URI`, and `GARMIN_TOKEN_URL`.
+- Garmin activity ingestion may still require Garmin push API callbacks or additional OAuth activity endpoints depending on your approved Developer Program access.
 - Never commit real secrets to git. Use deployment secrets/vars in your hosting platform.

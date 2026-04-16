@@ -6,7 +6,7 @@ import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, garminLogin } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -91,8 +91,6 @@ const SettingsPage = () => {
   const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
-  const [garminLoginModal, setGarminLoginModal] = useState(false);
-  const [garminCredentials, setGarminCredentials] = useState({ username: '', password: '' });
   const [polarConnected] = useState(false);
   const [corosConnected] = useState(false);
   const [files, setFiles] = useState([]);
@@ -188,10 +186,6 @@ const SettingsPage = () => {
       const tab = q.get('tab');
       if (tab === 'integrations') setActiveTab('integrations');
       if (tab === 'subscription') setActiveTab('subscription');
-      if (q.get('garmin') === 'connect') {
-        setActiveTab('integrations');
-        setGarminLoginModal(true);
-      }
     } catch {
       // ignore
     }
@@ -374,6 +368,50 @@ const SettingsPage = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const garminState = urlParams.get('garmin');
+    if (!garminState) return;
+
+    const finalizeGarminCallback = async () => {
+      if (garminState === 'error') {
+        addNotification(urlParams.get('message') || 'Garmin connection failed', 'error');
+        return;
+      }
+
+      if (garminState !== 'connected') return;
+
+      try {
+        const token = getStoredAuthToken();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (profileResponse.ok) {
+          const updatedUser = await profileResponse.json();
+          saveUserToStorage(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+
+        const status = await getIntegrationStatus();
+        setGarminConnected(Boolean(status.garminConnected));
+
+        const cleanPath = `${window.location.pathname}?tab=integrations`;
+        window.history.replaceState({}, document.title, cleanPath);
+        addNotification('Garmin account connected successfully', 'success');
+      } catch (e) {
+        console.error('Error finalizing Garmin callback:', e);
+        addNotification('Garmin connected, but profile refresh failed', 'warning');
+      }
+    };
+
+    finalizeGarminCallback();
+  }, [addNotification]);
 
   // Load Strava auto-sync setting from user profile
   useEffect(() => {
@@ -635,55 +673,12 @@ const SettingsPage = () => {
   };
 
   const handleConnectGarmin = async () => {
-    setGarminLoginModal(true);
-  };
-
-  const handleGarminLogin = async () => {
     try {
-      await garminLogin(garminCredentials);
-      setGarminLoginModal(false);
-      setGarminCredentials({ username: '', password: '' });
-      addNotification('Garmin account connected successfully', 'success');
-      
-      // Reload user profile
-      try {
-        const token = getStoredAuthToken();
-        const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (profileResponse.ok) {
-          const updatedUser = await profileResponse.json();
-          saveUserToStorage(updatedUser);
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-        }
-      } catch (profileError) {
-        console.error('Error reloading user profile:', profileError);
-      }
-      
-      // Check integration status
-      try {
-        const status = await getIntegrationStatus();
-        setGarminConnected(Boolean(status.garminConnected));
-      } catch (statusError) {
-        console.error('Error checking integration status:', statusError);
-      }
-      
-      // Automatically sync Garmin activities after connection
-      try {
-        const syncResult = await syncGarminActivities();
-        if (syncResult.imported > 0 || syncResult.updated > 0) {
-          addNotification(`Garmin sync: ${syncResult.imported || 0} imported, ${syncResult.updated || 0} updated`, 'success');
-          await handleSyncComplete();
-        }
-      } catch (syncError) {
-        console.error('Error during automatic Garmin sync:', syncError);
-      }
+      const url = await startGarminAuth();
+      window.location.href = url;
     } catch (e) {
-      console.error('Garmin login error:', e);
-      const errorMessage = e.response?.data?.error || e.message || 'Failed to connect Garmin account';
-      addNotification(errorMessage, 'error');
+      console.error('Garmin connect error:', e);
+      addNotification(e.response?.data?.error || e.message || 'Failed to start Garmin connection', 'error');
     }
   };
 
@@ -2122,12 +2117,14 @@ const SettingsPage = () => {
                       )}
                     <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Garmin</h4>
                     </div>
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${garminConnected ? 'text-green-600' : 'text-gray-500'}`}>
-                      {garminConnected ? 'Connected' : 'Not connected'}
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${(user?.admin || user?.role === 'admin') ? (garminConnected ? 'text-green-600' : 'text-gray-500') : 'text-amber-600'}`}>
+                      {(user?.admin || user?.role === 'admin')
+                        ? (garminConnected ? 'Connected' : 'Not connected')
+                        : 'Coming soon'}
                     </span>
                   </div>
                   
-                  {garminConnected && (
+                  {(user?.admin || user?.role === 'admin') && garminConnected && (
                     <div className={`${isMobile ? 'mb-2 pb-2' : 'mb-4 pb-4'} border-b`}>
                       <div className={`flex items-center justify-between ${isMobile ? 'flex-col gap-1.5' : ''}`}>
                         <div className={isMobile ? 'w-full' : ''}>
@@ -2151,31 +2148,41 @@ const SettingsPage = () => {
                     </div>
                   )}
                   
-                  <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
+                  {(user?.admin || user?.role === 'admin') ? (
+                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
+                      <button
+                        onClick={handleConnectGarmin}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
+                      >
+                        {garminConnected ? 'Reconnect' : 'Connect'}
+                      </button>
+                      {garminConnected && (
+                        <button
+                          onClick={handleSyncGarmin}
+                          disabled={isSyncingGarmin}
+                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                        >
+                          {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
+                        </button>
+                      )}
+                      {garminConnected && (
+                        <button
+                          onClick={handleDisconnectGarmin}
+                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                        >
+                          Disconnect Garmin
+                        </button>
+                      )}
+                    </div>
+                  ) : (
                     <button
-                      onClick={handleConnectGarmin}
-                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
+                      type="button"
+                      disabled
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
                     >
-                      {garminConnected ? 'Reconnect' : 'Connect'}
+                      Coming soon
                     </button>
-                    {garminConnected && (
-                      <button
-                        onClick={handleSyncGarmin}
-                        disabled={isSyncingGarmin}
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
-                      >
-                        {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
-                      </button>
-                    )}
-                    {garminConnected && (
-                      <button
-                        onClick={handleDisconnectGarmin}
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
-                      >
-                        Disconnect Garmin
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
 
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
@@ -2293,74 +2300,6 @@ const SettingsPage = () => {
         {renderTabContent()}
       </div>
 
-      {/* Garmin Login Modal */}
-      {garminLoginModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-xl ${isMobile ? 'p-4' : 'p-6'} max-w-md w-full`}>
-            <h3 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-gray-900 mb-4`}>Connect Garmin</h3>
-            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 mb-4`}>
-              Enter your Garmin Connect credentials to sync your activities.
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleGarminLogin();
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label htmlFor="garmin-username" className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700 block mb-1`}>
-                  Username/Email
-                </label>
-                <input
-                  id="garmin-username"
-                  type="email"
-                  name="username"
-                  autoComplete="username"
-                  value={garminCredentials.username}
-                  onChange={(e) => setGarminCredentials({ ...garminCredentials, username: e.target.value })}
-                  className={`w-full ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} border border-gray-300 ${isMobile ? 'rounded-md' : 'rounded'} focus:outline-none focus:ring-2 focus:ring-primary`}
-                  placeholder="your@email.com"
-                />
-              </div>
-              <div>
-                <label htmlFor="garmin-password" className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700 block mb-1`}>
-                  Password
-                </label>
-                <input
-                  id="garmin-password"
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                  value={garminCredentials.password}
-                  onChange={(e) => setGarminCredentials({ ...garminCredentials, password: e.target.value })}
-                  className={`w-full ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} border border-gray-300 ${isMobile ? 'rounded-md' : 'rounded'} focus:outline-none focus:ring-2 focus:ring-primary`}
-                  placeholder="••••••••"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGarminLoginModal(false);
-                    setGarminCredentials({ username: '', password: '' });
-                  }}
-                  className={`flex-1 ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!garminCredentials.username || !garminCredentials.password}
-                  className={`flex-1 ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  Connect
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
