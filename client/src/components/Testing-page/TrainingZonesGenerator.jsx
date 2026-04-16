@@ -70,17 +70,15 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     }
     
     if (isNaN(seconds) || seconds <= 0) return 0;
-    
-    // Convert seconds per km to speed
-    if (unitSystem === 'imperial') {
-      // Convert pace (seconds per km) to speed (mph)
-      // First convert to km/h, then to mph
-      const kmh = 3600 / seconds;
-      return kmh * 0.621371; // Convert km/h to mph
-    } else {
-      // Convert pace (seconds per km) to speed (km/h)
-      return 3600 / seconds;
+
+    const sport = mockData?.sport;
+    if (sport === 'swim') {
+      const kmh = 360 / seconds;
+      if (unitSystem === 'imperial') return kmh * 0.621371;
+      return kmh;
     }
+    // Run: sec/km (metric) or sec/mile (imperial)
+    return 3600 / seconds;
   };
 
   const mapSportToProfileKey = (sport) => (

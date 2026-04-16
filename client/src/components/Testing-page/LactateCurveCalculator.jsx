@@ -406,37 +406,55 @@ const formatSecondsToMMSS = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const KM_PER_MILE = 1.609344;
 const M_PER_YARD = 0.9144;
+const KM_PER_MILE = 1.609344;
 
-const paceSecondsToDisplaySeconds = (seconds, { isSwimming, unitSystem }) => {
-  // Canonical storage for pace sports in this app:
-  // - running pace is stored as seconds per km
-  // - swimming pace is stored as seconds per 100m
-  // UI converts to:
-  // - imperial run: seconds per mile
-  // - imperial swim: seconds per 100yd
+/** True when this test's run intervals were stored as seconds per mile (see TestingForm / API). */
+function testRunPaceStoredPerMile(mockData, sportKey) {
+  if (sportKey !== 'run') return false;
+  const u = String(mockData?.unitSystem ?? '').trim().toLowerCase();
+  return (
+    u === 'imperial' ||
+    u === 'us' ||
+    u === 'mile' ||
+    u === 'miles' ||
+    u === 'mi' ||
+    u === 'mph'
+  );
+}
+
+/**
+ * Seconds suitable for MM:SS labels on the chart / tooltips.
+ * - Swim imperial: canonical sec/100m → sec/100yd.
+ * - Run: `unitSystem` is resolved display (user + test); `testRunPerMileStorage` is how `power` was saved.
+ *   When display is imperial but test stored sec/km → multiply. When display metric but test stored sec/mile → divide.
+ */
+const paceSecondsToDisplaySeconds = (
+  seconds,
+  { isSwimming, unitSystem, testRunPerMileStorage = false }
+) => {
   if (seconds == null || !Number.isFinite(Number(seconds))) return seconds;
   const s = Number(seconds);
-  if (unitSystem !== 'imperial') return s;
+  const displayImperial = unitSystem === 'imperial';
   if (isSwimming) {
-    // 100yd = 91.44m => sec/100yd = sec/100m * 0.9144
+    if (!displayImperial) return s;
     return s * M_PER_YARD;
   }
-  // sec/mile = sec/km * 1.609344
-  return s * KM_PER_MILE;
+  if (displayImperial && !testRunPerMileStorage) return s * KM_PER_MILE;
+  if (!displayImperial && testRunPerMileStorage) return s / KM_PER_MILE;
+  return s;
 };
 
-const convertPaceToSpeed = (seconds, unitSystem = 'metric') => {
-  // Convert canonical pace seconds -> speed
-  // - canonical is sec/km for running; for speed display we still treat input as sec/km (km/h), then convert
+const convertPaceToSpeed = (seconds, unitSystem = 'metric', isSwimming = false) => {
   if (!seconds || !Number.isFinite(Number(seconds))) return 0;
-  const secPerKm = Number(seconds);
-  const kmh = 3600 / secPerKm;
-  if (unitSystem === 'imperial') {
-    return kmh * 0.621371; // mph
+  const s = Number(seconds);
+  if (isSwimming) {
+    const kmh = 360 / s;
+    if (unitSystem === 'imperial') return kmh * 0.621371;
+    return kmh;
   }
-  return kmh; // km/h
+  // Run: s is sec/km (metric) or sec/mile (imperial) → km/h or mph via 3600/s
+  return 3600 / s;
 };
 
 /** Zóny + LT1/LT2 tooltipy — musí být v Chart.register + options.plugins (react-chartjs-2 ignoruje změny plugins z props po mountu). */
@@ -449,7 +467,8 @@ const lactateZoneLtpOverlayPlugin = {
     const ctx = chart.ctx;
     const chartArea = chart.chartArea;
     const xScale = chart.scales.x;
-    const cv = opts.chartViewRef?.current ?? 'power';
+    // Prefer live chartView from options (same render as Chart); ref updates after paint and can lag.
+    const cv = opts.chartView ?? opts.chartViewRef?.current ?? 'power';
     const { zonesVisibleRef, ltpLinesVisibleRef } = opts;
     const sportKey = opts.sportKey;
     const isPaceSport = opts.isPaceSport;
@@ -506,8 +525,11 @@ const lactateZoneLtpOverlayPlugin = {
       const yAxisTitle = String(
         chart?.options?.scales?.y?.title?.text || ''
       ).toLowerCase();
+      // HR tab: X = lactate, Y = HR — must not format threshold X as pace (would mis-read lactate as seconds).
       const isHRView =
-        yAxisTitle.includes('heart rate') || yAxisTitle.includes('tepy');
+        cv === 'hr' ||
+        yAxisTitle.includes('heart rate') ||
+        yAxisTitle.includes('tepy');
 
       const labels = [];
 
@@ -574,7 +596,11 @@ const lactateZoneLtpOverlayPlugin = {
             const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
             valueText = `Speed: ${Number(point.x).toFixed(1)}${unit}`;
           } else if (isPaceSport) {
-            const displaySec = paceSecondsToDisplaySeconds(point.x, { isSwimming, unitSystem });
+            const displaySec = paceSecondsToDisplaySeconds(point.x, {
+              isSwimming,
+              unitSystem,
+              testRunPerMileStorage: opts.testRunPerMileStorage,
+            });
             const paceStr = formatSecondsToMMSS(displaySec);
             const unit = isSwimming
               ? unitSystem === 'imperial'
@@ -589,7 +615,7 @@ const lactateZoneLtpOverlayPlugin = {
           } else {
             valueText = `Power: ${Math.round(point.x)}W`;
           }
-          lactateText = `${Number(point.y).toFixed(2)} mmol/L`;
+          lactateText = `Lactate: ${Number(point.y).toFixed(2)} mmol/L`;
         }
 
         labels.push({
@@ -849,6 +875,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
+  /** How run pace was saved on this test (sec/mile vs sec/km) — independent of user display override. */
+  const testRunPerMileStorage = testRunPaceStoredPerMile(mockData, sportKey);
   // Case + nesoulad metadat (speed) vs skutečná data v sekundách po přepnutí jiného testu
   const inputMode = getEffectiveLactateInputMode({ ...mockData, sport: sportKey });
   const rpeScale = mockData?.rpeScale || 'rpe'; // Default to RPE scale if not set
@@ -1178,7 +1206,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     const v = Number(power);
     if (!isPaceSport) return v;
     if (inputMode === 'pace') return v; // seconds
-    return convertPaceToSpeed(v, unitSystem); // speed mode
+    return convertPaceToSpeed(v, unitSystem, isSwimming); // speed mode
   });
   
   const yValsMeasured = validResults.map(r => {
@@ -1225,8 +1253,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           return Number(power);
         })); // Fastest pace in seconds
         
-        const slowestSpeed = convertPaceToSpeed(slowestPace, unitSystem); // Convert to km/h
-        const fastestSpeed = convertPaceToSpeed(fastestPace, unitSystem); // Convert to km/h
+        const slowestSpeed = convertPaceToSpeed(slowestPace, unitSystem, isSwimming); // Convert to km/h
+        const fastestSpeed = convertPaceToSpeed(fastestPace, unitSystem, isSwimming); // Convert to km/h
         const speedRange = slowestSpeed - fastestSpeed;
         
         // Place base lactate closer to the slowest point - smaller gap
@@ -1289,7 +1317,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     const lactate = r.lactate?.toString().replace(',', '.');
     const xRaw = Number(power);
     const x = isPaceSport
-      ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
+      ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem, isSwimming))
       : xRaw;
     return { x, y: Number(lactate) };
   });
@@ -1324,7 +1352,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     const y = Math.max(0, point.y); // Ensure lactate is never negative
     if (isPaceSport && inputMode === 'speed') {
       // Convert from pace (seconds) to speed (km/h or mph)
-      const speed = convertPaceToSpeed(point.x, unitSystem);
+      const speed = convertPaceToSpeed(point.x, unitSystem, isSwimming);
       return { x: speed, y };
     }
     // For pace mode or bike, x is already correct (seconds for pace, watts for bike)
@@ -1350,7 +1378,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       const lactate = r.lactate?.toString().replace(',', '.');
       const xRaw = Number(power);
       const x = isPaceSport
-        ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem))
+        ? (inputMode === 'pace' ? xRaw : convertPaceToSpeed(xRaw, unitSystem, isSwimming))
         : xRaw;
       
       // Keep all measured points visible in chart; only reject non-finite X.
@@ -1451,7 +1479,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
         const interpolatedX = prev.x + (next.x - prev.x) * ratio;
         // Convert to display units
         if (isPaceSport && inputMode === 'speed') {
-          return convertPaceToSpeed(interpolatedX, unitSystem);
+          return convertPaceToSpeed(interpolatedX, unitSystem, isSwimming);
         }
         return interpolatedX;
       }
@@ -1459,7 +1487,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     
     // Convert to display units
     if (isPaceSport && inputMode === 'speed') {
-      return convertPaceToSpeed(closestPoint.x, unitSystem);
+      return convertPaceToSpeed(closestPoint.x, unitSystem, isSwimming);
     }
     return closestPoint.x;
   };
@@ -1485,12 +1513,12 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       } else if (isPaceSport && key === 'LTP1' && thresholds[key] != null && Number.isFinite(Number(thresholds[key]))) {
         xValue = inputMode === 'pace'
           ? Number(thresholds[key])
-          : convertPaceToSpeed(Number(thresholds[key]), unitSystem);
+          : convertPaceToSpeed(Number(thresholds[key]), unitSystem, isSwimming);
       } else {
         xValue = xValueFromCurve != null
           ? xValueFromCurve
           : (isPaceSport
-              ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem))
+              ? (inputMode === 'pace' ? thresholds[key] : convertPaceToSpeed(thresholds[key], unitSystem, isSwimming))
               : thresholds[key]);
       }
       
@@ -1704,8 +1732,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             // For speed: min should be slower (lower speed), max should be faster (higher speed)
             // So: slower pace (zone.min, higher seconds) -> lower speed
             //     faster pace (zone.max, lower seconds) -> higher speed
-            minPace = convertPaceToSpeed(minPaceSeconds, unitSystem); // Slower pace (higher seconds) = lower speed
-            maxPace = convertPaceToSpeed(maxPaceSeconds, unitSystem); // Faster pace (lower seconds) = higher speed
+            minPace = convertPaceToSpeed(minPaceSeconds, unitSystem, isSwimming); // Slower pace (higher seconds) = lower speed
+            maxPace = convertPaceToSpeed(maxPaceSeconds, unitSystem, isSwimming); // Faster pace (lower seconds) = higher speed
           }
           
           if (isNaN(minPace) || isNaN(maxPace)) return;
@@ -1914,6 +1942,18 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     xScaleMax = dataMaxX + padOuter;
   }
 
+  // Zone 5 fill should match the visible X-axis (incl. padding), not only raw data min/max
+  zoneDatasets.forEach((ds) => {
+    if (ds.zoneKey !== 'zone5') return;
+    if (isReverse) {
+      ds.maxX = xScaleMin;
+      if (ds.data?.[1]) ds.data[1].x = xScaleMin;
+    } else {
+      ds.maxX = xScaleMax;
+      if (ds.data?.[1]) ds.data[1].x = xScaleMax;
+    }
+  });
+
   const xAxisDisplayRange = Math.max(xScaleMax - xScaleMin, 1e-9);
 
   const data = { datasets: allDatasets };
@@ -2000,8 +2040,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
           // Convert to speed: slower pace (higher seconds) = lower speed, faster pace (lower seconds) = higher speed
           // zone.min is slower pace (higher seconds) -> lower speed
           // zone.max is faster pace (lower seconds) -> higher speed
-          minValue = convertPaceToSpeed(minPaceSeconds, unitSystem); // Slower pace (higher seconds) -> lower speed
-          maxValue = convertPaceToSpeed(maxPaceSeconds, unitSystem); // Faster pace (lower seconds) -> higher speed
+          minValue = convertPaceToSpeed(minPaceSeconds, unitSystem, isSwimming); // Slower pace (higher seconds) -> lower speed
+          maxValue = convertPaceToSpeed(maxPaceSeconds, unitSystem, isSwimming); // Faster pace (lower seconds) -> higher speed
           
           // For speed mode (normal axis): check if xValue is between min (slower) and max (faster)
           // Zone 1: slowest (lowest speed), Zone 5: fastest (highest speed)
@@ -2051,15 +2091,24 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     return null;
   };
 
+  const formatZoneBoundaryPace = (v) =>
+    typeof v === 'string'
+      ? v
+      : formatSecondsToMMSS(
+          paceSecondsToDisplaySeconds(v, { isSwimming, unitSystem, testRunPerMileStorage })
+        );
+
   const lactateZoneLtpOverlayOpts = {
     zonesVisibleRef,
     ltpLinesVisibleRef,
+    chartView,
     chartViewRef,
     sportKey,
     isPaceSport,
     inputMode,
     isSwimming,
     unitSystem,
+    testRunPerMileStorage,
   };
   
   const options = {
@@ -2144,7 +2193,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             if (isPaceSport) {
               if (inputMode === 'pace') {
                 // value is already pace seconds - round to whole seconds for cleaner display
-                const displaySec = paceSecondsToDisplaySeconds(value, { isSwimming, unitSystem });
+                const displaySec = paceSecondsToDisplaySeconds(value, {
+                  isSwimming,
+                  unitSystem,
+                  testRunPerMileStorage,
+                });
                 const totalSeconds = Math.round(displaySec);
                 const minutes = Math.floor(totalSeconds / 60);
                 const seconds = totalSeconds % 60;
@@ -2240,8 +2293,8 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               
               if (isPaceSport) {
                 if (inputMode === 'pace') {
-                  const minPace = typeof zone.power.min === 'string' ? zone.power.min : formatSecondsToMMSS(zone.power.min);
-                  const maxPace = typeof zone.power.max === 'string' ? zone.power.max : formatSecondsToMMSS(zone.power.max);
+                  const minPace = formatZoneBoundaryPace(zone.power.min);
+                  const maxPace = formatZoneBoundaryPace(zone.power.max);
                   const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
                   labels.push(`Pace: ${minPace}${unit} - ${maxPace}${unit}`);
                 } else {
@@ -2279,7 +2332,11 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               const unit = unitSystem === 'imperial' ? ' mph' : ' km/h';
               formattedValue = `${Number(xVal).toFixed(1)}${unit}`;
             } else if (isPaceSport) {
-                const displaySec = paceSecondsToDisplaySeconds(xVal, { isSwimming, unitSystem });
+                const displaySec = paceSecondsToDisplaySeconds(xVal, {
+                  isSwimming,
+                  unitSystem,
+                  testRunPerMileStorage,
+                });
                 const paceStr = formatSecondsToMMSS(displaySec);
                 const unit = isSwimming ? (unitSystem === 'imperial' ? '/100yd' : '/100m') : (unitSystem === 'imperial' ? '/mile' : '/km');
               formattedValue = `${paceStr}${unit}`;
@@ -2332,7 +2389,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   `Zone: ${zone.name}`,
                   isPaceSport 
                     ? (inputMode === 'pace' 
-                        ? `Pace: ${typeof zone.power.min === 'string' ? zone.power.min : formatSecondsToMMSS(zone.power.min)} - ${typeof zone.power.max === 'string' ? zone.power.max : formatSecondsToMMSS(zone.power.max)}`
+                        ? `Pace: ${formatZoneBoundaryPace(zone.power.min)} - ${formatZoneBoundaryPace(zone.power.max)}`
                         : `Speed: ${typeof zone.power.min === 'string' ? zone.power.min : parseFloat(zone.power.min).toFixed(1)} - ${typeof zone.power.max === 'string' ? zone.power.max : parseFloat(zone.power.max).toFixed(1)} ${unitSystem === 'imperial' ? 'mph' : 'km/h'}`)
                     : `Power: ${zone.power.min}W - ${zone.power.max}W`,
                   zone.heartRate ? `HR: ${zone.heartRate.min} - ${zone.heartRate.max} bpm` : null,
@@ -2593,7 +2650,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   title="Preview and download full report as PDF"
                 >
                   <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
-                  {pdfPreviewLoading ? 'Preparing…' : 'PDF Report'}
+                  {pdfPreviewLoading ? 'Preparing…' : 'PDF'}
                 </button>
                 {pdfStatus?.message && (
                   <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2708,6 +2765,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                             paceSecondsToDisplaySeconds(thresholds.testAnalysis.lt1.power, {
                               isSwimming,
                               unitSystem,
+                              testRunPerMileStorage,
                             })
                           )
                         : isPaceSport && inputMode === 'speed'
@@ -2734,6 +2792,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                             paceSecondsToDisplaySeconds(thresholds.testAnalysis.lt2.power, {
                               isSwimming,
                               unitSystem,
+                              testRunPerMileStorage,
                             })
                           )
                         : isPaceSport && inputMode === 'speed'

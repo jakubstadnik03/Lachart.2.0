@@ -1621,6 +1621,7 @@ const TestingPage = () => {
           setTests={setTests}
           selectedTestId={testIdFromUrl}
           onSelectTestId={handleUrlTestSelection}
+          externalActivities={externalActivities}
         />
       </motion.div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import LactateCurve from "./LactateCurve";
 import TestingForm from "./TestingForm";
 import DateSelector from "../DateSelector";
@@ -6,8 +6,100 @@ import LactateCurveCalculator from "./LactateCurveCalculator";
 import TrainingZonesGenerator from "./TrainingZonesGenerator";
 import TestComparison from "./TestComparison";
 import TestSelector from "./TestSelector";
+import { resolveLtAnchorsFromTest } from "./resolveLtAnchorsFromTest";
 import { updateTest, deleteTest } from '../../services/api';
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from '../../context/AuthProvider';
+import { getUserUnits, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+
+const KM_PER_MILE = 1.609344;
+
+const RacePacePredictorCard = lazy(() => import("../RacePacePredictor/RacePacePredictorCard.tsx"));
+
+function predictorSportFromTest(test) {
+  const s = String(test?.sport || "").trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes("bike") || s === "cycling" || s === "cycle") return "bike";
+  if (s.includes("run")) return "run";
+  if (s.includes("swim")) return "swim";
+  return null;
+}
+
+/** True when this test's run paces were stored as seconds per mile (aligned with LactateCurveCalculator). */
+function testRunPaceStoredPerMile(test) {
+  const u = String(test?.unitSystem ?? "").trim().toLowerCase();
+  return (
+    u === "imperial" ||
+    u === "us" ||
+    u === "mile" ||
+    u === "miles" ||
+    u === "mi" ||
+    u === "mph"
+  );
+}
+
+function clamp(n, lo, hi) {
+  return Math.min(hi, Math.max(lo, n));
+}
+
+/** Rough training context for Race Pace card from Strava-linked activities (~8 weeks). */
+function buildPredictorTraining(externalActivities, sport) {
+  const now = Date.now();
+  const cutoff = now - 56 * 24 * 60 * 60 * 1000;
+  const matchSport = (act) => {
+    const s = String(act.sport || act.type || "").toLowerCase();
+    if (sport === "bike") {
+      return (
+        s.includes("ride") ||
+        s.includes("bike") ||
+        s.includes("cycling") ||
+        s === "virtualride"
+      );
+    }
+    if (sport === "run") return s.includes("run");
+    if (sport === "swim") return s.includes("swim");
+    return false;
+  };
+  const acts = (externalActivities || []).filter((a) => {
+    const t = new Date(a.startDate || a.date || a.start_date || 0).getTime();
+    return !Number.isNaN(t) && t >= cutoff && matchSport(a);
+  });
+  const sessions = acts.length;
+  const volume = acts.reduce((sum, a) => {
+    const sec = Number(a.movingTime ?? a.elapsedTime ?? a.duration ?? 0);
+    return sum + (Number.isFinite(sec) && sec > 0 ? sec / 3600 : 0);
+  }, 0);
+  const longWorkout = acts.reduce((max, a) => {
+    const sec = Number(a.movingTime ?? a.elapsedTime ?? a.duration ?? 0);
+    const h = Number.isFinite(sec) && sec > 0 ? sec / 3600 : 0;
+    return Math.max(max, h);
+  }, 0);
+  const intervals = clamp(Math.round(sessions / 12), 0, 5);
+  if (sessions === 0) {
+    return {
+      volume: 8,
+      sessions: 6,
+      zoneDistribution: [0.28, 0.34, 0.2, 0.12, 0.06],
+      longWorkout: 1.5,
+      intervals: 1,
+    };
+  }
+  const z1 = clamp(0.22 + (sessions > 24 ? 0.06 : 0), 0.18, 0.4);
+  const z2 = clamp(0.34 - (sessions > 24 ? 0.04 : 0), 0.22, 0.38);
+  const z3 = 0.2;
+  const z4 = clamp(0.12 + (longWorkout < 1.5 ? 0.03 : 0), 0.06, 0.18);
+  let z5 = clamp(1 - z1 - z2 - z3 - z4, 0.02, 0.12);
+  const raw = [z1, z2, z3, z4, z5];
+  const sumZ = raw.reduce((a, b) => a + b, 0) || 1;
+  const zoneDistribution = raw.map((v) => v / sumZ);
+  return {
+    volume: Math.round(volume * 10) / 10,
+    sessions,
+    zoneDistribution,
+    longWorkout: Math.round(longWorkout * 10) / 10,
+    intervals,
+  };
+}
 
 const PreviousTestingComponent = ({
   selectedSport,
@@ -15,7 +107,9 @@ const PreviousTestingComponent = ({
   setTests,
   selectedTestId = null,
   onSelectTestId,
+  externalActivities = [],
 }) => {
+  const { user } = useAuth();
   const [selectedTests, setSelectedTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [glucoseColumnHidden, setGlucoseColumnHidden] = useState(false);
@@ -282,6 +376,48 @@ const PreviousTestingComponent = ({
     setGlucoseColumnHidden(hidden);
   };
 
+  const racePredictorProps = useMemo(() => {
+    if (!currentTest?.results?.length) return null;
+    const sport = predictorSportFromTest(currentTest);
+    /** Race pace grid is for running only (pace-based Riegel + copy). */
+    if (sport !== "run") return null;
+    const anchors = resolveLtAnchorsFromTest(currentTest);
+    if (!anchors) return null;
+
+    const raw = currentTest.results
+      .map((r) => ({
+        load: Number(String(r.power ?? "").replace(",", ".")),
+        lac: Number(String(r.lactate ?? "").replace(",", ".")),
+      }))
+      .filter((p) => Number.isFinite(p.load) && Number.isFinite(p.lac));
+
+    if (raw.length < 3) return null;
+
+    const displayUnitSystem = resolveDistanceUnitSystem(
+      { units: getUserUnits(user) },
+      currentTest.unitSystem || "metric"
+    );
+    const testStoredPerMile = testRunPaceStoredPerMile(currentTest);
+    const paceSecToMinPerKm = (paceSeconds) =>
+      testStoredPerMile ? paceSeconds / (60 * KM_PER_MILE) : paceSeconds / 60;
+
+    const lactateCurve = [...raw]
+      .map((p) => ({ x: paceSecToMinPerKm(p.load), y: p.lac }))
+      .sort((a, b) => b.x - a.x);
+    const lt1 = paceSecToMinPerKm(anchors.lt1_value);
+    const lt2 = paceSecToMinPerKm(anchors.lt2_value);
+
+    const training = buildPredictorTraining(externalActivities, sport);
+
+    return {
+      lt1,
+      lt2,
+      lactateCurve,
+      training,
+      unitSystem: displayUnitSystem,
+    };
+  }, [currentTest, externalActivities, user]);
+
   return (
     <div className="space-y-6">
       <AnimatePresence mode="wait">
@@ -357,6 +493,28 @@ const PreviousTestingComponent = ({
             transition={{ duration: 0.3 }}
           >
         <TrainingZonesGenerator mockData={currentTest} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {racePredictorProps && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.25 }}
+            className="w-full"
+          >
+            <Suspense
+              fallback={
+                <div className="rounded-xl border border-gray-100 bg-white/80 p-4 text-center text-sm text-gray-500">
+                  Loading race predictor…
+                </div>
+              }
+            >
+              <RacePacePredictorCard {...racePredictorProps} />
+            </Suspense>
           </motion.div>
         )}
       </AnimatePresence>

@@ -97,10 +97,14 @@ const convertSecondsToPace = (seconds) => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const convertSecondsToSpeed = (seconds, unitSystem) => {
+const convertSecondsToSpeed = (seconds, unitSystem, sport) => {
   if (!seconds || seconds <= 0) return 0;
-  const speed = 3600 / seconds; // Convert seconds per km to km/h
-  return unitSystem === 'imperial' ? speed * 0.621371 : speed; // Convert to mph if imperial
+  if (sport === 'swim') {
+    const kmh = 360 / seconds;
+    return unitSystem === 'imperial' ? kmh * 0.621371 : kmh;
+  }
+  // Run: sec/km (metric) or sec/mile (imperial)
+  return 3600 / seconds;
 };
 
 
@@ -399,7 +403,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             return convertSecondsToPace(power);
           } else {
             // Speed mode - convert seconds to speed
-            const speed = convertSecondsToSpeed(power, unitSystem);
+            const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
             const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
             return `${speed.toFixed(1)} ${unit}`;
           }
@@ -511,7 +515,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                   const pace = convertSecondsToPace(power);
                   return `${label}: ${valueStr} ${valueUnit} | ${pace}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return `${label}: ${valueStr} ${valueUnit} | ${speed.toFixed(1)} ${unit}`;
                 }
@@ -629,7 +633,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                   const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
                   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return `${speed.toFixed(1)} ${unit}`;
                 }
@@ -640,7 +644,7 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
                   const unit = unitSystem === 'imperial' ? '/mile' : '/km';
                   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
                 } else {
-                  const speed = convertSecondsToSpeed(power, unitSystem);
+                  const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
                   return `${speed.toFixed(1)} ${unit}`;
                 }

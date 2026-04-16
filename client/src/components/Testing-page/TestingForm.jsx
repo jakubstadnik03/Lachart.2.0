@@ -201,35 +201,36 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     return (minutes * 60) + seconds;
   };
 
-  const convertSecondsToSpeed = (seconds, unitSystem) => {
+  /**
+   * Pace sports: running stores seconds per km (metric) or per mile (imperial).
+   * Swimming stores seconds per 100m; speed uses km/h (metric) or mph (imperial).
+   */
+  const convertSecondsToSpeed = (seconds, unitSystem, sport) => {
     if (!seconds) return 0;
-    if (unitSystem === 'imperial') {
-      // Convert pace (seconds per km) to speed (mph)
-      // First convert seconds per km to km/h, then to mph
-      const kmh = 3600 / seconds; // Convert seconds per km to km/h
-      return kmh * 0.621371; // Convert km/h to mph
-    } else {
-      // Convert pace (seconds per km) to speed (km/h)
-      return 3600 / seconds;
+    if (sport === 'swim') {
+      const kmh = 360 / seconds;
+      if (unitSystem === 'imperial') return kmh * 0.621371;
+      return kmh;
     }
+    // run (and any legacy path): duration per distance unit → km/h or mph via 3600/s
+    return 3600 / seconds;
   };
 
-  const convertSpeedToSeconds = (speed, unitSystem) => {
+  const convertSpeedToSeconds = (speed, unitSystem, sport) => {
     if (!speed || speed === 0) return 0;
     const speedNum = typeof speed === 'string' ? parseFloat(speed.replace(',', '.')) : speed;
     if (isNaN(speedNum) || speedNum <= 0) return 0;
-    
-    if (unitSystem === 'imperial') {
-      // Convert speed (mph) to pace (seconds per km)
-      // First convert mph to km/h, then to seconds per km
-      const kmh = speedNum / 0.621371; // Convert mph to km/h
-      if (kmh <= 0) return 0;
-      return 3600 / kmh; // Convert km/h to seconds per km
-    } else {
-      // Convert speed (km/h) to pace (seconds per km)
-      if (speedNum <= 0) return 0;
-      return 3600 / speedNum;
+
+    if (sport === 'swim') {
+      if (unitSystem === 'imperial') {
+        const kmh = speedNum / 0.621371;
+        if (kmh <= 0) return 0;
+        return 360 / kmh;
+      }
+      return 360 / speedNum;
     }
+    // run: km/h or mph → sec/km or sec/mile
+    return 3600 / speedNum;
   };
 
   const [formData, setFormData] = useState({
@@ -284,7 +285,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
             }
             // If it's a small number (< 50), assume it's speed - convert to pace
             else if (powerNum > 0 && powerNum < 50) {
-            const seconds = convertSpeedToSeconds(powerNum, unitSystem);
+            const seconds = convertSpeedToSeconds(powerNum, unitSystem, formData.sport);
             return { ...row, power: convertSecondsToPace(seconds) };
             }
             // For values 50-60, might be ambiguous - keep as is or convert based on context
@@ -294,8 +295,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           
           // If it has ':', it's pace format - convert to speed
           if (powerStr.includes(':')) {
-            const seconds = convertPaceToSeconds(powerStr);
-            const speed = convertSecondsToSpeed(seconds, unitSystem);
+            const paceSeconds = convertPaceToSeconds(powerStr);
+            const speed = convertSecondsToSpeed(paceSeconds, unitSystem, formData.sport);
             const speedNum = Number(speed);
             return { ...row, power: Number.isFinite(speedNum) ? speedNum.toFixed(1) : '' };
           }
@@ -304,7 +305,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           if (!isNaN(powerNum)) {
             // If it's a large number (>= 60), assume it's seconds from backend - convert to speed
             if (powerNum >= 60) {
-              const speed = convertSecondsToSpeed(powerNum, unitSystem);
+              const speed = convertSecondsToSpeed(powerNum, unitSystem, formData.sport);
               const speedNum = Number(speed);
               return { ...row, power: Number.isFinite(speedNum) ? speedNum.toFixed(1) : '' };
             }
@@ -599,7 +600,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
           let power = row.power !== undefined && row.power !== null ? String(row.power) : '';
           
           // For existing tests (from backend), convert seconds to display format
-          // Backend always stores pace in seconds for run/swim
+          // Run: metric tests store sec/km, imperial tests store sec/mile (same MM:SS formatting).
+          // Swim: sec/100m.
           if ((testData.sport === 'run' || testData.sport === 'swim') && power) {
             const powerNum = parseFloat(power);
             // If it's a number > 60, it's seconds from backend - convert to display format
@@ -610,7 +612,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 power = convertSecondsToPace(powerNum);
               } else if (inputMode === 'speed') {
                 // Convert seconds to speed (km/h or mph)
-                const speed = convertSecondsToSpeed(powerNum, unitSystem);
+                const speed = convertSecondsToSpeed(powerNum, unitSystem, testData.sport);
                 const speedNum = Number(speed);
                 power = Number.isFinite(speedNum) ? speedNum.toFixed(1) : '';
             } else {
@@ -664,10 +666,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     
     // Check if it's already in pace format (MM:SS)
     if (powerStr.includes(':')) {
-      // It's pace format, convert to seconds
-      const seconds = convertPaceToSeconds(powerStr);
-      console.log(`[convertPowerToSeconds] Pace "${powerStr}" -> ${seconds}s`);
-      return seconds;
+      return convertPaceToSeconds(powerStr);
     }
     
     // Try to parse as number
@@ -689,7 +688,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     let result;
     if (isLikelySpeed && !isLikelySeconds) {
       // It's speed, convert to seconds
-      result = convertSpeedToSeconds(powerNum, currentUnitSystem);
+      result = convertSpeedToSeconds(powerNum, currentUnitSystem, sport);
       console.log(`[convertPowerToSeconds] Speed ${powerNum} ${currentUnitSystem === 'imperial' ? 'mph' : 'km/h'} -> ${result}s`);
     } else if (isLikelySeconds) {
       // It's already in seconds, return as is
@@ -698,7 +697,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
     } else {
       // Ambiguous case: use current inputMode to decide
       if (currentInputMode === 'speed') {
-        result = convertSpeedToSeconds(powerNum, currentUnitSystem);
+        result = convertSpeedToSeconds(powerNum, currentUnitSystem, sport);
         console.log(`[convertPowerToSeconds] Ambiguous, using speed mode: ${powerNum} -> ${result}s`);
       } else {
         // Assume it's already seconds if in pace mode
@@ -1263,11 +1262,14 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                             if (restoredInputMode === 'pace') {
                               power = convertSecondsToPace(powerNum);
                             } else if (restoredInputMode === 'speed') {
-                              const speed = convertSecondsToSpeed(powerNum, restoredUnitSystem);
+                              const speed = convertSecondsToSpeed(
+                                powerNum,
+                                restoredUnitSystem,
+                                originalTestData.sport
+                              );
                               const speedNum = Number(speed);
                               power = Number.isFinite(speedNum) ? speedNum.toFixed(1) : '';
                             } else {
-                              // Fallback: convert to pace
                               power = convertSecondsToPace(powerNum);
                             }
                           }

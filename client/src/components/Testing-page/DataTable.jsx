@@ -3660,6 +3660,15 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     else if (sLow === 'swimming') sport = 'swim';
     const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
     const inputMode = getEffectiveLactateInputMode(mockData);
+    const rawTestUnit = String(mockData?.unitSystem ?? '').trim().toLowerCase();
+    const testRunPerMileStorage =
+      sport === 'run' &&
+      (rawTestUnit === 'imperial' ||
+        rawTestUnit === 'us' ||
+        rawTestUnit === 'mile' ||
+        rawTestUnit === 'miles' ||
+        rawTestUnit === 'mi' ||
+        rawTestUnit === 'mph');
   
     // Seznam metod, včetně Log-log
     const methods = [
@@ -3695,7 +3704,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             return 'N/A';
           }
           const value = thresholds[method];
-          return value ? formatPowerOrPace(value, sport, unitSystem, inputMode) : 'N/A';
+          return value
+            ? formatPowerOrPace(value, sport, unitSystem, inputMode, { testRunPerMileStorage })
+            : 'N/A';
         })
       },
       {
@@ -3820,26 +3831,31 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatPowerOrPace = (value, sport, unitSystem = 'metric', inputMode = 'pace') => {
+  const formatPowerOrPace = (
+    value,
+    sport,
+    unitSystem = 'metric',
+    inputMode = 'pace',
+    extras = {}
+  ) => {
     if (!value || value === 'N/A') return 'N/A';
+    const testRunPerMileStorage = extras.testRunPerMileStorage === true;
     
     if (sport === 'bike') {
       return `${Math.round(value)} W`;
     } else if (sport === 'run' || sport === 'swim') {
       if (inputMode === 'pace') {
-        // Canonical storage:
-        // - running: sec/km
-        // - swimming: sec/100m
-        // Convert to imperial display if needed.
         const KM_PER_MILE = 1.609344;
         const M_PER_YARD = 0.9144;
-        const canonicalSeconds = Number(value);
-        const displaySeconds =
-          unitSystem !== 'imperial'
-            ? canonicalSeconds
-            : sport === 'swim'
-              ? canonicalSeconds * M_PER_YARD // sec/100yd
-              : canonicalSeconds * KM_PER_MILE; // sec/mile
+        const stored = Number(value);
+        const displayImperial = unitSystem === 'imperial';
+        let displaySeconds = stored;
+        if (sport === 'swim') {
+          if (displayImperial) displaySeconds = stored * M_PER_YARD;
+        } else {
+          if (displayImperial && !testRunPerMileStorage) displaySeconds = stored * KM_PER_MILE;
+          if (!displayImperial && testRunPerMileStorage) displaySeconds = stored / KM_PER_MILE;
+        }
         const paceStr = formatSecondsToMMSS(displaySeconds);
         if (sport === 'swim') {
           const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
@@ -3849,14 +3865,20 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
           return `${paceStr}${unit}`;
         }
       } else {
-        // Speed mode - convert seconds to speed
-        const speed = 3600 / value; // Convert seconds per km to km/h
-        if (unitSystem === 'imperial') {
-          const mph = speed * 0.621371; // Convert km/h to mph
-          return `${mph.toFixed(1)} mph`;
-        } else {
-          return `${speed.toFixed(1)} km/h`;
+        const s = Number(value);
+        if (sport === 'swim') {
+          const kmh = 360 / s;
+          if (unitSystem === 'imperial') {
+            return `${(kmh * 0.621371).toFixed(1)} mph`;
+          }
+          return `${kmh.toFixed(1)} km/h`;
         }
+        // Run: sec/km (metric) or sec/mile (imperial) → km/h or mph
+        const speedOut = 3600 / s;
+        if (unitSystem === 'imperial') {
+          return `${speedOut.toFixed(1)} mph`;
+        }
+        return `${speedOut.toFixed(1)} km/h`;
       }
     }
     return 'N/A';
