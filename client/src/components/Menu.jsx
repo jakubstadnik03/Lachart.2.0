@@ -283,7 +283,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         className={`fixed lg:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden safe-top`}
       >
         <div 
-          className="flex items-center justify-center h-16 border-b border-gray-200 flex-shrink-0"
+          className="flex items-center justify-center h-14 border-b border-gray-200 flex-shrink-0"
         >
           <img src="/images/LaChart.png" alt="LaChart Logo" className="w-10 h-8 mr-2 object-contain" />
           <h1 className="text-xl font-bold text-primary">LaChart</h1>

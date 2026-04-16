@@ -254,6 +254,65 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
     };
   }, [chartData, smoothing]);
 
+  const summarizeWindow = useCallback((points, startIndex, endIndex, label = 'Selected segment') => {
+    if (!Array.isArray(points) || points.length === 0 || startIndex == null || endIndex == null) return;
+    if (endIndex <= startIndex) return;
+
+    let sumPower = 0;
+    let countPower = 0;
+    let sumHr = 0;
+    let countHr = 0;
+    let sumCadence = 0;
+    let countCadence = 0;
+    let sumSpeed = 0;
+    let countSpeed = 0;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      const p = points[i];
+      const pPower = Number(p.power || 0);
+      const pHr = Number(p.heartRate || 0);
+      const pCad = p.cadence != null ? Number(p.cadence) : null;
+      const pSpeed = Number(p.speed || 0);
+
+      if (pPower > 0) {
+        sumPower += pPower;
+        countPower++;
+      }
+      if (pHr > 0) {
+        sumHr += pHr;
+        countHr++;
+      }
+      if (pCad != null) {
+        sumCadence += pCad;
+        countCadence++;
+      }
+      if (pSpeed > 0) {
+        sumSpeed += pSpeed;
+        countSpeed++;
+      }
+    }
+
+    const startPoint = points[startIndex];
+    const endPoint = points[endIndex];
+    const durationSec = endPoint.time - startPoint.time;
+    const distanceKm = Math.max(0, endPoint.distance - startPoint.distance);
+
+    setHighlightWindow({
+      startDistance: startPoint.distance,
+      endDistance: endPoint.distance
+    });
+
+    setHighlightSummary({
+      label,
+      durationSec,
+      distanceKm,
+      avgPower: countPower > 0 ? sumPower / countPower : null,
+      avgHr: countHr > 0 ? sumHr / countHr : null,
+      avgCadence: countCadence > 0 ? sumCadence / countCadence : null,
+      avgSpeedKmh: countSpeed > 0 ? sumSpeed / countSpeed : null
+    });
+  }, []);
+
   // When coming from Power Radar (highlightMetric), auto-zoom to the best window and keep tooltip there
   useEffect(() => {
     if (!highlightMetric || !processedData || !processedData.points || processedData.points.length === 0) {
@@ -330,55 +389,6 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
 
     setZoomRange({ min: startRatio, max: endRatio });
 
-    // Store window distances for visual highlight
-    setHighlightWindow({
-      startDistance: startPoint.distance,
-      endDistance: endPoint.distance
-    });
-
-    // Compute summary metrics inside this window (avg power, HR, cadence, speed, duration, distance)
-    let sumPower = 0;
-    let countPower = 0;
-    let sumHr = 0;
-    let countHr = 0;
-    let sumCadence = 0;
-    let countCadence = 0;
-    let sumSpeed = 0;
-    let countSpeed = 0;
-
-    for (let i = best.startIndex; i <= best.endIndex; i++) {
-      const p = points[i];
-      const pPower = Number(p.power || 0);
-      const pHr = Number(p.heartRate || 0);
-      const pCad = p.cadence != null ? Number(p.cadence) : null;
-      const pSpeed = Number(p.speed || 0);
-
-      if (pPower > 0) {
-        sumPower += pPower;
-        countPower++;
-      }
-      if (pHr > 0) {
-        sumHr += pHr;
-        countHr++;
-      }
-      if (pCad != null) {
-        sumCadence += pCad;
-        countCadence++;
-      }
-      if (pSpeed > 0) {
-        sumSpeed += pSpeed;
-        countSpeed++;
-      }
-    }
-
-    const durationSec = endPoint.time - startPoint.time;
-    const distanceKm = Math.max(0, endPoint.distance - startPoint.distance);
-
-    const avgPower = countPower > 0 ? sumPower / countPower : null;
-    const avgHr = countHr > 0 ? sumHr / countHr : null;
-    const avgCadence = countCadence > 0 ? sumCadence / countCadence : null;
-    const avgSpeedKmh = countSpeed > 0 ? sumSpeed / countSpeed : null;
-
     // Human-friendly label for the metric
     const metricLabels = {
       sprint5s: 'Best 5s sprint window',
@@ -388,21 +398,13 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       endurance60min: 'Best 60min endurance window'
     };
 
-    setHighlightSummary({
-      label: metricLabels[highlightMetric] || 'Highlighted window',
-      durationSec,
-      distanceKm,
-      avgPower,
-      avgHr,
-      avgCadence,
-      avgSpeedKmh
-    });
+    summarizeWindow(points, best.startIndex, best.endIndex, metricLabels[highlightMetric] || 'Highlighted window');
 
     // Also set hoveredPoint so tooltip immediately shows at window end
     const midIndex = Math.round((best.startIndex + best.endIndex) / 2);
     const midPoint = points[midIndex] || endPoint;
     setHoveredPoint(midPoint);
-  }, [highlightMetric, processedData]);
+  }, [highlightMetric, processedData, summarizeWindow]);
 
   // Check if training has elevation data and set showElevation default
   useEffect(() => {
@@ -940,12 +942,28 @@ const TrainingChart = ({ training, userProfile, onHover, onLeave, user, highligh
       const newMax = endDistance / processedData.maxDistance;
       
       setZoomRange({ min: Math.max(0, newMin), max: Math.min(1, newMax) });
+
+      let startIndex = 0;
+      let endIndex = processedData.points.length - 1;
+      for (let i = 0; i < processedData.points.length; i++) {
+        if (processedData.points[i].distance >= startDistance) {
+          startIndex = i;
+          break;
+        }
+      }
+      for (let i = processedData.points.length - 1; i >= 0; i--) {
+        if (processedData.points[i].distance <= endDistance) {
+          endIndex = i;
+          break;
+        }
+      }
+      summarizeWindow(processedData.points, startIndex, endIndex, 'Selected segment');
     }
     
     setIsDragging(false);
     setDragStart(null);
     setDragEnd(null);
-  }, [isDragging, dragStart, dragEnd, processedData, graphWidth, zoomRange]);
+  }, [isDragging, dragStart, dragEnd, processedData, graphWidth, zoomRange, summarizeWindow]);
 
   const handleMouseLeave = useCallback(() => {
     // On mobile, don't clear clicked point on mouse leave

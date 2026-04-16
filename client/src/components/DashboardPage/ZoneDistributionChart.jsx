@@ -75,15 +75,18 @@ function extractZones(training) {
   const empty = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
 
   // ── 1. Structured zone fields ──────────────────────────────────────────────
-  if (Array.isArray(training.zones) && training.zones.length > 0) {
-    const result = { ...empty };
-    training.zones.forEach((z) => {
-      const idx = Number(z.zone || z.zoneNumber || z.id);
-      const t = Number(z.time || z.seconds || z.duration || 0);
-      if (idx >= 1 && idx <= 5) result[`z${idx}`] += t;
-    });
-    const total = Object.values(result).reduce((a, b) => a + b, 0);
-    if (total > 0) return result;
+  for (const zonesField of ['zones', 'timeInZone', 'timeInZones', 'zoneTimes']) {
+    const zones = training?.[zonesField];
+    if (Array.isArray(zones) && zones.length > 0) {
+      const result = { ...empty };
+      zones.forEach((z) => {
+        const idx = Number(z.zone || z.zoneNumber || z.id);
+        const t = Number(z.time || z.seconds || z.duration || z.value || 0);
+        if (idx >= 1 && idx <= 5) result[`z${idx}`] += t;
+      });
+      const total = Object.values(result).reduce((a, b) => a + b, 0);
+      if (total > 0) return result;
+    }
   }
 
   for (const fieldName of ['heartRateZones', 'powerZones']) {

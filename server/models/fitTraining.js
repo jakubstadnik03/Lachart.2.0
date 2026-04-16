@@ -119,7 +119,7 @@ const fitTrainingSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', null],
+    enum: ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', 'hills', null],
     default: null
   },
   trainingRouteId: {

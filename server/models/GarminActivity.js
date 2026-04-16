@@ -25,7 +25,7 @@ const garminActivitySchema = new mongoose.Schema({
   description: { type: String, default: null },
   category: {
     type: String,
-    enum: ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', null],
+    enum: ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', 'hills', null],
     default: null
   },
   sport: String,

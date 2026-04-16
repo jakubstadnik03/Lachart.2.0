@@ -775,6 +775,22 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/integrations/garmin/disconnect - remove Garmin credentials & disable auto-sync
+router.post('/garmin/disconnect', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    user.garmin = undefined;
+    await user.save();
+
+    res.json({ success: true, message: 'Garmin disconnected' });
+  } catch (error) {
+    console.error('Error disconnecting Garmin:', error);
+    res.status(500).json({ error: error.message || 'Failed to disconnect Garmin' });
+  }
+});
+
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null) {
   try {
@@ -1784,7 +1800,7 @@ router.put('/strava/activities/:id', verifyToken, async (req, res) => {
     // Update category if provided
     // Ensure category is either a valid enum value or null (empty string becomes null)
     if (category !== undefined) {
-      const validCategories = ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery'];
+      const validCategories = ['endurance', 'tempo', 'threshold', 'vo2max', 'anaerobic', 'recovery', 'hills'];
       if (category === null || category === '' || category === undefined) {
         activity.category = null;
       } else if (validCategories.includes(category)) {

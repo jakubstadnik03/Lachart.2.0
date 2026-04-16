@@ -15,7 +15,9 @@ const resultSchema = new mongoose.Schema({
     power: Number,
     heartRate: Number,
     lactate: Number,
-    RPE: Number
+    RPE: Number,
+    elevation: Number,
+    sourceLapIndex: Number
 });
 
 const specificsSchema = new mongoose.Schema({

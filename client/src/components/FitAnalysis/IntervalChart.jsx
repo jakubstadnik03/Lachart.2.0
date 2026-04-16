@@ -91,8 +91,10 @@ const IntervalChart = ({
   const [hoveredBar, setHoveredBar] = useState(null);
   const [clickedBarIndex, setClickedBarIndex] = useState(null); // Track clicked bar on mobile / external highlight
   const chartContainerRef = useRef(null);
+  const chartScrollRef = useRef(null);
   const barRefs = useRef({});
   const lastTouchAtRef = useRef(0);
+  const [xZoomScale, setXZoomScale] = useState(1);
   
   // Determine unit system from user profile or default to metric
   const unitSystem = (user || authUser)?.units?.distance || 'metric';
@@ -483,17 +485,34 @@ const IntervalChart = ({
     if (idx === -1 || idx == null) return;
     setClickedBarIndex(idx);
     setHoveredBar({ bar: chartData.bars[idx], index: idx, widthPercent: 0 });
-
-    // Ensure the selected bar is visible (useful on small screens).
-    const el = barRefs.current?.[idx];
-    if (el && el.scrollIntoView) {
-      try {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      } catch {
-        // ignore
-      }
-    }
+    setXZoomScale(2.4);
   }, [selectedLapNumber, chartData]);
+
+  useEffect(() => {
+    if (clickedBarIndex == null) {
+      setXZoomScale(1);
+      return;
+    }
+
+    setXZoomScale((prev) => Math.max(prev, 2.4));
+
+    const scrollContainer = chartScrollRef.current;
+    const barElement = barRefs.current?.[clickedBarIndex];
+    if (!scrollContainer || !barElement) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const barRect = barElement.getBoundingClientRect();
+    const targetLeft =
+      scrollContainer.scrollLeft +
+      (barRect.left - containerRect.left) -
+      (containerRect.width / 2) +
+      (barRect.width / 2);
+
+    scrollContainer.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: 'smooth'
+    });
+  }, [clickedBarIndex, xZoomScale]);
 
   // Close "locked" tooltip when clicking/tapping outside the chart
   useEffect(() => {
@@ -664,14 +683,30 @@ const IntervalChart = ({
   const { bars, maxValue, minValue, totalDistance, groups } = chartData;
   const { labels: yAxisLabels, adjustedMinValue, adjustedMaxValue, reversed } = getYAxisLabels();
   const isPaceAxis = (isRun || isSwim) && selectedMetric === 'pace';
-  const yAxisWidth = isPaceAxis ? (isMobile ? 'w-14' : 'w-20') : (isMobile ? 'w-8' : 'w-12');
-  const chartLeftMargin = isPaceAxis ? (isMobile ? 'ml-14' : 'ml-20') : (isMobile ? 'ml-10' : 'ml-14');
+  const yAxisWidth = isMobile ? 'w-8' : 'w-12';
+  const chartLeftMargin = isMobile ? 'ml-10' : 'ml-14';
 
   return (
     <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow`}>
       <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-2 mb-2 sm:mb-4`}>
         <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold text-gray-900`}>Activity Intervals</h3>
         <div className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'flex-wrap' : ''}`}>
+          {xZoomScale > 1 && (
+            <button
+              onClick={() => {
+                setXZoomScale(1);
+                setClickedBarIndex(null);
+                setHoveredBar(null);
+                if (onSelectLapNumber) onSelectLapNumber(null);
+                if (chartScrollRef.current) {
+                  chartScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                }
+              }}
+              className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'} font-medium rounded-lg transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200`}
+            >
+              Reset zoom
+            </button>
+          )}
           {(isRun || isSwim) && (
           <button
               onClick={() => setSelectedMetric('pace')}
@@ -730,9 +765,9 @@ const IntervalChart = ({
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px' }}>
+      <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px', paddingTop: isMobile ? '8px' : '10px' }}>
         {/* Y-axis labels - aligned 1:1 with dashed grid lines */}
-        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-1 pt-0.5`}>
+        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-0.5 pt-2`}>
           <div className="relative w-full h-full">
             {yAxisLabels.map((_, i) => {
               const steps = yAxisLabels.length - 1 || 1;
@@ -757,10 +792,7 @@ const IntervalChart = ({
                 displayLabel = Math.round(value);
               }
 
-              let topPercent = steps > 0 ? (i / steps) * 100 : 0;
-              // Nudge first/last labels inside the chart so they are not clipped (esp. "Faster" helper)
-              if (i === 0) topPercent += 4;
-              else if (i === steps) topPercent -= 4;
+              const topPercent = steps > 0 ? (i / steps) * 100 : 0;
               
               return (
                 <div
@@ -768,16 +800,10 @@ const IntervalChart = ({
                   className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right absolute right-0`}
                   style={{
                     top: `${topPercent}%`,
-                    // Prevent the first label from being clipped at the top and the last at the bottom
-                    transform: i === 0 ? 'translateY(0%)' : (i === steps ? 'translateY(-100%)' : 'translateY(-50%)')
+                    transform: 'translateY(-50%)'
                   }}
                 >
                   {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}
-                  {((isRun || isSwim) && selectedMetric === 'pace' && (i === 0 || i === steps)) && (
-                    <div className="text-[10px] text-gray-500 font-medium mt-0.5 whitespace-nowrap">
-                      {i === 0 ? 'Faster' : 'Slower'}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -786,28 +812,33 @@ const IntervalChart = ({
 
         {/* Chart area */}
         <div
-          className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} relative overflow-x-hidden overflow-y-hidden`}
-          style={{ height: isMobile ? 'calc(100% - 36px)' : 'calc(100% - 48px)' }}
+          ref={chartScrollRef}
+          className={`${chartLeftMargin} ${isMobile ? 'mr-0' : 'mr-4'} relative overflow-x-auto overflow-y-hidden`}
+          style={{ height: isMobile ? 'calc(100% - 44px)' : 'calc(100% - 58px)' }}
         >
-          {/* Grid lines */}
-          <div className="absolute inset-0">
-            {yAxisLabels.map((_, i) => (
-              <div
-                key={i}
-                className="absolute left-0 right-0 border-t border-dashed border-gray-200"
-                style={{
-                  top: `${(i / (yAxisLabels.length - 1)) * 100}%`
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Bars */}
           <div
-            className="relative h-full flex items-end gap-0.5 overflow-hidden"
-            style={{ minWidth: isMobile ? '100%' : 'auto' }}
+            className="relative h-full"
+            style={{ width: `${Math.max(100, xZoomScale * 100)}%`, minWidth: '100%' }}
           >
-            {bars.map((bar, index) => {
+            {/* Grid lines */}
+            <div className="absolute inset-0">
+              {yAxisLabels.map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute left-0 right-0 border-t border-dashed border-gray-200"
+                  style={{
+                    top: `${(i / (yAxisLabels.length - 1)) * 100}%`
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Bars */}
+            <div
+              className="relative h-full flex items-end gap-0.5 overflow-hidden"
+              style={{ minWidth: '100%' }}
+            >
+              {bars.map((bar, index) => {
               const isSelectedBar = selectedBarIndex === index;
               // For pace, reverse the height calculation (smaller pace = faster = higher bar)
               const height = adjustedMaxValue > adjustedMinValue 
@@ -927,9 +958,9 @@ const IntervalChart = ({
                   />
                 </div>
               );
-            })}
+              })}
+            </div>
           </div>
-          
         </div>
         
         {/* Tooltip positioned above the bar (desktop only) */}
@@ -1117,33 +1148,31 @@ const IntervalChart = ({
           })()}
 
         {/* X-axis labels - show cumulative distance/time instead of individual intervals */}
-        <div className={`${chartLeftMargin} ${isMobile ? 'mr-2' : 'mr-4'} mt-2 flex items-center justify-between`}>
-          {/* Show only start, middle, and end labels with cumulative values */}
-          {bars.length > 0 && (
-            <>
-              {/* Start label */}
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-left`}>
-                {formatDistance(0, unitSystem).formatted}
-              </div>
-              
-              {/* Middle label (if enough bars) */}
-              {bars.length > 2 && (
-                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-center`}>
-                  {formatDistance((totalDistance || 0) / 2, unitSystem).formatted}
+        <div className={`${chartLeftMargin} ${isMobile ? 'mr-0' : 'mr-4'} mt-2`}>
+          <div style={{ width: `${Math.max(100, xZoomScale * 100)}%`, minWidth: '100%' }} className="flex items-center justify-between">
+            {bars.length > 0 && (
+              <>
+                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-left`}>
+                  {formatDistance(0, unitSystem).formatted}
                 </div>
-              )}
-              
-              {/* End label with total distance and time */}
-              <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right`}>
-                {formatDistance(totalDistance || 0, unitSystem).formatted}
-                {!isMobile && totalTime > 0 && (
-                  <span className="ml-1 text-gray-500">
-                    ({formatDuration(totalTime)})
-                  </span>
+
+                {bars.length > 2 && (
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-center`}>
+                    {formatDistance((totalDistance || 0) / 2, unitSystem).formatted}
+                  </div>
                 )}
-              </div>
-            </>
-          )}
+
+                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right`}>
+                  {formatDistance(totalDistance || 0, unitSystem).formatted}
+                  {!isMobile && totalTime > 0 && (
+                    <span className="ml-1 text-gray-500">
+                      ({formatDuration(totalTime)})
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

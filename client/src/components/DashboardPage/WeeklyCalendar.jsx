@@ -1148,6 +1148,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           trainingDetail?.category === 'vo2max' ? 'bg-orange-100 text-orange-800' :
                           trainingDetail?.category === 'anaerobic' ? 'bg-red-100 text-red-800' :
                           trainingDetail?.category === 'recovery' ? 'bg-gray-100 text-gray-800' :
+                          trainingDetail?.category === 'hills' ? 'bg-emerald-100 text-emerald-800' :
                           'bg-gray-100 text-gray-500'
                         }`}>
                           {trainingDetail?.category ? categoryLabel(trainingDetail.category) : 'Category'}

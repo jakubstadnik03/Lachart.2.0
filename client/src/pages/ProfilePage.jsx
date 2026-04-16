@@ -44,6 +44,26 @@ const ProfilePage = () => {
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   const [compareHistoryAKey, setCompareHistoryAKey] = useState('');
   const [compareHistoryBKey, setCompareHistoryBKey] = useState('');
+
+  const normalizeSportName = useCallback((sport) => {
+    const s = String(sport || '').toLowerCase();
+    if (s === 'bike') return 'cycling';
+    if (s === 'run') return 'running';
+    if (s === 'swim') return 'swimming';
+    return s;
+  }, []);
+
+  const effectiveTrainingGraphSport = useMemo(() => {
+    const preferred = normalizeSportName(selectedSport);
+    const hasPreferred = trainings.some((t) => normalizeSportName(t?.sport) === preferred);
+    if (hasPreferred) return preferred;
+
+    const firstAvailable = trainings
+      .map((t) => normalizeSportName(t?.sport))
+      .find(Boolean);
+
+    return firstAvailable || preferred;
+  }, [trainings, selectedSport, normalizeSportName]);
   
   // Detect mobile
   useEffect(() => {
@@ -173,6 +193,39 @@ const ProfilePage = () => {
     if (!Number.isFinite(min) && !Number.isFinite(max)) return '-';
     return `${fmt(min)}-${fmt(max)}`;
   };
+
+  const hasConfiguredZonesForSport = useCallback((sportKey) => {
+    const zones = userInfo?.powerZones?.[sportKey];
+    if (!zones || typeof zones !== 'object') return false;
+
+    if (zones.lt1 != null || zones.lt2 != null) return true;
+
+    for (let i = 1; i <= 5; i++) {
+      const zone = zones[`zone${i}`];
+      if (!zone || typeof zone !== 'object') continue;
+      if (
+        zone.min != null ||
+        zone.max != null ||
+        zone.description ||
+        (zone.lactate && (zone.lactate.min != null || zone.lactate.max != null))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [userInfo]);
+
+  const availableZoneSports = useMemo(
+    () => ['cycling', 'running', 'swimming'].filter((sport) => hasConfiguredZonesForSport(sport)),
+    [hasConfiguredZonesForSport]
+  );
+
+  useEffect(() => {
+    if (availableZoneSports.length === 0) return;
+    if (!availableZoneSports.includes(selectedZoneSport)) {
+      setSelectedZoneSport(availableZoneSports[0]);
+    }
+  }, [availableZoneSports, selectedZoneSport]);
 
   const selectedZoneHistory = useMemo(() => {
     const power = Array.isArray(zoneHistory?.powerZonesHistory) ? zoneHistory.powerZonesHistory : [];
@@ -414,7 +467,9 @@ const ProfilePage = () => {
   // Přidáme efekt pro změnu sportu
   useEffect(() => {
     if (trainings.length > 0) {
-      const sportTrainings = trainings.filter(t => t.sport === selectedSport);
+      const sportTrainings = trainings.filter(
+        (t) => normalizeSportName(t?.sport) === effectiveTrainingGraphSport
+      );
       const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
       
       if (!selectedTitle || !sportTrainings.some(t => t.title === selectedTitle)) {
@@ -425,7 +480,7 @@ const ProfilePage = () => {
         }
       }
     }
-  }, [selectedSport, trainings, selectedTitle]);
+  }, [effectiveTrainingGraphSport, trainings, selectedTitle, normalizeSportName]);
 
   // Convert trainings to calendar activities format and combine with FIT/Strava activities
   const calendarActivities = useMemo(() => {
@@ -734,7 +789,7 @@ const ProfilePage = () => {
       </motion.div>
 
       {/* Power Zones Section */}
-      {(userInfo.powerZones?.cycling || userInfo.powerZones?.running || userInfo.powerZones?.swimming) && (
+      {availableZoneSports.length > 0 && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -747,7 +802,7 @@ const ProfilePage = () => {
               <h2 className={`${isMobile ? 'text-lg' : 'text-xl md:text-2xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : ''}`}>Training Zones</h2>
               <div className={`flex ${isMobile ? 'flex-col' : 'items-center'} ${isMobile ? 'gap-2' : 'gap-3'}`}>
               <div className={`flex ${isMobile ? 'gap-1.5' : 'gap-2'} ${isMobile ? 'w-full' : ''}`}>
-                {userInfo.powerZones?.cycling && (
+                {hasConfiguredZonesForSport('cycling') && (
                   <button
                     onClick={() => setSelectedZoneSport('cycling')}
                     className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
@@ -759,7 +814,7 @@ const ProfilePage = () => {
                     Cycling
                   </button>
                 )}
-                {userInfo.powerZones?.running && (
+                {hasConfiguredZonesForSport('running') && (
                   <button
                     onClick={() => setSelectedZoneSport('running')}
                     className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
@@ -771,7 +826,7 @@ const ProfilePage = () => {
                     Running
                   </button>
                 )}
-                {userInfo.powerZones?.swimming && (
+                {hasConfiguredZonesForSport('swimming') && (
                   <button
                     onClick={() => setSelectedZoneSport('swimming')}
                     className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
@@ -797,7 +852,7 @@ const ProfilePage = () => {
             </div>
 
             {/* Cycling Zones */}
-            {userInfo.powerZones?.cycling && selectedZoneSport === 'cycling' && (
+            {hasConfiguredZonesForSport('cycling') && selectedZoneSport === 'cycling' && (
               <>
                 {userInfo.powerZones?.cycling?.lastUpdated && (
                   <p className="text-xs text-gray-500 mb-4">
@@ -898,7 +953,7 @@ const ProfilePage = () => {
             )}
 
             {/* Running Zones */}
-            {userInfo.powerZones?.running && selectedZoneSport === 'running' && (
+            {hasConfiguredZonesForSport('running') && selectedZoneSport === 'running' && (
               <>
                 {userInfo.powerZones?.running?.lastUpdated && (
                   <p className="text-xs text-gray-500 mb-4">
@@ -1003,7 +1058,7 @@ const ProfilePage = () => {
             )}
 
             {/* Swimming Zones */}
-            {userInfo.powerZones?.swimming && selectedZoneSport === 'swimming' && (
+            {hasConfiguredZonesForSport('swimming') && selectedZoneSport === 'swimming' && (
               <>
                 {userInfo.powerZones?.swimming?.lastUpdated && (
                   <p className="text-xs text-gray-500 mb-4">
@@ -1239,7 +1294,7 @@ const ProfilePage = () => {
             >
             <TrainingGraph 
               trainingList={trainings}
-              selectedSport={selectedSport}
+              selectedSport={effectiveTrainingGraphSport}
               selectedTitle={selectedTitle}
               setSelectedTitle={setSelectedTitle}
               selectedTraining={selectedTraining}

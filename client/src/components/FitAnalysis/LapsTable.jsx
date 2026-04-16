@@ -209,6 +209,17 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               lap.cadence ??
               0;
 
+            const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
+            const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+            let elevation = null;
+            if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+              elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
+            } else if (Number.isFinite(Number(elevationGain))) {
+              elevation = Math.round(Number(elevationGain));
+            } else if (Number.isFinite(Number(elevationLoss))) {
+              elevation = -Math.round(Math.abs(Number(elevationLoss)));
+            }
+
             const selectedStyle = isSelected
               ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
               : {};
@@ -239,6 +250,9 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                       {hr > 0 && <span className="text-[11px] text-red-500">{Math.round(hr)} bpm</span>}
                       {!isSwim && power > 0 && <span className="text-[11px] text-purple-600">{Math.round(power)} W</span>}
                       {isSwim && cadence > 0 && <span className="text-[11px] text-gray-600">{Math.round(cadence)} rpm</span>}
+                      {elevation !== null && elevation !== 0 && (
+                        <span className="text-[11px] text-emerald-600">{elevation > 0 ? '+' : ''}{elevation} m</span>
+                      )}
                     {!editingLactate && lap.lactate && (
                       <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
                     )}
@@ -310,6 +324,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               {isSwim && (
                 <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Avg Cadence</th>
               )}
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Elevation</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-600 uppercase">Lactate</th>
             </tr>
           </thead>
@@ -354,6 +369,17 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 lap.cadence ??
                 0;
 
+              const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
+              const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+              let elevation = null;
+              if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+                elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
+              } else if (Number.isFinite(Number(elevationGain))) {
+                elevation = Math.round(Number(elevationGain));
+              } else if (Number.isFinite(Number(elevationLoss))) {
+                elevation = -Math.round(Math.abs(Number(elevationLoss)));
+              }
+
               const paceCell = isRun
                 ? formatPace(speedMps)
                 : isSwim
@@ -380,6 +406,9 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 {isSwim && (
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{cadence > 0 ? `${Math.round(cadence)} rpm` : '-'}</td>
                 )}
+                <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
+                  {elevation !== null && elevation !== 0 ? `${elevation > 0 ? '+' : ''}${elevation} m` : '-'}
+                </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                   {editingLactate ? (
                     <input

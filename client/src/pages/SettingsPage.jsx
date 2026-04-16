@@ -60,6 +60,10 @@ function formatRegistrationLocationLine(loc) {
   return [place, extras.length ? `(${extras.join(' · ')})` : null].filter(Boolean).join(' ');
 }
 
+function getStoredAuthToken() {
+  return localStorage.getItem('authToken') || localStorage.getItem('token') || '';
+}
+
 const SettingsPage = () => {
   const { user, logout, login, premiumPreviewNoAccess, setPremiumPreviewNoAccess } = useAuth();
   const location = useLocation();
@@ -89,6 +93,8 @@ const SettingsPage = () => {
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [garminLoginModal, setGarminLoginModal] = useState(false);
   const [garminCredentials, setGarminCredentials] = useState({ username: '', password: '' });
+  const [polarConnected] = useState(false);
+  const [corosConnected] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -182,6 +188,10 @@ const SettingsPage = () => {
       const tab = q.get('tab');
       if (tab === 'integrations') setActiveTab('integrations');
       if (tab === 'subscription') setActiveTab('subscription');
+      if (q.get('garmin') === 'connect') {
+        setActiveTab('integrations');
+        setGarminLoginModal(true);
+      }
     } catch {
       // ignore
     }
@@ -637,9 +647,10 @@ const SettingsPage = () => {
       
       // Reload user profile
       try {
+        const token = getStoredAuthToken();
         const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken') || localStorage.getItem('token')}`
+            'Authorization': `Bearer ${token}`
           }
         });
         if (profileResponse.ok) {
@@ -693,11 +704,12 @@ const SettingsPage = () => {
 
   const handleToggleGarminAutoSync = async (enabled) => {
     try {
+      const token = getStoredAuthToken();
       const response = await fetch(`${API_BASE_URL}/api/integrations/garmin/auto-sync`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ autoSync: enabled })
       });
@@ -710,7 +722,7 @@ const SettingsPage = () => {
         // Reload user profile
         const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${token}`
           }
         });
         if (profileResponse.ok) {
@@ -724,6 +736,46 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Error updating Garmin auto-sync:', e);
       addNotification('Failed to update Garmin auto-sync setting', 'error');
+    }
+  };
+
+  const handleDisconnectGarmin = async () => {
+    try {
+      const ok = window.confirm('Disconnect your Garmin account? Auto-sync will be turned off.');
+      if (!ok) return;
+
+      const token = getStoredAuthToken();
+      const resp = await fetch(`${API_BASE_URL}/api/integrations/garmin/disconnect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to disconnect Garmin');
+      }
+
+      const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (profileResponse.ok) {
+        const updatedUser = await profileResponse.json();
+        saveUserToStorage(updatedUser);
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+      }
+
+      setGarminConnected(false);
+      setGarminAutoSync(false);
+      addNotification('Garmin disconnected successfully', 'success');
+    } catch (e) {
+      console.error('Disconnect Garmin error:', e);
+      addNotification(e.message || 'Failed to disconnect Garmin', 'error');
     }
   };
 
@@ -2052,8 +2104,6 @@ const SettingsPage = () => {
                   </div>
                 </div>
 
-                {/* Garmin Integration - Admin Only */}
-                {(user?.admin || user?.role === 'admin') && (
                 <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
                   <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                     <div className="flex items-center gap-2">
@@ -2117,9 +2167,64 @@ const SettingsPage = () => {
                         {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
                       </button>
                     )}
+                    {garminConnected && (
+                      <button
+                        onClick={handleDisconnectGarmin}
+                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                      >
+                        Disconnect Garmin
+                      </button>
+                    )}
                   </div>
                 </div>
-                )}
+
+                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                  <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-red-50 rounded-lg`}>
+                        <span className="text-red-600 font-bold text-sm">P</span>
+                      </div>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Polar</h4>
+                    </div>
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${polarConnected ? 'text-green-600' : 'text-amber-600'}`}>
+                      {polarConnected ? 'Connected' : 'Coming soon'}
+                    </span>
+                  </div>
+                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                    Planned integration for Polar Flow workout sync and activity import.
+                  </p>
+                  <button
+                    type="button"
+                    disabled
+                    className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
+                  >
+                    Coming soon
+                  </button>
+                </div>
+
+                <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} border border-gray-200 ${isMobile ? 'p-2.5' : 'p-6'}`}>
+                  <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`flex items-center justify-center ${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-orange-50 rounded-lg`}>
+                        <span className="text-orange-600 font-bold text-sm">C</span>
+                      </div>
+                      <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>COROS</h4>
+                    </div>
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${corosConnected ? 'text-green-600' : 'text-amber-600'}`}>
+                      {corosConnected ? 'Connected' : 'Coming soon'}
+                    </span>
+                  </div>
+                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                    Planned integration for COROS training history, routes and structured endurance sessions.
+                  </p>
+                  <button
+                    type="button"
+                    disabled
+                    className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-400 ${isMobile ? 'rounded-md' : 'rounded'} cursor-not-allowed`}
+                  >
+                    Coming soon
+                  </button>
+                </div>
            
                   <FitUploadSection
                     files={files}

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -234,28 +234,44 @@ const TrainingGraph = ({
 }) => {
   const { user } = useAuth();
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
+  const normalizeSport = useCallback((sport) => {
+    const value = String(sport || '').toLowerCase();
+    if (value === 'bike') return 'cycling';
+    if (value === 'run') return 'running';
+    if (value === 'swim') return 'swimming';
+    return value;
+  }, []);
+
+  const trainingSport = useCallback((training) => normalizeSport(training?.sport), [normalizeSport]);
+  const matchesSport = useCallback(
+    (training, sport) => sport === 'all' || trainingSport(training) === normalizeSport(sport),
+    [trainingSport, normalizeSport]
+  );
+
   // Get available sports from trainings
-  const availableSports = [...new Set(trainingList.map(t => t.sport))].filter(Boolean);
+  const availableSports = [...new Set(trainingList.map((t) => trainingSport(t)))].filter(Boolean);
   
   // Initialize selectedSport with localStorage or default to 'all'
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
-    if (selectedSport) return selectedSport;
+    if (selectedSport) return normalizeSport(selectedSport);
     const saved = localStorage.getItem('trainingGraph_selectedSport');
-    if (saved && (saved === 'all' || availableSports.includes(saved))) {
-      return saved;
+    const normalizedSaved = normalizeSport(saved);
+    if (normalizedSaved && (normalizedSaved === 'all' || availableSports.includes(normalizedSaved))) {
+      return normalizedSaved;
     }
     return 'all';
   });
   
   // Use external selectedSport if provided, otherwise use internal
-  const currentSelectedSport = selectedSport || internalSelectedSport;
+  const currentSelectedSport = selectedSport ? normalizeSport(selectedSport) : internalSelectedSport;
   const setCurrentSelectedSport = (value) => {
+    const normalizedValue = normalizeSport(value);
     if (setSelectedSport) {
-      setSelectedSport(value);
+      setSelectedSport(normalizedValue);
     } else {
-      setInternalSelectedSport(value);
+      setInternalSelectedSport(normalizedValue);
     }
-    localStorage.setItem('trainingGraph_selectedSport', value);
+    localStorage.setItem('trainingGraph_selectedSport', normalizedValue);
   };
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null);
@@ -273,7 +289,7 @@ const TrainingGraph = ({
 
   // Funkce pro formátování hodnoty podle sportu
   const formatPowerValue = (value, sport) => {
-    if (sport === 'bike') {
+    if (normalizeSport(sport) === 'cycling') {
       return `${value}W`;
     } else {
       return formatPace(value);
@@ -288,7 +304,7 @@ const TrainingGraph = ({
     // Pak aktualizujeme data pro nový sport
     const sportTrainings = newSport === 'all' 
       ? trainingList 
-      : trainingList.filter(t => t.sport === newSport);
+      : trainingList.filter((t) => matchesSport(t, newSport));
     
     const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
     
@@ -312,7 +328,7 @@ const TrainingGraph = ({
   const handleTitleChange = (newTitle) => {
     const sportTrainings = currentSelectedSport === 'all' 
       ? trainingList 
-      : trainingList.filter(t => t.sport === currentSelectedSport);
+      : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     const trainingsWithTitle = sportTrainings.filter(t => t.title === newTitle);
     
     // Seřadíme tréninky podle data od nejnovějšího
@@ -341,7 +357,7 @@ const TrainingGraph = ({
     setLoading(false);
     const sportTrainings = currentSelectedSport === 'all' 
       ? trainingList 
-      : trainingList.filter(t => t.sport === currentSelectedSport);
+      : trainingList.filter((t) => matchesSport(t, currentSelectedSport));
     
     if (sportTrainings.length === 0) {
       if (setSelectedTitle) setSelectedTitle(null);
@@ -352,7 +368,7 @@ const TrainingGraph = ({
     // Pokud už máme vybraný trénink a je stále platný, necháme ho
     if (selectedTraining) {
       const currentTraining = trainingList.find(t => t._id === selectedTraining);
-      if (currentTraining && (currentSelectedSport === 'all' || currentTraining.sport === currentSelectedSport)) {
+      if (currentTraining && matchesSport(currentTraining, currentSelectedSport)) {
         // Trénink je stále platný, aktualizujeme pouze title pokud se změnil
         if (setSelectedTitle && currentTraining.title !== selectedTitle) {
           setSelectedTitle(currentTraining.title);
@@ -388,7 +404,7 @@ const TrainingGraph = ({
       if (setSelectedTitle) setSelectedTitle(newestTraining.title);
       if (setSelectedTraining) setSelectedTraining(newestTraining._id);
     }
-  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining]);
+  }, [currentSelectedSport, trainingList, selectedTraining, selectedTitle, setSelectedTitle, setSelectedTraining, matchesSport]);
 
   // Sloučíme dva useEffects do jednoho pro optimalizaci
   useEffect(() => {
@@ -433,7 +449,7 @@ const TrainingGraph = ({
   const selectedTrainingData = trainingList.find(t => t._id === selectedTraining);
   const sportTrainings = currentSelectedSport === 'all' 
     ? (trainingList || [])
-    : (trainingList || []).filter(t => t.sport === currentSelectedSport);
+    : (trainingList || []).filter((t) => matchesSport(t, currentSelectedSport));
   const uniqueTitles = [...new Set(sportTrainings.map(t => t.title))];
 
   // Pokud nejsou k dispozici žádné tréninky pro vybraný sport, zobrazíme prázdný graf
@@ -733,7 +749,7 @@ const TrainingGraph = ({
             labels: selectedTrainingData.results.map(r => r.interval.toString()),
             datasets: [
               {
-                label: (currentSelectedSport === 'bike' || currentSelectedSport === 'all') ? "Power" : "Pace",
+                label: (currentSelectedSport === 'cycling' || currentSelectedSport === 'all') ? "Power" : "Pace",
                 data: selectedTrainingData.results.map(r => r.power),
                 borderColor: "#3B82F6",
                 backgroundColor: "#3B82F6",

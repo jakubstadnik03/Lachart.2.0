@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
-import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw } from '../utils/fitAnalysisUtils';
+import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw, lapSpeedMpsForChart } from '../utils/fitAnalysisUtils';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -223,7 +223,7 @@ const LACTATE_STATS_STYLE_POWER_ZONES = [
 ];
 
 // Strava Laps Table Component
-const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null, userProfile = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
+const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null, userProfile = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -311,8 +311,14 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       const min = parseZoneNumber(def?.min);
       const max = def?.max === undefined ? null : parseZoneNumber(def?.max);
       if (min === null) continue;
-      const maxSafe = max === null ? Infinity : max;
-      if (val >= min && val <= maxSafe) return zKey;
+      // Pace zones can be stored in reverse order (slower->faster), so match by normalized range.
+      if (max === null || max === Infinity) {
+        if (val >= min) return zKey;
+        continue;
+      }
+      const low = Math.min(min, max);
+      const high = Math.max(min, max);
+      if (val >= low && val <= high) return zKey;
     }
     return null;
   }, [zoneKeys, parseZoneNumber]);
@@ -331,10 +337,10 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     return 100 / speedMps; // sec/100m (swimming)
   }, [stravaSportType]);
 
-  const getHrMetricFromLap = (lap) => {
+  const getHrMetricFromLap = useCallback((lap) => {
     const hr = Number(lap.average_heartrate ?? lap.avgHeartRate ?? lap.heartRate ?? 0);
     return Number.isFinite(hr) && hr > 0 ? hr : null;
-  };
+  }, []);
 
   const timeInZones = React.useMemo(() => {
     const powerTimes = Object.fromEntries(zoneKeys.map((k) => [k, 0]));
@@ -344,27 +350,71 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
     let powerTotal = 0;
     let hrTotal = 0;
 
-    for (const lap of uniqueLaps) {
-      const sec = Number(lap?.elapsed_time ?? lap?.elapsedTime ?? 0);
-      if (!Number.isFinite(sec) || sec <= 0) continue;
+    const streamTime = selectedStravaStreams?.time?.data || selectedStravaStreams?.time || [];
+    const streamSpeed = selectedStravaStreams?.velocity_smooth?.data || selectedStravaStreams?.velocity_smooth || [];
+    const streamPower = selectedStravaStreams?.watts?.data || selectedStravaStreams?.watts || [];
+    const streamHr = selectedStravaStreams?.heartrate?.data || selectedStravaStreams?.heartrate || [];
 
-      const pMetric = getPowerMetricFromLap(lap);
-      if (pMetric != null) {
-        powerTotal += sec;
-        const pZone = findZoneKeyForValue(pMetric, powerZonesForSport);
-        if (pZone) {
-          powerTimes[pZone] += sec;
-          powerWeighted[pZone] += pMetric * sec;
+    const hasTimeStream = Array.isArray(streamTime) && streamTime.length > 1;
+    if (hasTimeStream) {
+      for (let i = 1; i < streamTime.length; i++) {
+        const dt = Number(streamTime[i]) - Number(streamTime[i - 1]);
+        if (!Number.isFinite(dt) || dt <= 0 || dt > 30) continue;
+
+        let pMetric = null;
+        if (stravaSportType === 'cycling') {
+          const watts = Number(streamPower[i]);
+          pMetric = Number.isFinite(watts) && watts > 0 ? watts : null;
+        } else {
+          const speedMps = Number(streamSpeed[i]);
+          if (Number.isFinite(speedMps) && speedMps > 0) {
+            pMetric = stravaSportType === 'running' ? 1000 / speedMps : 100 / speedMps;
+          }
+        }
+
+        if (pMetric != null) {
+          powerTotal += dt;
+          const pZone = findZoneKeyForValue(pMetric, powerZonesForSport);
+          if (pZone) {
+            powerTimes[pZone] += dt;
+            powerWeighted[pZone] += pMetric * dt;
+          }
+        }
+
+        const hrMetric = Number(streamHr[i]);
+        if (Number.isFinite(hrMetric) && hrMetric > 0) {
+          hrTotal += dt;
+          const hrZone = findZoneKeyForValue(hrMetric, hrZonesForSport);
+          if (hrZone) {
+            hrTimes[hrZone] += dt;
+            hrWeighted[hrZone] += hrMetric * dt;
+          }
         }
       }
+    } else {
+      // Fallback for activities where Strava stream data are unavailable.
+      for (const lap of uniqueLaps) {
+        const sec = Number(lap?.elapsed_time ?? lap?.elapsedTime ?? 0);
+        if (!Number.isFinite(sec) || sec <= 0) continue;
 
-      const hrMetric = getHrMetricFromLap(lap);
-      if (hrMetric != null) {
-        hrTotal += sec;
-        const hrZone = findZoneKeyForValue(hrMetric, hrZonesForSport);
-        if (hrZone) {
-          hrTimes[hrZone] += sec;
-          hrWeighted[hrZone] += hrMetric * sec;
+        const pMetric = getPowerMetricFromLap(lap);
+        if (pMetric != null) {
+          powerTotal += sec;
+          const pZone = findZoneKeyForValue(pMetric, powerZonesForSport);
+          if (pZone) {
+            powerTimes[pZone] += sec;
+            powerWeighted[pZone] += pMetric * sec;
+          }
+        }
+
+        const hrMetric = getHrMetricFromLap(lap);
+        if (hrMetric != null) {
+          hrTotal += sec;
+          const hrZone = findZoneKeyForValue(hrMetric, hrZonesForSport);
+          if (hrZone) {
+            hrTimes[hrZone] += sec;
+            hrWeighted[hrZone] += hrMetric * sec;
+          }
         }
       }
     }
@@ -400,7 +450,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
       avgPowerByZone,
       avgHrByZone,
     };
-  }, [uniqueLaps, powerZonesForSport, hrZonesForSport, findZoneKeyForValue, getPowerMetricFromLap, zoneKeys]);
+  }, [selectedStravaStreams, stravaSportType, uniqueLaps, powerZonesForSport, hrZonesForSport, findZoneKeyForValue, getPowerMetricFromLap, getHrMetricFromLap, zoneKeys]);
 
   const formatPowerZoneRange = (zKey) => {
     const def = powerZonesForSport?.[zKey];
@@ -957,8 +1007,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
 
   // Mobile card layout
   if (isMobileTable) {
-    const isStravaRun = (selectedStrava?.sport || '').toLowerCase().includes('run');
-    const isStravaSwim = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase().includes('swim');
+    const mobileSportRaw = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
+    const isStravaRun = mobileSportRaw.includes('run') || mobileSportRaw === 'walk' || mobileSportRaw === 'hike';
+    const isStravaSwim = mobileSportRaw.includes('swim');
     const unitSystem = resolveDistanceUnitSystem(user, 'metric');
     const stravaPaceFmt = (spd) => {
       if (!spd || spd <= 0) return null;
@@ -995,6 +1046,16 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
             const endTime = cumulativeTime + (lap.elapsed_time || 0);
             const lapNumber = lap?.lapNumber ?? (index + 1);
             const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+            const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
+            const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+            let elevation = null;
+            if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+              elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
+            } else if (Number.isFinite(Number(elevationGain))) {
+              elevation = Math.round(Number(elevationGain));
+            } else if (Number.isFinite(Number(elevationLoss))) {
+              elevation = -Math.round(Math.abs(Number(elevationLoss)));
+            }
             const selectedStyle = isActive
               ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
               : {};
@@ -1020,27 +1081,34 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   chart.dispatchAction({ type: 'dataZoom', start: Math.max(0, startPercent - padding), end: Math.min(100, endPercent + padding) });
                 }}
                 className={`w-full text-left py-2.5 px-1 flex items-center gap-3 transition-colors touch-manipulation ${
-                  isActive ? 'bg-primary/10 border-l-[3px] border-primary' : lap.lactate ? 'bg-primary/5' : 'active:bg-gray-50'
+                  isActive ? 'bg-primary/10 border-l-[3px] border-primary' : lap.lactate ? 'bg-primary/5' : lap.exportedToTraining ? 'bg-primary/3' : 'active:bg-gray-50'
                 }`}
                 style={{ WebkitTapHighlightColor: 'transparent', ...selectedStyle }}
               >
                 <div className="w-7 text-center">
                   <span className={`text-xs font-bold ${isActive ? 'text-primary' : 'text-gray-400'}`}>{index + 1}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-3">
-                    {lap.distance > 0 && <span className="text-sm font-semibold text-gray-900">{formatDistance(lap.distance, user)}</span>}
-                    <span className="text-sm text-gray-600">{formatDuration(lap.elapsed_time)}</span>
-                    {lap.average_speed > 0 && (
-                      <span className="text-xs text-gray-500">
-                        {(isStravaRun || isStravaSwim) ? stravaPaceFmt(lap.average_speed) : `${(lap.average_speed * 3.6).toFixed(1)} km/h`}
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
+                    {normalizeStravaLapDistanceRaw(lap) > 0 && (
+                      <span className="text-sm font-semibold text-gray-900 shrink-0">
+                        {formatDistance(normalizeStravaLapDistanceRaw(lap), user)}
                       </span>
                     )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    {lap.average_heartrate && <span className="text-[11px] text-red-500">{Math.round(lap.average_heartrate)} bpm</span>}
-                    {lap.average_watts > 0 && <span className="text-[11px] text-purple-600">{Math.round(lap.average_watts)} W</span>}
-                    {!editingLactate && lap.lactate && <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>}
+                    <span className="text-sm text-gray-600 shrink-0">{formatDuration(lap.elapsed_time)}</span>
+                    {lapSpeedMpsForChart(lap) > 0 && (
+                      <span className="text-xs text-gray-500 shrink-0">
+                        {(isStravaRun || isStravaSwim)
+                          ? stravaPaceFmt(lapSpeedMpsForChart(lap))
+                          : `${(lapSpeedMpsForChart(lap) * 3.6).toFixed(1)} km/h`}
+                      </span>
+                    )}
+                    {lap.average_heartrate && <span className="text-[11px] text-red-500 shrink-0">{Math.round(lap.average_heartrate)} bpm</span>}
+                    {lap.average_watts > 0 && <span className="text-[11px] text-purple-600 shrink-0">{Math.round(lap.average_watts)} W</span>}
+                    {elevation !== null && elevation !== 0 && (
+                      <span className="text-[11px] text-emerald-600 shrink-0">{elevation > 0 ? '+' : ''}{elevation} m</span>
+                    )}
+                    {!editingLactate && lap.lactate && <span className="text-[11px] font-semibold text-primary shrink-0">{lap.lactate.toFixed(1)} mmol/L</span>}
                   </div>
                 </div>
                 {editingLactate && (
@@ -1122,9 +1190,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
         )}
         </div>
       </div>
-      <div className=" overflow-y-auto -mx-2 sm:mx-0 max-h-[420px] sm:max-h-[520px]">
+      <div className="overflow-y-auto -mx-2 sm:mx-0 max-h-[420px] sm:max-h-[520px] rounded-xl border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
             <tr>
               {editingMode && (
                 <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase w-12">
@@ -1146,9 +1214,17 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
-              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Speed</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                {(() => {
+                  const sportRaw = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
+                  const isSwim = sportRaw.includes('swim');
+                  const isRun = sportRaw.includes('run') || sportRaw === 'walk' || sportRaw === 'hike';
+                  return (isRun || isSwim) ? 'Avg Pace' : 'Avg Speed';
+                })()}
+              </th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg HR</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Power</th>
+              <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Elevation</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Lactate</th>
               <th className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -1163,6 +1239,16 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
               const endTime = cumulativeTime + (lap.elapsed_time || 0);
               const lapNumber = lap?.lapNumber ?? (index + 1);
               const isActive = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+              const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
+              const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+              let elevation = null;
+              if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+                elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
+              } else if (Number.isFinite(Number(elevationGain))) {
+                elevation = Math.round(Number(elevationGain));
+              } else if (Number.isFinite(Number(elevationLoss))) {
+                elevation = -Math.round(Math.abs(Number(elevationLoss)));
+              }
 
               return (
                 <tr 
@@ -1199,6 +1285,7 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   className={[
                     isActive ? 'bg-primary/10' : '',
                     lap.lactate ? 'bg-purple-50' : '',
+                  !lap.lactate && lap.exportedToTraining ? 'bg-primary/5' : '',
                     selectedLapIndices.has(index) ? 'bg-blue-100' : '',
                     !editingLactate && !editingMode ? 'cursor-pointer hover:bg-gray-50' : '',
                   ].join(' ')}
@@ -1247,6 +1334,9 @@ const StravaLapsTable = ({ selectedStrava, stravaChartRef, maxTime, loadStravaDe
                   </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_heartrate ? `${Math.round(lap.average_heartrate)} bpm` : '-'}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{lap.average_watts ? `${Math.round(lap.average_watts)} W` : '-'}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
+                    {elevation !== null && elevation !== 0 ? `${elevation > 0 ? '+' : ''}${elevation} m` : '-'}
+                  </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
                     {editingLactate ? (
                       <input
@@ -1368,6 +1458,17 @@ const FitAnalysisPage = () => {
   const [externalActivities, setExternalActivities] = useState([]);
   const [selectedStrava, setSelectedStrava] = useState(null);
   const [selectedStravaStreams, setSelectedStravaStreams] = useState(null);
+  const getLinkedStravaActivityId = useCallback((training) => {
+    if (!training || typeof training !== 'object') return null;
+    const candidate =
+      training.sourceStravaActivityId ??
+      training.sourceStravaId ??
+      training.stravaActivityId ??
+      training.stravaId ??
+      training.externalActivityId ??
+      null;
+    return candidate == null ? null : String(candidate);
+  }, []);
   const stravaChartRef = useRef(null);
   const formatDateTime = useCallback((dateStr) => {
     if (!dateStr) return '-';
@@ -1588,13 +1689,13 @@ const FitAnalysisPage = () => {
       return [lat, lng];
     };
 
-    if (selectedStrava && selectedStravaStreams) {
+    const latlngArray = selectedStravaStreams?.latlng?.data || selectedStravaStreams?.latlng || [];
+    if ((selectedStrava || getLinkedStravaActivityId(selectedTraining)) && latlngArray.length > 0) {
       // Get GPS from Strava latlng stream
-      const latlngArray = selectedStravaStreams?.latlng?.data || selectedStravaStreams?.latlng || [];
-      if (latlngArray.length > 0) {
-        return latlngArray.map(([lat, lng]) => [lat, lng]).filter(p => p[0] != null && p[1] != null);
-      }
-    } else if (selectedTraining && selectedTraining.records) {
+      return latlngArray.map(([lat, lng]) => [lat, lng]).filter(p => p[0] != null && p[1] != null);
+    }
+
+    if (selectedTraining && selectedTraining.records) {
       // Get GPS from FIT/regular training records (supports multiple field names).
       const fromRecords = selectedTraining.records
         .map(extractLatLngFromRecord)
@@ -1622,7 +1723,39 @@ const FitAnalysisPage = () => {
     }
 
     return [];
-  }, [selectedStrava, selectedStravaStreams, selectedTraining]);
+  }, [selectedStrava, selectedStravaStreams, selectedTraining, getLinkedStravaActivityId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const linkedStravaId = getLinkedStravaActivityId(selectedTraining);
+    if (!selectedTraining || !linkedStravaId || selectedStrava) return undefined;
+
+    const role = String(user?.role || '').toLowerCase();
+    const athleteId = ['coach', 'tester', 'testing'].includes(role)
+      ? (role === 'coach' ? (selectedAthleteId || user?._id) : selectedAthleteId)
+      : null;
+
+    const loadLinkedStravaStreams = async () => {
+      try {
+        const data = await getStravaActivityDetail(linkedStravaId, athleteId);
+        const streamsPayload = data?.streams && typeof data.streams === 'object' ? data.streams : {};
+        if (!cancelled) {
+          setSelectedStravaStreams(streamsPayload);
+        }
+      } catch (_error) {
+        if (!cancelled) {
+          setSelectedStravaStreams(null);
+        }
+      }
+    };
+
+    loadLinkedStravaStreams();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTraining, selectedStrava, selectedAthleteId, user?.role, user?._id, getLinkedStravaActivityId]);
   
   // Smoothing function
   const smoothData = React.useCallback((data, windowSizeSeconds, timeArray) => {
@@ -1773,13 +1906,24 @@ const FitAnalysisPage = () => {
       // Merge lactate values from linked Training model into Strava laps (if user entered
       // lactate during export but it wasn't saved to the Strava activity itself)
       if (linkedTraining?.results && Array.isArray(linkedTraining.results)) {
+        const exportedLapIndices = new Set(
+          linkedTraining.results
+            .map((result, idx) => {
+              const sourceIndex = result?.sourceLapIndex;
+              return Number.isInteger(sourceIndex) ? sourceIndex : idx;
+            })
+            .filter((idx) => Number.isInteger(idx) && idx >= 0)
+        );
+
         uniqueLaps = uniqueLaps.map((lap, idx) => {
-          if (lap.lactate != null) return lap; // already has lactate
+          const originalIndex = lap?.__sourceIndex ?? idx;
+          const isExported = exportedLapIndices.has(originalIndex);
+          if (lap.lactate != null) return isExported ? { ...lap, exportedToTraining: true } : lap; // already has lactate
           const linkedResult = linkedTraining.results[idx];
           if (linkedResult?.lactate != null) {
-            return { ...lap, lactate: Number(linkedResult.lactate) };
+            return { ...lap, lactate: Number(linkedResult.lactate), exportedToTraining: isExported };
           }
-          return lap;
+          return isExported ? { ...lap, exportedToTraining: true } : lap;
         });
       }
       
@@ -2392,6 +2536,7 @@ const FitAnalysisPage = () => {
         };
         setSelectedTraining(trainingData);
         setSelectedStrava(null);
+        setSelectedStravaStreams(null);
         localStorage.setItem('fitAnalysis_selectedRegularTrainingId', id);
         localStorage.removeItem('fitAnalysis_selectedTrainingId');
         localStorage.removeItem('fitAnalysis_selectedStravaId');
@@ -2465,6 +2610,7 @@ const FitAnalysisPage = () => {
       }
       
       setSelectedTraining(data);
+      setSelectedStravaStreams(null);
       // Persist selection to localStorage
       localStorage.setItem('fitAnalysis_selectedTrainingId', id);
       localStorage.removeItem('fitAnalysis_selectedStravaId');
@@ -2501,6 +2647,7 @@ const FitAnalysisPage = () => {
             }
             setSelectedTraining(fitTraining);
             setSelectedStrava(null);
+            setSelectedStravaStreams(null);
             localStorage.setItem('fitAnalysis_selectedTrainingId', trainingId);
             localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
             localStorage.removeItem('fitAnalysis_selectedStravaId');
@@ -2533,6 +2680,7 @@ const FitAnalysisPage = () => {
           
           setSelectedTraining(fitTraining);
           setSelectedStrava(null);
+          setSelectedStravaStreams(null);
           localStorage.setItem('fitAnalysis_selectedTrainingId', data.sourceFitTrainingId);
           localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
           localStorage.removeItem('fitAnalysis_selectedStravaId');
@@ -2620,6 +2768,7 @@ const FitAnalysisPage = () => {
       
       setSelectedTraining(convertedTraining);
       setSelectedStrava(null);
+      setSelectedStravaStreams(null);
       // Persist selection to localStorage
       localStorage.setItem('fitAnalysis_selectedTrainingModelId', trainingId);
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
@@ -2862,6 +3011,18 @@ const FitAnalysisPage = () => {
       const heartRate = lap.average_heartrate || lap.average_hr || null;
       const lactate = lap.lactate || null;
       const distance = lap.distance || null; // distance in meters
+      const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.total_ascent ?? null;
+      const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+      let elevation = null;
+      if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+        elevation = Number(elevationGain) - Number(elevationLoss);
+      } else if (Number.isFinite(Number(elevationGain))) {
+        elevation = Number(elevationGain);
+      } else if (Number.isFinite(Number(elevationLoss))) {
+        elevation = -Math.abs(Number(elevationLoss));
+      } else if (Number.isFinite(Number(lap.elevation))) {
+        elevation = Number(lap.elevation);
+      }
       
       // For run/swim, convert pace from speed to MM:SS format
       let powerValue = '';
@@ -2921,10 +3082,12 @@ const FitAnalysisPage = () => {
       
       return {
         interval: idx + 1,
+        sourceLapIndex: lap?.__sourceIndex ?? idx,
         power: powerValue,
         heartRate: heartRate ? heartRate.toString() : '',
         lactate: lactate ? lactate.toString() : '',
         RPE: '',
+        elevation: elevation != null && Number.isFinite(Number(elevation)) ? Math.round(Number(elevation)).toString() : '',
         duration: useDistance ? distanceValue : formatDuration(duration), // Use distance if available, otherwise time in MM:SS
         durationType: useDistance ? 'distance' : 'time', // Use distance if available
         repeatCount: 1,
@@ -3139,6 +3302,7 @@ const FitAnalysisPage = () => {
     const formData = {
       sport: sport,
       type: 'interval',
+      category: selectedStrava?.category || '',
       title: selectedStrava?.titleManual || selectedStrava?.name || 'Untitled Training',
       customTitle: '',
       description: selectedStrava?.description || '',
@@ -4719,6 +4883,7 @@ const FitAnalysisPage = () => {
                             category === 'vo2max' ? 'bg-orange-100 text-orange-800' :
                             category === 'anaerobic' ? 'bg-red-100 text-red-800' :
                             category === 'recovery' ? 'bg-gray-100 text-gray-800' :
+                            category === 'hills' ? 'bg-emerald-100 text-emerald-800' :
                             'bg-gray-100 text-gray-500'
                           }`}>
                             {category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Category'}
@@ -5409,6 +5574,7 @@ const FitAnalysisPage = () => {
               {(!isMobile || showStravaLapsOnMobile) && (
                 <StravaLapsTable 
                   selectedStrava={selectedStrava}
+                  selectedStravaStreams={selectedStravaStreams}
                   stravaChartRef={stravaChartRef}
                   maxTime={maxTime}
                   loadStravaDetail={loadStravaDetail}

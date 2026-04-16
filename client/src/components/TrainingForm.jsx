@@ -34,6 +34,7 @@ const TERRAIN_OPTIONS = {
 };
 
 const WEATHER_OPTIONS = ["sunny", "indoor", "rainy", "windy"];
+const CATEGORY_OPTIONS = ["endurance", "tempo", "threshold", "vo2max", "anaerobic", "recovery", "hills"];
 
 const formatSecondsToMMSS = (seconds) => {
   if (!seconds) return "";
@@ -47,6 +48,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
   const [formData, setFormData] = useState(initialData || {
     sport: "bike",
     type: "interval",
+    category: "",
     title: "",
     customTitle: "",
     description: "",
@@ -116,7 +118,8 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           return {
             ...result,
             power: powerValue,
-            duration: durationValue
+            duration: durationValue,
+            elevation: result.elevation ?? ""
           };
         })
       };
@@ -270,7 +273,14 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
               duration: "0"
             };
           }
-          return interval;
+          const updatedInterval = { ...interval };
+          if (updatedInterval.elevation !== undefined && updatedInterval.elevation !== null && updatedInterval.elevation !== '') {
+            const elevation = Number(updatedInterval.elevation);
+            updatedInterval.elevation = Number.isFinite(elevation) ? elevation : undefined;
+          } else {
+            delete updatedInterval.elevation;
+          }
+          return updatedInterval;
         });
       }
       
@@ -302,6 +312,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
           heartRate: "",
           lactate: "",
           RPE: "",
+          elevation: "",
           duration: "00:00",
           durationType: "time",
           repeatCount: 1
@@ -331,7 +342,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
   };
 
   return (
-    <div className="bg-white rounded-xl w-full max-w-2xl flex flex-col max-h-[90vh] relative">
+    <div className="bg-white rounded-xl w-full max-w-5xl flex flex-col max-h-[90vh] relative">
       <button
         onClick={onClose}
         className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
@@ -453,6 +464,29 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                   className="w-full border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   style={{ WebkitAppearance: 'none', appearance: 'none' }}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Category</label>
+                <div className="relative">
+                  <select
+                    value={formData.category || ""}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg p-2 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
+                    style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                  >
+                    <option value="">Select category</option>
+                    {CATEGORY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -672,7 +706,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                     </div>
                   </div>
                   
-                  <div className={`p-4 grid grid-cols-2 sm:grid-cols-3 md:flex md:items-center gap-4 ${isRecovery && !isSelected ? 'opacity-50' : ''}`}>
+                  <div className={`p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 ${isRecovery && !isSelected ? 'opacity-50' : ''}`}>
                     <div className="flex items-center gap-2">
                       <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -781,6 +815,29 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                         onChange={(e) => {
                           const newResults = [...formData.results];
                           newResults[index].RPE = e.target.value;
+                          setFormData(prev => ({ ...prev, results: newResults }));
+                        }}
+                        disabled={isRecovery && !isSelected}
+                        className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
+                          isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
+                        }`}
+                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20h10M12 4v16m0 0l-4-4m4 4l4-4" />
+                        </svg>
+                      </span>
+                      <input
+                        type="number"
+                        placeholder="Elev +/-"
+                        value={interval.elevation ?? ""}
+                        onChange={(e) => {
+                          const newResults = [...formData.results];
+                          newResults[index].elevation = e.target.value;
                           setFormData(prev => ({ ...prev, results: newResults }));
                         }}
                         disabled={isRecovery && !isSelected}
