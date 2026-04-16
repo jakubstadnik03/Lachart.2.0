@@ -1557,6 +1557,37 @@ const FitAnalysisPage = () => {
   
   // Helper function to get GPS data from training or Strava
   const getGpsData = React.useMemo(() => {
+    const toNumber = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const maybeConvertSemicircles = (v) => {
+      // Garmin FIT sometimes stores coordinates in semicircles.
+      // If value is outside valid degree range, convert.
+      if (v == null) return null;
+      return Math.abs(v) > 180 ? (v / 11930464.711111111) : v;
+    };
+
+    const extractLatLngFromRecord = (r) => {
+      if (!r || typeof r !== 'object') return null;
+
+      const rawLat = toNumber(
+        r.positionLat ?? r.position_lat ?? r.lat ?? r.latitude ?? r.gpsLat ?? r.gps_lat
+      );
+      const rawLng = toNumber(
+        r.positionLong ?? r.position_long ?? r.lng ?? r.lon ?? r.longitude ?? r.gpsLng ?? r.gps_lng
+      );
+
+      if (rawLat == null || rawLng == null) return null;
+
+      const lat = maybeConvertSemicircles(rawLat);
+      const lng = maybeConvertSemicircles(rawLng);
+      if (lat == null || lng == null) return null;
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+      return [lat, lng];
+    };
+
     if (selectedStrava && selectedStravaStreams) {
       // Get GPS from Strava latlng stream
       const latlngArray = selectedStravaStreams?.latlng?.data || selectedStravaStreams?.latlng || [];
@@ -1564,14 +1595,32 @@ const FitAnalysisPage = () => {
         return latlngArray.map(([lat, lng]) => [lat, lng]).filter(p => p[0] != null && p[1] != null);
       }
     } else if (selectedTraining && selectedTraining.records) {
-      // Get GPS from FIT file records
-      return selectedTraining.records
-        .filter(r => r.positionLat != null && r.positionLong != null)
-        .map(r => [
-          r.positionLat / 11930464.711111111, // Convert from semicircles to degrees
-          r.positionLong / 11930464.711111111
-        ]);
+      // Get GPS from FIT/regular training records (supports multiple field names).
+      const fromRecords = selectedTraining.records
+        .map(extractLatLngFromRecord)
+        .filter(Boolean);
+      if (fromRecords.length > 0) return fromRecords;
     }
+
+    // Fallbacks: some payloads expose route/coordinates arrays directly.
+    const fallbackPoints =
+      selectedTraining?.gpsData ||
+      selectedTraining?.route ||
+      selectedTraining?.coordinates ||
+      selectedTraining?.polylinePoints ||
+      [];
+
+    if (Array.isArray(fallbackPoints) && fallbackPoints.length > 0) {
+      const fromFallback = fallbackPoints
+        .map((p) => {
+          if (Array.isArray(p) && p.length >= 2) return extractLatLngFromRecord({ lat: p[0], lng: p[1] });
+          if (p && typeof p === 'object') return extractLatLngFromRecord(p);
+          return null;
+        })
+        .filter(Boolean);
+      if (fromFallback.length > 0) return fromFallback;
+    }
+
     return [];
   }, [selectedStrava, selectedStravaStreams, selectedTraining]);
   
@@ -3361,6 +3410,44 @@ const FitAnalysisPage = () => {
                 user={user}
                 isMobile={isMobile}
               />
+
+                  {/* Route Map for FIT/regular training when GPS is available */}
+                  {getGpsData.length > 0 && (
+                    <div className={`${isMobile ? 'mb-2' : 'mb-3 sm:mb-4 md:mb-6'}`}>
+                      <div className={`bg-white/90 ${isMobile ? 'rounded-lg' : 'rounded-xl sm:rounded-2xl md:rounded-3xl'} border border-gray-200 shadow-md ${isMobile ? 'p-1.5' : 'p-2 sm:p-3 md:p-4 lg:p-6'}`}>
+                        <h3 className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base md:text-lg lg:text-xl'} font-semibold text-gray-900 ${isMobile ? 'mb-1.5' : 'mb-2 sm:mb-3'}`}>
+                          Route Map
+                        </h3>
+                        <div className={`relative ${isMobile ? 'rounded-md' : 'rounded-lg sm:rounded-xl md:rounded-2xl'} overflow-hidden border border-gray-200 ${isMobile ? 'h-[180px]' : 'h-[200px] sm:h-[300px] md:h-[400px]'}`}>
+                          <MapContainer
+                            center={getGpsData[Math.floor(getGpsData.length / 2)]}
+                            zoom={13}
+                            style={{ height: '100%', width: '100%', zIndex: 0 }}
+                            scrollWheelZoom={true}
+                          >
+                            <TileLayer
+                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
+                            <Polyline
+                              positions={getGpsData}
+                              pathOptions={{
+                                color: '#767EB5',
+                                weight: 4,
+                                opacity: 0.85
+                              }}
+                            />
+                            <Marker position={getGpsData[0]}>
+                              <Popup>Start</Popup>
+                            </Marker>
+                            <Marker position={getGpsData[getGpsData.length - 1]}>
+                              <Popup>Finish</Popup>
+                            </Marker>
+                          </MapContainer>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {highlightMetric && (
                     <div className="mb-3 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm text-indigo-800">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -113,12 +113,20 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
   const [showRPE, setShowRPE] = useState(false);
   const chartRef = useRef(null);
   
+  const safeResizeChart = useCallback(() => {
+    const chart = chartRef.current;
+    const canvas = chart?.canvas;
+    if (!chart || typeof chart.resize !== 'function') return;
+    if (!canvas || !canvas.ownerDocument) return;
+    // Ignore detached canvas instances during fast unmount/remount cycles.
+    if (!canvas.isConnected) return;
+    chart.resize();
+  }, []);
+
   // Detect mobile and force chart resize after layout changes.
   useEffect(() => {
     const forceChartResize = () => {
-      const chart = chartRef.current;
-      if (!chart || typeof chart.resize !== 'function') return;
-      window.requestAnimationFrame(() => chart.resize());
+      window.requestAnimationFrame(() => safeResizeChart());
     };
 
     const handleResize = () => {
@@ -133,13 +141,11 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       window.clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [safeResizeChart]);
 
   useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || typeof chart.resize !== 'function') return;
-    window.requestAnimationFrame(() => chart.resize());
-  }, [isMobile, mockData?.results?.length]);
+    window.requestAnimationFrame(() => safeResizeChart());
+  }, [isMobile, mockData?.results?.length, safeResizeChart]);
   
   // Get unit system and input mode from user profile, mockData, or default to metric/pace
   const unitSystem = resolveDistanceUnitSystem(user, mockData?.unitSystem || 'metric');
