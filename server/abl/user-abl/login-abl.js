@@ -31,7 +31,7 @@ class LoginAbl {
             // bcrypt.compare would throw if hash is missing/invalid -> caused 500 and prevented recovery.
             if (!user.password || typeof user.password !== "string" || user.password.trim() === "") {
                 return res.status(401).json({
-                    error: "Tento účet nemá nastavené heslo. Přihlas se přes Google nebo si nastav heslo přes 'Forgot password' (reset přes email).",
+                    error: "This account does not have a password set. Sign in with Google or set a password via 'Forgot password' (email reset).",
                     reason: "no_password_set",
                     signupMethod: user.signupMethod || (user.googleId ? "google" : undefined)
                 });
