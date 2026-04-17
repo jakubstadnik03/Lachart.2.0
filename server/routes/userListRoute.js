@@ -49,6 +49,17 @@ function smtpDiagFromError(err) {
     return { code, command, responseCode };
 }
 
+function hasPendingInviteFromCoach(athlete, coachUser) {
+    if (!athlete || !coachUser) return false;
+    const coachId = String(coachUser._id || "");
+    if (!coachId) return false;
+    if (String(athlete.pendingCoachId || "") === coachId) return true;
+    if (Array.isArray(coachUser.pendingAthleteIds)) {
+        return coachUser.pendingAthleteIds.some((id) => String(id) === String(athlete._id));
+    }
+    return false;
+}
+
 /** Load linked coaches for an athlete (legacy coachId + coachIds). */
 async function getAthleteCoachesPayload(athleteId) {
     const athlete = await userDao.findById(athleteId);
@@ -932,6 +943,9 @@ router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
             }
+            if (hasPendingInviteFromCoach(athlete, user)) {
+                return res.status(403).json({ error: "Athlete invitation is pending confirmation" });
+            }
             if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
             }
@@ -987,6 +1001,9 @@ router.get("/athlete/:athleteId/profile", verifyToken, async (req, res) => {
             const athlete = await userDao.findById(athleteId);
             if (!athlete) {
                 return res.status(404).json({ error: "Athlete not found" });
+            }
+            if (hasPendingInviteFromCoach(athlete, user)) {
+                return res.status(403).json({ error: "Athlete invitation is pending confirmation" });
             }
             if (!athleteHasCoachUser(athlete, userId)) {
                 return res.status(403).json({ error: "This athlete does not belong to your team" });
@@ -1168,6 +1185,10 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
   try {
     const { athleteId } = req.params;
     const coachId = req.user.userId;
+    const coach = await userDao.findById(coachId);
+    if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+      return res.status(403).json({ success: false, message: 'Access allowed only for coach/tester roles' });
+    }
 
     // Find athlete
     const athlete = await userDao.findById(athleteId);
@@ -1175,8 +1196,12 @@ router.post('/coach/resend-invitation/:athleteId', verifyToken, async (req, res)
       return res.status(404).json({ success: false, message: 'Athlete not found' });
     }
 
-    // Check if athlete is assigned to coach
-    if (!athleteHasCoachUser(athlete, coachId)) {
+    // Check if athlete is assigned to coach OR pending under this coach
+    const hasPendingInviteFromCoach =
+      String(athlete.pendingCoachId || '') === String(coachId) ||
+      (Array.isArray(coach.pendingAthleteIds) &&
+        coach.pendingAthleteIds.some((id) => String(id) === String(athlete._id)));
+    if (!athleteHasCoachUser(athlete, coachId) && !hasPendingInviteFromCoach) {
       return res.status(403).json({ success: false, message: 'Not authorized to resend invitation' });
     }
 

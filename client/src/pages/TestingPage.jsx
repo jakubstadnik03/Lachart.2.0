@@ -73,6 +73,7 @@ const TestingPage = () => {
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(true);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
+  const [pendingAthletesLoaded, setPendingAthletesLoaded] = useState(false);
   const [hrTestPlan, setHrTestPlan] = useState(null);
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
@@ -97,6 +98,12 @@ const TestingPage = () => {
     }
     return user?._id ?? null;
   }, [isTestingRole, isCoachLikeRole, selectedAthleteId, user?.role, user?._id]);
+  const isPendingSelectedAthlete = useMemo(() => {
+    if (!isCoachLikeRole) return false;
+    if (!selectedAthleteId) return false;
+    if (String(selectedAthleteId) === String(user?._id || '')) return false;
+    return pendingAthleteIds.includes(String(selectedAthleteId));
+  }, [isCoachLikeRole, selectedAthleteId, user?._id, pendingAthleteIds]);
 
   /** Current effective athlete for data loads — used to drop stale / out-of-order list responses */
   const effectiveAthleteIdRef = useRef(effectiveTargetAthleteId);
@@ -273,11 +280,18 @@ const TestingPage = () => {
         const response = await api.get('/user/coach/athletes');
         const list = Array.isArray(response?.data) ? response.data : [];
         const pendingIds = list
-          .filter((a) => a?.invitationPending || a?.coachLinkStatus === 'pending')
+          .filter((a) =>
+            a?.invitationPending ||
+            a?.coachLinkStatus === 'pending' ||
+            a?.status === 'pending' ||
+            a?.pending === true
+          )
           .map((a) => String(a._id));
         setPendingAthleteIds(pendingIds);
       } catch (e) {
         console.warn('Failed to load coach athletes for pending checks:', e?.message || e);
+      } finally {
+        setPendingAthletesLoaded(true);
       }
     };
     loadCoachAthletes();
@@ -411,6 +425,7 @@ const TestingPage = () => {
   useEffect(() => {
     const checkStravaConnection = async () => {
       if (!isAuthenticated || !user) return;
+      if (isPendingSelectedAthlete) return;
       
       try {
         const status = await getIntegrationStatus();
@@ -441,7 +456,7 @@ const TestingPage = () => {
     };
 
     checkStravaConnection();
-  }, [user, isAuthenticated]);
+  }, [user, isAuthenticated, isPendingSelectedAthlete]);
 
   // Listen for Strava connection updates (e.g., after connecting)
   useEffect(() => {
@@ -497,6 +512,19 @@ const TestingPage = () => {
       if (!isAuthenticated || !u) return;
       const targetId = effectiveTargetAthleteId;
       if (!targetId) return;
+      if (
+        isCoachLikeRole &&
+        String(targetId) !== String(u?._id || '') &&
+        !pendingAthletesLoaded
+      ) {
+        return;
+      }
+      if (isPendingSelectedAthlete) {
+        setAthleteProfile(null);
+        setExternalActivities([]);
+        setBikePowerMetrics(null);
+        return;
+      }
 
       try {
         setAdvisorLoading(true);
@@ -596,7 +624,7 @@ const TestingPage = () => {
 
     loadAdvisor();
     return () => ac.abort();
-  }, [isAuthenticated, effectiveTargetAthleteId, isCoachLikeRole, user?._id, user?.role]);
+  }, [isAuthenticated, effectiveTargetAthleteId, isCoachLikeRole, user?._id, user?.role, isPendingSelectedAthlete, pendingAthletesLoaded]);
 
   // Load HR-first test plan from Strava activities - with error handling
   useEffect(() => {
@@ -1198,7 +1226,7 @@ const TestingPage = () => {
       }
 
       // If coach created test for an athlete, offer to send email
-      if (user?.role === 'coach' && selectedAthleteId && selectedAthleteId !== user._id) {
+      if (user?.role === 'coach' && selectedAthleteId && selectedAthleteId !== user._id && !isPendingSelectedAthlete) {
         try {
           // Get athlete profile to check for email
           const athleteProfile = await api.get(`/user/athlete/${selectedAthleteId}/profile`);
@@ -1283,6 +1311,11 @@ const TestingPage = () => {
             allowPendingSelection
           />
         </motion.div>
+      )}
+      {isPendingSelectedAthlete && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Athlete is waiting for confirmation. You can add tests, but profile and training data are hidden until invitation is accepted.
+        </div>
       )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6">
         <motion.div 
