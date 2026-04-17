@@ -581,11 +581,22 @@ router.delete("/coach/remove-athlete/:athleteId", verifyToken, async (req, res) 
         // Remove athlete from coach's list
         await userDao.removeAthleteFromCoach(coach._id, athlete._id);
         await User.findByIdAndUpdate(coach._id, { $pull: { pendingAthleteIds: athlete._id } });
-        
-        // Delete athlete's account
-        await userDao.deleteById(athlete._id);
 
-        res.status(200).json({ message: "Athlete successfully removed" });
+        // Unlink coach from athlete profile (never delete athlete account here).
+        // Handles both legacy single-coach and new multi-coach schema.
+        const nextCoachLinks = removeCoachFromAthleteIds(athlete, coach._id);
+        const athleteUpdate = {
+            coachIds: nextCoachLinks.coachIds,
+            coachId: nextCoachLinks.coachId
+        };
+        if (String(athlete.pendingCoachId || '') === String(coach._id)) {
+            athleteUpdate.pendingCoachId = null;
+            athleteUpdate.invitationToken = null;
+            athleteUpdate.invitationSentAt = null;
+        }
+        await userDao.updateUser(athlete._id, athleteUpdate);
+
+        res.status(200).json({ message: "Athlete successfully unlinked from coach" });
     } catch (error) {
         console.error("Error removing athlete:", error);
         res.status(500).json({ error: error.message });
