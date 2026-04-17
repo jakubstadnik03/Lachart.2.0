@@ -305,8 +305,31 @@ router.get("/coach/athletes", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
-        const athletes = await userDao.findAthletesByCoachId(req.user.userId);
-        res.status(200).json(athletes);
+        const linkedAthletes = await userDao.findAthletesByCoachId(req.user.userId);
+        const pendingByCoachFlag = await User.find({
+            pendingCoachId: coach._id
+        });
+        const pendingByCoachList = Array.isArray(coach.pendingAthleteIds) && coach.pendingAthleteIds.length > 0
+            ? await User.find({ _id: { $in: coach.pendingAthleteIds } })
+            : [];
+
+        const byId = new Map();
+        [...linkedAthletes, ...pendingByCoachFlag, ...pendingByCoachList].forEach((athlete) => {
+            if (!athlete?._id) return;
+            const key = String(athlete._id);
+            const isPendingInvite =
+                (String(athlete.pendingCoachId || '') === String(coach._id) ||
+                 (Array.isArray(coach.pendingAthleteIds) && coach.pendingAthleteIds.some((id) => String(id) === String(athlete._id)))) &&
+                !athleteHasCoachUser(athlete, coach._id);
+
+            byId.set(key, {
+                ...athlete.toObject?.() || athlete,
+                invitationPending: Boolean(isPendingInvite),
+                coachLinkStatus: isPendingInvite ? 'pending' : 'active'
+            });
+        });
+
+        res.status(200).json(Array.from(byId.values()));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -537,12 +560,16 @@ router.delete("/coach/remove-athlete/:athleteId", verifyToken, async (req, res) 
             return res.status(404).json({ error: "Athlete not found" });
         }
 
-        if (!athleteHasCoachUser(athlete, coach._id)) {
+        const hasPendingInviteFromCoach =
+            String(athlete.pendingCoachId || '') === String(coach._id) ||
+            (Array.isArray(coach.pendingAthleteIds) && coach.pendingAthleteIds.some((id) => String(id) === String(athlete._id)));
+        if (!athleteHasCoachUser(athlete, coach._id) && !hasPendingInviteFromCoach) {
             return res.status(403).json({ error: "You are not authorized to remove this athlete" });
         }
 
         // Remove athlete from coach's list
         await userDao.removeAthleteFromCoach(coach._id, athlete._id);
+        await User.findByIdAndUpdate(coach._id, { $pull: { pendingAthleteIds: athlete._id } });
         
         // Delete athlete's account
         await userDao.deleteById(athlete._id);
@@ -1288,6 +1315,9 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             invitationTokenExpires,
             pendingCoachId: coachId
         });
+        await User.findByIdAndUpdate(coach._id, {
+            $addToSet: { pendingAthleteIds: athlete._id }
+        });
 
         // Send invitation email
         const transporter = createEmailTransporter();
@@ -1363,34 +1393,67 @@ router.post("/accept-invitation/:token", async (req, res) => {
             pendingCoachId: null
         });
         await userDao.addAthleteToCoach(coach._id, athlete._id);
+        await User.findByIdAndUpdate(coach._id, {
+            $pull: { pendingAthleteIds: athlete._id }
+        });
 
-        // Send confirmation email to coach (same branded template as other LaChart emails)
+        // Send confirmation emails to both coach and athlete (best effort; do not block acceptance flow)
         const transporter = createEmailTransporter();
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl();
 
-        if (coach?.email && transporter) {
-            const coachContent = `
-                <p>Hi ${coach.name},</p>
-                <p>Athlete <strong>${athlete.name} ${athlete.surname}</strong> has accepted your team invitation in LaChart.</p>
-                <p>They will now appear in your athletes list and you can view their shared data from your coach dashboard.</p>
-            `;
+        if (transporter) {
+            try {
+                if (coach?.email) {
+                    const coachContent = `
+                        <p>Hi ${coach.name},</p>
+                        <p>Athlete <strong>${athlete.name} ${athlete.surname}</strong> has accepted your team invitation in LaChart.</p>
+                        <p>They will now appear in your athletes list and you can view their shared data from your coach dashboard.</p>
+                    `;
 
-            await transporter.sendMail({
-                from: {
-                    name: 'LaChart',
-                    address: process.env.EMAIL_USER
-                },
-                to: coach.email.toLowerCase(),
-                subject: 'Invitation Accepted – LaChart',
-                html: generateEmailTemplate({
-                    title: 'Invitation Accepted',
-                    content: coachContent,
-                    loginButtonText: 'Open LaChart',
-                    loginButtonUrl: clientUrl,
-                    footerText: 'You can manage your athletes and invitations from your LaChart coach dashboard.'
-                })
-            });
+                    await transporter.sendMail({
+                        from: {
+                            name: 'LaChart',
+                            address: process.env.EMAIL_USER
+                        },
+                        to: coach.email.toLowerCase(),
+                        subject: 'Invitation Accepted – LaChart',
+                        html: generateEmailTemplate({
+                            title: 'Invitation Accepted',
+                            content: coachContent,
+                            loginButtonText: 'Open LaChart',
+                            loginButtonUrl: clientUrl,
+                            footerText: 'You can manage your athletes and invitations from your LaChart coach dashboard.'
+                        })
+                    });
+                }
+
+                if (athlete?.email) {
+                    const athleteContent = `
+                        <p>Hi ${athlete.name},</p>
+                        <p>You have successfully confirmed your invitation and joined coach <strong>${coach.name} ${coach.surname}</strong> in LaChart.</p>
+                        <p>Your account is now linked and your coach can work with your training data.</p>
+                    `;
+
+                    await transporter.sendMail({
+                        from: {
+                            name: 'LaChart',
+                            address: process.env.EMAIL_USER
+                        },
+                        to: athlete.email.toLowerCase(),
+                        subject: 'Team Invitation Confirmed – LaChart',
+                        html: generateEmailTemplate({
+                            title: 'Invitation Confirmed',
+                            content: athleteContent,
+                            loginButtonText: 'Open LaChart',
+                            loginButtonUrl: clientUrl,
+                            footerText: 'If this was not expected, contact support at lachart@lachart.net.'
+                        })
+                    });
+                }
+            } catch (emailError) {
+                console.error('Invitation acceptance emails failed:', emailError?.message || emailError);
+            }
         }
 
         res.status(200).json({ 

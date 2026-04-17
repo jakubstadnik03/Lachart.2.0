@@ -399,11 +399,16 @@ const SettingsPage = () => {
         }
 
         const status = await getIntegrationStatus();
-        setGarminConnected(Boolean(status.garminConnected));
+        const isConnected = Boolean(status.garminConnected);
+        setGarminConnected(isConnected);
 
         const cleanPath = `${window.location.pathname}?tab=integrations`;
         window.history.replaceState({}, document.title, cleanPath);
-        addNotification('Garmin account connected successfully', 'success');
+        if (isConnected) {
+          addNotification('Garmin account connected successfully', 'success');
+        } else {
+          addNotification('Garmin callback finished, but account is still not marked as connected', 'warning');
+        }
       } catch (e) {
         console.error('Error finalizing Garmin callback:', e);
         addNotification('Garmin connected, but profile refresh failed', 'warning');
@@ -2117,10 +2122,8 @@ const SettingsPage = () => {
                       )}
                     <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold`}>Garmin</h4>
                     </div>
-                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${(user?.admin || user?.role === 'admin') ? (garminConnected ? 'text-green-600' : 'text-gray-500') : 'text-amber-600'}`}>
-                      {(user?.admin || user?.role === 'admin')
-                        ? (garminConnected ? 'Connected' : 'Not connected')
-                        : 'Coming soon'}
+                    <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium ${garminConnected ? 'text-green-600' : 'text-gray-500'}`}>
+                      {garminConnected ? 'Connected' : 'Not connected'}
                     </span>
                   </div>
                   

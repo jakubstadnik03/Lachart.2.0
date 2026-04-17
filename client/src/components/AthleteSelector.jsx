@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 
-const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
+const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user, allowPendingSelection = false }) => {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -55,6 +55,10 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
 
   const handleAthleteChange = (e) => {
     const newAthleteId = e.target.value;
+    const selectedAthlete = athletes.find((a) => String(a._id) === String(newAthleteId));
+    if (!allowPendingSelection && (selectedAthlete?.invitationPending || selectedAthlete?.coachLinkStatus === 'pending')) {
+      return;
+    }
     if (newAthleteId) {
       // Globální volba atleta – sdílená napříč stránkami (Dashboard, Training, Testing, Menu)
       try {
@@ -99,8 +103,15 @@ const AthleteSelector = ({ selectedAthleteId, onAthleteChange, user }) => {
             </option>
           )}
           {athletes.map((athlete) => (
-            <option key={athlete._id} value={athlete._id}>
+            <option
+              key={athlete._id}
+              value={athlete._id}
+              disabled={Boolean(!allowPendingSelection && (athlete.invitationPending || athlete.coachLinkStatus === 'pending'))}
+            >
               {athlete.name} {athlete.surname}
+              {athlete.invitationPending || athlete.coachLinkStatus === 'pending'
+                ? ' (Waiting for confirmation)'
+                : ''}
             </option>
           ))}
         </select>

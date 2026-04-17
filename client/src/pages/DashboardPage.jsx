@@ -92,6 +92,7 @@ export default function DashboardPage() {
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
+  const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const navigate = useNavigate();
   const [selectedTests, setSelectedTests] = useState([]);
   /** Avoid flashing the empty-state hero while API/cache is still settling */
@@ -140,6 +141,23 @@ export default function DashboardPage() {
     
     checkStravaConnection();
   }, [user]);
+
+  useEffect(() => {
+    const loadCoachAthletes = async () => {
+      if (!isCoachLikeRole) return;
+      try {
+        const response = await api.get('/user/coach/athletes');
+        const list = Array.isArray(response?.data) ? response.data : [];
+        const pendingIds = list
+          .filter((a) => a?.invitationPending || a?.coachLinkStatus === 'pending')
+          .map((a) => String(a._id));
+        setPendingAthleteIds(pendingIds);
+      } catch (e) {
+        console.warn('Failed to load coach athletes for pending-state checks:', e?.message || e);
+      }
+    };
+    loadCoachAthletes();
+  }, [isCoachLikeRole]);
   
   const handleConnectStrava = async () => {
     try {
@@ -669,6 +687,19 @@ export default function DashboardPage() {
       return;
     }
 
+    const isPendingAthleteSelection =
+      isCoachLikeRole &&
+      String(targetAthleteId) !== String(user?._id || '') &&
+      pendingAthleteIds.includes(String(targetAthleteId));
+    if (isPendingAthleteSelection) {
+      setTrainings([]);
+      setRegularTrainings([]);
+      setCalendarData([]);
+      setTests([]);
+      setError('Waiting for athlete confirmation');
+      return;
+    }
+
     // Coach fallback: if nothing is selected, use coach self profile.
     if (user?.role === 'coach' && !selectedAthleteId) {
       setSelectedAthleteId(user._id);
@@ -728,7 +759,7 @@ export default function DashboardPage() {
     };
 
     loadData();
-  }, [user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole]);
+  }, [user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {
@@ -902,6 +933,14 @@ export default function DashboardPage() {
           />
         </motion.div>
       )}
+      {isCoachLikeRole &&
+        selectedAthleteId &&
+        String(selectedAthleteId) !== String(user?._id || '') &&
+        pendingAthleteIds.includes(String(selectedAthleteId)) && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            This athlete is waiting for confirmation. Profile and historical data will unlock after the athlete accepts the invitation.
+          </div>
+        )}
       
       {showAthleteEmptyWelcome && (
         <DashboardEmptyWelcome

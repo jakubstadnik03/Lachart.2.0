@@ -72,6 +72,7 @@ const TestingPage = () => {
   const [bikePowerMetrics, setBikePowerMetrics] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(true);
+  const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const [hrTestPlan, setHrTestPlan] = useState(null);
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
@@ -240,6 +241,7 @@ const TestingPage = () => {
     const validateAthlete = async () => {
       if (!user || !selectedAthleteId || selectedAthleteId === user._id || !isAuthenticated) return;
       if (isTestingRole) return;
+      if (pendingAthleteIds.includes(String(selectedAthleteId))) return;
       
       try {
         // Try to load athlete profile - if it fails, athlete might be deleted/problematic
@@ -262,7 +264,24 @@ const TestingPage = () => {
     if (isAuthenticated && user) {
       validateAthlete();
     }
-  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole, isTestingRole]);
+  }, [athleteId, user, selectedAthleteId, isAuthenticated, navigate, addNotification, isCoachLikeRole, isTestingRole, pendingAthleteIds]);
+
+  useEffect(() => {
+    const loadCoachAthletes = async () => {
+      if (!isCoachLikeRole) return;
+      try {
+        const response = await api.get('/user/coach/athletes');
+        const list = Array.isArray(response?.data) ? response.data : [];
+        const pendingIds = list
+          .filter((a) => a?.invitationPending || a?.coachLinkStatus === 'pending')
+          .map((a) => String(a._id));
+        setPendingAthleteIds(pendingIds);
+      } catch (e) {
+        console.warn('Failed to load coach athletes for pending checks:', e?.message || e);
+      }
+    };
+    loadCoachAthletes();
+  }, [isCoachLikeRole]);
 
   // Load test by ID from URL if present (before loading all tests)
   useEffect(() => {
@@ -1261,6 +1280,7 @@ const TestingPage = () => {
             selectedAthleteId={selectedAthleteId}
             onAthleteChange={handleAthleteChange}
             user={user}
+            allowPendingSelection
           />
         </motion.div>
       )}

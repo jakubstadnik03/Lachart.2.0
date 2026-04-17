@@ -81,6 +81,11 @@ const AthletesPage = () => {
 
 
   const handleViewProfile = (athleteId) => {
+    const athlete = athletes.find(a => String(a._id) === String(athleteId));
+    if (athlete?.invitationPending || athlete?.coachLinkStatus === 'pending') {
+      addNotification('Waiting for athlete confirmation before profile access.', 'info');
+      return;
+    }
     navigate(`/athlete/${athleteId}`);
   };
 
@@ -472,6 +477,11 @@ const AthletesPage = () => {
                         >
                           {athlete.name} {athlete.surname}
                         </h3>
+                        {(athlete.invitationPending || athlete.coachLinkStatus === 'pending') && (
+                          <p className="text-xs sm:text-sm text-amber-700 mt-1 font-medium">
+                            Waiting for confirmation
+                          </p>
+                        )}
                         <p className="text-sm sm:text-base text-gray-500 mt-1">{athlete.email}</p>
                       </div>
                       <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4 flex-grow">
@@ -495,9 +505,10 @@ const AthletesPage = () => {
                       </div>
                       <button 
                         onClick={() => handleViewProfile(athlete._id)}
-                        className="w-full mt-4 sm:mt-6 bg-primary text-white py-2 sm:py-3 rounded-xl hover:bg-primary-dark transition-colors text-sm sm:text-lg font-semibold flex items-center justify-center gap-2"
+                        disabled={Boolean(athlete.invitationPending || athlete.coachLinkStatus === 'pending')}
+                        className="w-full mt-4 sm:mt-6 bg-primary text-white py-2 sm:py-3 rounded-xl hover:bg-primary-dark transition-colors text-sm sm:text-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        View Profile
+                        {athlete.invitationPending || athlete.coachLinkStatus === 'pending' ? 'Waiting for confirmation' : 'View Profile'}
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                         </svg>

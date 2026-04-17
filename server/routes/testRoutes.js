@@ -241,9 +241,11 @@ router.get('/list/:athleteId', verifyToken, async (req, res) => {
         // tester/testing/coach: only tests for their own athletes (not arbitrary users)
         if (['tester', 'testing', 'coach'].includes(role) && targetAthleteId !== requesterUserId) {
             const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
-            const athlete = await User.findById(targetAthleteId).select('coachId coachIds');
+            const athlete = await User.findById(targetAthleteId).select('coachId coachIds pendingCoachId');
             if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-            if (!athleteHasCoachUser(athlete, requesterUserId)) {
+            const hasPendingInviteFromRequester =
+                String(athlete.pendingCoachId || '') === String(requesterUserId);
+            if (!athleteHasCoachUser(athlete, requesterUserId) && !hasPendingInviteFromRequester) {
                 return res.status(403).json({ error: 'You do not have permission to view these tests' });
             }
         }
@@ -315,9 +317,11 @@ router.post("/", verifyToken, async (req, res) => {
             // Allow creating for self (rare, but consistent with isSelf permissions elsewhere)
             if (requestedAthleteId !== requesterId) {
                 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
-                const athlete = await User.findById(requestedAthleteId).select('coachId coachIds');
+                const athlete = await User.findById(requestedAthleteId).select('coachId coachIds pendingCoachId');
                 if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
-                if (!athleteHasCoachUser(athlete, requesterId)) {
+                const hasPendingInviteFromRequester =
+                    String(athlete.pendingCoachId || '') === String(requesterId);
+                if (!athleteHasCoachUser(athlete, requesterId) && !hasPendingInviteFromRequester) {
                     return res.status(403).json({ error: 'You do not have permission to create tests for this athlete' });
                 }
             }

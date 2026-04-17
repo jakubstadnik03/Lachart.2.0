@@ -1408,6 +1408,7 @@ const FitAnalysisPage = () => {
   const navigate = useNavigate();
   const { activityId, athleteId: athleteIdParam } = useParams();
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
+  const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -2009,6 +2010,15 @@ const FitAnalysisPage = () => {
         setExternalActivities([]);
         return;
       }
+      if (
+        role === 'coach' &&
+        athleteId &&
+        String(athleteId) !== String(user?._id || '') &&
+        pendingAthleteIds.includes(String(athleteId))
+      ) {
+        setExternalActivities([]);
+        return;
+      }
 
       const params = athleteId ? { athleteId } : {};
       const acts = normalizeApiList(await listExternalActivities(params));
@@ -2039,7 +2049,7 @@ const FitAnalysisPage = () => {
       console.error('Error loading external activities:', e);
       setExternalActivities([]);
     }
-  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail]);
+  }, [selectedAthleteId, user?.role, user?._id, selectedStrava, loadStravaDetail, pendingAthleteIds]);
 
   // Training chart zoom and drag handlers - must be at top level (not conditionally rendered)
   useEffect(() => {
@@ -2416,6 +2426,15 @@ const FitAnalysisPage = () => {
         setTrainings([]);
         return;
       }
+      if (
+        role === 'coach' &&
+        athleteId &&
+        String(athleteId) !== String(user?._id || '') &&
+        pendingAthleteIds.includes(String(athleteId))
+      ) {
+        setTrainings([]);
+        return;
+      }
 
       const raw = await getFitTrainings(athleteId);
       const data = normalizeApiList(raw);
@@ -2465,7 +2484,7 @@ const FitAnalysisPage = () => {
       setTrainings([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAthleteId, user?.role, user?._id, selectedTraining]);
+  }, [selectedAthleteId, user?.role, user?._id, selectedTraining, pendingAthleteIds]);
 
   // Load regular trainings from /training route
   const loadRegularTrainings = useCallback(async () => {
@@ -2479,6 +2498,15 @@ const FitAnalysisPage = () => {
             : selectedAthleteId;
 
       if (role === 'coach' && !athleteId) {
+        setRegularTrainings([]);
+        return;
+      }
+      if (
+        role === 'coach' &&
+        athleteId &&
+        String(athleteId) !== String(user?._id || '') &&
+        pendingAthleteIds.includes(String(athleteId))
+      ) {
         setRegularTrainings([]);
         return;
       }
@@ -2500,7 +2528,7 @@ const FitAnalysisPage = () => {
       }
       console.error('Error loading regular trainings:', error);
     }
-  }, [selectedAthleteId, user?.role, user?._id]);
+  }, [selectedAthleteId, user?.role, user?._id, pendingAthleteIds]);
 
   // Load regular training detail from /training route
   const loadRegularTrainingDetail = useCallback(async (id) => {
@@ -2859,6 +2887,24 @@ const FitAnalysisPage = () => {
     window.addEventListener('athleteSelected', handleAthleteSelected);
     return () => window.removeEventListener('athleteSelected', handleAthleteSelected);
   }, [selectedAthleteId]);
+
+  useEffect(() => {
+    const loadCoachAthletes = async () => {
+      const role = String(user?.role || '').toLowerCase();
+      if (role !== 'coach' && role !== 'tester' && role !== 'testing') return;
+      try {
+        const response = await api.get('/user/coach/athletes');
+        const list = Array.isArray(response?.data) ? response.data : [];
+        const pendingIds = list
+          .filter((a) => a?.invitationPending || a?.coachLinkStatus === 'pending')
+          .map((a) => String(a._id));
+        setPendingAthleteIds(pendingIds);
+      } catch (e) {
+        console.warn('Failed to load coach athletes for pending-state checks:', e?.message || e);
+      }
+    };
+    loadCoachAthletes();
+  }, [user?.role]);
 
   // Reload data when selectedAthleteId changes (debounced to prevent multiple calls)
   useEffect(() => {
@@ -3483,6 +3529,14 @@ const FitAnalysisPage = () => {
             user={user}
           />
         )}
+        {user?.role === 'coach' &&
+          selectedAthleteId &&
+          String(selectedAthleteId) !== String(user?._id || '') &&
+          pendingAthleteIds.includes(String(selectedAthleteId)) && (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              This athlete is waiting for invitation confirmation. Training history and integrations will be available after acceptance.
+            </div>
+          )}
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
         <div className={isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''}>

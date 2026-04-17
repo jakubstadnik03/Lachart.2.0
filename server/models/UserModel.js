@@ -83,6 +83,11 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  /** Coach-side list of athletes invited but not yet accepted. */
+  pendingAthleteIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   isRegistrationComplete: {
