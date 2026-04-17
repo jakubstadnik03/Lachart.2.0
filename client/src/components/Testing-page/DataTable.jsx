@@ -2552,9 +2552,9 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     // API / formulář může posílat cycling|running|swimming — findLactateThresholds očekává bike|run|swim
     let sport = mockData.sport || 'bike';
     const sLow = String(sport).toLowerCase();
-    if (sLow === 'cycling' || sLow === 'cycle') sport = 'bike';
-    else if (sLow === 'running') sport = 'run';
-    else if (sLow === 'swimming') sport = 'swim';
+    if (sLow === 'bike' || sLow === 'cycling' || sLow === 'cycle' || sLow.includes('ride')) sport = 'bike';
+    else if (sLow === 'run' || sLow === 'running') sport = 'run';
+    else if (sLow === 'swim' || sLow === 'swimming') sport = 'swim';
   
     if (!results || results.length < 3) {
       return {
@@ -3306,7 +3306,55 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         }
       }
 
+      // High-LT1 guard for bike:
+      // LT1 should stay near the first deflection (roughly ~2.0-2.3 mmol), not near threshold segment.
+      const targetLt1LaBike = Math.min(MAX_LTP1_LACTATE, Math.max(1.9, Number(effectiveBaseLactate) + 0.9));
+      const pAtTargetLt1 = interpolatePowerAtLactateFinal(targetLt1LaBike);
+      const obla25Power = Number(thresholds['OBLA 2.5']);
+      const lt1UpperCandidates = [
+        pAtTargetLt1?.power,
+        Number.isFinite(obla25Power) ? obla25Power : null
+      ]
+        .filter((v) => Number.isFinite(Number(v)))
+        .map((v) => Number(v));
+      const lt1UpperBound = lt1UpperCandidates.length > 0 ? Math.min(...lt1UpperCandidates) : null;
+      const curLt1Power = Number(thresholds['LTP1']);
+      if (Number.isFinite(curLt1Power) && Number.isFinite(lt1UpperBound) && curLt1Power > lt1UpperBound) {
+        const correctedLt1 = interpolateAtPowerFinal(lt1UpperBound);
+        if (correctedLt1 && Number.isFinite(Number(correctedLt1.power))) {
+          thresholds['LTP1'] = Number(correctedLt1.power);
+          thresholds.lactates['LTP1'] = Number.isFinite(Number(correctedLt1.lactate))
+            ? Number(correctedLt1.lactate)
+            : targetLt1LaBike;
+          thresholds.heartRates['LTP1'] = correctedLt1.heartRate != null
+            ? Number(correctedLt1.heartRate)
+            : thresholds.heartRates['LTP1'];
+        }
+      }
+
       const minLt2PowerFinal = Number(thresholds['LTP1']) + MIN_LT2_LT1_GAP_W;
+      const maxLt2LaFinal = MAX_LTP2_LACTATE;
+      const curLt2LaBeforeClamp = Number(thresholds.lactates['LTP2']);
+      if (Number.isFinite(curLt2LaBeforeClamp) && curLt2LaBeforeClamp > maxLt2LaFinal + 0.05) {
+        const pAtCap = interpolatePowerAtLactateFinal(maxLt2LaFinal);
+        let correctedLt2 = null;
+        if (pAtCap && Number.isFinite(Number(pAtCap.power)) && Number(pAtCap.power) >= minLt2PowerFinal) {
+          correctedLt2 = interpolateAtPowerFinal(Number(pAtCap.power));
+        }
+        if (!correctedLt2) {
+          correctedLt2 = interpolateAtPowerFinal(minLt2PowerFinal);
+        }
+        if (correctedLt2 && Number.isFinite(Number(correctedLt2.power))) {
+          thresholds['LTP2'] = Number(correctedLt2.power);
+          thresholds.lactates['LTP2'] = Number.isFinite(Number(correctedLt2.lactate))
+            ? Math.min(maxLt2LaFinal, Number(correctedLt2.lactate))
+            : maxLt2LaFinal;
+          thresholds.heartRates['LTP2'] = correctedLt2.heartRate != null
+            ? Number(correctedLt2.heartRate)
+            : thresholds.heartRates['LTP2'];
+        }
+      }
+
       const minLt2LaFinal = 3.2;
       const curLt2Power = Number(thresholds['LTP2']);
       const curLt2La = Number(thresholds.lactates['LTP2']);
@@ -3387,6 +3435,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         ltp1: thresholds['LTP1'],
         ltp2: thresholds['LTP2'],
         sport,
+        testId: mockData?._id || null,
+        testTitle: mockData?.title || null,
         note:
           'U běhu/plavání se LTP2 tempo po ensemblu ještě přemapuje na polynom při stejném La — proto dřívější log mohl mít jiné ltp2 než finální řádek.',
       });
@@ -3397,6 +3447,8 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       const r4 = (x) => (x == null || !Number.isFinite(Number(x)) ? x : Number(Number(x).toFixed(4)));
       console.log({
         sport,
+        testId: mockData?._id || null,
+        testTitle: mockData?.title || null,
         LTP1_W: r4(thresholds['LTP1']),
         LTP2_W: r4(thresholds['LTP2']),
         LTP1_La_mmol: r4(thresholds.lactates?.['LTP1']),
@@ -3802,21 +3854,38 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             </>
           )}
           
-          <div className="flex justify-between items-start w-full">
-            {columns.map((column, colIndex) => (
-              <div key={colIndex} className="md:w-[100px] sm:w-[100px]">
-                <TableCell isHeader>{column.header}</TableCell>
-                {column.data.map((item, rowIndex) => (
-                  <TableCell 
-                    key={rowIndex}
-                    description={colIndex === 0 ? column.descriptions[rowIndex] : null}
-                    methodName={colIndex === 0 ? methods[rowIndex] : null}
-                  >
-                    {item}
-                  </TableCell>
-                ))}
-              </div>
-            ))}
+          <div className="w-full">
+            <div className="grid grid-cols-4">
+              {columns.map((column, colIndex) => (
+                <div key={`hdr-${colIndex}`} className="md:w-[100px] sm:w-[100px]">
+                  <TableCell isHeader>{column.header}</TableCell>
+                </div>
+              ))}
+            </div>
+            {methods.map((method, rowIndex) => {
+              const methodDescription = columns[0]?.descriptions?.[rowIndex];
+              const pwrValue = columns[1]?.data?.[rowIndex] ?? 'N/A';
+              const hrValue = columns[2]?.data?.[rowIndex] ?? 'N/A';
+              const laValue = columns[3]?.data?.[rowIndex] ?? 'N/A';
+              return (
+                <div key={`row-${method}-${rowIndex}`} className="grid grid-cols-4">
+                  <div className="md:w-[100px] sm:w-[100px]">
+                    <TableCell description={methodDescription} methodName={method}>
+                      {method}
+                    </TableCell>
+                  </div>
+                  <div className="md:w-[100px] sm:w-[100px]">
+                    <TableCell>{pwrValue}</TableCell>
+                  </div>
+                  <div className="md:w-[100px] sm:w-[100px]">
+                    <TableCell>{hrValue}</TableCell>
+                  </div>
+                  <div className="md:w-[100px] sm:w-[100px]">
+                    <TableCell>{laValue}</TableCell>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </TooltipProvider>

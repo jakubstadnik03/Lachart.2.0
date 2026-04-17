@@ -7,6 +7,7 @@ const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
 const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
+const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const router = express.Router();
 
 /** UI/calendar uses `strava-<numericId>`; routes expect numeric Strava id or Mongo _id. */
@@ -1433,7 +1434,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+          if (!athleteHasCoachUser(athlete, userId)) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetUserId = req.query.athleteId;
@@ -1675,7 +1676,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athlete.coachId || athlete.coachId.toString() !== user._id.toString()) {
+          if (!athleteHasCoachUser(athlete, user._id)) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetUserId = req.query.athleteId;
@@ -1707,7 +1708,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         // Check if this activity belongs to one of coach's athletes
         const activityOwner = await User.findById(activityUserId);
         if (activityOwner) {
-          if (activityOwner.coachId && activityOwner.coachId.toString() === user._id.toString()) {
+          if (athleteHasCoachUser(activityOwner, user._id)) {
             // Activity belongs to coach's athlete
             targetUserId = activityUserId;
           } else if (activityUserId === user._id.toString()) {
@@ -1737,7 +1738,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       // Verify access for coach
       if (['coach', 'tester', 'testing'].includes(detailRequesterRole) && savedActivity.userId.toString() !== user._id.toString()) {
         const activityOwner = await User.findById(savedActivity.userId);
-        if (!activityOwner || !activityOwner.coachId || activityOwner.coachId.toString() !== user._id.toString()) {
+        if (!activityOwner || !athleteHasCoachUser(activityOwner, user._id)) {
           return res.status(403).json({ error: 'You are not authorized to view this activity' });
         }
         // Update targetUserId to activity owner
@@ -1763,7 +1764,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         if (foundActivity) {
           const activityOwner = await User.findById(foundActivity.userId);
           if (activityOwner) {
-            if (activityOwner.coachId && activityOwner.coachId.toString() === user._id.toString()) {
+            if (athleteHasCoachUser(activityOwner, user._id)) {
               // Activity belongs to coach's athlete - update targetUserId
               targetUserId = foundActivity.userId.toString();
               savedActivity = foundActivity;

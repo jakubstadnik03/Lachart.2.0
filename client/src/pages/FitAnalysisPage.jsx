@@ -2906,6 +2906,23 @@ const FitAnalysisPage = () => {
     loadCoachAthletes();
   }, [user?.role]);
 
+  useEffect(() => {
+    const role = String(user?.role || '').toLowerCase();
+    if (role !== 'coach') return;
+    if (!selectedAthleteId) return;
+    const isPendingSelection =
+      String(selectedAthleteId) !== String(user?._id || '') &&
+      pendingAthleteIds.includes(String(selectedAthleteId));
+    if (!isPendingSelection) return;
+
+    const fallbackAthleteId = String(user?._id || '');
+    if (!fallbackAthleteId) return;
+    setSelectedAthleteId(fallbackAthleteId);
+    localStorage.setItem('trainingCalendar_selectedAthleteId', fallbackAthleteId);
+    setSelectedTraining(null);
+    setSelectedStrava(null);
+  }, [selectedAthleteId, pendingAthleteIds, user?._id, user?.role]);
+
   // Reload data when selectedAthleteId changes (debounced to prevent multiple calls)
   useEffect(() => {
     if (user && selectedAthleteId) {

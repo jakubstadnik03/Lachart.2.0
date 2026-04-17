@@ -127,7 +127,6 @@ export default function AuthSideCarousel({
               alt={current?.title || 'LaChart'}
               className="w-full h-full object-cover"
               loading="eager"
-              fetchPriority="high"
               decoding="async"
               draggable={false}
             />

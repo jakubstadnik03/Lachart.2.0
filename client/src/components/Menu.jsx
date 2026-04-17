@@ -49,6 +49,18 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
   }, [loadAthletes]);
 
   useEffect(() => {
+    const handleAthletesUpdated = () => {
+      loadAthletes();
+    };
+    window.addEventListener('coachAthletesUpdated', handleAthletesUpdated);
+    window.addEventListener('athleteListUpdated', handleAthletesUpdated);
+    return () => {
+      window.removeEventListener('coachAthletesUpdated', handleAthletesUpdated);
+      window.removeEventListener('athleteListUpdated', handleAthletesUpdated);
+    };
+  }, [loadAthletes]);
+
+  useEffect(() => {
     const handleResize = () => {
       setIsDesktop(window.innerWidth >= LAYOUT_DESKTOP_MIN_PX);
     };

@@ -36,6 +36,11 @@ const AthletesPage = () => {
   const { addNotification } = useNotification();
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'overview'
 
+  const notifyAthletesUpdated = () => {
+    window.dispatchEvent(new CustomEvent('coachAthletesUpdated'));
+    window.dispatchEvent(new CustomEvent('athleteListUpdated'));
+  };
+
   useEffect(() => {
     const loadAthletes = async () => {
       if (!['coach', 'tester', 'testing'].includes(user?.role)) {
@@ -145,6 +150,7 @@ const AthletesPage = () => {
       try {
         await api.delete(`/user/coach/remove-athlete/${athleteId}`);
         setAthletes(athletes.filter(athlete => athlete._id !== athleteId));
+        notifyAthletesUpdated();
         setDropdownOpen(null);
         addNotification('Athlete removed successfully', 'success');
       } catch (error) {
@@ -166,6 +172,7 @@ const AthletesPage = () => {
             ? { ...athlete, isRegistrationComplete: false }
             : athlete
         ));
+        notifyAthletesUpdated();
       } else {
         addNotification('Error resending invitation: ' + response.data.message, 'error');
       }
@@ -195,6 +202,7 @@ const AthletesPage = () => {
         setAthletes(athletes.map(athlete => 
           athlete._id === selectedAthlete._id ? response.data.athlete : athlete
         ));
+        notifyAthletesUpdated();
         addNotification('Athlete updated successfully', 'success');
         setIsModalOpen(false);
         setSelectedAthlete(null);
@@ -218,6 +226,7 @@ const AthletesPage = () => {
           });
           
           setAthletes([...athletes, response.data.athlete]);
+          notifyAthletesUpdated();
           addNotification(
             emailValue
               ? 'Athlete added successfully and invitation sent'
@@ -228,8 +237,6 @@ const AthletesPage = () => {
           setIsModalOpen(false);
           setSelectedAthlete(null);
           resetForm();
-          // Refresh stránky
-          window.location.reload();
         } catch (error) {
           console.error('Error adding athlete:', error);
           let errorMessage = 'An unexpected error occurred';
@@ -308,6 +315,7 @@ const AthletesPage = () => {
       const response = await api.post('/user/coach/invite-athlete', { email: inviteEmail });
       if (response.data.athlete) {
         setAthletes([...athletes, response.data.athlete]);
+        notifyAthletesUpdated();
         alert('Athlete was added to your team and an invitation email was sent.');
         setIsInviteModalOpen(false);
         setInviteEmail('');

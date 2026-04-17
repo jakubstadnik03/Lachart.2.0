@@ -203,6 +203,10 @@ const TestingPage = () => {
         (isCoachLikeRole ? selectedAthleteId : user?._id);
 
       if (!targetAthleteId) return;
+      if (isPendingSelectedAthlete) {
+        setTests([]);
+        return;
+      }
 
       try {
         invalidateCache('/test/list/');
@@ -233,7 +237,7 @@ const TestingPage = () => {
 
     window.addEventListener('lachart:testNotFound', handler);
     return () => window.removeEventListener('lachart:testNotFound', handler);
-  }, [isAuthenticated, user?.role, user?._id, selectedAthleteId, selectedSport, loadTests, setSearchParams, isCoachLikeRole]);
+  }, [isAuthenticated, user?.role, user?._id, selectedAthleteId, selectedSport, loadTests, setSearchParams, isCoachLikeRole, isPendingSelectedAthlete]);
 
   // Synchronizace selectedAthleteId s URL parametrem + validation
   useEffect(() => {
@@ -411,6 +415,17 @@ const TestingPage = () => {
 
     const targetId = effectiveTargetAthleteId;
     if (!targetId) return;
+    if (
+      isCoachLikeRole &&
+      String(targetId) !== String(user?._id || '') &&
+      !pendingAthletesLoaded
+    ) {
+      return;
+    }
+    if (isPendingSelectedAthlete) {
+      setTests([]);
+      return;
+    }
     // One fetch per athlete selection. Do NOT depend on `tests` here: when the API returns []
     // that would retrigger the effect forever (guard used to require tests.length > 0).
     if (String(lastLoadedTestsForAthleteRef.current) === String(targetId)) {
@@ -419,7 +434,7 @@ const TestingPage = () => {
     lastLoadedTestsForAthleteRef.current = targetId;
     loadTests(targetId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tests intentionally omitted; see comment above
-  }, [user, isAuthenticated, navigate, effectiveTargetAthleteId, loadTests]);
+  }, [user, isAuthenticated, navigate, effectiveTargetAthleteId, loadTests, isCoachLikeRole, pendingAthletesLoaded, isPendingSelectedAthlete]);
 
   // Check Strava connection status and show modal if not connected
   useEffect(() => {

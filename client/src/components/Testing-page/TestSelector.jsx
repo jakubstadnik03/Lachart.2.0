@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { resolveLtAnchorsFromTest } from './zoneCalculator';
 
 const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSport = 'all' }) => {
   const { user } = useAuth();
@@ -54,13 +55,17 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
     if (!test.results || test.results.length === 0) return null;
     
     if (test.sport === 'run') {
-      // For running, convert power to pace and get minimum pace (fastest = best)
+      // Use real LT2 anchor when available (pace in sec/km), fallback to rough conversion.
+      const anchors = resolveLtAnchorsFromTest(test);
+      const lt2 = Number(anchors?.lt2_value);
+      if (Number.isFinite(lt2) && lt2 > 0) {
+        return formatPace(lt2);
+      }
       const paces = test.results
         .map(r => r.power ? powerToPace(r.power) : null)
         .filter(p => p !== null);
       if (paces.length === 0) return null;
-      const minPace = Math.min(...paces); // Minimum pace = fastest
-      return formatPace(minPace);
+      return formatPace(Math.min(...paces));
     } else {
       // For bike/swim, get max power
       const powers = test.results
@@ -264,8 +269,12 @@ const TestSelector = ({ tests = [], selectedTests = [], onTestSelect, selectedSp
                 <div className={`flex items-center ${isMobile ? 'justify-between w-full' : 'gap-4'}`}>
                   <div className={`${isMobile ? 'text-left' : 'text-right'}`}>
                     <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
-                      {maxValue !== null 
-                        ? (test.sport === 'run' ? `${maxValue}${getPaceUnit()}` : `${Math.round(maxValue)}W`)
+                      {maxValue !== null
+                        ? (
+                          test.sport === 'run'
+                            ? `${maxValue}${getPaceUnit()}`
+                            : `${Math.round(maxValue)}W`
+                        )
                         : 'N/A'}
                     </p>
                     <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>

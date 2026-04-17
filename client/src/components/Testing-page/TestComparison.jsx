@@ -63,7 +63,15 @@ const TestComparison = ({ tests = [] }) => {
     );
   }
 
-  const sport = validTests[0]?.sport;
+  const normalizeSportKey = (sportRaw) => {
+    const s = String(sportRaw || '').toLowerCase();
+    if (s === 'bike' || s === 'cycling' || s === 'cycle' || s.includes('bike') || s.includes('ride')) return 'bike';
+    if (s === 'run' || s === 'running' || s.includes('run')) return 'run';
+    if (s === 'swim' || s === 'swimming' || s.includes('swim')) return 'swim';
+    return s;
+  };
+  const sport = normalizeSportKey(validTests[0]?.sport);
+  const isBikeSport = sport === 'bike';
 
   // Pomocná funkce pro převod hex na rgb
   const hexToRgb = (hex) => {
@@ -302,11 +310,11 @@ const TestComparison = ({ tests = [] }) => {
         type: 'linear',
         min: showHeartRateGraph ? axisLimitsHRX.min : axisLimitsPower.min,
         max: showHeartRateGraph ? axisLimitsHRX.max : axisLimitsPower.max,
-        reverse: !showHeartRateGraph && sport !== 'bike',
+        reverse: !showHeartRateGraph && !isBikeSport,
         grid: { color: "rgba(0, 0, 0, 0.1)", borderDash: [5, 5] },
         title: {
           display: true,
-          text: showHeartRateGraph ? "Lactate (mmol/L)" : (sport === 'bike' ? "Power (W)" : "Pace (min/km)"),
+          text: showHeartRateGraph ? "Lactate (mmol/L)" : (isBikeSport ? "Power (W)" : "Pace (min/km)"),
           font: { size: 14 }
         },
         ticks: {
@@ -356,10 +364,10 @@ const TestComparison = ({ tests = [] }) => {
               return `${datasetLabel}: Lactate ${lactateStr} | HR ${hrStr}`;
             }
 
-            const xValue = sport === 'bike' ? `${Math.round(point.x)} W` : convertPowerToPace(point.x, sport);
+            const xValue = isBikeSport ? `${Math.round(point.x)} W` : convertPowerToPace(point.x, sport);
 
             if (datasetLabel === 'Data points' || datasetLabel === 'Polynomial Fit') {
-              return `${datasetLabel}: ${sport === 'bike' ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L`;
+              return `${datasetLabel}: ${isBikeSport ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L`;
             }
 
             if (datasetLabel === 'LTRatio') {
@@ -367,7 +375,7 @@ const TestComparison = ({ tests = [] }) => {
             }
 
             const hr = currentTest.thresholds.heartRates[datasetLabel];
-            return `${datasetLabel}: ${sport === 'bike' ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L | HR ${hr ? Math.round(hr) : 'N/A'} bpm`;
+            return `${datasetLabel}: ${isBikeSport ? 'Power' : 'Pace'} ${xValue} | Lactate ${point.y.toFixed(1)} mmol/L | HR ${hr ? Math.round(hr) : 'N/A'} bpm`;
           }
         }
       },
@@ -410,7 +418,7 @@ const TestComparison = ({ tests = [] }) => {
           </div>
         ) : (
           <Line 
-            key={validTests.map(t => t._id).join(',')}
+            key={`${validTests.map(t => t._id).join(',')}|thr:${showThresholdPoints}|hr:${showHeartRateGraph}`}
             ref={chartRef}
             options={options} 
             data={{ datasets: displayDatasets }}
@@ -446,7 +454,7 @@ const TestComparison = ({ tests = [] }) => {
                     ctx.lineTo(xPixel, chartArea.bottom);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    const valueText = sport === 'bike' ? `Power: ${Math.round(ltp.value)}W` : convertPowerToPace(ltp.value, sport);
+                    const valueText = isBikeSport ? `Power: ${Math.round(ltp.value)}W` : convertPowerToPace(ltp.value, sport);
                     const lactateText = ltp.lactate != null ? `${Number(ltp.lactate).toFixed(2)} mmol/L` : '';
                     ctx.font = '11px sans-serif';
                     ctx.fillStyle = '#1f2937';
@@ -494,18 +502,22 @@ const TestComparison = ({ tests = [] }) => {
           return `${sign}${Math.round(change)}`;
         };
         const renderChangeCell = (prevZones, currZones, zoneKey) => {
-          if (!prevZones || !currZones) return null;
+          if (!prevZones || !currZones) {
+            return (
+              <td className="px-2 py-1.5 text-gray-400 text-xs border-l border-gray-200 bg-gray-50">−</td>
+            );
+          }
           const prevZone = (prevZones.power || prevZones.pace)?.[zoneKey];
           const currZone = (currZones.power || currZones.pace)?.[zoneKey];
           const prevHR = prevZones.heartRate?.[zoneKey];
           const currHR = currZones.heartRate?.[zoneKey];
           if (!prevZone || !currZone) return <td className="px-2 py-1.5 text-gray-400">−</td>;
-          const prevMin = sport === 'bike' ? prevZone.min : parsePaceToSeconds(prevZone.min);
-          const currMin = sport === 'bike' ? currZone.min : parsePaceToSeconds(currZone.min);
-          const prevMax = sport === 'bike' ? prevZone.max : parsePaceToSeconds(prevZone.max);
-          const currMax = sport === 'bike' ? currZone.max : parsePaceToSeconds(currZone.max);
-          const changeMin = sport === 'bike' ? currMin - prevMin : prevMin - currMin;
-          const changeMax = sport === 'bike' ? currMax - prevMax : prevMax - currMax;
+          const prevMin = isBikeSport ? prevZone.min : parsePaceToSeconds(prevZone.min);
+          const currMin = isBikeSport ? currZone.min : parsePaceToSeconds(currZone.min);
+          const prevMax = isBikeSport ? prevZone.max : parsePaceToSeconds(prevZone.max);
+          const currMax = isBikeSport ? currZone.max : parsePaceToSeconds(currZone.max);
+          const changeMin = isBikeSport ? currMin - prevMin : prevMin - currMin;
+          const changeMax = isBikeSport ? currMax - prevMax : prevMax - currMax;
           const isImprove = changeMin > 0;
           const hrChangeMin = currHR?.min != null && prevHR?.min != null ? currHR.min - prevHR.min : null;
           const hrChangeMax = currHR?.max != null && prevHR?.max != null ? currHR.max - prevHR.max : null;
@@ -519,7 +531,7 @@ const TestComparison = ({ tests = [] }) => {
               <div className="space-y-0.5">
                 <div className={textClass}>
                   <span className="mr-1" aria-hidden>{arrow}</span>
-                  {sport === 'bike' ? `${formatChangeValue(changeMin)} / ${formatChangeValue(changeMax)} W` : `${formatChangeValue(changeMin, true)} / ${formatChangeValue(changeMax, true)}`}
+                  {isBikeSport ? `${formatChangeValue(changeMin)} / ${formatChangeValue(changeMax)} W` : `${formatChangeValue(changeMin, true)} / ${formatChangeValue(changeMax, true)}`}
                 </div>
                 {hrChangeMin != null && (hrChangeMin !== 0 || hrChangeMax !== 0) && (
                   <div className={hrImprove ? 'text-emerald-600 text-xs' : 'text-red-600 text-xs'}>
@@ -563,19 +575,20 @@ const TestComparison = ({ tests = [] }) => {
                   {validTests.map((_, i) => (
                     <React.Fragment key={i}>
                       {i > 0 && <th className="px-2 py-1 text-center text-xs font-medium text-gray-500 bg-gray-50 border-r border-gray-200">vs prev.</th>}
-                      <th className="px-2 py-1 text-left text-xs font-medium text-gray-600 border-r border-gray-200">{sport === 'bike' ? 'Power (W)' : 'Pace'}</th>
+                      <th className="px-2 py-1 text-left text-xs font-medium text-gray-600 border-r border-gray-200">{isBikeSport ? 'Power (W)' : 'Pace'}</th>
                       <th className="px-2 py-1 text-left text-xs font-medium text-gray-600 border-r border-gray-200">HR</th>
                     </React.Fragment>
                   ))}
                 </tr>
               </thead>
               <tbody>
+                {/*
+                  Use a stable zone key list instead of relying on the first test.
+                  Some tests can miss threshold anchors => null zones, which previously
+                  hid the whole table body when the first selected test was invalid.
+                */}
                 {[1, 2, 3, 4, 5].map(zoneNum => {
                   const zoneKey = `zone${zoneNum}`;
-                  const firstZones = zonesForTests[0];
-                  if (!firstZones) return null;
-                  const powerOrPace = firstZones.power || firstZones.pace;
-                  if (!powerOrPace || !powerOrPace[zoneKey]) return null;
                   return (
                     <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50/80">
                       <td className="px-3 py-2 font-medium border-r border-gray-200">
@@ -596,7 +609,7 @@ const TestComparison = ({ tests = [] }) => {
                               {renderChangeCell(zonesForTests[testIndex - 1], zones, zoneKey)}
                               <td className="px-2 py-2 border-r border-gray-200">
                                 {zones && (zones.power || zones.pace)?.[zoneKey]
-                                  ? (sport === 'bike' ? `${(zones.power || zones.pace)[zoneKey].min}-${(zones.power || zones.pace)[zoneKey].max} W` : `${(zones.power || zones.pace)[zoneKey].min}–${(zones.power || zones.pace)[zoneKey].max}`)
+                                  ? (isBikeSport ? `${(zones.power || zones.pace)[zoneKey].min}-${(zones.power || zones.pace)[zoneKey].max} W` : `${(zones.power || zones.pace)[zoneKey].min}–${(zones.power || zones.pace)[zoneKey].max}`)
                                   : '−'}
                               </td>
                               <td className="px-2 py-2 border-r border-gray-200">
@@ -609,7 +622,7 @@ const TestComparison = ({ tests = [] }) => {
                           <React.Fragment key={testIndex}>
                             <td className="px-2 py-2 border-r border-gray-200">
                               {zones && (zones.power || zones.pace)?.[zoneKey]
-                                ? (sport === 'bike' ? `${(zones.power || zones.pace)[zoneKey].min}-${(zones.power || zones.pace)[zoneKey].max} W` : `${(zones.power || zones.pace)[zoneKey].min}–${(zones.power || zones.pace)[zoneKey].max}`)
+                                ? (isBikeSport ? `${(zones.power || zones.pace)[zoneKey].min}-${(zones.power || zones.pace)[zoneKey].max} W` : `${(zones.power || zones.pace)[zoneKey].min}–${(zones.power || zones.pace)[zoneKey].max}`)
                                 : '−'}
                             </td>
                             <td className="px-2 py-2 border-r border-gray-200">

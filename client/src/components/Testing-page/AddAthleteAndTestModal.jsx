@@ -53,6 +53,7 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
           });
           console.log('Dispatching athleteListUpdated event', event);
           window.dispatchEvent(event);
+          window.dispatchEvent(new CustomEvent('coachAthletesUpdated', { detail: { athlete, athleteId } }));
         } catch (e) {
           console.warn('Failed to dispatch athleteListUpdated event', e);
         }

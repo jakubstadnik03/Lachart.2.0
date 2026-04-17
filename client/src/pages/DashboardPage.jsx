@@ -80,7 +80,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!dashboardSportStorageKey) return;
     const saved = localStorage.getItem(dashboardSportStorageKey);
-    setSelectedSport(saved || 'all');
+    const nextSport = saved || 'all';
+    // Guard against state churn loops when key changes rapidly.
+    setSelectedSport((prev) => (prev === nextSport ? prev : nextSport));
   }, [dashboardSportStorageKey]);
   
   // Persist selectedSport per athlete
@@ -692,10 +694,18 @@ export default function DashboardPage() {
       String(targetAthleteId) !== String(user?._id || '') &&
       pendingAthleteIds.includes(String(targetAthleteId));
     if (isPendingAthleteSelection) {
-      setTrainings([]);
-      setRegularTrainings([]);
-      setCalendarData([]);
-      setTests([]);
+      const fallbackAthleteId = String(user?._id || '');
+      if (fallbackAthleteId && String(selectedAthleteId || '') !== fallbackAthleteId) {
+        setSelectedAthleteId(fallbackAthleteId);
+        try {
+          localStorage.setItem('global_selectedAthleteId', fallbackAthleteId);
+        } catch {
+          // ignore storage errors
+        }
+        if (athleteId) {
+          navigate('/dashboard', { replace: true });
+        }
+      }
       setError('Waiting for athlete confirmation');
       return;
     }
@@ -730,7 +740,7 @@ export default function DashboardPage() {
           const athleteData = await loadAthlete(targetAthleteId);
           await loadTests(targetAthleteId);
           if (athleteData && athleteData._id !== selectedAthleteId) {
-            setSelectedAthleteId(athleteData._id);
+            // Keep current selection stable to avoid effect loops.
           }
 
           return;
@@ -751,7 +761,7 @@ export default function DashboardPage() {
           setTrainings(trainingsData);
         }
         if (athleteData && athleteData._id !== selectedAthleteId) {
-          setSelectedAthleteId(athleteData._id);
+          // Keep current selection stable to avoid effect loops.
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -759,7 +769,7 @@ export default function DashboardPage() {
     };
 
     loadData();
-  }, [user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
+  }, [athleteId, user?._id, user?.role, selectedAthleteId, selectedSport, isAuthenticated, navigate, loadTrainings, loadAthlete, loadTests, loadCalendarData, loadRegularTrainings, isTestingRole, isCoachLikeRole, pendingAthleteIds]);
 
   // Auto-sync Strava activities if enabled
   useEffect(() => {

@@ -614,6 +614,27 @@ const About = () => {
     '@context': 'https://schema.org', '@type': 'FAQPage',
     mainEntity: faqItems.map(item => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
   };
+  const softwareApplicationStructuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'LaChart',
+    applicationCategory: 'HealthApplication',
+    operatingSystem: 'Web',
+    url: 'https://lachart.net/about',
+    description: 'LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2, create training zones, and export PDF reports.',
+    offers: {
+      '@type': 'Offer',
+      price: '0',
+      priceCurrency: 'USD'
+    },
+    featureList: [
+      'Lactate curve analysis',
+      'LT1 and LT2 threshold calculation',
+      'Training zone generation',
+      'PDF lactate test reports',
+      'Coach and athlete management'
+    ]
+  };
   const deferredSectionStyle = { contentVisibility: 'auto', containIntrinsicSize: '1px 900px' };
   const disableScrollAnimations = prefersReducedMotion || isMobileViewport;
   const revealProps = (initial, whileInView, transition, viewport = { once: true }) => (
@@ -625,16 +646,19 @@ const About = () => {
   return (
     <main className="min-h-screen bg-white">
       <Helmet>
-        <title>Lactate Curve Analyzer, Lactate Threshold Calculator & Lactate Testing PDF Reports | LaChart</title>
+        <title>Lactate Testing App, Lactate Threshold Calculator & PDF Reports | LaChart</title>
         <link rel="canonical" href="https://lachart.net/about" />
-        <meta name="description" content="Generate lactate curves from test data, calculate all critical thresholds (LT1, LT2, LTP1, LTP2, IAT, Log-log, OBLA), and automatically determine training zones. Download professional lactate testing PDF reports." />
+        <meta name="description" content="LaChart is a lactate testing app for athletes and coaches. Generate lactate curves, calculate LT1/LT2 thresholds, build training zones, and download professional PDF reports." />
         <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
         <meta name="theme-color" content="#767EB5" />
-        <meta property="og:title" content="Lactate Curve Analyzer & Lactate Testing PDF Reports | LaChart" />
+        <meta property="og:title" content="Lactate Testing App & Lactate Threshold Calculator | LaChart" />
+        <meta property="og:description" content="Analyze lactate tests, calculate LT1/LT2, generate training zones, and export PDF reports in one lactate testing app." />
         <meta property="og:image" content="https://lachart.net/images/lachart1.png" />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://lachart.net/about" />
         <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Lactate Testing App & Lactate Threshold Calculator | LaChart" />
+        <meta name="twitter:description" content="Science-based lactate testing app for coaches and athletes with LT1/LT2, zones, and PDF reporting." />
         <link
           rel="preload"
           as="image"
@@ -643,6 +667,7 @@ const About = () => {
           imageSizes="(min-width: 1024px) 42rem, 100vw"
         />
         <script type="application/ld+json">{JSON.stringify(faqStructuredData)}</script>
+        <script type="application/ld+json">{JSON.stringify(softwareApplicationStructuredData)}</script>
       </Helmet>
 
       {/* ── Top Navbar ─────────────────────────────────────────────────────── */}
@@ -775,7 +800,7 @@ const About = () => {
 
               <motion.p initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="text-base sm:text-lg text-gray-500 max-w-lg mb-8 leading-relaxed">
-                Generate lactate curves, calculate LT1 &amp; LT2, build training zones, and track your performance — all in one platform for athletes and coaches.
+                LaChart is a lactate testing app where you can generate lactate curves, calculate LT1 &amp; LT2, build training zones, and track performance — all in one platform for athletes and coaches.
               </motion.p>
 
               {/* CTAs */}
@@ -858,7 +883,6 @@ const About = () => {
                     className="w-full object-cover"
                     srcSet="/images/lactate_curve_calculator_lachart.jpg 1536w"
                     sizes="(min-width: 1024px) 42rem, 100vw"
-                    fetchPriority="high"
                     decoding="async"
                   />
                 </picture>
