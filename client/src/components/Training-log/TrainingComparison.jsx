@@ -22,6 +22,23 @@ import {
 
 const SERIES_COLORS = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
 
+function navigateTrainingToCalendar(trainingData, navigate) {
+  if (!trainingData || !navigate) return;
+  if (trainingData.type === 'fit' && trainingData._id) {
+    navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingData._id}`)}`);
+  } else if (trainingData.type === 'strava' && (trainingData.stravaId || trainingData.id)) {
+    const stravaId = trainingData.stravaId || trainingData.id;
+    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+  } else if (trainingData.type === 'regular' && trainingData._id) {
+    navigate(`/training-calendar/${encodeURIComponent(`regular-${trainingData._id}`)}`);
+  } else if (trainingData.stravaId || trainingData.id) {
+    const stravaId = trainingData.stravaId || trainingData.id;
+    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+  } else if (trainingData._id) {
+    navigate(`/training-calendar/${encodeURIComponent(`training-${trainingData._id}`)}`);
+  }
+}
+
 const TrainingComparison = ({ trainings }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -121,6 +138,18 @@ const TrainingComparison = ({ trainings }) => {
       return dateA - dateB;
     });
   }, [trainings, selectedCategory, selectedTitle]);
+
+  const recentSavedTrainings = useMemo(() => {
+    const list = Array.isArray(trainings) ? [...trainings] : [];
+    return list
+      .filter((t) => t && (t._id || t.stravaId || t.id))
+      .sort((a, b) => {
+        const dateA = new Date(a.date || a.timestamp || a.createdAt || 0).getTime();
+        const dateB = new Date(b.date || b.timestamp || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      })
+      .slice(0, 25);
+  }, [trainings]);
 
   // Prepare data for comparison chart
   const chartData = useMemo(() => {
@@ -989,6 +1018,7 @@ const TrainingComparison = ({ trainings }) => {
   };
 
   if (filteredTrainings.length === 0) {
+    const hasAnySaved = recentSavedTrainings.length > 0;
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -996,7 +1026,50 @@ const TrainingComparison = ({ trainings }) => {
         className="bg-white rounded-3xl shadow-sm p-6"
       >
         <h2 className="text-xl font-bold text-gray-900 mb-4">Training Comparison</h2>
-        <p className="text-gray-500">No trainings found with intervals for the selected filters.</p>
+        <p className="text-gray-600 mb-2">
+          {hasAnySaved
+            ? 'The comparison chart needs at least one session with saved intervals (laps or structured steps) for the selected category and title. Open a session below to add or edit intervals in the calendar.'
+            : 'No trainings in this log yet. Add a manual training or sync Strava / FIT so sessions appear here.'}
+        </p>
+        {hasAnySaved && (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Recent saved sessions</h3>
+            <ul className="divide-y divide-gray-100 rounded-xl border border-gray-200 max-h-[min(50vh,24rem)] overflow-y-auto">
+              {recentSavedTrainings.map((t) => {
+                const when = new Date(t.date || t.timestamp || t.createdAt || 0);
+                const dateLabel = Number.isNaN(when.getTime())
+                  ? '—'
+                  : when.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+                const label = t.title || t.name || 'Untitled';
+                const sport = t.sport || '—';
+                const hasIntervals = Array.isArray(t.results) && t.results.length > 0;
+                return (
+                  <li
+                    key={String(t._id || t.stravaId || t.id)}
+                    className="flex flex-col gap-2 py-3 px-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{label}</p>
+                      <p className="text-xs text-gray-500">
+                        {dateLabel}
+                        {sport ? ` · ${sport}` : ''}
+                        {t.category ? ` · ${t.category}` : ''}
+                        {!hasIntervals ? ' · no intervals yet' : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigateTrainingToCalendar(t, navigate)}
+                      className="shrink-0 rounded-lg border border-primary/40 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-indigo-100"
+                    >
+                      Open in calendar
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </motion.div>
     );
   }

@@ -53,7 +53,6 @@ const FtpCalculatorPage = lazy(() => import('./pages/FtpCalculatorPage'));
 const TssCalculatorPage = lazy(() => import('./pages/TssCalculatorPage'));
 const TrainingZonesCalculatorPage = lazy(() => import('./pages/TrainingZonesCalculatorPage'));
 const RacePredictorPage = lazy(() => import('./pages/RacePredictorPage'));
-
 // Loading component for Suspense fallback
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen bg-gray-100">
@@ -257,7 +256,7 @@ function AppRoutes() {
           <Route 
             path="/training" 
             element={
-              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+              <ProtectedRoute allowedRoles={['coach', 'athlete', 'tester', 'testing']}>
                 <Training />
               </ProtectedRoute>
             } 
@@ -301,7 +300,7 @@ function AppRoutes() {
           <Route 
             path="/training/:athleteId?" 
             element={
-              <ProtectedRoute allowedRoles={['coach', 'athlete']}>
+              <ProtectedRoute allowedRoles={['coach', 'athlete', 'tester', 'testing']}>
                 <Training />
               </ProtectedRoute>
             } 

@@ -1,30 +1,36 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
-import TrainingComparison from '../components/Training-log/TrainingComparison';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { addTraining } from '../services/api';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import AthleteSelector from '../components/AthleteSelector';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const TrainingPage = () => {
+const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
+
+const COACH_LIKE_ROLES = ['coach', 'tester', 'testing'];
+
+export default function TrainingPage() {
   const { athleteId } = useParams();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuth();
+  const coachLike = COACH_LIKE_ROLES.includes(String(user?.role || '').toLowerCase());
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
-    if (user?.role === 'coach') {
+    if (coachLike && user) {
       try {
         const globalId = localStorage.getItem('global_selectedAthleteId');
         if (globalId) return globalId;
       } catch {
         // ignore
       }
-      return user?._id || null;
+      return user._id || null;
     }
     return null;
   });
@@ -126,15 +132,32 @@ const TrainingPage = () => {
       return;
     }
 
-    // Pokud je trenér a není vybraný atlet, nastav sebe jako výchozí
-    if (user?.role === 'coach' && !selectedAthleteId) {
+    if (coachLike && user?._id && !selectedAthleteId) {
       setSelectedAthleteId(user._id);
       return;
     }
 
     const targetId = selectedAthleteId || user._id;
     loadTrainings(targetId);
-  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings]);
+  }, [user, isAuthenticated, navigate, selectedAthleteId, loadTrainings, coachLike]);
+
+  useEffect(() => {
+    if (location.hash !== '#field-lactate') return;
+    const t = window.setTimeout(() => {
+      document.getElementById('field-lactate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    return () => window.clearTimeout(t);
+  }, [location.hash, location.pathname]);
+
+  const integrationAthleteId = useMemo(() => {
+    if (!user || !coachLike || !selectedAthleteId) return null;
+    if (String(selectedAthleteId) !== String(user._id)) return String(selectedAthleteId);
+    return null;
+  }, [user, coachLike, selectedAthleteId]);
+
+  const showFieldLactatePanel = ['coach', 'athlete', 'tester', 'testing'].includes(
+    String(user?.role || '').toLowerCase()
+  );
 
   // Posluchač pro změnu atleta
   useEffect(() => {
@@ -273,7 +296,7 @@ const TrainingPage = () => {
       animate={{ opacity: 1 }}
       className="py-2 md:p-6 max-w-[1600px] mx-auto"
     >
-      {user?.role === 'coach' && (
+      {coachLike && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -349,6 +372,10 @@ const TrainingPage = () => {
         </div>
       </div>
 
+      {showFieldLactatePanel && user && (
+        <FieldLactateTrainingPanel integrationAthleteId={integrationAthleteId} user={user} />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -405,10 +432,12 @@ const TrainingPage = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.7 }}
+        transition={{ delay: 0.65 }}
         className="mt-6"
       >
-        <TrainingComparison trainings={trainings} />
+        <Suspense fallback={<p className="text-sm text-gray-500 py-6">Loading training comparison…</p>}>
+          <TrainingComparison trainings={trainings} />
+        </Suspense>
       </motion.div>
 
       <AnimatePresence>
@@ -437,6 +466,4 @@ const TrainingPage = () => {
       </AnimatePresence>
     </motion.div>
   );
-};
-
-export default TrainingPage;
+}

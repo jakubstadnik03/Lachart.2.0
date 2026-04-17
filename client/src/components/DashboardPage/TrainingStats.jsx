@@ -735,7 +735,19 @@ function TrainingComparison({ training, previousTraining, sport, onTrainingClick
   );
 }
 
-export function TrainingStats({ trainings, selectedSport, onSportChange, selectedTitle, setSelectedTitle, selectedTrainingId, setSelectedTrainingId, isFullWidth = false, user = null }) {
+export function TrainingStats({
+  trainings,
+  selectedSport,
+  onSportChange,
+  selectedTitle,
+  setSelectedTitle,
+  selectedTrainingId,
+  setSelectedTrainingId,
+  isFullWidth = false,
+  user = null,
+  /** When true, omits the compact “Training Progress” list (use with full Training Comparison on the same page). */
+  hideTrainingProgress = false,
+}) {
   const navigate = useNavigate();
   const unitSystem = resolveDistanceUnitSystem(user, 'metric');
   const trainingsList = useMemo(
@@ -1454,79 +1466,81 @@ export function TrainingStats({ trainings, selectedSport, onSportChange, selecte
         </div>
       </div>
 
-      <div className="mt-2 sm:mt-3">
-        <div className="flex items-center justify-between mb-1 sm:mb-1.5">
-          <div className="text-xs sm:text-sm font-medium text-gray-900">
-            Training Progress
+      {!hideTrainingProgress && (
+        <div className="mt-2 sm:mt-3">
+          <div className="flex items-center justify-between mb-1 sm:mb-1.5">
+            <div className="text-xs sm:text-sm font-medium text-gray-900">
+              Training Progress
+              {filteredTrainings.length > progressItemsPerPage && (
+                <span className="ml-2 text-gray-500 text-[10px] sm:text-xs font-normal">
+                  ({progressIndex + 1}-{Math.min(progressIndex + progressItemsPerPage, filteredTrainings.length)} of {filteredTrainings.length})
+                </span>
+              )}
+            </div>
             {filteredTrainings.length > progressItemsPerPage && (
-              <span className="ml-2 text-gray-500 text-[10px] sm:text-xs font-normal">
-                ({progressIndex + 1}-{Math.min(progressIndex + progressItemsPerPage, filteredTrainings.length)} of {filteredTrainings.length})
-              </span>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <button
+                  onClick={handleProgressNavigateLeft}
+                  disabled={!canNavigateProgressLeft}
+                  className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  title="Previous trainings"
+                >
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleProgressNavigateRight}
+                  disabled={!canNavigateProgressRight}
+                  className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  title="Next trainings"
+                >
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
             )}
           </div>
-          {filteredTrainings.length > progressItemsPerPage && (
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button
-                onClick={handleProgressNavigateLeft}
-                disabled={!canNavigateProgressLeft}
-                className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Previous trainings"
-              >
-                <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={handleProgressNavigateRight}
-                disabled={!canNavigateProgressRight}
-                className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Next trainings"
-              >
-                <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          )}
+          <div className="space-y-1">
+            {filteredTrainings
+              .slice(progressIndex, progressIndex + progressItemsPerPage)
+              .map((training, index) => {
+                const handleTrainingClick = (trainingData) => {
+                  // Navigate to FitAnalysisPage with canonical URL format
+                  // Training objects from DashboardPage may have 'type' property or not
+                  // Try to determine type from available properties
+                  if (trainingData.type === 'fit' && trainingData._id) {
+                    navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingData._id}`)}`);
+                  } else if (trainingData.type === 'strava' && (trainingData.stravaId || trainingData.id)) {
+                    const stravaId = trainingData.stravaId || trainingData.id;
+                    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                  } else if (trainingData.type === 'regular' && trainingData._id) {
+                    navigate(`/training-calendar/${encodeURIComponent(`regular-${trainingData._id}`)}`);
+                  } else if (trainingData.stravaId || trainingData.id) {
+                    // Strava activity (without explicit type)
+                    const stravaId = trainingData.stravaId || trainingData.id;
+                    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
+                  } else if (trainingData._id) {
+                    // Regular training (Training model) - most common case
+                    navigate(`/training-calendar/${encodeURIComponent(`training-${trainingData._id}`)}`);
+                  }
+                };
+
+                return (
+                  <TrainingComparison
+                    key={training._id || training.id || index}
+                    training={training}
+                    previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
+                    sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
+                    onTrainingClick={handleTrainingClick}
+                    user={user}
+                  />
+                );
+              })}
+          </div>
         </div>
-        <div className="space-y-1">
-          {filteredTrainings
-            .slice(progressIndex, progressIndex + progressItemsPerPage)
-            .map((training, index) => {
-              const handleTrainingClick = (trainingData) => {
-                // Navigate to FitAnalysisPage with canonical URL format
-                // Training objects from DashboardPage may have 'type' property or not
-                // Try to determine type from available properties
-                if (trainingData.type === 'fit' && trainingData._id) {
-                  navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingData._id}`)}`);
-                } else if (trainingData.type === 'strava' && (trainingData.stravaId || trainingData.id)) {
-                  const stravaId = trainingData.stravaId || trainingData.id;
-                  navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
-                } else if (trainingData.type === 'regular' && trainingData._id) {
-                  navigate(`/training-calendar/${encodeURIComponent(`regular-${trainingData._id}`)}`);
-                } else if (trainingData.stravaId || trainingData.id) {
-                  // Strava activity (without explicit type)
-                  const stravaId = trainingData.stravaId || trainingData.id;
-                  navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
-                } else if (trainingData._id) {
-                  // Regular training (Training model) - most common case
-                  navigate(`/training-calendar/${encodeURIComponent(`training-${trainingData._id}`)}`);
-                }
-              };
-              
-              return (
-                <TrainingComparison
-                  key={training._id || training.id || index}
-                  training={training}
-                  previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
-                  sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
-                  onTrainingClick={handleTrainingClick}
-                  user={user}
-                />
-              );
-            })}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -1410,6 +1410,105 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Strava activities from the last N days where field lactate is still missing on at least one lap,
+ * or laps are not loaded yet (empty laps) — for "add lactate to training" UX.
+ * GET /api/integrations/strava/pending-lactate?days=14&athleteId=...
+ */
+router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    let targetUserId = userId;
+    const requesterRole = String(user.role || '').toLowerCase();
+    if (req.query.athleteId) {
+      if (['coach', 'tester', 'testing'].includes(requesterRole)) {
+        if (String(req.query.athleteId) === String(userId)) {
+          targetUserId = userId;
+        } else {
+          const athlete = await User.findById(req.query.athleteId);
+          if (!athlete) {
+            return res.status(404).json({ error: 'Athlete not found' });
+          }
+          if (!athleteHasCoachUser(athlete, userId)) {
+            return res.status(403).json({ error: 'This athlete does not belong to your team' });
+          }
+          targetUserId = req.query.athleteId;
+        }
+      } else if (requesterRole === 'athlete') {
+        if (String(req.query.athleteId) !== String(userId)) {
+          return res.status(403).json({ error: 'You are not authorized to view these activities' });
+        }
+        targetUserId = userId;
+      }
+    } else if (requesterRole === 'athlete') {
+      targetUserId = userId;
+    }
+
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 14));
+    const since = new Date(Date.now() - days * 86400000);
+
+    const rows = await StravaActivity.find({
+      userId: targetUserId.toString(),
+      startDate: { $gte: since },
+    })
+      .sort({ startDate: -1 })
+      .limit(150)
+      .select('_id stravaId name sport startDate laps movingTime elapsedTime distance')
+      .lean();
+
+    const activities = [];
+    for (const a of rows) {
+      const laps = Array.isArray(a.laps) ? a.laps : [];
+      let needsLactate = false;
+      let missingLactateCount = 0;
+
+      if (laps.length === 0) {
+        needsLactate = true;
+        missingLactateCount = 0;
+      } else {
+        for (const l of laps) {
+          const v = l.lactate;
+          if (v == null || v === '') {
+            missingLactateCount += 1;
+            needsLactate = true;
+          }
+        }
+      }
+
+      if (!needsLactate) continue;
+
+      const coachViewingAthlete =
+        req.query.athleteId && String(req.query.athleteId) !== String(userId);
+      const openPath = coachViewingAthlete
+        ? `/training-calendar/${req.query.athleteId}/strava-${a.stravaId}`
+        : `/training-calendar/strava-${a.stravaId}`;
+
+      activities.push({
+        _id: a._id,
+        stravaId: a.stravaId,
+        name: a.name || 'Activity',
+        sport: a.sport,
+        startDate: a.startDate,
+        lapCount: laps.length,
+        missingLactateCount: laps.length === 0 ? null : missingLactateCount,
+        openPath,
+      });
+
+      if (activities.length >= 30) break;
+    }
+
+    return res.json({ activities, days });
+  } catch (error) {
+    console.error('[integrations] pending-lactate:', error);
+    return res.status(500).json({ error: error.message || 'Server error' });
+  }
+});
+
 // List normalized activities
 router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, res) => {
   try {
