@@ -147,6 +147,42 @@ function getExternalSourcePriority(source) {
   return idx === -1 ? EXTERNAL_SOURCE_PRIORITY.length : idx;
 }
 
+async function requestGarminToken({
+  tokenUrl,
+  clientId,
+  clientSecret,
+  params
+}) {
+  const formBase = new URLSearchParams(params || {});
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  try {
+    return await axios.post(tokenUrl, formBase.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`
+      },
+      timeout: 30000
+    });
+  } catch (err) {
+    const status = err?.response?.status;
+    // Garmin tools often send client credentials in form body.
+    // Retry with body credentials for compatibility if Basic auth is rejected.
+    if (status === 400 || status === 401 || status === 403) {
+      const formWithClient = new URLSearchParams(formBase.toString());
+      formWithClient.set('client_id', clientId);
+      formWithClient.set('client_secret', clientSecret);
+      return axios.post(tokenUrl, formWithClient.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        timeout: 30000
+      });
+    }
+    throw err;
+  }
+}
+
 // Import all Strava history progressively in background to avoid backend/API spikes.
 function startStravaHistoricalBackfill(userId, initialBefore = Math.floor(Date.now() / 1000)) {
   const lockKey = String(userId);
@@ -886,20 +922,18 @@ router.get('/garmin/callback', async (req, res) => {
       return res.status(401).json({ error: 'Malformed Garmin OAuth state' });
     }
 
-    const tokenBody = new URLSearchParams({
+    const tokenParams = {
       grant_type: 'authorization_code',
       code: String(code),
       redirect_uri: redirectUri,
       code_verifier: String(decodedState.verifier)
-    });
+    };
 
-    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenResp = await axios.post(tokenUrl, tokenBody.toString(), {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${basicAuth}`
-      },
-      timeout: 30000
+    const tokenResp = await requestGarminToken({
+      tokenUrl,
+      clientId,
+      clientSecret,
+      params: tokenParams
     });
 
     const tokenData = tokenResp.data || {};
@@ -1163,17 +1197,15 @@ async function getValidGarminToken(user) {
     throw new Error('Garmin client credentials missing');
   }
 
-  const body = new URLSearchParams({
+  const tokenParams = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken
-  });
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const tokenResp = await axios.post(tokenUrl, body.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${basicAuth}`
-    },
-    timeout: 30000
+  };
+  const tokenResp = await requestGarminToken({
+    tokenUrl,
+    clientId,
+    clientSecret,
+    params: tokenParams
   });
 
   const tokenData = tokenResp.data || {};
