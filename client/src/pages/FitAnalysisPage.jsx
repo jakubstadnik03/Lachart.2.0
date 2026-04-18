@@ -1090,9 +1090,9 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                 </div>
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
-                    {normalizeStravaLapDistanceRaw(lap) > 0 && (
+                    {normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }) > 0 && (
                       <span className="text-sm font-semibold text-gray-900 shrink-0">
-                        {formatDistance(normalizeStravaLapDistanceRaw(lap), user)}
+                        {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }), user, { swim: isStravaSwim })}
                       </span>
                     )}
                     <span className="text-sm text-gray-600 shrink-0">{formatDuration(lap.elapsed_time)}</span>
@@ -1231,6 +1231,8 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {uniqueLaps.map((lap, index) => {
+              const sportRawLaps = (selectedStrava?.sport || selectedStrava?.sport_type || selectedStrava?.type || '').toLowerCase();
+              const isSwimLapsRow = sportRawLaps.includes('swim');
               let cumulativeTime = 0;
               for (let i = 0; i < index; i++) {
                 cumulativeTime += (uniqueLaps[i]?.elapsed_time || 0);
@@ -1304,7 +1306,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
-                    {formatDistance(normalizeStravaLapDistanceRaw(lap), user)}
+                    {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isSwimLapsRow }), user, { swim: isSwimLapsRow })}
                   </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                     {(() => {

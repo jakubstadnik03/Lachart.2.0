@@ -170,7 +170,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               lap.distanceMeters ??
               lap.distance_meters ??
               0;
-            const dist = formatDistance(distanceMeters, user);
+            const dist = formatDistance(distanceMeters, user, { swim: isSwim });
 
             const speedMps =
               lap.avgSpeed ??
@@ -395,7 +395,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               >
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">{index + 1}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time)}</td>
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDistance(distanceMeters, user)}</td>
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">{formatDistance(distanceMeters, user, { swim: isSwim })}</td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
                   {paceCell}
                 </td>

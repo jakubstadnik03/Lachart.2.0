@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   formatDuration,
-  stravaLapDistanceMeters,
+  lapDistanceMetersForChart,
   lapDurationSecondsForChart,
   lapSpeedMpsForChart
 } from '../../utils/fitAnalysisUtils';
@@ -18,23 +18,10 @@ const MOVING_SPEED_THRESHOLD_MPS = 0.14; // ~0.5 km/h
  * Strava/Garmin sometimes store lap.distance as cumulative end-of-split position (1km, 2km, …).
  * Summing those as segment lengths inflates total (e.g. 45 km for a 9 km run). Convert to per-lap meters.
  */
-function resolveLapSegmentDistancesMeters(laps, records, isRun, lapTimeSource = 'fit') {
+function resolveLapSegmentDistancesMeters(laps, records, isRun, isSwim, lapTimeSource = 'fit') {
   if (!Array.isArray(laps) || laps.length === 0) return [];
-  const raw = laps.map((l) => {
-    if (lapTimeSource === 'strava') {
-      return stravaLapDistanceMeters(l);
-    }
-    const d = Number(
-      l.totalDistance ??
-      l.total_distance ??
-      l.distance ??
-      l.distanceMeters ??
-      l.distance_meters ??
-      0
-    );
-    return Number.isFinite(d) && d > 0 ? d : 0;
-  });
-  if (!isRun) return raw;
+  const raw = laps.map((l) => lapDistanceMetersForChart(l, lapTimeSource, isSwim));
+  if (!isRun && !isSwim) return raw;
 
   const n = raw.length;
   const sumRaw = raw.reduce((a, b) => a + b, 0);
@@ -46,23 +33,25 @@ function resolveLapSegmentDistancesMeters(laps, records, isRun, lapTimeSource = 
 
   const strictlyIncreasing = n >= 2 && raw.every((d, i) => i === 0 || d > raw[i - 1]);
 
-  // Classic auto-lap km splits: lap.distance = end position 1km, 2km, …, n km → sum = 1000*(1+2+…+n) = last * (n+1) / 2.
-  // Nine ~1 km segments instead: each ~1000 m → sum ≈ n * last (if last lap also ~1km) or sum >> triangular — never matches.
+  // Run: cumulative km auto-laps. Swim: cumulative pool / open-water split distances (50,100,150…).
+  const minLastForTriangular = isSwim ? 20 : 400;
   let treatAsCumulative = false;
-  if (strictlyIncreasing && lastRaw >= 400 && n >= 2) {
+  if (strictlyIncreasing && lastRaw >= minLastForTriangular && n >= 2) {
     const expectedTriangular = (lastRaw * (n + 1)) / 2;
-    const tol = lastRaw * 0.08 + n * 120;
+    const tol = isSwim ? lastRaw * 0.12 + n * 10 : lastRaw * 0.08 + n * 120;
     if (Math.abs(sumRaw - expectedTriangular) <= tol) {
       treatAsCumulative = true;
     }
   }
-  if (!treatAsCumulative && streamTotal > 250 && lastRaw >= streamTotal * 0.65 && sumRaw > streamTotal * 1.2) {
+  const streamFloor = isSwim ? 30 : 250;
+  if (!treatAsCumulative && streamTotal > streamFloor && lastRaw >= streamTotal * 0.65 && sumRaw > streamTotal * 1.2) {
     treatAsCumulative = true;
   }
-  if (!treatAsCumulative && n >= 2 && streamTotal > 250 && sumRaw > streamTotal * 1.35) {
+  if (!treatAsCumulative && n >= 2 && streamTotal > streamFloor && sumRaw > streamTotal * 1.35) {
     treatAsCumulative = true;
   }
-  if (!treatAsCumulative && strictlyIncreasing && lastRaw > 1500 && sumRaw > lastRaw * 1.4) {
+  const minLastForSumHeuristic = isSwim ? 80 : 1500;
+  if (!treatAsCumulative && strictlyIncreasing && lastRaw > minLastForSumHeuristic && sumRaw > lastRaw * 1.4) {
     treatAsCumulative = true;
   }
 
@@ -270,7 +259,7 @@ const IntervalChart = ({
       return power >= 30;
     });
 
-    const segmentDistancesM = resolveLapSegmentDistancesMeters(filteredLaps, records, isRun, lapTimeSource);
+    const segmentDistancesM = resolveLapSegmentDistancesMeters(filteredLaps, records, isRun, isSwim, lapTimeSource);
 
     const bars = filteredLaps.map((lap, originalIndex) => {
       // Prefer explicit lapNumber if available; otherwise fall back to array index
@@ -278,6 +267,16 @@ const IntervalChart = ({
       
       let value = 0;
       let unit = '';
+
+      let segmentMeters = Number(segmentDistancesM[originalIndex]);
+      if (!Number.isFinite(segmentMeters) || segmentMeters <= 0) {
+        segmentMeters = lapDistanceMetersForChart(lap, lapTimeSource, isSwim);
+      }
+      if (isSwim && (!Number.isFinite(segmentMeters) || segmentMeters <= 0)) {
+        const tSec = lapDurationSecondsForChart(lap, lapTimeSource);
+        const sMps = lapSpeedMpsForChart(lap);
+        if (tSec > 0 && sMps > 0) segmentMeters = sMps * tSec;
+      }
 
       switch (selectedMetric) {
         case 'power':
@@ -304,8 +303,12 @@ const IntervalChart = ({
           unit = 'rpm';
           break;
         case 'pace': {
-          // Same m/s as intervals table (Strava: average_speed)
-          const speedMps = lapSpeedMpsForChart(lap);
+          // Same m/s as intervals table (Strava: average_speed); swim fallback from distance/time
+          let speedMps = lapSpeedMpsForChart(lap);
+          if (isSwim && (!Number.isFinite(speedMps) || speedMps <= 0) && segmentMeters > 0) {
+            const tSec = lapDurationSecondsForChart(lap, lapTimeSource);
+            if (tSec > 0) speedMps = segmentMeters / tSec;
+          }
           if (speedMps > 0) {
             if (isSwim) {
               if (unitSystem === 'imperial') {
@@ -343,17 +346,19 @@ const IntervalChart = ({
           value = 0;
       }
 
-      // Bar width & tooltips: true segment length (fixes cumulative Strava lap.distance)
+      // Bar width & tooltips: segment meters only (avoid raw lap.distance km-heuristic bugs on swim)
       const distance =
-        segmentDistancesM[originalIndex] ??
-        lap.distance ??
-        lap.totalDistance ??
-        lap.total_distance ??
-        lap.distanceMeters ??
-        lap.distance_meters ??
-        0;
+        segmentMeters > 0
+          ? segmentMeters
+          : (Number(segmentDistancesM[originalIndex]) > 0
+              ? Number(segmentDistancesM[originalIndex])
+              : lapDistanceMetersForChart(lap, lapTimeSource, isSwim));
       
-      const speedMpsPause = lapSpeedMpsForChart(lap);
+      let speedMpsPause = lapSpeedMpsForChart(lap);
+      if (isSwim && (!Number.isFinite(speedMpsPause) || speedMpsPause <= 0) && segmentMeters > 0) {
+        const tSec = lapDurationSecondsForChart(lap, lapTimeSource);
+        if (tSec > 0) speedMpsPause = segmentMeters / tSec;
+      }
       const isPause = speedMpsPause <= 0.1 || value === 0 || (selectedMetric === 'pace' && value === 0);
       
       // Get max heart rate for this interval
@@ -1106,7 +1111,11 @@ const IntervalChart = ({
                   >
                     <div className={`space-y-1 ${isMobile ? 'text-[10px]' : 'text-xs'}`}>
                         <div className="font-semibold text-gray-900">
-                          {(isRun || isSwim) ? (isSwim ? `100m ${bar.lapNumber}` : `Km ${bar.lapNumber}`) : `Lap ${bar.lapNumber}`}
+                          {isSwim
+                            ? `Lap ${bar.lapNumber}`
+                            : isRun
+                              ? `Km ${bar.lapNumber}`
+                              : `Lap ${bar.lapNumber}`}
                         </div>
                         <div className="text-gray-600">
                           Distance: {bar.distance > 0 ? formatDistance(bar.distance, unitSystem).formatted : '-'}

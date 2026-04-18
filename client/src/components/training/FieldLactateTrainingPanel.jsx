@@ -20,9 +20,14 @@ function formatWhen(iso) {
 
 /**
  * Strava activities missing lap-level lactate — embedded on Training.
- * @param {{ integrationAthleteId: string | null, user: object }} props
+ * @param {{ integrationAthleteId: string | null, user: object, onAddLactate?: (activity: object) => Promise<void>, loadingActivityId?: string | null }} props
  */
-export default function FieldLactateTrainingPanel({ integrationAthleteId, user }) {
+export default function FieldLactateTrainingPanel({
+  integrationAthleteId,
+  user,
+  onAddLactate,
+  loadingActivityId = null,
+}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stravaConnected, setStravaConnected] = useState(null);
@@ -131,12 +136,25 @@ export default function FieldLactateTrainingPanel({ integrationAthleteId, user }
                   )}
                 </p>
               </div>
-              <Link
-                to={a.openPath || `/training-calendar/strava-${a.stravaId}`}
-                className="shrink-0 rounded-lg border border-primary/40 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-indigo-100"
-              >
-                Add lactate
-              </Link>
+              {typeof onAddLactate === 'function' ? (
+                <button
+                  type="button"
+                  disabled={loadingActivityId != null && String(loadingActivityId) === String(a._id)}
+                  onClick={() => onAddLactate(a)}
+                  className="shrink-0 rounded-lg border border-primary/40 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-indigo-100 disabled:opacity-60"
+                >
+                  {loadingActivityId != null && String(loadingActivityId) === String(a._id)
+                    ? 'Opening…'
+                    : 'Add lactate'}
+                </button>
+              ) : (
+                <Link
+                  to={a.openPath || `/training-calendar/strava-${a.stravaId}`}
+                  className="shrink-0 rounded-lg border border-primary/40 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-indigo-100"
+                >
+                  Add lactate
+                </Link>
+              )}
             </li>
           ))}
         </ul>

@@ -4,6 +4,7 @@ import TrainingForm from "../TrainingForm";
 import { deleteTraining, updateTraining } from "../../services/api";
 import { useTrainings } from "../../context/TrainingContext"; // Předpokládám, že máte kontext pro správu tréninků
 import { useNotification } from "../../context/NotificationContext"; // Přidáme import pro notifikace
+import { prepareTrainingForLactateEntry } from "../../utils/trainingLactateModal";
 
 const Pagination = ({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }) => {
   const getVisiblePages = () => {
@@ -113,6 +114,7 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [trainingToDelete, setTrainingToDelete] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [focusLactateOnOpen, setFocusLactateOnOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   
@@ -207,7 +209,14 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   );
 
   const handleEditTraining = (training) => {
+    setFocusLactateOnOpen(false);
     setTrainingToEdit(training);
+    setShowEditModal(true);
+  };
+
+  const handleAddLactateTraining = (training) => {
+    setFocusLactateOnOpen(true);
+    setTrainingToEdit(prepareTrainingForLactateEntry(training));
     setShowEditModal(true);
   };
 
@@ -335,6 +344,19 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
               onToggleExpand={() => toggleExpand(training._id)}
             />
             <div className="absolute right-4 top-4 transform flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAddLactateTraining(training);
+                }}
+                className="p-2 text-green-700 hover:text-green-900 hover:bg-green-50 rounded-full bg-white shadow-sm"
+                title="Add lactate"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
+              </button>
               <button 
                 onClick={(e) => {
                   e.stopPropagation(); // Zabrání rozbalení při kliknutí na tlačítko
@@ -421,15 +443,18 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
           </div>
           
           <TrainingForm 
+            key={`${trainingToEdit._id}-${focusLactateOnOpen ? "lac" : "edit"}`}
             onClose={() => {
               setShowEditModal(false);
               setTrainingToEdit(null);
+              setFocusLactateOnOpen(false);
               setError(null);
             }}
             onSubmit={handleEditSubmit}
             initialData={trainingToEdit}
             isEditing={true}
             isLoading={isLoading}
+            focusLactateOnOpen={focusLactateOnOpen}
           />
         </div>
       )}

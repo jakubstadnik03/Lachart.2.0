@@ -1225,6 +1225,22 @@ export const getPendingLactateActivities = async (athleteId = null, opts = {}) =
   return data; // { activities: [...], days }
 };
 
+/**
+ * Sync Strava activity to Training and return payload for TrainingForm (field lactate from list).
+ * @param {string} stravaActivityId Mongo _id of StravaActivity
+ * @param {string | null} [athleteId] coach viewing athlete
+ */
+export const fetchTrainingForStravaLactateForm = async (stravaActivityId, athleteId = null) => {
+  const params = {};
+  if (athleteId) params.athleteId = athleteId;
+  const { data } = await api.post(
+    '/api/integrations/strava/training-for-lactate-form',
+    { stravaActivityId },
+    { params }
+  );
+  return data; // { training }
+};
+
 export const updateAvatarFromStrava = async () => {
   const { data } = await api.post('/api/integrations/strava/update-avatar');
   return data; // { success, avatar, message }

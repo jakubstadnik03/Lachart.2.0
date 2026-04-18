@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 
@@ -43,8 +43,17 @@ const formatSecondsToMMSS = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false, isLoading = false }) => {
+const TrainingForm = ({
+  onClose,
+  onSubmit,
+  initialData = null,
+  isEditing = false,
+  isLoading = false,
+  /** When editing: scroll to and focus first work interval with empty lactate (Training log shortcut). */
+  focusLactateOnOpen = false,
+}) => {
   const { addNotification } = useNotification();
+  const lactateFocusDoneRef = useRef(false);
   const [formData, setFormData] = useState(initialData || {
     sport: "bike",
     type: "interval",
@@ -126,6 +135,42 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       setFormData(formattedData);
     }
   }, [initialData, formData.sport]);
+
+  useEffect(() => {
+    lactateFocusDoneRef.current = false;
+  }, [initialData?._id, focusLactateOnOpen]);
+
+  // Run once when interval count is known; avoid re-running on every results edit (would steal focus).
+  useEffect(() => {
+    if (!focusLactateOnOpen || !isEditing || !initialData) return;
+    if (lactateFocusDoneRef.current) return;
+    const results = formData.results;
+    if (!Array.isArray(results) || results.length === 0) return;
+
+    const pickIndex = () => {
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].isRecovery === true) continue;
+        const lac = results[i].lactate;
+        if (lac === null || lac === undefined || lac === "") return i;
+      }
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].isRecovery !== true) return i;
+      }
+      return -1;
+    };
+
+    const idx = pickIndex();
+    if (idx < 0) return;
+
+    const t = window.setTimeout(() => {
+      const el = document.getElementById(`training-form-lactate-${idx}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el && typeof el.focus === "function") el.focus();
+      lactateFocusDoneRef.current = true;
+    }, 200);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when interval count stabilises
+  }, [focusLactateOnOpen, isEditing, initialData?._id, formData.results?.length]);
 
   const handlePaceChange = (index, value) => {
     // Povolíme pouze čísla a dvojtečku
@@ -353,7 +398,9 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
       </button>
 
       <div className="p-4 sm:p-6 border-b border-gray-200">
-        <h2 className="text-xl font-semibold">{isEditing ? "Edit Training" : "Add New Training"}</h2>
+        <h2 className="text-xl font-semibold">
+          {isEditing ? (focusLactateOnOpen ? "Edit training — add lactate" : "Edit Training") : "Add New Training"}
+        </h2>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -786,6 +833,7 @@ const TrainingForm = ({ onClose, onSubmit, initialData = null, isEditing = false
                         </svg>
                       </span>
                       <input
+                        id={`training-form-lactate-${index}`}
                         type="number"
                         placeholder="Lac"
                         value={interval.lactate}

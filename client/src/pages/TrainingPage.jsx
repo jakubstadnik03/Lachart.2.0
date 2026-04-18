@@ -6,7 +6,8 @@ import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining } from '../services/api';
+import { addTraining, updateTraining, fetchTrainingForStravaLactateForm } from '../services/api';
+import { prepareTrainingForLactateEntry } from '../utils/trainingLactateModal';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import AthleteSelector from '../components/AthleteSelector';
@@ -52,6 +53,15 @@ export default function TrainingPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [fieldLactatePanelKey, setFieldLactatePanelKey] = useState(0);
+  const [lactateActivityLoadingId, setLactateActivityLoadingId] = useState(null);
+  const [stravaLactateFormError, setStravaLactateFormError] = useState(null);
+  const [stravaLactateModal, setStravaLactateModal] = useState({
+    isOpen: false,
+    initialData: null,
+    focusLactateOnOpen: false,
+  });
+  const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
 
   // Přidáme debug log pro user objekt
   // console.log('Current user:', user);
@@ -154,6 +164,67 @@ export default function TrainingPage() {
     if (String(selectedAthleteId) !== String(user._id)) return String(selectedAthleteId);
     return null;
   }, [user, coachLike, selectedAthleteId]);
+
+  const closeStravaLactateModal = useCallback(() => {
+    setStravaLactateModal({
+      isOpen: false,
+      initialData: null,
+      focusLactateOnOpen: false,
+    });
+  }, []);
+
+  const handleFieldAddLactate = useCallback(
+    async (activity) => {
+      setStravaLactateFormError(null);
+      setLactateActivityLoadingId(String(activity._id));
+      try {
+        const { training } = await fetchTrainingForStravaLactateForm(
+          String(activity._id),
+          integrationAthleteId
+        );
+        if (!training || !training._id) {
+          setStravaLactateFormError('No training data returned');
+          return;
+        }
+        setStravaLactateModal({
+          isOpen: true,
+          initialData: prepareTrainingForLactateEntry(training),
+          focusLactateOnOpen: true,
+        });
+      } catch (err) {
+        setStravaLactateFormError(
+          err.response?.data?.error || err.message || 'Could not open lactate form'
+        );
+      } finally {
+        setLactateActivityLoadingId(null);
+      }
+    },
+    [integrationAthleteId]
+  );
+
+  const handleStravaLactateFormSubmit = useCallback(
+    async (updatedTraining) => {
+      try {
+        setStravaLactateSubmitting(true);
+        setStravaLactateFormError(null);
+        await updateTraining(updatedTraining._id, updatedTraining);
+        const targetId = selectedAthleteId || user._id;
+        await loadTrainings(targetId);
+        setFieldLactatePanelKey((k) => k + 1);
+        closeStravaLactateModal();
+      } catch (err) {
+        setStravaLactateFormError(
+          err.response?.data?.message ||
+            err.response?.data?.error ||
+            err.message ||
+            'Save failed'
+        );
+      } finally {
+        setStravaLactateSubmitting(false);
+      }
+    },
+    [selectedAthleteId, user, loadTrainings, closeStravaLactateModal]
+  );
 
   const showFieldLactatePanel = ['coach', 'athlete', 'tester', 'testing'].includes(
     String(user?.role || '').toLowerCase()
@@ -372,8 +443,30 @@ export default function TrainingPage() {
         </div>
       </div>
 
+      {stravaLactateFormError && (
+        <div
+          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+          role="alert"
+        >
+          <span>{stravaLactateFormError}</span>
+          <button
+            type="button"
+            onClick={() => setStravaLactateFormError(null)}
+            className="shrink-0 rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-900 hover:bg-red-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {showFieldLactatePanel && user && (
-        <FieldLactateTrainingPanel integrationAthleteId={integrationAthleteId} user={user} />
+        <FieldLactateTrainingPanel
+          key={fieldLactatePanelKey}
+          integrationAthleteId={integrationAthleteId}
+          user={user}
+          onAddLactate={handleFieldAddLactate}
+          loadingActivityId={lactateActivityLoadingId}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -458,6 +551,39 @@ export default function TrainingPage() {
                 <TrainingForm 
                   onClose={() => setIsFormOpen(false)} 
                   onSubmit={handleAddTraining}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {stravaLactateModal.isOpen && stravaLactateModal.initialData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1001] p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="relative">
+                <TrainingForm
+                  key={`${stravaLactateModal.initialData._id}-field-lac`}
+                  onClose={() => {
+                    closeStravaLactateModal();
+                    setStravaLactateFormError(null);
+                  }}
+                  onSubmit={handleStravaLactateFormSubmit}
+                  initialData={stravaLactateModal.initialData}
+                  isEditing
+                  isLoading={stravaLactateSubmitting}
+                  focusLactateOnOpen={stravaLactateModal.focusLactateOnOpen}
                 />
               </div>
             </motion.div>

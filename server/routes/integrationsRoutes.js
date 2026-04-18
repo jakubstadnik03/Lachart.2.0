@@ -7,8 +7,47 @@ const verifyToken = require('../middleware/verifyToken');
 const StravaActivity = require('../models/StravaActivity');
 const GarminActivity = require('../models/GarminActivity');
 const User = require('../models/UserModel');
+const Training = require('../models/training');
+const TrainingAbl = require('../abl/trainingAbl');
 const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const router = express.Router();
+
+/** Resolve athlete user id for integration routes (pending lactate, lactate form). */
+async function resolveIntegrationTargetUserId(req) {
+  const userId = req.user.userId;
+  const user = await User.findById(userId);
+  if (!user) {
+    return { ok: false, status: 404, error: 'User not found' };
+  }
+
+  let targetUserId = userId;
+  const requesterRole = String(user.role || '').toLowerCase();
+  if (req.query.athleteId) {
+    if (['coach', 'tester', 'testing'].includes(requesterRole)) {
+      if (String(req.query.athleteId) === String(userId)) {
+        targetUserId = userId;
+      } else {
+        const athlete = await User.findById(req.query.athleteId);
+        if (!athlete) {
+          return { ok: false, status: 404, error: 'Athlete not found' };
+        }
+        if (!athleteHasCoachUser(athlete, userId)) {
+          return { ok: false, status: 403, error: 'This athlete does not belong to your team' };
+        }
+        targetUserId = req.query.athleteId;
+      }
+    } else if (requesterRole === 'athlete') {
+      if (String(req.query.athleteId) !== String(userId)) {
+        return { ok: false, status: 403, error: 'You are not authorized to view these activities' };
+      }
+      targetUserId = userId;
+    }
+  } else if (requesterRole === 'athlete') {
+    targetUserId = userId;
+  }
+
+  return { ok: true, user, targetUserId };
+}
 
 /** UI/calendar uses `strava-<numericId>`; routes expect numeric Strava id or Mongo _id. */
 function stripStravaActivityIdPrefix(id) {
@@ -1417,37 +1456,12 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
  */
 router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
   try {
+    const resolved = await resolveIntegrationTargetUserId(req);
+    if (!resolved.ok) {
+      return res.status(resolved.status).json({ error: resolved.error });
+    }
+    const { targetUserId } = resolved;
     const userId = req.user.userId;
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    let targetUserId = userId;
-    const requesterRole = String(user.role || '').toLowerCase();
-    if (req.query.athleteId) {
-      if (['coach', 'tester', 'testing'].includes(requesterRole)) {
-        if (String(req.query.athleteId) === String(userId)) {
-          targetUserId = userId;
-        } else {
-          const athlete = await User.findById(req.query.athleteId);
-          if (!athlete) {
-            return res.status(404).json({ error: 'Athlete not found' });
-          }
-          if (!athleteHasCoachUser(athlete, userId)) {
-            return res.status(403).json({ error: 'This athlete does not belong to your team' });
-          }
-          targetUserId = req.query.athleteId;
-        }
-      } else if (requesterRole === 'athlete') {
-        if (String(req.query.athleteId) !== String(userId)) {
-          return res.status(403).json({ error: 'You are not authorized to view these activities' });
-        }
-        targetUserId = userId;
-      }
-    } else if (requesterRole === 'athlete') {
-      targetUserId = userId;
-    }
 
     const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 14));
     const since = new Date(Date.now() - days * 86400000);
@@ -1505,6 +1519,69 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
     return res.json({ activities, days });
   } catch (error) {
     console.error('[integrations] pending-lactate:', error);
+    return res.status(500).json({ error: error.message || 'Server error' });
+  }
+});
+
+/**
+ * Sync Strava activity → Training model and return training JSON for TrainingForm (field lactate).
+ * POST /api/integrations/strava/training-for-lactate-form?athleteId=...
+ * Body: { stravaActivityId: "<Mongo StravaActivity _id>" }
+ */
+router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const activityId = req.body?.stravaActivityId;
+    if (!activityId || !mongoose.Types.ObjectId.isValid(String(activityId))) {
+      return res.status(400).json({ error: 'Invalid stravaActivityId' });
+    }
+
+    const resolved = await resolveIntegrationTargetUserId(req);
+    if (!resolved.ok) {
+      return res.status(resolved.status).json({ error: resolved.error });
+    }
+    const { targetUserId } = resolved;
+    const targetStr = targetUserId.toString();
+
+    const activity = await StravaActivity.findOne({
+      _id: activityId,
+      userId: targetStr,
+    }).lean();
+
+    if (!activity) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+
+    const activityData = {
+      ...activity,
+      name: activity.name,
+      titleManual: activity.titleManual,
+      description: activity.description,
+      sport: activity.sport,
+      startDate: activity.startDate,
+      elapsedTime: activity.elapsedTime,
+      movingTime: activity.movingTime,
+      laps: activity.laps,
+    };
+
+    const synced = await TrainingAbl.syncTrainingFromSource('strava', activityData, targetStr);
+    let training = null;
+    if (synced && synced._id) {
+      training = await Training.findById(synced._id).lean();
+    }
+    if (!training) {
+      training = await Training.findOne({
+        athleteId: targetStr,
+        sourceStravaActivityId: String(activity._id),
+      }).lean();
+    }
+    if (!training) {
+      return res.status(500).json({ error: 'Could not prepare training for this activity' });
+    }
+
+    return res.json({ training });
+  } catch (error) {
+    console.error('[integrations] training-for-lactate-form:', error);
     return res.status(500).json({ error: error.message || 'Server error' });
   }
 });

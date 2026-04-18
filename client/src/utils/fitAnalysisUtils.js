@@ -18,8 +18,9 @@ export const formatDuration = (seconds) => {
 /**
  * Normalize distance to meters. API (FIT, Strava) typically sends meters.
  * Heuristic: >= 1000 → meters; 0 < value < 1 → km; 1–99 integer → km (e.g. 10 km); 100–999 integer → meters (e.g. 400 m); decimals 1–999 → km.
+ * @param {{ swim?: boolean }} options — when swim is true, integers 1–2499 are treated as meters (pool lengths), not km.
  */
-export function distanceToMeters(distance) {
+export function distanceToMeters(distance, options = {}) {
   if (distance == null || (typeof distance !== 'number' && typeof distance !== 'string')) return 0;
   if (typeof distance === 'string') {
     const clean = distance.trim().toLowerCase();
@@ -36,6 +37,7 @@ export function distanceToMeters(distance) {
   if (num > 0 && num < 1) return num * 1000; // km (e.g. 0.5 → 500 m)
   if (num >= 1 && num < 1000) {
     if (Number.isInteger(num)) {
+      if (options.swim && num <= 2499) return num; // pool / open-water lap lengths in meters (50, 100, …)
       if (num <= 99) return num * 1000; // 10 → 10 km, 21 → 21 km
       return num; // 100–999 → meters (100 m, 400 m, 800 m)
     }
@@ -44,8 +46,8 @@ export function distanceToMeters(distance) {
   return num;
 }
 
-export const formatDistance = (distance, user = null) => {
-  const distanceInMeters = distanceToMeters(distance);
+export const formatDistance = (distance, user = null, opts = {}) => {
+  const distanceInMeters = distanceToMeters(distance, opts);
   if (distanceInMeters === 0) return '0 m';
 
   if (user) {
@@ -86,12 +88,16 @@ export const formatPace = (mps) => {
  * Same numeric distance fix as Strava intervals table (FitAnalysisPage) before formatDistance().
  * Keeps IntervalChart bar widths / totals aligned with the table.
  */
-export function normalizeStravaLapDistanceRaw(lap) {
+export function normalizeStravaLapDistanceRaw(lap, opts = {}) {
   const distance = lap?.distance;
   const d = Number(distance);
   const lapDurationSec = Number(lap?.elapsed_time ?? lap?.elapsedTime ?? lap?.moving_time ?? 0);
 
   if (!Number.isFinite(d) || d <= 0) return distance;
+
+  if (opts.swim && Number.isInteger(d) && d > 0 && d <= 2499) {
+    return d;
+  }
 
   if (d > 100000 && Number.isFinite(lapDurationSec) && lapDurationSec > 0 && lapDurationSec < 600) {
     return d / 1000;
@@ -116,8 +122,29 @@ export function normalizeStravaLapDistanceRaw(lap) {
   return distance;
 }
 
-export function stravaLapDistanceMeters(lap) {
-  return distanceToMeters(normalizeStravaLapDistanceRaw(lap));
+export function stravaLapDistanceMeters(lap, opts = {}) {
+  const swim = opts.swim === true;
+  return distanceToMeters(normalizeStravaLapDistanceRaw(lap, { swim }), { swim });
+}
+
+/**
+ * Lap length in meters for chart / table (Strava vs FIT keys, swim-safe small integers).
+ */
+export function lapDistanceMetersForChart(lap, lapTimeSource = 'fit', isSwim = false) {
+  const swimOpts = { swim: isSwim };
+  if (lapTimeSource === 'strava') {
+    return stravaLapDistanceMeters(lap, swimOpts);
+  }
+  const d = Number(
+    lap?.totalDistance ??
+      lap?.total_distance ??
+      lap?.distance ??
+      lap?.distanceMeters ??
+      lap?.distance_meters ??
+      0
+  );
+  if (!Number.isFinite(d) || d <= 0) return 0;
+  return distanceToMeters(d, swimOpts);
 }
 
 /**

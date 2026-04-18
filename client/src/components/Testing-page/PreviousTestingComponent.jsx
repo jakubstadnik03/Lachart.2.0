@@ -379,8 +379,8 @@ const PreviousTestingComponent = ({
   const racePredictorProps = useMemo(() => {
     if (!currentTest?.results?.length) return null;
     const sport = predictorSportFromTest(currentTest);
-    /** Race pace grid is for running only (pace-based Riegel + copy). */
-    if (sport !== "run") return null;
+    // Support run and bike; swim uses same pace logic as run
+    if (!sport) return null;
     const anchors = resolveLtAnchorsFromTest(currentTest);
     if (!anchors) return null;
 
@@ -393,6 +393,27 @@ const PreviousTestingComponent = ({
 
     if (raw.length < 3) return null;
 
+    const training = buildPredictorTraining(externalActivities, sport);
+    const athleteWeightKg = currentTest.weight ? Number(currentTest.weight) : undefined;
+
+    if (sport === "bike") {
+      // Cycling: X-axis is power in watts — use values directly, no pace conversion
+      const lactateCurve = [...raw]
+        .map((p) => ({ x: p.load, y: p.lac }))
+        .sort((a, b) => a.x - b.x);
+      const lt1 = anchors.lt1_value;
+      const lt2 = anchors.lt2_value;
+      return {
+        lt1,
+        lt2,
+        lactateCurve,
+        training,
+        sport,
+        athleteWeightKg: athleteWeightKg && athleteWeightKg > 0 ? athleteWeightKg : undefined,
+      };
+    }
+
+    // Run / swim: X-axis is pace (min/km internally)
     const displayUnitSystem = resolveDistanceUnitSystem(
       { units: getUserUnits(user) },
       currentTest.unitSystem || "metric"
@@ -407,13 +428,12 @@ const PreviousTestingComponent = ({
     const lt1 = paceSecToMinPerKm(anchors.lt1_value);
     const lt2 = paceSecToMinPerKm(anchors.lt2_value);
 
-    const training = buildPredictorTraining(externalActivities, sport);
-
     return {
       lt1,
       lt2,
       lactateCurve,
       training,
+      sport,
       unitSystem: displayUnitSystem,
     };
   }, [currentTest, externalActivities, user]);

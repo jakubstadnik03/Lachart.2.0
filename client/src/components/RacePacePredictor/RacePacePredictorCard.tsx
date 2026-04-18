@@ -15,6 +15,8 @@ const ACCENT = '#767eb5';
 const ACCENT_SOFT = 'rgba(118, 126, 181, 0.18)';
 
 export type RaceType = '1500m' | '5k' | '10k' | 'hm' | 'marathon';
+export type CyclingEventType = '1min' | '5min' | '20min' | '1h' | '2h' | '3h' | '5h';
+export type SportType = 'run' | 'bike' | 'swim';
 
 export type LactatePoint = { x: number; y: number };
 
@@ -33,10 +35,13 @@ export type RacePacePredictorProps = {
   lt2: number;
   lactateCurve: LactatePoint[];
   training: RacePacePredictorTraining;
+  sport?: SportType;
+  /** Athlete body weight in kg — enables W/kg display for cycling. */
+  athleteWeightKg?: number;
   /** Show running paces as min/mile vs min/km (chart X-axis and pace strings). Math stays min/km internally. */
   unitSystem?: 'metric' | 'imperial';
-  /** Optional: highlight one distance in the grid (default 10 km). */
-  featuredRace?: RaceType;
+  /** Optional: highlight one distance in the grid (default 10 km for run, 1h for bike). */
+  featuredRace?: RaceType | CyclingEventType;
   /** @deprecated All standard distances are shown; use featuredRace to emphasize one. */
   raceType?: RaceType;
   /** Optional second curve (e.g. prior test) for comparison overlay. */
@@ -55,6 +60,26 @@ export const RACE_DISTANCE_ROWS: { id: RaceType; label: string; km: number }[] =
   { id: 'marathon', label: 'Marathon', km: 42.195 },
 ];
 
+/**
+ * Cycling power targets as % of FTP (LT2).
+ * Based on empirical power-duration curves (Coggan power profile, extended endurance adjustments).
+ */
+export const CYCLING_EVENT_ROWS: {
+  id: CyclingEventType;
+  label: string;
+  shortLabel: string;
+  durationSec: number;
+  ftpPct: number;
+}[] = [
+  { id: '1min', label: '1 min', shortLabel: '1 min', durationSec: 60, ftpPct: 1.50 },
+  { id: '5min', label: '5 min', shortLabel: '5 min', durationSec: 300, ftpPct: 1.14 },
+  { id: '20min', label: '20 min', shortLabel: '20 min', durationSec: 1200, ftpPct: 1.06 },
+  { id: '1h', label: '1 hour (FTP)', shortLabel: '1h', durationSec: 3600, ftpPct: 1.00 },
+  { id: '2h', label: '2 hours', shortLabel: '2h', durationSec: 7200, ftpPct: 0.87 },
+  { id: '3h', label: '3 hours', shortLabel: '3h', durationSec: 10800, ftpPct: 0.79 },
+  { id: '5h', label: '5 hours', shortLabel: '5h', durationSec: 18000, ftpPct: 0.70 },
+];
+
 const RIEGEL_EXP = 1.06;
 const KM_PER_MILE = 1.609344;
 
@@ -62,7 +87,7 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-/** Convert pace duration from min/km to min/mile (same “minutes per unit distance” scale). */
+/** Convert pace duration from min/km to min/mile (same "minutes per unit distance" scale). */
 function minPerKmToMinPerMile(minPerKm: number): number {
   return minPerKm * KM_PER_MILE;
 }
@@ -213,6 +238,15 @@ function predictFromPowerWatts(lt2W: number, raceKm: number): number | null {
   return timeSec / (raceKm * 60);
 }
 
+/**
+ * Predict cycling power target for a given duration using FTP-percentage model.
+ * ftpPct from CYCLING_EVENT_ROWS encodes physiological power-duration relationship.
+ * Returns watts.
+ */
+function predictCyclingPower(ftp: number, ftpPct: number): number {
+  return Math.round(ftp * ftpPct);
+}
+
 function enduranceScore(training: RacePacePredictorTraining): number {
   const z = normalizeZones(training.zoneDistribution);
   const z12 = z[0] + z[1];
@@ -289,11 +323,10 @@ function buildProfileSummary(params: {
   durability: number;
   slope: number | null;
   gap: number | null;
+  sport: SportType;
 }): string {
-  const { endurance, load, durability, slope, gap } = params;
-  /** Typical lactate rise per unit intensity stays in a moderate band for "stable" curves (scale depends on x-axis units). */
+  const { endurance, load, durability, slope, gap, sport } = params;
   const stable = slope != null && slope > 0.008 && slope < 0.22;
-  /** mmol/L lactate rise between thresholds — "compact" when small. */
   const narrowGap = gap != null && gap < 1.2;
 
   let tone = 'Balanced';
@@ -310,19 +343,25 @@ function buildProfileSummary(params: {
   const dur =
     durability >= 72 ? 'strong durability' : durability >= 48 ? 'solid durability' : 'developing durability';
 
-  return `${tone} profile with ${lactate} and ${dur}.`;
+  const sportLabel = sport === 'bike' ? 'cycling' : sport === 'swim' ? 'swimming' : 'running';
+
+  return `${tone} ${sportLabel} profile with ${lactate} and ${dur}.`;
 }
 
-function buildTrainingHint(params: { endurance: number; load: number; durability: number }): string {
-  const { endurance, load, durability } = params;
+function buildTrainingHint(params: { endurance: number; load: number; durability: number; sport: SportType }): string {
+  const { endurance, load, durability, sport } = params;
   if (durability < endurance - 12 && durability < 52) {
-    return 'Based on your training, predicted pace is slightly limited by durability — prioritize long aerobic work.';
+    return sport === 'bike'
+      ? 'Based on your training, power is slightly limited by durability — prioritize long aerobic rides (3 h+).'
+      : 'Based on your training, predicted pace is slightly limited by durability — prioritize long aerobic work.';
   }
   if (load > endurance + 10) {
     return 'Based on your training, freshness may outperform peak speed — watch recovery around key sessions.';
   }
   if (endurance > 78 && durability > 70) {
-    return 'Training profile supports the prediction well — maintain volume with selective quality near LT2.';
+    return sport === 'bike'
+      ? 'Training profile supports the prediction well — maintain volume with selective quality near LT2.'
+      : 'Training profile supports the prediction well — maintain volume with selective quality near LT2.';
   }
   return 'Based on your training, predicted pace aligns with threshold and aerobic development.';
 }
@@ -367,25 +406,153 @@ function MetricMini({
   );
 }
 
+// ─── Cycling power table ───────────────────────────────────────────────────────
+
+function CyclingEventGrid({
+  ftp,
+  athleteWeightKg,
+  highlightId,
+}: {
+  ftp: number;
+  athleteWeightKg?: number;
+  highlightId: string;
+}) {
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
+        <h3 className="text-sm font-bold text-slate-900">Power targets by event duration</h3>
+        <p className="text-[11px] text-slate-500">FTP-percentage model · LT2 = FTP ({Math.round(ftp)} W)</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {CYCLING_EVENT_ROWS.map(row => {
+          const watts = predictCyclingPower(ftp, row.ftpPct);
+          const wpkg = athleteWeightKg && athleteWeightKg > 0 ? watts / athleteWeightKg : null;
+          const isFeatured = row.id === highlightId;
+          const isAboveFtp = row.ftpPct > 1.0;
+          return (
+            <div
+              key={row.id}
+              className={`rounded-xl border px-2 py-3 text-center shadow-sm transition-colors ${
+                isFeatured
+                  ? 'border-[#767eb5]/50 bg-[#767eb5]/[0.07] ring-1 ring-[#767eb5]/25'
+                  : isAboveFtp
+                  ? 'border-orange-200/60 bg-orange-50/40'
+                  : 'border-slate-200/80 bg-white/80'
+              }`}
+            >
+              <div className={`text-[10px] font-semibold uppercase tracking-wide ${isAboveFtp ? 'text-orange-500' : 'text-[#767eb5]'}`}>
+                {row.shortLabel}
+              </div>
+              <div className="mt-1.5 text-base font-bold tabular-nums leading-tight text-slate-900 sm:text-lg">
+                {watts} W
+              </div>
+              {wpkg != null ? (
+                <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                  {wpkg.toFixed(2)} W/kg
+                </div>
+              ) : null}
+              <div className={`mt-0.5 text-[10px] font-medium ${isAboveFtp ? 'text-orange-400' : 'text-slate-400'}`}>
+                {Math.round(row.ftpPct * 100)}% FTP
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[10px] leading-snug text-slate-400">
+        Targets based on FTP-percentage power-duration model (Coggan). Orange = above FTP (anaerobic).
+        {athleteWeightKg ? ` W/kg calculated at ${athleteWeightKg} kg.` : ' Add body weight in test settings to see W/kg.'}
+      </p>
+    </div>
+  );
+}
+
+// ─── Running distance grid ─────────────────────────────────────────────────────
+
+function RunningDistanceGrid({
+  distanceRows,
+  highlightId,
+  unitSystem,
+  isPower,
+}: {
+  distanceRows: { id: RaceType; label: string; km: number; paceMinKm: number | null; timeSec: number | null }[];
+  highlightId: string;
+  unitSystem: 'metric' | 'imperial';
+  isPower: boolean;
+}) {
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
+        <h3 className="text-sm font-bold text-slate-900">Predicted times &amp; paces</h3>
+        <p className="text-[11px] text-slate-500">
+          {isPower
+            ? 'Power model · Riegel scaling from 10 km reference at LT2'
+            : unitSystem === 'imperial'
+              ? 'Riegel formula · LT2 pace as 10 km reference · paces shown in min/mile'
+              : 'Riegel formula · LT2 pace as 10 km reference'}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {distanceRows.map(row => {
+          const isFeatured = row.id === highlightId;
+          return (
+            <div
+              key={row.id}
+              className={`rounded-xl border px-2.5 py-3 text-center shadow-sm transition-colors ${
+                isFeatured
+                  ? 'border-[#767eb5]/50 bg-[#767eb5]/[0.07] ring-1 ring-[#767eb5]/25'
+                  : 'border-slate-200/80 bg-white/80'
+              }`}
+            >
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[#767eb5]">
+                {raceDistanceTileLabel(row, unitSystem)}
+              </div>
+              <div className="mt-1.5 text-lg font-bold tabular-nums leading-tight text-slate-900 sm:text-xl">
+                {formatRaceTime(row.timeSec)}
+              </div>
+              <div className="mt-0.5 text-[11px] font-medium text-slate-500">
+                {formatPaceFromMinPerKm(row.paceMinKm, unitSystem)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[10px] leading-snug text-slate-400">
+        1500 m–10 km: Riegel scaling from LT2 as a 10 km anchor. Half marathon &amp; marathon: same base, plus a
+        small capped slowdown when durability or long-run volume from your training block looks limited.
+      </p>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
 export function RacePacePredictorCard({
   lt1,
   lt2,
   lactateCurve,
   training,
+  sport,
+  athleteWeightKg,
   unitSystem = 'metric',
   featuredRace,
   raceType,
   comparisonCurve,
   className = '',
 }: RacePacePredictorProps) {
-  const highlightId = featuredRace ?? raceType ?? '10k';
+  // Determine sport mode: explicit prop takes priority, else infer from values
+  const isCycling: boolean = sport === 'bike' || (!sport && lt2 > lt1 && lt2 > 50);
+  const isSwim: boolean = sport === 'swim';
+  const sportType: SportType = isCycling ? 'bike' : isSwim ? 'swim' : 'run';
+
+  const defaultFeatured = isCycling ? '1h' : '10k';
+  const highlightId = (featuredRace ?? raceType ?? defaultFeatured) as string;
   const paceUnitLabel = unitSystem === 'imperial' ? 'min/mile' : 'min/km';
 
   const model = useMemo(() => {
     const curve = sortedCurve(lactateCurve);
     const minX = curve.length ? curve[0].x : 0;
     const maxX = curve.length ? curve[curve.length - 1].x : 0;
-    const isPower = lt2 > lt1;
+    const isPower = isCycling;
 
     const durability = durabilityScore(training);
     const longH = Math.max(0, training.longWorkout);
@@ -425,9 +592,10 @@ export function RacePacePredictorCard({
       durability,
       slope,
       gap: lactateGap,
+      sport: sportType,
     });
 
-    const hint = buildTrainingHint({ endurance, load, durability });
+    const hint = buildTrainingHint({ endurance, load, durability, sport: sportType });
 
     return {
       isPower,
@@ -446,19 +614,24 @@ export function RacePacePredictorCard({
       minX,
       maxX,
     };
-  }, [lt1, lt2, lactateCurve, training, comparisonCurve]);
+  }, [lt1, lt2, lactateCurve, training, comparisonCurve, isCycling, sportType]);
 
-  const lt2Display = model.isPower ? `${Math.round(lt2)} W` : formatPaceFromMinPerKm(lt2, unitSystem);
+  const lt2Display = isCycling ? `${Math.round(lt2)} W` : formatPaceFromMinPerKm(lt2, unitSystem);
   const ltGapDisplay =
-    model.isPower || unitSystem === 'metric'
-      ? model.ltGap.toFixed(2)
+    isCycling || unitSystem === 'metric'
+      ? model.ltGap.toFixed(isCycling ? 0 : 2)
       : (model.ltGap * KM_PER_MILE).toFixed(2);
-  const ltGapUnit = model.isPower ? '' : unitSystem === 'imperial' ? 'min/mi' : 'min/km';
+  const ltGapUnit = isCycling ? 'W' : unitSystem === 'imperial' ? 'min/mi' : 'min/km';
 
   const chartHasCompare =
     Array.isArray(comparisonCurve) &&
     comparisonCurve.length > 0 &&
-    model.chartData.some(d => Number.isFinite(d.compare));
+    model.chartData.some(d => Number.isFinite((d as any).compare));
+
+  const sportLabel = isCycling ? 'Cycling' : isSwim ? 'Swimming' : 'Running';
+  const wpkgDisplay = isCycling && athleteWeightKg && athleteWeightKg > 0
+    ? `${(lt2 / athleteWeightKg).toFixed(2)} W/kg`
+    : null;
 
   return (
     <section
@@ -467,69 +640,58 @@ export function RacePacePredictorCard({
     >
       <header className="flex flex-col gap-2 border-b border-slate-200/80 pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Race Pace Predictor</h2>
-          <p className="text-sm text-slate-500">Based on lactate &amp; training data</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+              {isCycling ? 'Power Predictor' : 'Race Pace Predictor'}
+            </h2>
+            <span className="rounded-full bg-[#767eb5]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#767eb5]">
+              {sportLabel}
+            </span>
+          </div>
+          <p className="text-sm text-slate-500">
+            {isCycling
+              ? 'Power targets based on lactate threshold (FTP)'
+              : 'Based on lactate & training data'}
+          </p>
         </div>
         <ConfidenceBadge level={model.conf} />
       </header>
 
-      <div className="mt-5">
-        <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between">
-          <h3 className="text-sm font-bold text-slate-900">Predicted times &amp; paces</h3>
-          <p className="text-[11px] text-slate-500">
-            {model.isPower
-              ? 'Power model · Riegel scaling from 10 km reference at LT2'
-              : unitSystem === 'imperial'
-                ? 'Riegel formula · LT2 pace as 10 km reference · paces shown in min/mile'
-                : 'Riegel formula · LT2 pace as 10 km reference'}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {model.distanceRows.map(row => {
-            const isFeatured = row.id === highlightId;
-            return (
-              <div
-                key={row.id}
-                className={`rounded-xl border px-2.5 py-3 text-center shadow-sm transition-colors ${
-                  isFeatured
-                    ? 'border-[#767eb5]/50 bg-[#767eb5]/[0.07] ring-1 ring-[#767eb5]/25'
-                    : 'border-slate-200/80 bg-white/80'
-                }`}
-              >
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-[#767eb5]">
-                  {raceDistanceTileLabel(row, unitSystem)}
-                </div>
-                <div className="mt-1.5 text-lg font-bold tabular-nums leading-tight text-slate-900 sm:text-xl">
-                  {formatRaceTime(row.timeSec)}
-                </div>
-                <div className="mt-0.5 text-[11px] font-medium text-slate-500">
-                  {formatPaceFromMinPerKm(row.paceMinKm, unitSystem)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-[10px] leading-snug text-slate-400">
-          1500 m–10 km: Riegel scaling from LT2 as a 10 km anchor. Half marathon &amp; marathon: same base, plus a
-          small capped slowdown when durability or long-run volume from your training block looks limited (not a full
-          glycogen / split model).
-        </p>
-      </div>
+      {/* Event grid — cycling or running */}
+      {isCycling ? (
+        <CyclingEventGrid
+          ftp={lt2}
+          athleteWeightKg={athleteWeightKg}
+          highlightId={highlightId}
+        />
+      ) : (
+        <RunningDistanceGrid
+          distanceRows={model.distanceRows}
+          highlightId={highlightId}
+          unitSystem={unitSystem}
+          isPower={false}
+        />
+      )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Metrics row */}
+      <div className={`mt-5 grid gap-3 ${isCycling && wpkgDisplay ? 'grid-cols-2 lg:grid-cols-5' : 'grid-cols-2 lg:grid-cols-4'}`}>
         <MetricMini label="Endurance score" value={model.endurance} suffix="/ 100" />
-        <MetricMini label="LT2" value={lt2Display} />
+        <MetricMini label={isCycling ? 'FTP (LT2)' : 'LT2'} value={lt2Display} />
+        {wpkgDisplay && (
+          <MetricMini label="FTP W/kg" value={wpkgDisplay} />
+        )}
         <MetricMini label="Training load" value={model.load} suffix="/ 100" />
         <MetricMini label="Durability" value={model.durability} suffix="/ 100" />
       </div>
 
+      {/* Curve insight */}
       <div className="mt-6 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Curve insight</h3>
+            <h3 className="text-sm font-bold text-slate-900">Lactate curve</h3>
             <p className="mt-0.5 text-[10px] leading-snug text-slate-500">
-              {model.isPower
-                ? 'X-axis: power (W) · Y-axis: lactate (mmol/L). Shaded band = intensity range between LT1 and LT2.'
+              {isCycling
+                ? 'X-axis: power (W) · Y-axis: lactate (mmol/L). Shaded band = intensity range between LT1 and LT2 (FTP zone).'
                 : `X-axis: pace (${paceUnitLabel}; slower left, faster right) · Y-axis: lactate (mmol/L). Shaded band = intensity range between LT1 and LT2.`}
             </p>
           </div>
@@ -554,24 +716,24 @@ export function RacePacePredictorCard({
                 top: 4,
                 right: 8,
                 left: 0,
-                bottom: model.isPower ? 22 : unitSystem === 'imperial' ? 34 : 28,
+                bottom: isCycling ? 22 : unitSystem === 'imperial' ? 34 : 28,
               }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
               <XAxis
                 dataKey="x"
-                reversed={!model.isPower}
+                reversed={!isCycling}
                 tick={{ fontSize: 10, fill: '#64748b' }}
                 axisLine={{ stroke: '#e2e8f0' }}
                 tickLine={false}
                 tickMargin={4}
                 tickFormatter={(v: number) =>
-                  model.isPower
+                  isCycling
                     ? `${Math.round(v)}`
                     : formatPaceFromMinPerKm(v, unitSystem).replace(/ \/mi| \/km/, '')
                 }
                 label={{
-                  value: model.isPower ? 'Power (W)' : `Pace (${paceUnitLabel})`,
+                  value: isCycling ? 'Power (W)' : `Pace (${paceUnitLabel})`,
                   position: 'bottom',
                   offset: 2,
                   fontSize: 10,
@@ -591,7 +753,7 @@ export function RacePacePredictorCard({
                   fontSize: 12,
                 }}
                 labelFormatter={(v: number) =>
-                  model.isPower ? `Power ${v}` : `Pace ${formatPaceFromMinPerKm(v, unitSystem)}`
+                  isCycling ? `Power ${v} W` : `Pace ${formatPaceFromMinPerKm(v, unitSystem)}`
                 }
                 formatter={(value: number, name: string) => {
                   const label = name === 'compare' ? 'Prior' : name === 'lactate' ? 'Lactate' : String(name);
@@ -604,8 +766,20 @@ export function RacePacePredictorCard({
                 fill={ACCENT_SOFT}
                 strokeOpacity={0}
               />
-              <ReferenceLine x={lt1} stroke={ACCENT} strokeDasharray="4 4" strokeWidth={1} />
-              <ReferenceLine x={lt2} stroke="#334155" strokeDasharray="4 4" strokeWidth={1} />
+              <ReferenceLine
+                x={lt1}
+                stroke={ACCENT}
+                strokeDasharray="4 4"
+                strokeWidth={1}
+                label={{ value: 'LT1', position: 'top', fontSize: 9, fill: ACCENT }}
+              />
+              <ReferenceLine
+                x={lt2}
+                stroke="#334155"
+                strokeDasharray="4 4"
+                strokeWidth={1}
+                label={{ value: isCycling ? 'FTP' : 'LT2', position: 'top', fontSize: 9, fill: '#334155' }}
+              />
               <Line type="monotone" dataKey="lactate" stroke={ACCENT} strokeWidth={2} dot={false} name="Current" />
               {chartHasCompare ? (
                 <Line
@@ -635,7 +809,7 @@ export function RacePacePredictorCard({
             </dd>
           </div>
           <div>
-            <dt className="text-slate-400">LT1–LT2 (axis)</dt>
+            <dt className="text-slate-400">LT1–LT2 gap</dt>
             <dd className="font-semibold text-slate-800">
               {ltGapDisplay}
               {ltGapUnit ? <span className="ml-1 font-normal text-slate-500">{ltGapUnit}</span> : null}
@@ -648,31 +822,6 @@ export function RacePacePredictorCard({
             </dd>
           </div>
         </dl>
-        <div className="mt-3 space-y-2 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
-          <p>
-            <span className="font-semibold text-slate-700">Slope (LT1→LT2):</span> average change in lactate per
-            one-unit step along the X-axis between LT1 and LT2. For running pace, the chart reads easier (slower) paces
-            on the left and harder (faster) on the right; the numeric slope is still Δlactate per pace-unit step in data
-            space, so it can be <strong>negative</strong> and still make sense. Tick labels use {paceUnitLabel}
-            {unitSystem === 'imperial'
-              ? '; the numeric slope is still Δlactate per min/km step (internal x scale).'
-              : '.'}
-          </p>
-          <p>
-            <span className="font-semibold text-slate-700">Curvature:</span> how much the curve bends between
-            consecutive samples (discrete second derivative). Higher values usually mean sharper breaks between test
-            stages; the number depends a lot on how your stages are spaced.
-          </p>
-          <p>
-            <span className="font-semibold text-slate-700">LT1–LT2 (axis):</span> the intensity difference between LT1
-            and LT2 in the same units as the X-axis ({model.isPower ? 'watts' : paceUnitLabel}) — how wide the band
-            between the two thresholds is on the chart.
-          </p>
-          <p>
-            <span className="font-semibold text-slate-700">Lactate @ gap:</span> how many mmol/L lactate differs at LT1
-            versus LT2 intensity, computed by interpolating between your measured points.
-          </p>
-        </div>
       </div>
 
       <p className="mt-5 rounded-xl border border-slate-200/70 bg-white/90 px-4 py-3 text-sm leading-relaxed text-slate-700">
