@@ -5,6 +5,7 @@ import { formatDuration, formatDistance, prepareTrainingChartData } from '../../
 import { updateFitTraining, getAllTitles } from '../../services/api';
 import api from '../../services/api';
 import { formatSpeedForUser } from '../../utils/unitsConverter';
+import { useCategories } from '../../context/CategoryContext';
 
 const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileProp }) => {
   const [isMobileLocal, setIsMobileLocal] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -14,19 +15,16 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
     return () => window.removeEventListener('resize', h);
   }, []);
   const isMobile = isMobileProp !== undefined ? isMobileProp : isMobileLocal;
+  const { categories, getCategoryStyle } = useCategories();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
-  // eslint-disable-next-line no-unused-vars
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [title, setTitle] = useState(training?.titleManual || training?.titleAuto || training?.originalFileName || '');
   const [description, setDescription] = useState(training?.description || '');
-  // eslint-disable-next-line no-unused-vars
   const [category, setCategory] = useState(training?.category || '');
   const [saving, setSaving] = useState(false);
   const [allTitles, setAllTitles] = useState([]);
-  // eslint-disable-next-line no-unused-vars
   const [showSuggestions, setShowSuggestions] = useState(false);
-  // eslint-disable-next-line no-unused-vars
   const [filteredTitles, setFilteredTitles] = useState([]);
   const titleInputRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -568,6 +566,43 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
     setSelectedLapIndices([]);
   };
 
+  // Sport icon mapping
+  const getSportIcon = (sport) => {
+    const s = (sport || '').toLowerCase();
+    if (s.includes('run')) return '🏃';
+    if (s.includes('swim')) return '🏊';
+    if (s.includes('walk')) return '🚶';
+    if (s.includes('hike')) return '🥾';
+    if (s.includes('ski')) return '⛷️';
+    if (s.includes('row')) return '🚣';
+    return '🚴';
+  };
+
+  const formatTrainingDate = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    } catch { return ''; }
+  };
+
+  // Direct save (bypasses interval-selection modal) for non-lap fields
+  const performDirectSave = async (payload) => {
+    if (!training) return;
+    try {
+      setSaving(true);
+      await updateFitTraining(training._id, payload);
+      if (payload.category !== undefined) setIsEditingCategory(false);
+      if (onUpdate) await onUpdate(training._id);
+    } catch (error) {
+      console.error('Error saving training:', error);
+      alert('Error saving training');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
       {intervalModalOpen && (
@@ -708,6 +743,127 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
         </div>
       )}     
       
+      {/* ── Activity Header ── */}
+      <div className={`${isMobile ? 'mb-3 pb-3' : 'mb-5 pb-4'} border-b border-gray-100`}>
+        {/* Sport + Date + Category row */}
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="text-lg leading-none">{getSportIcon(training.sport)}</span>
+          <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-gray-400 font-medium`}>
+            {formatTrainingDate(training.timestamp || training.uploadDate || training.date)}
+          </span>
+          {/* Category badge — click to edit */}
+          {isEditingCategory ? (
+            <div className="flex items-center gap-1">
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="px-2 py-0.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                autoFocus
+              >
+                <option value="">None</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => performDirectSave({ category: category || null })}
+                disabled={saving}
+                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+              >
+                <CheckIcon className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => { setIsEditingCategory(false); setCategory(training?.category || ''); }}
+                className="p-1 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition-colors"
+              >
+                <XMarkIcon className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsEditingCategory(true)}
+              title="Click to set category"
+              className="flex items-center gap-1"
+            >
+              <span
+                className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80"
+                style={getCategoryStyle(category)}
+              >
+                {category
+                  ? (categories.find(c => c.id === category)?.label || category)
+                  : '+ Category'}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Editable title */}
+        {isEditingTitle ? (
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                }}
+                onFocus={() => { if (allTitles.length > 0) setShowSuggestions(true); }}
+                className={`w-full ${isMobile ? 'text-base' : 'text-xl'} font-bold border-2 border-primary/50 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary bg-white/90 shadow-sm`}
+                placeholder="Training title…"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') initiateSave({ title: title.trim() || null });
+                  if (e.key === 'Escape') { setIsEditingTitle(false); setTitle(training?.titleManual || training?.titleAuto || training?.originalFileName || ''); }
+                }}
+              />
+              {showSuggestions && filteredTitles.length > 0 && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto"
+                >
+                  {filteredTitles.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      onClick={() => { setTitle(suggestion); setShowSuggestions(false); }}
+                      className="px-3 py-2 hover:bg-primary/10 cursor-pointer text-sm transition-colors first:rounded-t-xl last:rounded-b-xl"
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => initiateSave({ title: title.trim() || null })}
+              disabled={saving}
+              className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              <CheckIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => { setIsEditingTitle(false); setTitle(training?.titleManual || training?.titleAuto || training?.originalFileName || ''); }}
+              className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors shadow-sm"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="group flex items-center gap-2">
+            <h1 className={`${isMobile ? 'text-base' : 'text-xl md:text-2xl'} font-bold text-gray-900 flex-1 leading-tight`}>
+              {title || 'Untitled Training'}
+            </h1>
+            <button
+              onClick={() => setIsEditingTitle(true)}
+              className={`${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0`}
+              title="Edit title"
+            >
+              <PencilIcon className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Description - Only show if there's content or when editing */}
       {(description || isEditingDescription) && (
       <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">

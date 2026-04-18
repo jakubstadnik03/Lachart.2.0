@@ -626,48 +626,83 @@ const IntervalChart = ({
     return { h: h * 360, s, l };
   };
 
+  /**
+   * Y-axis domain centered on the mean so typical laps sit mid-chart (not anchored only to the fastest lap).
+   * @param {number[]} values — lap metric values (>0)
+   * @param {'pace'|'heartRate'|'power'|'speed'|'cadence'} metric
+   */
+  const symmetricAxisFromMean = (values, metric) => {
+    if (!values.length) return null;
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const spanData = hi - lo;
+    const minHalf =
+      metric === 'pace'
+        ? Math.max(12, spanData * 0.12, mean * 0.06)
+        : Math.max((hi + lo) * 0.02, spanData * 0.08, 1e-6);
+    const halfRaw = Math.max(hi - mean, mean - lo, spanData > 0 ? spanData * 0.06 : minHalf);
+    const pad = Math.max(halfRaw * 0.18, spanData * 0.04, metric === 'pace' ? 4 : 0);
+    let low = mean - halfRaw - pad;
+    let high = mean + halfRaw + pad;
+    if (metric === 'pace') {
+      low = Math.max(22, low);
+    }
+    if (metric === 'heartRate') low = Math.max(35, low);
+    if (metric === 'power' || metric === 'speed' || metric === 'cadence') low = Math.max(0, low);
+    if (high <= low) high = low + (metric === 'pace' ? 15 : 1);
+    return { adjustedMinValue: low, adjustedMaxValue: high };
+  };
+
   const getYAxisLabels = () => {
-    const { maxValue, minValue } = chartData;
-    
-    // Pace (run + swim): top = fastest, bottom = proportional (5/3). Same for run (min/km) and swim (s/100m). Pause/slow don't stretch axis.
-    // Cadence: normal orientation (min at bottom, max at top) with 20% padding
-    // Other metrics (cycling power/speed/hr, etc.): min/max from data, pause values excluded from axis via filter(v > 0)
-    let adjustedMinValue, adjustedMaxValue;
-    if ((isRun || isSwim) && selectedMetric === 'pace') {
-      adjustedMinValue = minValue * 0.9; // Top: 10% faster than fastest
-      // Bottom: (5/3)*fastest — run e.g. 3:00/km → 5:00/km; swim e.g. 1:20/100m → 2:13/100m; never 20:00 or slow outliers
+    const { maxValue, minValue, bars } = chartData;
+    const activeValues = (bars || [])
+      .filter((b) => b.value > 0 && !b.isPause)
+      .map((b) => b.value);
+
+    const useMeanCenteredPace = (isRun || isSwim) && selectedMetric === 'pace';
+    const useMeanCenteredSwimMetric =
+      isSwim && ['power', 'heartRate', 'speed', 'cadence'].includes(selectedMetric);
+
+    let adjustedMinValue;
+    let adjustedMaxValue;
+
+    if (useMeanCenteredPace && activeValues.length > 0) {
+      const sym = symmetricAxisFromMean(activeValues, 'pace');
+      adjustedMinValue = sym.adjustedMinValue;
+      adjustedMaxValue = sym.adjustedMaxValue;
+    } else if (useMeanCenteredSwimMetric && activeValues.length > 0) {
+      const sym = symmetricAxisFromMean(activeValues, selectedMetric);
+      adjustedMinValue = sym.adjustedMinValue;
+      adjustedMaxValue = sym.adjustedMaxValue;
+    } else if ((isRun || isSwim) && selectedMetric === 'pace') {
+      adjustedMinValue = minValue * 0.9;
       adjustedMaxValue = minValue * (5 / 3);
     } else if (selectedMetric === 'cadence') {
-      // For cadence: normal orientation - min at bottom, max at top
-      adjustedMinValue = minValue * 0.8; // Bottom: 20% smaller than minimum
-      adjustedMaxValue = maxValue * 1.2; // Top: 20% larger than maximum
+      adjustedMinValue = minValue * 0.8;
+      adjustedMaxValue = maxValue * 1.2;
     } else {
-      // Cycling (power, speed, hr): proportional axis — min at least 20% of max so axis isn't stretched to 0 by coasting/pause
       adjustedMinValue = Math.max(minValue * 0.8, maxValue * 0.2);
       adjustedMaxValue = maxValue * 1.1;
     }
-    
+
     const range = adjustedMaxValue - adjustedMinValue;
     const step = range / 5;
     const labels = [];
-    
+
     for (let i = 0; i <= 5; i++) {
       labels.push(Math.round(adjustedMinValue + step * i));
     }
-    
-    // For pace: labels are [minValue * 0.9, ..., maxValue * 1.1] - fastest-10% at top, slowest+10% at bottom (reversed)
-    // For cadence: labels are [minValue * 0.8, ..., maxValue * 1.2] - smallest at bottom, largest at top (normal)
-    // For other metrics: labels are [minValue * 0.8, ..., maxValue] - smallest at top, largest at bottom (reversed)
+
+    // Run + swim pace: fastest (smallest s/km or s/100m) at top, slower toward bottom; bar height uses reversed.
     if ((isRun || isSwim) && selectedMetric === 'pace') {
       return { labels, adjustedMinValue, adjustedMaxValue, reversed: true };
     }
-    
+
     if (selectedMetric === 'cadence') {
-      // Normal orientation for cadence: min at bottom, max at top
       return { labels, adjustedMinValue, adjustedMaxValue, reversed: false };
     }
-    
-    // Power, speed, HR: use same adjustedMaxValue for both axis labels and bar height so bars align with Y scale
+
     return { labels, adjustedMinValue, adjustedMaxValue, reversed: false };
   };
 
@@ -770,21 +805,25 @@ const IntervalChart = ({
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="relative w-full overflow-hidden" style={{ height: isMobile ? '250px' : '400px', paddingTop: isMobile ? '8px' : '10px' }}>
-        {/* Y-axis labels - aligned 1:1 with dashed grid lines */}
-        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-0.5 pt-2`}>
+      <div
+        ref={chartContainerRef}
+        className="relative w-full overflow-x-hidden"
+        style={{ height: isMobile ? '250px' : '400px', paddingTop: isMobile ? '12px' : '14px' }}
+      >
+        {/* Y-axis labels - aligned 1:1 with dashed grid lines; first/last not shifted up/down so they are not clipped */}
+        <div className={`absolute left-0 top-0 bottom-12 ${yAxisWidth} ${isMobile ? 'pr-1' : 'pr-2'} z-10 pb-0.5 pt-1`}>
           <div className="relative w-full h-full">
             {yAxisLabels.map((_, i) => {
               const steps = yAxisLabels.length - 1 || 1;
               const t = i / steps;
               const range = adjustedMaxValue - adjustedMinValue;
               let value;
-              if ((isRun || isSwim) && selectedMetric === 'pace') {
-                // Pace: nejrychlejší (nejmenší) nahoře, nejpomalejší dole
-                value = adjustedMinValue + range * t;  // min -> max zhora dolů
+              if (isPaceAxis) {
+                // Pace (run + swim): fastest = smallest seconds at top of axis
+                value = adjustedMinValue + range * t;
               } else {
-                // Power / Speed / HR / Cadence: největší nahoře, nejmenší dole
-                value = adjustedMaxValue - range * t;  // max -> min zhora dolů
+                // Power, speed, HR, cadence: larger value at top, smaller at bottom
+                value = adjustedMaxValue - range * t;
               }
 
               // Format display label
@@ -798,14 +837,16 @@ const IntervalChart = ({
               }
 
               const topPercent = steps > 0 ? (i / steps) * 100 : 0;
-              
+              const yTransform =
+                i === 0 ? 'translateY(0)' : i === steps ? 'translateY(-100%)' : 'translateY(-50%)';
+
               return (
                 <div
                   key={i}
-                  className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right absolute right-0`}
+                  className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 text-right absolute right-0 leading-tight`}
                   style={{
                     top: `${topPercent}%`,
-                    transform: 'translateY(-50%)'
+                    transform: yTransform,
                   }}
                 >
                   {displayLabel} {!isMobile && (chartData.bars[0]?.unit || '')}

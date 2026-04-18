@@ -455,22 +455,36 @@ class TrainingAbl {
             const results = [];
             const laps = Array.isArray(sourceData.laps) ? sourceData.laps : [];
 
-            let filteredLaps;
-            const optionLapIndices = Array.isArray(options.selectedLapIndices)
-                ? options.selectedLapIndices
-                    .map((value) => typeof value === 'number' ? value : parseInt(value, 10))
-                    .filter((value) => Number.isInteger(value) && value >= 0)
-                : [];
+            const useAllStravaLaps =
+                sourceType === 'strava' && options.useAllStravaLapsForLactate === true;
 
-            if (optionLapIndices.length > 0) {
-                const uniqueIndices = [...new Set(optionLapIndices)].sort((a, b) => a - b);
-                filteredLaps = uniqueIndices
-                    .map(index => laps[index])
-                    .filter(lap => lap);
+            let filteredLaps;
+            if (useAllStravaLaps) {
+                filteredLaps = [];
+                for (let i = 0; i < laps.length; i++) {
+                    const lap = laps[i];
+                    const lapDuration = getLapDurationSeconds(lap);
+                    if (lapDuration <= 0) continue;
+                    if (totalActivitySeconds > 0 && lapDuration >= totalActivitySeconds * 0.95) continue;
+                    filteredLaps.push(lap);
+                }
             } else {
-                filteredLaps = selectImportantLaps(laps, sourceType);
+                const optionLapIndices = Array.isArray(options.selectedLapIndices)
+                    ? options.selectedLapIndices
+                        .map((value) => typeof value === 'number' ? value : parseInt(value, 10))
+                        .filter((value) => Number.isInteger(value) && value >= 0)
+                    : [];
+
+                if (optionLapIndices.length > 0) {
+                    const uniqueIndices = [...new Set(optionLapIndices)].sort((a, b) => a - b);
+                    filteredLaps = uniqueIndices
+                        .map(index => laps[index])
+                        .filter(lap => lap);
+                } else {
+                    filteredLaps = selectImportantLaps(laps, sourceType);
+                }
             }
-            
+
             filteredLaps.forEach((lap, index) => {
                 const lapDuration = getLapDurationSeconds(lap);
 
@@ -509,9 +523,46 @@ class TrainingAbl {
                     power: lapPower,
                     heartRate: lapHeartRate,
                     lactate: lap.lactate || null,
-                    RPE: null
+                    RPE: null,
+                    isRecovery: false,
+                    isSelected: true
                 });
             });
+
+            // Field lactate: mark easy / recovery laps (unchecked in TrainingForm) when metrics allow
+            if (useAllStravaLaps && results.length > 0) {
+                const powers = results
+                    .map((r) => toNumber(r.power))
+                    .filter((p) => p !== null && p > 0);
+                const maxP = powers.length ? Math.max(...powers) : 0;
+                if (maxP >= 40) {
+                    const threshold = maxP * 0.48;
+                    results.forEach((r) => {
+                        const p = toNumber(r.power);
+                        const d = typeof r.duration === 'number' ? r.duration : parseFloat(r.duration) || 0;
+                        if (p !== null && p > 0 && p < threshold && d > 0 && d <= 900) {
+                            r.isRecovery = true;
+                            r.isSelected = false;
+                        }
+                    });
+                } else {
+                    const hrs = results
+                        .map((r) => toNumber(r.heartRate))
+                        .filter((h) => h !== null && h > 0);
+                    const maxHr = hrs.length ? Math.max(...hrs) : 0;
+                    if (maxHr >= 95) {
+                        const thresholdHr = maxHr * 0.58;
+                        results.forEach((r) => {
+                            const hr = toNumber(r.heartRate);
+                            const d = typeof r.duration === 'number' ? r.duration : parseFloat(r.duration) || 0;
+                            if (hr !== null && hr > 0 && hr < thresholdHr && d > 0 && d <= 900) {
+                                r.isRecovery = true;
+                                r.isSelected = false;
+                            }
+                        });
+                    }
+                }
+            }
 
             // Check if Training record already exists
             // Use date and timestamp to find the correct training, not just title

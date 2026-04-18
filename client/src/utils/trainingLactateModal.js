@@ -16,12 +16,13 @@ export function prepareTrainingForLactateEntry(training) {
   const results = Array.isArray(raw.results) ? raw.results : [];
   raw.results = results.map((r, idx) => {
     const isRec = r.isRecovery === true;
+    const explicitSelected = typeof r.isSelected === 'boolean';
     return {
       ...r,
       interval: r.interval ?? idx + 1,
       heartRate: r.heartRate ?? r.heart_rate ?? r.avgHeartRate ?? '',
       lactate: r.lactate ?? '',
-      isSelected: isRec ? false : true,
+      isSelected: explicitSelected ? r.isSelected : !isRec,
       isRecovery: isRec,
     };
   });

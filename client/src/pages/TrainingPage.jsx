@@ -12,6 +12,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import AthleteSelector from '../components/AthleteSelector';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useCategories, hexToRgba } from '../context/CategoryContext';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
 
@@ -53,6 +54,7 @@ export default function TrainingPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const { categories, getCategoryStyle } = useCategories();
   const [fieldLactatePanelKey, setFieldLactatePanelKey] = useState(0);
   const [lactateActivityLoadingId, setLactateActivityLoadingId] = useState(null);
   const [stravaLactateFormError, setStravaLactateFormError] = useState(null);
@@ -389,7 +391,7 @@ export default function TrainingPage() {
           Training Log
         </motion.h1>
         <div className="flex items-center gap-3">
-          {/* Category Filter */}
+          {/* Category Filter — dynamic from CategoryContext */}
           <div className="relative">
             <select
               value={selectedCategory}
@@ -398,13 +400,10 @@ export default function TrainingPage() {
               style={{ WebkitAppearance: 'none', appearance: 'none' }}
             >
               <option value="all">All categories</option>
-              <option value="endurance">Endurance</option>
-              <option value="tempo">Tempo</option>
-              <option value="threshold">Threshold</option>
-              <option value="vo2max">VO2max</option>
-              <option value="anaerobic">Anaerobic</option>
-              <option value="recovery">Recovery</option>
-              <option value="uncategorized">Bez kategorie</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.label}</option>
+              ))}
+              <option value="uncategorized">Uncategorized</option>
             </select>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -412,6 +411,19 @@ export default function TrainingPage() {
               </svg>
             </div>
           </div>
+          {/* Active category badge */}
+          {selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && (() => {
+            const cat = categories.find(c => c.id === selectedCategory);
+            if (!cat) return null;
+            return (
+              <span
+                className="hidden sm:inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold"
+                style={getCategoryStyle(selectedCategory)}
+              >
+                {cat.label}
+              </span>
+            );
+          })()}
         <motion.button
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -476,8 +488,8 @@ export default function TrainingPage() {
           transition={{ delay: 0.3 }}
           whileHover={{ scale: 1.02 }}
         >
-          <SpiderChart 
-            trainings={trainings}
+          <SpiderChart
+            trainings={filteredTrainings}
             selectedSport={selectedSport}
           />
         </motion.div>
@@ -487,8 +499,8 @@ export default function TrainingPage() {
           transition={{ delay: 0.4 }}
           whileHover={{ scale: 1.02 }}
         >
-          <TrainingGraph 
-            trainingList={trainings}
+          <TrainingGraph
+            trainingList={filteredTrainings}
             selectedSport={selectedSport}
             selectedTitle={selectedTitle}
             setSelectedTitle={setSelectedTitle}

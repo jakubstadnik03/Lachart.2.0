@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { formatDuration, formatDistance, formatSpeed, formatPace } from '../../utils/fitAnalysisUtils';
 import { updateLactateValues } from '../../services/api';
 
+/** Scroll only the laps rows — max height uses dvh so chart + zones fit better on small screens */
+const LAPS_LIST_SCROLL_CLASS =
+  'overflow-x-auto overflow-y-auto max-h-[min(34dvh,19rem)] sm:max-h-[min(38dvh,23rem)] md:max-h-[min(42dvh,28rem)] overscroll-y-contain touch-pan-y';
+
 const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [editingLactate, setEditingLactate] = useState(false);
   const [lactateInputs, setLactateInputs] = useState({});
@@ -158,7 +162,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           </button>
         </div>
 
-        <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto pr-0.5">
+        <div className={`${LAPS_LIST_SCROLL_CLASS} rounded-xl border border-gray-200 bg-white`}>
+        <div className="divide-y divide-gray-100 pr-0.5">
           {uniqueLaps.map((lap, index) => {
             const lapNumber = lap?.lapNumber ?? (index + 1);
             const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
@@ -273,6 +278,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             );
           })}
         </div>
+        </div>
         {editingLactate && (
           <div className="mt-3 flex gap-2">
             <button
@@ -306,7 +312,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
       </div>
       <div
         ref={tableContainerRef}
-        className="overflow-x-auto overflow-y-auto max-h-[400px] rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0"
+        className={`${LAPS_LIST_SCROLL_CLASS} rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0 min-h-0`}
       >
         <table className="min-w-full divide-y divide-gray-200/50">
           <thead className="bg-white/80 backdrop-blur-sm sticky top-0 z-10">

@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { 
-  ChevronLeftIcon, 
-  ChevronRightIcon, 
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   ChevronDownIcon,
   ArrowUpIcon,
   ArrowDownIcon,
@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
+import { useCategories, hexToRgba } from '../../context/CategoryContext';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -130,6 +131,31 @@ export default function CalendarView({
   onMonthChange = null,
   onVisiblePeriodChange = null,
 }) {
+  const { getCategory } = useCategories();
+
+  /** Returns inline style for a category tag badge. */
+  const catBadgeStyle = (catId) => {
+    const cat = getCategory(catId);
+    if (!cat) return { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#d1d5db' };
+    return {
+      backgroundColor: hexToRgba(cat.color, 0.15),
+      color: cat.color,
+      borderColor: hexToRgba(cat.color, 0.35),
+    };
+  };
+
+  /** Returns the border color for an activity card. */
+  const catBorderColor = (catId) => {
+    const cat = getCategory(catId);
+    return cat ? cat.color : null;
+  };
+
+  /** Returns the display label for a category. */
+  const catLabel = (catId) => {
+    const cat = getCategory(catId);
+    return cat ? cat.label : (catId ? catId.charAt(0).toUpperCase() + catId.slice(1) : 'Uncategorized');
+  };
+
   // Initialize anchorDate from localStorage, initialAnchorDate prop, or today
   const getInitialAnchorDate = () => {
     if (initialAnchorDate) return initialAnchorDate;
@@ -161,6 +187,8 @@ export default function CalendarView({
   const [sportFilter, setSportFilter] = useState(getInitialSportFilter);
   const [expandedDays, setExpandedDays] = useState(new Set());
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // Optimistic selection — marks activity immediately on click, before parent updates selectedActivityId
+  const [optimisticSelectedId, setOptimisticSelectedId] = useState(null);
   
   // User profile data for TSS calculation
   const [userProfile, setUserProfile] = useState(null);
@@ -257,12 +285,22 @@ export default function CalendarView({
     }
   }, [initialAnchorDate]);
   
+  // When parent confirms selection, clear the optimistic state
+  useEffect(() => {
+    if (selectedActivityId) {
+      setOptimisticSelectedId(null);
+    }
+  }, [selectedActivityId]);
+
+  // effectiveSelectedId: use optimistic value immediately, fall back to confirmed prop
+  const effectiveSelectedId = optimisticSelectedId ?? selectedActivityId;
+
   // Auto-expand the day containing the selected activity
   useEffect(() => {
-    if (selectedActivityId && activities.length > 0) {
+    if (effectiveSelectedId && activities.length > 0) {
       const selectedActivity = activities.find(a => {
         const id = a.id || a._id;
-        return String(id) === String(selectedActivityId);
+        return String(id) === String(effectiveSelectedId);
       });
       if (selectedActivity) {
         const activityDate = new Date(selectedActivity.date || selectedActivity.timestamp || selectedActivity.startDate || Date.now());
@@ -270,13 +308,20 @@ export default function CalendarView({
         setExpandedDays(prev => new Set([...prev, dateKey]));
       }
     }
-  }, [selectedActivityId, activities]);
+  }, [effectiveSelectedId, activities]);
 
   const uniqueSports = useMemo(() => {
     const set = new Set();
     activities.forEach(a => { if (a?.sport) set.add(String(a.sport)); });
     return ['all', ...Array.from(set).sort()];
   }, [activities]);
+
+  // Optimistic handler — mark selected immediately, then call parent
+  const handleSelectActivity = (a) => {
+    const id = a.id || a._id;
+    if (id) setOptimisticSelectedId(String(id));
+    if (onSelectActivity) onSelectActivity(a);
+  };
 
   const filteredActivities = useMemo(() => {
     if (sportFilter === 'all') return activities;
@@ -524,7 +569,7 @@ export default function CalendarView({
   };
 
   return (
-    <div className={`${isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white/10 backdrop-blur-xl rounded-2xl md:rounded-3xl border border-white/20 shadow-md p-3 md:p-4 lg:p-4 mb-4 md:mb-6'} overflow-hidden`}>
+    <div className={`${isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6'} overflow-hidden`}>
       {/* Header */}
       {isMobile ? (
         <div className="flex items-center justify-between mb-2 px-1">
@@ -541,22 +586,22 @@ export default function CalendarView({
       ) : (
       <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="flex items-center gap-1.5 md:gap-2">
-          <button 
-            onClick={prev} 
-            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
+          <button
+            onClick={prev}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
             aria-label="Previous"
           >
             <ChevronLeftIcon className="w-4 h-4 md:w-5 md:h-5" />
           </button>
-          <button 
-            onClick={today} 
-            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors text-xs md:text-sm"
+          <button
+            onClick={today}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors text-xs md:text-sm"
           >
             Today
           </button>
-          <button 
-            onClick={next} 
-            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
+          <button
+            onClick={next}
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-sm transition-colors flex items-center justify-center"
             aria-label="Next"
           >
             <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
@@ -567,10 +612,10 @@ export default function CalendarView({
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
           <div className="relative">
-            <select 
-              value={sportFilter} 
-              onChange={(e) => setSportFilter(e.target.value)} 
-              className="appearance-none pr-6 md:pr-8 pl-2 md:pl-3 py-1 md:py-1.5 text-xs md:text-sm border border-white/20 bg-white/10 backdrop-blur-md hover:bg-white/20 rounded-lg md:rounded-xl text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+            <select
+              value={sportFilter}
+              onChange={(e) => setSportFilter(e.target.value)}
+              className="appearance-none pr-6 md:pr-8 pl-2 md:pl-3 py-1 md:py-1.5 text-xs md:text-sm border border-gray-200 bg-white hover:bg-gray-50 rounded-lg md:rounded-xl text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary transition-all"
             >
               {uniqueSports.map(s => (
                 <option key={s} value={s}>{s === 'all' ? 'All sports' : s}</option>
@@ -578,15 +623,15 @@ export default function CalendarView({
             </select>
             <ChevronDownIcon className="pointer-events-none absolute inset-y-0 right-1 md:right-2 flex items-center text-gray-400 w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <button 
-            onClick={() => setView('week')} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white hover:bg-primary-dark':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
+          <button
+            onClick={() => setView('week')}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='week'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
           >
             Week
           </button>
-          <button 
-            onClick={() => setView('month')} 
-            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-white/20 shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white hover:bg-primary-dark':'bg-white/10 backdrop-blur-md hover:bg-white/20 text-gray-700'}`}
+          <button
+            onClick={() => setView('month')}
+            className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border shadow-sm transition-colors text-xs md:text-sm ${view==='month'?'bg-primary text-white border-primary hover:bg-primary-dark':'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'}`}
           >
             Month
           </button>
@@ -625,8 +670,8 @@ export default function CalendarView({
                   key={dayIdx}
                   onClick={() => {
                     handleDayClick(dayDate);
-                    if (acts.length === 1 && onSelectActivity) {
-                      onSelectActivity(acts[0]);
+                    if (acts.length === 1) {
+                      handleSelectActivity(acts[0]);
                     }
                   }}
                   className={`flex flex-col items-center py-1.5 touch-manipulation transition-colors relative ${
@@ -668,7 +713,7 @@ export default function CalendarView({
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">{dayLabel}</div>
                 {dayActs.map((a, i) => {
                   const activityId = a.id || a._id;
-                  const isActSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                  const isActSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
                   const title = a.title || a.name || a.originalFileName || 'Activity';
                   const duration = Number(a.totalTimerTime || a.moving_time || a.movingTime || a.totalElapsedTime || a.elapsedTime || a.duration || 0);
                   const distance = Number(a.distance || 0);
@@ -681,7 +726,7 @@ export default function CalendarView({
                   return (
                     <button
                       key={i}
-                      onClick={() => onSelectActivity && onSelectActivity(a)}
+                      onClick={() => handleSelectActivity(a)}
                       className={`w-full text-left rounded-xl border p-3 transition-all touch-manipulation ${
                         isActSelected
                           ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/20'
@@ -702,8 +747,11 @@ export default function CalendarView({
                         <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       </div>
                       {a.category && (
-                        <div className={`mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border ${categoryColor(a.category)}`}>
-                          {categoryLabel(a.category)}
+                        <div
+                          className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold"
+                          style={catBadgeStyle(a.category)}
+                        >
+                          {catLabel(a.category)}
                         </div>
                       )}
                     </button>
@@ -715,9 +763,9 @@ export default function CalendarView({
         </div>
       ) : (
         /* Desktop: Original grid layout */
-        <div className={`grid gap-px bg-white/10 rounded-xl overflow-hidden`} style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}> 
+        <div className={`grid gap-px bg-gray-100 rounded-xl overflow-hidden`} style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}>
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
-          <div key={d} className="bg-white/10 backdrop-blur-md text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-700">{d}</div>
+          <div key={d} className="bg-gray-50 text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-600">{d}</div>
         ))}
         {(() => {
           // Group days into weeks
@@ -759,32 +807,42 @@ export default function CalendarView({
                 };
                 
                 return (
-                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white/10 backdrop-blur-md p-1 md:p-2.5 min-h-[80px] md:min-h-[90px] transition-all ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-offset-1 bg-gradient-to-br from-primary/5 to-primary/10' : 'hover:bg-white/20'} rounded-lg`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white p-1 md:p-2.5 min-h-[80px] md:min-h-[90px] transition-all ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'}`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
                     <div className={`text-xs md:text-sm font-semibold mb-1.5 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                       {dayDate.getDate()}
                     </div>
                     <div className="space-y-1 w-full" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                       {visibleActs.map((a, i) => {
                         const activityId = a.id || a._id;
-                        const isSelected = selectedActivityId && String(activityId) === String(selectedActivityId);
+                        const isSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
                         const activityTitle = a.title || a.name || a.originalFileName || 'Activity';
                         return (
-                          <button 
-                            key={i} 
-                            onClick={() => onSelectActivity && onSelectActivity(a)} 
+                          <button
+                            key={i}
+                            onClick={() => handleSelectActivity(a)}
                             className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
-                              isSelected 
-                                ? `bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ${a.category ? categoryBorderColor(a.category) : 'border-primary'} ring-2 ring-primary/20` 
-                                : `bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md ${a.category ? categoryBorderColor(a.category) : 'border-gray-200'} ${a.category ? 'hover:border-opacity-70' : 'hover:border-primary/30'}`
+                              isSelected
+                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
+                                : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
                             }`}
-                            style={{ minWidth: 0, overflow: 'hidden' }}
+                            style={{
+                              minWidth: 0,
+                              overflow: 'hidden',
+                              borderColor: a.category
+                                ? (isSelected ? catBorderColor(a.category) || undefined : catBorderColor(a.category) || '#e5e7eb')
+                                : (isSelected ? undefined : '#e5e7eb'),
+                              borderLeftWidth: a.category ? '3px' : undefined,
+                            }}
                             title={activityTitle}
                           >
                             <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
                             <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
                             {a.category && (
-                              <div className={`text-[8px] px-1 py-0.5 rounded flex-shrink-0 ${categoryColor(a.category)}`}>
-                                {categoryLabel(a.category).substring(0, 4)}
+                              <div
+                                className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 font-semibold border"
+                                style={catBadgeStyle(a.category)}
+                              >
+                                {catLabel(a.category).substring(0, 4)}
                               </div>
                             )}
                           </button>
@@ -814,7 +872,7 @@ export default function CalendarView({
               }),
               // Week summary column - smaller and more compact
               weekSummary ? (
-                <div key={`summary-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-1 border-l-4 border-primary/30 min-h-[80px] md:min-h-[90px] min-w-[160px] max-w-[180px] rounded-r-lg">
+                <div key={`summary-${weekIdx}`} className="bg-gray-50 p-1 border-l-4 border-primary/30 min-h-[80px] md:min-h-[90px] min-w-[160px] max-w-[180px]">
                   <div className="mb-1.5 pb-1.5 border-b border-gray-300/30">
                     <div className="text-xs font-bold text-gray-900 mb-1">
                       {formatWeekRange(weekSummary.weekStart)}
@@ -897,7 +955,7 @@ export default function CalendarView({
                   </div>
                 </div>
               ) : (
-                <div key={`summary-empty-${weekIdx}`} className="bg-white/10 backdrop-blur-md p-1 min-h-[80px] md:min-h-[90px] min-w-[160px]"></div>
+                <div key={`summary-empty-${weekIdx}`} className="bg-gray-50 p-1 min-h-[80px] md:min-h-[90px] min-w-[160px]"></div>
               )
             ].filter(Boolean);
           });

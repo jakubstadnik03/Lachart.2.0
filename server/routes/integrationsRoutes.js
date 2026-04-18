@@ -1564,7 +1564,9 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
       laps: activity.laps,
     };
 
-    const synced = await TrainingAbl.syncTrainingFromSource('strava', activityData, targetStr);
+    const synced = await TrainingAbl.syncTrainingFromSource('strava', activityData, targetStr, {
+      useAllStravaLapsForLactate: true,
+    });
     let training = null;
     if (synced && synced._id) {
       training = await Training.findById(synced._id).lean();

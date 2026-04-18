@@ -4,6 +4,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthProvider';
 import { NotificationProvider } from './context/NotificationContext';
 import { TrainingProvider } from './context/TrainingContext';
+import { CategoryProvider } from './context/CategoryContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -361,16 +362,18 @@ function App() {
   }), []);
 
   const coreApp = (
-    <NotificationProvider>
-      <AuthProvider>
-        <TrainingProvider>
-          {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
-          <AppRoutes />
-          {isProd && <DeferredVercelTrackers />}
-          {isProd && <DeferredBuyMeACoffeeWidget />}
-        </TrainingProvider>
-      </AuthProvider>
-    </NotificationProvider>
+    <CategoryProvider>
+      <NotificationProvider>
+        <AuthProvider>
+          <TrainingProvider>
+            {isProd && !isCapacitorNative() && initAnalytics('G-HNHPQH30BL')}
+            <AppRoutes />
+            {isProd && <DeferredVercelTrackers />}
+            {isProd && <DeferredBuyMeACoffeeWidget />}
+          </TrainingProvider>
+        </AuthProvider>
+      </NotificationProvider>
+    </CategoryProvider>
   );
 
   return (

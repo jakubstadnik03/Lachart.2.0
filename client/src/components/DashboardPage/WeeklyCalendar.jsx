@@ -9,6 +9,7 @@ import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStrav
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import { useCategories, hexToRgba } from '../../context/CategoryContext';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -85,6 +86,21 @@ function categoryLabel(category) {
 
 const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
   const { user } = useAuth();
+  const { getCategory } = useCategories();
+
+  const catBadgeStyle = (catId) => {
+    const cat = getCategory(catId);
+    if (!cat) return { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#d1d5db' };
+    return { backgroundColor: hexToRgba(cat.color, 0.15), color: cat.color, borderColor: hexToRgba(cat.color, 0.35) };
+  };
+  const catBorderColor = (catId) => {
+    const cat = getCategory(catId);
+    return cat ? cat.color : null;
+  };
+  const catLabel = (catId) => {
+    const cat = getCategory(catId);
+    return cat ? cat.label : (catId ? catId.charAt(0).toUpperCase() + catId.slice(1) : 'Uncategorized');
+  };
   const stravaDetailAthleteId = useMemo(() => {
     const role = String(user?.role || '').toLowerCase();
     if (!['coach', 'tester', 'testing'].includes(role)) return null;
@@ -734,9 +750,10 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 onClick={() => handleActivityClick(act)}
                                 className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[9px] ${
                                   isSelected
-                                    ? `bg-white/30 backdrop-blur-md text-text shadow-sm ${act.category ? categoryBorderColor(act.category) : 'border-white/30'}`
-                                    : `bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${act.category ? categoryBorderColor(act.category) : 'border-white/15'}`
+                                    ? 'bg-white/30 backdrop-blur-md text-text shadow-sm'
+                                    : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text'
                                 }`}
+                                style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: isSelected ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.15)' }}
                                 title={act.title || act.name || 'Activity'}
                               >
                                 <div className="flex items-center gap-1 mb-0.5">
@@ -799,9 +816,10 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             onClick={() => handleActivityClick(act)}
                             className={`w-full text-left px-1.5 py-1 rounded border transition-colors ${
                               isSelected
-                                ? `bg-white/30 backdrop-blur-md text-text shadow-sm ${act.category ? categoryBorderColor(act.category) : 'border-white/30'}`
-                                : `bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${act.category ? categoryBorderColor(act.category) : 'border-white/15'}`
+                                ? 'bg-white/30 backdrop-blur-md text-text shadow-sm'
+                                : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text'
                             }`}
+                            style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: isSelected ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.15)' }}
                             title={act.title || act.name || 'Activity'}
                           >
                             <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -810,8 +828,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 <span className="truncate font-medium text-[10px]">{act.title || act.name || 'Activity'}</span>
                               </div>
                               {act.category && (
-                                <div className={`text-[9px] px-1 py-0.5 rounded flex-shrink-0 ${categoryColor(act.category)}`}>
-                                  {categoryLabel(act.category).substring(0, 4)}
+                                <div className="text-[9px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
+                                  {catLabel(act.category).substring(0, 4)}
                                 </div>
                               )}
                             </div>
@@ -1141,17 +1159,11 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       </>
                     ) : (
                       <div className="flex items-center gap-2 group">
-                        <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
-                          trainingDetail?.category === 'endurance' ? 'bg-blue-100 text-blue-800' :
-                          trainingDetail?.category === 'tempo' ? 'bg-green-100 text-green-800' :
-                          trainingDetail?.category === 'threshold' ? 'bg-yellow-100 text-yellow-800' :
-                          trainingDetail?.category === 'vo2max' ? 'bg-orange-100 text-orange-800' :
-                          trainingDetail?.category === 'anaerobic' ? 'bg-red-100 text-red-800' :
-                          trainingDetail?.category === 'recovery' ? 'bg-gray-100 text-gray-800' :
-                          trainingDetail?.category === 'hills' ? 'bg-emerald-100 text-emerald-800' :
-                          'bg-gray-100 text-gray-500'
-                        }`}>
-                          {trainingDetail?.category ? categoryLabel(trainingDetail.category) : 'Category'}
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium border"
+                          style={catBadgeStyle(trainingDetail?.category)}
+                        >
+                          {trainingDetail?.category ? catLabel(trainingDetail.category) : 'Category'}
                         </span>
                         <button
                           onClick={() => {
@@ -1522,9 +1534,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             <button
                               key={i}
                               onClick={() => handleActivityClick(act)}
-                              className={`w-full text-left px-1.5 py-1 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${
-                                act.category ? categoryBorderColor(act.category) : 'border-white/15'
-                              }`}
+                              className="w-full text-left px-1.5 py-1 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text"
+                              style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: 'rgba(255,255,255,0.15)' }}
                               title={act.title || act.name || 'Activity'}
                             >
                               <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1533,8 +1544,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   <span className="truncate font-medium text-[9px]">{act.title || act.name || 'Activity'}</span>
                                 </div>
                                 {act.category && (
-                                  <div className={`text-[8px] px-1 py-0.5 rounded flex-shrink-0 ${categoryColor(act.category)}`}>
-                                    {categoryLabel(act.category).substring(0, 4)}
+                                  <div className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
+                                    {catLabel(act.category).substring(0, 4)}
                                   </div>
                                 )}
                               </div>
@@ -1585,9 +1596,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                         <button
                           key={i}
                           onClick={() => handleActivityClick(act)}
-                            className={`w-full text-left px-2 py-1.5 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text ${
-                              act.category ? categoryBorderColor(act.category) : 'border-white/15'
-                            }`}
+                          className="w-full text-left px-2 py-1.5 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text"
+                          style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: 'rgba(255,255,255,0.15)' }}
                           title={act.title || act.name || 'Activity'}
                         >
                           <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1596,8 +1606,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               <span className="truncate font-medium text-xs">{act.title || act.name || 'Activity'}</span>
                             </div>
                             {act.category && (
-                              <div className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${categoryColor(act.category)}`}>
-                                {categoryLabel(act.category)}
+                              <div className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
+                                {catLabel(act.category)}
                               </div>
                             )}
                           </div>

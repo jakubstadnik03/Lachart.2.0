@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
+import CategoryManager from '../components/Settings/CategoryManager';
 import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
@@ -134,7 +135,8 @@ const SettingsPage = () => {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'subscription', name: 'Subscription', icon: CreditCard },
     { id: 'account', name: 'Account', icon: User },
-    { id: 'integrations', name: 'Integrations', icon: LinkIcon }
+    { id: 'integrations', name: 'Integrations', icon: LinkIcon },
+    { id: 'categories', name: 'Categories', icon: Tag },
   ];
 
   const togglePasswordVisibility = (field) => {
@@ -2246,6 +2248,15 @@ const SettingsPage = () => {
                     onSyncComplete={handleSyncComplete}
                   />
               </div>
+            </div>
+          </div>
+        );
+
+      case 'categories':
+        return (
+          <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-xl'} shadow-md ${isMobile ? 'p-3' : 'p-6'}`}>
+              <CategoryManager />
             </div>
           </div>
         );
