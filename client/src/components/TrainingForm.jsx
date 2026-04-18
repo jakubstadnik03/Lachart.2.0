@@ -94,10 +94,11 @@ const TrainingForm = ({
   useEffect(() => {
     if (initialData) {
       console.log('Editing training:', initialData);
+      const rawResults = Array.isArray(initialData.results) ? initialData.results : [];
       const formattedData = {
         ...initialData,
         date: new Date(initialData.date).toISOString().slice(0, 16),
-        results: initialData.results.map(result => {
+        results: rawResults.map(result => {
           // For run/swim, check if power is already in MM:SS format (string with colon)
           // If yes, keep it as is; if no, convert from seconds to MM:SS
           let powerValue = result.power;

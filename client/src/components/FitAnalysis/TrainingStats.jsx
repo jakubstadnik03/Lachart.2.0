@@ -7,6 +7,12 @@ import api from '../../services/api';
 import { formatSpeedForUser } from '../../utils/unitsConverter';
 import { useCategories } from '../../context/CategoryContext';
 
+/** Display / edit string for training name (covers FIT + regular + model variants). */
+function getTrainingTitleString(t) {
+  if (!t) return '';
+  return t.titleManual || t.titleAuto || t.title || t.originalFileName || '';
+}
+
 const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileProp }) => {
   const [isMobileLocal, setIsMobileLocal] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
@@ -19,7 +25,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
-  const [title, setTitle] = useState(training?.titleManual || training?.titleAuto || training?.originalFileName || '');
+  const [title, setTitle] = useState(() => getTrainingTitleString(training));
   const [description, setDescription] = useState(training?.description || '');
   const [category, setCategory] = useState(training?.category || '');
   const [saving, setSaving] = useState(false);
@@ -59,7 +65,7 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
   // Update state when training changes
   useEffect(() => {
     if (training) {
-      setTitle(training.titleManual || training.titleAuto || training.originalFileName || '');
+      setTitle(getTrainingTitleString(training));
       setDescription(training.description || '');
       setCategory(training.category || '');
     }
@@ -459,6 +465,14 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
   const initiateSave = (payload) => {
     if (!training) return;
 
+    const keys = Object.keys(payload || {});
+    const onlyTitleOrDescription =
+      keys.length > 0 && keys.every((k) => k === 'title' || k === 'description');
+    if (onlyTitleOrDescription) {
+      performSave(payload, null);
+      return;
+    }
+
     const laps = training?.laps || [];
     if (!laps.length) {
       performSave(payload, null);
@@ -743,180 +757,197 @@ const TrainingStats = ({ training, onDelete, onUpdate, user, isMobile: isMobileP
         </div>
       )}     
       
-      {/* ── Activity Header ── */}
+      {/* ── Activity Header: title + meta (left), description (right on md+) ── */}
       <div className={`${isMobile ? 'mb-3 pb-3' : 'mb-5 pb-4'} border-b border-gray-100`}>
-        {/* Sport + Date + Category row */}
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <span className="text-lg leading-none">{getSportIcon(training.sport)}</span>
-          <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-gray-400 font-medium`}>
-            {formatTrainingDate(training.timestamp || training.uploadDate || training.date)}
-          </span>
-          {/* Category badge — click to edit */}
-          {isEditingCategory ? (
-            <div className="flex items-center gap-1">
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="px-2 py-0.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                autoFocus
-              >
-                <option value="">None</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.label}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => performDirectSave({ category: category || null })}
-                disabled={saving}
-                className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-              >
-                <CheckIcon className="w-3 h-3" />
-              </button>
-              <button
-                onClick={() => { setIsEditingCategory(false); setCategory(training?.category || ''); }}
-                className="p-1 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition-colors"
-              >
-                <XMarkIcon className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsEditingCategory(true)}
-              title="Click to set category"
-              className="flex items-center gap-1"
-            >
-              <span
-                className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80"
-                style={getCategoryStyle(category)}
-              >
-                {category
-                  ? (categories.find(c => c.id === category)?.label || category)
-                  : '+ Category'}
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="min-w-0 flex-1">
+            {/* Sport + Date + Category row */}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-lg leading-none">{getSportIcon(training.sport)}</span>
+              <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-gray-400 font-medium`}>
+                {formatTrainingDate(training.timestamp || training.uploadDate || training.date)}
               </span>
-            </button>
-          )}
-        </div>
-
-        {/* Editable title */}
-        {isEditingTitle ? (
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                }}
-                onFocus={() => { if (allTitles.length > 0) setShowSuggestions(true); }}
-                className={`w-full ${isMobile ? 'text-base' : 'text-xl'} font-bold border-2 border-primary/50 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary bg-white/90 shadow-sm`}
-                placeholder="Training title…"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') initiateSave({ title: title.trim() || null });
-                  if (e.key === 'Escape') { setIsEditingTitle(false); setTitle(training?.titleManual || training?.titleAuto || training?.originalFileName || ''); }
-                }}
-              />
-              {showSuggestions && filteredTitles.length > 0 && (
-                <div
-                  ref={suggestionsRef}
-                  className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto"
-                >
-                  {filteredTitles.map((suggestion, index) => (
-                    <div
-                      key={index}
-                      onClick={() => { setTitle(suggestion); setShowSuggestions(false); }}
-                      className="px-3 py-2 hover:bg-primary/10 cursor-pointer text-sm transition-colors first:rounded-t-xl last:rounded-b-xl"
-                    >
-                      {suggestion}
-                    </div>
-                  ))}
+              {isEditingCategory ? (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="px-2 py-0.5 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    autoFocus
+                  >
+                    <option value="">None</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => performDirectSave({ category: category || null })}
+                    disabled={saving}
+                    className="p-1 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+                  >
+                    <CheckIcon className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingCategory(false);
+                      setCategory(training?.category || '');
+                    }}
+                    className="p-1 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition-colors"
+                  >
+                    <XMarkIcon className="w-3 h-3" />
+                  </button>
                 </div>
+              ) : (
+                <button
+                  onClick={() => setIsEditingCategory(true)}
+                  title="Click to set category"
+                  className="flex items-center gap-1"
+                >
+                  <span
+                    className="px-2 py-0.5 text-[10px] rounded-md font-medium border transition-opacity hover:opacity-80"
+                    style={getCategoryStyle(category)}
+                  >
+                    {category ? categories.find((c) => c.id === category)?.label || category : '+ Category'}
+                  </span>
+                </button>
               )}
             </div>
-            <button
-              onClick={() => initiateSave({ title: title.trim() || null })}
-              disabled={saving}
-              className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors shadow-sm"
-            >
-              <CheckIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => { setIsEditingTitle(false); setTitle(training?.titleManual || training?.titleAuto || training?.originalFileName || ''); }}
-              className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors shadow-sm"
-            >
-              <XMarkIcon className="w-4 h-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="group flex items-center gap-2">
-            <h1 className={`${isMobile ? 'text-base' : 'text-xl md:text-2xl'} font-bold text-gray-900 flex-1 leading-tight`}>
-              {title || 'Untitled Training'}
-            </h1>
-            <button
-              onClick={() => setIsEditingTitle(true)}
-              className={`${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all flex-shrink-0`}
-              title="Edit title"
-            >
-              <PencilIcon className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
 
-      {/* Description - Only show if there's content or when editing */}
-      {(description || isEditingDescription) && (
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex items-start gap-2">
-          {isEditingDescription ? (
-            <>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg min-h-[80px] bg-white text-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
-                placeholder="Enter description..."
-                autoFocus
-              />
-              <div className="flex flex-col gap-1.5 flex-shrink-0">
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    ref={titleInputRef}
+                    type="text"
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                    }}
+                    onFocus={() => {
+                      if (allTitles.length > 0) setShowSuggestions(true);
+                    }}
+                    className={`w-full ${isMobile ? 'text-base' : 'text-xl'} font-bold border-2 border-primary/50 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary bg-white/90 shadow-sm`}
+                    placeholder="Training title…"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') initiateSave({ title: title.trim() || null });
+                      if (e.key === 'Escape') {
+                        setIsEditingTitle(false);
+                        setTitle(getTrainingTitleString(training));
+                      }
+                    }}
+                  />
+                  {showSuggestions && filteredTitles.length > 0 && (
+                    <div
+                      ref={suggestionsRef}
+                      className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl"
+                    >
+                      {filteredTitles.map((suggestion, index) => (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            setTitle(suggestion);
+                            setShowSuggestions(false);
+                          }}
+                          className="cursor-pointer px-3 py-2 text-sm transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-primary/10"
+                        >
+                          {suggestion}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
-                  onClick={handleSaveDescription}
+                  onClick={() => initiateSave({ title: title.trim() || null })}
                   disabled={saving}
-                  className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
-                  title="Save description"
+                  className="rounded-lg bg-emerald-500 p-2 text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:opacity-50"
                 >
-                  <CheckIcon className="w-4 h-4" />
+                  <CheckIcon className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => {
-                    setIsEditingDescription(false);
-                    setDescription(training?.description || '');
+                    setIsEditingTitle(false);
+                    setTitle(getTrainingTitleString(training));
                   }}
-                  className="p-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-all shadow-sm hover:shadow-md"
-                  title="Cancel"
+                  className="rounded-lg bg-gray-400 p-2 text-white shadow-sm transition-colors hover:bg-gray-500"
                 >
-                  <XMarkIcon className="w-4 h-4" />
+                  <XMarkIcon className="h-4 w-4" />
                 </button>
               </div>
-            </>
-          ) : (
-            <div className="flex items-start gap-2 w-full group">
-              <div className="flex-1">
-                  {description && (
-                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-sm">{description}</p>
-                )}
+            ) : (
+              <div className="group flex items-center gap-2">
+                <h1
+                  className={`${isMobile ? 'text-base' : 'text-xl md:text-2xl'} flex-1 font-bold leading-tight text-gray-900`}
+                >
+                  {title || 'Untitled Training'}
+                </h1>
+                <button
+                  onClick={() => setIsEditingTitle(true)}
+                  className={`${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} flex-shrink-0 rounded-lg p-1.5 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700`}
+                  title="Edit title"
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </button>
               </div>
+            )}
+          </div>
+
+          <div className="w-full shrink-0 md:max-w-[min(100%,22rem)] lg:max-w-md">
+            {isEditingDescription ? (
+              <div className="flex items-start gap-2 rounded-xl border border-gray-200 bg-gray-50/90 p-3">
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="min-h-[5.5rem] flex-1 resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Description…"
+                  autoFocus
+                />
+                <div className="flex flex-shrink-0 flex-col gap-1.5">
+                  <button
+                    onClick={handleSaveDescription}
+                    disabled={saving}
+                    className="rounded-lg bg-emerald-500 p-2 text-white shadow-sm transition-all hover:bg-emerald-600 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Save description"
+                  >
+                    <CheckIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingDescription(false);
+                      setDescription(training?.description || '');
+                    }}
+                    className="rounded-lg bg-gray-400 p-2 text-white shadow-sm transition-all hover:bg-gray-500 hover:shadow-md"
+                    title="Cancel"
+                  >
+                    <XMarkIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : description ? (
+              <div className="group relative rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+                <p className="whitespace-pre-wrap pr-8 text-sm leading-relaxed text-gray-800">{description}</p>
+                <button
+                  onClick={() => setIsEditingDescription(true)}
+                  className={`absolute right-2 top-2 rounded-lg p-1.5 text-gray-500 transition-all hover:bg-gray-200 hover:text-gray-700 ${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                  title="Edit description"
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
               <button
+                type="button"
                 onClick={() => setIsEditingDescription(true)}
-                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-all flex-shrink-0"
-                title="Edit description"
+                className="w-full rounded-xl border border-dashed border-gray-200 bg-gray-50/70 px-3 py-2.5 text-left text-sm text-gray-500 transition-colors hover:border-primary/35 hover:bg-white hover:text-gray-700"
               >
-                <PencilIcon className="w-4 h-4" />
+                Add description…
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-      )}
 
       {/* Summary cards — mobile: 3 columns, compact; desktop: icon grid */}
       {isMobile ? (

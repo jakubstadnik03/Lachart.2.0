@@ -18,7 +18,8 @@ export const formatDuration = (seconds) => {
 /**
  * Normalize distance to meters. API (FIT, Strava) typically sends meters.
  * Heuristic: >= 1000 → meters; 0 < value < 1 → km; 1–99 integer → km (e.g. 10 km); 100–999 integer → meters (e.g. 400 m); decimals 1–999 → km.
- * @param {{ swim?: boolean }} options — when swim is true, integers 1–2499 are treated as meters (pool lengths), not km.
+ * @param {{ swim?: boolean, assumeMeters?: boolean }} options — when swim is true, integers 1–2499 are treated as meters (pool lengths), not km.
+ *   When assumeMeters is true (per-lap / segment distances from FIT or Strava), skip the 1–99 km heuristic so short laps (e.g. 84 m rest) stay meters.
  */
 export function distanceToMeters(distance, options = {}) {
   if (distance == null || (typeof distance !== 'number' && typeof distance !== 'string')) return 0;
@@ -33,6 +34,9 @@ export function distanceToMeters(distance, options = {}) {
   }
   const num = Number(distance);
   if (isNaN(num)) return 0;
+  if (options.assumeMeters === true && Number.isFinite(num) && num > 0 && num <= 1e8) {
+    return num;
+  }
   if (num >= 1000) return num; // clearly meters (e.g. 10432)
   if (num > 0 && num < 1) return num * 1000; // km (e.g. 0.5 → 500 m)
   if (num >= 1 && num < 1000) {
@@ -124,7 +128,7 @@ export function normalizeStravaLapDistanceRaw(lap, opts = {}) {
 
 export function stravaLapDistanceMeters(lap, opts = {}) {
   const swim = opts.swim === true;
-  return distanceToMeters(normalizeStravaLapDistanceRaw(lap, { swim }), { swim });
+  return distanceToMeters(normalizeStravaLapDistanceRaw(lap, { swim }), { swim, assumeMeters: true });
 }
 
 /**
@@ -144,7 +148,7 @@ export function lapDistanceMetersForChart(lap, lapTimeSource = 'fit', isSwim = f
       0
   );
   if (!Number.isFinite(d) || d <= 0) return 0;
-  return distanceToMeters(d, swimOpts);
+  return distanceToMeters(d, { ...swimOpts, assumeMeters: true });
 }
 
 /**

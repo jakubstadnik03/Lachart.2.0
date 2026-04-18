@@ -1124,7 +1124,10 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto overflow-y-visible scrollbar-hide">
                     {normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }) > 0 && (
                       <span className="text-sm font-semibold text-gray-900 shrink-0">
-                        {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }), user, { swim: isStravaSwim })}
+                        {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }), user, {
+                          swim: isStravaSwim,
+                          assumeMeters: true,
+                        })}
                       </span>
                     )}
                     <span className="text-sm text-gray-600 shrink-0">{formatDuration(lap.elapsed_time)}</span>
@@ -1339,7 +1342,10 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{index + 1}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">{formatDuration(lap.elapsed_time)}</td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
-                    {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isSwimLapsRow }), user, { swim: isSwimLapsRow })}
+                    {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isSwimLapsRow }), user, {
+                      swim: isSwimLapsRow,
+                      assumeMeters: true,
+                    })}
                   </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                     {(() => {
@@ -3555,7 +3561,7 @@ const FitAnalysisPage = () => {
   };
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${isMobile ? 'p-0' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
+    <div className={`min-h-screen ${isMobile ? 'p-0' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
       <div className={`${isMobile ? 'w-full' : 'max-w-7xl'} mx-auto`}>
         {!isMobile && <h1 className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</h1>}
         {isMobile && !(selectedTraining || selectedStrava) && (

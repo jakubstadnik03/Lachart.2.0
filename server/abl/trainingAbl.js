@@ -529,6 +529,37 @@ class TrainingAbl {
                 });
             });
 
+            // Strava: only full-activity laps (≥95% duration) are dropped above — common when Strava has a single lap.
+            // Still expose one interval from activity totals so field-lactate / TrainingForm has a row.
+            if (useAllStravaLaps && results.length === 0 && totalActivitySeconds > 0) {
+                const actPower = toNumber(
+                    sourceData.weightedAveragePower ??
+                        sourceData.averagePower ??
+                        sourceData.average_watts ??
+                        sourceData.weighted_average_watts
+                );
+                const actHr = toNumber(
+                    sourceData.averageHeartRate ??
+                        sourceData.average_heartrate
+                );
+                const d = Math.round(totalActivitySeconds);
+                results.push({
+                    interval: 1,
+                    duration: d,
+                    durationSeconds: d,
+                    durationType: 'time',
+                    rest: 0,
+                    restSeconds: 0,
+                    intensity: '',
+                    power: actPower,
+                    heartRate: actHr,
+                    lactate: null,
+                    RPE: null,
+                    isRecovery: false,
+                    isSelected: true,
+                });
+            }
+
             // Field lactate: mark easy / recovery laps (unchecked in TrainingForm) when metrics allow
             if (useAllStravaLaps && results.length > 0) {
                 const powers = results

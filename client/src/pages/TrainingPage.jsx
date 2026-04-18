@@ -195,7 +195,10 @@ export default function TrainingPage() {
         });
       } catch (err) {
         setStravaLactateFormError(
-          err.response?.data?.error || err.message || 'Could not open lactate form'
+          err.response?.data?.message ||
+            err.response?.data?.error ||
+            err.message ||
+            'Could not open lactate form'
         );
       } finally {
         setLactateActivityLoadingId(null);

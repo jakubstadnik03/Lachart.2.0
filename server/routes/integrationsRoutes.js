@@ -1556,6 +1556,82 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
       return res.status(404).json({ error: 'Activity not found' });
     }
 
+    let lapsForSync = Array.isArray(activity.laps) ? activity.laps : [];
+    // List/sync often stores activities without laps; TrainingForm needs intervals from laps.
+    if (!lapsForSync.length && activity.stravaId) {
+      const targetUser =
+        String(targetUserId) === String(resolved.user._id)
+          ? resolved.user
+          : await User.findById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: 'Athlete not found' });
+      }
+      let token = await getValidStravaToken(targetUser);
+      if (!token) {
+        return res.status(400).json({
+          error: 'Strava not connected or token invalid',
+          message:
+            String(targetUserId) === String(resolved.user._id)
+              ? 'Your Strava account is not connected or token expired. Please reconnect in Settings.'
+              : "The athlete's Strava account is not connected or token expired. Please ask them to reconnect.",
+        });
+      }
+      const fetchLaps = async (authToken) => {
+        const lapsResp = await axios.get(
+          `https://www.strava.com/api/v3/activities/${activity.stravaId}/laps`,
+          { headers: { Authorization: `Bearer ${authToken}` }, timeout: 30000 }
+        );
+        let apiLaps = lapsResp.data || [];
+        if (!Array.isArray(apiLaps)) apiLaps = [];
+        return apiLaps.map((lap) => ({
+          ...lap,
+          startTime: lap.startTime || lap.start_date,
+        }));
+      };
+      try {
+        lapsForSync = await fetchLaps(token);
+      } catch (apiError) {
+        if (apiError.response?.status === 401) {
+          const refreshedTargetUser = await User.findById(targetUserId);
+          token = refreshedTargetUser ? await getValidStravaToken(refreshedTargetUser) : null;
+          if (token) {
+            try {
+              lapsForSync = await fetchLaps(token);
+            } catch (retryError) {
+              console.error(
+                '[integrations] training-for-lactate-form laps after refresh:',
+                retryError.response?.data || retryError.message
+              );
+            }
+          }
+        } else {
+          console.error(
+            '[integrations] training-for-lactate-form laps:',
+            apiError.response?.data || apiError.message
+          );
+        }
+      }
+      if (lapsForSync.length > 0) {
+        try {
+          await StravaActivity.updateOne(
+            { _id: activity._id, userId: targetStr },
+            { $set: { laps: lapsForSync } }
+          );
+        } catch (persistErr) {
+          console.warn('[integrations] training-for-lactate-form: could not persist laps', persistErr.message);
+        }
+      }
+    }
+
+    const activityDurationSec = Math.round(activity.elapsedTime || activity.movingTime || 0);
+    if (!lapsForSync.length && !activityDurationSec) {
+      return res.status(400).json({
+        error: 'no_laps',
+        message:
+          'No laps and no activity duration for this workout. Open the activity in the calendar once or reconnect Strava.',
+      });
+    }
+
     const activityData = {
       ...activity,
       name: activity.name,
@@ -1565,7 +1641,7 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
       startDate: activity.startDate,
       elapsedTime: activity.elapsedTime,
       movingTime: activity.movingTime,
-      laps: activity.laps,
+      laps: lapsForSync,
     };
 
     const synced = await TrainingAbl.syncTrainingFromSource('strava', activityData, targetStr, {
