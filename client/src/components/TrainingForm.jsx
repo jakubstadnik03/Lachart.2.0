@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
+import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
 
 const ACTIVITIES = [
   {
@@ -36,11 +37,26 @@ const TERRAIN_OPTIONS = {
 const WEATHER_OPTIONS = ["sunny", "indoor", "rainy", "windy"];
 const CATEGORY_OPTIONS = ["endurance", "tempo", "threshold", "vo2max", "anaerobic", "recovery", "hills"];
 
+/** Pace/duration display: avoid float garbage (e.g. 14.699999999999989) from JS % and division. */
 const formatSecondsToMMSS = (seconds) => {
-  if (!seconds) return "";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  if (seconds === null || seconds === undefined || seconds === "") return "";
+  if (typeof seconds === "string" && seconds.includes(":")) {
+    const parts = seconds.split(":");
+    if (parts.length >= 2) {
+      const m = parseInt(parts[0], 10) || 0;
+      const s = parseFloat(parts[1]) || 0;
+      const total = Math.round(m * 60 + s);
+      const M = Math.floor(total / 60);
+      const S = total % 60;
+      return `${String(M).padStart(2, "0")}:${String(S).padStart(2, "0")}`;
+    }
+  }
+  const n = typeof seconds === "string" ? parseFloat(seconds) : Number(seconds);
+  if (!Number.isFinite(n) || n < 0) return "";
+  const total = Math.round(n);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 };
 
 const TrainingForm = ({
@@ -92,50 +108,69 @@ const TrainingForm = ({
   }, []);
 
   useEffect(() => {
-    if (initialData) {
-      console.log('Editing training:', initialData);
-      const rawResults = Array.isArray(initialData.results) ? initialData.results : [];
-      const formattedData = {
-        ...initialData,
-        date: new Date(initialData.date).toISOString().slice(0, 16),
-        results: rawResults.map(result => {
-          // For run/swim, check if power is already in MM:SS format (string with colon)
-          // If yes, keep it as is; if no, convert from seconds to MM:SS
-          let powerValue = result.power;
-          if (formData.sport !== 'bike' && result.power) {
-            // Check if already in MM:SS format (contains colon)
-            if (typeof result.power === 'string' && result.power.includes(':')) {
-              powerValue = result.power; // Already in MM:SS format
-            } else {
-              // Convert from seconds (number or string) to MM:SS
-              const seconds = typeof result.power === 'string' ? parseFloat(result.power) : result.power;
-              powerValue = formatSecondsToMMSS(seconds);
-            }
+    if (!initialData) return;
+    const sportKey = mapSportForTrainingForm(initialData.sport);
+    console.log("Editing training:", initialData);
+    const rawResults = Array.isArray(initialData.results) ? initialData.results : [];
+    const showPace = sportKey === "run" || sportKey === "swim";
+
+    const formattedData = {
+      ...initialData,
+      sport: sportKey,
+      date: new Date(initialData.date).toISOString().slice(0, 16),
+      results: rawResults.map((result) => {
+        let powerValue = result.power;
+        if (
+          showPace &&
+          result.power !== undefined &&
+          result.power !== null &&
+          result.power !== ""
+        ) {
+          if (typeof result.power === "string" && result.power.includes(":")) {
+            powerValue = formatSecondsToMMSS(result.power);
+          } else {
+            const seconds =
+              typeof result.power === "string" ? parseFloat(result.power) : result.power;
+            powerValue = formatSecondsToMMSS(seconds);
           }
-          
-          // For duration, check if already in MM:SS format
-          let durationValue = result.duration;
-          if (result.durationType === "time" && result.duration) {
-            if (typeof result.duration === 'string' && result.duration.includes(':')) {
-              durationValue = result.duration; // Already in MM:SS format
-            } else {
-              // Convert from seconds to MM:SS
-              const seconds = typeof result.duration === 'string' ? parseFloat(result.duration) : result.duration;
-              durationValue = formatSecondsToMMSS(seconds);
-            }
+        }
+
+        const durType = result.durationType || "time";
+        let durationValue = result.duration;
+        if (
+          durType === "time" &&
+          result.duration !== undefined &&
+          result.duration !== null &&
+          result.duration !== ""
+        ) {
+          if (typeof result.duration === "string" && result.duration.includes(":")) {
+            durationValue = formatSecondsToMMSS(result.duration);
+          } else {
+            const seconds =
+              typeof result.duration === "string" ? parseFloat(result.duration) : result.duration;
+            durationValue = formatSecondsToMMSS(seconds);
           }
-          
-          return {
-            ...result,
-            power: powerValue,
-            duration: durationValue,
-            elevation: result.elevation ?? ""
-          };
-        })
-      };
-      setFormData(formattedData);
-    }
-  }, [initialData, formData.sport]);
+        }
+
+        const rawElev =
+          result.elevation ?? result.total_elevation_gain ?? result.elevation_gain;
+        let elevationDisp = "";
+        if (rawElev !== undefined && rawElev !== null && rawElev !== "") {
+          const e = Number(rawElev);
+          if (Number.isFinite(e)) elevationDisp = String(Math.round(e));
+        }
+
+        return {
+          ...result,
+          durationType: durType,
+          power: powerValue,
+          duration: durationValue,
+          elevation: elevationDisp,
+        };
+      }),
+    };
+    setFormData(formattedData);
+  }, [initialData]);
 
   useEffect(() => {
     lactateFocusDoneRef.current = false;
@@ -226,8 +261,10 @@ const TrainingForm = ({
           
           // Převod power (pace) z MM:SS na sekundy
           if (interval.power && interval.power.includes(':')) {
-            const [minutes, seconds] = interval.power.split(':').map(Number);
-            updatedInterval.power = (minutes * 60 + seconds).toString();
+            const parts = interval.power.split(':');
+            const minutes = parseInt(parts[0], 10) || 0;
+            const seconds = parseFloat(parts[1]) || 0;
+            updatedInterval.power = String(Math.round(minutes * 60 + seconds));
           }
           
           return updatedInterval;
@@ -253,8 +290,10 @@ const TrainingForm = ({
             } 
             // Pokud duration obsahuje ":", převedeme na sekundy
             else if (interval.duration.includes(':')) {
-              const [minutes, seconds] = interval.duration.split(':').map(Number);
-              updatedInterval.duration = (minutes * 60 + (seconds || 0)).toString();
+              const parts = interval.duration.split(':');
+              const minutes = parseInt(parts[0], 10) || 0;
+              const seconds = parseFloat(parts[1]) || 0;
+              updatedInterval.duration = String(Math.round(minutes * 60 + seconds));
             } 
             // Pokud je zadáno pouze číslo bez dvojtečky, převedeme na sekundy
             else {
@@ -310,19 +349,22 @@ const TrainingForm = ({
         dataToSubmit._id = initialData._id;
       }
       
-      // Zajistíme, že každý interval má duration
+      // Duration default + elevation (one pass so elevation is never skipped)
       if (dataToSubmit.results) {
-        dataToSubmit.results = dataToSubmit.results.map(interval => {
-          if (!interval.duration) {
-            return {
-              ...interval,
-              duration: "0"
-            };
-          }
+        dataToSubmit.results = dataToSubmit.results.map((interval) => {
           const updatedInterval = { ...interval };
-          if (updatedInterval.elevation !== undefined && updatedInterval.elevation !== null && updatedInterval.elevation !== '') {
+          if (!updatedInterval.duration) {
+            updatedInterval.duration = "0";
+          }
+          if (
+            updatedInterval.elevation !== undefined &&
+            updatedInterval.elevation !== null &&
+            updatedInterval.elevation !== ""
+          ) {
             const elevation = Number(updatedInterval.elevation);
-            updatedInterval.elevation = Number.isFinite(elevation) ? elevation : undefined;
+            updatedInterval.elevation = Number.isFinite(elevation)
+              ? Math.round(elevation)
+              : undefined;
           } else {
             delete updatedInterval.elevation;
           }
@@ -407,6 +449,7 @@ const TrainingForm = ({
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <form 
           id="training-form"
+          noValidate
           onSubmit={handleFormSubmit}
           className="space-y-6"
         >
@@ -881,12 +924,18 @@ const TrainingForm = ({
                         </svg>
                       </span>
                       <input
-                        type="number"
-                        placeholder="Elev +/-"
-                        value={interval.elevation ?? ""}
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Elev +/- (m)"
+                        value={
+                          interval.elevation === undefined || interval.elevation === null
+                            ? ""
+                            : String(interval.elevation)
+                        }
                         onChange={(e) => {
+                          const v = e.target.value.replace(/[^\d.-]/g, "");
                           const newResults = [...formData.results];
-                          newResults[index].elevation = e.target.value;
+                          newResults[index].elevation = v;
                           setFormData(prev => ({ ...prev, results: newResults }));
                         }}
                         disabled={isRecovery && !isSelected}

@@ -218,23 +218,31 @@ class TrainingDao {
         // Ensure duration is set (should be a number in seconds)
         if (result.duration === undefined || result.duration === null) {
           // If durationSeconds exists, use it; otherwise default to 0
-          result.duration = result.durationSeconds !== undefined && result.durationSeconds !== null 
-            ? (typeof result.durationSeconds === 'number' ? result.durationSeconds : parseFloat(result.durationSeconds) || 0)
-            : 0;
+          const fromSec =
+            result.durationSeconds !== undefined && result.durationSeconds !== null
+              ? typeof result.durationSeconds === 'number'
+                ? result.durationSeconds
+                : parseFloat(result.durationSeconds) || 0
+              : 0;
+          result.duration = Math.round(fromSec);
         } else {
           // Convert duration to number if it's a string
-          result.duration = typeof result.duration === 'number' 
-            ? result.duration 
-            : parseFloat(result.duration) || 0;
+          const d =
+            typeof result.duration === 'number'
+              ? result.duration
+              : parseFloat(result.duration) || 0;
+          result.duration = Math.round(d);
         }
         
         // Ensure durationSeconds matches duration
         if (result.durationSeconds === undefined || result.durationSeconds === null) {
           result.durationSeconds = result.duration;
         } else {
-          result.durationSeconds = typeof result.durationSeconds === 'number' 
-            ? result.durationSeconds 
-            : parseFloat(result.durationSeconds) || 0;
+          const ds =
+            typeof result.durationSeconds === 'number'
+              ? result.durationSeconds
+              : parseFloat(result.durationSeconds) || 0;
+          result.durationSeconds = Math.round(ds);
         }
         
         // Ensure rest is set (should be a number in seconds)
@@ -244,19 +252,35 @@ class TrainingDao {
             ? (typeof result.restSeconds === 'number' ? result.restSeconds : parseFloat(result.restSeconds) || 0)
             : 0;
         } else {
-          // Convert rest to number if it's a string
-          result.rest = typeof result.rest === 'number' 
-            ? result.rest 
-            : parseFloat(result.rest) || 0;
+          const r =
+            typeof result.rest === 'number' ? result.rest : parseFloat(result.rest) || 0;
+          result.rest = Math.round(r);
         }
         
         // Ensure restSeconds matches rest
         if (result.restSeconds === undefined || result.restSeconds === null) {
           result.restSeconds = result.rest;
         } else {
-          result.restSeconds = typeof result.restSeconds === 'number' 
-            ? result.restSeconds 
-            : parseFloat(result.restSeconds) || 0;
+          const rs =
+            typeof result.restSeconds === 'number'
+              ? result.restSeconds
+              : parseFloat(result.restSeconds) || 0;
+          result.restSeconds = Math.round(rs);
+        }
+
+        if (
+          result.elevation !== undefined &&
+          result.elevation !== null &&
+          result.elevation !== ''
+        ) {
+          const e = parseFloat(result.elevation);
+          if (Number.isFinite(e)) {
+            result.elevation = Math.round(e);
+          } else {
+            delete result.elevation;
+          }
+        } else {
+          delete result.elevation;
         }
       });
     }

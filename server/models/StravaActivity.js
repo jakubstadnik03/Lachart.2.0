@@ -14,6 +14,9 @@ const stravaLapSchema = new mongoose.Schema({
   max_watts: Number,
   average_cadence: Number,
   max_cadence: Number,
+  /** Strava lap API: metres gained this lap (persisted for training / elevation field). */
+  total_elevation_gain: Number,
+  elevation_gain: Number,
   lactate: { type: Number, default: null } // manually added lactate value
 }, { _id: false });
 
@@ -38,6 +41,8 @@ const stravaActivitySchema = new mongoose.Schema({
   averagePower: Number,
   /** Strava weighted average watts (better for variable rides than average_watts). */
   weightedAveragePower: Number,
+  /** Strava activity total elevation gain (m), when synced from API */
+  total_elevation_gain: Number,
   laps: [stravaLapSchema], // Store laps with lactate values
   raw: Object
 }, { timestamps: true });

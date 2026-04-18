@@ -455,6 +455,22 @@ class TrainingAbl {
             const results = [];
             const laps = Array.isArray(sourceData.laps) ? sourceData.laps : [];
 
+            const lapElevationMeters = (lap) => {
+                if (!lap || typeof lap !== 'object') return undefined;
+                const v = toNumber(
+                    lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalElevationGain
+                );
+                if (v === null || v === undefined || !Number.isFinite(v)) return undefined;
+                return Math.round(v);
+            };
+
+            const runPaceSecondsPerKmFromLap = (lap) => {
+                if (sport !== 'run') return null;
+                const v = toNumber(lap.average_speed ?? lap.averageSpeed);
+                if (v === null || v === undefined || v < 0.2) return null;
+                return Math.round(1000 / v);
+            };
+
             const useAllStravaLaps =
                 sourceType === 'strava' && options.useAllStravaLapsForLactate === true;
 
@@ -510,8 +526,17 @@ class TrainingAbl {
 
                 const durationSecondsValue = Math.round(lapDuration);
                 const lapPower = getLapPowerValue(lap);
+                let intervalPower = lapPower;
+                if (
+                    sourceType === 'strava' &&
+                    sport === 'run' &&
+                    (intervalPower === null || intervalPower === undefined)
+                ) {
+                    intervalPower = runPaceSecondsPerKmFromLap(lap);
+                }
                 const lapHeartRate = lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null;
-                
+                const lapElev = lapElevationMeters(lap);
+
                 results.push({
                     interval: index + 1,
                     duration: durationSecondsValue,
@@ -520,10 +545,11 @@ class TrainingAbl {
                     rest: restSeconds,
                     restSeconds: restSeconds,
                     intensity: '',
-                    power: lapPower,
+                    power: intervalPower,
                     heartRate: lapHeartRate,
                     lactate: lap.lactate || null,
                     RPE: null,
+                    elevation: lapElev,
                     isRecovery: false,
                     isSelected: true
                 });
@@ -542,6 +568,17 @@ class TrainingAbl {
                     sourceData.averageHeartRate ??
                         sourceData.average_heartrate
                 );
+                let fallbackPower = actPower;
+                if (
+                    sport === 'run' &&
+                    (fallbackPower === null || fallbackPower === undefined)
+                ) {
+                    const v = toNumber(sourceData.averageSpeed);
+                    if (v !== null && v !== undefined && v >= 0.2) {
+                        fallbackPower = Math.round(1000 / v);
+                    }
+                }
+                const actElev = lapElevationMeters(sourceData);
                 const d = Math.round(totalActivitySeconds);
                 results.push({
                     interval: 1,
@@ -551,10 +588,11 @@ class TrainingAbl {
                     rest: 0,
                     restSeconds: 0,
                     intensity: '',
-                    power: actPower,
+                    power: fallbackPower,
                     heartRate: actHr,
                     lactate: null,
                     RPE: null,
+                    elevation: actElev,
                     isRecovery: false,
                     isSelected: true,
                 });
