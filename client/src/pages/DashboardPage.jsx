@@ -20,6 +20,7 @@ import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
 import DashboardEmptyWelcome from "../components/DashboardPage/DashboardEmptyWelcome";
 import LT2TrendSparkline from '../components/DashboardPage/LT2TrendSparkline';
 import ZoneDistributionChart from '../components/DashboardPage/ZoneDistributionChart';
+import IntensityDistributionChart from '../components/DashboardPage/IntensityDistributionChart';
 import { motion } from 'framer-motion';
 //import { useNotification } from '../context/NotificationContext';
 // import { 
@@ -40,6 +41,19 @@ function normalizeApiList(payload) {
   if (payload && Array.isArray(payload.data)) return payload.data;
   if (payload && Array.isArray(payload.items)) return payload.items;
   return [];
+}
+
+/** Aligns with integrations `/activities` cap (~2000); was 100 so older weeks looked empty. */
+const MAX_DASHBOARD_CALENDAR_ACTIVITIES = 2000;
+
+function sortAndLimitCalendarActivities(combined) {
+  if (!Array.isArray(combined) || combined.length === 0) return [];
+  const tMs = (act) => {
+    const d = new Date(act?.date ?? act?.timestamp ?? act?.startDate ?? 0);
+    const x = d.getTime();
+    return Number.isNaN(x) ? 0 : x;
+  };
+  return [...combined].sort((a, b) => tMs(b) - tMs(a)).slice(0, MAX_DASHBOARD_CALENDAR_ACTIVITIES);
 }
 
 export default function DashboardPage() {
@@ -66,6 +80,8 @@ export default function DashboardPage() {
     }
     return null;
   });
+  /** Atletes never had `selectedAthleteId` set (it stayed null); charts used `athleteId` and bailed out. Coaches use selection. */
+  const dashboardDataAthleteId = selectedAthleteId || user?._id || null;
   const [trainings, setTrainings] = useState([]);
   const [regularTrainings, setRegularTrainings] = useState([]); // Trainings from /training route
   // eslint-disable-next-line no-unused-vars
@@ -408,7 +424,8 @@ export default function DashboardPage() {
           avgHeartRate: t.avgHeartRate,
           maxHeartRate: t.maxHeartRate,
           totalTime: t.totalElapsedTime || t.totalTimerTime,
-          distance: t.totalDistance
+          distance: t.totalDistance,
+          tss: t.tss || t.totalTSS || t.trainingStressScore
         })),
         ...(regTrainings || [])
           .filter(t => !t?.sourceStravaActivityId)
@@ -440,22 +457,34 @@ export default function DashboardPage() {
             stravaId: stravaId, // Ensure stravaId is set (raw ID)
             id: `strava-${stravaId}`, // Use prefixed ID to match FitAnalysisPage format
           avgPower: a.averagePower || a.average_watts,
+          weightedAveragePower: a.weightedAveragePower ?? a.weighted_average_watts ?? null,
+          avgSpeed: a.averageSpeed || a.average_speed,
           maxPower: a.maxPower || a.max_watts,
           avgHeartRate: a.averageHeartRate || a.average_heartrate,
           maxHeartRate: a.maxHeartRate || a.max_heartrate,
           totalTime: a.movingTime || a.elapsedTime,
-          distance: a.distance
+          distance: a.distance,
+          tss:
+            linkedTraining?.tss ||
+            linkedTraining?.totalTSS ||
+            a.tss ||
+            a.totalTSS ||
+            a.total_tss ||
+            null,
+          kilojoules: a.kilojoules ?? a.raw?.kilojoules
           };
         })
       ];
 
+      const limitedForView = sortAndLimitCalendarActivities(combined);
+
       // Cache the combined data
       try {
-        // Limit data size to avoid localStorage quota issues
-        const limitedCombined = combined.slice(0, 100); // Only cache first 100 activities
-        const dataToCache = JSON.stringify(limitedCombined);
-        localStorage.setItem(cacheKey, dataToCache);
-        localStorage.setItem(cacheTimestampKey, now.toString());
+        const dataToCache = JSON.stringify(limitedForView);
+        if (dataToCache.length < 450000) {
+          localStorage.setItem(cacheKey, dataToCache);
+          localStorage.setItem(cacheTimestampKey, now.toString());
+        }
       } catch (e) {
         if (e.name === 'QuotaExceededError' || e.code === 22) {
           // Try to clear old calendar cache entries
@@ -474,8 +503,8 @@ export default function DashboardPage() {
             });
             // Retry caching with limited data
             try {
-              const limitedCombined = combined.slice(0, 100);
-              localStorage.setItem(cacheKey, JSON.stringify(limitedCombined));
+              const smaller = limitedForView.slice(0, 400);
+              localStorage.setItem(cacheKey, JSON.stringify(smaller));
               localStorage.setItem(cacheTimestampKey, now.toString());
             } catch (retryError) {
               console.error('Error caching calendar data after cleanup:', retryError);
@@ -488,14 +517,12 @@ export default function DashboardPage() {
         }
       }
 
-      // For rendering we also limit to 100 to keep WeeklyCalendar fast
-      const limitedForView = combined.slice(0, 100);
       setCalendarData(limitedForView);
       console.log('[DashboardPage] Calendar data loaded and set:', limitedForView.length, 'activities');
       if (limitedForView.length > 0) {
         console.log('[DashboardPage] Sample activity:', limitedForView[0]);
       }
-      return combined;
+      return limitedForView;
     } catch (error) {
       console.error('Error loading calendar data:', error);
       
@@ -1029,7 +1056,7 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2"
         >
           <FormFitnessChart 
-            athleteId={selectedAthleteId}
+            athleteId={dashboardDataAthleteId}
           />
         </motion.div>
 
@@ -1041,8 +1068,18 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2"
         >
           <WeeklyTrainingLoad 
-            athleteId={selectedAthleteId}
+            athleteId={dashboardDataAthleteId}
           />
+        </motion.div>
+
+        {/* Intensity distribution (power × time from calendar / Strava-Garmin-FIT list) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.27 }}
+          className="lg:col-span-5 md:col-span-2"
+        >
+          <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
         </motion.div>
 
         {/* Weekly Calendar */}
@@ -1053,7 +1090,7 @@ export default function DashboardPage() {
           className="lg:col-span-5 md:col-span-2"
         >
           <WeeklyCalendar 
-            selectedAthleteId={selectedAthleteId}
+            selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}
             onSelectActivity={(activity) => {
               // Handle activity selection
@@ -1076,8 +1113,8 @@ export default function DashboardPage() {
                 return updated;
               });
               // Also invalidate cache to force reload on next refresh
-              const cacheKey = `calendarData_${selectedAthleteId}`;
-              const cacheTimestampKey = `calendarData_timestamp_${selectedAthleteId}`;
+              const cacheKey = `calendarData_${dashboardDataAthleteId}`;
+              const cacheTimestampKey = `calendarData_timestamp_${dashboardDataAthleteId}`;
               localStorage.removeItem(cacheKey);
               localStorage.removeItem(cacheTimestampKey);
             }}

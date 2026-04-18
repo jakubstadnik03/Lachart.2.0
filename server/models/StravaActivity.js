@@ -36,6 +36,8 @@ const stravaActivitySchema = new mongoose.Schema({
   averageSpeed: Number, // m/s
   averageHeartRate: Number,
   averagePower: Number,
+  /** Strava weighted average watts (better for variable rides than average_watts). */
+  weightedAveragePower: Number,
   laps: [stravaLapSchema], // Store laps with lactate values
   raw: Object
 }, { timestamps: true });

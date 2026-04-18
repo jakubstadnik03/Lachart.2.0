@@ -3892,6 +3892,125 @@ router.delete("/admin/users/:userId", verifyToken, async (req, res) => {
     }
 });
 
+/** GDPR / portability: strip secrets from stored user document before export. */
+function sanitizeUserDocumentForExport(userLean) {
+    if (!userLean || typeof userLean !== "object") return userLean;
+    const u = JSON.parse(JSON.stringify(userLean));
+    delete u.password;
+    delete u.resetPasswordToken;
+    delete u.resetPasswordExpires;
+    delete u.registrationToken;
+    delete u.registrationTokenExpires;
+    delete u.invitationToken;
+    delete u.invitationTokenExpires;
+    delete u.emailVerificationToken;
+    delete u.emailVerificationTokenExpires;
+    if (u.strava && typeof u.strava === "object") {
+        u.strava = {
+            athleteId: u.strava.athleteId ?? null,
+            autoSync: u.strava.autoSync,
+            lastSyncDate: u.strava.lastSyncDate ?? null,
+            expiresAt: u.strava.expiresAt ?? null,
+        };
+    }
+    if (u.garmin && typeof u.garmin === "object") {
+        u.garmin = {
+            athleteId: u.garmin.athleteId ?? null,
+            autoSync: u.garmin.autoSync,
+            lastSyncDate: u.garmin.lastSyncDate ?? null,
+            expiresAt: u.garmin.expiresAt ?? null,
+        };
+    }
+    return u;
+}
+
+function dedupeMongoDocsById(docs) {
+    const map = new Map();
+    for (const d of docs || []) {
+        if (d && d._id != null) map.set(String(d._id), d);
+    }
+    return Array.from(map.values());
+}
+
+// GDPR: export all personal data for the authenticated user (JSON)
+router.get("/export-all-data", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const userIdString = userId.toString();
+
+        const user = await User.findById(userId).lean();
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        const Training = require("../models/training");
+        const TestComment = require("../models/TestComment");
+        const ProtocolTemplate = require("../models/ProtocolTemplate");
+        const Subscription = require("../models/SubscriptionModel");
+        const GarminActivity = require("../models/GarminActivity");
+
+        const [
+            trainings,
+            fitTrainings,
+            tests,
+            lactateSessions,
+            stravaActivities,
+            garminActivities,
+            events,
+            protocolTemplates,
+            subscription,
+            commentsByAuthor,
+        ] = await Promise.all([
+            Training.find({ athleteId: userIdString }).lean(),
+            FitTraining.find({ athleteId: userIdString }).select("-records").lean(),
+            Test.find({ athleteId: userIdString }).lean(),
+            LactateSession.find({ athleteId: userIdString }).lean(),
+            StravaActivity.find({ userId }).select("-raw").lean(),
+            GarminActivity.find({ userId }).select("-raw").lean(),
+            Event.find({ $or: [{ userId: userIdString }, { userId: userId }] }).lean(),
+            ProtocolTemplate.find({
+                $or: [{ createdBy: userId }, { sharedWithAthletes: userId }],
+            }).lean(),
+            Subscription.findOne({ userId }).lean(),
+            TestComment.find({ authorId: userId }).lean(),
+        ]);
+
+        const testIds = (tests || []).map((t) => t._id).filter(Boolean);
+        const commentsOnMyTests =
+            testIds.length > 0 ? await TestComment.find({ testId: { $in: testIds } }).lean() : [];
+        const testComments = dedupeMongoDocsById([...(commentsOnMyTests || []), ...(commentsByAuthor || [])]);
+
+        const exportPayload = {
+            exportVersion: 1,
+            app: "LaChart",
+            generatedAt: new Date().toISOString(),
+            notes: {
+                fitPerSecondRecords:
+                    "fitTrainings[].records are omitted (per-second streams; very large). Summaries, laps, zones, and metadata are included. Contact support if you need original FIT files.",
+                stravaGarminRaw:
+                    "stravaActivities[].raw and garminActivities[].raw are omitted (large third-party payloads). Activity metadata and laps are included.",
+            },
+            profile: sanitizeUserDocumentForExport(user),
+            trainings,
+            fitTrainings,
+            tests,
+            lactateSessions,
+            stravaActivities,
+            garminActivities,
+            events,
+            protocolTemplates,
+            subscription: subscription || null,
+            testComments,
+        };
+
+        res.set("Cache-Control", "no-store");
+        return res.status(200).json(exportPayload);
+    } catch (error) {
+        console.error("GDPR export-all-data error:", error);
+        return res.status(500).json({ error: "Failed to export data: " + (error.message || "unknown") });
+    }
+});
+
 // Delete user account and all associated data
 router.delete("/delete-account", verifyToken, async (req, res) => {
     try {

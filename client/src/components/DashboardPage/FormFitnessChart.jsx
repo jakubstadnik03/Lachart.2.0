@@ -92,7 +92,19 @@ const FormFitnessChart = ({ athleteId }) => {
 
   useEffect(() => {
     const loadData = async () => {
-      if (!athleteId) return;
+      if (!athleteId) {
+        setChartData([]);
+        setTodayMetrics({
+          fitness: 0,
+          fatigue: 0,
+          form: 0,
+          fitnessChange: 0,
+          fatigueChange: 0,
+          formChange: 0
+        });
+        setLoading(false);
+        return;
+      }
 
       // Convert time range to days
       const days = timeRange === '30 days' ? 30 :

@@ -61,7 +61,11 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
 
   useEffect(() => {
     const loadData = async () => {
-      if (!athleteId) return;
+      if (!athleteId) {
+        setChartData([]);
+        setLoading(false);
+        return;
+      }
 
       const months =
         timeRange === '3 months' ? 3 :

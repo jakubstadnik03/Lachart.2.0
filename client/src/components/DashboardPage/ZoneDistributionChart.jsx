@@ -36,9 +36,12 @@ const INTENSITY_MAP = {
   // Z4
   threshold: 'z4', hard: 'z4', lt: 'z4', lt2: 'z4', 'lactate threshold': 'z4',
   zone4: 'z4', z4: 'z4',
-  // Z5
-  interval: 'z5', race: 'z5', sprint: 'z5', 'very hard': 'z5', very_hard: 'z5',
-  max: 'z5', vo2: 'z5', 'vo2max': 'z5', zone5: 'z5', z5: 'z5', high: 'z5',
+  // Z5 (note: do NOT map workout `type: "interval"` here — that is structural, not intensity)
+  race: 'z5', sprint: 'z5', 'very hard': 'z5', very_hard: 'z5',
+  max: 'z5', vo2: 'z5', vo2max: 'z5', zone5: 'z5', z5: 'z5', high: 'z5',
+  anaerobic: 'z5',
+  // Mixed / terrain — approximate mid zone
+  hills: 'z3',
 };
 
 function intensityToZone(str) {
@@ -64,6 +67,20 @@ function parseDuration(val) {
   return 0;
 }
 
+/** Total workout length in seconds (Strava/FIT use numeric seconds; DB trainings often use duration string). */
+function totalTrainingSeconds(training) {
+  const fromNumeric = Number(
+    training.movingTime
+    ?? training.elapsedTime
+    ?? training.totalElapsedTime
+    ?? training.totalTimerTime
+    ?? training.totalTime
+    ?? 0
+  );
+  if (Number.isFinite(fromNumeric) && fromNumeric > 0) return fromNumeric;
+  return parseDuration(training.duration || training.durationSeconds);
+}
+
 /**
  * Extract zone seconds from a single training.
  * Priority:
@@ -79,8 +96,15 @@ function extractZones(training) {
     const zones = training?.[zonesField];
     if (Array.isArray(zones) && zones.length > 0) {
       const result = { ...empty };
+      // Garmin-style arrays often use zone 0–4 → LaChart Z1–Z5
+      const zeroBased = zones.some((z) => {
+        const r = Number(z.zone ?? z.zoneNumber ?? z.id);
+        return Number.isFinite(r) && r === 0;
+      });
       zones.forEach((z) => {
-        const idx = Number(z.zone || z.zoneNumber || z.id);
+        let idx = Number(z.zone ?? z.zoneNumber ?? z.id);
+        if (!Number.isFinite(idx)) return;
+        if (zeroBased && idx >= 0 && idx <= 4) idx += 1;
         const t = Number(z.time || z.seconds || z.duration || z.value || 0);
         if (idx >= 1 && idx <= 5) result[`z${idx}`] += t;
       });
@@ -107,7 +131,7 @@ function extractZones(training) {
     const result = { ...empty };
     let attributed = 0;
     training.results.forEach((interval) => {
-      const zone = intensityToZone(interval.intensity);
+      const zone = intensityToZone(interval.intensity || interval.category);
       const secs = parseDuration(interval.duration || interval.durationSeconds);
       if (zone && secs > 0) {
         result[zone] += secs;
@@ -117,9 +141,10 @@ function extractZones(training) {
     if (attributed > 0) return result;
   }
 
-  // ── 3. Top-level intensity × total duration ────────────────────────────────
-  const zone = intensityToZone(training.intensity || training.type);
-  const totalSecs = parseDuration(training.duration || training.durationSeconds);
+  // ── 3. Top-level intensity / category × total duration ─────────────────────
+  // Ignore `training.type` (e.g. "interval") — it describes workout structure, not zone.
+  const zone = intensityToZone(training.intensity || training.category);
+  const totalSecs = totalTrainingSeconds(training);
   if (zone && totalSecs > 0) {
     const result = { ...empty };
     result[zone] = totalSecs;

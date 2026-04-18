@@ -71,7 +71,7 @@ const TestingPage = () => {
   const MAX_EXTERNAL_ACTIVITIES = 1000;
   const [bikePowerMetrics, setBikePowerMetrics] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
-  const [showRecommendations, setShowRecommendations] = useState(true);
+  const [showRecommendations, setShowRecommendations] = useState(false);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const [pendingAthletesLoaded, setPendingAthletesLoaded] = useState(false);
   const [hrTestPlan, setHrTestPlan] = useState(null);
@@ -888,7 +888,7 @@ const TestingPage = () => {
     };
   }, [externalActivities, user, isAuthenticated, selectedAthleteId, isCoachLikeRole]);
 
-  // Persist "recommendations panel" visibility per athlete
+  // Persist "recommendations panel" visibility per athlete (default: closed)
   useEffect(() => {
     const targetId = selectedAthleteId || user?._id;
     if (!targetId) return;
@@ -896,6 +896,8 @@ const TestingPage = () => {
     const saved = localStorage.getItem(key);
     if (saved !== null) {
       setShowRecommendations(saved === 'true');
+    } else {
+      setShowRecommendations(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthleteId, user?._id]);

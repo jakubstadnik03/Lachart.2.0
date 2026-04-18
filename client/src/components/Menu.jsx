@@ -292,7 +292,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           damping: 30,
           opacity: { duration: 0.2 }
         }}
-        className={`fixed lg:sticky top-0 left-0 h-screen w-64 min-w-[16rem] bg-white shadow-md flex flex-col font-sans z-40 overflow-hidden safe-top`}
+        className={`safe-top fixed left-0 top-0 z-40 flex h-dvh max-h-dvh w-64 min-w-[16rem] flex-col overflow-hidden bg-white font-sans shadow-md lg:sticky ${!isDesktop && !isMenuOpen ? "pointer-events-none" : ""}`}
       >
         <div 
           className="flex items-center justify-center h-14 border-b border-gray-200 flex-shrink-0"
@@ -328,7 +328,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
             overscrollBehavior: 'contain'
           }}
         >
-          <h2 className="text-base sm:text-lg pt-2 sm:pt-4 text-gray-700 mb-2 sm:mb-3 sticky top-0 bg-white pb-1 sm:pb-2 z-10">Menu</h2>
+          <h2 className="mb-2 pt-2 text-base text-gray-700 sm:mb-3 sm:pt-4 sm:text-lg">Menu</h2>
           {!user?.role ? (
             <ul className="space-y-2 pb-2">
               {[
@@ -434,7 +434,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
               overscrollBehavior: 'contain'
             }}
           >
-            <h2 className="text-sm font-bold pt-4 text-gray-700 mb-3 sticky top-0 bg-white pb-2 z-10">Athletes</h2>
+            <h2 className="mb-3 pt-4 text-sm font-bold text-gray-700">Athletes</h2>
             {loadingAthletes ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 pb-2">
                 <span className="inline-block w-3 h-3 border-2 border-primary border-r-transparent rounded-full animate-spin flex-shrink-0" />
@@ -534,7 +534,7 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           )}
 
           <div 
-            className="px-2 pb-2 pt-0 sm:p-4 sm:pt-1 border-t border-gray-100 sm:border-t-0"
+            className="border-t border-gray-100 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-0 sm:border-t-0 sm:p-4 sm:pb-4 sm:pt-1"
           >
             {!user?.role ? (
               <div

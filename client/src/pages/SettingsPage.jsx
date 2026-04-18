@@ -4,10 +4,10 @@ import { useAuth } from '../context/AuthProvider';
 import { GoogleLogin } from '@react-oauth/google';
 import { useNotification } from '../context/NotificationContext';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
-import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag } from 'lucide-react';
+import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, fetchGdprExportJson } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -124,6 +124,7 @@ const SettingsPage = () => {
   const [myCoaches, setMyCoaches] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isGdprExporting, setIsGdprExporting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameForm, setNameForm] = useState({ name: '', surname: '' });
   const [editingRole, setEditingRole] = useState(false);
@@ -935,6 +936,33 @@ const SettingsPage = () => {
     }
   };
 
+  const handleGdprExport = async () => {
+    try {
+      setIsGdprExporting(true);
+      const data = await fetchGdprExportJson();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `lachart-gdpr-export-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      addNotification('Your data export has been downloaded.', 'success');
+    } catch (error) {
+      console.error('GDPR export error:', error);
+      const msg =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to export data';
+      addNotification(msg, 'error');
+    } finally {
+      setIsGdprExporting(false);
+    }
+  };
+
   const handleDeleteProfile = async () => {
     const confirmMessage = 'Are you sure you want to delete your profile? This action cannot be undone. All your data will be permanently deleted.';
     if (!window.confirm(confirmMessage)) {
@@ -1356,6 +1384,52 @@ const SettingsPage = () => {
                 >
                   Start walkthrough
                 </button>
+              </div>
+            </div>
+
+            <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'} border border-emerald-100`}>
+              <div className="flex gap-3 min-w-0">
+                <div className={`shrink-0 rounded-lg bg-emerald-50 p-2 text-emerald-700 ${isMobile ? 'mt-0.5' : ''}`}>
+                  <Database className={isMobile ? 'w-4 h-4' : 'w-5 h-5'} aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div>
+                    <h3 className={`${isMobile ? 'text-sm' : 'text-xl'} font-bold text-gray-900`}>Export all data (GDPR)</h3>
+                    <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mt-0.5' : 'mt-1'}`}>
+                      Download a complete copy of your LaChart data as JSON (machine-readable).
+                    </p>
+                  </div>
+                  <div className={`rounded-lg border border-emerald-100 bg-emerald-50/60 ${isMobile ? 'p-2 text-[10px]' : 'p-4 text-sm'} text-gray-800 space-y-2`}>
+                    <p>
+                      Includes your profile (zones, preferences), training log entries, imported activities (Strava / Garmin metadata and laps),
+                      lactate tests, FIT-derived summaries (per-second streams omitted), lactate sessions, protocol templates linked to you,
+                      subscription summary, audit-style events, and comments on your tests.
+                    </p>
+                    <ul className={`${isMobile ? 'space-y-0.5' : 'space-y-1'} list-none`}>
+                      <li className="flex gap-2">
+                        <span className="text-emerald-600 shrink-0">✓</span>
+                        <span>Structured JSON for spreadsheets or archival</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-emerald-600 shrink-0">✓</span>
+                        <span>Aligned with data removed when you delete your account</span>
+                      </li>
+                    </ul>
+                    <p className={`flex gap-2 ${isMobile ? 'text-[9px]' : 'text-xs'} text-sky-800`}>
+                      <span className="shrink-0" aria-hidden>ℹ️</span>
+                      <span>FIT per-second <code className="rounded bg-white/80 px-0.5">records</code> and bulky third-party <code className="rounded bg-white/80 px-0.5">raw</code> payloads are excluded for size; contact support if you need originals.</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGdprExport}
+                    disabled={isGdprExporting}
+                    className={`inline-flex items-center justify-center gap-2 font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${isMobile ? 'px-3 py-2 text-xs w-full' : 'px-4 py-2.5 text-sm'}`}
+                  >
+                    <Database className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} aria-hidden />
+                    {isGdprExporting ? 'Preparing export…' : 'Export all data'}
+                  </button>
+                </div>
               </div>
             </div>
 

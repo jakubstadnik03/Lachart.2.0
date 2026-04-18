@@ -370,20 +370,27 @@ const ProfilePage = () => {
         }))
       ];
 
-      // Cache the combined data (limit to first 100 to keep UI snappy)
+      const tMs = (act) => {
+        const d = new Date(act?.date ?? act?.timestamp ?? act?.startDate ?? 0);
+        const x = d.getTime();
+        return Number.isNaN(x) ? 0 : x;
+      };
+      const limitedForView = [...combined]
+        .sort((a, b) => tMs(b) - tMs(a))
+        .slice(0, 2000);
+
       try {
-        const limitedCombined = combined.slice(0, 100); // Only cache first 100 activities
-        const dataToCache = JSON.stringify(limitedCombined);
-        localStorage.setItem(cacheKey, dataToCache);
-        localStorage.setItem(cacheTimestampKey, now.toString());
+        const dataToCache = JSON.stringify(limitedForView);
+        if (dataToCache.length < 450000) {
+          localStorage.setItem(cacheKey, dataToCache);
+          localStorage.setItem(cacheTimestampKey, now.toString());
+        }
       } catch (e) {
         if (e.name === 'QuotaExceededError' || e.code === 22) {
           console.warn('localStorage quota exceeded, skipping cache');
         }
       }
 
-      // For rendering we also limit to 100 to avoid rendering thousands of items
-      const limitedForView = combined.slice(0, 100);
       setCalendarData(limitedForView);
       console.log('[ProfilePage] Loaded calendar data:', limitedForView.length, 'activities');
     } catch (error) {

@@ -345,7 +345,8 @@ async function getReportData(requesterUserId, testId, overrides = {}) {
   if (!athlete) return { error: true, reason: 'athlete_not_found' };
 
   const requesterRole = String(requester.role || '').toLowerCase();
-  const isAdmin = requesterRole === 'admin';
+  // Match admin routes: `user.admin` flag OR role admin (some accounts use the flag without role string).
+  const isAdmin = requesterRole === 'admin' || requester.admin === true;
   const isCoachLikeRole = requesterRole === 'coach' || requesterRole === 'tester' || requesterRole === 'testing';
   const isCoachAllowed =
     requesterRole === 'coach' &&

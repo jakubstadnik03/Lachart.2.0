@@ -128,6 +128,10 @@ async function syncStravaForUser(user) {
               averageSpeed: a.average_speed || null,
               averageHeartRate: a.average_heartrate || null,
               averagePower: a.average_watts || null,
+              weightedAveragePower:
+                a.weighted_average_watts != null && Number.isFinite(Number(a.weighted_average_watts))
+                  ? Number(a.weighted_average_watts)
+                  : null,
               raw: a
             };
             

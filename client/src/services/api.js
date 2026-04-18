@@ -637,6 +637,12 @@ export const changePassword = async (passwordData) => {
   }
 };
 
+/** GDPR / data portability: full JSON export for the logged-in user (large payload allowed). */
+export const fetchGdprExportJson = async () => {
+  const response = await api.get('/user/export-all-data', { timeout: 180000 });
+  return response.data;
+};
+
 export const getTrainingTitles = async () => {
   try {
     const response = await api.get('/training/titles');
@@ -715,7 +721,8 @@ export const getAdminStats = async () => {
 // Send reactivation email with latest lactate test to a specific user (admin only)
 export const sendReactivationEmail = async (userId) => {
   try {
-    const response = await api.post(`/user/admin/send-reactivation-email/${userId}`, null, {
+    // Must not send JSON `null` as body: express body-parser strict mode only allows {} or [].
+    const response = await api.post(`/user/admin/send-reactivation-email/${userId}`, {}, {
       // 400 is often an expected business outcome here (e.g., email notifications OFF).
       suppressErrorLog: true,
     });

@@ -8,7 +8,6 @@ import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../serv
 import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalNotification";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
-import { isCapacitorNative } from "../utils/isNativeApp";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
@@ -307,12 +306,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex overflow-hidden">
+    <div className="flex h-dvh max-h-dvh min-h-0 w-full overflow-hidden bg-gray-100">
       {/* Menu na levé straně */}
       <MemoizedMenu {...menuProps} />
 
       {/* Hlavní obsah včetně header, main content a footer */}
-      <div className="flex-1 flex flex-col h-full ml-0 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
         <MemoizedHeader {...headerProps} />
 
@@ -330,18 +329,14 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
         <main
-          className={`flex-1 px-3 sm:px-3 md:px-4 overflow-y-auto ${
-            isCapacitorNative()
-              ? "pt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:pt-0"
-              : "pt-14 lg:pt-0"
-          }`}
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2 sm:px-3 md:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:px-4 lg:pb-0 lg:pt-0`}
         >
-          <div className="max-w-[1600px] mx-auto flex flex-col min-h-full">
-            <div className="flex-1">
+          <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
             </div>
             {/* Footer na mobilu — jen pod breakpointem md; od md výše jen sticky patička (jinak 768–1023px dvě patičky) */}
-            <div className="md:hidden">
+            <div className="shrink-0 md:hidden">
               <MemoizedFooter />
             </div>
           </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon, FireIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import TrainingStats from '../FitAnalysis/TrainingStats';
 import TrainingChart from '../FitAnalysis/TrainingChart';
 import IntervalChart from '../FitAnalysis/IntervalChart';
@@ -46,6 +46,228 @@ function sportBadge(sport) {
   if (s.includes('ride') || s.includes('cycle') || s.includes('bike') || s === 'cycling') return '🚴‍♂️';
   if (s.includes('swim') || s === 'swimming') return '🏊‍♂️';
   return '🏋️';
+}
+
+/** Local calendar day key — must match grouping in `activitiesByDay`. */
+function activityCalendarDateKey(act) {
+  const raw = act?.date ?? act?.timestamp ?? act?.startDate;
+  if (raw == null) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return getLocalDateString(d);
+}
+
+function readExplicitTss(act) {
+  const v =
+    act?.tss ??
+    act?.TSS ??
+    act?.totalTSS ??
+    act?.total_tss ??
+    act?.trainingStressScore ??
+    act?.training_stress_score ??
+    act?.totalTss ??
+    act?.totalTssValue ??
+    act?.icu_training_load ??
+    act?.load;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Same heuristics as server `calculateActivityTSS` (weeklyReport / fitness metrics). */
+function estimateTssFromActivity(act, userProfile) {
+  try {
+    const seconds = Number(
+      act?.movingTime ??
+        act?.elapsedTime ??
+        act?.totalElapsedTime ??
+        act?.totalTimerTime ??
+        act?.duration ??
+        act?.totalTime ??
+        0
+    );
+    if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+
+    const ftp =
+      userProfile?.powerZones?.cycling?.lt2 ||
+      userProfile?.powerZones?.cycling?.zone5?.min ||
+      userProfile?.ftp ||
+      250;
+
+    const thresholdPace =
+      userProfile?.powerZones?.running?.lt2 || userProfile?.runningZones?.lt2 || null;
+
+    const thresholdSwimPace = userProfile?.powerZones?.swimming?.lt2 || null;
+
+    const sport = String(act?.sport || '').toLowerCase();
+
+    if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport === 'cycling') {
+      const avgPower = Number(
+        act?.averagePower ?? act?.avgPower ?? act?.average_watts ?? act?.weighted_average_watts ?? 0
+      );
+      if (avgPower > 0 && ftp > 0) {
+        const np = avgPower;
+        return Math.round(((seconds * np * np) / (ftp * ftp * 3600)) * 100);
+      }
+      const kj = Number(act?.kilojoules ?? act?.raw?.kilojoules ?? 0);
+      if (kj > 0) {
+        return Math.round(kj * 0.84);
+      }
+    }
+
+    if (sport.includes('run') || sport.includes('walk') || sport.includes('hike') || sport === 'running') {
+      const avgSpeed = Number(act?.averageSpeed ?? act?.avgSpeed ?? act?.average_speed ?? 0);
+      if (avgSpeed > 0) {
+        const avgPaceSeconds = Math.round(1000 / avgSpeed);
+        let referencePace = thresholdPace;
+        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
+        const intensityRatio = referencePace / avgPaceSeconds;
+        return Math.round(((seconds * intensityRatio * intensityRatio) / 3600) * 100);
+      }
+    }
+
+    if (sport.includes('swim') || sport === 'swimming') {
+      const avgSpeed = Number(act?.averageSpeed ?? act?.avgSpeed ?? act?.average_speed ?? 0);
+      if (avgSpeed > 0) {
+        const avgPaceSeconds = Math.round(100 / avgSpeed);
+        let referencePace = thresholdSwimPace;
+        if (!referencePace || referencePace <= 0) referencePace = avgPaceSeconds;
+        const intensityRatio = referencePace / avgPaceSeconds;
+        return Math.round(((seconds * intensityRatio * intensityRatio) / 3600) * 100);
+      }
+    }
+
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+function activityTssResolved(act, userProfile) {
+  const explicit = readExplicitTss(act);
+  if (explicit > 0) return explicit;
+  return estimateTssFromActivity(act, userProfile);
+}
+
+function activityDurationSec(act) {
+  const v = act?.totalTime ?? act?.totalElapsedTime ?? act?.totalTimerTime ?? act?.movingTime ?? act?.elapsedTime;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function activityDistanceMeters(act) {
+  const v = act?.distance ?? act?.totalDistance;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function formatWeekDurationSeconds(totalSec) {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h <= 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+/** Decimal hours like 0.3h / 6.8h (matches weekly summary badges). */
+function formatDecimalHours(totalSec) {
+  const sec = Number(totalSec);
+  if (!Number.isFinite(sec) || sec <= 0) return null;
+  const h = sec / 3600;
+  return `${h.toFixed(1)}h`;
+}
+
+function WeekSummaryColumn({ summary, user, prevWeekTss, compact }) {
+  const { totalTss, totalSec, bySport } = summary;
+  const hoursStr = formatDecimalHours(totalSec);
+  const tssRounded = Math.round(totalTss);
+  const prevRounded = prevWeekTss != null ? Math.round(Number(prevWeekTss)) : null;
+  const showTrend =
+    prevRounded != null && prevRounded > 0 && tssRounded !== prevRounded;
+
+  return (
+    <div
+      className={`flex h-full flex-col rounded-xl border border-gray-100 bg-custom-gray text-left shadow-sm ${
+        compact ? 'min-w-[118px] p-2' : 'min-h-0 min-w-0 p-2 sm:p-2.5'
+      }`}
+      data-testid="weekly-calendar-summary"
+    >
+      {!compact && (
+        <p className="-mt-[35px] mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Week summary</p>
+      )}
+      <div className={`flex flex-wrap items-center ${compact ? 'gap-1' : 'gap-1.5'}`}>
+        {hoursStr ? (
+          <span
+            className={`rounded-full border border-primary/25 bg-white font-semibold tabular-nums text-primary-dark shadow-sm ${
+              compact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2.5 py-1 text-xs'
+            }`}
+          >
+            {hoursStr}
+          </span>
+        ) : null}
+        <span
+          className={`inline-flex items-center gap-1 rounded-full border border-primary/25 bg-white font-semibold tabular-nums text-primary-dark shadow-sm ${
+            compact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2.5 py-1 text-xs'
+          }`}
+          title="Total TSS"
+        >
+          <FireIcon className={compact ? 'h-3 w-3 shrink-0' : 'h-3.5 w-3.5 shrink-0'} aria-hidden />
+          {tssRounded}
+        </span>
+        {showTrend ? (
+          <span
+            className={`inline-flex items-center rounded-full border border-gray-100 bg-white px-1.5 py-0.5 ${tssRounded > prevRounded ? 'text-greenos' : 'text-red'}`}
+            title={tssRounded > prevRounded ? 'Up vs previous week' : 'Down vs previous week'}
+          >
+            {tssRounded > prevRounded ? (
+              <ArrowTrendingUpIcon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+            ) : (
+              <ArrowTrendingDownIcon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+            )}
+          </span>
+        ) : null}
+      </div>
+      <div
+        className={`mt-2 border-t border-gray-200/80 pt-2 ${
+          compact ? 'max-h-32 space-y-1 text-[9px]' : 'max-h-52 space-y-2 text-xs sm:text-[13px]'
+        } overflow-y-auto leading-snug`}
+      >
+        {bySport.length === 0 ? (
+          <div className="text-lighterText italic">—</div>
+        ) : (
+          bySport.map((row) => {
+            const distPart =
+              row.dist > 0 ? formatDistanceForUser(row.dist, user) : '—';
+            const timePart = row.sec > 0 ? formatDecimalHours(row.sec) || formatWeekDurationSeconds(row.sec) : '—';
+            return (
+              <div
+                key={row.sport}
+                className={`flex flex-col rounded-lg border border-gray-100/90 bg-white/80 ${
+                  compact ? 'gap-0 px-1.5 py-1' : 'gap-0.5 px-2 py-1.5'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-text">
+                  <span className="shrink-0 text-sm leading-none">{sportBadge(row.sport)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-gray-800 sm:text-xs" title={row.sport}>
+                    {row.sport}
+                  </span>
+                </div>
+                <div className={`tabular-nums text-lighterText ${compact ? 'pl-6 text-[9px]' : 'pl-7 text-[11px] sm:text-xs'}`}>
+                  <span>{distPart}</span>
+                  <span className="mx-1 text-gray-300">·</span>
+                  <span>{timePart}</span>
+                  <span className="mx-1 text-gray-300">·</span>
+                  <span className="inline-flex items-center gap-0.5 font-medium text-primary-dark">
+                    <FireIcon className={`shrink-0 ${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} aria-hidden />
+                    {Math.round(row.tss)}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
@@ -335,8 +557,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   useEffect(() => {
     if (activities && activities.length > 0) {
       try {
-        // Limit what we cache to keep memory and parse time reasonable
-        const limited = activities.slice(0, 100);
+        // Match dashboard calendar cap so week navigation into history still has data offline
+        const limited = activities.slice(0, 2000);
         localStorage.setItem('weeklyCalendar_activities', JSON.stringify(limited));
         localStorage.setItem('weeklyCalendar_cacheTime', Date.now().toString());
         setCachedActivities(limited);
@@ -372,6 +594,81 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     }
     return map;
   }, [effectiveActivities]);
+
+  const weekRangeMeta = useMemo(() => {
+    if (!weekDays?.length) return { primary: '', secondary: '' };
+    const start = weekDays[0];
+    const end = weekDays[6];
+    const fmt = (d, o) => d.toLocaleDateString(undefined, o);
+    const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+    const primary = sameMonth
+      ? `${fmt(start, { weekday: 'short', day: 'numeric' })} – ${fmt(end, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}`
+      : `${fmt(start, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} – ${fmt(end, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}`;
+    const secondary = sameMonth
+      ? fmt(start, { month: 'long', year: 'numeric' })
+      : `${fmt(start, { month: 'long', year: 'numeric' })} → ${fmt(end, { month: 'long', year: 'numeric' })}`;
+    return { primary, secondary };
+  }, [weekDays]);
+
+  const { weekSummary, prevWeekSummary } = useMemo(() => {
+    const empty = { sessions: 0, totalTss: 0, totalSec: 0, totalDist: 0, bySport: [] };
+    if (!weekDays?.length) {
+      return { weekSummary: empty, prevWeekSummary: { totalTss: 0 } };
+    }
+
+    const weekKeys = new Set(weekDays.map((d) => getLocalDateString(d)));
+    const prevMonday = addDays(weekDays[0], -7);
+    const prevWeekKeys = new Set(
+      Array.from({ length: 7 }, (_, i) => getLocalDateString(addDays(prevMonday, i)))
+    );
+
+    let sessions = 0;
+    let totalTss = 0;
+    let totalSec = 0;
+    let totalDist = 0;
+    const sportMap = new Map();
+    let prevTotalTss = 0;
+
+    (effectiveActivities || []).forEach((act) => {
+      const key = activityCalendarDateKey(act);
+      if (!key) return;
+
+      const inCurrent = weekKeys.has(key);
+      const inPrev = prevWeekKeys.has(key);
+      if (!inCurrent && !inPrev) return;
+
+      const tss = activityTssResolved(act, userProfile);
+      const sec = activityDurationSec(act);
+      const dist = activityDistanceMeters(act);
+
+      if (inPrev) {
+        prevTotalTss += tss;
+      }
+
+      if (inCurrent) {
+        sessions += 1;
+        totalTss += tss;
+        totalSec += sec;
+        totalDist += dist;
+
+        const label = String(act.sport || 'Other').trim() || 'Other';
+        if (!sportMap.has(label)) {
+          sportMap.set(label, { sport: label, count: 0, tss: 0, sec: 0, dist: 0 });
+        }
+        const row = sportMap.get(label);
+        row.count += 1;
+        row.tss += tss;
+        row.sec += sec;
+        row.dist += dist;
+      }
+    });
+
+    const bySport = Array.from(sportMap.values()).sort((a, b) => b.tss - a.tss || b.count - a.count);
+    return {
+      weekSummary: { sessions, totalTss, totalSec, totalDist, bySport },
+      prevWeekSummary: { totalTss: prevTotalTss }
+    };
+  }, [effectiveActivities, weekDays, userProfile]);
 
   // Store handleActivityClick in ref whenever it changes
   useEffect(() => {
@@ -607,28 +904,58 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  const weekSummaryAside = (compact) => (
+    <div
+      className={
+        compact
+          ? 'min-w-[118px] flex-shrink-0 self-stretch'
+          : 'h-full min-h-0 w-full min-w-[150px] max-w-[190px] self-stretch sm:min-w-[160px] sm:max-w-[210px]'
+      }
+    >
+      <WeekSummaryColumn summary={weekSummary} user={user} prevWeekTss={prevWeekSummary.totalTss} compact={compact} />
+    </div>
+  );
+
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
-      <div className="flex items-center justify-between mb-2 sm:mb-3">
-        <h3 className="text-base sm:text-lg font-semibold text-text">Weekly Calendar</h3>
-        <div className="flex items-center gap-1 sm:gap-1.5">
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Calendar</p>
+          <h3 className="text-sm font-semibold text-gray-800 sm:text-base">Weekly overview</h3>
+          {weekRangeMeta.primary && (
+            <p className="mt-1 truncate text-xs text-gray-500 sm:text-sm" title={weekRangeMeta.primary}>
+              {weekRangeMeta.primary}
+            </p>
+          )}
+          {weekRangeMeta.secondary && (
+            <p className="mt-0.5 truncate text-[11px] text-gray-400 sm:text-xs" title={weekRangeMeta.secondary}>
+              {weekRangeMeta.secondary}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-0.5 self-end rounded-lg bg-gray-50 p-0.5 sm:self-start">
           <button
+            type="button"
             onClick={prevWeek}
-            className="p-1 sm:p-1.5 rounded-lg bg-white/10 backdrop-blur-md hover:bg-white/20 border border-white/15 transition-colors"
+            className="rounded-md p-1.5 text-gray-600 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm"
+            aria-label="Previous week"
           >
-            <ChevronLeftIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
+            <ChevronLeftIcon className="h-4 w-4" />
           </button>
           <button
+            type="button"
             onClick={today}
-            className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs bg-white/20 backdrop-blur-md text-text rounded-lg hover:bg-white/30 border border-white/20 transition-colors font-medium"
+            className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-white hover:shadow-sm"
           >
             Today
           </button>
           <button
+            type="button"
             onClick={nextWeek}
-            className="p-1 sm:p-1.5 rounded-lg bg-white/10 backdrop-blur-md hover:bg-white/20 border border-white/15 transition-colors"
+            className="rounded-md p-1.5 text-gray-600 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm"
+            aria-label="Next week"
           >
-            <ChevronRightIcon className="w-3 h-3 sm:w-4 sm:h-4 text-text" />
+            <ChevronRightIcon className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -737,36 +1064,36 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     </div>
                   );
                 })}
+                {weekSummaryAside(true)}
                 </div>
               </div>
             </div>
           ) : (
-          <div className="flex flex-col gap-2 lg:col-span-1 max-w-[280px]">
+          <div className="flex w-full min-w-0 max-w-[min(100%,640px)] flex-col gap-2 lg:col-span-1">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
               const dayActivities = activitiesByDay.get(key) || [];
               const isToday = isSameDay(day, new Date());
 
-              return (
+              const dayCard = (
                 <div
-                  key={idx}
-                  className={`bg-white/10 backdrop-blur-md rounded-lg border p-1.5 ${
-                    isToday ? 'border-white/30 shadow-md bg-white/15' : 'border-white/15'
+                  className={`rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
+                    isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="mb-1 flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <div className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
+                      <div className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-gray-800'}`}>
                         {day.getDate()}
                       </div>
-                      <div className="text-[10px] text-lighterText">
+                      <div className="text-[10px] text-gray-500">
                         {dayNames[idx].substring(0, 3)}
                       </div>
                     </div>
                   </div>
                   <div className="space-y-1">
                     {dayActivities.length === 0 ? (
-                      <div className="text-[10px] text-lighterText italic">-</div>
+                      <div className="text-[10px] italic text-gray-400">-</div>
                     ) : (
                       dayActivities.slice(0, 2).map((act, i) => {
                         const activityId = act.id || act._id;
@@ -778,27 +1105,27 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                           <button
                             key={i}
                             onClick={() => handleActivityClick(act)}
-                            className={`w-full text-left px-1.5 py-1 rounded border transition-colors ${
+                            className={`w-full rounded-lg border px-1.5 py-1 text-left transition-colors ${
                               isSelected
-                                ? 'bg-white/30 backdrop-blur-md text-text shadow-sm'
-                                : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text'
+                                ? 'border-primary/40 bg-white text-gray-900 shadow-sm ring-1 ring-primary/15'
+                                : 'border-gray-100/80 bg-white/90 text-gray-800 hover:border-gray-200 hover:bg-white'
                             }`}
-                            style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: isSelected ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.15)' }}
+                            style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
                             title={act.title || act.name || 'Activity'}
                           >
-                            <div className="flex items-center justify-between gap-1 mb-0.5">
-                              <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <div className="mb-0.5 flex items-center justify-between gap-1">
+                              <div className="flex min-w-0 flex-1 items-center gap-1">
                                 <span className="text-xs">{sportBadge(act.sport)}</span>
-                                <span className="truncate font-medium text-[10px]">{act.title || act.name || 'Activity'}</span>
+                                <span className="truncate text-[10px] font-medium">{act.title || act.name || 'Activity'}</span>
                               </div>
                               {act.category && (
-                                <div className="text-[9px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
+                                <div className="flex-shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold" style={catBadgeStyle(act.category)}>
                                   {catLabel(act.category).substring(0, 4)}
                                 </div>
                               )}
                             </div>
                             {act.description && (
-                              <div className={`text-[8px] ${isSelected ? 'text-text/70' : 'text-lighterText'} truncate`}>
+                              <div className={`truncate text-[8px] ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>
                                 {act.description}
                               </div>
                             )}
@@ -807,11 +1134,26 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       })
                     )}
                     {dayActivities.length > 2 && (
-                      <div className="text-[9px] text-lighterText text-center">
+                      <div className="text-center text-[9px] text-gray-400">
                         +{dayActivities.length - 2} more
                       </div>
                     )}
                   </div>
+                </div>
+              );
+
+              if (idx === 6) {
+                return (
+                  <div key="sun-summary-row" className="flex w-full min-w-0 flex-col gap-3 items-stretch sm:flex-row sm:gap-4">
+                    <div className="min-w-0 flex-1">{dayCard}</div>
+                    <div className="w-full shrink-0 sm:w-auto sm:min-w-[160px] sm:max-w-[210px]">{weekSummaryAside(false)}</div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={idx}>
+                  {dayCard}
                 </div>
               );
             })}
@@ -1526,11 +1868,12 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                   </div>
                 );
               })}
+              {weekSummaryAside(true)}
               </div>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-7 gap-2 sm:gap-3">
+          <div className="grid w-full min-w-0 gap-2 sm:gap-3 [grid-template-columns:repeat(7,minmax(0,1fr))_minmax(10.5rem,0.95fr)]">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
               const dayActivities = activitiesByDay.get(key) || [];
@@ -1539,8 +1882,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               return (
                 <div
                   key={idx}
-                  className={`bg-white/10 backdrop-blur-md rounded-lg border p-2 ${
-                    isToday ? 'border-white/30 shadow-md bg-white/15' : 'border-white/15'
+                  className={`min-w-0 rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
+                    isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
                   }`}
                 >
                   <div className="flex flex-col items-center mb-2">
@@ -1560,8 +1903,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                         <button
                           key={i}
                           onClick={() => handleActivityClick(act)}
-                          className="w-full text-left px-2 py-1.5 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text"
-                          style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: 'rgba(255,255,255,0.15)' }}
+                          className="w-full rounded-lg border border-gray-100/90 bg-white/90 px-2 py-1.5 text-left text-gray-800 transition-colors hover:border-gray-200 hover:bg-white"
+                          style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
                           title={act.title || act.name || 'Activity'}
                         >
                           <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1588,6 +1931,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               </div>
             );
           })}
+            <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
         </div>
         )
       )}

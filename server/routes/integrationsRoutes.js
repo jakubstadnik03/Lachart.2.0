@@ -649,6 +649,10 @@ router.post('/strava/sync', verifyToken, async (req, res) => {
               averageSpeed: a.average_speed || null,
               averageHeartRate: a.average_heartrate || null,
               averagePower: a.average_watts || null,
+              weightedAveragePower:
+                a.weighted_average_watts != null && Number.isFinite(Number(a.weighted_average_watts))
+                  ? Number(a.weighted_average_watts)
+                  : null,
               raw: a
             };
             
@@ -1650,7 +1654,9 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       })
       .sort({ startDate: -1 })
         .limit(activityLimit)
-      .select('stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower')
+      .select(
+        'stravaId name titleManual category sport startDate elapsedTime movingTime distance averageSpeed averageHeartRate average_heartrate averagePower weightedAveragePower'
+      )
         .lean(),
       GarminActivity.find({ 
         userId: targetUserId.toString(),
@@ -1716,6 +1722,7 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
       const pick = (primaryVal, secondaryVal) => (primaryVal == null ? secondaryVal : primaryVal);
       merged.averageHeartRate = pick(preferred.averageHeartRate, secondary.averageHeartRate);
       merged.averagePower = pick(preferred.averagePower, secondary.averagePower);
+      merged.weightedAveragePower = pick(preferred.weightedAveragePower, secondary.weightedAveragePower);
       merged.averageSpeed = pick(preferred.averageSpeed, secondary.averageSpeed);
       merged.elapsedTime = pick(preferred.elapsedTime, secondary.elapsedTime);
       merged.movingTime = pick(preferred.movingTime, secondary.movingTime);

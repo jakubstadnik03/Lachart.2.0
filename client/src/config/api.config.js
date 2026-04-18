@@ -44,5 +44,6 @@ export const API_ENDPOINTS = {
     // Add USER and CHANGE_PASSWORD endpoints
     USER: `${API_BASE_URL}/user`,
     CHANGE_PASSWORD: `${API_BASE_URL}/user/change-password`,
+    GDPR_EXPORT_ALL: `${API_BASE_URL}/user/export-all-data`,
     // další endpointy...
 }; 
