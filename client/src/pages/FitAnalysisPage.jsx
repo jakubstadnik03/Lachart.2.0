@@ -3740,73 +3740,11 @@ const FitAnalysisPage = () => {
                   )}
 
                   {/* Training Chart - Modern SVG Version */}
-                  {selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (() => {
-                    // Calculate statistics from training data
-                    const records = selectedTraining.records;
-                    const powers = records.map(r => r.power).filter(p => p && p > 0);
-                    const cadences = records.map(r => r.cadence).filter(c => c && c > 0);
-                    
-                    const avgPower = powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b, 0) / powers.length) : null;
-                    const maxPower = powers.length > 0 ? Math.max(...powers) : null;
-                    const avgCadence = cadences.length > 0 ? Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length) : null;
-                    
-                    // Calculate Normalized Power (30-second rolling average, then 4th power, then 4th root)
-                    let normalizedPower = null;
-                    if (powers.length > 0 && records.length > 30) {
-                      // Assuming 1 second intervals, calculate 30-second rolling averages
-                      const rollingAverages = [];
-                      for (let i = 0; i < powers.length; i++) {
-                        const start = Math.max(0, i - 15);
-                        const end = Math.min(powers.length, i + 15);
-                        const window = powers.slice(start, end);
-                        const avg = window.reduce((sum, p) => sum + p, 0) / window.length;
-                        rollingAverages.push(avg);
-                      }
-                      // Raise to 4th power, average, then 4th root
-                      const fourthPowers = rollingAverages.map(avg => Math.pow(avg, 4));
-                      const avgFourthPower = fourthPowers.reduce((a, b) => a + b, 0) / fourthPowers.length;
-                      normalizedPower = Math.round(Math.pow(avgFourthPower, 1/4));
-                    }
-                    
-                    // Calculate TSS and IF
-                    const parsedTrainingDate = selectedTraining.timestamp ? new Date(selectedTraining.timestamp) : new Date();
-                    const trainingDate = Number.isNaN(parsedTrainingDate.getTime()) ? new Date() : parsedTrainingDate;
-                    const sport = selectedTraining.sport || 'cycling';
-                    const isRun = sport.toLowerCase().includes('run');
-                    const avgSpeed = selectedTraining.avgSpeed || null;
-                    const duration = selectedTraining.totalElapsedTime || selectedTraining.totalTimerTime || 0;
-                    
-                    let tss = null;
-                    let intensityFactor = null;
-                    let thresholdPace = null;
-                    let ftp = null;
-                    
-                    // For running: calculate TSS from pace
-                    if (isRun && avgSpeed && avgSpeed > 0) {
-                      const avgPaceSeconds = Math.round(1000 / avgSpeed); // seconds per km
-                      thresholdPace = userProfile?.powerZones?.running?.lt2 || null; // Threshold pace in seconds per km
-                      let referencePace = thresholdPace;
-                      // If no threshold pace from profile, use average pace as reference (intensity = 1.0)
-                      if (!referencePace || referencePace <= 0) {
-                        referencePace = avgPaceSeconds;
-                      }
-                      // Running TSS formula: TSS = (seconds * (referencePace / avgPace)^2) / 3600 * 100
-                      const intensityRatio = referencePace / avgPaceSeconds; // > 1 if faster than reference
-                      tss = Math.round((duration * Math.pow(intensityRatio, 2)) / 3600 * 100);
-                      intensityFactor = intensityRatio.toFixed(2);
-                    } else {
-                      // For cycling: calculate TSS from power
-                      ftp = userProfile?.powerZones?.cycling?.lt2 || null;
-                      const np = normalizedPower || avgPower;
-                      tss = ftp && np ? Math.round((duration * Math.pow(np, 2)) / (Math.pow(ftp, 2) * 3600) * 100) : null;
-                      intensityFactor = ftp && np ? (np / ftp).toFixed(2) : null;
-                    }
-                    
-                    return (
-                      <div className={`${isMobile ? 'mb-2' : 'mb-4 md:mb-6'}`}>
-                        {/* Statistics - hidden on mobile (already shown in TrainingStats above) */}
-                        <h3 className={`${isMobile ? 'text-sm' : 'text-base font-semibold'} font-semibold text-gray-800 ${isMobile ? 'mb-2' : 'mb-3'}`}>Training Overview</h3>
-                        <div className={`${isMobile ? '-mx-4' : ''}`}>
+                  {selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (
+                    <div className={`${isMobile ? 'mb-2' : 'mb-4 md:mb-6'}`}>
+                      {/* Statistics - hidden on mobile (already shown in TrainingStats above) */}
+                      <h3 className={`${isMobile ? 'text-sm' : 'text-base font-semibold'} font-semibold text-gray-800 ${isMobile ? 'mb-2' : 'mb-3'}`}>Training Overview</h3>
+                      <div className={`${isMobile ? '-mx-4' : ''}`}>
                         <TrainingChart
                           training={selectedTraining}
                           userProfile={userProfile}
@@ -3820,10 +3758,9 @@ const FitAnalysisPage = () => {
                           highlightMetric={highlightMetric}
                           radarWatts={radarWatts}
                         />
-                        </div>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
                   
                   {/* Legacy Training Chart - Full Time SVG Version (commented out, can be removed) */}
                   {false && selectedTraining && selectedTraining.records && selectedTraining.records.length > 0 && (() => {

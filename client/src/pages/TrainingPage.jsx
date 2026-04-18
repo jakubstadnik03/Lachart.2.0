@@ -12,7 +12,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
 import AthleteSelector from '../components/AthleteSelector';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCategories, hexToRgba } from '../context/CategoryContext';
+import { useCategories } from '../context/CategoryContext';
 
 const TrainingComparison = lazy(() => import('../components/Training-log/TrainingComparison'));
 

@@ -48,42 +48,6 @@ function sportBadge(sport) {
   return '🏋️';
 }
 
-function categoryColor(category) {
-  const colors = {
-    endurance: 'bg-blue-100 border-blue-300 text-blue-800',
-    tempo: 'bg-green-100 border-green-300 text-green-800',
-    threshold: 'bg-yellow-100 border-yellow-300 text-yellow-800',
-    vo2max: 'bg-orange-100 border-orange-300 text-orange-800',
-    anaerobic: 'bg-red-100 border-red-300 text-red-800',
-    recovery: 'bg-gray-100 border-gray-300 text-gray-800'
-  };
-  return colors[category] || 'bg-gray-100 border-gray-300 text-gray-800';
-}
-
-function categoryBorderColor(category) {
-  const borderColors = {
-    endurance: 'border-blue-400',
-    tempo: 'border-green-400',
-    threshold: 'border-yellow-400',
-    vo2max: 'border-orange-400',
-    anaerobic: 'border-red-400',
-    recovery: 'border-gray-400'
-  };
-  return borderColors[category] || 'border-white/15';
-}
-
-function categoryLabel(category) {
-  const labels = {
-    endurance: 'Endurance',
-    tempo: 'Tempo',
-    threshold: 'Threshold',
-    vo2max: 'VO2max',
-    anaerobic: 'Anaerobic',
-    recovery: 'Recovery'
-  };
-  return labels[category] || 'Uncategorized';
-}
-
 const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId, selectedAthleteId = null, onActivityUpdate = null }) => {
   const { user } = useAuth();
   const { getCategory } = useCategories();
