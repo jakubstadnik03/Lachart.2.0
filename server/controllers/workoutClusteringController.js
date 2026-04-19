@@ -17,7 +17,9 @@ async function extractPattern(req, res) {
     const { workoutId } = req.params;
     const { ftp } = req.body; // Optional FTP for normalization
 
-    const workout = await FitTraining.findOne({ _id: workoutId, athleteId: userId });
+    const workout = await FitTraining.findOne({ _id: workoutId, athleteId: userId })
+      .select('records workoutPattern patternExtracted')
+      .lean();
     if (!workout) {
       return res.status(404).json({ error: 'Workout not found' });
     }
@@ -36,10 +38,11 @@ async function extractPattern(req, res) {
     // Extract pattern
     const pattern = extractWorkoutPattern(intervals, ftp);
 
-    // Update workout with pattern
-    workout.workoutPattern = pattern;
-    workout.patternExtracted = true;
-    await workout.save();
+    // Update workout with pattern (lean() means no .save() — use findByIdAndUpdate)
+    await FitTraining.findByIdAndUpdate(workout._id, {
+      workoutPattern: pattern,
+      patternExtracted: true,
+    });
 
     res.json({
       success: true,
@@ -58,43 +61,59 @@ async function extractPattern(req, res) {
 
 /**
  * Cluster all workouts for user
+ * Memory-safe: processes records one workout at a time to avoid OOM on 512 MB instances.
  */
 async function clusterWorkouts(req, res) {
   try {
     const userId = req.user?.userId;
     const { ftp, eps = 0.25, minPts = 3 } = req.body;
 
-    // Get all workouts with power data
-    const workouts = await FitTraining.find({
+    // Step 1: Get lightweight metadata for all workouts — NO records loaded yet
+    const workoutMeta = await FitTraining.find({
       athleteId: userId,
-      'records.power': { $exists: true, $ne: null }
-    });
+    })
+      .select('_id patternExtracted workoutPattern titleManual titleAuto originalFileName timestamp sport laps')
+      .lean();
 
-    if (workouts.length === 0) {
+    if (workoutMeta.length === 0) {
       return res.json({ clusters: [], workouts: [] });
     }
 
+    // Step 2: For workouts missing patterns, load records one-at-a-time and extract
+    const needsExtraction = workoutMeta.filter(w => !w.patternExtracted || !w.workoutPattern);
+    for (const meta of needsExtraction) {
+      // Load ONLY the records field for this single workout
+      const workoutWithRecords = await FitTraining.findById(meta._id)
+        .select('records workoutPattern patternExtracted')
+        .lean();
+
+      if (!workoutWithRecords?.records?.length) continue;
+
+      const intervals = detectIntervals(workoutWithRecords.records);
+      if (intervals.length > 0) {
+        const pattern = extractWorkoutPattern(intervals, ftp);
+        await FitTraining.findByIdAndUpdate(meta._id, {
+          workoutPattern: pattern,
+          patternExtracted: true,
+        });
+        // Patch the meta object so we use it below without re-querying
+        meta.workoutPattern = pattern;
+        meta.patternExtracted = true;
+      }
+      // workoutWithRecords goes out of scope here — GC can free it
+    }
+
+    // Step 3: Re-read lightweight metadata (now with extracted patterns)
+    const updatedMeta = await FitTraining.find({ athleteId: userId })
+      .select('_id patternExtracted workoutPattern titleManual titleAuto originalFileName timestamp sport laps')
+      .lean();
+
     // Extract patterns for all workouts
     const patternsWithWorkouts = [];
-    for (const workout of workouts) {
-      let pattern = workout.workoutPattern;
-
-      // Extract pattern if not already extracted
-      if (!pattern || !workout.patternExtracted) {
-        const intervals = detectIntervals(workout.records);
-        if (intervals.length > 0) {
-          pattern = extractWorkoutPattern(intervals, ftp);
-          workout.workoutPattern = pattern;
-          workout.patternExtracted = true;
-          await workout.save();
-        }
-      }
-
+    for (const workout of updatedMeta) {
+      const pattern = workout.workoutPattern;
       if (pattern && pattern.intervalCount > 0) {
-        patternsWithWorkouts.push({
-          workout,
-          pattern
-        });
+        patternsWithWorkouts.push({ workout, pattern });
       }
     }
 
@@ -166,23 +185,21 @@ async function clusterWorkouts(req, res) {
         await existingCluster.save();
       }
 
-      // Update workouts with cluster ID and auto title
-      for (let i = 0; i < cluster.indices.length; i++) {
-        const idx = cluster.indices[i];
-        const workout = patternsWithWorkouts[idx].workout;
-        workout.clusterId = stableClusterId;
-        workout.titleAuto = title;
-        await workout.save();
-      }
+      // Update workouts with cluster ID and auto title (lean objects — use updateMany)
+      const workoutIds = cluster.indices.map(idx => patternsWithWorkouts[idx].workout._id);
+      await FitTraining.updateMany(
+        { _id: { $in: workoutIds } },
+        { clusterId: stableClusterId, titleAuto: title }
+      );
 
       savedClusters.push(existingCluster);
     }
 
-    // Get workouts with cluster info
+    // Get workouts with cluster info (no records — keep it lean)
     const updatedWorkouts = await FitTraining.find({
       athleteId: userId,
       clusterId: { $ne: null }
-    }).sort({ timestamp: -1 });
+    }).select('-records').lean().sort({ timestamp: -1 });
 
     res.json({
       success: true,
@@ -210,11 +227,11 @@ async function getClusters(req, res) {
   try {
     const userId = req.user?.userId;
 
-    // Get all workouts with clusters
+    // Get all workouts with clusters (exclude heavy records field)
     const workouts = await FitTraining.find({
       athleteId: userId,
       clusterId: { $ne: null }
-    });
+    }).select('_id titleManual titleAuto originalFileName timestamp sport clusterId workoutPattern').lean();
 
     // Get unique cluster IDs
     const clusterIds = [...new Set(workouts.map(w => w.clusterId))];
@@ -222,7 +239,7 @@ async function getClusters(req, res) {
     // Get cluster details
     const clusters = await WorkoutCluster.find({
       clusterId: { $in: clusterIds }
-    });
+    }).lean();
 
     // Get workouts for each cluster
     const clustersWithWorkouts = clusters.map(cluster => {
@@ -236,7 +253,7 @@ async function getClusters(req, res) {
         }));
 
       return {
-        ...cluster.toObject(),
+        ...cluster,
         workouts: clusterWorkouts
       };
     });
@@ -298,58 +315,157 @@ async function updateClusterTitle(req, res) {
 }
 
 /**
- * Get similar workouts to a given workout
+ * Get similar workouts to a given workout — auto-extracts pattern if needed.
+ * Returns rich metric data for each similar workout for trend analysis.
  */
 async function getSimilarWorkouts(req, res) {
   try {
     const userId = req.user?.userId;
     const { workoutId } = req.params;
-    const { threshold = 0.75 } = req.query;
+    const { threshold = 0.65 } = req.query;
 
-    const workout = await FitTraining.findOne({ _id: workoutId, athleteId: userId });
+    // Load workout metadata without records first
+    const workout = await FitTraining.findOne({ _id: workoutId, athleteId: userId })
+      .select('_id titleManual titleAuto originalFileName timestamp sport laps workoutPattern patternExtracted clusterId')
+      .lean();
     if (!workout) {
       return res.status(404).json({ error: 'Workout not found' });
     }
 
+    // Auto-extract pattern if not done yet — only then load records
     if (!workout.workoutPattern || !workout.patternExtracted) {
-      return res.status(400).json({ error: 'Pattern not extracted for this workout' });
+      const workoutWithRecords = await FitTraining.findById(workoutId)
+        .select('records')
+        .lean();
+      if (workoutWithRecords?.records?.length > 0) {
+        const intervals = detectIntervals(workoutWithRecords.records);
+        if (intervals.length > 0) {
+          const pattern = extractWorkoutPattern(intervals, null);
+          await FitTraining.findByIdAndUpdate(workoutId, {
+            workoutPattern: pattern,
+            patternExtracted: true,
+          });
+          workout.workoutPattern = pattern;
+          workout.patternExtracted = true;
+        }
+      }
     }
 
-    // Get all other workouts
+    if (!workout.workoutPattern || !workout.patternExtracted) {
+      return res.json({ success: true, similar: [], reason: 'no_pattern' });
+    }
+
+    // Get all other workouts with extracted patterns
     const otherWorkouts = await FitTraining.find({
       athleteId: userId,
       _id: { $ne: workoutId },
       patternExtracted: true,
       'workoutPattern.intervalCount': { $gt: 0 }
-    });
+    }).select('_id titleManual titleAuto originalFileName timestamp sport laps workoutPattern clusterId');
 
-    // Calculate similarities
+    // Calculate similarities and build rich response
     const similar = [];
     for (const other of otherWorkouts) {
       const similarity = calculateSimilarity(workout.workoutPattern, other.workoutPattern);
       if (similarity >= parseFloat(threshold)) {
+        // Aggregate lap metrics
+        const laps = other.laps || [];
+        const lactateLaps = laps.filter(l => l.lactate != null && l.lactate > 0);
+        const avgLactate = lactateLaps.length
+          ? lactateLaps.reduce((s, l) => s + l.lactate, 0) / lactateLaps.length
+          : null;
+        const avgPower = laps.length
+          ? laps.reduce((s, l) => s + (l.avgPower || l.avg_power || l.average_watts || 0), 0) / laps.length
+          : other.workoutPattern?.meanPower || null;
+        const avgHR = laps.length
+          ? laps.reduce((s, l) => s + (l.avgHeartRate || l.avg_heart_rate || l.average_heartrate || 0), 0) / laps.length
+          : null;
+        const totalDuration = laps.reduce((s, l) => s + (l.moving_time || l.totalTimerTime || l.totalElapsedTime || 0), 0);
+        const totalDistance = laps.reduce((s, l) => s + (l.totalDistance || l.distance || 0), 0);
+
         similar.push({
-          workout: {
-            _id: other._id,
-            title: other.titleManual || other.titleAuto || other.originalFileName,
-            timestamp: other.timestamp,
-            clusterId: other.clusterId
-          },
-          similarity
+          _id: other._id,
+          title: other.titleManual || other.titleAuto || other.originalFileName || 'Untitled',
+          timestamp: other.timestamp,
+          sport: other.sport,
+          clusterId: other.clusterId,
+          similarity: Math.round(similarity * 100),
+          intervalCount: other.workoutPattern?.intervalCount,
+          avgPower: avgPower ? Math.round(avgPower) : null,
+          avgHR: avgHR ? Math.round(avgHR) : null,
+          avgLactate: avgLactate ? Math.round(avgLactate * 10) / 10 : null,
+          totalDuration,
+          totalDistance: Math.round(totalDistance),
+          lactateLapCount: lactateLaps.length,
         });
       }
     }
 
-    // Sort by similarity
-    similar.sort((a, b) => b.similarity - a.similarity);
+    // Sort by date (oldest first for trend chart)
+    similar.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     res.json({
       success: true,
-      similar: similar.slice(0, 10) // Top 10
+      currentWorkout: {
+        _id: workout._id,
+        intervalCount: workout.workoutPattern?.intervalCount,
+        pattern: workout.workoutPattern,
+      },
+      similar,
     });
   } catch (error) {
     console.error('Error getting similar workouts:', error);
     res.status(500).json({ error: 'Failed to get similar workouts', message: error.message });
+  }
+}
+
+/**
+ * GET /api/workout-clustering/cluster/:clusterId/trend
+ * Returns all workouts in a cluster sorted chronologically with their metrics for trend analysis.
+ */
+async function getClusterTrend(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const { clusterId } = req.params;
+
+    const workouts = await FitTraining.find({
+      athleteId: userId,
+      clusterId,
+    })
+      .select('_id titleManual titleAuto originalFileName timestamp sport laps workoutPattern')
+      .sort({ timestamp: 1 });
+
+    const trend = workouts.map(w => {
+      const laps = w.laps || [];
+      const lactateLaps = laps.filter(l => l.lactate != null && l.lactate > 0);
+      const avgLactate = lactateLaps.length
+        ? lactateLaps.reduce((s, l) => s + l.lactate, 0) / lactateLaps.length
+        : null;
+      const avgPower = w.workoutPattern?.meanPower
+        || (laps.length ? laps.reduce((s, l) => s + (l.avgPower || l.avg_power || l.average_watts || 0), 0) / laps.length : null);
+      const avgHR = laps.length
+        ? laps.reduce((s, l) => s + (l.avgHeartRate || l.avg_heart_rate || l.average_heartrate || 0), 0) / laps.length
+        : null;
+      const totalDuration = laps.reduce((s, l) => s + (l.moving_time || l.totalTimerTime || l.totalElapsedTime || 0), 0);
+
+      return {
+        _id: w._id,
+        title: w.titleManual || w.titleAuto || w.originalFileName || 'Untitled',
+        timestamp: w.timestamp,
+        sport: w.sport,
+        avgPower: avgPower ? Math.round(avgPower) : null,
+        avgHR: avgHR ? Math.round(avgHR) : null,
+        avgLactate: avgLactate ? Math.round(avgLactate * 10) / 10 : null,
+        totalDuration,
+        intervalCount: w.workoutPattern?.intervalCount,
+        lactateLapCount: lactateLaps.length,
+      };
+    });
+
+    res.json({ success: true, clusterId, trend });
+  } catch (error) {
+    console.error('Error getting cluster trend:', error);
+    res.status(500).json({ error: 'Failed to get cluster trend', message: error.message });
   }
 }
 
@@ -358,6 +474,7 @@ module.exports = {
   clusterWorkouts,
   getClusters,
   updateClusterTitle,
-  getSimilarWorkouts
+  getSimilarWorkouts,
+  getClusterTrend,
 };
 

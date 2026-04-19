@@ -50,7 +50,7 @@ const SupportPage = () => {
     about: [
       {
         question: "What is LaChart?",
-        answer: "LaChart is a comprehensive platform for endurance athletes and coaches focused on lactate threshold testing and analysis. It provides tools for generating lactate curves, calculating training zones (LT1, LT2, LTP1, LTP2, OBLA, IAT), tracking progress over time, and analyzing training data from Strava and FIT files. The application is completely free."
+        answer: "LaChart is a comprehensive platform for endurance athletes and coaches focused on lactate threshold testing and analysis. It provides tools for generating lactate curves, calculating training zones (LT1, LT2, LTP1, LTP2, OBLA, IAT), tracking progress over time, and analyzing training data from Strava and FIT files. A free plan is available, with Pro and Coach plans unlocking advanced features."
       },
       {
         question: "What types of athletes benefit from LaChart?",
@@ -113,11 +113,11 @@ const SupportPage = () => {
     pricing: [
       {
         question: "What pricing plans are available?",
-        answer: "LaChart is completely free! All features are available at no cost. You can create unlimited tests, manage multiple athletes (for coaches), and use all analytical tools without any restrictions."
+        answer: "LaChart offers three plans. The Free plan covers basic lactate testing and analytics (up to 5 tests/month). The Pro plan ($9.99/month) unlocks unlimited tests, advanced analytics, PDF export, and priority support. The Coach plan ($19.99/month) adds a coach dashboard for managing up to 10 athletes. You can upgrade anytime from Settings → Subscription."
       },
       {
-        question: "Is LaChart really free?",
-        answer: "Yes, LaChart is completely free. There are no hidden fees, no subscriptions, and no feature limitations. All tools for lactate analysis, training zones, statistics, and other features are available for free."
+        question: "Is there a free trial?",
+        answer: "Yes! Every paid plan (Pro and Coach) includes a 30-day free trial. You will not be charged until the trial ends, and you can cancel anytime before that with no cost. After the trial, billing starts automatically at the plan price."
       }
     ]
   };

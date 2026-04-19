@@ -1358,7 +1358,56 @@ export const updateClusterTitle = async (clusterId, title, trainingRouteId = nul
   return data;
 };
 
-export const getSimilarWorkouts = async (workoutId, threshold = 0.75) => {
+export const getSimilarWorkouts = async (workoutId, threshold = 0.65) => {
   const { data } = await api.get(`/api/workout-clustering/similar/${workoutId}`, { params: { threshold } });
   return data;
-}; 
+};
+
+export const getClusterTrend = async (clusterId) => {
+  const { data } = await api.get(`/api/workout-clustering/cluster/${clusterId}/trend`);
+  return data;
+};
+
+// ===== SUBSCRIPTION / BILLING =====
+
+/** Fetch all available plans (no auth required) */
+export const getSubscriptionPlans = async () => {
+  const { data } = await api.get('/api/subscription/plans');
+  return data; // { plans: [...] }
+};
+
+/** Fetch current user's subscription status */
+export const getCurrentSubscription = async () => {
+  const { data } = await api.get('/api/subscription/current');
+  return data; // { subscription, isPremium, premiumSource }
+};
+
+/** Create a Stripe checkout session and redirect */
+export const createCheckoutSession = async (planId) => {
+  const successUrl = `${window.location.origin}/settings?tab=subscription&success=1`;
+  const cancelUrl = `${window.location.origin}/settings?tab=subscription&canceled=1`;
+  const { data } = await api.post('/api/subscription/create-checkout-session', {
+    planId,
+    successUrl,
+    cancelUrl,
+  });
+  return data; // { sessionId, url }
+};
+
+/** Get Stripe customer portal URL */
+export const getSubscriptionPortalUrl = async () => {
+  const { data } = await api.get('/api/subscription/portal');
+  return data; // { url }
+};
+
+/** Cancel subscription at period end */
+export const cancelSubscription = async () => {
+  const { data } = await api.post('/api/subscription/cancel');
+  return data;
+};
+
+/** Reactivate a canceled subscription */
+export const reactivateSubscription = async () => {
+  const { data } = await api.post('/api/subscription/reactivate');
+  return data;
+};

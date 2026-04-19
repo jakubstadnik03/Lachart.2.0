@@ -7,7 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, fetchGdprExportJson } from '../services/api';
+import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -130,6 +130,12 @@ const SettingsPage = () => {
   const [editingRole, setEditingRole] = useState(false);
   const [roleForm, setRoleForm] = useState(user?.role || 'athlete');
 
+  // Subscription state
+  const [subData, setSubData] = useState(null);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subActionLoading, setSubActionLoading] = useState(false);
+  const [subError, setSubError] = useState(null);
+
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
     { id: 'units', name: 'Units', icon: Settings },
@@ -189,10 +195,17 @@ const SettingsPage = () => {
       const tab = q.get('tab');
       if (tab === 'integrations') setActiveTab('integrations');
       if (tab === 'subscription') setActiveTab('subscription');
+      // Stripe redirect feedback
+      if (tab === 'subscription' && q.get('success') === '1') {
+        addNotification({ type: 'success', message: 'Payment successful! Your subscription is now active.' });
+      }
+      if (tab === 'subscription' && q.get('canceled') === '1') {
+        addNotification({ type: 'info', message: 'Checkout was canceled. No charges were made.' });
+      }
     } catch {
       // ignore
     }
-  }, [location.search]);
+  }, [location.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!editingRole && user?.role) {
@@ -515,6 +528,88 @@ const SettingsPage = () => {
       }
     }
   }, [user?.units, user?._id, user?.notifications]);
+
+  // Fetch subscription data when tab is active
+  useEffect(() => {
+    if (activeTab !== 'subscription') return;
+    let cancelled = false;
+    const load = async () => {
+      setSubLoading(true);
+      setSubError(null);
+      try {
+        const data = await getCurrentSubscription();
+        if (!cancelled) setSubData(data);
+      } catch (err) {
+        if (!cancelled) setSubError(err?.response?.data?.error || 'Failed to load subscription');
+      } finally {
+        if (!cancelled) setSubLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  // Handle upgrade / checkout
+  const handleUpgrade = async (planId) => {
+    setSubActionLoading(true);
+    setSubError(null);
+    try {
+      const { url } = await createCheckoutSession(planId);
+      if (url) window.location.href = url;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Checkout failed';
+      setSubError(msg);
+      addNotification({ type: 'error', message: msg });
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  // Open Stripe customer portal
+  const handlePortal = async () => {
+    setSubActionLoading(true);
+    try {
+      const { url } = await getSubscriptionPortalUrl();
+      if (url) window.location.href = url;
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Could not open billing portal';
+      setSubError(msg);
+      addNotification({ type: 'error', message: msg });
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  // Cancel subscription
+  const handleCancelSub = async () => {
+    if (!window.confirm('Are you sure you want to cancel? You will keep access until the end of the billing period.')) return;
+    setSubActionLoading(true);
+    try {
+      await cancelSubscription();
+      addNotification({ type: 'success', message: 'Subscription will be canceled at the end of the billing period.' });
+      const data = await getCurrentSubscription();
+      setSubData(data);
+    } catch (err) {
+      addNotification({ type: 'error', message: err?.response?.data?.error || 'Cancel failed' });
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
+
+  // Reactivate subscription
+  const handleReactivateSub = async () => {
+    setSubActionLoading(true);
+    try {
+      await reactivateSubscription();
+      addNotification({ type: 'success', message: 'Subscription reactivated!' });
+      const data = await getCurrentSubscription();
+      setSubData(data);
+    } catch (err) {
+      addNotification({ type: 'error', message: err?.response?.data?.error || 'Reactivate failed' });
+    } finally {
+      setSubActionLoading(false);
+    }
+  };
 
   // Save units to backend
   const saveUnitsToBackend = async (newUnits) => {
@@ -1722,114 +1817,284 @@ const SettingsPage = () => {
         );
 
       case 'subscription': {
-        const hasPremium = user?.isPremium === true;
-        const manualPremium = user?.premium === true && user?.premiumSource === 'manual';
+        const currentPlan = subData?.subscription?.plan || 'free';
+        const subStatus = subData?.subscription?.status;
+        const isActive = subData?.subscription?.isActive;
+        const cancelAtPeriodEnd = subData?.subscription?.cancelAtPeriodEnd;
+        const periodEnd = subData?.subscription?.currentPeriodEnd;
+        const systemEnabled = subData?.subscription?.systemEnabled;
+        const hasPremium = subData?.isPremium ?? (user?.isPremium === true);
+        const premiumSource = subData?.premiumSource || user?.premiumSource;
+        const isManualPremium = premiumSource === 'manual';
+        // User already used a trial if they have a trialStart date in their subscription
+        const alreadyTrialed = !!subData?.subscription?.trialStart;
+        const showTrial = !alreadyTrialed && currentPlan === 'free';
+
+        const PLANS_UI = [
+          {
+            id: 'free',
+            name: 'Free',
+            price: 0,
+            priceLabel: '$0',
+            period: '/ month',
+            highlight: false,
+            features: [
+              'Up to 5 lactate tests/month',
+              'Basic analytics',
+              'Manual FIT file upload',
+              'Strava & Garmin sync',
+              'Calendar view',
+            ],
+          },
+          {
+            id: 'pro',
+            name: 'Pro',
+            price: 9.99,
+            priceLabel: '$9.99',
+            period: '/ month',
+            highlight: true,
+            badge: 'Most popular',
+            trial: true,
+            features: [
+              'Unlimited lactate tests',
+              'Advanced analytics & charts',
+              'Population comparison',
+              'PDF export',
+              'Priority support',
+              'Everything in Free',
+            ],
+          },
+          {
+            id: 'coach',
+            name: 'Coach',
+            price: 19.99,
+            priceLabel: '$19.99',
+            period: '/ month',
+            highlight: false,
+            trial: true,
+            features: [
+              'Up to 10 athletes',
+              'Coach dashboard',
+              'Athlete management',
+              'Bulk data export',
+              'Everything in Pro',
+            ],
+          },
+        ];
+
+        const formatPeriodEnd = (iso) => {
+          if (!iso) return null;
+          try {
+            return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+          } catch { return null; }
+        };
+
         return (
-          <div className={`bg-white ${isMobile ? 'rounded-md' : 'rounded-lg'} shadow-md ${isMobile ? 'p-2.5' : 'p-6'}`}>
-            <div className={`mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 ${isMobile ? 'text-[10px]' : 'text-sm'} text-amber-950`}>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!premiumPreviewNoAccess}
-                  onChange={(e) => setPremiumPreviewNoAccess(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary"
-                />
-                <span>
-                  <span className="font-semibold block mb-0.5">Náhled jako uživatel bez premium</span>
-                  Zapne se jen u tebe v prohlížeči (localStorage). Stránky, které čtou stav z účtu, uvidí Free plán — API na serveru se nemění, dokud tam nemáš zapnutý REQUIRE_PREMIUM_ACCESS.
-                </span>
-              </label>
-            </div>
-            <div className={`text-center ${isMobile ? 'mb-2' : 'mb-6'}`}>
-              <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500 uppercase tracking-wide ${isMobile ? 'mb-0.5' : 'mb-2'}`}>Your Membership</p>
-              <h3 className={`${isMobile ? 'text-base' : 'text-3xl'} font-bold text-gray-900`}>
-                {hasPremium ? 'LaChart Premium' : 'LaChart Free'}
-              </h3>
-              {hasPremium && user?.premiumSource && (
-                <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 mt-1`}>
-                  {user.premiumSource === 'manual'
-                    ? 'Complimentary / admin access'
-                    : user.premiumSource === 'subscription'
-                      ? 'Active subscription'
-                      : ''}
-                </p>
+          <div className={`${isMobile ? 'space-y-3' : 'space-y-6'}`}>
+
+            {/* Dev preview toggle */}
+            {user?.role === 'admin' || hasPremium ? (
+              <div className={`bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900`}>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!premiumPreviewNoAccess}
+                    onChange={(e) => setPremiumPreviewNoAccess(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary"
+                  />
+                  <span>
+                    <span className="font-semibold block mb-0.5">Preview as non-premium user</span>
+                    <span className="text-xs text-amber-700">Browser-only (localStorage). Lets you test the free-plan UI without touching the server.</span>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
+            {/* Current plan status banner */}
+            <div className={`bg-white border border-gray-200 rounded-2xl ${isMobile ? 'p-4' : 'p-6'} shadow-sm`}>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Current plan</p>
+                  <h3 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
+                    LaChart {currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)}
+                  </h3>
+                  {subStatus ? (
+                    <p className="mt-1 text-xs text-gray-500 capitalize">
+                      Billing status: {String(subStatus).replace(/_/g, ' ')}
+                    </p>
+                  ) : null}
+                  {isManualPremium && (
+                    <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">Complimentary access</span>
+                  )}
+                  {!isManualPremium && isActive && currentPlan !== 'free' && (
+                    <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium">Active</span>
+                  )}
+                  {cancelAtPeriodEnd && periodEnd && (
+                    <p className="mt-2 text-sm text-orange-600">
+                      Cancels on {formatPeriodEnd(periodEnd)} — you keep access until then.
+                    </p>
+                  )}
+                  {!cancelAtPeriodEnd && periodEnd && currentPlan !== 'free' && (
+                    <p className="mt-1 text-xs text-gray-400">Renews {formatPeriodEnd(periodEnd)}</p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 items-end">
+                  {/* Manage billing portal */}
+                  {!isManualPremium && currentPlan !== 'free' && systemEnabled && (
+                    <>
+                      {cancelAtPeriodEnd ? (
+                        <button
+                          onClick={handleReactivateSub}
+                          disabled={subActionLoading}
+                          className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {subActionLoading ? 'Loading…' : 'Reactivate subscription'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handlePortal}
+                          disabled={subActionLoading}
+                          className="px-4 py-2 text-sm font-medium border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+                        >
+                          {subActionLoading ? 'Loading…' : 'Manage billing'}
+                        </button>
+                      )}
+                      {!cancelAtPeriodEnd && (
+                        <button
+                          onClick={handleCancelSub}
+                          disabled={subActionLoading}
+                          className="text-xs text-red-500 hover:text-red-700 transition-colors"
+                        >
+                          Cancel subscription
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {subLoading && (
+                <div className="mt-4 text-sm text-gray-400 text-center">Loading subscription info…</div>
+              )}
+              {subError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{subError}</div>
               )}
             </div>
-            
-            <div className={`${isMobile ? 'w-full' : 'max-w-md'} mx-auto bg-white border border-gray-200 ${isMobile ? 'rounded-md p-2' : 'rounded-lg p-6'}`}>
-              <div className={`text-center ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
-                <span className={`inline-block ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-3 py-1 text-xs'} ${hasPremium ? 'bg-primary text-white' : 'bg-gray-500 text-white'} font-semibold ${isMobile ? 'rounded-full mb-1.5' : 'rounded-full mb-3'}`}>
-                  {hasPremium ? 'PREMIUM' : 'FREE'}
-                </span>
-                <h4 className={`${isMobile ? 'text-xs' : 'text-lg'} font-semibold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-2'}`}>
-                  {hasPremium ? 'Premium access' : 'Free Plan'}
-                </h4>
-                <div className={`${isMobile ? 'text-lg' : 'text-4xl'} font-bold text-gray-900 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>
-                  {hasPremium && !manualPremium ? '—' : '$0.00'}
-                </div>
-                <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-500`}>
-                  {hasPremium && !manualPremium ? 'Billed via subscription' : 'USD / MONTH'}
-                </p>
-              </div>
-              
-              <div className={`border-t border-gray-200 ${isMobile ? 'pt-1.5 mt-1.5' : 'pt-4 mt-4'}`}>
-                <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 text-center`}>
-                  {hasPremium
-                    ? 'You have access to premium features.'
-                    : 'You are currently on the free plan'}
-                </p>
-              </div>
-            </div>
 
-            <div className={`${isMobile ? 'mt-2' : 'mt-6'} ${isMobile ? 'space-y-1.5' : 'space-y-4'}`}>
-              <div className="text-center">
-                {!hasPremium ? (
-                  <>
-                    <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-1.5' : 'mb-4'}`}>
-                      Premium features coming soon! Upgrade to unlock advanced analytics, unlimited data storage, and priority support.
-                    </p>
-                    <button 
-                      className={`${isMobile ? 'px-3 py-1 text-[10px]' : 'px-6 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded-lg'} hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-                      disabled
-                      title="Coming soon"
+            {/* Trial banner */}
+            {showTrial && (
+              <div className="bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-4 flex items-center gap-3">
+                <span className="text-2xl">🎁</span>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">1 month free — no charge today</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Start any paid plan with a 30-day free trial. Cancel anytime before it ends and you won't be billed.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Pricing cards */}
+            <div>
+              <h4 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900 mb-3`}>
+                {currentPlan === 'free' ? 'Choose a plan' : 'Available plans'}
+              </h4>
+              <div className={`grid ${isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}`}>
+                {PLANS_UI.map((plan) => {
+                  const isCurrent = plan.id === currentPlan;
+                  const isUpgrade = plan.price > (PLANS_UI.find(p => p.id === currentPlan)?.price ?? 0);
+                  const showTrialOnCard = showTrial && plan.trial;
+                  return (
+                    <div
+                      key={plan.id}
+                      className={`relative rounded-2xl border ${isMobile ? 'p-4' : 'p-5'} flex flex-col gap-4 ${
+                        isCurrent
+                          ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                          : plan.highlight
+                          ? 'border-primary/40 bg-white shadow-md'
+                          : 'border-gray-200 bg-white'
+                      }`}
                     >
-                      Upgrade to Premium
-                    </button>
-                  </>
-                ) : (
-                  <p className={`${isMobile ? 'text-[9px]' : 'text-sm'} text-gray-600`}>
-                    Paid checkout will appear here when billing is enabled.
+                      {plan.badge && !isCurrent && (
+                        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-semibold bg-primary text-white rounded-full whitespace-nowrap">
+                          {plan.badge}
+                        </span>
+                      )}
+                      {isCurrent && (
+                        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-semibold bg-gray-700 text-white rounded-full whitespace-nowrap">
+                          Current plan
+                        </span>
+                      )}
+
+                      <div>
+                        <h5 className="font-bold text-gray-900 text-base">{plan.name}</h5>
+                        <div className="mt-1 flex items-end gap-1">
+                          {showTrialOnCard ? (
+                            <>
+                              <span className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-primary`}>Free</span>
+                              <span className="text-sm text-gray-400 mb-1">first month</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>{plan.priceLabel}</span>
+                              <span className="text-sm text-gray-400 mb-1">{plan.period}</span>
+                            </>
+                          )}
+                        </div>
+                        {showTrialOnCard && (
+                          <p className="text-xs text-gray-400 mt-0.5">then {plan.priceLabel}/month</p>
+                        )}
+                      </div>
+
+                      <ul className="space-y-1.5 flex-1">
+                        {plan.features.map((f) => (
+                          <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
+                            <span className="text-primary mt-0.5 shrink-0">✓</span>
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <div className="mt-auto">
+                        {isCurrent ? (
+                          <div className="text-center text-sm text-gray-400 font-medium py-2">Your current plan</div>
+                        ) : plan.id === 'free' ? (
+                          <div className="text-center text-sm text-gray-400 py-2">Downgrade via cancel</div>
+                        ) : systemEnabled ? (
+                          <button
+                            onClick={() => handleUpgrade(plan.id)}
+                            disabled={subActionLoading || isManualPremium}
+                            className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              plan.highlight
+                                ? 'bg-primary text-white hover:bg-primary/90'
+                                : 'bg-gray-900 text-white hover:bg-gray-800'
+                            }`}
+                          >
+                            {subActionLoading
+                              ? 'Loading…'
+                              : showTrialOnCard
+                              ? `Try ${plan.name} free for 1 month`
+                              : isUpgrade
+                              ? `Upgrade to ${plan.name}`
+                              : `Switch to ${plan.name}`}
+                          </button>
+                        ) : (
+                          <div className="text-center text-xs text-gray-400 py-2 border border-dashed border-gray-200 rounded-xl">
+                            Billing not yet activated
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {!systemEnabled && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+                  <p className="font-semibold mb-1">Billing setup required</p>
+                  <p className="text-xs text-blue-700">
+                    Add your Stripe keys to the server <code>.env</code> file and set <code>SUBSCRIPTION_ENABLED=true</code> to activate checkout.
                   </p>
-                )}
-              </div>
-              
-              <div className={`${isMobile ? 'mt-2 pt-2' : 'mt-6 pt-6'} border-t border-gray-200`}>
-                <h4 className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-900 ${isMobile ? 'mb-1.5' : 'mb-3'}`}>
-                  {hasPremium ? 'Premium features' : 'Premium Features (Coming Soon)'}
-                </h4>
-                <ul className={`${isMobile ? 'space-y-1 text-[9px]' : 'space-y-2 text-sm'} text-gray-600`}>
-                  <li className="flex items-center gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>Advanced analytics and insights</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>Unlimited data storage</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>Priority support</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>Export data in multiple formats</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="text-primary">✓</span>
-                    <span>Custom training plans</span>
-                  </li>
-                </ul>
-              </div>
+                </div>
+              )}
             </div>
           </div>
         );

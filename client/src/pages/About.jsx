@@ -88,7 +88,7 @@ const faqItems = [
   { icon: 'user', question: 'Do I need to register to use the lactate calculator?', answer: 'No registration is required for basic lactate threshold calculations. You can use our free online calculator immediately. However, creating a free account allows you to save results, track progress over time, and access advanced features.' },
   { icon: 'flag', question: 'What sports is LaChart suitable for?', answer: 'LaChart is designed for all endurance sports including cycling, running, triathlon, swimming, and rowing. Our lactate testing protocols and training zone calculations work for any sport that involves sustained aerobic effort.' },
   { icon: 'chart', question: 'How does LaChart compare to expensive lab testing?', answer: 'While lab testing provides the most precise results, LaChart offers professional-grade analysis at a fraction of the cost. Our algorithms use the same calculation methods as expensive sports science software, making advanced lactate analysis accessible to all athletes.' },
-  { icon: 'flag', question: 'Can I generate a PDF report from my lactate test?', answer: 'Yes. After completing a lactate test, you can download a professional PDF report that includes your lactate curve with heart rate overlay, all calculated thresholds (LTP1, LTP2, OBLA, IAT), five training zones with power/pace and HR ranges, stage-by-stage results, a comparison graph with your previous test, and personalized training recommendations.' },
+  { icon: 'flag', question: 'Can I generate a PDF report from my lactate test?', answer: 'Yes, with a Pro or Coach plan. After completing a lactate test, you can download a professional PDF report that includes your lactate curve with heart rate overlay, all calculated thresholds (LTP1, LTP2, OBLA, IAT), five training zones with power/pace and HR ranges, stage-by-stage results, a comparison graph with your previous test, and personalized training recommendations. Pro and Coach plans include a 30-day free trial.' },
 ];
 
 // (tutorialSteps removed — replaced by VideoTutorialsSection)
@@ -712,7 +712,7 @@ const About = () => {
             <span className="text-lg font-bold text-primary-dark">LaChart</span>
           </a>
           <div className="hidden lg:flex items-center gap-1">
-            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['contact','Contact']].map(([id, label]) => (
+            {[['features','Features'],['connect','Connect'],['solutions','Solutions'],['guide','Guide'],['how-to-use','▶ Tutorials'],['pricing','Pricing'],['contact','Contact']].map(([id, label]) => (
               <button key={id} onClick={() => scrollToSection(id)} className="px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-primary transition-colors touch-manipulation">{label}</button>
             ))}
           </div>
@@ -1550,6 +1550,85 @@ const About = () => {
         </div>
       </section>
 
+
+      {/* ── Pricing ────────────────────────────────────────────────────────── */}
+      <section id="pricing" className="py-14 lg:py-20 bg-white border-t border-gray-100 scroll-mt-20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
+            <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Pricing</p>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Start free, upgrade when you're ready</h2>
+            <p className="text-gray-500 max-w-xl mx-auto">Every paid plan comes with a <span className="font-semibold text-gray-700">30-day free trial</span>. No charge today, cancel anytime.</p>
+          </motion.div>
+
+          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Free */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Free</h3>
+                <div className="mt-2 flex items-end gap-1">
+                  <span className="text-4xl font-extrabold text-gray-900">$0</span>
+                  <span className="text-gray-400 text-sm mb-1">/ month</span>
+                </div>
+              </div>
+              <ul className="space-y-2 flex-1">
+                {['Up to 5 lactate tests/month', 'Basic analytics', 'FIT file upload', 'Strava & Garmin sync', 'Training calendar'].map(f => (
+                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
+                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
+                  </li>
+                ))}
+              </ul>
+              <a href="/register" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
+                Get started free
+              </a>
+            </div>
+
+            {/* Pro */}
+            <div className="relative rounded-2xl border-2 border-primary bg-white p-6 flex flex-col gap-4 shadow-lg">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-primary text-white rounded-full whitespace-nowrap">Most popular</span>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Pro</h3>
+                <div className="mt-2 flex items-end gap-1">
+                  <span className="text-4xl font-extrabold text-gray-900">$9.99</span>
+                  <span className="text-gray-400 text-sm mb-1">/ month</span>
+                </div>
+                <p className="text-xs text-primary font-medium mt-1">🎁 First month free</p>
+              </div>
+              <ul className="space-y-2 flex-1">
+                {['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support'].map(f => (
+                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
+                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
+                  </li>
+                ))}
+              </ul>
+              <a href="/register" className="block text-center py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm">
+                Try Pro free for 1 month
+              </a>
+            </div>
+
+            {/* Coach */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Coach</h3>
+                <div className="mt-2 flex items-end gap-1">
+                  <span className="text-4xl font-extrabold text-gray-900">$19.99</span>
+                  <span className="text-gray-400 text-sm mb-1">/ month</span>
+                </div>
+                <p className="text-xs text-primary font-medium mt-1">🎁 First month free</p>
+              </div>
+              <ul className="space-y-2 flex-1">
+                {['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export'].map(f => (
+                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
+                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
+                  </li>
+                ))}
+              </ul>
+              <a href="/register" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
+                Try Coach free for 1 month
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
       {/* ── FAQ ────────────────────────────────────────────────────────────── */}
       <section id="faq" className="py-10 lg:py-16 bg-gray-50 border-t border-gray-100 scroll-mt-20">

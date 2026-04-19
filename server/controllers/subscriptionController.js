@@ -5,6 +5,7 @@ const stripe = process.env.SUBSCRIPTION_ENABLED === 'true' && process.env.STRIPE
 const User = require('../models/UserModel');
 const Subscription = require('../models/SubscriptionModel');
 const { resolvePremiumAccess } = require('../utils/premiumAccess');
+const { createEmailTransporter } = require('../utils/createEmailTransporter');
 
 // Available subscription plans (exported for use in middleware)
 const PLANS = {
@@ -214,6 +215,10 @@ exports.createCheckoutSession = async (req, res) => {
       await subscription.save();
     }
 
+    // Check if user already used a trial (prevent abuse)
+    const existingSub = await Subscription.findOne({ userId: user._id });
+    const alreadyTrialed = existingSub?.trialStart != null;
+
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -225,6 +230,14 @@ exports.createCheckoutSession = async (req, res) => {
         }
       ],
       mode: 'subscription',
+      // 30-day free trial for first-time subscribers
+      subscription_data: alreadyTrialed ? undefined : {
+        trial_period_days: 30,
+      },
+      // Require card upfront even during trial
+      payment_method_collection: 'always',
+      // Allow users to enter promo/coupon codes at checkout
+      allow_promotion_codes: true,
       success_url: successUrl || `${process.env.FRONTEND_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl || `${process.env.FRONTEND_URL}/subscription/cancel`,
       metadata: {
@@ -491,3 +504,130 @@ exports.getPortalUrl = async (req, res) => {
     res.status(500).json({ error: 'Failed to create portal session' });
   }
 };
+
+/**
+ * POST /api/subscription/send-promo-email
+ * Admin-only: Send promo code email to all registered users (or a subset).
+ * Protected by ADMIN_SECRET header.
+ */
+exports.sendPromoEmail = async (req, res) => {
+  // Simple admin protection via secret header
+  const adminSecret = req.headers['x-admin-secret'];
+  if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { promoCode, subject, dryRun = false } = req.body;
+  if (!promoCode) return res.status(400).json({ error: 'promoCode is required' });
+
+  const transporter = createEmailTransporter();
+  if (!transporter) {
+    return res.status(503).json({ error: 'Email not configured' });
+  }
+
+  try {
+    // Fetch all users with email
+    const users = await User.find({ email: { $exists: true, $ne: null } }, 'email name').lean();
+
+    const emailSubject = subject || `🎁 3 months of LaChart Pro — free, just for you`;
+
+    let sent = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const user of users) {
+      if (!user.email) continue;
+      const firstName = user.name || 'there';
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);padding:32px 32px 24px;">
+      <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;">LaChart</h1>
+      <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Lactate threshold analytics</p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:32px;">
+      <h2 style="margin:0 0 12px;color:#111827;font-size:20px;font-weight:700;">Hey ${firstName} 👋</h2>
+      <p style="margin:0 0 16px;color:#4b5563;font-size:15px;line-height:1.6;">
+        Thank you for being an early LaChart user. As a thank-you, I'm giving you <strong>3 months of LaChart Pro completely free</strong>.
+      </p>
+      <p style="margin:0 0 24px;color:#4b5563;font-size:15px;line-height:1.6;">
+        Pro unlocks FIT file analysis with interval detection &amp; power charts, unlimited lactate tests, PDF report export, and more.
+      </p>
+
+      <!-- Promo code box -->
+      <div style="background:#f0f9ff;border:2px dashed #3b82f6;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+        <p style="margin:0 0 8px;color:#1d4ed8;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Your promo code</p>
+        <p style="margin:0;color:#1e3a8a;font-size:28px;font-weight:800;letter-spacing:0.05em;">${promoCode}</p>
+        <p style="margin:8px 0 0;color:#6b7280;font-size:12px;">3 months free · No credit card required during trial</p>
+      </div>
+
+      <!-- CTA -->
+      <div style="text-align:center;margin-bottom:24px;">
+        <a href="${process.env.FRONTEND_URL}/settings?tab=subscription"
+           style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">
+          Activate my free Pro access →
+        </a>
+      </div>
+
+      <p style="margin:0 0 8px;color:#6b7280;font-size:13px;line-height:1.6;">
+        How to use: Go to <strong>Settings → Subscription</strong>, choose the Pro plan, and enter the code at checkout. You won't be charged for 3 months.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f9fafb;padding:20px 32px;border-top:1px solid #f3f4f6;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;">
+        You're receiving this because you have a LaChart account.
+        Questions? Reply to this email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+      if (dryRun) {
+        console.log(`[DRY RUN] Would send promo email to: ${user.email}`);
+        sent++;
+        continue;
+      }
+
+      try {
+        await transporter.sendMail({
+          from: `LaChart <${process.env.EMAIL_USER}>`,
+          to: user.email,
+          subject: emailSubject,
+          html,
+        });
+        sent++;
+        // Small delay to avoid SMTP rate limits
+        await new Promise(r => setTimeout(r, 200));
+      } catch (emailErr) {
+        console.error(`[PromoEmail] Failed for ${user.email}:`, emailErr.message);
+        failed++;
+        errors.push({ email: user.email, error: emailErr.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      dryRun,
+      total: users.length,
+      sent,
+      failed,
+      errors: errors.slice(0, 10), // return first 10 errors max
+    });
+
+  } catch (error) {
+    console.error('Error sending promo emails:', error);
+    res.status(500).json({ error: 'Failed to send promo emails' });
+  }
+};
+

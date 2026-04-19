@@ -24,6 +24,8 @@ import TrainingGlossary from '../DashboardPage/TrainingGlossary';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
+import UpgradeModal from '../UpgradeModal';
+import { usePremium } from '../../hooks/usePremium';
 
 ChartJS.register(
     CategoryScale,
@@ -770,6 +772,7 @@ ChartJS.register(lactateZoneLtpOverlayPlugin);
 
 const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const { user } = useAuth();
+  const { gate, UpgradeModalProps } = usePremium();
   const chartRef = useRef(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -998,6 +1001,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   // Open preview modal — generates blob URL for iframe
   const handleDownloadPdf = async () => {
+    if (!gate('PDF Report Export', 'pro')) return;
     if (!mockData) { setPdfStatus({ type: 'error', message: 'Missing test data.' }); return; }
     try {
       setPdfPreviewLoading(true);
@@ -2561,6 +2565,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
 
   return (
     <div className="flex flex-col gap-4 p-2 sm:p-4 bg-white rounded-2xl shadow-lg mt-3 sm:mt-5 relative">
+      <UpgradeModal {...UpgradeModalProps} />
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">

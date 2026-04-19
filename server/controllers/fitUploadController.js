@@ -1064,6 +1064,7 @@ async function analyzeTrainingsByMonth(req, res) {
       console.log('Fetching FIT trainings for athleteId:', targetAthleteIdStr, monthKeyParam ? `(month: ${monthKeyParam})` : '(all months)');
       fitTrainings = await FitTraining.find(query)
         .select('timestamp records title titleManual sport')
+        .limit(30) // Safety cap: max 30 trainings per month to avoid OOM on 512MB instances
         .lean();
 
       console.log(`Found ${fitTrainings.length} FIT trainings with records${monthKeyParam ? ` for month ${monthKeyParam}` : ''}`);
@@ -1079,6 +1080,7 @@ async function analyzeTrainingsByMonth(req, res) {
         };
         fitTrainings = await FitTraining.find(query2)
           .select('timestamp records title titleManual')
+          .limit(30) // Safety cap
           .lean();
         console.log(`Found ${fitTrainings.length} FIT trainings with userId.toString()${monthKeyParam ? ` for month ${monthKeyParam}` : ''}`);
       }

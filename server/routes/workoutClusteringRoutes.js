@@ -129,5 +129,11 @@ router.put('/cluster/:clusterId/title', verifyToken, workoutClusteringController
  */
 router.get('/similar/:workoutId', verifyToken, workoutClusteringController.getSimilarWorkouts);
 
+/**
+ * GET /api/workout-clustering/cluster/:clusterId/trend
+ * Get chronological trend data for all workouts in a cluster
+ */
+router.get('/cluster/:clusterId/trend', verifyToken, workoutClusteringController.getClusterTrend);
+
 module.exports = router;
 

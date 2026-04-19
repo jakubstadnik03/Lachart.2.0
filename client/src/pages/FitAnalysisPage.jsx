@@ -16,6 +16,9 @@ import LapsTable from '../components/FitAnalysis/LapsTable';
 import AthleteSelector from '../components/AthleteSelector';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
+import UpgradeModal from '../components/UpgradeModal';
+import { usePremium } from '../hooks/usePremium';
+import SimilarWorkoutsPanel from '../components/FitAnalysis/SimilarWorkoutsPanel';
 import TrainingForm from '../components/TrainingForm';
 import TrainingChart from '../components/FitAnalysis/TrainingChart';
 import { prepareTrainingChartData, formatDuration, formatDistance, normalizeStravaLapDistanceRaw, lapSpeedMpsForChart } from '../utils/fitAnalysisUtils';
@@ -731,28 +734,20 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
       };
     }).filter(lv => lv && lv.lactate && !isNaN(lv.lactate));
 
-    if (lactateValues.length === 0) {
-      alert('Please enter at least one lactate value');
-      return;
-    }
+    if (lactateValues.length === 0) return;
 
     try {
       setSaving(true);
       await updateStravaLactateValues(selectedStrava.id, lactateValues);
-      // Reload data to get updated laps with lactate values
       await loadStravaDetail(selectedStrava.id);
       setEditingLactate(false);
       setLactateInputs({});
-      alert('Lactate values saved successfully!');
       // Show export dialog after saving lactate (with small delay to ensure data is loaded)
       if (onExportToTraining) {
-        setTimeout(() => {
-          onExportToTraining();
-        }, 500);
+        setTimeout(() => { onExportToTraining(); }, 500);
       }
     } catch (error) {
       console.error('Error saving lactate:', error);
-      alert('Error saving lactate values');
     } finally {
       setSaving(false);
     }
@@ -1446,6 +1441,7 @@ const FitAnalysisPage = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
   const { categories, getCategoryStyle } = useCategories();
+  const { gate, UpgradeModalProps } = usePremium();
   const location = useLocation();
   const navigate = useNavigate();
   const { activityId, athleteId: athleteIdParam } = useParams();
@@ -2604,6 +2600,7 @@ const FitAnalysisPage = () => {
   }, []);
 
   const loadTrainingDetail = useCallback(async (id) => {
+    if (!gate('FIT Training Analysis', 'pro')) return;
     try {
       setDetailLoading(true);
       const data = await getFitTraining(id);
@@ -2681,7 +2678,7 @@ const FitAnalysisPage = () => {
       localStorage.removeItem('fitAnalysis_selectedTrainingId');
       setDetailLoading(false);
     }
-  }, []);
+  }, [gate]);
 
   // Load training from Training model (from TrainingTable)
   const loadTrainingFromTrainingModel = useCallback(async (trainingId) => {
@@ -3562,6 +3559,7 @@ const FitAnalysisPage = () => {
 
   return (
     <div className={`min-h-screen ${isMobile ? 'p-0' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
+      <UpgradeModal {...UpgradeModalProps} />
       <div className={`${isMobile ? 'w-full' : 'max-w-7xl'} mx-auto`}>
         {!isMobile && <h1 className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</h1>}
         {isMobile && !(selectedTraining || selectedStrava) && (
@@ -4557,7 +4555,7 @@ const FitAnalysisPage = () => {
 
                   {/* Laps/Intervals — table body scrolls inside LapsTable */}
                   <div className="min-h-0">
-                  <LapsTable 
+                  <LapsTable
                     training={selectedTraining}
                     onUpdate={loadTrainingDetail}
                     user={user}
@@ -4565,6 +4563,15 @@ const FitAnalysisPage = () => {
                     onSelectLapNumber={setSelectedLapNumber}
                   />
                   </div>
+
+                  {/* Similar workouts panel — only for FIT trainings with laps */}
+                  {selectedTraining?.laps?.length > 0 && !selectedTraining?.isRegularTraining && (
+                    <SimilarWorkoutsPanel
+                      training={selectedTraining}
+                      isMobile={isMobile}
+                      onSelectWorkout={(id) => loadTrainingDetail(id)}
+                    />
+                  )}
                   </div>
             </motion.div>
                         </div>

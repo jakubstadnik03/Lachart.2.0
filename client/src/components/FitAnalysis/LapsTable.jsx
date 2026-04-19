@@ -1,14 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { formatDuration, formatDistance, formatSpeed, formatPace } from '../../utils/fitAnalysisUtils';
-import { updateLactateValues } from '../../services/api';
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import LapsBarChart from './LapsBarChart';
+import LactateModal from './LactateModal';
+
+function exportLapsCSV(laps, training, user) {
+  if (!laps?.length) return;
+  const isRun = (training?.sport || '').toLowerCase().includes('run');
+  const rows = laps.map((lap, i) => {
+    const time = lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time || 0;
+    const dist = lap.totalDistance ?? lap.total_distance ?? lap.distance ?? 0;
+    const power = lap.avgPower ?? lap.avg_power ?? lap.average_watts ?? '';
+    const hr = lap.avgHeartRate ?? lap.avg_heart_rate ?? lap.average_heartrate ?? '';
+    const cadence = lap.avgCadence ?? lap.avg_cadence ?? lap.average_cadence ?? '';
+    const lactate = lap.lactate ?? '';
+    const speedMps = lap.avgSpeed ?? lap.average_speed ?? lap.avg_speed ?? null;
+    const pace = isRun && speedMps ? (1000 / speedMps / 60).toFixed(2) : '';
+    return {
+      lap: i + 1,
+      duration_s: Math.round(time),
+      distance_m: Math.round(dist),
+      avg_power_w: power !== '' ? Math.round(Number(power)) : '',
+      avg_hr_bpm: hr !== '' ? Math.round(Number(hr)) : '',
+      avg_cadence: cadence !== '' ? Math.round(Number(cadence)) : '',
+      pace_min_per_km: pace,
+      lactate_mmol: lactate,
+    };
+  });
+  const headers = Object.keys(rows[0]);
+  const lines = [
+    headers.join(','),
+    ...rows.map(r => headers.map(h => r[h] ?? '').join(',')),
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const name = training?.titleManual || training?.titleAuto || training?.originalFileName || 'laps';
+  a.href = url;
+  a.download = `${name.replace(/[^a-z0-9]/gi, '_')}_laps.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 /** Scroll only the laps rows — max height uses dvh so chart + zones fit better on small screens */
 const LAPS_LIST_SCROLL_CLASS =
   'overflow-x-auto overflow-y-auto max-h-[min(34dvh,19rem)] sm:max-h-[min(38dvh,23rem)] md:max-h-[min(42dvh,28rem)] overscroll-y-contain touch-pan-y';
 
 const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null }) => {
-  const [editingLactate, setEditingLactate] = useState(false);
-  const [lactateInputs, setLactateInputs] = useState({});
+  const [lactateModalOpen, setLactateModalOpen] = useState(false);
+  const [lactateSaved, setLactateSaved] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -127,40 +167,52 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
 
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
 
-  const handleSaveLactate = async () => {
-    const lactateValues = Object.entries(lactateInputs).map(([key, value]) => {
-      const [type, index] = key.split('-');
-      return {
-        type,
-        index: parseInt(index),
-        lactate: parseFloat(value)
-      };
-    }).filter(lv => lv.lactate && !isNaN(lv.lactate));
-
-    try {
-      await updateLactateValues(training._id, lactateValues);
-      await onUpdate(training._id);
-      setEditingLactate(false);
-      setLactateInputs({});
-      alert('Lactate values saved successfully!');
-    } catch (error) {
-      console.error('Error saving lactate:', error);
-      alert('Error saving lactate values');
-    }
+  const handleLactateSaved = async (trainingId) => {
+    if (onUpdate) await onUpdate(trainingId);
+    setLactateSaved(true);
+    setTimeout(() => setLactateSaved(false), 3000);
   };
 
   if (isMobile) {
     return (
       <div>
+        <LactateModal
+          isOpen={lactateModalOpen}
+          onClose={() => setLactateModalOpen(false)}
+          training={training}
+          user={user}
+          onSaved={handleLactateSaved}
+        />
+
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-sm font-bold text-gray-900">Laps</h3>
-          <button
-            onClick={() => setEditingLactate(!editingLactate)}
-            className="px-3 py-1 bg-primary text-white rounded-lg text-xs shadow-sm transition-colors active:bg-primary-dark"
-          >
-            {editingLactate ? 'Cancel' : 'Add Lactate'}
-          </button>
+          <h3 className="text-sm font-bold text-gray-900">
+            Laps
+            {lactateSaved && <span className="ml-2 text-xs font-normal text-green-600">✓ Saved</span>}
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportLapsCSV(uniqueLaps, training, user)}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              title="Export laps as CSV"
+            >
+              <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setLactateModalOpen(true)}
+              className="px-3 py-1 bg-primary text-white rounded-lg text-xs shadow-sm transition-colors active:bg-primary-dark"
+            >
+              Add Lactate
+            </button>
+          </div>
         </div>
+
+        {/* Strava-style bar chart */}
+        <LapsBarChart
+          laps={uniqueLaps}
+          selectedLapNumber={selectedLapNumber}
+          onSelect={onSelectLapNumber}
+          sport={training?.sport}
+        />
 
         <div className={`${LAPS_LIST_SCROLL_CLASS} rounded-xl border border-gray-200 bg-white`}>
         <div className="divide-y divide-gray-100 pr-0.5">
@@ -252,64 +304,66 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
-                      {hr > 0 && <span className="text-[11px] text-red-500">{Math.round(hr)} bpm</span>}
-                      {!isSwim && power > 0 && <span className="text-[11px] text-purple-600">{Math.round(power)} W</span>}
-                      {isSwim && cadence > 0 && <span className="text-[11px] text-gray-600">{Math.round(cadence)} rpm</span>}
-                      {elevation !== null && elevation !== 0 && (
-                        <span className="text-[11px] text-emerald-600">{elevation > 0 ? '+' : ''}{elevation} m</span>
-                      )}
-                    {!editingLactate && lap.lactate && (
+                    {hr > 0 && <span className="text-[11px] text-red-500">{Math.round(hr)} bpm</span>}
+                    {!isSwim && power > 0 && <span className="text-[11px] text-purple-600">{Math.round(power)} W</span>}
+                    {isSwim && cadence > 0 && <span className="text-[11px] text-gray-600">{Math.round(cadence)} rpm</span>}
+                    {elevation !== null && elevation !== 0 && (
+                      <span className="text-[11px] text-emerald-600">{elevation > 0 ? '+' : ''}{elevation} m</span>
+                    )}
+                    {lap.lactate && (
                       <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
                     )}
                   </div>
                 </div>
-                {editingLactate && (
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="La"
-                    value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
-                    onChange={(e) => setLactateInputs({ ...lactateInputs, [`lap-${index}`]: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-16 px-2 py-1 border border-primary/40 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                )}
               </button>
             );
           })}
         </div>
         </div>
-        {editingLactate && (
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => { setEditingLactate(false); setLactateInputs({}); }}
-              className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm transition-colors active:bg-gray-200"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveLactate}
-              className="flex-1 px-3 py-2 bg-greenos text-white rounded-lg text-sm transition-colors active:opacity-90"
-            >
-              Save
-            </button>
-          </div>
-        )}
       </div>
     );
   }
 
   return (
     <div>
+      <LactateModal
+        isOpen={lactateModalOpen}
+        onClose={() => setLactateModalOpen(false)}
+        training={training}
+        user={user}
+        onSaved={handleLactateSaved}
+      />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-        <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
-        <button
-          onClick={() => setEditingLactate(!editingLactate)}
-          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors w-full sm:w-auto"
-        >
-          {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
-        </button>
+        <div className="flex items-center gap-3">
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Intervals</h3>
+          {lactateSaved && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Lactate saved</span>}
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => exportLapsCSV(uniqueLaps, training, user)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            title="Export intervals as CSV"
+          >
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+          <button
+            onClick={() => setLactateModalOpen(true)}
+            className="flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors"
+          >
+            Add Lactate
+          </button>
+        </div>
       </div>
+
+      {/* Strava-style bar chart */}
+      <LapsBarChart
+        laps={uniqueLaps}
+        selectedLapNumber={selectedLapNumber}
+        onSelect={onSelectLapNumber}
+        sport={training?.sport}
+      />
       <div
         ref={tableContainerRef}
         className={`${LAPS_LIST_SCROLL_CLASS} rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0 min-h-0`}
@@ -418,24 +472,13 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                   {elevation !== null && elevation !== 0 ? `${elevation > 0 ? '+' : ''}${elevation} m` : '-'}
                 </td>
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
-                  {editingLactate ? (
-                    <input
-                      type="number"
-                      step="0.1"
-                      placeholder="mmol/L"
-                      value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
-                      onChange={(e) => setLactateInputs({
-                        ...lactateInputs,
-                        [`lap-${index}`]: e.target.value
-                      })}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-16 sm:w-20 md:w-24 px-1.5 sm:px-2 py-1 sm:py-1.5 border border-primary/50 rounded-lg text-xs sm:text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    />
-                  ) : (
-                    <span className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-500'}>
-                      {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'}
-                    </span>
-                  )}
+                  <span
+                    className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-400 cursor-pointer hover:text-primary transition-colors'}
+                    onClick={(e) => { e.stopPropagation(); setLactateModalOpen(true); }}
+                    title={lap.lactate ? undefined : 'Click to add lactate'}
+                  >
+                    {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '+ add'}
+                  </span>
                 </td>
               </tr>
               );
@@ -443,25 +486,6 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           </tbody>
         </table>
       </div>
-      {editingLactate && (
-        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
-          <button
-            onClick={() => {
-              setEditingLactate(false);
-              setLactateInputs({});
-            }}
-            className="px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 shadow-md transition-colors text-sm w-full sm:w-auto"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveLactate}
-            className="px-3 sm:px-4 py-2 bg-greenos text-white rounded-xl shadow-md transition-colors hover:opacity-90 text-sm w-full sm:w-auto"
-          >
-            Save Lactate Values
-          </button>
-        </div>
-      )}
     </div>
   );
 };

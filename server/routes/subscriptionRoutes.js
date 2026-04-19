@@ -56,4 +56,12 @@ router.post('/reactivate', verifyToken, subscriptionController.reactivateSubscri
  */
 router.get('/portal', verifyToken, subscriptionController.getPortalUrl);
 
+/**
+ * POST /api/subscription/send-promo-email
+ * Admin-only: send promo code email to all registered users.
+ * Requires header: x-admin-secret: <ADMIN_SECRET from .env>
+ * Body: { promoCode: "LACHART3FREE", subject?: "...", dryRun?: true }
+ */
+router.post('/send-promo-email', subscriptionController.sendPromoEmail);
+
 module.exports = router;

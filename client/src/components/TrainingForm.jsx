@@ -166,6 +166,7 @@ const TrainingForm = ({
           power: powerValue,
           duration: durationValue,
           elevation: elevationDisp,
+          repeatCount: result.repeatCount ?? 1,
         };
       }),
     };
@@ -411,7 +412,8 @@ const TrainingForm = ({
 
   const handleEditRepeatCount = (index) => {
     setEditingIntervalIndex(index);
-    setTempRepeatCount(formData.results[index].repeatCount.toString());
+    const rc = formData.results[index]?.repeatCount;
+    setTempRepeatCount(rc != null && rc !== "" ? String(rc) : "1");
   };
 
   const handleSaveRepeatCount = () => {
