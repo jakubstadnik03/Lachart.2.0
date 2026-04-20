@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
-import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, EllipsisVerticalIcon, UserPlusIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { motion } from 'framer-motion';
@@ -316,7 +316,7 @@ const AthletesPage = () => {
       if (response.data.athlete) {
         setAthletes([...athletes, response.data.athlete]);
         notifyAthletesUpdated();
-        alert('Athlete was added to your team and an invitation email was sent.');
+        addNotification('Athlete added to your team and invitation email sent.', 'success');
         setIsInviteModalOpen(false);
         setInviteEmail('');
       }
@@ -326,121 +326,105 @@ const AthletesPage = () => {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gray-100 px-2 sm:px-4 md:px-6"
-    >
-      <motion.div
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="max-w-7xl mx-auto py-4 sm:py-6"
-      >
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          className="px-2 sm:px-4 py-4 sm:py-6"
-        >
-          <motion.div
-            initial={{ scale: 0.95 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.6 }}
-            className="bg-white rounded-lg shadow"
-          >
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.8 }}
-              className="px-2 sm:px-4 py-4 sm:p-6"
-            >
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
-                <motion.h1
-                  initial={{ y: -10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ duration: 0.5, delay: 1 }}
-                  className="text-xl sm:text-2xl font-bold text-gray-900"
-                >
-                  List of athletes
-                </motion.h1>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                  <div className="relative w-full sm:w-64">
-                    <MagnifyingGlassIcon className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search athletes..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-9 sm:pl-10 pr-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsModalOpen(true)}
-                    data-tour="tour-add-athlete"
-                    className="w-full sm:w-auto bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors text-sm sm:text-base"
-                  >
-                    Add New Athlete
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsInviteModalOpen(true)}
-                    className="w-full sm:w-auto bg-white text-primary border border-primary px-4 py-2 rounded-lg hover:bg-primary hover:text-white transition-colors text-sm sm:text-base"
-                  >
-                    Add Existing Athlete
-                  </motion.button>
-                  <div className="flex bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
-                    <button
-                      onClick={() => setViewMode('cards')}
-                      className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Cards
-                    </button>
-                    <button
-                      onClick={() => setViewMode('overview')}
-                      className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'overview' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Overview
-                    </button>
-                  </div>
-                </div>
+    <>
+    <div className="min-h-screen py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100">
+            {/* Header row */}
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Athletes</h1>
+                <p className="text-xs text-gray-400 mt-0.5">{athletes.length} athlete{athletes.length !== 1 ? 's' : ''} in your team</p>
               </div>
+              <div className="flex items-center gap-2">
+                {/* View toggle */}
+                <div className="hidden sm:flex bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setViewMode('cards')}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Cards
+                  </button>
+                  <button
+                    onClick={() => setViewMode('overview')}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'overview' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Overview
+                  </button>
+                </div>
+                <button
+                  onClick={() => setIsInviteModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <UsersIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">Existing</span>
+                </button>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  data-tour="tour-add-athlete"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-xl text-xs font-medium hover:bg-primary-dark transition-colors shadow-sm"
+                >
+                  <UserPlusIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">Add Athlete</span>
+                  <span className="sm:hidden">Add</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Search + mobile view toggle */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-xs">
+                <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search athletes..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              {/* Mobile view toggle */}
+              <div className="flex sm:hidden bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('cards')}
+                  className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}
+                >
+                  Cards
+                </button>
+                <button
+                  onClick={() => setViewMode('overview')}
+                  className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition-colors ${viewMode === 'overview' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}
+                >
+                  List
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6">
 
               {viewMode === 'overview' ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4 }}
-                >
-                  <CoachAthleteOverview athletes={filteredAthletes} />
-                </motion.div>
+                <CoachAthleteOverview athletes={filteredAthletes} />
               ) : (
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.5, delay: 1.2 }}
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
-              >
-                {filteredAthletes.map((athlete, index) => (
-                  <motion.div
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredAthletes.length === 0 && (
+                  <div className="col-span-full py-12 text-center text-gray-400 text-sm">
+                    No athletes found. <button onClick={() => setIsModalOpen(true)} className="text-primary underline">Add one</button>
+                  </div>
+                )}
+                {filteredAthletes.map((athlete) => (
+                  <div
                     key={athlete._id}
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 1.4 + index * 0.1 }}
-                    whileHover={{ scale: 1.02 }}
-                    className="bg-white rounded-2xl sm:rounded-3xl shadow-sm overflow-hidden flex flex-col h-full"
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col"
                   >
                     <div className="h-24 sm:h-32 bg-gradient-to-r from-purple-100 to-purple-50 relative">
                       <div className="absolute top-2 sm:top-4 right-2 sm:right-4 dropdown-container">
-                        <button 
-                          onClick={() => setDropdownOpen(athlete._id)}
-                          className="text-gray-600 hover:text-gray-800"
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDropdownOpen(dropdownOpen === athlete._id ? null : athlete._id); }}
+                          className="p-1.5 rounded-lg bg-white/70 hover:bg-white text-gray-500 hover:text-gray-700 transition-colors"
                         >
-                          •••
+                          <EllipsisVerticalIcon className="w-5 h-5" />
                         </button>
                         {dropdownOpen === athlete._id && (
                           <div className="absolute right-0 mt-2 w-40 sm:w-48 bg-white rounded-lg shadow-lg py-1 z-50">
@@ -522,18 +506,18 @@ const AthletesPage = () => {
                         </svg>
                       </button>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
-              </motion.div>
+              </div>
               )}
-            </motion.div>
-          </motion.div>
-        </motion.div>
-      </motion.div>
+            </div>{/* /content */}
+          </div>{/* /card */}
+        </div>{/* /max-w */}
+      </div>{/* /page */}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-2xl  overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 w-full max-w-2xl max-h-[90dvh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">
                 {selectedAthlete ? 'Edit Athlete' : 'Add New Athlete'}
@@ -784,8 +768,8 @@ const AthletesPage = () => {
 
       {/* Invite Athlete Modal */}
       {isInviteModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-xl sm:rounded-3xl p-4 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">Add Existing Athlete</h2>
               <button 
@@ -844,7 +828,7 @@ const AthletesPage = () => {
           </div>
         </div>
       )}
-    </motion.div>
+    </>
   );
 };
 

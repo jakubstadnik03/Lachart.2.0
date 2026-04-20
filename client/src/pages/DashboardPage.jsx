@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
 import AthleteSelector from "../components/AthleteSelector";
+import CoachDashboardHeader from "../components/DashboardPage/CoachDashboardHeader";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
 import TestComparison from "../components/Testing-page/TestComparison";
 import TestSelector from "../components/Testing-page/TestSelector";
@@ -958,17 +959,11 @@ export default function DashboardPage() {
       className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6"
     >
       {isCoachLikeRole && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <AthleteSelector
-            selectedAthleteId={selectedAthleteId}
-            onAthleteChange={handleAthleteChange}
-            user={user}
-          />
-        </motion.div>
+        <CoachDashboardHeader
+          selectedAthleteId={selectedAthleteId}
+          onSelectAthlete={handleAthleteChange}
+          user={user}
+        />
       )}
       {isCoachLikeRole &&
         selectedAthleteId &&

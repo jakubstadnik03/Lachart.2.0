@@ -80,7 +80,10 @@ export const AuthProvider = ({ children }) => {
           key.startsWith('testing_recommendations_open_') ||
           key === 'lachart:lastTestId' ||
           key.startsWith('lachart:lastTestId:') ||
-          key.startsWith('strava_modal_dismissed_')
+          key.startsWith('strava_modal_dismissed_') ||
+          key === 'fitAnalysis_selectedStravaId' ||
+          key === 'fitAnalysis_selectedTrainingId' ||
+          key === 'fitAnalysis_selectedTrainingModelId'
         ) {
           keysToRemove.push(key);
         }
@@ -256,11 +259,39 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (email, password, token, user) => {
     try {
-      // Před každým novým přihlášením vždy kompletně smažeme předchozí stav,
-      // aby se nikdy „nelepil“ starý účet (jiný email / jiný uživatel).
-      removeToken();
-      
-      // Krátké zpoždění, aby se stihlo vyčistit localStorage a cache
+      // Clear credentials and per-user cache WITHOUT setting isAuthenticated(false).
+      // Calling the full removeToken() here causes ProtectedRoute to render
+      // <Navigate to=”/login”> during the 50ms gap, which re-mounts LoginPage
+      // and triggers the login/logout flicker the user sees.
+      // Instead we wipe only localStorage tokens + axios header + API cache silently.
+      localStorage.removeItem('token');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+      // Also clear stale per-user keys so data doesn't bleed between accounts
+      try {
+        const keysToWipe = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k) continue;
+          if (
+            k.startsWith('calendarData_') ||
+            k.startsWith('dashboard_selectedSport_') ||
+            k === 'weeklyCalendar_activities' ||
+            k === 'weeklyCalendar_cacheTime' ||
+            k === 'fitAnalysis_selectedStravaId' ||
+            k === 'fitAnalysis_selectedTrainingId' ||
+            k === 'fitAnalysis_selectedTrainingModelId' ||
+            k.startsWith('global_selectedAthleteId')
+          ) keysToWipe.push(k);
+        }
+        keysToWipe.forEach((k) => localStorage.removeItem(k));
+      } catch (e) { /* ignore */ }
+      if (api.defaults && api.defaults.headers && api.defaults.headers.common) {
+        delete api.defaults.headers.common.Authorization;
+      }
+      clearApiCache();
+
+      // Short pause so localStorage and in-flight requests clear before new token is set
       await new Promise(resolve => setTimeout(resolve, 50));
 
       const applyLogin = (loginToken, loginUser) => {

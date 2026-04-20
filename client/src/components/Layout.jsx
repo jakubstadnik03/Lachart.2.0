@@ -8,6 +8,7 @@ import api, { autoSyncStravaActivities, autoSyncGarminActivities } from "../serv
 import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalNotification";
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
+import CoachAthleteBar from "./CoachAthleteBar";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
@@ -326,6 +327,9 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
             <span className="whitespace-nowrap">Nastavení → Subscription</span>.
           </div>
         )}
+
+        {/* Coach: "Viewing athlete" banner */}
+        <CoachAthleteBar />
 
         {/* Hlavní obsah s footerem uvnitř na mobilu */}
         <main

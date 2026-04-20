@@ -2088,7 +2088,11 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
             });
           } catch (retryError) {
             console.error('Strava activity detail after refresh:', retryError.response?.data || retryError.message);
-            return res.status(retryError.response?.status || 500).json({
+            // Never forward Strava's 401 to the client — it would trigger app-wide logout.
+            // Use 400 (bad request / token issue) or 502 (bad gateway) instead.
+            const retryStatus = retryError.response?.status;
+            const safeStatus = retryStatus === 401 ? 400 : (retryStatus || 500);
+            return res.status(safeStatus).json({
               error: 'Failed to fetch activity from Strava after token refresh',
               details: retryError.response?.data || retryError.message
             });
@@ -2102,7 +2106,10 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         }
       } else {
         console.error('Strava activity detail error:', apiError.response?.data || apiError.message);
-        return res.status(apiError.response?.status || 500).json({
+        // Never forward Strava's 401 to the client — it would trigger app-wide logout.
+        const errStatus = apiError.response?.status;
+        const safeStatus = errStatus === 401 ? 400 : (errStatus || 500);
+        return res.status(safeStatus).json({
           error: 'Failed to fetch activity from Strava',
           details: apiError.response?.data || apiError.message
         });

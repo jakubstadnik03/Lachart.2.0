@@ -1483,6 +1483,8 @@ const FitAnalysisPage = () => {
   const [hoveredTrainingRecord, setHoveredTrainingRecord] = useState(null);
   const [trainingTooltipPosition, setTrainingTooltipPosition] = useState({ x: 0, y: 0 });
   const trainingChartRef = useRef(null);
+  // Prevents auto-loading the saved Strava selection more than once per session
+  const stravaAutoLoadAttempted = useRef(false);
   
   // Zoom state for training chart
   const [trainingZoom, setTrainingZoom] = useState({ min: 0, max: 1, scale: 1 });
@@ -1811,6 +1813,10 @@ const FitAnalysisPage = () => {
   }, []);
 
   useEffect(() => {
+    // Guard: don't fire API calls if auth token is missing (avoids spurious 401 → logout).
+    const hasToken = localStorage.getItem('token') || localStorage.getItem('authToken');
+    if (!hasToken) return;
+
     // Always load trainings first, then check for trainingId in URL params
     const params = new URLSearchParams(window.location.search);
     const trainingId = params.get('trainingId');
@@ -1885,6 +1891,13 @@ const FitAnalysisPage = () => {
   }, [activityId, athleteIdParam]);
 
   useEffect(() => {
+    // Guard: don't fire protected API calls if there is no auth token yet.
+    // ProtectedRoute normally ensures we only render when authenticated, but a
+    // belt-and-suspenders check here avoids any transient 401 that could trigger
+    // app-wide logout if the token hasn't fully propagated to localStorage.
+    const hasToken = localStorage.getItem('token') || localStorage.getItem('authToken');
+    if (!hasToken) return;
+
     const checkStatus = async () => {
       try {
         const status = await getIntegrationStatus();
@@ -1987,21 +2000,19 @@ const FitAnalysisPage = () => {
         return;
       }
       
-      // Handle 401 (Unauthorized) - token expired or invalid
-      if (e.response?.status === 401) {
-        console.error('Strava token expired or invalid. Please reconnect your Strava account.');
-        addNotification('Strava token expired. Please reconnect your Strava account in Settings.', 'error');
-        // Don't clear state - user might want to see cached data
-        setDetailLoading(false);
-        return;
-      }
-
-      if (e.response?.status === 400) {
+      // Handle 401 / 400 (Strava OAuth token expired or Strava API error)
+      // Clear the saved activity ID so the page doesn't auto-retry on every load.
+      if (e.response?.status === 401 || e.response?.status === 400) {
+        localStorage.removeItem('fitAnalysis_selectedStravaId');
         const d = e.response?.data;
-        const msg =
+        const serverMsg =
           (typeof d?.message === 'string' && d.message) ||
           (typeof d?.error === 'string' && d.error) ||
-          'Strava request failed. Try reconnecting Strava in Settings.';
+          null;
+        const msg = serverMsg
+          || (e.response?.status === 401
+            ? 'Strava token expired. Please reconnect your Strava account in Settings.'
+            : 'Strava request failed. Try reconnecting Strava in Settings.');
         addNotification(msg, 'error');
         setDetailLoading(false);
         return;
@@ -2048,19 +2059,24 @@ const FitAnalysisPage = () => {
       const acts = normalizeApiList(await listExternalActivities(params));
       setExternalActivities(acts);
       
-      // Check if we should restore Strava selection (only on initial load or when athlete changes)
-      const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
-      if (savedStravaId) {
-        // Verify the activity still exists
-        const activityExists = acts.some(a => String(a.stravaId) === savedStravaId);
-        if (activityExists) {
-          // Only load if not already selected (to avoid unnecessary API calls)
-          if (!selectedStrava || String(selectedStrava.id) !== savedStravaId) {
-            loadStravaDetail(savedStravaId);
+      // Restore the last-selected Strava activity — one-shot only.
+      // The ref prevents React StrictMode's double-invocation and concurrent calls
+      // from firing multiple API requests for the same saved activity.
+      if (!stravaAutoLoadAttempted.current) {
+        const savedStravaId = localStorage.getItem('fitAnalysis_selectedStravaId');
+        if (savedStravaId) {
+          const activityExists = acts.some(a => String(a.stravaId) === savedStravaId);
+          if (activityExists) {
+            if (!selectedStrava || String(selectedStrava.id) !== savedStravaId) {
+              stravaAutoLoadAttempted.current = true;
+              // Clear the saved ID *before* the async load so a concurrent invocation
+              // won't fire a second request. loadStravaDetail sets it back on success.
+              localStorage.removeItem('fitAnalysis_selectedStravaId');
+              loadStravaDetail(savedStravaId);
+            }
+          } else {
+            localStorage.removeItem('fitAnalysis_selectedStravaId');
           }
-        } else {
-          // Activity no longer exists, remove from localStorage
-          localStorage.removeItem('fitAnalysis_selectedStravaId');
         }
       }
     } catch (e) {

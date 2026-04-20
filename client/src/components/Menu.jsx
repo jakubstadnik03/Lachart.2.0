@@ -6,10 +6,21 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { LAYOUT_DESKTOP_MIN_PX } from '../constants/layoutBreakpoints';
 
+const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
+const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
+function getStatusDot(lastTestDate) {
+  if (!lastTestDate) return 'bg-red-400';
+  const diff = Date.now() - new Date(lastTestDate).getTime();
+  if (diff < SIX_WEEKS_MS) return 'bg-green-400';
+  if (diff < TWELVE_WEEKS_MS) return 'bg-yellow-400';
+  return 'bg-red-400';
+}
+
 const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) => {
   // FIRST: all hooks
   const { user: authUser, token: authToken, logout, loading } = useAuth();
   const [athletes, setAthletes] = useState([]);
+  const [athleteStatuses, setAthleteStatuses] = useState({});
   const [loadingAthletes, setLoadingAthletes] = useState(true);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= LAYOUT_DESKTOP_MIN_PX);
   const menuRef = useRef(null);
@@ -36,7 +47,26 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
     try {
       setLoadingAthletes(true);
       const response = await api.get('/user/coach/athletes');
-      setAthletes(response.data);
+      const list = response.data || [];
+      setAthletes(list);
+      // Load test statuses in background (non-blocking, best-effort)
+      if (list.length > 0) {
+        Promise.allSettled(
+          list.slice(0, 15).map(a =>
+            api.get(`/test/list/${a._id}`).then(r => ({ id: a._id, tests: r.data || [] }))
+          )
+        ).then(results => {
+          const statuses = {};
+          results.forEach(r => {
+            if (r.status === 'fulfilled') {
+              const { id, tests } = r.value;
+              const sorted = [...tests].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+              statuses[id] = sorted[0]?.date || sorted[0]?.createdAt || null;
+            }
+          });
+          setAthleteStatuses(statuses);
+        }).catch(() => {});
+      }
     } catch (error) {
       console.error('Error loading athletes:', error);
     } finally {
@@ -127,16 +157,12 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         return;
       }
 
-      // Pro training-calendar: nastav selectedAthleteId a zobraz profil
+      // Pro training-calendar: zůstaň na stránce, jen pošli event a ulož výběr
       if (currentPath === 'training-calendar') {
-        // Ulož selectedAthleteId do localStorage
         localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
-        // Nastav selectedAthleteId přes custom event (pro případ, že je stránka stále otevřená)
-        window.dispatchEvent(new CustomEvent('athleteSelected', { 
-          detail: { athleteId }
-        }));
-        // Zobraz profil atleta
-        navigate(`/athlete/${athleteId}`, { replace: true });
+        window.dispatchEvent(new CustomEvent('athleteSelected', { detail: { athleteId } }));
+        // navigate to training-calendar with athlete context (without redirecting away)
+        navigate(`/training-calendar`, { replace: true });
         return;
       }
 
@@ -441,31 +467,58 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
                 Loading athletes…
               </div>
             ) : athletes.length > 0 ? (
-              <ul className="space-y-2 pb-2">
-                {athletes.map((athlete) => (
-                  <li 
-                    key={athlete._id}
-                  >
-                    <button
-                      onClick={() => handleAthleteClick(athlete._id)}
-                      className={`w-full text-left flex items-center py-2.5 px-2 rounded-lg text-sm font-medium transition-colors duration-200 touch-manipulation ${
-                        effectiveAthleteId === athlete._id && currentPath !== 'athletes'
-                          ? "bg-violet-100 text-violet-700"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                    >
-                      <img
-                        src={getAvatar(athlete)}
-                        alt="Athlete"
-                        className="w-6 h-6 rounded-full mr-2"
-                      />
-                      {athlete.name} {athlete.surname}
-                    </button>
-                  </li>
-                ))}
+              <ul className="space-y-1 pb-2">
+                {athletes.map((athlete) => {
+                  const isSelected = effectiveAthleteId === athlete._id && currentPath !== 'athletes';
+                  const lastTest = athleteStatuses[athlete._id]; // undefined = loading, null = no test
+                  const isPending = athlete.invitationPending || athlete.coachLinkStatus === 'pending';
+                  return (
+                    <li key={athlete._id}>
+                      <button
+                        onClick={() => handleAthleteClick(athlete._id)}
+                        className={`w-full text-left flex items-center gap-2 py-2 px-2 rounded-lg text-sm font-medium transition-colors duration-150 touch-manipulation ${
+                          isSelected
+                            ? "bg-violet-100 text-violet-700"
+                            : "text-gray-700 hover:bg-gray-100"
+                        }`}
+                      >
+                        <div className="relative shrink-0">
+                          <img
+                            src={getAvatar(athlete)}
+                            alt=""
+                            className="w-6 h-6 rounded-full"
+                          />
+                          {/* Status dot — only if we have status data */}
+                          {!isPending && lastTest !== undefined && (
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${getStatusDot(lastTest)}`}
+                            />
+                          )}
+                          {isPending && (
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white bg-amber-400" />
+                          )}
+                        </div>
+                        <span className="truncate min-w-0 flex-1">
+                          {athlete.name} {athlete.surname}
+                        </span>
+                        {isPending && (
+                          <span className="text-[9px] bg-amber-100 text-amber-600 rounded px-1 py-0.5 shrink-0">pending</span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
-              <div className="text-sm text-gray-500">No athletes available</div>
+              <div className="text-xs text-gray-400 pb-2">
+                No athletes yet.{' '}
+                <button
+                  onClick={() => { navigate('/athletes'); if (window.innerWidth < LAYOUT_DESKTOP_MIN_PX) setIsMenuOpen(false); }}
+                  className="text-primary underline"
+                >
+                  Add one
+                </button>
+              </div>
             )}
           </div>
         )}

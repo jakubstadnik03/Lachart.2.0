@@ -383,10 +383,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Neodhlašovat globálně u přihlášení/registrace — vracejí 401 při špatných údajích;
       // axios defaults mohou mít pořád starý Bearer, takže by se jinak smazala platná relace.
+      // Also skip logout for Strava/Garmin integration endpoints — those can 401 due to a third-party
+      // OAuth token expiry, which is unrelated to the LaChart session. The backend translates
+      // Strava 401 → 400 but we add this belt-and-suspenders guard too.
+      // /api/integrations/status and /api/integrations/activities also fall under this umbrella:
+      // they are gated by the LaChart JWT but a transient 401 (e.g. timing on first render after
+      // login before the token fully propagates) should NOT blow away a valid session.
       const reqUrl = String(error.config?.url || '');
       const isCredentialAuthEndpoint =
         /\/user\/(login|register)(\?|$|\/)/.test(reqUrl);
-      if (!isCredentialAuthEndpoint) {
+      const isIntegrationEndpoint = reqUrl.includes('/strava/')
+        || reqUrl.includes('/garmin/')
+        || reqUrl.includes('/api/integrations/');
+      if (!isCredentialAuthEndpoint && !isIntegrationEndpoint) {
         localStorage.removeItem('authToken');
         localStorage.removeItem('token');
         if (api.defaults?.headers?.common) delete api.defaults.headers.common.Authorization;

@@ -15,10 +15,12 @@ import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus }
 import { logTestCreated } from '../utils/eventLogger';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
+import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
+import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
 import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 
 /** Map saved test sport to run | bike | swim for UI + advisor */
@@ -57,6 +59,12 @@ const TestingPage = () => {
     return null;
   });
   const [showNewTesting, setShowNewTesting] = useState(false);
+  const [showHistory, setShowHistory] = useState(() => {
+    try { return localStorage.getItem('testing_showHistory') !== 'false'; } catch { return true; }
+  });
+  const [showProtocol, setShowProtocol] = useState(() => {
+    try { return localStorage.getItem('testing_showProtocol') !== 'false'; } catch { return true; }
+  });
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
   
@@ -71,7 +79,7 @@ const TestingPage = () => {
   const MAX_EXTERNAL_ACTIVITIES = 1000;
   const [bikePowerMetrics, setBikePowerMetrics] = useState(null);
   const [advisorLoading, setAdvisorLoading] = useState(false);
-  const [showRecommendations, setShowRecommendations] = useState(false);
+  // showRecommendations removed — TestRecommendationCard is always visible
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
   const [pendingAthletesLoaded, setPendingAthletesLoaded] = useState(false);
   const [hrTestPlan, setHrTestPlan] = useState(null);
@@ -888,26 +896,6 @@ const TestingPage = () => {
     };
   }, [externalActivities, user, isAuthenticated, selectedAthleteId, isCoachLikeRole]);
 
-  // Persist "recommendations panel" visibility per athlete (default: closed)
-  useEffect(() => {
-    const targetId = selectedAthleteId || user?._id;
-    if (!targetId) return;
-    const key = `testing_recommendations_open_${targetId}`;
-    const saved = localStorage.getItem(key);
-    if (saved !== null) {
-      setShowRecommendations(saved === 'true');
-    } else {
-      setShowRecommendations(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAthleteId, user?._id]);
-
-  useEffect(() => {
-    const targetId = selectedAthleteId || user?._id;
-    if (!targetId) return;
-    const key = `testing_recommendations_open_${targetId}`;
-    localStorage.setItem(key, String(showRecommendations));
-  }, [showRecommendations, selectedAthleteId, user?._id]);
 
   const formatDateShort = (dateLike) => {
     if (!dateLike) return '';
@@ -1362,16 +1350,45 @@ const TestingPage = () => {
           >
             <InformationCircleIcon className="w-5 h-5 text-gray-500" />
           </button>
-          {recommendationsEligible && !showRecommendations && (
+
+          {/* Toggle: Threshold History */}
+          {tests.length >= 1 && (
             <button
-              onClick={() => setShowRecommendations(true)}
-              className="px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary-dark shadow-md hover:shadow-lg transition-all flex items-center gap-2"
-              title="Show Recommendations"
+              onClick={() => {
+                const next = !showHistory;
+                setShowHistory(next);
+                try { localStorage.setItem('testing_showHistory', String(next)); } catch {}
+              }}
+              title={showHistory ? 'Hide threshold history' : 'Show threshold history'}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors touch-manipulation"
+              style={showHistory
+                ? { background: '#767EB520', color: '#767EB5' }
+                : { color: '#9CA3AF' }
+              }
             >
-              <InformationCircleIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Show Recommendations</span>
+              <PresentationChartLineIcon className="w-5 h-5" />
             </button>
           )}
+
+          {/* Toggle: Recommended Protocol */}
+          {recommendationsEligible && (
+            <button
+              onClick={() => {
+                const next = !showProtocol;
+                setShowProtocol(next);
+                try { localStorage.setItem('testing_showProtocol', String(next)); } catch {}
+              }}
+              title={showProtocol ? 'Hide test protocol' : 'Show test protocol'}
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors touch-manipulation"
+              style={showProtocol
+                ? { background: '#4BA87D20', color: '#4BA87D' }
+                : { color: '#9CA3AF' }
+              }
+            >
+              <ClipboardDocumentListIcon className="w-5 h-5" />
+            </button>
+          )}
+
           {user?.role === 'coach' && (
             <button
               onClick={() => setShowAddAthleteModal(true)}
@@ -1391,274 +1408,57 @@ const TestingPage = () => {
         </motion.div>
       </div>
 
-      {/* Lactate Test Advisor — only after at least one saved test; content filtered by sport(s) tested */}
-      {recommendationsEligible && showRecommendations && (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-        transition={{ delay: 0.2 }}
-        className="w-full mb-3 sm:mb-4"
-      >
-          <div className="bg-white rounded-xl shadow border border-gray-100 p-3 sm:p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Lactate Test Recommendations
-                </h2>
-                <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5 leading-snug">
-                  {recSingleSport
-                    ? `Next test ideas for ${recRun ? 'running' : recBike ? 'cycling' : 'swimming'} (zones + Strava when connected).`
-                    : 'Next test ideas for your tested sports (zones + Strava when connected).'}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {advisorLoading && (
-                  <div className="text-xs text-gray-500 whitespace-nowrap">Loading…</div>
-                )}
-                <button
-                  onClick={() => setShowRecommendations(false)}
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
-                  aria-label="Hide recommendations"
-                  title="Hide recommendations"
-                >
-                  <XMarkIcon className="w-4 h-4 text-gray-500" />
-                </button>
-              </div>
-            </div>
-
-          {/* HR-First Test Plan — only for run/bike if that sport has a past test */}
-          {(recRun || recBike) && hrTestPlanLoading && (
-            <div className="mt-2 text-[11px] text-gray-500">Analyzing HR data from Strava…</div>
-          )}
-          {hrTestPlan && ((recRun && hrTestPlan.run) || (recBike && hrTestPlan.bike)) && (
-            <div className="mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <h3 className="text-xs font-semibold text-blue-900">HR-first plan (Strava)</h3>
-                <div className="text-xs text-blue-600 shrink-0">42–180 d</div>
-              </div>
-              <div className={`grid gap-2 ${recRun && recBike ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                {recRun && hrTestPlan.run && (
-                  <div className="text-[11px] text-blue-800 leading-snug">
-                    <div className="font-semibold mb-1">Running:</div>
-                    {(!hrTestPlan.run.hrMax?.value && !hrTestPlan.run.lt1?.hr?.value && !hrTestPlan.run.lt2?.hr?.value) && (
-                      <div className="text-blue-600 italic">No HR data available for running activities</div>
-                    )}
-                    {hrTestPlan.run.hrMax?.value && (
-                    <div>HRmax: {hrTestPlan.run.hrMax.value} bpm ({hrTestPlan.run.hrMax.confidence})</div>
-                    )}
-                    {hrTestPlan.run.lt1?.hr?.value && (
-                      <div>
-                        LT1: {hrTestPlan.run.lt1.hr.value} bpm ({hrTestPlan.run.lt1.confidence})
-                        {hrTestPlan.run.lt1.pace && ` • Pace: ${hrTestPlan.run.lt1.pace}`}
-                        {hrTestPlan.run.lt1.power && !hrTestPlan.run.lt1.pace && ` • Power: ${hrTestPlan.run.lt1.power}W`}
-                      </div>
-                    )}
-                    {hrTestPlan.run.lt2?.hr?.value && (
-                      <div>
-                        LT2: {hrTestPlan.run.lt2.hr.value} bpm ({hrTestPlan.run.lt2.confidence})
-                        {hrTestPlan.run.lt2.pace && ` • Pace: ${hrTestPlan.run.lt2.pace}`}
-                        {hrTestPlan.run.lt2.power && !hrTestPlan.run.lt2.pace && ` • Power: ${hrTestPlan.run.lt2.power}W`}
-                      </div>
-                    )}
-                    {hrTestPlan.run.protocol && (
-                      <div className="mt-2 pt-2 border-t border-blue-300">
-                        <div className="font-semibold">Protocol ({hrTestPlan.run.protocol.stageDurationMin} min stages):</div>
-                        {hrTestPlan.run.protocol.stages.slice(0, 3).map(stage => (
-                          <div key={stage.stage} className="text-xs">
-                            Stage {stage.stage}: HR {stage.targetHR} bpm
-                            {stage.suggestedPace && ` → ${stage.suggestedPace}`}
-                            {stage.suggestedPower && !stage.suggestedPace && ` → ${stage.suggestedPower}W`}
-                          </div>
-                        ))}
-                        {hrTestPlan.run.protocol.stages.length > 3 && (
-                          <div className="text-xs text-blue-600">+ {hrTestPlan.run.protocol.stages.length - 3} more</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {recBike && hrTestPlan.bike && (
-                  <div className="text-[11px] text-blue-800 leading-snug">
-                    <div className="font-semibold mb-1">Cycling:</div>
-                    {(!hrTestPlan.bike.hrMax?.value && !hrTestPlan.bike.lt1?.hr?.value && !hrTestPlan.bike.lt2?.hr?.value) && (
-                      <div className="text-blue-600 italic">No HR data available for cycling activities</div>
-                    )}
-                    {hrTestPlan.bike.hrMax?.value && (
-                    <div>HRmax: {hrTestPlan.bike.hrMax.value} bpm ({hrTestPlan.bike.hrMax.confidence})</div>
-                    )}
-                    {hrTestPlan.bike.lt1?.hr?.value && (
-                      <div>
-                        LT1: {hrTestPlan.bike.lt1.hr.value} bpm ({hrTestPlan.bike.lt1.confidence})
-                        {hrTestPlan.bike.lt1.power && ` • Power: ${hrTestPlan.bike.lt1.power}W`}
-                        {hrTestPlan.bike.lt1.pace && !hrTestPlan.bike.lt1.power && ` • Pace: ${hrTestPlan.bike.lt1.pace}`}
-                      </div>
-                    )}
-                    {hrTestPlan.bike.lt2?.hr?.value && (
-                      <div>
-                        LT2: {hrTestPlan.bike.lt2.hr.value} bpm ({hrTestPlan.bike.lt2.confidence})
-                        {hrTestPlan.bike.lt2.power && ` • Power: ${hrTestPlan.bike.lt2.power}W`}
-                        {hrTestPlan.bike.lt2.pace && !hrTestPlan.bike.lt2.power && ` • Pace: ${hrTestPlan.bike.lt2.pace}`}
-                      </div>
-                    )}
-                    {hrTestPlan.bike.protocol && (
-                      <div className="mt-2 pt-2 border-t border-blue-300">
-                        <div className="font-semibold">Protocol ({hrTestPlan.bike.protocol.stageDurationMin} min stages):</div>
-                        {hrTestPlan.bike.protocol.stages.slice(0, 3).map(stage => (
-                          <div key={stage.stage} className="text-xs">
-                            Stage {stage.stage}: HR {stage.targetHR} bpm
-                            {stage.suggestedPower && ` → ${stage.suggestedPower}W`}
-                            {stage.suggestedPace && !stage.suggestedPower && ` → ${stage.suggestedPace}`}
-                          </div>
-                        ))}
-                        {hrTestPlan.bike.protocol.stages.length > 3 && (
-                          <div className="text-xs text-blue-600">+ {hrTestPlan.bike.protocol.stages.length - 3} more</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Protocol + LT2 chart side-by-side on md+ (full width, lower height) */}
-          <div className="mt-2 space-y-2">
-            {recBike && (
-              <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-2 md:p-2.5">
-                <div className="flex-1 min-w-0 rounded-md border border-gray-200 bg-gray-50 p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-gray-900 text-xs">Bike</div>
-                    <div className="text-[10px] text-gray-500 shrink-0">
-                      Last: {advisor.bike.lastTest?.date ? `${formatDateShort(advisor.bike.lastTest.date)} (${advisor.bike.lastTestDays ?? '-'}d)` : '—'}
-                    </div>
-                  </div>
-                  <div className="mt-1.5 text-[11px] text-gray-700 space-y-0.5 leading-snug">
-                    <div>
-                      <span className="font-semibold">Protocol:</span>{' '}
-                      {advisor.bike.start && advisor.bike.end
-                        ? `${advisor.bike.start}→${advisor.bike.end}W (+${advisor.bike.step}W), ${advisor.bike.stageMin}min + ${advisor.bike.restMin}min rest`
-                        : 'Add zones or Strava/FIT power to suggest watt range.'}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Duration:</span>{' '}
-                      {advisor.bike.stages
-                        ? `~${advisor.bike.stages * (advisor.bike.stageMin + advisor.bike.restMin)} min`
-                        : '—'}
-                    </div>
-                    {(advisor.bike.lastTestDays != null && advisor.bike.lastTestDays > 90) && (
-                      <div className="text-rose-600 font-medium text-[11px]">⚠ Last bike test &gt;90d</div>
-                    )}
-                    {advisor.bike.zoneShift && (
-                      <div className="text-amber-700 font-medium text-[11px]">⚠ Check zones vs last test / power</div>
-                    )}
-                  </div>
-                </div>
-                {lt2History.bike.length >= 2 && (
-                  <div className="w-full md:w-[min(40%,320px)] md:shrink-0 flex flex-col justify-center border border-gray-200 rounded-md bg-white p-1.5">
-                    <div className="text-[10px] font-semibold text-gray-800 px-0.5">Bike LT2</div>
-                    <div className="h-[100px] md:h-[110px] w-full min-h-[100px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={lt2History.bike.map(p => ({ ...p, dateLabel: formatDateShort(p.date) }))}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="dateLabel" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
-                          <YAxis tick={{ fontSize: 8 }} width={32} />
-                          <Tooltip />
-                          <Line type="monotone" dataKey="lt2" stroke="#ef4444" strokeWidth={1.5} dot={{ r: 2 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="text-[9px] text-gray-500 px-0.5">≈4.0 mmol/L</div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {recRun && (
-              <div className="flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3 rounded-lg border border-gray-200 bg-gray-50/60 p-2 md:p-2.5">
-                <div className="flex-1 min-w-0 rounded-md border border-gray-200 bg-gray-50 p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-gray-900 text-xs">Run</div>
-                    <div className="text-[10px] text-gray-500 shrink-0">
-                      Last: {advisor.run.lastTest?.date ? `${formatDateShort(advisor.run.lastTest.date)} (${advisor.run.lastTestDays ?? '-'}d)` : '—'}
-                    </div>
-                  </div>
-                  <div className="mt-1.5 text-[11px] text-gray-700 space-y-0.5 leading-snug">
-                    <div>
-                      <span className="font-semibold">Protocol:</span>{' '}
-                      {advisor.run.startPaceSecPerKm != null && advisor.run.endPaceSecPerKm != null
-                        ? `${formatPace(advisor.run.startPaceSecPerKm)}→${formatPace(advisor.run.endPaceSecPerKm)} (−${advisor.run.stepSecPerKm}s/km), ${advisor.run.stageMin}min + ${advisor.run.restMin}min rest`
-                        : 'Set threshold pace or sync Strava runs for pace range.'}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Duration:</span>{' '}
-                      {advisor.run.stages
-                        ? `~${advisor.run.stages * (advisor.run.stageMin + advisor.run.restMin)} min`
-                        : '—'}
-                    </div>
-                    <div className="text-gray-600">Sample lactate same point each stage; short rest between steps.</div>
-                    {(advisor.run.lastTestDays != null && advisor.run.lastTestDays > 90) && (
-                      <div className="text-rose-600 font-medium text-[11px]">⚠ Last run test &gt;90d</div>
-                    )}
-                    {advisor.run.zoneShift && (
-                      <div className="text-amber-700 font-medium text-[11px]">⚠ Check zones vs last test / pace</div>
-                    )}
-                  </div>
-                </div>
-                {lt2History.run.length >= 2 && (
-                  <div className="w-full md:w-[min(40%,320px)] md:shrink-0 flex flex-col justify-center border border-gray-200 rounded-md bg-white p-1.5">
-                    <div className="text-[10px] font-semibold text-gray-800 px-0.5">Run LT2</div>
-                    <div className="h-[100px] md:h-[110px] w-full min-h-[100px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={lt2History.run.map(p => ({ ...p, dateLabel: formatDateShort(p.date) }))}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="dateLabel" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
-                          <YAxis tick={{ fontSize: 8 }} width={32} reversed />
-                          <Tooltip formatter={(v) => formatPace(v)} />
-                          <Line type="monotone" dataKey="lt2" stroke="#3b82f6" strokeWidth={1.5} dot={{ r: 2 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="text-[9px] text-gray-500 px-0.5">Lower = faster</div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {recSwim && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-semibold text-gray-900 text-xs">Swim</div>
-                  <div className="text-[10px] text-gray-500 shrink-0">
-                    Last: {latestBySport.swim?.date ? `${formatDateShort(latestBySport.swim.date)} (${daysSince(latestBySport.swim.date) ?? '-'}d)` : '—'}
-                  </div>
-                </div>
-                <p className="mt-1.5 text-[11px] text-gray-700 leading-snug">
-                  Stepped pace or send-off times like running; keep stroke and turns consistent between lactate samples.
-                </p>
-              </div>
-            )}
-          </div>
-          </div>
-        </motion.div>
-        )}
-
-      {/* Population Insights - Below LT2 charts, for selected sport */}
-      {athleteProfile && selectedSport !== 'all' && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="w-full mb-3 sm:mb-6"
-        >
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 sm:p-4 md:p-6">
-            <PopulationInsights 
-              athleteProfile={athleteProfile} 
-              selectedSport={selectedSport}
+      {/* Threshold progression history */}
+      <AnimatePresence>
+        {tests.length >= 1 && showHistory && (
+          <motion.div
+            key="threshold-history"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <ThresholdHistory
+              tests={tests}
+              onSelectTestId={handleUrlTestSelection}
+              externalActivities={externalActivities}
+              bikePowerMetrics={bikePowerMetrics}
+              onClose={() => { setShowHistory(false); try { localStorage.setItem('testing_showHistory', 'false'); } catch {} }}
             />
-          </div>
-        </motion.div>
+          </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* Recommended Test Protocol */}
+      <AnimatePresence>
+        {recommendationsEligible && showProtocol && (
+          <motion.div
+            key="test-protocol"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <TestRecommendationCard
+              sportsWithPastTests={sportsWithPastTests}
+              latestBySport={latestBySport}
+              advisor={advisor}
+              hrTestPlan={hrTestPlan}
+              hrTestPlanLoading={hrTestPlanLoading}
+              bikePowerMetrics={bikePowerMetrics}
+              externalActivities={externalActivities}
+              advisorLoading={advisorLoading}
+              onStartTest={(sport) => {
+                setSelectedSport(sport === 'bike' ? 'bike' : sport === 'run' ? 'run' : 'swim');
+                setShowNewTesting(true);
+              }}
+              onClose={() => { setShowProtocol(false); try { localStorage.setItem('testing_showProtocol', 'false'); } catch {} }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showNewTesting && (
@@ -1684,7 +1484,7 @@ const TestingPage = () => {
         transition={{ delay: 0.5 }}
         className="w-full min-w-0"
       >
-        <PreviousTestingComponent 
+        <PreviousTestingComponent
           key={selectedAthleteId || user?._id} // Reset component when athlete changes
           selectedSport={selectedSport}
           tests={tests}
@@ -1694,6 +1494,21 @@ const TestingPage = () => {
           externalActivities={externalActivities}
         />
       </motion.div>
+
+      {/* Population Comparison — always at the very bottom */}
+      {athleteProfile && selectedSport !== 'all' && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="w-full mt-4 mb-4"
+        >
+          <PopulationInsights
+            athleteProfile={athleteProfile}
+            selectedSport={selectedSport}
+          />
+        </motion.div>
+      )}
 
       {/* Glossary Modal */}
       <TrainingGlossary 
