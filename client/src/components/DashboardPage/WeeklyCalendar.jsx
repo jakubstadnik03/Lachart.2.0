@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, CheckIcon, XMarkIcon, FireIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
 import TrainingStats from '../FitAnalysis/TrainingStats';
-import TrainingChart from '../FitAnalysis/TrainingChart';
-import IntervalChart from '../FitAnalysis/IntervalChart';
 import LapsTable from '../FitAnalysis/LapsTable';
-import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity } from '../../services/api';
+import { getFitTraining, getStravaActivityDetail, updateFitTraining, updateStravaActivity, updateTraining, addTraining } from '../../services/api';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthProvider';
 import { formatDistanceForUser, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import TrainingForm from '../TrainingForm';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -299,19 +299,138 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
-  const [chartView, setChartView] = useState('training'); // 'training' or 'interval'
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingCategory, setEditingCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [showLeftScroll, setShowLeftScroll] = useState(false);
-  const [showRightScroll, setShowRightScroll] = useState(true);
+  const [lactateFormOpen, setLactateFormOpen] = useState(false);
+  const [lactateFormData, setLactateFormData] = useState(null);
+  const [lactateFormLoading, setLactateFormLoading] = useState(false);
+  const [, setShowLeftScroll] = useState(false);
+  const [, setShowRightScroll] = useState(true);
   const [showLeftScrollNoTraining, setShowLeftScrollNoTraining] = useState(false);
   const [showRightScrollNoTraining, setShowRightScrollNoTraining] = useState(true);
   const scrollContainerRef = useRef(null);
   const scrollContainerNoTrainingRef = useRef(null);
+
+  // Open the full TrainingForm for lactate entry
+  const handleOpenLactateForm = async (lapIndex) => {
+    if (!trainingDetail) return;
+    setLactateFormLoading(true);
+    try {
+      // Use the laps already loaded in trainingDetail — no second API call needed
+      const laps = Array.isArray(trainingDetail.laps) ? trainingDetail.laps : [];
+
+      // If no laps cached yet, fetch them now
+      let detail = trainingDetail;
+      let fetchedLaps = laps;
+      if (!fetchedLaps.length) {
+        const rawId = trainingDetail.stravaId || trainingDetail.id || '';
+        const stravaId = String(rawId).replace(/^strava-/i, '');
+        if (!stravaId) return;
+        const data = await getStravaActivityDetail(stravaId, stravaDetailAthleteId);
+        detail = { ...trainingDetail, ...(data.detail || {}) };
+        fetchedLaps = data.laps || [];
+      }
+      if (!fetchedLaps.length) return;
+
+      const sportType = detail.sport || detail.sport_type || detail.type || 'bike';
+      const sportLower = String(sportType).toLowerCase();
+      const sport = sportLower.includes('swim') ? 'swim' : sportLower.includes('run') ? 'run' : 'bike';
+      const isRun = sport === 'run';
+      const isSwim = sport === 'swim';
+
+      const fmtDur = (sec) => {
+        const s = Number(sec) || 0;
+        const m = Math.floor(s / 60);
+        const ss = Math.round(s % 60);
+        return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+      };
+
+      const results = fetchedLaps.map((lap, idx) => {
+        const durationSec = Math.round(lap.moving_time ?? lap.elapsed_time ?? lap.totalTimerTime ?? 0);
+        const distM = Math.round(lap.distance ?? lap.totalDistance ?? 0);
+        const speed = lap.average_speed ?? lap.avgSpeed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? lap.enhanced_avg_speed ?? lap.speed ?? 0;
+        const effectiveSpeed = speed > 0.05 ? speed : (distM > 0 && durationSec > 0 ? distM / durationSec : 0);
+
+        let powerValue = '';
+        if (isRun || isSwim) {
+          if (effectiveSpeed > 0.05) {
+            const paceSec = isSwim ? Math.round(100 / effectiveSpeed) : Math.round(1000 / effectiveSpeed);
+            powerValue = fmtDur(paceSec);
+          }
+        } else {
+          const w = lap.average_watts ?? lap.average_power ?? lap.avgPower ?? 0;
+          powerValue = w > 0 ? String(Math.round(w)) : '';
+        }
+
+        const isSwimRest = isSwim && distM < 10;
+        return {
+          interval: idx + 1,
+          power: powerValue,
+          heartRate: String(Math.round(lap.average_heartrate ?? lap.avgHeartRate ?? 0) || ''),
+          lactate: lap.lactate != null ? String(lap.lactate) : '',
+          RPE: '',
+          elevation: (() => {
+            const g = lap.total_elevation_gain ?? lap.elevation_gain ?? null;
+            return g != null && Number.isFinite(Number(g)) ? String(Math.round(Number(g))) : '';
+          })(),
+          duration: fmtDur(durationSec),
+          durationSeconds: durationSec,
+          durationType: 'time',
+          distanceMeters: distM > 0 ? distM : undefined,
+          repeatCount: 1,
+          isRecovery: isSwimRest,
+          isSelected: !isSwimRest,
+        };
+      });
+
+      const activityDate = detail.start_date_local || detail.start_date || detail.date || detail.startDate || new Date();
+      const parsedDate = new Date(activityDate);
+      const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
+
+      const stravaActId = String(detail.id || detail.stravaId || trainingDetail.stravaId || trainingDetail.id || '').replace(/^strava-/i, '');
+
+      const initialData = {
+        sport,
+        type: 'interval',
+        category: detail.category || trainingDetail.category || '',
+        title: detail.linkedTrainingTitle || detail.title || detail.name || 'Untitled Training',
+        customTitle: '',
+        description: detail.description || '',
+        date: dateStr,
+        sourceStravaActivityId: stravaActId,
+        specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
+        results,
+      };
+
+      setLactateFormData({ initialData, focusLap: lapIndex });
+      setLactateFormOpen(true);
+    } catch (err) {
+      console.error('WeeklyCalendar: failed to open lactate form', err);
+    } finally {
+      setLactateFormLoading(false);
+    }
+  };
+
+  const handleLactateFormSubmit = async (formData) => {
+    try {
+      const athleteId = selectedAthleteId || user?._id;
+      const trainingData = { ...formData, athleteId, coachId: user?._id };
+      if (formData._id) {
+        await updateTraining(formData._id, trainingData);
+      } else {
+        await addTraining(trainingData);
+      }
+      setLactateFormOpen(false);
+      setLactateFormData(null);
+      if (onActivityUpdate) onActivityUpdate();
+    } catch (err) {
+      console.error('WeeklyCalendar: failed to save lactate form', err);
+    }
+  };
 
   // If Strava doesn't provide explicit swim laps, generate swim splits from stream records.
   // This keeps the Interval tabs/table usable for swimming too.
@@ -960,115 +1079,102 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
         </div>
       </div>
 
-      {selectedTraining ? (
-        <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-6'} gap-3 sm:gap-4`}>
-          {/* Calendar - Mobile: Horizontal scroll, Desktop: Vertical Layout */}
-          {isMobile ? (
-            <div className="relative">
-              {/* Left scroll indicator */}
-              {showLeftScroll && (
-                <button
-                  onClick={() => {
-                    if (scrollContainerRef.current) {
-                      scrollContainerRef.current.scrollBy({ left: -200, behavior: 'smooth' });
-                    }
-                  }}
-                  className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 via-white/40 to-transparent z-10 flex items-center justify-start pl-2"
-                >
-                  <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                    <ChevronLeftIcon className="w-4 h-4 text-primary" />
-                  </div>
-                </button>
-              )}
-              
-              {/* Right scroll indicator */}
-              {showRightScroll && (
-                <button
-                  onClick={() => {
-                    if (scrollContainerRef.current) {
-                      scrollContainerRef.current.scrollBy({ left: 200, behavior: 'smooth' });
-                    }
-                  }}
-                  className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 via-white/40 to-transparent z-10 flex items-center justify-end pr-2"
-                >
-                  <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                    <ChevronRightIcon className="w-4 h-4 text-primary" />
-                  </div>
-                </button>
-              )}
-              
-              <div 
-                ref={scrollContainerRef}
-                className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
-                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
-              >
-                <div className="flex gap-2 min-w-max">
-                {weekDays.map((day, idx) => {
-                  const key = getLocalDateString(day);
-                  const dayActivities = activitiesByDay.get(key) || [];
-                  const isToday = isSameDay(day, new Date());
-                  
-                  return (
-                    <div
-                      key={idx}
-                      className={`bg-white/10 backdrop-blur-md rounded-lg border p-2 min-w-[120px] flex-shrink-0 ${
-                        isToday ? 'border-white/30 shadow-md bg-white/15' : 'border-white/15'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1">
-                          <div className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
-                            {day.getDate()}
-                          </div>
-                          <div className="text-[9px] text-lighterText">
-                            {dayNames[idx].substring(0, 3)}
-                          </div>
-                        </div>
+      {/* MOBILE: Always-visible unified day strip */}
+      {isMobile && (
+        <div className="relative">
+          {showLeftScrollNoTraining && (
+            <button
+              onClick={() => scrollContainerNoTrainingRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}
+              className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white via-white/70 to-transparent z-10 flex items-center justify-start pl-1"
+            >
+              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                <ChevronLeftIcon className="w-4 h-4 text-primary" />
+              </div>
+            </button>
+          )}
+          {showRightScrollNoTraining && (
+            <button
+              onClick={() => scrollContainerNoTrainingRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}
+              className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white via-white/70 to-transparent z-10 flex items-center justify-end pr-1"
+            >
+              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                <ChevronRightIcon className="w-4 h-4 text-primary" />
+              </div>
+            </button>
+          )}
+          <div
+            ref={scrollContainerNoTrainingRef}
+            className="overflow-x-auto -mx-2 px-2"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+          >
+            <div className="flex gap-2 min-w-max pb-1">
+              {weekDays.map((day, idx) => {
+                const key = getLocalDateString(day);
+                const dayActivities = activitiesByDay.get(key) || [];
+                const isToday = isSameDay(day, new Date());
+                return (
+                  <div
+                    key={idx}
+                    className={`bg-white rounded-xl border p-2.5 min-w-[120px] flex-shrink-0 transition-all ${
+                      isToday
+                        ? 'border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/15'
+                        : 'border-gray-100 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className={`text-lg font-bold leading-none ${isToday ? 'text-primary' : 'text-gray-800'}`}>
+                        {day.getDate()}
                       </div>
-                      <div className="space-y-1">
-                        {dayActivities.length === 0 ? (
-                          <div className="text-[9px] text-lighterText italic">-</div>
-                        ) : (
-                          dayActivities.slice(0, 2).map((act, i) => {
-                            const activityId = act.id || act._id;
-                            const isSelected = selectedTraining && (
-                              (selectedTraining.id && String(activityId) === String(selectedTraining.id)) ||
-                              (selectedTraining._id && String(activityId) === String(selectedTraining._id))
-                            );
-                            return (
-                              <button
-                                key={i}
-                                onClick={() => handleActivityClick(act)}
-                                className={`w-full text-left px-1.5 py-1 rounded border transition-colors text-[9px] ${
-                                  isSelected
-                                    ? 'bg-white/30 backdrop-blur-md text-text shadow-sm'
-                                    : 'bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text'
-                                }`}
-                                style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: isSelected ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.15)' }}
-                                title={act.title || act.name || 'Activity'}
-                              >
-                                <div className="flex items-center gap-1 mb-0.5">
-                                  <span className="text-[10px]">{sportBadge(act.sport)}</span>
-                                  <span className="truncate font-medium text-[9px]">{act.title || act.name || 'Activity'}</span>
-                                </div>
-                              </button>
-                            );
-                          })
-                        )}
-                        {dayActivities.length > 2 && (
-                          <div className="text-[8px] text-lighterText text-center">
-                            +{dayActivities.length - 2} more
-                          </div>
-                        )}
+                      <div className={`text-[10px] font-semibold uppercase tracking-wide ${isToday ? 'text-primary/60' : 'text-gray-400'}`}>
+                        {dayNames[idx].substring(0, 3)}
                       </div>
                     </div>
-                  );
-                })}
-                {weekSummaryAside(true)}
-                </div>
-              </div>
+                    <div className="space-y-1">
+                      {dayActivities.length === 0 ? (
+                        <div className="text-[9px] text-gray-300 italic py-0.5">—</div>
+                      ) : (
+                        dayActivities.slice(0, 3).map((act, i) => {
+                          const activityId = act.id || act._id;
+                          const isSelected = selectedTraining && (
+                            (selectedTraining.id && String(activityId) === String(selectedTraining.id)) ||
+                            (selectedTraining._id && String(activityId) === String(selectedTraining._id))
+                          );
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => handleActivityClick(act)}
+                              className={`w-full text-left px-1.5 py-1 rounded-lg border transition-all ${
+                                isSelected
+                                  ? 'border-primary/40 bg-primary/5 ring-1 ring-primary/15 shadow-sm'
+                                  : 'border-gray-100 bg-gray-50/80 hover:bg-white hover:border-gray-200'
+                              }`}
+                              style={act.category ? { borderLeftColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : undefined}
+                            >
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-[10px] shrink-0">{sportBadge(act.sport)}</span>
+                                <span className="truncate text-[9px] font-medium text-gray-700">{act.title || act.name || act.sport || 'Activity'}</span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                      {dayActivities.length > 3 && (
+                        <div className="text-[8px] text-gray-400 text-center">+{dayActivities.length - 3} more</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {weekSummaryAside(true)}
             </div>
-          ) : (
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP layout: selected training shows left-day-list + right-detail-panel */}
+      {!isMobile && (selectedTraining ? (
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 sm:gap-4">
+          {/* Desktop day list - left column */}
           <div className="flex w-full min-w-0 max-w-[min(100%,640px)] flex-col gap-2 lg:col-span-1">
             {weekDays.map((day, idx) => {
               const key = getLocalDateString(day);
@@ -1142,15 +1248,6 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                 </div>
               );
 
-              if (idx === 6) {
-                return (
-                  <div key="sun-summary-row" className="flex w-full min-w-0 flex-col gap-3 items-stretch sm:flex-row sm:gap-4">
-                    <div className="min-w-0 flex-1">{dayCard}</div>
-                    <div className="w-full shrink-0 sm:w-auto sm:min-w-[160px] sm:max-w-[210px]">{weekSummaryAside(false)}</div>
-                  </div>
-                );
-              }
-
               return (
                 <div key={idx}>
                   {dayCard}
@@ -1158,15 +1255,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               );
             })}
           </div>
-          )}
 
-          {/* Training Details - Right Side - Much Wider */}
+          {/* Training Details - Right Side */}
           <AnimatePresence>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className={`bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2 sm:p-3 md:p-4 ${isMobile ? 'w-full mt-3' : 'lg:col-span-5'}`}
+              className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-2 sm:p-3 md:p-4 lg:col-span-5"
             >
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-3 flex-1">
@@ -1214,7 +1310,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                 const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                 const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                 const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                                
+
                                 if (Array.isArray(timeArray)) {
                                   const records = timeArray.map((t, i) => ({
                                     timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1224,14 +1320,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     cadence: cadenceArray[i] || null,
                                     distance: distanceArray[i] || null
                                   }));
-                                
+
                                 const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
                                 const isSwim = sportLower.includes('swim');
                                 let laps = Array.isArray(detail.laps) ? detail.laps : [];
                                 if (isSwim && laps.length === 0) {
                                   laps = generateSwimLapsFromRecords(records);
                                 }
-                                  
+
                                   setTrainingDetail({
                                     ...selectedTraining,
                                     type: 'strava',
@@ -1301,7 +1397,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 flex-1 group">
-                      <h4 
+                      <h4
                         className="text-base font-semibold text-text flex-1 cursor-pointer"
                         onClick={() => {
                           setEditingTitle(trainingDetail?.title || trainingDetail?.name || '');
@@ -1322,7 +1418,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                       </button>
                     </div>
                   )}
-                  
+
                   {/* Category */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {isEditingCategory ? (
@@ -1373,7 +1469,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                   const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                   const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                   const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                                  
+
                                   if (Array.isArray(timeArray)) {
                                     const records = timeArray.map((t, i) => ({
                                       timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1390,7 +1486,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     if (isSwim && laps.length === 0) {
                                       laps = generateSwimLapsFromRecords(records);
                                     }
-                                    
+
                                     setTrainingDetail({
                                       ...selectedTraining,
                                       type: 'strava',
@@ -1485,7 +1581,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     )}
                   </div>
                 </div>
-                
+
                 {/* Close button */}
                 <button
                   onClick={() => {
@@ -1508,9 +1604,11 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               ) : trainingDetail ? (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Training Stats */}
-                  <TrainingStats 
-                    training={trainingDetail} 
+                  <TrainingStats
+                    training={trainingDetail}
                     user={user}
+                    hideCategory
+                    hideTitle
                     onUpdate={async () => {
                       // Reload detail if needed
                       try {
@@ -1528,7 +1626,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                             const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                             const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                            
+
                             if (Array.isArray(timeArray)) {
                               const records = timeArray.map((t, i) => ({
                                 timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1545,7 +1643,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                               if (isSwim && laps.length === 0) {
                                 laps = generateSwimLapsFromRecords(records);
                               }
-                              
+
                               setTrainingDetail({
                                 ...selectedTraining,
                                 type: 'strava',
@@ -1581,110 +1679,10 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                     }}
                   />
 
-                  {/* Chart Toggle */}
-                  {(trainingDetail.records && trainingDetail.records.length > 0) || 
-                   (trainingDetail.laps && trainingDetail.laps.length > 0) ? (
-                    <div className="mt-4 sm:mt-6">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        <button
-                          onClick={() => setChartView('training')}
-                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                            chartView === 'training'
-                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
-                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
-                          }`}
-                        >
-                          Training Chart
-                        </button>
-                        <button
-                          onClick={() => setChartView('interval')}
-                          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                            chartView === 'interval'
-                              ? 'bg-white/30 backdrop-blur-md text-text shadow-sm border border-white/30'
-                              : 'bg-white/10 backdrop-blur-md text-text hover:bg-white/20 border border-white/15'
-                          }`}
-                        >
-                          Interval Chart
-                        </button>
-                      </div>
-
-                      {/* Training Chart */}
-                      {chartView === 'training' && trainingDetail.records && trainingDetail.records.length > 0 && (
-                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                          <TrainingChart 
-                            training={trainingDetail} 
-                            userProfile={userProfile}
-                            user={user}
-                          />
-                        </div>
-                      )}
-
-                      {/* Interval Chart */}
-                      {chartView === 'interval' && trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                        <div className="bg-white/10 backdrop-blur-md rounded-lg sm:rounded-xl p-1 border border-white/20 mt-2 sm:mt-3 overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                          {/* Selected lap info (like on FitAnalysis) */}
-                          {(() => {
-                            if (!selectedLapNumber) return null;
-                            const lap = trainingDetail.laps.find(
-                              (l, idx) =>
-                                String(l.lapNumber ?? idx + 1) === String(selectedLapNumber)
-                            );
-                            if (!lap) return null;
-                            return (
-                              <div className="mb-2 px-1 text-xs sm:text-sm text-gray-100 flex flex-wrap items-center gap-2">
-                                <span className="font-medium">
-                                  Lap {lap.lapNumber ?? trainingDetail.laps.indexOf(lap) + 1}
-                                </span>
-                                {lap.duration != null && (
-                                  <span className="text-gray-300">
-                                    Time: {Math.round(lap.duration)} s
-                                  </span>
-                                )}
-                                {lap.distance != null && (
-                                  <span className="text-gray-300">
-                                    Dist: {formatDistanceForUser(Number(lap.distance), user)}
-                                  </span>
-                                )}
-                                {lap.avgPower != null && (
-                                  <span className="text-gray-300">
-                                    Power: {Math.round(lap.avgPower)} W
-                                  </span>
-                                )}
-                                {lap.avgPace != null && (
-                                  <span className="text-gray-300">
-                                    Pace: {lap.avgPace}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
-
-                          <IntervalChart 
-                            laps={trainingDetail.laps}
-                            sport={trainingDetail.sport || 'cycling'}
-                            user={user}
-                            selectedLapNumber={selectedLapNumber}
-                            onSelectLapNumber={setSelectedLapNumber}
-                          />
-                        </div>
-                      )}
-
-                      {chartView === 'training' && (!trainingDetail.records || trainingDetail.records.length === 0) && (
-                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-                          Training has no records data to display chart
-                        </div>
-                      )}
-
-                      {chartView === 'interval' && (!trainingDetail.laps || trainingDetail.laps.length === 0) && (
-                        <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-                          Training has no intervals (laps) to display chart
-                        </div>
-                      )}
-
-                      {/* Laps Table - Show for both training and interval views if laps exist */}
-                      {trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                        <div className="mt-3 sm:mt-4">
-                          <LapsTable 
+                  {/* Laps Table */}
+                  {trainingDetail.laps && trainingDetail.laps.length > 0 && (
+                    <div className="mt-3 sm:mt-4">
+                          <LapsTable
                             training={trainingDetail}
                             onUpdate={async () => {
                               // Reload detail if needed
@@ -1702,7 +1700,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                     const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
                                     const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
                                     const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
-                                    
+
                                     if (Array.isArray(timeArray)) {
                                       const records = timeArray.map((t, i) => ({
                                         timestamp: new Date(startDate.getTime() + (t * 1000)),
@@ -1719,7 +1717,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                                       if (isSwim && laps.length === 0) {
                                         laps = generateSwimLapsFromRecords(records);
                                       }
-                                      
+
                                       setTrainingDetail({
                                         ...selectedTraining,
                                         type: 'strava',
@@ -1751,15 +1749,10 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             user={user}
                             selectedLapNumber={selectedLapNumber}
                             onSelectLapNumber={setSelectedLapNumber}
+                            onOpenLactateForm={handleOpenLactateForm}
                           />
                         </div>
                       )}
-                    </div>
-                  ) : (
-                    <div className="text-lighterText text-center py-8 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-                      Training has no data to display charts (no records or laps)
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="text-lighterText text-center py-8">
@@ -1770,47 +1763,8 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
           </AnimatePresence>
         </div>
       ) : (
-        /* Calendar - Mobile: Horizontal scroll, Desktop: Grid Layout */
-        isMobile ? (
-          <div className="relative">
-            {/* Left scroll indicator */}
-            {showLeftScrollNoTraining && (
-              <button
-                onClick={() => {
-                  if (scrollContainerNoTrainingRef.current) {
-                    scrollContainerNoTrainingRef.current.scrollBy({ left: -200, behavior: 'smooth' });
-                  }
-                }}
-                className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white/80 via-white/40 to-transparent z-10 flex items-center justify-start pl-2"
-              >
-                <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                  <ChevronLeftIcon className="w-4 h-4 text-primary" />
-                </div>
-              </button>
-            )}
-            
-            {/* Right scroll indicator */}
-            {showRightScrollNoTraining && (
-              <button
-                onClick={() => {
-                  if (scrollContainerNoTrainingRef.current) {
-                    scrollContainerNoTrainingRef.current.scrollBy({ left: 200, behavior: 'smooth' });
-                  }
-                }}
-                className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white/80 via-white/40 to-transparent z-10 flex items-center justify-end pr-2"
-              >
-                <div className="w-6 h-6 rounded-full bg-primary/20 backdrop-blur-sm flex items-center justify-center">
-                  <ChevronRightIcon className="w-4 h-4 text-primary" />
-                </div>
-              </button>
-            )}
-            
-            <div 
-              ref={scrollContainerNoTrainingRef}
-              className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0" 
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
-            >
-              <div className="flex gap-2 min-w-max">
+        /* Desktop no-training: 7-col grid */
+        <div className="grid w-full min-w-0 gap-2 sm:gap-3 [grid-template-columns:repeat(7,minmax(0,1fr))_minmax(10.5rem,0.95fr)]">
           {weekDays.map((day, idx) => {
             const key = getLocalDateString(day);
             const dayActivities = activitiesByDay.get(key) || [];
@@ -1819,84 +1773,21 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
             return (
               <div
                 key={idx}
-                    className={`bg-white/10 backdrop-blur-md rounded-lg border p-2 min-w-[140px] flex-shrink-0 ${
-                      isToday ? 'border-white/30 shadow-md bg-white/15' : 'border-white/15'
+                className={`min-w-0 rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
+                  isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
                 }`}
               >
                 <div className="flex flex-col items-center mb-2">
-                      <div className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
+                  <div className={`text-base font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
                     {day.getDate()}
                   </div>
-                      <div className="text-[10px] text-lighterText">
-                        {dayNames[idx].substring(0, 3)}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      {dayActivities.length === 0 ? (
-                        <div className="text-[9px] text-lighterText italic text-center">-</div>
-                      ) : (
-                        dayActivities.slice(0, 2).map((act, i) => {
-                          return (
-                            <button
-                              key={i}
-                              onClick={() => handleActivityClick(act)}
-                              className="w-full text-left px-1.5 py-1 rounded border transition-colors bg-white/10 backdrop-blur-sm hover:bg-white/20 text-text"
-                              style={act.category ? { borderColor: catBorderColor(act.category) || undefined, borderLeftWidth: '3px' } : { borderColor: 'rgba(255,255,255,0.15)' }}
-                              title={act.title || act.name || 'Activity'}
-                            >
-                              <div className="flex items-center justify-between gap-1 mb-0.5">
-                                <div className="flex items-center gap-1 flex-1 min-w-0">
-                                  <span className="text-xs">{sportBadge(act.sport)}</span>
-                                  <span className="truncate font-medium text-[9px]">{act.title || act.name || 'Activity'}</span>
-                                </div>
-                                {act.category && (
-                                  <div className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 border font-semibold" style={catBadgeStyle(act.category)}>
-                                    {catLabel(act.category).substring(0, 4)}
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                      {dayActivities.length > 2 && (
-                        <div className="text-[8px] text-lighterText text-center">
-                          +{dayActivities.length - 2} more
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {weekSummaryAside(true)}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid w-full min-w-0 gap-2 sm:gap-3 [grid-template-columns:repeat(7,minmax(0,1fr))_minmax(10.5rem,0.95fr)]">
-            {weekDays.map((day, idx) => {
-              const key = getLocalDateString(day);
-              const dayActivities = activitiesByDay.get(key) || [];
-              const isToday = isSameDay(day, new Date());
-
-              return (
-                <div
-                  key={idx}
-                  className={`min-w-0 rounded-xl border border-gray-100 bg-custom-gray p-2 sm:p-2.5 ${
-                    isToday ? 'border-primary/35 bg-primary/5 shadow-sm ring-1 ring-primary/20' : ''
-                  }`}
-                >
-                  <div className="flex flex-col items-center mb-2">
-                    <div className={`text-base font-bold ${isToday ? 'text-primary' : 'text-text'}`}>
-                      {day.getDate()}
-                    </div>
-                    <div className="text-xs text-lighterText">
+                  <div className="text-xs text-lighterText">
                     {dayNames[idx]}
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   {dayActivities.length === 0 ? (
-                      <div className="text-xs text-lighterText italic text-center">-</div>
+                    <div className="text-xs text-lighterText italic text-center">-</div>
                   ) : (
                     dayActivities.map((act, i) => {
                       return (
@@ -1919,7 +1810,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
                             )}
                           </div>
                           {act.description && (
-                              <div className="text-[9px] text-lighterText truncate">
+                            <div className="text-[9px] text-lighterText truncate">
                               {act.description}
                             </div>
                           )}
@@ -1931,9 +1822,313 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
               </div>
             );
           })}
-            <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
+          <div className="min-w-0 flex flex-col justify-start">{weekSummaryAside(false)}</div>
         </div>
-        )
+      ))}
+
+      {/* MOBILE: Training detail bottom-sheet portal */}
+      {isMobile && selectedTraining && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9999] flex flex-col justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setSelectedTraining(null);
+              setTrainingDetail(null);
+              setIsEditingTitle(false);
+              setIsEditingCategory(false);
+            }}
+          />
+          {/* Sheet panel */}
+          <div className="relative z-10 bg-white rounded-t-2xl shadow-2xl flex flex-col" style={{ maxHeight: '90dvh' }}>
+            {/* Drag handle */}
+            <div className="shrink-0 pt-3 pb-1 flex justify-center">
+              <div className="w-10 h-1 bg-gray-200 rounded-full" />
+            </div>
+            {/* Header */}
+            <div className="shrink-0 px-4 pb-3 border-b border-gray-100">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl mt-0.5 shrink-0">{sportBadge(trainingDetail?.sport || selectedTraining?.sport)}</span>
+                <div className="flex-1 min-w-0">
+                  {/* Title */}
+                  {isEditingTitle ? (
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white"
+                        autoFocus
+                      />
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSaving(true);
+                            const title = editingTitle.trim();
+                            if (trainingDetail.type === 'fit' && trainingDetail._id) {
+                              await updateFitTraining(trainingDetail._id, { title });
+                              const detail = await getFitTraining(trainingDetail._id);
+                              setTrainingDetail({ ...detail, type: 'fit' });
+                              setSelectedTraining(prev => prev ? { ...prev, title, titleManual: title } : null);
+                              if (onActivityUpdate) onActivityUpdate({ type: 'fit', _id: trainingDetail._id, id: `fit-${trainingDetail._id}`, title, titleManual: title });
+                            } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
+                              await updateStravaActivity(trainingDetail.id, { title });
+                              setSelectedTraining(prev => prev ? { ...prev, title, titleManual: title, name: title } : null);
+                              if (onActivityUpdate) onActivityUpdate({ type: 'strava', id: trainingDetail.id, stravaId: trainingDetail.id, title, titleManual: title, name: title });
+                            }
+                            setIsEditingTitle(false);
+                          } catch (error) { console.error('Error saving title:', error); }
+                          finally { setSaving(false); }
+                        }}
+                        disabled={saving}
+                        className="shrink-0 p-1.5 text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
+                      >
+                        <CheckIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => { setIsEditingTitle(false); setEditingTitle(trainingDetail?.title || trainingDetail?.name || ''); }}
+                        className="shrink-0 p-1.5 text-gray-400 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <h3
+                      className="text-base font-bold text-gray-900 mb-2 cursor-pointer"
+                      onClick={() => { setEditingTitle(trainingDetail?.title || trainingDetail?.name || ''); setIsEditingTitle(true); }}
+                    >
+                      {trainingDetail?.linkedTrainingTitle || trainingDetail?.title || trainingDetail?.name || selectedTraining?.title || selectedTraining?.name || 'Training'}
+                    </h3>
+                  )}
+                  {/* Category */}
+                  {isEditingCategory ? (
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={editingCategory}
+                        onChange={(e) => setEditingCategory(e.target.value)}
+                        className="flex-1 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        autoFocus
+                      >
+                        <option value="">None</option>
+                        <option value="endurance">Endurance</option>
+                        <option value="tempo">Tempo</option>
+                        <option value="threshold">Threshold</option>
+                        <option value="vo2max">VO2max</option>
+                        <option value="anaerobic">Anaerobic</option>
+                        <option value="recovery">Recovery</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setSaving(true);
+                            const category = editingCategory || null;
+                            if (trainingDetail.type === 'fit' && trainingDetail._id) {
+                              await updateFitTraining(trainingDetail._id, { category });
+                              const detail = await getFitTraining(trainingDetail._id);
+                              setTrainingDetail({ ...detail, type: 'fit' });
+                              if (onActivityUpdate) onActivityUpdate({ type: 'fit', _id: trainingDetail._id, id: `fit-${trainingDetail._id}`, category });
+                            } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
+                              await updateStravaActivity(trainingDetail.id, { category: category || null });
+                              if (onActivityUpdate) onActivityUpdate({ type: 'strava', id: trainingDetail.id, stravaId: trainingDetail.id, category });
+                            }
+                            setIsEditingCategory(false);
+                          } catch (error) { console.error('Error saving category:', error); }
+                          finally { setSaving(false); }
+                        }}
+                        disabled={saving}
+                        className="shrink-0 p-1.5 text-primary bg-primary/10 rounded-lg hover:bg-primary/20 transition-colors"
+                      >
+                        <CheckIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => { setIsEditingCategory(false); setEditingCategory(trainingDetail?.category || ''); }}
+                        className="shrink-0 p-1.5 text-gray-400 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        <XMarkIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingCategory(trainingDetail?.category || ''); setIsEditingCategory(true); }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer"
+                      style={catBadgeStyle(trainingDetail?.category)}
+                    >
+                      {trainingDetail?.category ? catLabel(trainingDetail.category) : '+ Category'}
+                    </button>
+                  )}
+                </div>
+                {/* Close button */}
+                <button
+                  onClick={() => {
+                    setSelectedTraining(null);
+                    setTrainingDetail(null);
+                    setIsEditingTitle(false);
+                    setIsEditingCategory(false);
+                  }}
+                  className="shrink-0 p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                >
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain">
+              {loadingDetail ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : trainingDetail ? (
+                <div className="p-4 space-y-4">
+                  <TrainingStats
+                    training={trainingDetail}
+                    user={user}
+                    hideCategory
+                    hideTitle
+                    onUpdate={async () => {
+                      try {
+                        if (trainingDetail.type === 'fit' && trainingDetail._id) {
+                          const detail = await getFitTraining(trainingDetail._id);
+                          setTrainingDetail({ ...detail, type: 'fit' });
+                        } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
+                          const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
+                          if (detail.detail && detail.streams) {
+                            const startDate = new Date(detail.detail.start_date);
+                            const timeArray = detail.streams.time?.data || detail.streams.time || [];
+                            const wattsArray = detail.streams.watts?.data || detail.streams.watts || [];
+                            const heartrateArray = detail.streams.heartrate?.data || detail.streams.heartrate || [];
+                            const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
+                            const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
+                            const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
+                            if (Array.isArray(timeArray)) {
+                              const records = timeArray.map((t, i) => ({
+                                timestamp: new Date(startDate.getTime() + (t * 1000)),
+                                power: wattsArray[i] || null,
+                                heartRate: heartrateArray[i] || null,
+                                speed: velocityArray[i] || null,
+                                cadence: cadenceArray[i] || null,
+                                distance: distanceArray[i] || null
+                              }));
+                              const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                              const isSwim = sportLower.includes('swim');
+                              let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                              if (isSwim && laps.length === 0) laps = generateSwimLapsFromRecords(records);
+                              setTrainingDetail({
+                                ...selectedTraining, type: 'strava', records, laps,
+                                totalElapsedTime: detail.detail.elapsed_time || 0,
+                                totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
+                                totalDistance: detail.detail.distance || 0,
+                                avgPower: detail.detail.average_watts || null, maxPower: detail.detail.max_watts || null,
+                                avgHeartRate: detail.detail.average_heartrate || null, maxHeartRate: detail.detail.max_heartrate || null,
+                                avgSpeed: detail.detail.average_speed || null, maxSpeed: detail.detail.max_speed || null,
+                                avgCadence: detail.detail.average_cadence || null, maxCadence: detail.detail.max_cadence || null,
+                                sport: trainingDetail.sport || detail.detail.type || 'cycling',
+                                title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
+                                linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
+                                category: detail.category || trainingDetail.category || ''
+                              });
+                            } else {
+                              setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
+                            }
+                          } else {
+                            setTrainingDetail({ ...selectedTraining, type: 'strava', ...detail });
+                          }
+                        }
+                      } catch (error) { console.error('Error reloading training detail:', error); }
+                    }}
+                  />
+                  {trainingDetail.laps && trainingDetail.laps.length > 0 && (
+                    <LapsTable
+                      training={trainingDetail}
+                      onUpdate={async () => {
+                        try {
+                          if (trainingDetail.type === 'fit' && trainingDetail._id) {
+                            const detail = await getFitTraining(trainingDetail._id);
+                            setTrainingDetail({ ...detail, type: 'fit' });
+                          } else if (trainingDetail.type === 'strava' && trainingDetail.id) {
+                            const detail = await getStravaActivityDetail(trainingDetail.id, stravaDetailAthleteId);
+                            if (detail.detail && detail.streams) {
+                              const startDate = new Date(detail.detail.start_date);
+                              const timeArray = detail.streams.time?.data || detail.streams.time || [];
+                              const wattsArray = detail.streams.watts?.data || detail.streams.watts || [];
+                              const heartrateArray = detail.streams.heartrate?.data || detail.streams.heartrate || [];
+                              const velocityArray = detail.streams.velocity_smooth?.data || detail.streams.velocity_smooth || [];
+                              const cadenceArray = detail.streams.cadence?.data || detail.streams.cadence || [];
+                              const distanceArray = detail.streams.distance?.data || detail.streams.distance || [];
+                              if (Array.isArray(timeArray)) {
+                                const records = timeArray.map((t, i) => ({
+                                  timestamp: new Date(startDate.getTime() + (t * 1000)),
+                                  power: wattsArray[i] || null,
+                                  heartRate: heartrateArray[i] || null,
+                                  speed: velocityArray[i] || null,
+                                  cadence: cadenceArray[i] || null,
+                                  distance: distanceArray[i] || null
+                                }));
+                                const sportLower = String(trainingDetail?.sport || detail?.detail?.type || '').toLowerCase();
+                                const isSwim = sportLower.includes('swim');
+                                let laps = Array.isArray(detail.laps) ? detail.laps : [];
+                                if (isSwim && laps.length === 0) laps = generateSwimLapsFromRecords(records);
+                                setTrainingDetail({
+                                  ...selectedTraining, type: 'strava', records, laps,
+                                  totalElapsedTime: detail.detail.elapsed_time || 0,
+                                  totalTimerTime: detail.detail.moving_time || detail.detail.elapsed_time || 0,
+                                  totalDistance: detail.detail.distance || 0,
+                                  avgPower: detail.detail.average_watts || null, maxPower: detail.detail.max_watts || null,
+                                  avgHeartRate: detail.detail.average_heartrate || null, maxHeartRate: detail.detail.max_heartrate || null,
+                                  avgSpeed: detail.detail.average_speed || null, maxSpeed: detail.detail.max_speed || null,
+                                  avgCadence: detail.detail.average_cadence || null, maxCadence: detail.detail.max_cadence || null,
+                                  sport: trainingDetail.sport || detail.detail.type || 'cycling',
+                                  title: trainingDetail.linkedTrainingTitle || trainingDetail.title || detail.detail.name || '',
+                                  linkedTrainingTitle: trainingDetail.linkedTrainingTitle || null,
+                                  category: detail.category || trainingDetail.category || ''
+                                });
+                              }
+                            }
+                          }
+                        } catch (error) { console.error('Error reloading training detail:', error); }
+                      }}
+                      user={user}
+                      selectedLapNumber={selectedLapNumber}
+                      onSelectLapNumber={setSelectedLapNumber}
+                      fullHeight
+                      onOpenLactateForm={handleOpenLactateForm}
+                    />
+                  )}
+                  {/* Lactate form loading overlay */}
+                  {lactateFormLoading && (
+                    <div className="flex items-center justify-center py-6 gap-2 text-sm text-primary">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+                      <span>Opening lactate form…</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400 text-sm">Loading training details...</div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* TrainingForm portal for lactate entry — rendered above everything */}
+      {lactateFormOpen && lactateFormData && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => { setLactateFormOpen(false); setLactateFormData(null); }}
+          />
+          <div className="relative z-10 w-full max-w-2xl">
+            <TrainingForm
+              key={lactateFormData.initialData?.sourceStravaActivityId || 'wc-lac'}
+              initialData={lactateFormData.initialData}
+              isEditing={false}
+              initialSelectedLap={lactateFormData.focusLap != null ? lactateFormData.focusLap + 1 : null}
+              onClose={() => { setLactateFormOpen(false); setLactateFormData(null); }}
+              onSubmit={handleLactateFormSubmit}
+            />
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

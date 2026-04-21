@@ -1506,6 +1506,25 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
         ? `/training-calendar/${req.query.athleteId}/strava-${a.stravaId}`
         : `/training-calendar/strava-${a.stravaId}`;
 
+      // Compute intensity signals from laps for client-side scoring
+      const lapHrs = laps
+        .map(l => l.avgHeartRate ?? l.avg_heart_rate ?? l.average_heartrate ?? l.averageHeartRate ?? 0)
+        .filter(v => Number(v) > 0).map(Number);
+      const lapWatts = laps
+        .map(l => l.avgPower ?? l.avg_power ?? l.average_watts ?? l.averageWatts ?? 0)
+        .filter(v => Number(v) > 0).map(Number);
+      const lapTimes = laps
+        .map(l => l.moving_time ?? l.totalTimerTime ?? l.totalElapsedTime ?? l.elapsed_time ?? 0)
+        .filter(v => Number(v) > 0).map(Number);
+      const arrAvg = arr => arr.reduce((s, v) => s + v, 0) / arr.length;
+      const avgHr = lapHrs.length ? Math.round(arrAvg(lapHrs)) : null;
+      const maxHr = lapHrs.length ? Math.max(...lapHrs) : null;
+      const avgWatts = lapWatts.length ? Math.round(arrAvg(lapWatts)) : null;
+      // Coefficient of variation of lap durations — low value = regular/structured intervals
+      const lapDurationCv = lapTimes.length >= 2
+        ? +( Math.sqrt(arrAvg(lapTimes.map(v => (v - arrAvg(lapTimes)) ** 2))) / arrAvg(lapTimes) ).toFixed(3)
+        : null;
+
       activities.push({
         _id: a._id,
         stravaId: a.stravaId,
@@ -1515,6 +1534,13 @@ router.get('/strava/pending-lactate', verifyToken, async (req, res) => {
         lapCount: laps.length,
         missingLactateCount: laps.length === 0 ? null : missingLactateCount,
         openPath,
+        // Intensity signals for smart scoring
+        avgHr,
+        maxHr,
+        avgWatts,
+        lapDurationCv,
+        movingTime: a.movingTime || a.moving_time || null,
+        distance: a.distance || null,
       });
 
       if (activities.length >= 30) break;
@@ -1661,7 +1687,21 @@ router.post('/strava/training-for-lactate-form', verifyToken, async (req, res) =
       return res.status(500).json({ error: 'Could not prepare training for this activity' });
     }
 
-    return res.json({ training });
+    // Filter laps to exactly match what syncTrainingFromSource used for results,
+    // so the chart bars align 1-to-1 with table rows.
+    const getLapDur = (lap) => {
+      const t = lap.moving_time ?? lap.movingTime ?? lap.elapsed_time ?? lap.elapsedTime ?? lap.duration ?? 0;
+      return typeof t === 'number' ? t : parseFloat(t) || 0;
+    };
+    const filteredLapsForChart = lapsForSync.filter((lap) => {
+      const dur = getLapDur(lap);
+      if (dur <= 0) return false;                                               // zero-duration
+      if (dur < 10) return false;                                               // micro-lap / GPS artefact
+      if (activityDurationSec > 0 && dur >= activityDurationSec * 0.95) return false; // full-activity single lap
+      return true;
+    });
+
+    return res.json({ training, laps: filteredLapsForChart });
   } catch (error) {
     console.error('[integrations] training-for-lactate-form:', error);
     return res.status(500).json({ error: error.message || 'Server error' });

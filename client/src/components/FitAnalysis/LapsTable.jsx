@@ -46,8 +46,13 @@ function exportLapsCSV(laps, training, user) {
 const LAPS_LIST_SCROLL_CLASS =
   'overflow-x-auto overflow-y-auto max-h-[min(34dvh,19rem)] sm:max-h-[min(38dvh,23rem)] md:max-h-[min(42dvh,28rem)] overscroll-y-contain touch-pan-y';
 
-const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null }) => {
+/** No internal scroll — parent container handles scrolling (e.g. bottom sheet portal) */
+const LAPS_LIST_FULL_CLASS =
+  'overflow-x-auto';
+
+const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelectLapNumber = null, fullHeight = false, onOpenLactateForm = null }) => {
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
+  const [initialLapIndex, setInitialLapIndex] = useState(null);
   const [lactateSaved, setLactateSaved] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
@@ -152,17 +157,14 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   useEffect(() => {
     if (selectedLapNumber == null) return;
     const el = lapRefs.current[selectedLapNumber];
-    if (el && el.scrollIntoView) {
-      // Scroll the row into view inside the table container (desktop) / list (mobile)
-      // so chart-selection and table-selection stay in sync.
-      try {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } catch {
-        // ignore
-      }
-    } else if (tableContainerRef.current) {
-      // no-op fallback
-    }
+    const container = tableContainerRef.current;
+    if (!el || !container) return;
+    // Manual scroll: center the selected row within the scrollable container
+    const elRect = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const relativeTop = elRect.top - containerRect.top;
+    const centerOffset = relativeTop - container.clientHeight / 2 + elRect.height / 2;
+    container.scrollBy({ top: centerOffset, behavior: 'smooth' });
   }, [selectedLapNumber]);
 
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
@@ -174,14 +176,16 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   };
 
   if (isMobile) {
+    const scrollClass = fullHeight ? LAPS_LIST_FULL_CLASS : LAPS_LIST_SCROLL_CLASS;
     return (
       <div>
         <LactateModal
           isOpen={lactateModalOpen}
-          onClose={() => setLactateModalOpen(false)}
+          onClose={() => { setLactateModalOpen(false); setInitialLapIndex(null); }}
           training={training}
           user={user}
           onSaved={handleLactateSaved}
+          initialLapIndex={initialLapIndex}
         />
 
         <div className="flex justify-between items-center mb-3">
@@ -198,15 +202,18 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => setLactateModalOpen(true)}
-              className="px-3 py-1 bg-primary text-white rounded-lg text-xs shadow-sm transition-colors active:bg-primary-dark"
+              onClick={() => {
+                if (onOpenLactateForm) { onOpenLactateForm(null); }
+                else { setInitialLapIndex(null); setLactateModalOpen(true); }
+              }}
+              className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium shadow-sm transition-colors active:bg-primary-dark"
             >
               Add Lactate
             </button>
           </div>
         </div>
 
-        {/* Strava-style bar chart */}
+        {/* Lap bar overview */}
         <LapsBarChart
           laps={uniqueLaps}
           selectedLapNumber={selectedLapNumber}
@@ -214,111 +221,112 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           sport={training?.sport}
         />
 
-        <div className={`${LAPS_LIST_SCROLL_CLASS} rounded-xl border border-gray-200 bg-white`}>
-        <div className="divide-y divide-gray-100 pr-0.5">
-          {uniqueLaps.map((lap, index) => {
-            const lapNumber = lap?.lapNumber ?? (index + 1);
-            const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
-            const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
-            const distanceMeters =
-              lap.totalDistance ??
-              lap.total_distance ??
-              lap.distance ??
-              lap.distanceMeters ??
-              lap.distance_meters ??
-              0;
-            const dist = formatDistance(distanceMeters, user, { swim: isSwim, assumeMeters: true });
+        <div ref={tableContainerRef} className={`${scrollClass} rounded-xl border border-gray-200 bg-white`}>
+          <div className="divide-y divide-gray-100">
+            {uniqueLaps.map((lap, index) => {
+              const lapNumber = lap?.lapNumber ?? (index + 1);
+              const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+              const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
+              const distanceMeters =
+                lap.totalDistance ?? lap.total_distance ?? lap.distance ?? lap.distanceMeters ?? lap.distance_meters ?? 0;
+              const dist = formatDistance(distanceMeters, user, { swim: isSwim, assumeMeters: true });
 
-            const speedMps =
-              lap.avgSpeed ??
-              lap.average_speed ??
-              lap.avg_speed ??
-              lap.averageSpeed ??
-              lap.speed ??
-              null;
+              const speedMps =
+                lap.avgSpeed ?? lap.average_speed ?? lap.avg_speed ?? lap.averageSpeed ?? lap.speed ?? null;
 
-            const pace = isRun
-              ? formatPace(speedMps)
-              : isSwim
-                ? formatSwimPace(speedMps)
-                : formatSpeed(speedMps, user);
+              const pace = isRun
+                ? formatPace(speedMps)
+                : isSwim
+                  ? formatSwimPace(speedMps)
+                  : formatSpeed(speedMps, user);
 
-            const hr =
-              lap.avgHeartRate ??
-              lap.avg_heart_rate ??
-              lap.average_heartrate ??
-              lap.averageHeartRate ??
-              lap.heartRate ??
-              0;
+              const hr =
+                lap.avgHeartRate ?? lap.avg_heart_rate ?? lap.average_heartrate ?? lap.averageHeartRate ?? lap.heartRate ?? 0;
 
-            const power =
-              lap.avgPower ??
-              lap.avg_power ??
-              lap.average_watts ??
-              lap.averageWatts ??
-              0;
+              const power =
+                lap.avgPower ?? lap.avg_power ?? lap.average_watts ?? lap.averageWatts ?? 0;
 
-            const cadence =
-              lap.avgCadence ??
-              lap.avg_cadence ??
-              lap.average_cadence ??
-              lap.averageCadence ??
-              lap.cadence ??
-              0;
+              const cadence =
+                lap.avgCadence ?? lap.avg_cadence ?? lap.average_cadence ?? lap.averageCadence ?? lap.cadence ?? 0;
 
-            const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
-            const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
-            let elevation = null;
-            if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
-              elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
-            } else if (Number.isFinite(Number(elevationGain))) {
-              elevation = Math.round(Number(elevationGain));
-            } else if (Number.isFinite(Number(elevationLoss))) {
-              elevation = -Math.round(Math.abs(Number(elevationLoss)));
-            }
+              const elevationGain = lap.total_elevation_gain ?? lap.elevation_gain ?? lap.totalAscent ?? lap.total_ascent ?? null;
+              const elevationLoss = lap.total_descent ?? lap.elevation_loss ?? lap.descent ?? null;
+              let elevation = null;
+              if (Number.isFinite(Number(elevationGain)) && Number.isFinite(Number(elevationLoss))) {
+                elevation = Math.round(Number(elevationGain) - Number(elevationLoss));
+              } else if (Number.isFinite(Number(elevationGain))) {
+                elevation = Math.round(Number(elevationGain));
+              } else if (Number.isFinite(Number(elevationLoss))) {
+                elevation = -Math.round(Math.abs(Number(elevationLoss)));
+              }
 
-            const selectedStyle = isSelected
-              ? { borderLeftColor: 'rgb(118 126 181 / var(--tw-border-opacity, 1))' }
-              : {};
-            return (
-              <button
-                key={index}
-                ref={el => { lapRefs.current[lapNumber] = el; }}
-                onClick={() => onSelectLapNumber && onSelectLapNumber(isSelected ? null : lapNumber)}
-                className={`w-full text-left py-2.5 px-1 flex items-center gap-3 transition-colors touch-manipulation ${
-                  isSelected ? 'bg-primary/10 border-l-[3px] border-primary' : lap.lactate ? 'bg-primary/5' : 'active:bg-gray-50'
-                }`}
-                style={{ WebkitTapHighlightColor: 'transparent', ...selectedStyle }}
-              >
-                <div className="w-7 text-center">
-                  <span className={`text-xs font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}`}>{index + 1}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-3">
-                    {dist && dist !== '0 m' && dist !== '0.0 km' && (
-                      <span className="text-sm font-semibold text-gray-900">{dist}</span>
-                    )}
-                    <span className="text-sm text-gray-600">{time}</span>
-                    {pace && pace !== '-' && (
-                      <span className="text-xs text-gray-500">{pace}</span>
-                    )}
+              return (
+                <button
+                  key={index}
+                  ref={el => { lapRefs.current[lapNumber] = el; }}
+                  onClick={() => onSelectLapNumber && onSelectLapNumber(isSelected ? null : lapNumber)}
+                  className={`w-full text-left px-3 py-3.5 flex items-center gap-3 transition-colors touch-manipulation ${
+                    isSelected
+                      ? 'bg-primary/10 border-l-[3px] border-primary'
+                      : lap.lactate
+                        ? 'bg-primary/5'
+                        : 'active:bg-gray-50'
+                  }`}
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {/* Lap number */}
+                  <div className="w-8 shrink-0 text-center">
+                    <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
+                      {index + 1}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    {hr > 0 && <span className="text-[11px] text-red-500">{Math.round(hr)} bpm</span>}
-                    {!isSwim && power > 0 && <span className="text-[11px] text-purple-600">{Math.round(power)} W</span>}
-                    {isSwim && cadence > 0 && <span className="text-[11px] text-gray-600">{Math.round(cadence)} rpm</span>}
-                    {elevation !== null && elevation !== 0 && (
-                      <span className="text-[11px] text-emerald-600">{elevation > 0 ? '+' : ''}{elevation} m</span>
-                    )}
-                    {lap.lactate && (
-                      <span className="text-[11px] font-semibold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
-                    )}
+
+                  {/* Main info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2.5 flex-wrap">
+                      {dist && dist !== '0 m' && dist !== '0.0 km' && (
+                        <span className="text-base font-bold text-gray-900">{dist}</span>
+                      )}
+                      <span className="text-base font-semibold text-gray-600">{time}</span>
+                      {pace && pace !== '-' && (
+                        <span className="text-sm text-gray-500">{pace}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      {hr > 0 && (
+                        <span className="text-xs font-medium text-red-500">♥ {Math.round(hr)} bpm</span>
+                      )}
+                      {!isSwim && power > 0 && (
+                        <span className="text-xs font-medium text-purple-600">{Math.round(power)} W</span>
+                      )}
+                      {isSwim && cadence > 0 && (
+                        <span className="text-xs font-medium text-gray-600">{Math.round(cadence)} rpm</span>
+                      )}
+                      {elevation !== null && elevation !== 0 && (
+                        <span className="text-xs font-medium text-emerald-600">{elevation > 0 ? '+' : ''}{elevation} m</span>
+                      )}
+                      {lap.lactate && (
+                        <span className="text-xs font-bold text-primary">{lap.lactate.toFixed(1)} mmol/L</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+
+                  {/* Lactate add button */}
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (onOpenLactateForm) { onOpenLactateForm(index); }
+                      else { setInitialLapIndex(index); setLactateModalOpen(true); }
+                    }}
+                    className="shrink-0 px-2 py-1 rounded-lg border border-gray-200 text-[10px] font-semibold text-gray-500 hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors touch-manipulation"
+                  >
+                    {lap.lactate ? lap.lactate.toFixed(1) : '+ La'}
+                  </button>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -349,7 +357,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
             Export CSV
           </button>
           <button
-            onClick={() => setLactateModalOpen(true)}
+            onClick={() => { if (onOpenLactateForm) { onOpenLactateForm(null); } else { setLactateModalOpen(true); } }}
             className="flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 bg-primary text-white rounded-xl hover:bg-primary-dark text-xs sm:text-sm shadow-md transition-colors"
           >
             Add Lactate
@@ -357,16 +365,17 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
         </div>
       </div>
 
-      {/* Strava-style bar chart */}
+      {/* Lap bar overview */}
       <LapsBarChart
         laps={uniqueLaps}
         selectedLapNumber={selectedLapNumber}
         onSelect={onSelectLapNumber}
         sport={training?.sport}
       />
+
       <div
         ref={tableContainerRef}
-        className={`${LAPS_LIST_SCROLL_CLASS} rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0 min-h-0`}
+        className={`${fullHeight ? LAPS_LIST_FULL_CLASS : LAPS_LIST_SCROLL_CLASS} rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-lg -mx-2 sm:mx-0 min-h-0`}
       >
         <table className="min-w-full divide-y divide-gray-200/50">
           <thead className="bg-white/80 backdrop-blur-sm sticky top-0 z-10">
@@ -474,7 +483,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                   <span
                     className={lap.lactate ? 'font-semibold text-primary-dark' : 'text-gray-400 cursor-pointer hover:text-primary transition-colors'}
-                    onClick={(e) => { e.stopPropagation(); setLactateModalOpen(true); }}
+                    onClick={(e) => { e.stopPropagation(); if (onOpenLactateForm) { onOpenLactateForm(index); } else { setInitialLapIndex(index); setLactateModalOpen(true); } }}
                     title={lap.lactate ? undefined : 'Click to add lactate'}
                   >
                     {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '+ add'}

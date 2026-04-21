@@ -30,14 +30,6 @@ const C = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function normSport(s) {
-  const v = String(s || '').toLowerCase();
-  if (v.includes('bike') || v.includes('cycl') || v.includes('ride')) return 'bike';
-  if (v.includes('run')) return 'run';
-  if (v.includes('swim')) return 'swim';
-  return null;
-}
-
 function fmtPace(sec) {
   if (!sec || sec <= 0) return '—';
   const m = Math.floor(sec / 60);

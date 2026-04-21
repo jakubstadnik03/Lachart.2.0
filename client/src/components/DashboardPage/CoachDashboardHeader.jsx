@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserPlusIcon, BeakerIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { UserPlusIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import api from '../../services/api';
 import { getAthleteAvatar } from '../../utils/avatarUtils';
 

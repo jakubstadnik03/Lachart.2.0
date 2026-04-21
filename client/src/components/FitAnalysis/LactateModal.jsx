@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { XMarkIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import { updateLactateValues } from '../../services/api';
 import { formatDuration, formatDistance, formatPace } from '../../utils/fitAnalysisUtils';
@@ -15,11 +16,13 @@ import { formatDuration, formatDistance, formatPace } from '../../utils/fitAnaly
  *   user        — user object (for unit preferences)
  *   onSaved     — (trainingId) => void — called after successful save
  */
-export default function LactateModal({ isOpen, onClose, training, user, onSaved }) {
+export default function LactateModal({ isOpen, onClose, training, user, onSaved, initialLapIndex = null }) {
   const [inputs, setInputs] = useState({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  const lapRefs = useRef({});
+  const scrollRef = useRef(null);
 
   const laps = training?.laps || [];
   const sportLower = (training?.sport || '').toLowerCase();
@@ -37,6 +40,19 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved 
     setInputs(initial);
     setSaved(false);
     setError(null);
+    // Scroll to the initially clicked lap after render
+    if (initialLapIndex != null) {
+      requestAnimationFrame(() => {
+        const el = lapRefs.current[initialLapIndex];
+        const container = scrollRef.current;
+        if (el && container) {
+          const elRect = el.getBoundingClientRect();
+          const containerRect = container.getBoundingClientRect();
+          const offset = elRect.top - containerRect.top - container.clientHeight / 2 + elRect.height / 2;
+          container.scrollBy({ top: offset, behavior: 'smooth' });
+        }
+      });
+    }
   }, [isOpen, training?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
@@ -74,10 +90,10 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved 
 
   const filledCount = Object.values(inputs).filter(v => v && parseFloat(v) > 0).length;
 
-  return (
+  return ReactDOM.createPortal(
     /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Scrim */}
@@ -119,7 +135,7 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved 
         </div>
 
         {/* Lap rows */}
-        <div className="overflow-y-auto flex-1 overscroll-contain">
+        <div ref={scrollRef} className="overflow-y-auto flex-1 overscroll-contain">
           {laps.map((lap, i) => {
             const key = `lap-${i}`;
             const lapNumber = lap?.lapNumber ?? (i + 1);
@@ -137,11 +153,13 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved 
             const inputVal = inputs[key] ?? '';
             const hasValue = inputVal && parseFloat(inputVal) > 0;
 
+            const isInitial = initialLapIndex === i;
             return (
               <div
                 key={i}
+                ref={el => { lapRefs.current[i] = el; }}
                 className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] gap-2 items-center px-5 py-3 border-b border-gray-50 transition-colors ${
-                  hasValue ? 'bg-primary/5' : 'hover:bg-gray-50'
+                  isInitial ? 'bg-primary/10 ring-1 ring-primary/30' : hasValue ? 'bg-primary/5' : 'hover:bg-gray-50'
                 }`}
               >
                 <span className={`text-xs font-bold ${hasValue ? 'text-primary' : 'text-gray-400'}`}>
@@ -214,6 +232,7 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -114,7 +114,6 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   const [trainingToDelete, setTrainingToDelete] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [focusLactateOnOpen, setFocusLactateOnOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   
@@ -209,13 +208,11 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
   );
 
   const handleEditTraining = (training) => {
-    setFocusLactateOnOpen(false);
     setTrainingToEdit(training);
     setShowEditModal(true);
   };
 
   const handleAddLactateTraining = (training) => {
-    setFocusLactateOnOpen(true);
     setTrainingToEdit(prepareTrainingForLactateEntry(training));
     setShowEditModal(true);
   };
@@ -437,24 +434,18 @@ const UserTrainingsTable = ({ trainings = [], onTrainingUpdate }) => {
 
       {/* Edit Modal */}
       {showEditModal && trainingToEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
-            {error}
-          </div>
-          
-          <TrainingForm 
-            key={`${trainingToEdit._id}-${focusLactateOnOpen ? "lac" : "edit"}`}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <TrainingForm
+            key={trainingToEdit._id}
             onClose={() => {
               setShowEditModal(false);
               setTrainingToEdit(null);
-              setFocusLactateOnOpen(false);
               setError(null);
             }}
             onSubmit={handleEditSubmit}
             initialData={trainingToEdit}
             isEditing={true}
             isLoading={isLoading}
-            focusLactateOnOpen={focusLactateOnOpen}
           />
         </div>
       )}

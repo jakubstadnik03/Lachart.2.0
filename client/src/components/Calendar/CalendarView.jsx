@@ -92,6 +92,7 @@ export default function CalendarView({
   user = null,
   onMonthChange = null,
   onVisiblePeriodChange = null,
+  onAddLactate = null,
 }) {
   const { getCategory } = useCategories();
 
@@ -686,37 +687,47 @@ export default function CalendarView({
                   const tss = Number(a.tss || a.TSS || a.totalTSS || 0);
 
                   return (
-                    <button
-                      key={i}
-                      onClick={() => handleSelectActivity(a)}
-                      className={`w-full text-left rounded-xl border p-3 transition-all touch-manipulation ${
-                        isActSelected
-                          ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/20'
-                          : 'border-gray-200 bg-white shadow-sm active:bg-gray-50'
-                      }`}
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <SportIcon sport={a.sport} className="w-8 h-8" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-gray-900 truncate">{title}</div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {durationStr && <span className="text-xs text-gray-500">{durationStr}</span>}
-                            {distanceStr && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{distanceStr}</span></>}
-                            {tss > 0 && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{Math.round(tss)} TSS</span></>}
+                    <div key={i} className="w-full">
+                      <button
+                        onClick={() => handleSelectActivity(a)}
+                        className={`w-full text-left rounded-xl border p-3 transition-all touch-manipulation ${
+                          isActSelected
+                            ? 'border-primary bg-primary/5 shadow-md ring-1 ring-primary/20'
+                            : 'border-gray-200 bg-white shadow-sm active:bg-gray-50'
+                        }`}
+                        style={{ WebkitTapHighlightColor: 'transparent' }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <SportIcon sport={a.sport} className="w-8 h-8" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 truncate">{title}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {durationStr && <span className="text-xs text-gray-500">{durationStr}</span>}
+                              {distanceStr && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{distanceStr}</span></>}
+                              {tss > 0 && <><span className="text-xs text-gray-300">•</span><span className="text-xs text-gray-500">{Math.round(tss)} TSS</span></>}
+                            </div>
                           </div>
+                          <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         </div>
-                        <ChevronRightIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      </div>
-                      {a.category && (
-                        <div
-                          className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold"
-                          style={catBadgeStyle(a.category)}
+                        {a.category && (
+                          <div
+                            className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold"
+                            style={catBadgeStyle(a.category)}
+                          >
+                            {catLabel(a.category)}
+                          </div>
+                        )}
+                      </button>
+                      {onAddLactate && a.type === 'strava' && (
+                        <button
+                          onClick={() => onAddLactate(a)}
+                          className="mt-1 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold active:bg-violet-100 touch-manipulation"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
                         >
-                          {catLabel(a.category)}
-                        </div>
+                          <span className="text-base leading-none">+</span> Add Lactate
+                        </button>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -779,35 +790,45 @@ export default function CalendarView({
                         const isSelected = effectiveSelectedId && String(activityId) === String(effectiveSelectedId);
                         const activityTitle = a.title || a.name || a.originalFileName || 'Activity';
                         return (
-                          <button
-                            key={i}
-                            onClick={() => handleSelectActivity(a)}
-                            className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
-                              isSelected
-                                ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
-                                : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
-                            }`}
-                            style={{
-                              minWidth: 0,
-                              overflow: 'hidden',
-                              borderColor: a.category
-                                ? (isSelected ? catBorderColor(a.category) || undefined : catBorderColor(a.category) || '#e5e7eb')
-                                : (isSelected ? undefined : '#e5e7eb'),
-                              borderLeftWidth: a.category ? '3px' : undefined,
-                            }}
-                            title={activityTitle}
-                          >
-                            <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
-                            {a.category && (
-                              <div
-                                className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 font-semibold border"
-                                style={catBadgeStyle(a.category)}
+                          <div key={i} className="relative group/act w-full max-w-full" style={{ minWidth: 0 }}>
+                            <button
+                              onClick={() => handleSelectActivity(a)}
+                              className={`w-full max-w-full text-left text-[10px] md:text-[11px] px-2 md:px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
+                                isSelected
+                                  ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md hover:shadow-lg ring-2 ring-primary/20'
+                                  : 'bg-white hover:bg-gray-50 text-gray-800 shadow-sm hover:shadow-md'
+                              }`}
+                              style={{
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                borderColor: a.category
+                                  ? (isSelected ? catBorderColor(a.category) || undefined : catBorderColor(a.category) || '#e5e7eb')
+                                  : (isSelected ? undefined : '#e5e7eb'),
+                                borderLeftWidth: a.category ? '3px' : undefined,
+                              }}
+                              title={activityTitle}
+                            >
+                              <SportIcon sport={a.sport} className="w-3.5 h-3.5 flex-shrink-0" />
+                              <span className="truncate min-w-0 flex-1 font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activityTitle}</span>
+                              {a.category && (
+                                <div
+                                  className="text-[8px] px-1 py-0.5 rounded flex-shrink-0 font-semibold border"
+                                  style={catBadgeStyle(a.category)}
+                                >
+                                  {catLabel(a.category).substring(0, 4)}
+                                </div>
+                              )}
+                            </button>
+                            {onAddLactate && a.type === 'strava' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onAddLactate(a); }}
+                                title="Add lactate"
+                                className="absolute top-0.5 right-0.5 hidden group-hover/act:flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-bold bg-violet-100 text-violet-700 hover:bg-violet-200 border border-violet-200 leading-none z-10"
                               >
-                                {catLabel(a.category).substring(0, 4)}
-                              </div>
+                                + La
+                              </button>
                             )}
-                          </button>
+                          </div>
                         );
                       })}
                       {hasOverflow && (

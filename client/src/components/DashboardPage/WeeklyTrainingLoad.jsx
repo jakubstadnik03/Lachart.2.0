@@ -132,7 +132,7 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
   }, [athleteId, timeRange, sportFilter]);
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Weekly Training Load</h3>
         <div className="flex items-center gap-2">
@@ -233,11 +233,11 @@ const WeeklyTrainingLoad = ({ athleteId }) => {
       )}
 
       {loading ? (
-        <div className="h-64 sm:h-80 flex items-center justify-center">
+        <div className="h-72 sm:h-96 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       ) : (
-        <div className="h-64 sm:h-80">
+        <div className="h-72 sm:h-96">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

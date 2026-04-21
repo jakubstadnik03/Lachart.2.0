@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthProvider';
 import { MagnifyingGlassIcon, XMarkIcon, EllipsisVerticalIcon, UserPlusIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 import { getAthleteAvatar } from '../utils/avatarUtils';
 import CoachAthleteOverview from '../components/Athletes/CoachAthleteOverview';

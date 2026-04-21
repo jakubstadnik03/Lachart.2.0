@@ -331,24 +331,22 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         {/* Coach: "Viewing athlete" banner */}
         <CoachAthleteBar />
 
-        {/* Hlavní obsah s footerem uvnitř na mobilu */}
+        {/* Hlavní obsah s footerem */}
         <main
           className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2 sm:px-3 md:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:px-4 lg:pb-0 lg:pt-0`}
         >
           <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
-            </div>
-            {/* Footer na mobilu — jen pod breakpointem md; od md výše jen sticky patička (jinak 768–1023px dvě patičky) */}
-            <div className="shrink-0 md:hidden">
+            {/* Footer na mobilu — scrolluje s obsahem, viditelný jen na spodku */}
+            <div className="mt-auto pt-4 md:hidden">
               <MemoizedFooter />
             </div>
           </div>
         </main>
 
         {/* Footer na desktopu - sticky */}
-        <div className="hidden md:block">
-        <MemoizedFooter />
+        <div className="hidden md:block shrink-0">
+          <MemoizedFooter />
         </div>
       </div>
       {isMenuOpen && (

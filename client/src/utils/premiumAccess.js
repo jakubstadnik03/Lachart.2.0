@@ -1,9 +1,8 @@
 /**
- * Client-side premium gate. Prefer `user.isPremium` from GET /user/profile (combines manual + subscription).
+ * Client-side premium gate. Currently all features are free for all users.
  */
 export function userHasPremiumAccess(user) {
+  // All features are currently free — always grant access for logged-in users.
   if (!user) return false;
-  if (user.isPremium === true) return true;
-  if (user.premium === true) return true;
-  return false;
+  return true;
 }

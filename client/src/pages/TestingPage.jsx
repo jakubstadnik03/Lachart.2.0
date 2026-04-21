@@ -5,23 +5,18 @@ import api, { invalidateCache, addTest } from '../services/api';
 import SportsSelector from "../components/Header/SportsSelector";
 import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
 import NewTestingComponent from "../components/Testing-page/NewTestingComponent";
-import NotificationBadge from "../components/Testing-page/NotificationBadge";
-import AthleteSelector from "../components/AthleteSelector";
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { InformationCircleIcon } from '@heroicons/react/24/outline';
 import TrainingGlossary from '../components/DashboardPage/TrainingGlossary';
 import { listExternalActivities, getStravaActivityDetail, getIntegrationStatus } from '../services/api';
 import { logTestCreated } from '../utils/eventLogger';
 import { generateHRTestPlan } from '../utils/hrTestPlanner';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserPlusIcon, PresentationChartLineIcon, PlusIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import AddAthleteAndTestModal from '../components/Testing-page/AddAthleteAndTestModal';
 import StravaIntegrationModal from '../components/Testing-page/StravaIntegrationModal';
 import PopulationInsights from '../components/Testing-page/PopulationInsights';
 import ThresholdHistory from '../components/Testing-page/ThresholdHistory';
 import TestRecommendationCard from '../components/Testing-page/TestRecommendationCard';
-import { resolveDistanceUnitSystem } from '../utils/unitsConverter';
 
 /** Map saved test sport to run | bike | swim for UI + advisor */
 function normalizeTestSportKey(sport) {
@@ -59,12 +54,6 @@ const TestingPage = () => {
     return null;
   });
   const [showNewTesting, setShowNewTesting] = useState(false);
-  const [showHistory, setShowHistory] = useState(() => {
-    try { return localStorage.getItem('testing_showHistory') !== 'false'; } catch { return true; }
-  });
-  const [showProtocol, setShowProtocol] = useState(() => {
-    try { return localStorage.getItem('testing_showProtocol') !== 'false'; } catch { return true; }
-  });
   const [selectedSport, setSelectedSport] = useState("all");
   const [tests, setTests] = useState([]);
   
@@ -86,6 +75,7 @@ const TestingPage = () => {
   const [hrTestPlanLoading, setHrTestPlanLoading] = useState(false);
   const [showAddAthleteModal, setShowAddAthleteModal] = useState(false);
   const [showStravaModal, setShowStravaModal] = useState(false);
+  const [mobileTab, setMobileTab] = useState('tests');
   const navigate = useNavigate();
   const lastLoadedTestIdFromUrlRef = useRef(null);
   const lastLoadedTestsForAthleteRef = useRef(null);
@@ -896,16 +886,6 @@ const TestingPage = () => {
     };
   }, [externalActivities, user, isAuthenticated, selectedAthleteId, isCoachLikeRole]);
 
-
-  const formatDateShort = (dateLike) => {
-    if (!dateLike) return '';
-    try {
-      return new Date(dateLike).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
-    } catch {
-      return '';
-    }
-  };
-
   const daysSince = (dateLike) => {
     if (!dateLike) return null;
     const d = new Date(dateLike);
@@ -913,18 +893,6 @@ const TestingPage = () => {
     const diff = Date.now() - d.getTime();
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
-
-  // Get unitSystem from user profile
-  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
-
-  const formatPace = (secondsPerKm) => {
-    if (!secondsPerKm || secondsPerKm <= 0) return '-';
-    const m = Math.floor(secondsPerKm / 60);
-    const s = Math.round(secondsPerKm % 60);
-    const unit = unitSystem === 'imperial' ? '/mile' : '/km';
-    return `${m}:${String(s).padStart(2, '0')}${unit}`;
-  };
-
   // Simple LT2 estimate from test: interpolate power/pace at 4.0 mmol/L if possible
   // Wrapped in try/catch to prevent freeze on problematic test data
   const estimateLt2FromTest = (test) => {
@@ -999,11 +967,6 @@ const TestingPage = () => {
   }, [tests]);
 
   const recommendationsEligible = sportsWithPastTests.length > 0;
-  const recRun = sportsWithPastTests.includes('run');
-  const recBike = sportsWithPastTests.includes('bike');
-  const recSwim = sportsWithPastTests.includes('swim');
-  const recSingleSport = sportsWithPastTests.length === 1;
-
   const runRecentPerf = useMemo(() => {
     // Estimate threshold pace from fastest recent longish run avg speed
     const runs = (externalActivities || []).filter(a => (a?.sport || '').toLowerCase().includes('run'));
@@ -1147,31 +1110,6 @@ const TestingPage = () => {
     }
   }, [athleteProfile, latestBySport, bikeFtpEstimate, runRecentPerf]);
 
-  const lt2History = useMemo(() => {
-    try {
-    const bySport = { bike: [], run: [] };
-    (tests || []).forEach(t => {
-        try {
-      const s = normalizeTestSportKey(t?.sport);
-      if (s !== 'bike' && s !== 'run') return;
-      const d = t.date || t.createdAt;
-      const lt2 = estimateLt2FromTest(t)?.x;
-      if (!lt2) return;
-      bySport[s].push({ date: d, lt2 });
-        } catch (testError) {
-          console.warn('Error processing test for LT2 history:', testError, t);
-          // Skip problematic test, continue with others
-        }
-    });
-    bySport.bike.sort((a, b) => new Date(a.date) - new Date(b.date));
-    bySport.run.sort((a, b) => new Date(a.date) - new Date(b.date));
-    return bySport;
-    } catch (error) {
-      console.error('Error calculating LT2 history:', error);
-      return { bike: [], run: [] };
-    }
-  }, [tests]);
-
   // Posluchač pro změnu atleta z menu
   useEffect(() => {
     const handleAthleteChange = (event) => {
@@ -1281,13 +1219,8 @@ const TestingPage = () => {
     loadTests(athleteId);
   };
 
-  const handleAthleteChange = (newAthleteId) => {
-    setSelectedAthleteId(newAthleteId);
-    navigate(`/testing/${newAthleteId}`, { replace: true });
-  };
-
   if (error) return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="p-6 text-red-600 bg-red-50 rounded-lg shadow-lg"
@@ -1296,229 +1229,242 @@ const TestingPage = () => {
     </motion.div>
   );
 
+  // activeTab drives both mobile and desktop — 'tests' | 'history'
+  const activeTab = mobileTab; // reuse existing state
+  const setActiveTab = setMobileTab;
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="w-full max-w-[1600px] mx-auto md:p-6 min-w-0"
+      className="flex flex-col w-full max-w-[1600px] mx-auto min-h-0"
     >
-      {isCoachLikeRole && (
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mb-2 sm:mb-4 md:mt-6"
-        >
-          <AthleteSelector
-            selectedAthleteId={selectedAthleteId}
-            onAthleteChange={handleAthleteChange}
-            user={user}
-            allowPendingSelection
-          />
-        </motion.div>
-      )}
-      {isPendingSelectedAthlete && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Athlete is waiting for confirmation. You can add tests, but profile and training data are hidden until invitation is accepted.
-        </div>
-      )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4 mb-3 sm:mb-6">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="w-full sm:w-auto sm:flex-1 min-w-0"
-        >
-          <SportsSelector
-            sports={sports}
-            selectedSport={selectedSport}
-            onSportChange={setSelectedSport}
-          />
-        </motion.div>
+      {/* ── Sticky top bar ──────────────────────────────────────── */}
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
 
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
-          className="w-full sm:w-auto min-w-0 flex items-center gap-2"
-        >
-          <button
-            onClick={() => setShowGlossary(true)}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
-            aria-label="Show glossary"
-            title="Training Glossary"
-          >
-            <InformationCircleIcon className="w-5 h-5 text-gray-500" />
-          </button>
+        {/* Pending banner */}
+        {isPendingSelectedAthlete && (
+          <div className="px-4 pt-2">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+              Athlete pending confirmation — tests can be added but profile data is hidden.
+            </div>
+          </div>
+        )}
 
-          {/* Toggle: Threshold History */}
-          {tests.length >= 1 && (
-            <button
-              onClick={() => {
-                const next = !showHistory;
-                setShowHistory(next);
-                try { localStorage.setItem('testing_showHistory', String(next)); } catch {}
-              }}
-              title={showHistory ? 'Hide threshold history' : 'Show threshold history'}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors touch-manipulation"
-              style={showHistory
-                ? { background: '#767EB520', color: '#767EB5' }
-                : { color: '#9CA3AF' }
-              }
-            >
-              <PresentationChartLineIcon className="w-5 h-5" />
-            </button>
-          )}
+        {/* Main toolbar */}
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5">
 
-          {/* Toggle: Recommended Protocol */}
-          {recommendationsEligible && (
-            <button
-              onClick={() => {
-                const next = !showProtocol;
-                setShowProtocol(next);
-                try { localStorage.setItem('testing_showProtocol', String(next)); } catch {}
-              }}
-              title={showProtocol ? 'Hide test protocol' : 'Show test protocol'}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors touch-manipulation"
-              style={showProtocol
-                ? { background: '#4BA87D20', color: '#4BA87D' }
-                : { color: '#9CA3AF' }
-              }
-            >
-              <ClipboardDocumentListIcon className="w-5 h-5" />
-            </button>
-          )}
+          {/* Tab pills */}
+          <div className="flex items-center bg-gray-100 rounded-xl p-1 gap-0.5 shrink-0">
+            {[
+              { id: 'tests', label: 'Tests' },
+              { id: 'history', label: 'History' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all touch-manipulation ${
+                  activeTab === tab.id
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-          {user?.role === 'coach' && (
-            <button
-              onClick={() => setShowAddAthleteModal(true)}
-              className="px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 shadow-md hover:shadow-lg transition-all flex items-center gap-2"
-              title="Add New Athlete & Create Test"
-            >
-              <UserPlusIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Add Athlete & Test</span>
-            </button>
-          )}
-          <div data-tour="tour-new-testing" className="w-full sm:w-auto">
-            <NotificationBadge
-              isActive={showNewTesting}
-              onToggle={() => setShowNewTesting((prev) => !prev)}
+          {/* Sport selector — flex grows to fill remaining space */}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <SportsSelector
+              sports={sports}
+              selectedSport={selectedSport}
+              onSportChange={setSelectedSport}
             />
           </div>
-        </motion.div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => setShowGlossary(true)}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 transition-colors touch-manipulation"
+              title="Glossary"
+            >
+              <InformationCircleIcon className="w-5 h-5" />
+            </button>
+
+            {user?.role === 'coach' && (
+              <button
+                onClick={() => setShowAddAthleteModal(true)}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors touch-manipulation"
+                title="Add Athlete & Test"
+              >
+                <UserPlusIcon className="w-4 h-4" />
+                <span>Add Athlete</span>
+              </button>
+            )}
+            {user?.role === 'coach' && (
+              <button
+                onClick={() => setShowAddAthleteModal(true)}
+                className="sm:hidden w-9 h-9 flex items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors touch-manipulation"
+              >
+                <UserPlusIcon className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* New Test button — always visible */}
+            <button
+              data-tour="tour-new-testing"
+              onClick={() => {
+                setShowNewTesting(prev => !prev);
+                setActiveTab('tests');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all touch-manipulation ${
+                showNewTesting
+                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-primary text-white shadow-sm hover:bg-primary-dark'
+              }`}
+            >
+              {showNewTesting
+                ? <><XMarkIcon className="w-4 h-4" /><span className="hidden sm:inline">Cancel</span></>
+                : <><PlusIcon className="w-4 h-4" /><span className="hidden sm:inline">New Test</span></>
+              }
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Threshold progression history */}
-      <AnimatePresence>
-        {tests.length >= 1 && showHistory && (
-          <motion.div
-            key="threshold-history"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <ThresholdHistory
-              tests={tests}
-              onSelectTestId={handleUrlTestSelection}
-              externalActivities={externalActivities}
-              bikePowerMetrics={bikePowerMetrics}
-              onClose={() => { setShowHistory(false); try { localStorage.setItem('testing_showHistory', 'false'); } catch {} }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Tab content ─────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 px-3 sm:px-5 py-4 space-y-4">
+        <AnimatePresence mode="wait">
 
-      {/* Recommended Test Protocol */}
-      <AnimatePresence>
-        {recommendationsEligible && showProtocol && (
-          <motion.div
-            key="test-protocol"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <TestRecommendationCard
-              sportsWithPastTests={sportsWithPastTests}
-              latestBySport={latestBySport}
-              advisor={advisor}
-              hrTestPlan={hrTestPlan}
-              hrTestPlanLoading={hrTestPlanLoading}
-              bikePowerMetrics={bikePowerMetrics}
-              externalActivities={externalActivities}
-              advisorLoading={advisorLoading}
-              onStartTest={(sport) => {
-                setSelectedSport(sport === 'bike' ? 'bike' : sport === 'run' ? 'run' : 'swim');
-                setShowNewTesting(true);
-              }}
-              onClose={() => { setShowProtocol(false); try { localStorage.setItem('testing_showProtocol', 'false'); } catch {} }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {/* ── TESTS tab ─────────────────────────────────────── */}
+          {activeTab === 'tests' && (
+            <motion.div
+              key="tab-tests"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-4"
+            >
+              {/* New test form */}
+              <AnimatePresence>
+                {showNewTesting && (
+                  <motion.div
+                    key="new-test-form"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22 }}
+                    className="overflow-hidden"
+                  >
+                    <NewTestingComponent
+                      selectedSport={selectedSport}
+                      onSubmit={handleAddTest}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-      <AnimatePresence>
-        {showNewTesting && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="mb-3 sm:mb-6 w-full"
-          >
-            <NewTestingComponent 
-              selectedSport={selectedSport}
-              onSubmit={handleAddTest}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {/* Tests list */}
+              <div data-tour="tour-test-list">
+                <PreviousTestingComponent
+                  key={selectedAthleteId || user?._id}
+                  selectedSport={selectedSport}
+                  tests={tests}
+                  setTests={setTests}
+                  selectedTestId={testIdFromUrl}
+                  onSelectTestId={handleUrlTestSelection}
+                  externalActivities={externalActivities}
+                />
+              </div>
+            </motion.div>
+          )}
 
-      <motion.div
-        data-tour="tour-test-list"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="w-full min-w-0"
-      >
-        <PreviousTestingComponent
-          key={selectedAthleteId || user?._id} // Reset component when athlete changes
-          selectedSport={selectedSport}
-          tests={tests}
-          setTests={setTests}
-          selectedTestId={testIdFromUrl}
-          onSelectTestId={handleUrlTestSelection}
-          externalActivities={externalActivities}
-        />
-      </motion.div>
+          {/* ── HISTORY tab ───────────────────────────────────── */}
+          {activeTab === 'history' && (
+            <motion.div
+              key="tab-history"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-4"
+            >
+              {tests.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <PresentationChartLineIcon className="w-14 h-14 text-gray-200 mb-4" />
+                  <p className="text-gray-500 font-medium mb-1">No tests yet</p>
+                  <p className="text-sm text-gray-400 mb-4">Add your first lactate test to start tracking your history.</p>
+                  <button
+                    onClick={() => { setShowNewTesting(true); setActiveTab('tests'); }}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary-dark transition-colors"
+                  >
+                    <PlusIcon className="w-4 h-4" /> Add first test
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Threshold progression */}
+                  <ThresholdHistory
+                    tests={tests}
+                    onSelectTestId={(id) => { handleUrlTestSelection(id); setActiveTab('tests'); }}
+                    externalActivities={externalActivities}
+                    bikePowerMetrics={bikePowerMetrics}
+                    onClose={null}
+                  />
 
-      {/* Population Comparison — always at the very bottom */}
-      {athleteProfile && selectedSport !== 'all' && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="w-full mt-4 mb-4"
-        >
-          <PopulationInsights
-            athleteProfile={athleteProfile}
-            selectedSport={selectedSport}
-          />
-        </motion.div>
-      )}
+                  {/* Desktop: two-column for protocol + insights */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {recommendationsEligible && (
+                      <TestRecommendationCard
+                        sportsWithPastTests={sportsWithPastTests}
+                        latestBySport={latestBySport}
+                        advisor={advisor}
+                        hrTestPlan={hrTestPlan}
+                        hrTestPlanLoading={hrTestPlanLoading}
+                        bikePowerMetrics={bikePowerMetrics}
+                        externalActivities={externalActivities}
+                        advisorLoading={advisorLoading}
+                        onStartTest={(sport) => {
+                          setSelectedSport(sport === 'bike' ? 'bike' : sport === 'run' ? 'run' : 'swim');
+                          setShowNewTesting(true);
+                          setActiveTab('tests');
+                        }}
+                        onClose={null}
+                      />
+                    )}
 
-      {/* Glossary Modal */}
-      <TrainingGlossary 
-        isOpen={showGlossary} 
-        onClose={() => setShowGlossary(false)} 
+                    {athleteProfile && selectedSport !== 'all' && (
+                      <PopulationInsights
+                        athleteProfile={athleteProfile}
+                        selectedSport={selectedSport}
+                      />
+                    )}
+                  </div>
+
+                  {/* Prompt if no insights available */}
+                  {(!recommendationsEligible && (!athleteProfile || selectedSport === 'all')) && (
+                    <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">
+                      Select a specific sport above to see protocol recommendations and population insights.
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </div>
+
+      {/* ── Modals ──────────────────────────────────────────────── */}
+      <TrainingGlossary
+        isOpen={showGlossary}
+        onClose={() => setShowGlossary(false)}
         initialTerm="Lactate Testing"
         initialCategory="Lactate"
       />
-
-      {/* Add Athlete & Test Modal */}
       {user?.role === 'coach' && (
         <AddAthleteAndTestModal
           isOpen={showAddAthleteModal}
@@ -1526,8 +1472,6 @@ const TestingPage = () => {
           onAthleteCreated={handleAthleteCreated}
         />
       )}
-
-      {/* Strava Integration Modal */}
       <StravaIntegrationModal
         isOpen={showStravaModal}
         onClose={handleStravaModalClose}

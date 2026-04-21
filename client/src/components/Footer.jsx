@@ -2,7 +2,7 @@ import * as React from "react";
 
 export default function Footer() {
   return (
-    <div className="flex overflow-hidden flex-wrap gap-4 sm:gap-10 justify-between items-center self-center px-6 py-5 w-full text-sm leading-none bg-white border-t border-gray-200 max-md:px-5 max-md:max-w-full">
+    <div className="flex flex-wrap gap-4 sm:gap-10 justify-between items-center px-4 sm:px-6 py-4 w-full text-sm leading-none bg-white border-t border-gray-200">
       <div className="self-stretch my-auto text-gray-600">
         © 2026 LaChart. All Rights Reserved.
       </div>

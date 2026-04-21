@@ -819,12 +819,8 @@ const TrainingHistory = () => {
 
       {/* Edit Modal */}
       {showEditModal && trainingToEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
-            {error}
-          </div>
-          
-          <TrainingForm 
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <TrainingForm
             onClose={() => {
               setShowEditModal(false);
               setTrainingToEdit(null);
@@ -840,12 +836,8 @@ const TrainingHistory = () => {
 
       {/* Add New Training Modal */}
       {showAddModal && trainingToEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 p-3 bg-red-100 text-red-700 rounded-lg z-50">
-            {error}
-          </div>
-          
-          <TrainingForm 
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <TrainingForm
             onClose={() => {
               setShowAddModal(false);
               setTrainingToEdit(null);

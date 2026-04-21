@@ -409,16 +409,6 @@ export default function ThresholdHistory({
             <div className="h-48 -mx-1 pt-1">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="lt1grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={C.greenos} stopOpacity={0.15} />
-                      <stop offset="95%" stopColor={C.greenos} stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="lt2grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={C.red} stopOpacity={0.12} />
-                      <stop offset="95%" stopColor={C.red} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                   <XAxis
                     dataKey="date"
@@ -434,7 +424,7 @@ export default function ThresholdHistory({
                     tickFormatter={v => isPace ? fmtPace(v) : `${v}W`}
                     width={isPace ? 60 : 40}
                   />
-                  <Tooltip content={<CustomTooltip isPace={isPace} />} />
+                  <Tooltip content={(props) => <CustomTooltip {...props} isPace={isPace} />} />
 
                   {/* Strava current-level reference */}
                   {stravaPerf?.value && (
@@ -519,9 +509,9 @@ export default function ThresholdHistory({
           )}
 
           {/* ── Strava-based recommendation banner ── */}
-          {stravaRec && (() => {
+          {stravaRec && REC[stravaRec.level] && (() => {
             const r = REC[stravaRec.level];
-            const { Icon } = r;
+            const Icon = r.Icon;
             return (
               <div
                 className="flex items-start gap-3 rounded-2xl border px-3.5 py-3"
@@ -529,7 +519,7 @@ export default function ThresholdHistory({
               >
                 <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
                      style={{ background: `${r.dot}20` }}>
-                  <Icon style={{ width: 15, height: 15, color: r.text }} />
+                  {Icon && <Icon style={{ width: 15, height: 15, color: r.text }} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold" style={{ color: r.text }}>{r.label}</div>

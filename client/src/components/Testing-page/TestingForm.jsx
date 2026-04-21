@@ -1196,8 +1196,8 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
       <div data-tour="tour-test-details" className="flex flex-col gap-2 flex-shrink-0 min-w-0 w-full">
         {/* Title and Edit Button Row — pr-* keeps text/Edit clear of corner icon cluster */}
         <div
-          className={`flex items-center gap-2 justify-between min-w-0 ${
-            demoMode ? 'pr-[6.5rem] sm:pr-32' : 'pr-[5rem] sm:pr-24'
+          className={`flex items-center gap-2 min-w-0 ${
+            demoMode ? 'pr-[5.5rem] sm:pr-24' : 'pr-14 sm:pr-16'
           }`}
         >
           <div className="flex-1 min-w-0">
@@ -1296,7 +1296,7 @@ function TestingForm({ testData, onTestDataChange, onSave, onGlucoseColumnChange
                 }
                 setIsEditMode(!isEditMode);
               }}
-              className={`w-24 shrink-0 justify-center px-2 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
+              className={`shrink-0 justify-center px-3 py-1.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap text-sm ${
                 isEditMode 
                   ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
                   : 'bg-primary hover:bg-primary-dark text-white'

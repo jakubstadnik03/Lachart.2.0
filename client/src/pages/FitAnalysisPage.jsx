@@ -8,12 +8,11 @@ import CalendarView from '../components/Calendar/CalendarView';
 import IntervalChart from '../components/FitAnalysis/IntervalChart';
 import { getIntegrationStatus } from '../services/api';
 import { listExternalActivities } from '../services/api';
-import { getStravaActivityDetail, updateStravaActivity, updateStravaLactateValues, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
+import { getStravaActivityDetail, updateStravaActivity, getAllTitles, createStravaLap, deleteStravaLap, getTrainingById, addTraining, updateTraining } from '../services/api';
 import api from '../services/api';
 import TrainingStats from '../components/FitAnalysis/TrainingStats';
 import CalendarPeriodStats from '../components/FitAnalysis/CalendarPeriodStats';
 import LapsTable from '../components/FitAnalysis/LapsTable';
-import AthleteSelector from '../components/AthleteSelector';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import UpgradeModal from '../components/UpgradeModal';
@@ -227,9 +226,7 @@ const LACTATE_STATS_STYLE_POWER_ZONES = [
 ];
 
 // Strava Laps Table Component
-const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, user = null, userProfile = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
-  const [editingLactate, setEditingLactate] = useState(false);
-  const [lactateInputs, setLactateInputs] = useState({});
+const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaChartRef, maxTime, loadStravaDetail, loadExternalActivities, onExportToTraining, onAddLactate = null, user = null, userProfile = null, selectedLapNumber = null, onSelectLapNumber = null }) => {
   const [saving, setSaving] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [editingMode, setEditingMode] = useState(false); // Mode for selecting intervals to merge
@@ -713,45 +710,6 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
     );
   };
 
-  const handleSaveLactate = async () => {
-    const lactateValues = Object.entries(lactateInputs).map(([key, value]) => {
-      const uniqueIndex = parseInt(key.replace('lap-', ''), 10);
-      const uniqueLap = uniqueLaps[uniqueIndex];
-      if (!uniqueLap) {
-        console.warn('Could not find unique lap at index', uniqueIndex);
-        return null;
-      }
-      
-      const originalIndex = uniqueLap.__sourceIndex ?? uniqueIndex;
-
-      if (originalIndex === undefined || originalIndex === null) {
-        return null;
-      }
-      
-      return {
-        lapIndex: originalIndex,
-        lactate: parseFloat(value)
-      };
-    }).filter(lv => lv && lv.lactate && !isNaN(lv.lactate));
-
-    if (lactateValues.length === 0) return;
-
-    try {
-      setSaving(true);
-      await updateStravaLactateValues(selectedStrava.id, lactateValues);
-      await loadStravaDetail(selectedStrava.id);
-      setEditingLactate(false);
-      setLactateInputs({});
-      // Show export dialog after saving lactate (with small delay to ensure data is loaded)
-      if (onExportToTraining) {
-        setTimeout(() => { onExportToTraining(); }, 500);
-      }
-    } catch (error) {
-      console.error('Error saving lactate:', error);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDeleteLap = async (lapIndex) => {
     if (!window.confirm('Are you sure you want to delete this interval? This action cannot be undone.')) {
@@ -1052,12 +1010,14 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-sm font-bold text-gray-900">Laps</h3>
           <div className="flex gap-1.5">
-            <button
-              onClick={() => { setEditingLactate(!editingLactate); if (editingLactate) { setEditingMode(false); setSelectedLapIndices(new Set()); } }}
-              className="px-2.5 py-1 bg-primary text-white rounded-lg text-xs shadow-sm active:bg-primary-dark"
-            >
-              {editingLactate ? 'Cancel' : 'Lactate'}
-            </button>
+            {onAddLactate && (
+              <button
+                onClick={() => onAddLactate(selectedStrava)}
+                className="px-2.5 py-1 bg-primary text-white rounded-lg text-xs shadow-sm active:bg-primary-dark"
+              >
+                + Lactate
+              </button>
+            )}
             {onExportToTraining && (
               <button onClick={() => onExportToTraining()} className="px-2.5 py-1 bg-greenos text-white rounded-lg text-xs shadow-sm active:opacity-90">Export</button>
             )}
@@ -1094,7 +1054,6 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   if (onSelectLapNumber) {
                     onSelectLapNumber(isActive ? null : lapNumber);
                   }
-                  if (editingLactate) return;
                   if (!stravaChartRef || !stravaChartRef.current) return;
                   if (isActive) {
                     stravaChartRef.current.getEchartsInstance().dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
@@ -1116,7 +1075,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   <span className={`text-xs font-bold ${isActive ? 'text-primary' : 'text-gray-400'}`}>{index + 1}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto overflow-y-visible scrollbar-hide">
+                  <div className="flex items-center gap-2 whitespace-nowrap overflow-x-auto overflow-y-hidden scrollbar-hide">
                     {normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }) > 0 && (
                       <span className="text-sm font-semibold text-gray-900 shrink-0">
                         {formatDistance(normalizeStravaLapDistanceRaw(lap, { swim: isStravaSwim }), user, {
@@ -1138,31 +1097,14 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                     {elevation !== null && elevation !== 0 && (
                       <span className="text-[11px] text-emerald-600 shrink-0">{elevation > 0 ? '+' : ''}{elevation} m</span>
                     )}
-                    {!editingLactate && lap.lactate && <span className="text-[11px] font-semibold text-primary shrink-0">{lap.lactate.toFixed(1)} mmol/L</span>}
+                    {lap.lactate && <span className="text-[11px] font-semibold text-primary shrink-0">{lap.lactate.toFixed(1)} mmol/L</span>}
                   </div>
                 </div>
-                {editingLactate && (
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="La"
-                    value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
-                    onChange={(e) => setLactateInputs({ ...lactateInputs, [`lap-${index}`]: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-16 px-2 py-1 border border-primary/40 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                )}
               </button>
             );
           })}
         </div>
         </div>
-        {editingLactate && (
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => { setEditingLactate(false); setLactateInputs({}); }} className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm active:bg-gray-200">Cancel</button>
-            <button onClick={handleSaveLactate} disabled={saving} className="flex-1 px-3 py-2 bg-greenos text-white rounded-lg text-sm active:opacity-90 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
-          </div>
-        )}
         <div className="mt-3 flex gap-2">
           <button onClick={handleDeleteAllLaps} disabled={deletingAll || saving || uniqueLaps.length === 0} className="flex-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs border border-red-200 active:bg-red-100 disabled:opacity-50">
             {deletingAll ? 'Deleting...' : 'Delete All'}
@@ -1181,18 +1123,14 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
       <div className="flex sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
         <h3 className="text-base sm:text-lg font-semibold">Intervals</h3>
         <div className="flex gap-1.5 sm:gap-2 w-full sm:w-auto flex-wrap">
-        <button
-          onClick={() => {
-            setEditingLactate(!editingLactate);
-            if (editingLactate) {
-              setEditingMode(false);
-              setSelectedLapIndices(new Set());
-            }
-          }}
-          className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-primary text-white rounded-xl hover:bg-primary-dark shadow-md transition-colors w-full sm:w-auto"
-        >
-          {editingLactate ? 'Cancel Edit' : 'Add Lactate'}
-        </button>
+        {onAddLactate && (
+          <button
+            onClick={() => onAddLactate(selectedStrava)}
+            className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-primary text-white rounded-xl hover:bg-primary-dark shadow-md transition-colors w-full sm:w-auto"
+          >
+            Add Lactate
+          </button>
+        )}
      
         {editingMode && selectedLapIndices.size >= 2 && (
           <button
@@ -1289,7 +1227,6 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   ref={(el) => { lapRefs.current[lapNumber] = el; }}
                   onClick={(e) => {
                     if (editingMode && e.target.type === 'checkbox') return;
-                    if (editingLactate && e.target.tagName === 'INPUT') return;
                     if (e.target.closest('button')) return;
                     if (!stravaChartRef.current || editingMode) return;
 
@@ -1320,7 +1257,7 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                     lap.lactate ? 'bg-purple-50' : '',
                   !lap.lactate && lap.exportedToTraining ? 'bg-primary/5' : '',
                     selectedLapIndices.has(index) ? 'bg-blue-100' : '',
-                    !editingLactate && !editingMode ? 'cursor-pointer hover:bg-gray-50' : '',
+                    !editingMode ? 'cursor-pointer hover:bg-gray-50' : '',
                   ].join(' ')}
                 >
                   {editingMode && (
@@ -1373,23 +1310,8 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm">
                     {elevation !== null && elevation !== 0 ? `${elevation > 0 ? '+' : ''}${elevation} m` : '-'}
                   </td>
-                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
-                    {editingLactate ? (
-                      <input
-                        type="number"
-                        step="0.1"
-                        placeholder="mmol/L"
-                        value={lactateInputs[`lap-${index}`] || lap.lactate || ''}
-                        onChange={(e) => setLactateInputs({
-                          ...lactateInputs,
-                          [`lap-${index}`]: e.target.value
-                        })}
-                        className="w-16 sm:w-20 md:w-24 px-1.5 sm:px-2 py-1 sm:py-1.5 border rounded text-xs sm:text-sm"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'
-                    )}
+                  <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-primary">
+                    {lap.lactate ? `${lap.lactate.toFixed(1)} mmol/L` : '-'}
                   </td>
                   <td className="px-2 sm:px-3 md:px-4 py-2 sm:py-3 text-xs sm:text-sm" onClick={(e) => e.stopPropagation()}>
                     <button
@@ -1411,26 +1333,6 @@ const StravaLapsTable = ({ selectedStrava, selectedStravaStreams = null, stravaC
       </div>
 
       {renderTimeInZonesBlock()}
-      {editingLactate && (
-        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-2">
-          <button
-            onClick={() => {
-              setEditingLactate(false);
-              setLactateInputs({});
-            }}
-            className="px-3 sm:px-4 py-2 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 w-full sm:w-auto"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveLactate}
-            disabled={saving}
-            className="px-3 sm:px-4 py-2 text-sm bg-greenos text-white rounded-xl hover:opacity-90 disabled:opacity-50 shadow-md transition-colors w-full sm:w-auto"
-          >
-            {saving ? 'Saving...' : 'Save Lactate Values'}
-          </button>
-        </div>
-      )}
     </div>
     {renderZoneTooltipPortal()}
     </>
@@ -1678,10 +1580,12 @@ const FitAnalysisPage = () => {
   
   // Export to Training state
   const [showTrainingForm, setShowTrainingForm] = useState(false);
-  const [showDurationTypeModal, setShowDurationTypeModal] = useState(false);
-  const [preferredDurationType, setPreferredDurationType] = useState('auto'); // 'auto', 'time', 'distance'
   const [trainingFormData, setTrainingFormData] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Calendar "Add Lactate" loading/error state (while fetching Strava detail)
+  const [calendarLactateLoading, setCalendarLactateLoading] = useState(false);
+  const [calendarLactateError, setCalendarLactateError] = useState(null);
   
   // Helper function to get GPS data from training or Strava
   const getGpsData = React.useMemo(() => {
@@ -2979,17 +2883,6 @@ const FitAnalysisPage = () => {
   }, [selectedAthleteId, user, loadTrainings, loadExternalActivities, loadRegularTrainings]);
 
 
-  const handleAthleteChange = (athleteId) => {
-    setSelectedAthleteId(athleteId);
-    localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId);
-    // Clear selected training when switching athletes
-    setSelectedTraining(null);
-    setSelectedStrava(null);
-    localStorage.removeItem('fitAnalysis_selectedTrainingId');
-    localStorage.removeItem('fitAnalysis_selectedStravaId');
-    localStorage.removeItem('fitAnalysis_selectedTrainingModelId');
-  };
-
   const [calendarPeriod, setCalendarPeriod] = useState(null);
   const handleCalendarPeriodChange = useCallback((info) => {
     setCalendarPeriod(info);
@@ -3070,6 +2963,7 @@ const FitAnalysisPage = () => {
       ...externalActivities.map((a) => {
         const linked = trainingByStravaId.get(String(a.stravaId));
         return {
+          _id: a._id,                        // keep MongoDB _id for lactate form lookup
           id: `strava-${a.stravaId}`,
           date: a.startDate,
           title: linked?.title || a.titleManual || a.name || 'Untitled Activity',
@@ -3110,7 +3004,7 @@ const FitAnalysisPage = () => {
     
     return laps.map((lap, idx) => {
       const isRecovery = isRecoveryMap.get(idx) || false;
-      const duration = lap.elapsed_time || 0;
+      const duration = lap.moving_time ?? lap.elapsed_time ?? 0;
       const power = lap.average_watts || lap.average_power || null;
       const heartRate = lap.average_heartrate || lap.average_hr || null;
       const lactate = lap.lactate || null;
@@ -3132,14 +3026,13 @@ const FitAnalysisPage = () => {
       let powerValue = '';
       if (isRun || isSwim) {
         // Convert speed (m/s) to pace (seconds per km for run, seconds per 100m for swim)
-        if (lap.average_speed && lap.average_speed > 0) {
-          let paceSeconds;
-          if (isRun) {
-            paceSeconds = Math.round(1000 / lap.average_speed); // seconds per km
-          } else {
-            paceSeconds = Math.round(100 / lap.average_speed); // seconds per 100m
-          }
-          // Convert to MM:SS format
+        const effectiveSpeed = (lap.average_speed && lap.average_speed > 0.05)
+          ? lap.average_speed
+          : (distance > 0 && duration > 0 ? distance / duration : 0);
+        if (effectiveSpeed > 0.05) {
+          const paceSeconds = isRun
+            ? Math.round(1000 / effectiveSpeed)   // sec/km
+            : Math.round(100 / effectiveSpeed);   // sec/100m
           const minutes = Math.floor(paceSeconds / 60);
           const seconds = paceSeconds % 60;
           powerValue = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
@@ -3150,7 +3043,6 @@ const FitAnalysisPage = () => {
       }
       
       // Format distance if available (convert meters to km for display, or keep as meters for swim)
-      let distanceValue = '';
       let useDistance = false;
       
       // Determine if we should use distance based on preference
@@ -3169,21 +3061,19 @@ const FitAnalysisPage = () => {
         if (isSwim) {
           // For swim, show in meters (e.g., "400m", "50m")
           if (distance >= 1000) {
-            distanceValue = `${(distance / 1000).toFixed(2)} km`;
           } else {
-            distanceValue = `${Math.round(distance)}m`;
           }
         } else {
           // For bike/run, show in km (e.g., "1 km", "5.2 km")
           if (distance >= 1000) {
-            distanceValue = `${(distance / 1000).toFixed(2)} km`;
           } else {
             // If less than 1km, show in meters
-            distanceValue = `${Math.round(distance)}m`;
           }
         }
       }
       
+      const distanceMetersNum = distance && distance > 0 ? Math.round(distance) : undefined;
+
       return {
         interval: idx + 1,
         sourceLapIndex: lap?.__sourceIndex ?? idx,
@@ -3192,11 +3082,13 @@ const FitAnalysisPage = () => {
         lactate: lactate ? lactate.toString() : '',
         RPE: '',
         elevation: elevation != null && Number.isFinite(Number(elevation)) ? Math.round(Number(elevation)).toString() : '',
-        duration: useDistance ? distanceValue : formatDuration(duration), // Use distance if available, otherwise time in MM:SS
-        durationType: useDistance ? 'distance' : 'time', // Use distance if available
+        duration: formatDuration(duration), // always MM:SS time
+        durationSeconds: duration || 0,     // raw seconds for card header + submit conversion
+        durationType: 'time',
+        distanceMeters: distanceMetersNum,  // raw meters for Distance field
         repeatCount: 1,
-        isRecovery: isRecovery, // Flag to mark recovery intervals
-        isSelected: !isRecovery // Recovery intervals are not selected by default
+        isRecovery: isRecovery,
+        isSelected: !isRecovery
       };
     });
   };
@@ -3345,74 +3237,64 @@ const FitAnalysisPage = () => {
       alert('No intervals available to export');
       return;
     }
-
-    // Check if we have distance data available
-    const uniqueLaps = deduplicateStravaLaps(selectedStrava.laps || []);
-    const hasDistance = uniqueLaps.some(lap => lap.distance && lap.distance > 0);
-    
-    // If no distance data, skip modal and use time directly
-    if (!hasDistance) {
-      performExportToTraining('time');
-      return;
-    }
-    
-    // Show modal to choose duration type
-    setShowDurationTypeModal(true);
+    performExportToTraining('auto');
   };
 
-  // Perform the actual export with selected duration type
-  const performExportToTraining = (durationType = 'auto') => {
-    if (!selectedStrava || !selectedStrava.laps || selectedStrava.laps.length === 0) {
+  // Perform the actual export with selected duration type.
+  // stravaActivityOverride: optional activity object (used when opening from calendar "+ La").
+  const performExportToTraining = (durationType = 'auto', stravaActivityOverride = null) => {
+    const strava = stravaActivityOverride || selectedStrava;
+    if (!strava || !strava.laps || strava.laps.length === 0) {
       return;
     }
 
-    const uniqueLaps = deduplicateStravaLaps(selectedStrava.laps || []);
-    
+    const uniqueLaps = deduplicateStravaLaps(strava.laps || []);
+
     // Determine sport type
-    const sportType = selectedStrava?.sport_type || selectedStrava?.sport || 'bike';
+    const sportType = strava?.sport_type || strava?.sport || 'bike';
     let sport = 'bike';
     if (sportType.toLowerCase().includes('run')) {
       sport = 'run';
     } else if (sportType.toLowerCase().includes('swim')) {
       sport = 'swim';
     }
-    
+
     // Mark recovery intervals (but keep all intervals)
     const isRecoveryMap = new Map();
     uniqueLaps.forEach((lap, index) => {
       isRecoveryMap.set(index, isRecoveryInterval(lap, index, sportType, uniqueLaps));
     });
-    
+
     // Convert all laps to training format (including recovery) with duration type preference
     const results = convertLapsToTrainingFormat(uniqueLaps, isRecoveryMap, durationType);
-    
+
     // Check if we have at least some work intervals
     const workIntervals = results.filter(r => !r.isRecovery);
     if (workIntervals.length === 0) {
       alert('No work intervals found. All intervals appear to be recovery periods.');
       return;
     }
-    
+
     // Format date safely (avoid RangeError: Invalid time value)
-    const activityDate = selectedStrava?.start_date_local || 
-                       selectedStrava?.start_date || 
-                       selectedStrava?.startDate || 
+    const activityDate = strava?.start_date_local ||
+                       strava?.start_date ||
+                       strava?.startDate ||
                        new Date();
     const parsedActivityDate = new Date(activityDate);
     const safeActivityDate = Number.isNaN(parsedActivityDate.getTime()) ? new Date() : parsedActivityDate;
     const dateStr = safeActivityDate.toISOString().slice(0, 16);
-    
+
     // Prepare form data with all intervals (user can edit/remove in form)
     const formData = {
       sport: sport,
       type: 'interval',
-      category: selectedStrava?.category || '',
-      title: selectedStrava?.titleManual || selectedStrava?.name || 'Untitled Training',
+      category: strava?.category || '',
+      title: strava?.titleManual || strava?.name || 'Untitled Training',
       customTitle: '',
-      description: selectedStrava?.description || '',
+      description: strava?.description || '',
       date: dateStr,
       // Link back to Strava so we can merge calendar entries and keep Strava data as the source of truth
-      sourceStravaActivityId: String(selectedStrava.id || selectedStrava.stravaId || ''),
+      sourceStravaActivityId: String(strava.id || strava.stravaId || ''),
       specifics: {
         specific: '',
         weather: '',
@@ -3421,11 +3303,9 @@ const FitAnalysisPage = () => {
       },
       results: results
     };
-    
+
     setTrainingFormData(formData);
     setShowTrainingForm(true);
-    setShowDurationTypeModal(false);
-    setPreferredDurationType('auto'); // Reset for next time
   };
 
   // Handle training form submission
@@ -3573,10 +3453,128 @@ const FitAnalysisPage = () => {
     }
   };
 
+  // Calendar "Add Lactate" handlers
+  const handleCalendarAddLactate = useCallback(async (activity) => {
+    // Extract Strava numeric ID from calendar activity (id is "strava-<numericId>")
+    const rawId = String(activity.id || activity.stravaId || '');
+    const stravaNumericId = rawId.replace(/^strava-/i, '');
+    if (!stravaNumericId) {
+      setCalendarLactateError('Lactate entry is only available for Strava activities.');
+      return;
+    }
+    setCalendarLactateError(null);
+    setCalendarLactateLoading(true);
+    try {
+      const integAthleteId = selectedAthleteId && user && String(selectedAthleteId) !== String(user._id)
+        ? String(selectedAthleteId)
+        : null;
+      // Load full Strava activity detail (same as clicking it in the calendar)
+      const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
+      const stravaActivity = {
+        ...data.detail,
+        titleManual: data.titleManual,
+        description: data.description,
+        category: data.category || null,
+        laps: data.laps || [],
+      };
+      if (!stravaActivity.laps || stravaActivity.laps.length === 0) {
+        setCalendarLactateError('No intervals found for this activity.');
+        return;
+      }
+      // Open the same full export form
+      performExportToTraining('auto', stravaActivity);
+    } catch (err) {
+      setCalendarLactateError(
+        err.response?.data?.message || err.response?.data?.error || err.message || 'Could not open form'
+      );
+    } finally {
+      setCalendarLactateLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- performExportToTraining is intentionally not memoized
+  }, [selectedAthleteId, user]);
+
+  // Open TrainingForm for lactate entry from FIT training LapsTable
+  const handleFitOpenLactateForm = useCallback((lapIndex) => {
+    if (!selectedTraining || !selectedTraining.laps?.length) return;
+    const sport = (selectedTraining.sport || selectedTraining.sportType || selectedTraining.sport_type || 'bike').toLowerCase();
+    const sportKey = sport.includes('run') ? 'run' : sport.includes('swim') ? 'swim' : 'bike';
+    const isRun = sportKey === 'run';
+    const isSwim = sportKey === 'swim';
+
+    if (selectedTraining.laps[0]) {
+      console.log('[FitLactate] first lap keys:', Object.keys(selectedTraining.laps[0]));
+      console.log('[FitLactate] first lap speed fields:', {
+        avgSpeed: selectedTraining.laps[0].avgSpeed,
+        average_speed: selectedTraining.laps[0].average_speed,
+        avg_speed: selectedTraining.laps[0].avg_speed,
+        enhancedAvgSpeed: selectedTraining.laps[0].enhancedAvgSpeed,
+        enhanced_avg_speed: selectedTraining.laps[0].enhanced_avg_speed,
+        speed: selectedTraining.laps[0].speed,
+        distance: selectedTraining.laps[0].distance,
+        moving_time: selectedTraining.laps[0].moving_time,
+      });
+    }
+
+    const results = selectedTraining.laps.map((lap, idx) => {
+      const duration = lap.moving_time ?? lap.totalTimerTime ?? lap.totalElapsedTime ?? lap.elapsed_time ?? 0;
+      const distance = Number(lap.distance ?? lap.totalDistance ?? lap.distanceMeters ?? 0);
+      const rawSpeed = lap.avgSpeed ?? lap.average_speed ?? lap.avg_speed ?? lap.enhancedAvgSpeed ?? lap.enhanced_avg_speed ?? lap.speed ?? 0;
+      const effectiveSpeed = rawSpeed > 0.05 ? rawSpeed : (distance > 0 && duration > 0 ? distance / duration : 0);
+      const power = lap.avgPower ?? lap.avg_power ?? lap.average_watts ?? null;
+      const hr = lap.avgHeartRate ?? lap.avg_heart_rate ?? lap.average_heartrate ?? null;
+      const lactate = lap.lactate ?? null;
+
+      let powerValue = '';
+      if (isRun || isSwim) {
+        if (effectiveSpeed > 0.05) {
+          const paceSeconds = isRun ? Math.round(1000 / effectiveSpeed) : Math.round(100 / effectiveSpeed);
+          powerValue = `${Math.floor(paceSeconds / 60).toString().padStart(2, '0')}:${(paceSeconds % 60).toString().padStart(2, '0')}`;
+        }
+      } else {
+        powerValue = power ? power.toString() : '';
+      }
+
+      const mins = Math.floor(duration / 60);
+      const secs = Math.round(duration % 60);
+      const durationStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+      return {
+        interval: idx + 1,
+        power: powerValue,
+        heartRate: hr ? hr.toString() : '',
+        lactate: lactate ? lactate.toString() : '',
+        RPE: '',
+        elevation: '',
+        duration: durationStr,
+        durationSeconds: duration,
+        durationType: 'time',
+        distanceMeters: distance > 0 ? Math.round(distance) : undefined,
+        repeatCount: 1,
+        isRecovery: false,
+        isSelected: true,
+      };
+    });
+
+    const date = selectedTraining.timestamp || selectedTraining.date || selectedTraining.startDate || new Date().toISOString();
+    const formData = {
+      _id: selectedTraining._id,
+      sport: sportKey,
+      type: 'interval',
+      category: selectedTraining.category || '',
+      title: selectedTraining.titleManual || selectedTraining.titleAuto || '',
+      description: selectedTraining.description || '',
+      date: new Date(date).toISOString().slice(0, 16),
+      results,
+    };
+    setTrainingFormData({ ...formData, _initialSelectedLap: lapIndex != null ? lapIndex + 1 : null });
+    setShowTrainingForm(true);
+  }, [selectedTraining]);
+
+
   return (
-    <div className={`min-h-screen ${isMobile ? 'p-0' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
+    <div className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
       <UpgradeModal {...UpgradeModalProps} />
-      <div className={`${isMobile ? 'w-full' : 'max-w-7xl'} mx-auto`}>
+      <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
         {!isMobile && <h1 className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</h1>}
         {isMobile && !(selectedTraining || selectedStrava) && (
           <div className="px-4 pt-4 pb-2">
@@ -3584,14 +3582,7 @@ const FitAnalysisPage = () => {
           </div>
         )}
 
-        {/* Athlete Selector for Coach */}
-        {user?.role === 'coach' && (
-          <AthleteSelector
-            selectedAthleteId={selectedAthleteId}
-            onAthleteChange={handleAthleteChange}
-            user={user}
-          />
-        )}
+        {/* Athlete selection is handled globally by CoachAthleteBar in Layout */}
         {user?.role === 'coach' &&
           selectedAthleteId &&
           String(selectedAthleteId) !== String(user?._id || '') &&
@@ -3621,6 +3612,7 @@ const FitAnalysisPage = () => {
           }
           initialAnchorDate={selectedTraining?.timestamp ? new Date(selectedTraining.timestamp) : null}
           onSelectActivity={handleCalendarActivitySelect}
+          onAddLactate={handleCalendarAddLactate}
           onMonthChange={useCallback(({ year, month }) => {
             // Note: API loads all trainings at once, so no need to reload when month changes
             // Data is already loaded and calendar will filter by date client-side
@@ -4577,6 +4569,7 @@ const FitAnalysisPage = () => {
                     user={user}
                     selectedLapNumber={selectedLapNumber}
                     onSelectLapNumber={setSelectedLapNumber}
+                    onOpenLactateForm={handleFitOpenLactateForm}
                   />
                   </div>
 
@@ -5604,6 +5597,7 @@ const FitAnalysisPage = () => {
                   loadStravaDetail={loadStravaDetail}
                   loadExternalActivities={loadExternalActivities}
                   onExportToTraining={handleExportToTraining}
+                  onAddLactate={handleCalendarAddLactate}
                   user={user}
                   userProfile={userProfile}
                   selectedLapNumber={selectedLapNumber}
@@ -5619,83 +5613,10 @@ const FitAnalysisPage = () => {
 
           </div>
 
-      {/* Duration Type Selection Modal */}
-      {showDurationTypeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Select Duration Type</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Choose how you want to record interval duration in the training form:
-            </p>
-            <div className="space-y-3">
-              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="durationType"
-                  value="time"
-                  checked={preferredDurationType === 'time'}
-                  onChange={(e) => setPreferredDurationType(e.target.value)}
-                  className="mr-3"
-                />
-                <div>
-                  <div className="font-medium">Time (MM:SS)</div>
-                  <div className="text-sm text-gray-500">Use elapsed time for each interval</div>
-                </div>
-              </label>
-              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="durationType"
-                  value="distance"
-                  checked={preferredDurationType === 'distance'}
-                  onChange={(e) => setPreferredDurationType(e.target.value)}
-                  className="mr-3"
-                />
-                <div>
-                  <div className="font-medium">Distance (km/m)</div>
-                  <div className="text-sm text-gray-500">Use distance covered for each interval</div>
-                </div>
-              </label>
-              <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                <input
-                  type="radio"
-                  name="durationType"
-                  value="auto"
-                  checked={preferredDurationType === 'auto'}
-                  onChange={(e) => setPreferredDurationType(e.target.value)}
-                  className="mr-3"
-                />
-                <div>
-                  <div className="font-medium">Auto (Recommended)</div>
-                  <div className="text-sm text-gray-500">Use distance if available, otherwise use time</div>
-                </div>
-              </label>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowDurationTypeModal(false);
-                  setPreferredDurationType('auto');
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => performExportToTraining(preferredDurationType)}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Training Form Modal - Direct export with smart selection */}
+      {/* Training Form Modal - Export to training */}
       {showTrainingForm && trainingFormData && (
-        <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 ${isMobile ? 'p-2' : 'p-4'}`}>
-          <div className={`w-full ${isMobile ? 'max-w-full' : 'max-w-4xl'} ${isMobile ? 'max-h-[95vh]' : 'max-h-[90vh]'} overflow-y-auto`}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-2xl">
             <TrainingForm
               onClose={() => {
                 setShowTrainingForm(false);
@@ -5705,10 +5626,30 @@ const FitAnalysisPage = () => {
               initialData={trainingFormData}
               isEditing={false}
               isLoading={isExporting}
-                  />
-                </div>
-                </div>
-                  )}
+              initialSelectedLap={trainingFormData?._initialSelectedLap ?? null}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Calendar "Add Lactate" loading indicator */}
+      {calendarLactateLoading && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[1050]">
+          <div className="bg-white rounded-xl p-6 flex items-center gap-3 shadow-xl">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+            <span className="text-sm text-gray-700">Loading lactate form…</span>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar "Add Lactate" error banner */}
+      {calendarLactateError && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1060] flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 shadow-lg text-sm text-red-900">
+          <span>{calendarLactateError}</span>
+          <button onClick={() => setCalendarLactateError(null)} className="rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-900 hover:bg-red-100">✕</button>
+        </div>
+      )}
+
     </div>
   );
 };

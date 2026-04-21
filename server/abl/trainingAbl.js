@@ -19,6 +19,7 @@ const getLapDurationSeconds = (lap = {}) => {
         lap.total_elapsed_time,
         lap.totalTimerTime,
         lap.total_timer_time,
+        lap.moving_time,   // Strava laps: prefer moving_time (excludes pauses)
         lap.elapsed_time,
         lap.duration
     ];
@@ -464,11 +465,17 @@ class TrainingAbl {
                 return Math.round(v);
             };
 
-            const runPaceSecondsPerKmFromLap = (lap) => {
-                if (sport !== 'run') return null;
-                const v = toNumber(lap.average_speed ?? lap.averageSpeed);
-                if (v === null || v === undefined || v < 0.2) return null;
-                return Math.round(1000 / v);
+            // Returns pace in seconds: sec/km for run, sec/100m for swim
+            const lapPaceSeconds = (lap, fallbackDistM, fallbackDurS) => {
+                let v = toNumber(lap.average_speed ?? lap.averageSpeed);
+                // Fallback: compute speed from distance/duration (pool swim laps often have average_speed=0)
+                if ((v === null || v === undefined || v < 0.05) && fallbackDistM > 0 && fallbackDurS > 0) {
+                    v = fallbackDistM / fallbackDurS;
+                }
+                if (v === null || v === undefined || v < 0.05) return null;
+                if (sport === 'run') return Math.round(1000 / v);   // sec/km
+                if (sport === 'swim') return Math.round(100 / v);   // sec/100m
+                return null;
             };
 
             const useAllStravaLaps =
@@ -484,6 +491,9 @@ class TrainingAbl {
                     if (totalActivitySeconds > 0 && lapDuration >= totalActivitySeconds * 0.95) continue;
                     filteredLaps.push(lap);
                 }
+
+                // Remove micro-laps (auto-splits < 10 s, GPS artefacts)
+                filteredLaps = filteredLaps.filter(l => getLapDurationSeconds(l) >= 10);
             } else {
                 const optionLapIndices = Array.isArray(options.selectedLapIndices)
                     ? options.selectedLapIndices
@@ -525,23 +535,29 @@ class TrainingAbl {
                 }
 
                 const durationSecondsValue = Math.round(lapDuration);
+                const lapDistM = Math.round(toNumber(lap.distance) || 0);
                 const lapPower = getLapPowerValue(lap);
                 let intervalPower = lapPower;
                 if (
                     sourceType === 'strava' &&
-                    sport === 'run' &&
+                    (sport === 'run' || sport === 'swim') &&
                     (intervalPower === null || intervalPower === undefined)
                 ) {
-                    intervalPower = runPaceSecondsPerKmFromLap(lap);
+                    intervalPower = lapPaceSeconds(lap, lapDistM, durationSecondsValue);
                 }
                 const lapHeartRate = lap.avgHeartRate || lap.maxHeartRate || lap.average_heartrate || lap.max_heartrate || null;
-                const lapElev = lapElevationMeters(lap);
+                const lapElev = sport === 'swim' ? undefined : lapElevationMeters(lap);
+
+                // Swim rest: distance < 10m means it's a rest/turnaround lap.
+                // Do NOT use speed — pool swim laps often have average_speed=0 even for active intervals.
+                const isSwimRest = sport === 'swim' && lapDistM < 10;
 
                 results.push({
                     interval: index + 1,
                     duration: durationSecondsValue,
                     durationSeconds: durationSecondsValue,
                     durationType: 'time',
+                    distanceMeters: lapDistM > 0 ? lapDistM : undefined,
                     rest: restSeconds,
                     restSeconds: restSeconds,
                     intensity: '',
@@ -550,8 +566,8 @@ class TrainingAbl {
                     lactate: lap.lactate || null,
                     RPE: null,
                     elevation: lapElev,
-                    isRecovery: false,
-                    isSelected: true
+                    isRecovery: isSwimRest,
+                    isSelected: !isSwimRest
                 });
             });
 
@@ -570,21 +586,25 @@ class TrainingAbl {
                 );
                 let fallbackPower = actPower;
                 if (
-                    sport === 'run' &&
+                    (sport === 'run' || sport === 'swim') &&
                     (fallbackPower === null || fallbackPower === undefined)
                 ) {
-                    const v = toNumber(sourceData.averageSpeed);
-                    if (v !== null && v !== undefined && v >= 0.2) {
-                        fallbackPower = Math.round(1000 / v);
+                    const v = toNumber(sourceData.averageSpeed ?? sourceData.average_speed);
+                    if (v !== null && v !== undefined && v >= 0.05) {
+                        fallbackPower = sport === 'swim'
+                            ? Math.round(100 / v)   // sec/100m
+                            : Math.round(1000 / v); // sec/km
                     }
                 }
-                const actElev = lapElevationMeters(sourceData);
+                const actElev = sport === 'swim' ? undefined : lapElevationMeters(sourceData);
+                const actDistM = Math.round(toNumber(sourceData.distance) || 0);
                 const d = Math.round(totalActivitySeconds);
                 results.push({
                     interval: 1,
                     duration: d,
                     durationSeconds: d,
                     durationType: 'time',
+                    distanceMeters: actDistM > 0 ? actDistM : undefined,
                     rest: 0,
                     restSeconds: 0,
                     intensity: '',

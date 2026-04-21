@@ -2,17 +2,13 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import WeeklyCalendar from '../components/DashboardPage/WeeklyCalendar';
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import SpiderChart from "../components/DashboardPage/SpiderChart";
-import PreviousTestingComponent from "../components/Testing-page/PreviousTestingComponent";
-import SportsSelector from "../components/Header/SportsSelector";
 import EditProfileModal from "../components/Profile/EditProfileModal";
 import ChangePasswordModal from "../components/Profile/ChangePasswordModal";
 import { getZoneHistory, updateUserProfile } from '../services/api';
 import { getAvatarBySportAndGender } from '../utils/avatarUtils';
 import { 
   PencilIcon, 
-  KeyIcon,
-  UserIcon,
-  EnvelopeIcon,
+  KeyIcon,  EnvelopeIcon,
   PhoneIcon,
   CalendarIcon,
   MapPinIcon,
@@ -28,11 +24,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 const ProfilePage = () => {
   const [userInfo, setUserInfo] = useState(null);
   const [trainings, setTrainings] = useState([]);
-  const [tests, setTests] = useState([]);
   const [calendarData, setCalendarData] = useState([]); // FIT trainings and Strava activities
   const [selectedSport] = useState('bike');
-  const [selectedTestingSport, setSelectedTestingSport] = useState('all');
-  const [selectedTitle, setSelectedTitle] = useState(null);
+const [selectedTitle, setSelectedTitle] = useState(null);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,7 +34,6 @@ const ProfilePage = () => {
   const [isZonesModalOpen, setIsZonesModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [selectedZoneSport, setSelectedZoneSport] = useState('cycling'); // cycling or running
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [zoneHistory, setZoneHistory] = useState({ powerZonesHistory: [], heartRateZonesHistory: [] });
   const [compareHistoryAKey, setCompareHistoryAKey] = useState('');
   const [compareHistoryBKey, setCompareHistoryBKey] = useState('');
@@ -65,14 +58,6 @@ const ProfilePage = () => {
     return firstAvailable || preferred;
   }, [trainings, selectedSport, normalizeSportName]);
   
-  // Detect mobile
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // const getUserProfile = async () => {
   //   try {
@@ -183,15 +168,6 @@ const ProfilePage = () => {
     if (!Number.isFinite(Number(min)) && !Number.isFinite(Number(max))) return '-';
     const fmt = (v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(1) : '∞');
     return `${fmt(min)}-${fmt(max)} mmol/L`;
-  };
-
-  const formatLactateRangeShort = (lactate) => {
-    if (!lactate) return '-';
-    const min = Number(lactate.min);
-    const max = Number(lactate.max);
-    const fmt = (v) => (Number.isFinite(v) ? v.toFixed(1) : '∞');
-    if (!Number.isFinite(min) && !Number.isFinite(max)) return '-';
-    return `${fmt(min)}-${fmt(max)}`;
   };
 
   const hasConfiguredZonesForSport = useCallback((sportKey) => {
@@ -440,21 +416,16 @@ const ProfilePage = () => {
       // Vlastní FIT / Strava / tréninky v kalendáři — i pro trenéra (propojená Strava patří jeho účtu)
       const athleteKey = String(profileData._id);
       try {
-        const [trainingsResponse, testsResponse] = await Promise.all([
-          api.get(`/user/athlete/${athleteKey}/trainings`),
-          api.get(`/test/list/${athleteKey}`)
-        ]);
+        const trainingsResponse = await api.get(`/user/athlete/${athleteKey}/trainings`);
         setTrainings(Array.isArray(trainingsResponse.data) ? trainingsResponse.data : []);
-        setTests(Array.isArray(testsResponse.data) ? testsResponse.data : []);
       } catch (loadErr) {
         const status = loadErr?.response?.status;
         if (status === 403 || status === 404) {
-          console.warn('[ProfilePage] Trainings/tests not available:', status, loadErr?.response?.data?.error);
+          console.warn('[ProfilePage] Trainings not available:', status, loadErr?.response?.data?.error);
         } else {
-          console.error('[ProfilePage] Error loading trainings/tests:', loadErr);
+          console.error('[ProfilePage] Error loading trainings:', loadErr);
         }
         setTrainings([]);
-        setTests([]);
       }
 
       loadCalendarData(profileData._id);
@@ -594,753 +565,402 @@ const ProfilePage = () => {
   );
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="py-2 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto"
+      className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6 space-y-4 overflow-x-hidden"
     >
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
+      {/* ── HERO CARD ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-white rounded-3xl shadow-sm overflow-hidden relative"
+        transition={{ delay: 0.1 }}
+        className="relative bg-white rounded-2xl shadow-sm overflow-hidden"
       >
-        <div className="absolute top-4 right-4 flex gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+        {/* Banner */}
+        <div className="h-20 sm:h-28 bg-gradient-to-r from-violet-500 via-purple-400 to-indigo-400" />
+
+        {/* Action buttons */}
+        <div className="absolute top-3 right-3 flex gap-1.5">
+          <button
             onClick={() => setIsEditModalOpen(true)}
-            className="p-2 rounded-full bg-white shadow-sm hover:bg-gray-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/80 backdrop-blur-sm text-xs font-medium text-gray-700 hover:bg-white shadow-sm transition-all"
           >
-            <PencilIcon className="w-5 h-5 text-gray-600" />
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            <PencilIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Edit</span>
+          </button>
+          <button
             onClick={() => setIsPasswordModalOpen(true)}
-            className="p-2 rounded-full bg-white shadow-sm hover:bg-gray-50"
+            className="p-1.5 rounded-lg bg-white/80 backdrop-blur-sm text-gray-700 hover:bg-white shadow-sm transition-all"
+            title="Change password"
           >
-            <KeyIcon className="w-5 h-5 text-gray-600" />
-          </motion.button>
+            <KeyIcon className="w-4 h-4" />
+          </button>
         </div>
 
-        <div className="h-24 md:h-32 bg-gradient-to-r from-purple-100 to-purple-50" />
-        <div className="px-4 md:px-6 pb-4 md:pb-6">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="flex flex-col sm:flex-row sm:items-end -mt-12 mb-4 gap-4 sm:gap-0"
-          >
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white overflow-hidden bg-white mx-auto sm:mx-0">
-              <img
-                src={userInfo.avatar}
-                alt="Profile"
-                className="w-full h-full object-cover"
-              />
+        <div className="px-4 sm:px-6 pb-4 sm:pb-5">
+          {/* Avatar + name row */}
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4 -mt-8 sm:-mt-10 mb-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-white shadow-md overflow-hidden bg-white shrink-0">
+              <img src={userInfo.avatar} alt="Profile" className="w-full h-full object-cover" />
             </div>
-            <div className="text-center sm:text-left sm:ml-4 sm:mb-2">
-              <h1 className="text-xl md:text-2xl font-bold">{userInfo.name}</h1>
-              <p className="text-gray-600">{userInfo.title}</p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight">{userInfo.name}</h1>
+              <p className="text-sm text-gray-500">{userInfo.title !== 'Not set' ? userInfo.title : userInfo.sport}</p>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-4 md:mt-6"
-          >
-            <h2 className="text-lg font-semibold mb-3 md:mb-4">Personal Info</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4">
-              {/* Basic Info */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <UserIcon className="w-5 h-5" />
-                  <p className="text-sm">Full Name</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.name || 'Not set'}</p>
-              </motion.div>
+          {/* Quick stats pills */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {userInfo.weight && userInfo.weight !== 'Not set' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-xs font-medium text-gray-700">
+                <ScaleIcon className="w-3.5 h-3.5 text-gray-400" />
+                {userInfo.weight} kg
+              </span>
+            )}
+            {userInfo.height && userInfo.height !== 'Not set' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-xs font-medium text-gray-700">
+                <ArrowTrendingUpIcon className="w-3.5 h-3.5 text-gray-400" />
+                {userInfo.height} cm
+              </span>
+            )}
+            {userInfo.sport && userInfo.sport !== 'Not set' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-100 text-xs font-medium text-violet-700">
+                <TrophyIcon className="w-3.5 h-3.5" />
+                {userInfo.sport}
+              </span>
+            )}
+            {userInfo.dateOfBirthRaw && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-xs font-medium text-gray-700">
+                <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />
+                {formatDate(userInfo.dateOfBirthRaw)}
+              </span>
+            )}
+          </div>
 
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+          {/* Personal info grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[
+              { icon: EnvelopeIcon, label: 'Email', value: userInfo.email, breakAll: true },
+              { icon: PhoneIcon, label: 'Phone', value: userInfo.phone },
+              { icon: AcademicCapIcon, label: 'Specialization', value: userInfo.specialization },
+              { icon: MapPinIcon, label: 'Address', value: userInfo.address },
+              { icon: InformationCircleIcon, label: 'Bio', value: userInfo.bio, fullWidth: true },
+            ].filter(({ value }) => value && value !== 'Not set').map(({ icon: Icon, label, value, breakAll, fullWidth }) => (
+              <div
+                key={label}
+                className={`flex items-start gap-2.5 p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors${fullWidth ? ' sm:col-span-2' : ''}`}
               >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <EnvelopeIcon className="w-5 h-5" />
-                  <p className="text-sm">Email</p>
+                <Icon className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide leading-none mb-0.5">{label}</p>
+                  <p className={`text-sm text-gray-800 font-medium ${breakAll ? 'break-all' : 'break-words'}`}>{value}</p>
                 </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.email || 'Not set'}</p>
-              </motion.div>
-
-              {/* Physical Stats */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <ScaleIcon className="w-5 h-5" />
-                  <p className="text-sm">Weight</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.weight ? `${userInfo.weight} kg` : 'Not set'}</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <ArrowTrendingUpIcon className="w-5 h-5" />
-                  <p className="text-sm">Height</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.height ? `${userInfo.height} cm` : 'Not set'}</p>
-              </motion.div>
-
-              {/* Sport Info */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <TrophyIcon className="w-5 h-5" />
-                  <p className="text-sm">Sport</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.sport || 'Not set'}</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.6 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <AcademicCapIcon className="w-5 h-5" />
-                  <p className="text-sm">Specialization</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.specialization || 'Not set'}</p>
-              </motion.div>
-
-              {/* Contact Info */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.7 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <PhoneIcon className="w-5 h-5" />
-                  <p className="text-sm">Phone</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.phone || 'Not set'}</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.8 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <CalendarIcon className="w-5 h-5" />
-                  <p className="text-sm">Date of Birth</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">
-                  {userInfo.dateOfBirthRaw ? formatDate(userInfo.dateOfBirthRaw) : (userInfo.dateOfBirth || 'Not set')}
-                </p>
-              </motion.div>
-
-              {/* Address - Full width on mobile, half width on PC */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.9 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors md:col-span-2"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <MapPinIcon className="w-5 h-5" />
-                  <p className="text-sm">Address</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.address || 'Not set'}</p>
-              </motion.div>
-
-              {/* Bio - Full width on mobile, half width on PC */}
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.0 }}
-                className="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors md:col-span-2"
-              >
-                <div className="flex items-center gap-2 text-gray-600 w-1/3">
-                  <InformationCircleIcon className="w-5 h-5" />
-                  <p className="text-sm">Bio</p>
-                </div>
-                <p className="font-medium text-sm w-2/3">{userInfo.bio || 'Not set'}</p>
-              </motion.div>
-            </div>
-          </motion.div>
+              </div>
+            ))}
+          </div>
         </div>
       </motion.div>
 
-      {/* Power Zones Section */}
+      {/* ── TRAINING ZONES ── */}
       {availableZoneSports.length > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.1 }}
-          className="bg-white rounded-3xl shadow-sm overflow-hidden"
+          transition={{ delay: 0.2 }}
+          className="relative flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-white/60 backdrop-blur-lg rounded-2xl sm:rounded-3xl border border-white/30 shadow-xl overflow-hidden"
         >
-          <div className={`${isMobile ? 'px-2 py-3' : 'px-4 md:px-6 py-4 md:py-6'}`}>
-            {/* Sport Selector */}
-            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2 mb-3' : 'mb-6'}`}>
-              <h2 className={`${isMobile ? 'text-lg' : 'text-xl md:text-2xl'} font-bold text-gray-900 ${isMobile ? 'mb-2' : ''}`}>Training Zones</h2>
-              <div className={`flex ${isMobile ? 'flex-col' : 'items-center'} ${isMobile ? 'gap-2' : 'gap-3'}`}>
-              <div className={`flex ${isMobile ? 'gap-1.5' : 'gap-2'} ${isMobile ? 'w-full' : ''}`}>
-                {hasConfiguredZonesForSport('cycling') && (
-                  <button
-                    onClick={() => setSelectedZoneSport('cycling')}
-                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
-                      selectedZoneSport === 'cycling'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Cycling
-                  </button>
-                )}
-                {hasConfiguredZonesForSport('running') && (
-                  <button
-                    onClick={() => setSelectedZoneSport('running')}
-                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
-                      selectedZoneSport === 'running'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Running
-                  </button>
-                )}
-                {hasConfiguredZonesForSport('swimming') && (
-                  <button
-                    onClick={() => setSelectedZoneSport('swimming')}
-                    className={`${isMobile ? 'px-2.5 py-1.5 text-xs flex-1' : 'px-4 py-2 text-sm'} font-semibold ${isMobile ? 'rounded-lg' : 'rounded-xl'} transition-all ${
-                      selectedZoneSport === 'swimming'
-                        ? 'bg-primary text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Swimming
-                  </button>
-                )}
+          {/* Header */}
+          <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/20 bg-white/20 rounded-t-2xl sm:rounded-t-3xl backdrop-blur">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h4 className="text-base sm:text-lg font-semibold text-gray-900 drop-shadow-[0_1px_8px_rgba(0,0,30,0.10)]">
+                Training Zones
+              </h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Sport tabs */}
+                <div className="flex gap-1 bg-gray-100/80 p-0.5 rounded-lg">
+                  {['cycling', 'running', 'swimming'].filter(s => hasConfiguredZonesForSport(s)).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSelectedZoneSport(s)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all capitalize ${
+                        selectedZoneSport === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {s === 'cycling' ? '🚴' : s === 'running' ? '🏃' : '🏊'} {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
                 </div>
                 <button
-                  onClick={() => {
-                    setIsZonesModalOpen(true);
-                  }}
-                  className={`flex items-center justify-center gap-2 ${isMobile ? 'px-3 py-1.5 text-xs w-full' : 'px-4 py-2 text-sm'} font-semibold text-white bg-primary ${isMobile ? 'rounded-lg' : 'rounded-xl'} hover:bg-primary-dark shadow-md hover:shadow-lg transition-all`}
+                  onClick={() => setIsZonesModalOpen(true)}
+                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm text-xs font-medium"
                 >
-                  <PencilIcon className={isMobile ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-                  Edit Zones
+                  Edit
                 </button>
               </div>
             </div>
+          </div>
 
-            {/* Cycling Zones */}
-            {hasConfiguredZonesForSport('cycling') && selectedZoneSport === 'cycling' && (
-              <>
-                {userInfo.powerZones?.cycling?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.powerZones.cycling.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
+          {['cycling', 'running', 'swimming'].map((sport) => {
+            if (!hasConfiguredZonesForSport(sport) || selectedZoneSport !== sport) return null;
+            const zones = userInfo.powerZones[sport];
+            const hrZones = userInfo.heartRateZones?.[sport];
+            const lt1 = zones.lt1;
+            const lt2 = zones.lt2;
+            const zoneColors = [
+              'bg-[#22c55e]/60',
+              'bg-[#3b82f6]/60',
+              'bg-[#fbbf24]/60',
+              'bg-[#ef4444]/60',
+              'bg-[#8b5cf6]/60',
+            ];
+            const zoneNames = ['Recovery / Easy', 'Aerobic Base', 'Tempo / Steady', 'Threshold', 'VO₂max / Sprint'];
+            const fmtMain = (val) => {
+              if (val == null || val === '' || val === Infinity) return '∞';
+              if (sport === 'cycling') return `${val}W`;
+              if (sport === 'swimming') return `${formatPace(val)}/100m`;
+              return `${formatPace(val)}${getPaceUnit('running')}`;
+            };
 
-            {/* LTP1 and LTP2 */}
-            {(userInfo.powerZones.cycling.lt1 || userInfo.powerZones.cycling.lt2) && (
-              <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
-                {userInfo.powerZones.cycling.lt1 && (
-                  <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                    <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
-                    <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>{userInfo.powerZones.cycling.lt1}W</p>
-                  </div>
-                )}
-                {userInfo.powerZones.cycling.lt2 && (
-                  <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                    <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2 (FTP)</p>
-                    <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>{userInfo.powerZones.cycling.lt2}W</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Zones Table */}
-            <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
-                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Power Range (W)</th>
-                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
-                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
-                    <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[1, 2, 3, 4, 5].map(zoneNum => {
-                    const zone = userInfo.powerZones.cycling[`zone${zoneNum}`];
-                    if (!zone || (!zone.min && !zone.max)) return null;
-                    
-                    const hrZone = userInfo.heartRateZones?.cycling?.[`zone${zoneNum}`];
-                    const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
-                    
-                    const zoneColors = {
-                      1: 'bg-blue-50 text-blue-700',
-                      2: 'bg-green-50 text-green-700',
-                      3: 'bg-yellow-50 text-yellow-700',
-                      4: 'bg-orange-50 text-orange-700',
-                      5: 'bg-red-50 text-red-700'
-                    };
-                    
-                    return (
-                      <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                          <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
-                            {zoneNum}
-                          </span>
-                        </td>
-                        <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                          <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                            {zone.min || 0}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : `${zone.max}`}W
-                          </span>
-                        </td>
-                        <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
-                          {hasHrZone ? (
-                            <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                              {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
-                            </span>
-                          ) : (
-                            <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
-                          )}
-                        </td>
-                        <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-                          <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                            {formatLactateRangeShort(zone?.lactate)} mmol/L
-                          </span>
-                        </td>
-                        <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
-                          {zone.description || '-'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-                {(!userInfo.powerZones.cycling.zone1 || !userInfo.powerZones.cycling.zone1.min) && (
-                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      No cycling zones configured. Edit your profile to set power zones from your lactate test.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Running Zones */}
-            {hasConfiguredZonesForSport('running') && selectedZoneSport === 'running' && (
-              <>
-                {userInfo.powerZones?.running?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.powerZones.running.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
-
-                {/* LTP1 and LTP2 for Running */}
-                {(userInfo.powerZones.running.lt1 || userInfo.powerZones.running.lt2) && (
-                  <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
-                    {userInfo.powerZones.running.lt1 && (
-                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
-                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>
-                          {formatPace(userInfo.powerZones.running.lt1)} {getPaceUnit('running')}
-                        </p>
+            return (
+              <React.Fragment key={sport}>
+                {/* LT1 / LT2 */}
+                {(lt1 || lt2) && (
+                  <div className="grid grid-cols-2 gap-2 px-3 sm:px-6">
+                    {lt1 && (
+                      <div className="p-3 bg-sky-50/80 rounded-xl border border-sky-100">
+                        <p className="text-[10px] font-semibold text-sky-500 uppercase tracking-wide mb-0.5">LTP1</p>
+                        <p className="text-xl font-bold text-sky-700">{fmtMain(lt1)}</p>
                       </div>
                     )}
-                    {userInfo.powerZones.running.lt2 && (
-                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2</p>
-                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>
-                          {formatPace(userInfo.powerZones.running.lt2)} {getPaceUnit('running')}
+                    {lt2 && (
+                      <div className="p-3 bg-violet-50/80 rounded-xl border border-violet-100">
+                        <p className="text-[10px] font-semibold text-violet-500 uppercase tracking-wide mb-0.5">
+                          LTP2{sport === 'cycling' ? ' / FTP' : ''}
                         </p>
+                        <p className="text-xl font-bold text-violet-700">{fmtMain(lt2)}</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Running Zones Table */}
-                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/km)</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[1, 2, 3, 4, 5].map(zoneNum => {
-                        const zone = userInfo.powerZones.running[`zone${zoneNum}`];
-                        if (!zone || (!zone.min && !zone.max)) return null;
-                        
-                        const hrZone = userInfo.heartRateZones?.running?.[`zone${zoneNum}`];
-                        const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
-                        
-                        const zoneColors = {
-                          1: 'bg-blue-50 text-blue-700',
-                          2: 'bg-green-50 text-green-700',
-                          3: 'bg-yellow-50 text-yellow-700',
-                          4: 'bg-orange-50 text-orange-700',
-                          5: 'bg-red-50 text-red-700'
-                        };
-                        
-                        return (
-                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                              <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
-                                {zoneNum}
-                              </span>
-                            </td>
-                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} {getPaceUnit('running')}
-                              </span>
-                            </td>
-                            <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
-                              {hasHrZone ? (
-                                <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                  {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
+                {/* Zones table */}
+                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
+                  <div className="inline-block min-w-full align-middle">
+                    <table className="w-full min-w-[300px] sm:min-w-full select-text">
+                      <thead className="bg-white/10">
+                        <tr>
+                          <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">Zone</th>
+                          <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20 hidden sm:table-cell">Description</th>
+                          <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">
+                            {sport === 'cycling' ? 'Power (W)' : sport === 'swimming' ? 'Pace /100m' : 'Pace /km'}
+                          </th>
+                          <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-white/20">HR</th>
+                          <th className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Lactate</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white/30 divide-y divide-white/30 rounded-b-3xl">
+                        {[1, 2, 3, 4, 5].map((zoneNum, index) => {
+                          const zone = zones[`zone${zoneNum}`];
+                          if (!zone || (!zone.min && !zone.max)) return null;
+                          const hrZone = hrZones?.[`zone${zoneNum}`];
+                          const fmtBound = (v) => (v == null || v === Infinity || v === '') ? '∞' : String(v);
+                          const lactateStr = zone.lactate
+                            ? `${Number.isFinite(Number(zone.lactate.min)) ? Number(zone.lactate.min).toFixed(1) : '?'}–${Number.isFinite(Number(zone.lactate.max)) ? Number(zone.lactate.max).toFixed(1) : '?'} mmol/L`
+                            : null;
+                          return (
+                            <motion.tr
+                              key={`z${zoneNum}`}
+                              className="transition-all duration-200 hover:bg-white/40 hover:backdrop-blur"
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: index * 0.09 }}
+                            >
+                              <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 border-r border-white/20">
+                                <div className="flex items-center">
+                                  <span className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full mr-1 sm:mr-2 inline-block border border-white/70 shadow ${zoneColors[zoneNum - 1]}`} />
+                                  <span className="text-xs sm:text-sm font-semibold text-gray-900">{zoneNum}</span>
+                                </div>
+                              </td>
+                              <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 border-r border-white/20 hidden sm:table-cell">
+                                <span className="text-xs sm:text-sm text-gray-700">{zone.description || zoneNames[zoneNum - 1]}</span>
+                              </td>
+                              <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 border-r border-white/20">
+                                <span className="text-xs sm:text-sm text-gray-900 font-mono tracking-tight">
+                                  {fmtMain(zone.min || 0)}–{fmtMain(zone.max)}
                                 </span>
-                              ) : (
-                                <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
-                              )}
-                            </td>
-                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                {formatLactateRangeShort(zone?.lactate)} mmol/L
-                              </span>
-                            </td>
-                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
-                              {zone.description || '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              </td>
+                              <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 border-r border-white/20">
+                                <span className="text-xs sm:text-sm text-gray-900 font-mono tracking-tight">
+                                  {hrZone ? `${hrZone.min || 0}–${fmtBound(hrZone.max)}` : '-'}
+                                </span>
+                              </td>
+                              <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3">
+                                <span className="text-xs sm:text-sm text-gray-900 font-mono tracking-tight">
+                                  {lactateStr || '-'}
+                                </span>
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
-                {(!userInfo.powerZones.running.zone1 || !userInfo.powerZones.running.zone1.min) && (
-                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      No running zones configured. Edit your profile to set pace zones from your lactate test.
-                    </p>
+                {zones.lastUpdated && (
+                  <p className="text-[10px] text-gray-400 px-3 sm:px-6 pb-1">Updated: {new Date(zones.lastUpdated).toLocaleDateString()}</p>
+                )}
+
+                {(!zones.zone1 || !zones.zone1.min) && !lt1 && !lt2 && (
+                  <div className="mx-3 sm:mx-6 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                    <p className="text-xs text-amber-700">No {sport} zones configured. Click Edit to set zones.</p>
                   </div>
                 )}
-              </>
-            )}
+              </React.Fragment>
+            );
+          })}
 
-            {/* Swimming Zones */}
-            {hasConfiguredZonesForSport('swimming') && selectedZoneSport === 'swimming' && (
-              <>
-                {userInfo.powerZones?.swimming?.lastUpdated && (
-                  <p className="text-xs text-gray-500 mb-4">
-                    Updated: {new Date(userInfo.powerZones.swimming.lastUpdated).toLocaleDateString()}
-                  </p>
-                )}
-
-                {/* LTP1 and LTP2 for Swimming */}
-                {(userInfo.powerZones.swimming.lt1 || userInfo.powerZones.swimming.lt2) && (
-                  <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-4'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
-                    {userInfo.powerZones.swimming.lt1 && (
-                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-blue-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP1</p>
-                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-blue-700`}>
-                          {formatPace(userInfo.powerZones.swimming.lt1)} /100m
-                        </p>
-                      </div>
-                    )}
-                    {userInfo.powerZones.swimming.lt2 && (
-                      <div className={`${isMobile ? 'p-2' : 'p-4'} bg-purple-50 ${isMobile ? 'rounded-md' : 'rounded-lg'}`}>
-                        <p className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>LTP2</p>
-                        <p className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-purple-700`}>
-                          {formatPace(userInfo.powerZones.swimming.lt2)} /100m
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Swimming Zones Table */}
-                <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0">
-                  <table className="w-full">
+          {/* History compare */}
+          {selectedZoneHistory.length > 1 && (
+            <div className="mx-3 sm:mx-6 pt-3 border-t border-white/30">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">Compare snapshots</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                <label className="text-[11px] text-gray-500">
+                  Snapshot A
+                  <select
+                    value={compareHistoryAKey}
+                    onChange={(e) => setCompareHistoryAKey(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700"
+                  >
+                    {selectedZoneHistory.map((item) => (
+                      <option key={`a-${item.key}`} value={item.key}>
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-[11px] text-gray-500">
+                  Snapshot B
+                  <select
+                    value={compareHistoryBKey}
+                    onChange={(e) => setCompareHistoryBKey(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700"
+                  >
+                    {selectedZoneHistory.map((item) => (
+                      <option key={`b-${item.key}`} value={item.key}>
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {comparedSnapshotA && comparedSnapshotB && (
+                <div className="overflow-x-auto rounded-xl border border-white/30">
+                  <table className="w-full min-w-[420px] text-xs">
                     <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Zone</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Pace Range (/100m)</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 ${isMobile ? 'hidden' : ''}`}>Heart Rate Range (BPM)</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700`}>Lactate</th>
-                        <th className={`text-left ${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-[10px]' : 'text-sm'} font-semibold text-gray-700 hidden md:table-cell`}>Description</th>
+                      <tr className="bg-white/20 border-b border-white/20">
+                        <th className="text-left py-2 px-3 font-semibold text-gray-600">Zone</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-600">Power/Pace (A vs B)</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-600">HR (A vs B)</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-600">Lactate (A vs B)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[1, 2, 3, 4, 5].map(zoneNum => {
-                        const zone = userInfo.powerZones.swimming[`zone${zoneNum}`];
-                        if (!zone || (!zone.min && !zone.max)) return null;
-                        
-                        const hrZone = userInfo.heartRateZones?.swimming?.[`zone${zoneNum}`];
-                        const hasHrZone = hrZone && (hrZone.min !== undefined || hrZone.max !== undefined);
-                        
-                        const zoneColors = {
-                          1: 'bg-blue-50 text-blue-700',
-                          2: 'bg-green-50 text-green-700',
-                          3: 'bg-yellow-50 text-yellow-700',
-                          4: 'bg-orange-50 text-orange-700',
-                          5: 'bg-red-50 text-red-700'
-                        };
-                        
+                      {[1, 2, 3, 4, 5].map((zoneNum) => {
+                        const aPz = comparedSnapshotA.powerSnapshot?.[`zone${zoneNum}`];
+                        const bPz = comparedSnapshotB.powerSnapshot?.[`zone${zoneNum}`];
+                        const aHz = comparedSnapshotA.hrSnapshot?.[`zone${zoneNum}`];
+                        const bHz = comparedSnapshotB.hrSnapshot?.[`zone${zoneNum}`];
+                        const deltaMain = selectedZoneSport === 'cycling'
+                          ? formatNumericDelta(aPz?.max, bPz?.max, ' W')
+                          : formatPaceDelta(aPz?.max, bPz?.max);
+                        const deltaHr = formatNumericDelta(aHz?.max, bHz?.max, ' bpm');
+                        const deltaLac = (() => {
+                          const aL = Number(aPz?.lactate?.max);
+                          const bL = Number(bPz?.lactate?.max);
+                          if (!Number.isFinite(aL) || !Number.isFinite(bL)) return '-';
+                          const d = aL - bL;
+                          return `${d > 0 ? '+' : ''}${d.toFixed(1)} mmol/L`;
+                        })();
                         return (
-                          <tr key={zoneNum} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                              <span className={`inline-flex items-center justify-center ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full font-bold ${zoneColors[zoneNum]}`}>
-                                {zoneNum}
-                              </span>
+                          <tr key={`cmp-${zoneNum}`} className="border-b border-white/20 last:border-b-0">
+                            <td className="py-2 px-3 font-bold text-gray-700">Z{zoneNum}</td>
+                            <td className="py-2 px-3 text-gray-700">
+                              <span className="font-mono">{formatPowerOrPaceRange(aPz, selectedZoneSport)}</span>
+                              <span className="text-gray-400 mx-1">vs</span>
+                              <span className="font-mono">{formatPowerOrPaceRange(bPz, selectedZoneSport)}</span>
+                              <span className="ml-1.5 text-primary font-bold">({deltaMain})</span>
                             </td>
-                            <td className={isMobile ? 'py-2 px-2' : 'py-3 px-4'}>
-                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                {formatPace(zone.min || 0)}-{zone.max === Infinity || zone.max === null || zone.max === undefined ? '∞' : formatPace(zone.max)} /100m
-                              </span>
+                            <td className="py-2 px-3 text-gray-700">
+                              <span className="font-mono">{formatHeartRateRange(aHz)}</span>
+                              <span className="text-gray-400 mx-1">vs</span>
+                              <span className="font-mono">{formatHeartRateRange(bHz)}</span>
+                              <span className="ml-1.5 text-primary font-bold">({deltaHr})</span>
                             </td>
-                            <td className={`${isMobile ? 'py-2 px-2 hidden' : 'py-3 px-4'}`}>
-                              {hasHrZone ? (
-                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                  {hrZone.min || 0}-{hrZone.max === Infinity || hrZone.max === null || hrZone.max === undefined ? '∞' : `${hrZone.max}`} BPM
-                              </span>
-                              ) : (
-                                <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-400`}>-</span>
-                              )}
-                            </td>
-                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-                              <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                                {formatLactateRangeShort(zone?.lactate)} mmol/L
-                              </span>
-                            </td>
-                            <td className={`${isMobile ? 'py-2 px-2' : 'py-3 px-4'} ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 hidden md:table-cell`}>
-                              {zone.description || '-'}
+                            <td className="py-2 px-3 text-gray-700">
+                              <span className="font-mono">{formatLactateRange(aPz?.lactate)}</span>
+                              <span className="text-gray-400 mx-1">vs</span>
+                              <span className="font-mono">{formatLactateRange(bPz?.lactate)}</span>
+                              <span className="ml-1.5 text-primary font-bold">({deltaLac})</span>
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
-                </div>
-
-                {(!userInfo.powerZones.swimming.zone1 || !userInfo.powerZones.swimming.zone1.min) && (
-                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      No swimming zones configured. Edit your profile to set pace zones from your lactate test.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className="mt-6 border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900`}>Zones History</h3>
-                <span className="text-xs text-gray-500">Scroll for older changes</span>
-              </div>
-              {selectedZoneHistory.length === 0 ? (
-                <p className="text-sm text-gray-500">No history yet. After next zone edit, snapshots will appear here.</p>
-              ) : (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-gray-200 p-3 bg-white">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">Compare snapshots</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                      <label className="text-xs text-gray-600">
-                        Snapshot A
-                        <select
-                          value={compareHistoryAKey}
-                          onChange={(e) => setCompareHistoryAKey(e.target.value)}
-                          className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
-                        >
-                          {selectedZoneHistory.map((item) => (
-                            <option key={`a-${item.key}`} value={item.key}>
-                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="text-xs text-gray-600">
-                        Snapshot B
-                        <select
-                          value={compareHistoryBKey}
-                          onChange={(e) => setCompareHistoryBKey(e.target.value)}
-                          className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700"
-                        >
-                          {selectedZoneHistory.map((item) => (
-                            <option key={`b-${item.key}`} value={item.key}>
-                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown date'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    {comparedSnapshotA && comparedSnapshotB && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[560px]">
-                          <thead>
-                            <tr className="border-b border-gray-200">
-                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">Zone</th>
-                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">Main (A vs B)</th>
-                              <th className="text-left py-2 pr-2 text-xs font-semibold text-gray-700">HR (A vs B)</th>
-                              <th className="text-left py-2 text-xs font-semibold text-gray-700">Lactate (A vs B)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[1, 2, 3, 4, 5].map((zoneNum) => {
-                              const aPz = comparedSnapshotA.powerSnapshot?.[`zone${zoneNum}`];
-                              const bPz = comparedSnapshotB.powerSnapshot?.[`zone${zoneNum}`];
-                              const aHz = comparedSnapshotA.hrSnapshot?.[`zone${zoneNum}`];
-                              const bHz = comparedSnapshotB.hrSnapshot?.[`zone${zoneNum}`];
-                              const deltaMain =
-                                selectedZoneSport === 'cycling'
-                                  ? formatNumericDelta(aPz?.max, bPz?.max, ' W')
-                                  : formatPaceDelta(aPz?.max, bPz?.max);
-                              const deltaHr = formatNumericDelta(aHz?.max, bHz?.max, ' bpm');
-                              const deltaLac = (() => {
-                                const aL = Number(aPz?.lactate?.max);
-                                const bL = Number(bPz?.lactate?.max);
-                                if (!Number.isFinite(aL) || !Number.isFinite(bL)) return '-';
-                                const d = aL - bL;
-                                const sign = d > 0 ? '+' : '';
-                                return `${sign}${d.toFixed(1)} mmol/L`;
-                              })();
-                              return (
-                                <tr key={`cmp-${zoneNum}`} className="border-b border-gray-100 last:border-b-0">
-                                  <td className="py-2 pr-2 text-xs font-semibold text-gray-700">Z{zoneNum}</td>
-                                  <td className="py-2 pr-2 text-xs text-gray-800">
-                                    <span className="font-mono">{formatPowerOrPaceRange(aPz, selectedZoneSport)}</span>
-                                    <span className="text-gray-400"> vs </span>
-                                    <span className="font-mono">{formatPowerOrPaceRange(bPz, selectedZoneSport)}</span>
-                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaMain})</span>
-                                  </td>
-                                  <td className="py-2 pr-2 text-xs text-gray-800">
-                                    <span className="font-mono">{formatHeartRateRange(aHz)}</span>
-                                    <span className="text-gray-400"> vs </span>
-                                    <span className="font-mono">{formatHeartRateRange(bHz)}</span>
-                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaHr})</span>
-                                  </td>
-                                  <td className="py-2 text-xs text-gray-800">
-                                    <span className="font-mono">{formatLactateRange(aPz?.lactate)}</span>
-                                    <span className="text-gray-400"> vs </span>
-                                    <span className="font-mono">{formatLactateRange(bPz?.lactate)}</span>
-                                    <span className="ml-2 text-[11px] text-primary font-semibold">({deltaLac})</span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
-          </div>
+          )}
         </motion.div>
       )}
 
-      <>
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6"
-          >
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.6 }}
-            >
-              <SpiderChart 
-                trainings={trainings}
-                selectedSport={selectedSport}
-                className="w-[400px]"
-              />
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.7 }}
-            >
-            <TrainingGraph 
-              trainingList={trainings}
-              selectedSport={effectiveTrainingGraphSport}
-              selectedTitle={selectedTitle}
-              setSelectedTitle={setSelectedTitle}
-              selectedTraining={selectedTraining}
-              setSelectedTraining={setSelectedTraining}
-            />
-            </motion.div>
+      {/* ── PERFORMANCE CHARTS (side-by-side on lg) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="min-w-0 overflow-hidden"
+        >
+          <SpiderChart
+            trainings={trainings}
+            selectedSport={selectedSport}
+            className="w-full"
+          />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="min-w-0 overflow-hidden"
+        >
+          <TrainingGraph
+            trainingList={trainings}
+            selectedSport={effectiveTrainingGraphSport}
+            selectedTitle={selectedTitle}
+            setSelectedTitle={setSelectedTitle}
+            selectedTraining={selectedTraining}
+            setSelectedTraining={setSelectedTraining}
+          />
+        </motion.div>
+      </div>
 
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8 }}
-              className='lg:col-span-2'
-            >
-              <WeeklyCalendar 
-                activities={calendarActivities}
-                onSelectActivity={(activity) => {
-                  console.log('Selected activity:', activity);
-                }}
-              />
-            </motion.div>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-            className="lg:col-span-2"
-          >
-            <div className="mb-4">
-              <SportsSelector onSportChange={setSelectedTestingSport} />
-            </div>
-            <PreviousTestingComponent 
-              selectedSport={selectedTestingSport}
-              tests={tests}
-              setTests={setTests}
-              athleteId={userInfo._id}
-            />
-          </motion.div>
-      </>
+      {/* ── WEEKLY CALENDAR ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="min-w-0 overflow-hidden"
+      >
+        <WeeklyCalendar
+          activities={calendarActivities}
+          onSelectActivity={(activity) => {
+            console.log('Selected activity:', activity);
+          }}
+        />
+      </motion.div>
 
       <AnimatePresence>
         {isEditModalOpen && (
@@ -1348,31 +968,23 @@ const ProfilePage = () => {
             isOpen={isEditModalOpen}
             onClose={() => setIsEditModalOpen(false)}
             onSubmit={handleProfileUpdate}
-            userData={{
-              ...userInfo,
-              _selectedSport: selectedZoneSport // Pass selected sport to open modal on correct tab
-            }}
+            userData={{ ...userInfo, _selectedSport: selectedZoneSport }}
           />
         )}
-
         {isZonesModalOpen && (
           <EditProfileModal
             isOpen={isZonesModalOpen}
             onClose={() => setIsZonesModalOpen(false)}
             onSubmit={handleProfileUpdate}
             zonesOnly={true}
-            userData={{
-              ...userInfo,
-              _selectedSport: selectedZoneSport
-            }}
+            userData={{ ...userInfo, _selectedSport: selectedZoneSport }}
           />
         )}
-
         {isPasswordModalOpen && (
-      <ChangePasswordModal
-        isOpen={isPasswordModalOpen}
-        onClose={() => setIsPasswordModalOpen(false)}
-      />
+          <ChangePasswordModal
+            isOpen={isPasswordModalOpen}
+            onClose={() => setIsPasswordModalOpen(false)}
+          />
         )}
       </AnimatePresence>
     </motion.div>

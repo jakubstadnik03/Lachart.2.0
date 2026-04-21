@@ -17,6 +17,7 @@ const resultSchema = new mongoose.Schema({
     lactate: Number,
     RPE: Number,
     elevation: Number,
+    distanceMeters: Number,
     sourceLapIndex: Number,
     /** UI / export: recovery lap (e.g. Strava field-lactate sync); unchecked in TrainingForm */
     isRecovery: { type: Boolean, default: false },

@@ -118,12 +118,12 @@ const IntervalChart = ({
     isRun || isSwim ? 'pace' : (hasPowerData ? 'power' : 'heartRate')
   );
 
-  // When sport or available data changes (e.g. switching from run to bike),
-  // reset selected metric to a sensible default so bike starts on power, run/swim on pace.
+  // When sport or available data changes (e.g. switching from run to bike, or to a different swim activity),
+  // reset selected metric to a sensible default so swim/run always starts on pace.
   useEffect(() => {
     const defaultMetric = isRun || isSwim ? 'pace' : (hasPowerData ? 'power' : 'heartRate');
     setSelectedMetric(defaultMetric);
-  }, [isRun, isSwim, hasPowerData]);
+  }, [sport, isRun, isSwim, hasPowerData]);
   
   // Debug log
 
@@ -353,13 +353,14 @@ const IntervalChart = ({
           : (Number(segmentDistancesM[originalIndex]) > 0
               ? Number(segmentDistancesM[originalIndex])
               : lapDistanceMetersForChart(lap, lapTimeSource, isSwim));
-      
+
       let speedMpsPause = lapSpeedMpsForChart(lap);
       if (isSwim && (!Number.isFinite(speedMpsPause) || speedMpsPause <= 0) && segmentMeters > 0) {
         const tSec = lapDurationSecondsForChart(lap, lapTimeSource);
         if (tSec > 0) speedMpsPause = segmentMeters / tSec;
       }
-      const isPause = speedMpsPause <= 0.1 || value === 0 || (selectedMetric === 'pace' && value === 0);
+      // For swim: also treat as pause when distance is 0 (rest laps with no movement)
+      const isPause = speedMpsPause <= 0.1 || value === 0 || (selectedMetric === 'pace' && value === 0) || (isSwim && distance === 0);
       
       // Get max heart rate for this interval
       const maxHeartRate = lap.max_heartrate || lap.maxHeartRate || lap.average_heartrate || lap.avgHeartRate || 0;
@@ -378,7 +379,8 @@ const IntervalChart = ({
     const values = bars.map(b => b.value).filter(v => v > 0);
     const maxValue = values.length > 0 ? Math.max(...values) : 100;
     const minValue = values.length > 0 ? Math.min(...values) : 0;
-    const totalDistance = bars.reduce((sum, b) => sum + b.distance, 0); // Total distance instead of duration
+    // Exclude pauses from totalDistance so active laps fill proportional width correctly
+    const totalDistance = bars.filter(b => !b.isPause).reduce((sum, b) => sum + b.distance, 0);
 
     // Group intervals by similar values (within 5% tolerance)
     // Pauses (isPause = true) get special group -1 (gray, minimum height)
@@ -728,8 +730,7 @@ const IntervalChart = ({
 
   return (
     <div className={`relative bg-white ${isMobile ? 'rounded-lg p-2' : 'rounded-2xl p-2 sm:p-4'} shadow-lg overflow`}>
-      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} gap-2 mb-2 sm:mb-4`}>
-        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold text-gray-900`}>Activity Intervals</h3>
+      <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-end'} gap-2 mb-2 sm:mb-4`}>
         <div className={`flex items-center gap-1 sm:gap-2 ${isMobile ? 'flex-wrap' : ''}`}>
           {xZoomScale > 1 && (
             <button
@@ -881,8 +882,8 @@ const IntervalChart = ({
 
             {/* Bars */}
             <div
-              className="relative h-full flex items-end gap-0.5 overflow-hidden"
-              style={{ minWidth: '100%' }}
+              className="relative h-full flex items-end gap-0.5"
+              style={{ width: '100%' }}
             >
               {bars.map((bar, index) => {
               const isSelectedBar = selectedBarIndex === index;
@@ -919,10 +920,12 @@ const IntervalChart = ({
                 : (unitSystem === 'imperial' ? '/mile' : '/km');
               const paceFormatted = paceSeconds > 0 ? `${paceMinutes}:${String(paceSecs).padStart(2, '0')}${paceUnit}` : '-';
               
-              // Calculate width based on distance (relative to totalDistance)
-              const widthPercent = totalDistance > 0
-                ? (bar.distance / totalDistance) * 100
-                : (100 / bars.length);
+              // widthPercent kept for tooltip hit-test calculations only — actual sizing uses flexGrow below
+              const widthPercent = bar.isPause
+                ? 0
+                : (totalDistance > 0
+                    ? (bar.distance / totalDistance) * 100
+                    : (100 / bars.filter(b => !b.isPause).length));
               
               const barColor = getBarColor(bar, maxValue, minValue, groups);
               
@@ -947,10 +950,10 @@ const IntervalChart = ({
                 <div
                   key={index}
                   className="group relative cursor-pointer flex flex-col items-stretch justify-end"
-                  style={{ 
-                    width: `${widthPercent}%`,
-                    height: '100%'
-                  }}
+                  style={bar.isPause
+                    ? { flex: '0 0 6px', height: '100%' }
+                    : { flex: `${Math.max(bar.distance, 1)} 1 0%`, minWidth: 0, height: '100%' }
+                  }
                   onMouseEnter={() => {
                     if (!isMobile) {
                       setHoveredBar({ bar, index, widthPercent });

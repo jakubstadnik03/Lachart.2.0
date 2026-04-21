@@ -10,11 +10,7 @@ import WeeklyTrainingLoad from "../components/DashboardPage/WeeklyTrainingLoad";
 import { useAuth } from '../context/AuthProvider';
 import api, { getFitTrainings, listExternalActivities, autoSyncStravaActivities, getIntegrationStatus, getStravaAuthUrl } from '../services/api';
 import { useNotification } from '../context/NotificationContext';
-import AthleteSelector from "../components/AthleteSelector";
-import CoachDashboardHeader from "../components/DashboardPage/CoachDashboardHeader";
 import LactateCurveCalculator from "../components/Testing-page/LactateCurveCalculator";
-import TestComparison from "../components/Testing-page/TestComparison";
-import TestSelector from "../components/Testing-page/TestSelector";
 import DateSelector from "../components/DateSelector";
 import LactateStatistics from "../components/LactateStatistics/LactateStatistics";
 import WeeklyCalendar from "../components/DashboardPage/WeeklyCalendar";
@@ -112,9 +108,7 @@ export default function DashboardPage() {
   const [currentTest, setCurrentTest] = useState(null);
   const [tests, setTests] = useState([]);
   const [pendingAthleteIds, setPendingAthleteIds] = useState([]);
-  const navigate = useNavigate();
-  const [selectedTests, setSelectedTests] = useState([]);
-  /** Avoid flashing the empty-state hero while API/cache is still settling */
+  const navigate = useNavigate();  /** Avoid flashing the empty-state hero while API/cache is still settling */
   const [showEmptyWelcomeDelayed, setShowEmptyWelcomeDelayed] = useState(false);
 
   // Check Strava connection status (athletes + coaches — own Strava / profile photo)
@@ -923,15 +917,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleTestSelect = (tests) => {
-    setSelectedTests(tests);
-  };
-
-  const handleAthleteChange = (newAthleteId) => {
-    setSelectedAthleteId(newAthleteId);
-    navigate(`/dashboard/${newAthleteId}`);
-  };
-
   if (error) return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -956,15 +941,9 @@ export default function DashboardPage() {
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="mx-6 m-auto max-w-[1600px] mx-auto py-4 md:p-6"
+      className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6"
     >
-      {isCoachLikeRole && (
-        <CoachDashboardHeader
-          selectedAthleteId={selectedAthleteId}
-          onSelectAthlete={handleAthleteChange}
-          user={user}
-        />
-      )}
+      {/* CoachDashboardHeader is now shown globally in Layout (CoachAthleteBar) */}
       {isCoachLikeRole &&
         selectedAthleteId &&
         String(selectedAthleteId) !== String(user?._id || '') &&
@@ -1043,62 +1022,25 @@ export default function DashboardPage() {
           <>
         {!showAthleteEmptyWelcome && (
           <>
-        {/* Form & Fitness Chart */}
-        <motion.div 
+        {/* Weekly Calendar — at the top */}
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="lg:col-span-5 md:col-span-2"
         >
-          <FormFitnessChart 
-            athleteId={dashboardDataAthleteId}
-          />
-        </motion.div>
-
-        {/* Weekly Training Load */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="lg:col-span-5 md:col-span-2"
-        >
-          <WeeklyTrainingLoad 
-            athleteId={dashboardDataAthleteId}
-          />
-        </motion.div>
-
-        {/* Intensity distribution (power × time from calendar / Strava-Garmin-FIT list) */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.27 }}
-          className="lg:col-span-5 md:col-span-2"
-        >
-          <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
-        </motion.div>
-
-        {/* Weekly Calendar */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="lg:col-span-5 md:col-span-2"
-        >
-          <WeeklyCalendar 
+          <WeeklyCalendar
             selectedAthleteId={dashboardDataAthleteId}
             activities={calendarData || []}
             onSelectActivity={(activity) => {
-              // Handle activity selection
               console.log('Selected activity:', activity);
             }}
             onActivityUpdate={(updatedActivity) => {
-              // Update the activity in calendarData
               setCalendarData(prev => {
                 const updated = prev.map(act => {
-                  // Match by type and id
                   if (updatedActivity.type === 'fit' && act.type === 'fit' && act._id === updatedActivity._id) {
                     return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || act.title };
-                  } else if (updatedActivity.type === 'strava' && act.type === 'strava' && 
+                  } else if (updatedActivity.type === 'strava' && act.type === 'strava' &&
                              (act.id === updatedActivity.id || act.stravaId === updatedActivity.stravaId || act.stravaId === updatedActivity.id)) {
                     return { ...act, ...updatedActivity, title: updatedActivity.title || updatedActivity.titleManual || updatedActivity.name || act.title };
                   }
@@ -1107,13 +1049,45 @@ export default function DashboardPage() {
                 console.log('[DashboardPage] Updated calendarData after activity update:', updatedActivity);
                 return updated;
               });
-              // Also invalidate cache to force reload on next refresh
               const cacheKey = `calendarData_${dashboardDataAthleteId}`;
               const cacheTimestampKey = `calendarData_timestamp_${dashboardDataAthleteId}`;
               localStorage.removeItem(cacheKey);
               localStorage.removeItem(cacheTimestampKey);
             }}
           />
+        </motion.div>
+
+        {/* Form & Fitness Chart + Weekly Training Load — side by side, equal height */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="lg:col-span-3 md:col-span-2 flex flex-col"
+        >
+          <FormFitnessChart
+            athleteId={dashboardDataAthleteId}
+          />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.27 }}
+          className="lg:col-span-2 md:col-span-2 flex flex-col"
+        >
+          <WeeklyTrainingLoad
+            athleteId={dashboardDataAthleteId}
+          />
+        </motion.div>
+
+        {/* Intensity distribution */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.29 }}
+          className="lg:col-span-5 md:col-span-2"
+        >
+          <IntensityDistributionChart athleteId={dashboardDataAthleteId} activities={calendarData || []} />
         </motion.div>
 
         {/* LT2 Trend Sparkline + Zone Distribution — side by side on large screens */}
@@ -1245,13 +1219,6 @@ export default function DashboardPage() {
                 {currentTest && currentTest.results && (
                   <>
                     <LactateCurveCalculator mockData={currentTest} />
-                    <TestSelector 
-                      tests={filteredTests}
-                      selectedTests={selectedTests}
-                      onTestSelect={handleTestSelect}
-                      selectedSport={selectedSport}
-                    />
-                    <TestComparison tests={selectedTests} />
                   </>
                 )}
               </>

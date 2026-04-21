@@ -22,10 +22,13 @@ export function prepareTrainingForLactateEntry(training) {
       interval: r.interval ?? idx + 1,
       heartRate: r.heartRate ?? r.heart_rate ?? r.avgHeartRate ?? '',
       lactate: r.lactate ?? '',
+      distanceMeters: r.distanceMeters ?? undefined,
       isSelected: explicitSelected ? r.isSelected : !isRec,
       isRecovery: isRec,
     };
   });
   raw.sport = mapSportForTrainingForm(raw.sport);
+  // Pass through raw Strava laps for the bar chart in TrainingForm
+  raw.laps = Array.isArray(training.laps) ? training.laps : undefined;
   return raw;
 }

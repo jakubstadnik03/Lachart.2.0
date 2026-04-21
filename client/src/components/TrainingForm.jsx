@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
+import LapsBarChart from "./FitAnalysis/LapsBarChart";
 
 const ACTIVITIES = [
   {
@@ -23,15 +24,10 @@ const ACTIVITIES = [
   }
 ];
 
-// const DURATION_TYPES = [
-//   { type: "time", options: ["00:30", "01:00", "02:00", "05:00", "10:00", "15:00", "20:00"] },
-//   { type: "distance", options: ["100m", "200m", "400m", "800m", "1km", "2km", "5km"] }
-// ];
-
 const TERRAIN_OPTIONS = {
   bike: ["track", "road", "trail", "indoor"],
   run: ["track", "road", "trail", "indoor"],
-  swim: [] // pro plavání používáme poolLength
+  swim: []
 };
 
 const WEATHER_OPTIONS = ["sunny", "indoor", "rainy", "windy"];
@@ -65,11 +61,9 @@ const TrainingForm = ({
   initialData = null,
   isEditing = false,
   isLoading = false,
-  /** When editing: scroll to and focus first work interval with empty lactate (Training log shortcut). */
-  focusLactateOnOpen = false,
+  initialSelectedLap = null,
 }) => {
   const { addNotification } = useNotification();
-  const lactateFocusDoneRef = useRef(false);
   const [formData, setFormData] = useState(initialData || {
     sport: "bike",
     type: "interval",
@@ -93,6 +87,22 @@ const TrainingForm = ({
   const [isCustomSpecific, setIsCustomSpecific] = useState(initialData?.specifics?.customSpecific ? true : false);
   const [editingIntervalIndex, setEditingIntervalIndex] = useState(null);
   const [tempRepeatCount, setTempRepeatCount] = useState("");
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [specificsOpen, setSpecificsOpen] = useState(false);
+  const [selectedChartLap, setSelectedChartLap] = useState(null);
+  const intervalRefs = useRef([]);
+  const scrollBodyRef = useRef(null);
+  const chartPanelRef = useRef(null);
+  /** Format raw seconds → "M:SS" or "H:MM:SS" */
+  const fmtDur = (val) => {
+    const n = typeof val === "string" ? parseFloat(val) : Number(val);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    const h = Math.floor(n / 3600);
+    const m = Math.floor((n % 3600) / 60);
+    const s = Math.round(n % 60);
+    if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+    return `${m}:${String(s).padStart(2,"0")}`;
+  };
 
   useEffect(() => {
     const loadTrainingTitles = async () => {
@@ -167,55 +177,20 @@ const TrainingForm = ({
           duration: durationValue,
           elevation: elevationDisp,
           repeatCount: result.repeatCount ?? 1,
+          distanceMeters: result.distanceMeters ?? undefined,
         };
       }),
     };
     setFormData(formattedData);
   }, [initialData]);
 
-  useEffect(() => {
-    lactateFocusDoneRef.current = false;
-  }, [initialData?._id, focusLactateOnOpen]);
-
-  // Run once when interval count is known; avoid re-running on every results edit (would steal focus).
-  useEffect(() => {
-    if (!focusLactateOnOpen || !isEditing || !initialData) return;
-    if (lactateFocusDoneRef.current) return;
-    const results = formData.results;
-    if (!Array.isArray(results) || results.length === 0) return;
-
-    const pickIndex = () => {
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].isRecovery === true) continue;
-        const lac = results[i].lactate;
-        if (lac === null || lac === undefined || lac === "") return i;
-      }
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].isRecovery !== true) return i;
-      }
-      return -1;
-    };
-
-    const idx = pickIndex();
-    if (idx < 0) return;
-
-    const t = window.setTimeout(() => {
-      const el = document.getElementById(`training-form-lactate-${idx}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (el && typeof el.focus === "function") el.focus();
-      lactateFocusDoneRef.current = true;
-    }, 200);
-    return () => window.clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only when interval count stabilises
-  }, [focusLactateOnOpen, isEditing, initialData?._id, formData.results?.length]);
-
   const handlePaceChange = (index, value) => {
     // Povolíme pouze čísla a dvojtečku
     const cleanValue = value.replace(/[^\d:]/g, '');
-    
+
     // Automatické formátování
     let formattedValue = cleanValue;
-    
+
     // Pokud uživatel zadá číslo bez dvojtečky
     if (cleanValue.length > 0 && !cleanValue.includes(':')) {
       // Přidáme dvojtečku po druhém čísle
@@ -235,10 +210,10 @@ const TrainingForm = ({
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    
+
     try {
       const dataToSubmit = { ...formData };
-      
+
       // Rozepsání opakujících se intervalů
       if (dataToSubmit.results) {
         const expandedResults = [];
@@ -254,12 +229,12 @@ const TrainingForm = ({
         });
         dataToSubmit.results = expandedResults;
       }
-      
+
       // Převod pace na sekundy pro run a swim
       if ((formData.sport === 'run' || formData.sport === 'swim') && dataToSubmit.results) {
         dataToSubmit.results = dataToSubmit.results.map(interval => {
           const updatedInterval = { ...interval };
-          
+
           // Převod power (pace) z MM:SS na sekundy
           if (interval.power && interval.power.includes(':')) {
             const parts = interval.power.split(':');
@@ -267,35 +242,35 @@ const TrainingForm = ({
             const seconds = parseFloat(parts[1]) || 0;
             updatedInterval.power = String(Math.round(minutes * 60 + seconds));
           }
-          
+
           return updatedInterval;
         });
       }
-      
+
       // Zpracování duration pro všechny intervaly
       if (dataToSubmit.results) {
-        console.log('Processing durations before conversion:', dataToSubmit.results.map(r => ({ 
-          interval: r.interval, 
-          duration: r.duration, 
-          durationType: r.durationType 
+        console.log('Processing durations before conversion:', dataToSubmit.results.map(r => ({
+          interval: r.interval,
+          duration: r.duration,
+          durationType: r.durationType
         })));
-        
+
         dataToSubmit.results = dataToSubmit.results.map(interval => {
           const updatedInterval = { ...interval };
-          
+
           // Pokud je durationType "time"
           if (interval.durationType === "time") {
             // Pokud je duration prázdné, nastavíme výchozí hodnotu 0
             if (!interval.duration) {
               updatedInterval.duration = "0";
-            } 
+            }
             // Pokud duration obsahuje ":", převedeme na sekundy
             else if (interval.duration.includes(':')) {
               const parts = interval.duration.split(':');
               const minutes = parseInt(parts[0], 10) || 0;
               const seconds = parseFloat(parts[1]) || 0;
               updatedInterval.duration = String(Math.round(minutes * 60 + seconds));
-            } 
+            }
             // Pokud je zadáno pouze číslo bez dvojtečky, převedeme na sekundy
             else {
               const minutes = parseInt(interval.duration);
@@ -312,44 +287,44 @@ const TrainingForm = ({
               updatedInterval.duration = "0";
             }
           }
-          
+
           // Zajistíme, že duration není undefined nebo null
           if (updatedInterval.duration === undefined || updatedInterval.duration === null) {
             updatedInterval.duration = "0";
           }
-          
+
           // Zajistíme, že durationType je vždy nastaven
           if (!updatedInterval.durationType) {
             updatedInterval.durationType = "time";
           }
-          
+
           return updatedInterval;
         });
-        
-        console.log('Processed durations after conversion:', dataToSubmit.results.map(r => ({ 
-          interval: r.interval, 
-          duration: r.duration, 
-          durationType: r.durationType 
+
+        console.log('Processed durations after conversion:', dataToSubmit.results.map(r => ({
+          interval: r.interval,
+          duration: r.duration,
+          durationType: r.durationType
         })));
       }
-      
+
       if (isCustomTitle && formData.customTitle) {
         dataToSubmit.title = formData.customTitle;
       }
-      
+
       if (isCustomSpecific && formData.specifics.customSpecific) {
         dataToSubmit.specifics.specific = formData.specifics.customSpecific;
       }
-      
+
       if (isCustomWeather && formData.specifics.customWeather) {
         dataToSubmit.specifics.weather = formData.specifics.customWeather;
       }
-      
+
       // Přidáme ID pokud editujeme
       if (isEditing && initialData?._id) {
         dataToSubmit._id = initialData._id;
       }
-      
+
       // Duration default + elevation (one pass so elevation is never skipped)
       if (dataToSubmit.results) {
         dataToSubmit.results = dataToSubmit.results.map((interval) => {
@@ -372,16 +347,16 @@ const TrainingForm = ({
           return updatedInterval;
         });
       }
-      
+
       console.log('Submitting training data:', dataToSubmit);
-      
+
       await onSubmit(dataToSubmit);
-      
+
       // Počkáme krátkou chvíli, aby se data stihla aktualizovat na serveru
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       addNotification(isEditing ? 'Training updated successfully' : 'Training added successfully', 'success');
-      
+
       // Zavřeme formulář
       onClose();
     } catch (error) {
@@ -431,663 +406,661 @@ const TrainingForm = ({
     setTempRepeatCount("");
   };
 
-  return (
-    <div className="bg-white rounded-xl w-full max-w-5xl flex flex-col max-h-[90vh] relative">
-      <button
-        onClick={onClose}
-        className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+  // Build chart-compatible laps from current formData.results
+  const chartLaps = formData.results.map((interval, idx) => {
+    const isSwim = formData.sport === 'swim';
+    const isRun = formData.sport === 'run';
+    let average_watts = 0;
+    let average_speed = 0;
+    if (formData.sport === 'bike') {
+      average_watts = parseFloat(interval.power) || 0;
+    } else {
+      // parse MM:SS pace → m/s
+      const raw = String(interval.power || '');
+      const parts = raw.split(':');
+      if (parts.length === 2) {
+        const totalSec = (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
+        if (totalSec > 0) average_speed = isSwim ? 100 / totalSec : 1000 / totalSec;
+      }
+      // Fallback: compute speed from distance / duration if pace field empty
+      if (average_speed === 0 && (isRun || isSwim)) {
+        const dist = parseFloat(interval.distanceMeters) || 0;
+        const dur = parseFloat(interval.durationSeconds) || 0;
+        if (dist > 0 && dur > 0) average_speed = dist / dur;
+      }
+    }
+    return {
+      lapNumber: idx + 1,
+      average_watts,
+      average_speed,
+      average_heartrate: parseFloat(interval.heartRate) || 0,
+      lactate: interval.lactate ? parseFloat(interval.lactate) : null,
+      distance: interval.distanceMeters || 0,
+      moving_time: interval.durationSeconds || 0,
+      elapsed_time: interval.durationSeconds || 0,
+    };
+  });
 
-      <div className="p-4 sm:p-6 border-b border-gray-200">
-        <h2 className="text-xl font-semibold">
-          {isEditing ? (focusLactateOnOpen ? "Edit training — add lactate" : "Edit Training") : "Add New Training"}
+  // Auto-scroll to initial lap after form data is loaded
+  useEffect(() => {
+    if (initialSelectedLap == null || formData.results.length === 0) return;
+    const lapNum = initialSelectedLap;
+    setSelectedChartLap(lapNum);
+    // Wait for layout then scroll
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = intervalRefs.current[lapNum - 1];
+        const scrollEl = scrollBodyRef.current;
+        if (el && scrollEl) {
+          const chartHeight = chartPanelRef.current?.offsetHeight || 0;
+          const elRect = el.getBoundingClientRect();
+          const containerRect = scrollEl.getBoundingClientRect();
+          const targetScroll = scrollEl.scrollTop + (elRect.top - containerRect.top) - chartHeight - 8;
+          scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+        }
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSelectedLap, formData.results.length]);
+
+  const handleChartSelect = (lapNumber) => {
+    const next = selectedChartLap === lapNumber ? null : lapNumber;
+    setSelectedChartLap(next);
+    if (next != null) {
+      const el = intervalRefs.current[next - 1];
+      const scrollEl = scrollBodyRef.current;
+      if (el && scrollEl) {
+        // Use getBoundingClientRect so the sticky chart height is automatically accounted for
+        requestAnimationFrame(() => {
+          const chartHeight = chartPanelRef.current?.offsetHeight || 0;
+          const elRect = el.getBoundingClientRect();
+          const containerRect = scrollEl.getBoundingClientRect();
+          const currentScroll = scrollEl.scrollTop;
+          // Position the card just below the sticky chart with 8px breathing room
+          const targetScroll = currentScroll + (elRect.top - containerRect.top) - chartHeight - 8;
+          scrollEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+        });
+      }
+    }
+  };
+
+  // Shared input classes
+  const inputBase =
+    "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary min-h-[44px]";
+  const selectBase =
+    "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none min-h-[44px] pr-8";
+  const labelBase = "block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide";
+
+  // ChevronDown inline SVG
+  const ChevronDown = ({ className = "w-4 h-4" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+
+  return (
+    <div className="bg-white rounded-2xl w-full max-w-2xl flex flex-col max-h-[95dvh] relative shadow-xl overflow-hidden">
+
+      {/* ── Header (always visible) ── */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 z-20">
+        {/* Title */}
+        <h2 className="flex-1 text-base font-semibold text-gray-900 truncate">
+          {isEditing ? "Edit Training" : "New Training"}
         </h2>
+
+        {/* Sport pills */}
+        <div className="flex items-center gap-1">
+          {ACTIVITIES.map((activity) => (
+            <button
+              key={activity.id}
+              type="button"
+              onClick={() => {
+                const newResults = formData.results.map(result => ({
+                  ...result,
+                  power: activity.id === 'bike' ? result.power : formatSecondsToMMSS(result.power)
+                }));
+                setFormData(prev => ({
+                  ...prev,
+                  sport: activity.id,
+                  results: newResults
+                }));
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors min-h-[36px] ${
+                formData.sport === activity.id
+                  ? "bg-primary text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              <img
+                src={activity.icon}
+                alt=""
+                className={`w-4 h-4 ${formData.sport === activity.id ? "brightness-0 invert" : ""}`}
+              />
+              <span className="hidden sm:inline">{activity.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Close button */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center justify-center w-9 h-9 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <form 
-          id="training-form"
-          noValidate
-          onSubmit={handleFormSubmit}
-          className="space-y-6"
-        >
-          <div className="grid grid-cols-3 gap-2">
-            {ACTIVITIES.map((activity) => (
-              <button
-                key={activity.id}
-                type="button"
-                onClick={() => {
-                  const newResults = formData.results.map(result => ({
-                    ...result,
-                    power: activity.id === 'bike' ? result.power : formatSecondsToMMSS(result.power)
-                  }));
-                  setFormData(prev => ({ 
-                    ...prev, 
-                    sport: activity.id,
-                    results: newResults
-                  }));
-                }}
-                className={`
-                  flex items-center justify-center gap-2 px-4 py-2 rounded-full
-                  ${formData.sport === activity.id 
-                    ? 'bg-secondary text-white' 
-                    : 'bg-gray-100 text-gray-900'}
-                  w-full
-                `}
-              >
-                <img 
-                  src={activity.icon} 
-                  alt="" 
-                  className={`w-5 h-5 sm:w-6 sm:h-6 ${formData.sport === activity.id ? 'brightness-0 invert' : ''}`}
-                />
-                <span>{activity.label}</span>
-              </button>
-            ))}
-          </div>
+      {/* ── Scrollable body ── */}
+      <div ref={scrollBodyRef} className="flex-1 overflow-y-auto min-h-0">
+        <form id="training-form" noValidate onSubmit={handleFormSubmit}>
 
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Training title:</label>
-                <div className="space-y-2">
-                  {!isCustomTitle ? (
-                    <>
-                      <div className="relative">
-                        <select
-                          value={formData.title}
-                          onChange={(e) => {
-                            if (e.target.value === "custom") {
-                              setIsCustomTitle(true);
-                            } else {
-                              setFormData(prev => ({ ...prev, title: e.target.value }));
-                            }
-                          }}
-                          className="w-full border border-gray-300 rounded-lg p-2 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        >
-                          <option value="">Select training</option>
-                          {trainingTitles.map((title) => (
-                            <option key={title} value={title}>
-                              {title}
-                            </option>
-                          ))}
-                          <option value="custom">+ Add custom title</option>
-                        </select>
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.customTitle}
-                        onChange={(e) => setFormData(prev => ({ ...prev, customTitle: e.target.value }))}
-                        placeholder="Enter custom title"
-                        className="flex-1 border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCustomTitle(false);
-                          setFormData(prev => ({ ...prev, customTitle: "" }));
-                        }}
-                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
+          {/* ── Top section ── */}
+          <div className="px-4 pt-4 pb-2 space-y-4">
+
+              {/* Date + Category row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelBase}>Date</label>
+                  <input
+                    type="datetime-local"
+                    value={formData.date}
+                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                    className={inputBase}
+                  />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Start Date</label>
-                <input
-                  type="datetime-local"
-                  value={formData.date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Category</label>
-                <div className="relative">
-                  <select
-                    value={formData.category || ""}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg p-2 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                    style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                  >
-                    <option value="">Select category</option>
-                    {CATEGORY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option.charAt(0).toUpperCase() + option.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                <div>
+                  <label className={labelBase}>Category</label>
+                  <div className="relative">
+                    <select
+                      value={formData.category || ""}
+                      onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                      className={selectBase}
+                    >
+                      <option value="">Select</option>
+                      {CATEGORY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option.charAt(0).toUpperCase() + option.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                      <ChevronDown />
+                    </span>
                   </div>
                 </div>
               </div>
+
+              {/* Training title */}
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  {formData.sport === "swim" ? "Pool Length:" : "Terrain:"}
-                </label>
-                {!isCustomSpecific ? (
-                  <div className="space-y-2">
-                    <div className="relative">
-                      <select
-                        value={formData.specifics.specific}
-                        onChange={(e) => {
-                          if (e.target.value === "custom") {
-                            setIsCustomSpecific(true);
-                          } else {
-                            setFormData(prev => ({
+                <label className={labelBase}>Training title</label>
+                {!isCustomTitle ? (
+                  <div className="relative">
+                    <select
+                      value={formData.title}
+                      onChange={(e) => {
+                        if (e.target.value === "custom") {
+                          setIsCustomTitle(true);
+                        } else {
+                          setFormData(prev => ({ ...prev, title: e.target.value }));
+                        }
+                      }}
+                      className={selectBase}
+                    >
+                      <option value="">Select training</option>
+                      {trainingTitles.map((title) => (
+                        <option key={title} value={title}>{title}</option>
+                      ))}
+                      <option value="custom">+ Add custom title</option>
+                    </select>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                      <ChevronDown />
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.customTitle}
+                      onChange={(e) => setFormData(prev => ({ ...prev, customTitle: e.target.value }))}
+                      placeholder="Enter custom title"
+                      className={inputBase}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomTitle(false);
+                        setFormData(prev => ({ ...prev, customTitle: "" }));
+                      }}
+                      className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-xl hover:bg-gray-100 min-h-[44px]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Description — collapsible */}
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setDescriptionOpen(o => !o)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <span>Description {formData.description ? <span className="text-primary">•</span> : null}</span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${descriptionOpen ? "rotate-180" : ""}`} />
+                </button>
+                {descriptionOpen && (
+                  <div className="px-4 pb-4">
+                    <textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Write some notes about this training…"
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Specifics — collapsible */}
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setSpecificsOpen(o => !o)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <span>
+                    Specifics{" "}
+                    {(formData.specifics?.specific || formData.specifics?.weather) ? <span className="text-primary">•</span> : null}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${specificsOpen ? "rotate-180" : ""}`} />
+                </button>
+                {specificsOpen && (
+                  <div className="px-4 pb-4 grid grid-cols-2 gap-3">
+                    {/* Terrain / pool length */}
+                    <div>
+                      <label className={labelBase}>
+                        {formData.sport === "swim" ? "Pool Length" : "Terrain"}
+                      </label>
+                      {!isCustomSpecific ? (
+                        <div className="relative">
+                          <select
+                            value={formData.specifics.specific}
+                            onChange={(e) => {
+                              if (e.target.value === "custom") {
+                                setIsCustomSpecific(true);
+                              } else {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  specifics: { ...prev.specifics, specific: e.target.value }
+                                }));
+                              }
+                            }}
+                            className={selectBase}
+                          >
+                            <option value="">
+                              Select {formData.sport === "swim" ? "pool length" : "terrain"}
+                            </option>
+                            {formData.sport === "swim" ? (
+                              <>
+                                <option value="25m">25m</option>
+                                <option value="50m">50m</option>
+                                <option value="custom">+ Custom length</option>
+                              </>
+                            ) : (
+                              <>
+                                {TERRAIN_OPTIONS[formData.sport]?.map(option => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                                <option value="custom">+ Custom terrain</option>
+                              </>
+                            )}
+                          </select>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                            <ChevronDown />
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={formData.specifics.customSpecific}
+                            onChange={(e) => setFormData(prev => ({
                               ...prev,
-                              specifics: { ...prev.specifics, specific: e.target.value }
-                            }));
-                          }
-                        }}
-                        className="w-full border border-gray-300 rounded-lg p-2 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      >
-                        <option value="">Select {formData.sport === "swim" ? "pool length" : "terrain"}</option>
-                        {formData.sport === "swim" ? (
-                          <>
-                            <option value="25m">25m</option>
-                            <option value="50m">50m</option>
-                            <option value="custom">+ Custom length</option>
-                          </>
-                        ) : (
-                          <>
-                            {TERRAIN_OPTIONS[formData.sport].map(option => (
+                              specifics: { ...prev.specifics, customSpecific: e.target.value }
+                            }))}
+                            placeholder={`Custom ${formData.sport === "swim" ? "length" : "terrain"}`}
+                            className={inputBase}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomSpecific(false);
+                              setFormData(prev => ({
+                                ...prev,
+                                specifics: { ...prev.specifics, customSpecific: "" }
+                              }));
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Weather */}
+                    <div>
+                      <label className={labelBase}>Weather</label>
+                      {!isCustomWeather ? (
+                        <div className="relative">
+                          <select
+                            value={formData.specifics.weather}
+                            onChange={(e) => {
+                              if (e.target.value === "custom") {
+                                setIsCustomWeather(true);
+                              } else {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  specifics: { ...prev.specifics, weather: e.target.value }
+                                }));
+                              }
+                            }}
+                            className={selectBase}
+                          >
+                            <option value="">Select weather</option>
+                            {WEATHER_OPTIONS.map(option => (
                               <option key={option} value={option}>{option}</option>
                             ))}
-                            <option value="custom">+ Custom terrain</option>
-                          </>
-                        )}
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={formData.specifics.customSpecific}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        specifics: { ...prev.specifics, customSpecific: e.target.value }
-                      }))}
-                      placeholder={`Enter custom ${formData.sport === "swim" ? "length" : "terrain"}`}
-                      className="flex-1 border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCustomSpecific(false);
-                        setFormData(prev => ({
-                          ...prev,
-                          specifics: { ...prev.specifics, customSpecific: "" }
-                        }));
-                      }}
-                      className="text-gray-600 hover:text-gray-800"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Weather:</label>
-                {!isCustomWeather ? (
-                  <div className="space-y-2">
-                    <div className="relative">
-                      <select
-                        value={formData.specifics.weather}
-                        onChange={(e) => {
-                          if (e.target.value === "custom") {
-                            setIsCustomWeather(true);
-                          } else {
-                            setFormData(prev => ({
+                            <option value="custom">+ Custom weather</option>
+                          </select>
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                            <ChevronDown />
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={formData.specifics.customWeather}
+                            onChange={(e) => setFormData(prev => ({
                               ...prev,
-                              specifics: { ...prev.specifics, weather: e.target.value }
-                            }));
-                          }
-                        }}
-                        className="w-full border border-gray-300 rounded-lg p-2 bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      >
-                        <option value="">Select weather</option>
-                        {WEATHER_OPTIONS.map(option => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                        <option value="custom">+ Custom weather</option>
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
+                              specifics: { ...prev.specifics, customWeather: e.target.value }
+                            }))}
+                            placeholder="Custom weather"
+                            className={inputBase}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomWeather(false);
+                              setFormData(prev => ({
+                                ...prev,
+                                specifics: { ...prev.specifics, customWeather: "" }
+                              }));
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={formData.specifics.customWeather}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        specifics: { ...prev.specifics, customWeather: e.target.value }
-                      }))}
-                      placeholder="Enter custom weather"
-                      className="flex-1 border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCustomWeather(false);
-                        setFormData(prev => ({
-                          ...prev,
-                          specifics: { ...prev.specifics, customWeather: "" }
-                        }));
-                      }}
-                      className="text-gray-600 hover:text-gray-800"
-                    >
-                      Cancel
-                    </button>
                   </div>
                 )}
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Description</label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Write some text"
-                className="w-full border border-gray-300 rounded-lg p-2 min-h-[100px] bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-y"
-                style={{ WebkitAppearance: 'none', appearance: 'none' }}
+          {/* ── Laps bar chart — sticky once scrolled into view ── */}
+          {formData.results.length > 0 && (
+            <div ref={chartPanelRef} className="sticky top-0 z-10 bg-white border-y border-gray-100 px-4 pt-3 pb-2">
+              <LapsBarChart
+                laps={chartLaps}
+                selectedLapNumber={selectedChartLap}
+                onSelect={handleChartSelect}
+                sport={formData.sport}
               />
             </div>
+          )}
 
-            <div className="space-y-4">
+          {/* ── Interval cards ── */}
+          <div className="px-4 pt-4 pb-4 space-y-3">
+
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-700">Intervals</h3>
+                <button
+                  type="button"
+                  onClick={handleAddInterval}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors min-h-[36px]"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add interval
+                </button>
+              </div>
+
               {formData.results.map((interval, index) => {
                 const isRecovery = interval.isRecovery === true;
-                const isSelected = interval.isSelected !== false; // Default to true if not set
-                
+                const isChartSelected = selectedChartLap === index + 1;
                 return (
-                <div 
-                  key={index} 
-                  className={`border rounded-lg transition-all ${
-                    isRecovery 
-                      ? isSelected 
-                        ? 'border-gray-300 bg-gray-50/50' 
-                        : 'border-gray-200 bg-gray-50/30 opacity-60'
-                      : 'border-gray-200 bg-white'
-                  }`}
-                >
-                  <div className="flex justify-between items-center px-4 py-2 border-b border-gray-200">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newResults = [...formData.results];
-                          newResults[index].isSelected = !newResults[index].isSelected;
-                          setFormData(prev => ({ ...prev, results: newResults }));
-                        }}
-                        className={`w-6 h-6 flex items-center justify-center rounded border-2 transition-all ${
-                          isSelected
-                            ? 'bg-primary border-primary text-white'
-                            : 'bg-white border-gray-300 text-gray-400 hover:border-primary hover:text-primary'
-                        }`}
-                        title={isSelected ? "Remove from export" : "Include in export"}
-                      >
-                        {isSelected ? (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                        )}
-                      </button>
-                      <h3 className={`font-medium ${isRecovery && !isSelected ? 'text-gray-500' : 'text-gray-700'}`}>
-                        {isRecovery && <span className="text-xs text-gray-400 mr-1">[Recovery]</span>}
-                        {interval.repeatCount > 1 
-                          ? `${index + 1}-${index + parseInt(interval.repeatCount)} interval`
-                          : `${index + 1}. interval`}
-                      </h3>
-                      {!isRecovery && (
-                      <button
-                        type="button"
-                        onClick={() => handleEditRepeatCount(index)}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {interval.repeatCount > 1 && (
-                        <span className="text-sm text-gray-500">
-                          {interval.repeatCount}x
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className={`p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 ${isRecovery && !isSelected ? 'opacity-50' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                            d={formData.sport === "bike" 
-                              ? "M13 10V3L4 14h7v7l9-11h-7z" 
-                              : "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"} 
+                  <div
+                    key={index}
+                    ref={el => { intervalRefs.current[index] = el; }}
+                    className={`rounded-xl border transition-all ${
+                      isRecovery
+                        ? "border-dashed border-gray-200 bg-gray-50/60"
+                        : isChartSelected
+                          ? "border-primary bg-white shadow-md ring-2 ring-primary/20"
+                          : "border-gray-200 bg-white shadow-sm"
+                    }`}
+                  >
+                    {isRecovery ? (
+                      /* ── Compact recovery row ── */
+                      <div className="flex items-center gap-2 px-3 py-1.5">
+                        <span className="text-amber-400 text-xs shrink-0">↩</span>
+                        <span className="text-[11px] text-gray-400 font-medium shrink-0">Rec {index + 1}</span>
+                        {/* Duration inline */}
+                        <div className="flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
+                          <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">time</span>
+                          <input
+                            type="text" inputMode="numeric" placeholder="MM:SS"
+                            value={interval.duration || ''}
+                            onChange={(e) => {
+                              const r=[...formData.results];
+                              let v=e.target.value.replace(/[^\d:]/g,'');
+                              if(v.length>0&&!v.includes(':')&&v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
+                              r[index].duration=v; r[index].durationType='time';
+                              setFormData(p=>({...p,results:r}));
+                            }}
+                            className="w-12 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
                           />
-                        </svg>
-                      </span>
-                      {formData.sport === "bike" ? (
-                        <input
-                          type="number"
-                          placeholder="Power"
-                          value={interval.power}
-                          onChange={(e) => {
-                            const newResults = [...formData.results];
-                            newResults[index].power = e.target.value;
-                            setFormData(prev => ({ ...prev, results: newResults }));
-                          }}
-                          disabled={isRecovery && !isSelected}
-                          className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                            isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                          }`}
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          placeholder={formData.sport === 'bike' ? "Power" : "Pace (MM:SS)"}
-                          value={interval.power}
-                          onChange={(e) => {
-                            if (formData.sport === 'bike') {
-                              const newResults = [...formData.results];
-                              newResults[index].power = e.target.value;
-                              setFormData(prev => ({ ...prev, results: newResults }));
-                            } else {
-                              handlePaceChange(index, e.target.value);
-                            }
-                          }}
-                          disabled={isRecovery && !isSelected}
-                          className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                            isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                          }`}
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        />
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                        </svg>
-                      </span>
-                      <input
-                        type="number"
-                        placeholder="HR"
-                        value={interval.heartRate}
-                        onChange={(e) => {
-                          const newResults = [...formData.results];
-                          newResults[index].heartRate = e.target.value;
-                          setFormData(prev => ({ ...prev, results: newResults }));
-                        }}
-                        disabled={isRecovery && !isSelected}
-                        className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                          isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                        }`}
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                        </svg>
-                      </span>
-                      <input
-                        id={`training-form-lactate-${index}`}
-                        type="number"
-                        placeholder="Lac"
-                        value={interval.lactate}
-                        onChange={(e) => {
-                          const newResults = [...formData.results];
-                          newResults[index].lactate = e.target.value;
-                          setFormData(prev => ({ ...prev, results: newResults }));
-                        }}
-                        disabled={isRecovery && !isSelected}
-                        className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                          isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                        }`}
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </span>
-                      <input
-                        type="number"
-                        placeholder="RPE"
-                        value={interval.RPE}
-                        onChange={(e) => {
-                          const newResults = [...formData.results];
-                          newResults[index].RPE = e.target.value;
-                          setFormData(prev => ({ ...prev, results: newResults }));
-                        }}
-                        disabled={isRecovery && !isSelected}
-                        className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                          isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                        }`}
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20h10M12 4v16m0 0l-4-4m4 4l4-4" />
-                        </svg>
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="Elev +/- (m)"
-                        value={
-                          interval.elevation === undefined || interval.elevation === null
-                            ? ""
-                            : String(interval.elevation)
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value.replace(/[^\d.-]/g, "");
-                          const newResults = [...formData.results];
-                          newResults[index].elevation = v;
-                          setFormData(prev => ({ ...prev, results: newResults }));
-                        }}
-                        disabled={isRecovery && !isSelected}
-                        className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                          isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                        }`}
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2 col-span-2 sm:col-span-1">
-                      <span className={isRecovery ? "text-gray-400" : "text-gray-500"}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </span>
-                      <div className="relative flex-1">
-                        <input
-                          type="text"
-                          placeholder={interval.durationType === "time" ? "MM:SS" : "Distance (e.g. 1 km, 400m)"}
-                          value={interval.duration}
-                          onChange={(e) => {
-                            const newResults = [...formData.results];
-                            let value = e.target.value;
-                            
-                            // Pokud je typ distance, povolíme formát s km nebo m
-                            if (interval.durationType === "distance") {
-                              // Povolíme čísla, tečku, mezeru a jednotky km/m
-                              value = value.replace(/[^\d\s.km]/g, '');
-                              
-                              // Necháme uživatele zadat vlastní jednotku
-                              // Automaticky nepřidáváme jednotku
-                            } else {
-                              // Pro typ "time" zpracujeme číselnou hodnotu
-                              // Povolíme pouze čísla a dvojtečku
-                              value = value.replace(/[^\d:]/g, '');
-                              
-                              // Pokud uživatel zadá číslo bez dvojtečky
-                              if (value.length > 0 && !value.includes(':')) {
-                                // Přidáme dvojtečku po druhém čísle
-                                if (value.length >= 2) {
-                                  value = `${value.slice(0, 2)}:${value.slice(2, 4)}`;
-                                }
-                              }
-                            }
-                            
-                            newResults[index].duration = value;
-                            setFormData(prev => ({ ...prev, results: newResults }));
-                          }}
-                          disabled={isRecovery && !isSelected}
-                          className={`border-b border-gray-300 focus:border-secondary outline-none px-2 py-1 w-full bg-transparent ${
-                            isRecovery && !isSelected ? 'bg-gray-100 cursor-not-allowed' : ''
-                          }`}
-                          style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        />
-                        {!isRecovery && (
+                        </div>
+                        {/* HR inline */}
+                        <div className="flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
+                          <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">hr</span>
+                          <input
+                            type="number" inputMode="numeric" placeholder="—"
+                            value={interval.heartRate || ''}
+                            onChange={(e) => { const r=[...formData.results]; r[index].heartRate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                            className="w-10 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
+                          />
+                        </div>
+                        <div className="flex-1" />
                         <button
                           type="button"
-                          onClick={() => {
-                            const newResults = [...formData.results];
-                            newResults[index].durationType = interval.durationType === "time" ? "distance" : "time";
-                            // Při přepnutí na time vymažeme hodnotu
-                            if (newResults[index].durationType === "time") {
-                              newResults[index].duration = "00:00"; // Set default value instead of empty string
-                            } else {
-                              newResults[index].duration = "0"; // Set default value for distance
-                            }
-                            setFormData(prev => ({ ...prev, results: newResults }));
-                          }}
-                          className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                          onClick={() => { const r=[...formData.results]; r[index].isRecovery=false; r[index].isSelected=true; setFormData(p=>({...p,results:r})); }}
+                          className="text-[10px] px-2 py-0.5 rounded-lg font-semibold bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors"
+                        >Rec</button>
+                        <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}
+                          className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                         </button>
-                        )}
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        {/* Card header */}
+                        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+                          <span className={`flex-1 text-xs font-semibold ${isRecovery ? "text-gray-400" : "text-gray-700"}`}>
+                            Interval {index + 1}
+                            {interval.durationSeconds > 0 && (
+                              <span className="text-gray-400 font-normal ml-1.5">{fmtDur(interval.durationSeconds)}</span>
+                            )}
+                            {interval.distanceMeters > 0 && (
+                              <span className="text-gray-400 font-normal ml-1.5">· {interval.distanceMeters}m</span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { const r=[...formData.results]; r[index].isRecovery=true; r[index].isSelected=false; setFormData(p=>({...p,results:r})); }}
+                            className="text-[10px] px-2 py-0.5 rounded-lg font-semibold transition-colors bg-gray-100 text-gray-400 hover:bg-gray-200"
+                          >Rec</button>
+                          <button type="button" onClick={() => handleEditRepeatCount(index)}
+                            className={`text-[10px] px-2 py-0.5 rounded-lg font-semibold ${interval.repeatCount > 1 ? "bg-primary text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                          >×{interval.repeatCount > 1 ? interval.repeatCount : 1}</button>
+                          <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+
+                        {/* Fields grid */}
+                        <div className={`grid gap-px bg-gray-100 rounded-b-xl overflow-hidden grid-cols-3`}>
+                          {/* Power / Pace */}
+                          <div className="bg-white px-3 py-2.5">
+                            <label className={labelBase}>{formData.sport === "bike" ? "Power W" : formData.sport === "swim" ? "Pace /100m" : "Pace /km"}</label>
+                            {formData.sport === "bike" ? (
+                              <input type="number" inputMode="numeric" placeholder="—" value={interval.power}
+                                onChange={(e) => { const r=[...formData.results]; r[index].power=e.target.value; setFormData(p=>({...p,results:r})); }}
+                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                            ) : (
+                              <input type="text" inputMode="numeric" placeholder="MM:SS" value={interval.power}
+                                onChange={(e) => handlePaceChange(index, e.target.value)}
+                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                            )}
+                          </div>
+                          {/* HR */}
+                          <div className="bg-white px-3 py-2.5">
+                            <label className={labelBase}>HR bpm</label>
+                            <input type="number" inputMode="numeric" placeholder="—" value={interval.heartRate}
+                              onChange={(e) => { const r=[...formData.results]; r[index].heartRate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                          </div>
+                          {/* Lactate */}
+                          <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary">
+                            <label className={`${labelBase} text-primary`}>Lactate</label>
+                            <input id={`training-form-lactate-${index}`} type="number" inputMode="decimal" placeholder="—" value={interval.lactate}
+                              onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}
+                              className="w-full text-sm bg-transparent outline-none placeholder-gray-300 min-h-[28px] font-semibold text-primary" />
+                          </div>
+                          {/* RPE */}
+                          <div className="bg-white px-3 py-2.5">
+                            <label className={labelBase}>RPE</label>
+                            <input type="number" inputMode="numeric" placeholder="—" value={interval.RPE}
+                              onChange={(e) => { const r=[...formData.results]; r[index].RPE=e.target.value; setFormData(p=>({...p,results:r})); }}
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                          </div>
+                          {/* Duration */}
+                          <div className="bg-white px-3 py-2.5">
+                            <label className={labelBase}>Duration</label>
+                            <input type="text" inputMode="numeric" placeholder="MM:SS" value={interval.duration}
+                              onChange={(e) => {
+                                const r=[...formData.results];
+                                let v=e.target.value.replace(/[^\d:]/g,'');
+                                if(v.length>0&&!v.includes(':')&&v.length>=2) v=`${v.slice(0,2)}:${v.slice(2,4)}`;
+                                r[index].duration=v; r[index].durationType='time';
+                                setFormData(p=>({...p,results:r}));
+                              }}
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                          </div>
+                          {/* Distance */}
+                          <div className="bg-white px-3 py-2.5">
+                            <label className={labelBase}>{formData.sport === "swim" ? "Dist m" : "Dist"}</label>
+                            <input type="text" inputMode="numeric" placeholder={formData.sport === "swim" ? "e.g. 400" : "e.g. 1km"}
+                              value={interval.distanceMeters ? String(interval.distanceMeters) : ""}
+                              onChange={(e) => {
+                                const r=[...formData.results];
+                                const v=e.target.value.replace(/[^\d.km\s]/g,'');
+                                r[index].distanceMeters=v?parseFloat(v)||undefined:undefined;
+                                setFormData(p=>({...p,results:r}));
+                              }}
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              );
+                );
               })}
+
+              {formData.results.length === 0 && (
+                <div className="text-center py-8 text-sm text-gray-400">
+                  No intervals yet. Tap &ldquo;Add interval&rdquo; to get started.
+                </div>
+              )}
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddInterval}
-              className="flex items-center gap-2 text-secondary border border-secondary rounded-lg px-4 py-2"
-            >
-              Add step
-              <span className="text-xl">+</span>
-            </button>
-          </div>
+          {/* Bottom spacer so sticky footer doesn't overlap last card */}
+          <div className="h-2" />
         </form>
       </div>
 
-      <div className="border-t border-gray-200 p-4 sm:p-6 bg-white">
-        <div className="flex justify-end gap-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            disabled={isLoading}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="training-form"
-            className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 disabled:bg-secondary/50"
-            disabled={isLoading}
-          >
-            {isLoading ? "Saving..." : (isEditing ? "Update Training" : "Add Training")}
-          </button>
-        </div>
+      {/* ── Sticky footer ── */}
+      <div className="sticky bottom-0 z-10 bg-white border-t border-gray-100 px-4 py-3 flex gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isLoading}
+          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="training-form"
+          disabled={isLoading}
+          className="flex-1 px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors min-h-[44px]"
+        >
+          {isLoading ? "Saving…" : isEditing ? "Update" : "Save Training"}
+        </button>
       </div>
 
+      {/* ── Repeat-count modal ── */}
       {editingIntervalIndex !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium mb-4">Set Number of Repetitions</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Number of repetitions:</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={tempRepeatCount}
-                  onChange={(e) => setTempRepeatCount(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                  autoFocus
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleCancelEditRepeatCount}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveRepeatCount}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90"
-                >
-                  Save
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-xs shadow-xl">
+            <div className="px-5 pt-5 pb-4">
+              <h3 className="text-base font-semibold text-gray-900 mb-4">Repeat count</h3>
+              <label className={labelBase}>Number of repetitions</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                value={tempRepeatCount}
+                onChange={(e) => setTempRepeatCount(e.target.value)}
+                className={inputBase}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2 px-5 pb-5">
+              <button
+                type="button"
+                onClick={handleCancelEditRepeatCount}
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRepeatCount}
+                className="flex-1 px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 min-h-[44px]"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>

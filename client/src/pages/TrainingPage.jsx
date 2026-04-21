@@ -1,16 +1,13 @@
 import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
 import UserTrainingsTable from '../components/Training-log/UserTrainingsTable';
 import TrainingForm from '../components/TrainingForm';
-import SpiderChart from "../components/DashboardPage/SpiderChart";
 import TrainingGraph from '../components/DashboardPage/TrainingGraph';
 import { TrainingStats } from '../components/DashboardPage/TrainingStats';
 import api from '../services/api';
 import { useAuth } from '../context/AuthProvider';
-import { addTraining, updateTraining, fetchTrainingForStravaLactateForm } from '../services/api';
-import { prepareTrainingForLactateEntry } from '../utils/trainingLactateModal';
+import { addTraining, updateTraining, getStravaActivityDetail } from '../services/api';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FieldLactateTrainingPanel from '../components/training/FieldLactateTrainingPanel';
-import AthleteSelector from '../components/AthleteSelector';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCategories } from '../context/CategoryContext';
 
@@ -61,7 +58,6 @@ export default function TrainingPage() {
   const [stravaLactateModal, setStravaLactateModal] = useState({
     isOpen: false,
     initialData: null,
-    focusLactateOnOpen: false,
   });
   const [stravaLactateSubmitting, setStravaLactateSubmitting] = useState(false);
 
@@ -171,28 +167,99 @@ export default function TrainingPage() {
     setStravaLactateModal({
       isOpen: false,
       initialData: null,
-      focusLactateOnOpen: false,
     });
   }, []);
 
   const handleFieldAddLactate = useCallback(
     async (activity) => {
+      const stravaNumericId = String(activity.stravaId || '');
+      if (!stravaNumericId) {
+        setStravaLactateFormError('No Strava ID found for this activity.');
+        return;
+      }
       setStravaLactateFormError(null);
-      setLactateActivityLoadingId(String(activity._id));
+      setLactateActivityLoadingId(String(activity._id || activity.stravaId));
       try {
-        const { training } = await fetchTrainingForStravaLactateForm(
-          String(activity._id),
-          integrationAthleteId
-        );
-        if (!training || !training._id) {
-          setStravaLactateFormError('No training data returned');
+        const integAthleteId = integrationAthleteId ? String(integrationAthleteId) : null;
+        const data = await getStravaActivityDetail(stravaNumericId, integAthleteId);
+        const detail = data.detail || {};
+        const laps = data.laps || [];
+        if (!laps.length) {
+          setStravaLactateFormError('No intervals found for this activity.');
           return;
         }
-        setStravaLactateModal({
-          isOpen: true,
-          initialData: prepareTrainingForLactateEntry(training),
-          focusLactateOnOpen: true,
+        // Build form data the same way as FitAnalysisPage's performExportToTraining
+        const sportType = detail.sport_type || detail.sport || 'bike';
+        const sportLower = sportType.toLowerCase();
+        const sport = sportLower.includes('swim') ? 'swim' : sportLower.includes('run') ? 'run' : 'bike';
+        const isRun = sport === 'run';
+        const isSwim = sport === 'swim';
+
+        const fmtDur = (sec) => {
+          const s = Number(sec) || 0;
+          const m = Math.floor(s / 60);
+          const ss = Math.round(s % 60);
+          return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+        };
+
+        const results = laps.map((lap, idx) => {
+          const durationSec = Math.round(
+            lap.moving_time ?? lap.elapsed_time ?? lap.duration ?? 0
+          );
+          const distM = Math.round(lap.distance ?? 0);
+          const speed = lap.average_speed ?? 0;
+
+          let powerValue = '';
+          if (isRun || isSwim) {
+            const effectiveSpeed = speed > 0.05 ? speed : (distM > 0 && durationSec > 0 ? distM / durationSec : 0);
+            if (effectiveSpeed > 0.05) {
+              const paceSec = isSwim ? Math.round(100 / effectiveSpeed) : Math.round(1000 / effectiveSpeed);
+              powerValue = fmtDur(paceSec);
+            }
+          } else {
+            const w = lap.average_watts ?? lap.average_power ?? 0;
+            powerValue = w > 0 ? String(Math.round(w)) : '';
+          }
+
+          const isSwimRest = isSwim && distM < 10;
+          return {
+            interval: idx + 1,
+            power: powerValue,
+            heartRate: String(Math.round(lap.average_heartrate ?? lap.avg_heart_rate ?? 0) || ''),
+            lactate: lap.lactate != null ? String(lap.lactate) : '',
+            RPE: '',
+            elevation: (() => {
+              const g = lap.total_elevation_gain ?? lap.elevation_gain ?? null;
+              return g != null && Number.isFinite(Number(g)) ? String(Math.round(Number(g))) : '';
+            })(),
+            duration: fmtDur(durationSec),
+            durationSeconds: durationSec,
+            durationType: 'time',
+            distanceMeters: distM > 0 ? distM : undefined,
+            repeatCount: 1,
+            isRecovery: isSwimRest,
+            isSelected: !isSwimRest,
+          };
         });
+
+        const activityDate = detail.start_date_local || detail.start_date || new Date();
+        const parsedDate = new Date(activityDate);
+        const dateStr = (Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate).toISOString().slice(0, 16);
+
+        const initialData = {
+          sport,
+          type: 'interval',
+          category: data.category || '',
+          title: data.titleManual || detail.name || 'Untitled Training',
+          customTitle: '',
+          description: data.description || detail.description || '',
+          date: dateStr,
+          sourceStravaActivityId: String(detail.id || detail.stravaId || stravaNumericId),
+          specifics: { specific: '', weather: '', customSpecific: '', customWeather: '' },
+          results,
+        };
+
+        setStravaLactateModal({ isOpen: true, initialData });
       } catch (err) {
         setStravaLactateFormError(
           err.response?.data?.message ||
@@ -208,12 +275,17 @@ export default function TrainingPage() {
   );
 
   const handleStravaLactateFormSubmit = useCallback(
-    async (updatedTraining) => {
+    async (formData) => {
       try {
         setStravaLactateSubmitting(true);
         setStravaLactateFormError(null);
-        await updateTraining(updatedTraining._id, updatedTraining);
         const targetId = selectedAthleteId || user._id;
+        const trainingData = { ...formData, athleteId: targetId, coachId: user._id };
+        if (formData._id) {
+          await updateTraining(formData._id, trainingData);
+        } else {
+          await addTraining(trainingData);
+        }
         await loadTrainings(targetId);
         setFieldLactatePanelKey((k) => k + 1);
         closeStravaLactateModal();
@@ -269,11 +341,6 @@ export default function TrainingPage() {
     window.addEventListener('athleteChanged', handleAthleteChange);
     return () => window.removeEventListener('athleteChanged', handleAthleteChange);
   }, [navigate, selectedSport, selectedCategory]);
-
-  const handleAthleteChange = (newAthleteId) => {
-    setSelectedAthleteId(newAthleteId);
-    navigate(`/training/${newAthleteId}`);
-  };
 
   // Funkce pro přidání nového tréninku
   const handleAddTraining = async (formData) => {
@@ -367,39 +434,32 @@ export default function TrainingPage() {
   );
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="py-2 md:p-6 max-w-[1600px] mx-auto"
+      className="mx-auto w-full max-w-[1600px] px-2 sm:px-4 py-4 md:p-6"
     >
-      {coachLike && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <AthleteSelector
-            selectedAthleteId={selectedAthleteId}
-            onAthleteChange={handleAthleteChange}
-            user={user}
-          />
-        </motion.div>
-      )}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <motion.h1 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="text-2xl font-semibold"
-        >
-          Training Log
-        </motion.h1>
-        <div className="flex items-center gap-3">
-          {/* Category Filter — dynamic from CategoryContext */}
+      {/* ── HEADER ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6"
+      >
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Training Log</h1>
+          {filteredTrainings.length > 0 && (
+            <p className="text-xs text-gray-400 mt-0.5">{filteredTrainings.length} training{filteredTrainings.length !== 1 ? 's' : ''}</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Category filter */}
           <div className="relative">
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-2 pr-8 border border-gray-300 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+              className="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none shadow-sm"
               style={{ WebkitAppearance: 'none', appearance: 'none' }}
             >
               <option value="all">All categories</option>
@@ -409,11 +469,12 @@ export default function TrainingPage() {
               <option value="uncategorized">Uncategorized</option>
             </select>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
           </div>
+
           {/* Active category badge */}
           {selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && (() => {
             const cat = categories.find(c => c.id === selectedCategory);
@@ -427,42 +488,28 @@ export default function TrainingPage() {
               </span>
             );
           })()}
-        <motion.button
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-          ) : (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          )}
-          {isSubmitting ? 'Adding...' : 'Add Training'}
-        </motion.button>
-        </div>
-      </div>
 
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={() => setIsFormOpen(true)}
+            className="flex items-center gap-1.5 h-9 px-4 bg-primary text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-all shadow-sm disabled:opacity-60"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            )}
+            {isSubmitting ? 'Adding…' : 'Add Training'}
+          </motion.button>
+        </div>
+      </motion.div>
+
+      {/* Error banner */}
       {stravaLactateFormError && (
-        <div
-          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
-          role="alert"
-        >
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           <span>{stravaLactateFormError}</span>
           <button
             type="button"
@@ -474,100 +521,125 @@ export default function TrainingPage() {
         </div>
       )}
 
-      {showFieldLactatePanel && user && (
-        <FieldLactateTrainingPanel
-          key={fieldLactatePanelKey}
-          integrationAthleteId={integrationAthleteId}
-          user={user}
-          onAddLactate={handleFieldAddLactate}
-          loadingActivityId={lactateActivityLoadingId}
-        />
-      )}
+      {/* ── 5-COLUMN DASHBOARD GRID ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Row 1: Field Lactate (2 cols) + TrainingGraph (3 cols) */}
+        {showFieldLactatePanel && user ? (
+          <>
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.15 }}
+              className="lg:col-span-2 md:col-span-2 min-w-0 flex flex-col"
+            >
+              <FieldLactateTrainingPanel
+                key={fieldLactatePanelKey}
+                integrationAthleteId={integrationAthleteId}
+                user={user}
+                onAddLactate={handleFieldAddLactate}
+                loadingActivityId={lactateActivityLoadingId}
+              />
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="lg:col-span-3 md:col-span-2 min-w-0 flex flex-col"
+            >
+              <TrainingGraph
+                trainingList={filteredTrainings}
+                selectedSport={selectedSport}
+                selectedTitle={selectedTitle}
+                setSelectedTitle={setSelectedTitle}
+                selectedTraining={selectedTraining}
+                setSelectedTraining={setSelectedTraining}
+              />
+            </motion.div>
+          </>
+        ) : (
+          /* No lactate panel — TrainingGraph full row */
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="lg:col-span-5 md:col-span-2 min-w-0"
+          >
+            <TrainingGraph
+              trainingList={filteredTrainings}
+              selectedSport={selectedSport}
+              selectedTitle={selectedTitle}
+              setSelectedTitle={setSelectedTitle}
+              selectedTraining={selectedTraining}
+              setSelectedTraining={setSelectedTraining}
+            />
+          </motion.div>
+        )}
+
+        {/* Row 2: Training Stats — full width */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="lg:col-span-5 md:col-span-2 min-w-0"
+        >
+          <TrainingStats
+            trainings={filteredTrainings}
+            selectedSport={selectedSport}
+            onSportChange={setSelectedSport}
+            isFullWidth={true}
+            user={user}
+          />
+        </motion.div>
+
+        {/* Row 3: Training Comparison — full width */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          whileHover={{ scale: 1.02 }}
+          className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <SpiderChart
-            trainings={filteredTrainings}
-            selectedSport={selectedSport}
-          />
+          <Suspense fallback={
+            <div className="rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center py-12">
+              <p className="text-sm text-gray-400">Loading comparison…</p>
+            </div>
+          }>
+            <TrainingComparison trainings={trainings} />
+          </Suspense>
         </motion.div>
+
+        {/* Row 4: Training Table — full width */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          whileHover={{ scale: 1.02 }}
+          transition={{ delay: 0.35 }}
+          className="lg:col-span-5 md:col-span-2 min-w-0"
         >
-          <TrainingGraph
-            trainingList={filteredTrainings}
-            selectedSport={selectedSport}
-            selectedTitle={selectedTitle}
-            setSelectedTitle={setSelectedTitle}
-            selectedTraining={selectedTraining}
-            setSelectedTraining={setSelectedTraining}
-          />
+          <UserTrainingsTable trainings={filteredTrainings} />
         </motion.div>
+
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="mb-6"
-      >
-        <UserTrainingsTable trainings={filteredTrainings} />
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className='max-w-[94vw] md:max-w-none'
-      >
-        <TrainingStats 
-          trainings={filteredTrainings} 
-          selectedSport={selectedSport}
-          onSportChange={setSelectedSport}
-          isFullWidth={true}
-          user={user}
-        />
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.65 }}
-        className="mt-6"
-      >
-        <Suspense fallback={<p className="text-sm text-gray-500 py-6">Loading training comparison…</p>}>
-          <TrainingComparison trainings={trainings} />
-        </Suspense>
-      </motion.div>
-
+      {/* ── MODALS ── */}
       <AnimatePresence>
         {isFormOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] p-4"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000] p-4"
           >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-2xl"
             >
-              <div className="relative">
-                <TrainingForm 
-                  onClose={() => setIsFormOpen(false)} 
-                  onSubmit={handleAddTraining}
-                />
-              </div>
+              <TrainingForm
+                onClose={() => setIsFormOpen(false)}
+                onSubmit={handleAddTraining}
+              />
             </motion.div>
           </motion.div>
         )}
@@ -579,28 +651,25 @@ export default function TrainingPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1001] p-4"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1001] p-4"
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-2xl"
             >
-              <div className="relative">
-                <TrainingForm
-                  key={`${stravaLactateModal.initialData._id}-field-lac`}
-                  onClose={() => {
-                    closeStravaLactateModal();
-                    setStravaLactateFormError(null);
-                  }}
-                  onSubmit={handleStravaLactateFormSubmit}
-                  initialData={stravaLactateModal.initialData}
-                  isEditing
-                  isLoading={stravaLactateSubmitting}
-                  focusLactateOnOpen={stravaLactateModal.focusLactateOnOpen}
-                />
-              </div>
+              <TrainingForm
+                key={stravaLactateModal.initialData.sourceStravaActivityId || 'strava-lac'}
+                onClose={() => {
+                  closeStravaLactateModal();
+                  setStravaLactateFormError(null);
+                }}
+                onSubmit={handleStravaLactateFormSubmit}
+                initialData={stravaLactateModal.initialData}
+                isEditing={false}
+                isLoading={stravaLactateSubmitting}
+              />
             </motion.div>
           </motion.div>
         )}

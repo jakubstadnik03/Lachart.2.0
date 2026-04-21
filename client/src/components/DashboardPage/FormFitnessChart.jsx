@@ -423,7 +423,7 @@ const FormFitnessChart = ({ athleteId }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg">
+    <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg h-full">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Form & Fitness</h3>
         <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -560,7 +560,7 @@ const FormFitnessChart = ({ athleteId }) => {
               <div className="-mx-4 px-4 overflow-x-auto snap-x snap-mandatory flex gap-3">
                 {/* Fitness */}
                 <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-3">
+                  <div className="rounded-xl border border-gray-200 p-2">
                     <div className="flex items-center justify-between">
                       <div className="text-xs font-semibold text-gray-500 uppercase">Fitness</div>
                       <button
@@ -571,13 +571,13 @@ const FormFitnessChart = ({ athleteId }) => {
                         <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                       </button>
                     </div>
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <div className="text-2xl font-bold text-blue-600">{insights.fitness}</div>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <div className="text-xl font-bold text-blue-600">{insights.fitness}</div>
                       <div className="text-xs text-gray-600">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
                     </div>
                     <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
-                    <div className="mt-2 select-none">
-                      <ResponsiveContainer width="100%" height={56}>
+                    <div className="mt-1 select-none">
+                      <ResponsiveContainer width="100%" height={36}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -590,7 +590,7 @@ const FormFitnessChart = ({ athleteId }) => {
 
                 {/* Form */}
                 <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-3">
+                  <div className="rounded-xl border border-gray-200 p-2">
                     <div className="flex items-center justify-between">
                       <div className="text-xs font-semibold text-gray-500 uppercase">Form</div>
                       <button
@@ -601,13 +601,13 @@ const FormFitnessChart = ({ athleteId }) => {
                         <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                       </button>
                     </div>
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <div className={`text-2xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <div className={`text-xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
                       <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
                     </div>
                     <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
-                    <div className="mt-2 select-none">
-                      <ResponsiveContainer width="100%" height={56}>
+                    <div className="mt-1 select-none">
+                      <ResponsiveContainer width="100%" height={36}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -621,7 +621,7 @@ const FormFitnessChart = ({ athleteId }) => {
 
                 {/* Fatigue */}
                 <div className="min-w-full snap-center">
-                  <div className="rounded-xl border border-gray-200 p-3">
+                  <div className="rounded-xl border border-gray-200 p-2">
                     <div className="flex items-center justify-between">
                       <div className="text-xs font-semibold text-gray-500 uppercase">Fatigue</div>
                       <button
@@ -632,13 +632,13 @@ const FormFitnessChart = ({ athleteId }) => {
                         <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                       </button>
                     </div>
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <div className="text-2xl font-bold text-pink-600">{insights.fatigue}</div>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <div className="text-xl font-bold text-pink-600">{insights.fatigue}</div>
                       <div className="text-xs text-gray-600">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
                     </div>
                     <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
-                    <div className="mt-2 select-none">
-                      <ResponsiveContainer width="100%" height={56}>
+                    <div className="mt-1 select-none">
+                      <ResponsiveContainer width="100%" height={36}>
                         <LineChart data={zoomedData}>
                           <XAxis dataKey="dateLabel" hide />
                           <Tooltip content={miniTooltip} />
@@ -654,7 +654,7 @@ const FormFitnessChart = ({ athleteId }) => {
             {!isMobile && (
               <>
             {/* Fitness */}
-            <div className="rounded-xl border border-gray-200 p-3">
+            <div className="rounded-xl border border-gray-200 p-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Fitness</div>
                 <button
@@ -665,13 +665,13 @@ const FormFitnessChart = ({ athleteId }) => {
                   <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <div className="text-2xl sm:text-3xl font-bold text-blue-600">{insights.fitness}</div>
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <div className="text-xl sm:text-2xl font-bold text-blue-600">{insights.fitness}</div>
                 <div className="text-xs text-gray-600">{deltaDisplayText(insights.fitnessDelta, insights.deltaLabel)}</div>
               </div>
               <div className="mt-1 text-sm font-semibold text-blue-600">{insights.fitnessStatus}</div>
-              <div className="mt-2 select-none">
-                <ResponsiveContainer width="100%" height={56}>
+              <div className="mt-1 select-none">
+                <ResponsiveContainer width="100%" height={36}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -694,7 +694,7 @@ const FormFitnessChart = ({ athleteId }) => {
             </div>
 
             {/* Form */}
-            <div className="rounded-xl border border-gray-200 p-3">
+            <div className="rounded-xl border border-gray-200 p-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Form</div>
                 <button
@@ -705,13 +705,13 @@ const FormFitnessChart = ({ athleteId }) => {
                   <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <div className={`text-2xl sm:text-3xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <div className={`text-xl sm:text-2xl font-bold ${insights.form < 0 ? 'text-orange-600' : 'text-orange-500'}`}>{insights.form}</div>
                 <div className="text-xs text-gray-600">{deltaDisplayText(insights.formDelta, insights.deltaLabel)}</div>
               </div>
               <div className="mt-1 text-sm font-semibold text-orange-600">{insights.formStatus}</div>
-              <div className="mt-2 select-none">
-                <ResponsiveContainer width="100%" height={56}>
+              <div className="mt-1 select-none">
+                <ResponsiveContainer width="100%" height={36}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -735,7 +735,7 @@ const FormFitnessChart = ({ athleteId }) => {
             </div>
 
             {/* Fatigue */}
-            <div className="rounded-xl border border-gray-200 p-3">
+            <div className="rounded-xl border border-gray-200 p-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold text-gray-500 uppercase">Fatigue</div>
                 <button
@@ -746,13 +746,13 @@ const FormFitnessChart = ({ athleteId }) => {
                   <InformationCircleIcon className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <div className="text-2xl sm:text-3xl font-bold text-pink-600">{insights.fatigue}</div>
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <div className="text-xl sm:text-2xl font-bold text-pink-600">{insights.fatigue}</div>
                 <div className="text-xs text-gray-600">{deltaDisplayText(insights.fatigueDelta, insights.deltaLabel)}</div>
               </div>
               <div className="mt-1 text-sm font-semibold text-pink-600">{insights.fatigueStatus}</div>
-              <div className="mt-2 select-none">
-                <ResponsiveContainer width="100%" height={56}>
+              <div className="mt-1 select-none">
+                <ResponsiveContainer width="100%" height={36}>
                   <LineChart
                     data={zoomedData}
                     onMouseDown={handleZoomMouseDown}
@@ -778,7 +778,7 @@ const FormFitnessChart = ({ athleteId }) => {
           </div>
         )}
 
-        <div className="h-56 sm:h-80 select-none relative">
+        <div className="h-44 sm:h-64 select-none relative">
           {zoomRange && (
             <button
               onClick={handleZoomReset}
