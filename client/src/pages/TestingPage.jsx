@@ -1237,7 +1237,7 @@ const TestingPage = () => {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-col w-full max-w-[1600px] mx-auto min-h-0"
+      className="flex flex-col w-full max-w-[1600px] mx-auto min-h-0 overflow-x-hidden"
     >
       {/* ── Sticky top bar ──────────────────────────────────────── */}
       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
@@ -1274,8 +1274,8 @@ const TestingPage = () => {
             ))}
           </div>
 
-          {/* Sport selector — flex grows to fill remaining space */}
-          <div className="flex-1 min-w-0 overflow-hidden">
+          {/* Sport selector — flex grows to fill remaining space, scrollable on mobile */}
+          <div className="flex-1 min-w-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
             <SportsSelector
               sports={sports}
               selectedSport={selectedSport}
@@ -1335,7 +1335,7 @@ const TestingPage = () => {
       </div>
 
       {/* ── Tab content ─────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 px-3 sm:px-5 py-4 space-y-4">
+      <div className="flex-1 min-h-0 px-3 sm:px-5 py-4 space-y-4 overflow-x-hidden">
         <AnimatePresence mode="wait">
 
           {/* ── TESTS tab ─────────────────────────────────────── */}

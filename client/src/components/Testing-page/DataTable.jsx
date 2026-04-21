@@ -1,7 +1,8 @@
 // DataTable.jsx
 // =============
 
-import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
+import React, { useState, useRef, useEffect, createContext, useContext, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import * as math from 'mathjs';
 import { useAuth } from '../../context/AuthProvider';
 import { getEffectiveLactateInputMode } from '../../utils/lactateTestInputMode';
@@ -87,27 +88,38 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       sortedPoints = filteredPoints;
     }
     
-    // Najít první a poslední bod (po seřazení)
-    const firstPoint = sortedPoints[0];
+    // Modified D-max (Cheng 1992): use minimum lactate point in first half as reference start.
+    // This correctly handles "drop then rise" lactate curves — the reference line starts where
+    // lactate is lowest (first sustained rise), not at the very first measured point.
     const lastPoint = sortedPoints[sortedPoints.length - 1];
-    
-    // Validace: první a poslední bod by neměly být stejné
-    if (firstPoint.power === lastPoint.power) {
-      console.warn('[D-max] First and last points have same power, cannot calculate D-max');
+    const searchLen = Math.ceil(sortedPoints.length / 2);
+    let riseStartIdx = 0;
+    let minLa = sortedPoints[0].lactate;
+    for (let i = 1; i < searchLen; i++) {
+      if (sortedPoints[i].lactate < minLa) {
+        minLa = sortedPoints[i].lactate;
+        riseStartIdx = i;
+      }
+    }
+    const refStart = sortedPoints[riseStartIdx]; // = firstPoint when no initial drop
+
+    // Validace: reference start a poslední bod musí mít různý výkon
+    if (refStart.power === lastPoint.power) {
+      console.warn('[D-max] Reference start and last point have same power, cannot calculate D-max');
       return null;
     }
-    
-    // Vypočítat přímku mezi prvním a posledním bodem
-    const slope = (lastPoint.lactate - firstPoint.lactate) / 
-                  (lastPoint.power - firstPoint.power);
-    const intercept = firstPoint.lactate - slope * firstPoint.power;
-    
-    // Najít bod s největší kolmou vzdáleností od přímky
-    // Ignorovat první a poslední bod (mohou být outliery)
+
+    // Přímka od minima laktátu k poslednímu bodu (Modified D-max referenční přímka)
+    const slope = (lastPoint.lactate - refStart.lactate) /
+                  (lastPoint.power - refStart.power);
+    const intercept = refStart.lactate - slope * refStart.power;
+
+    // Najít bod s největší kolmou vzdáleností od přímky.
+    // Hledat pouze od riseStartIdx dál (body před minimem nejsou relevantní).
     let maxDistance = 0;
     let dmaxPoint = null;
-    
-    for (let i = 1; i < sortedPoints.length - 1; i++) {
+
+    for (let i = riseStartIdx + 1; i < sortedPoints.length - 1; i++) {
       const point = sortedPoints[i];
       // Vypočítat vzdálenost bodu od přímky
       const distance = Math.abs(
@@ -3430,6 +3442,7 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
         pointsCount: sortedResults.length,
         hasHR: sortedResults.some((r) => Number.isFinite(Number(r.heartRate))),
       });
+      thresholds.confidence = confidence;
       dbgLog('[calculateThresholds] LT confidence (finální, po sladění s křivkou u pace)', {
         confidence,
         ltp1: thresholds['LTP1'],
@@ -3560,28 +3573,62 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     );
   };
 
-  // Vlastní jednoduchý Tooltip komponent
+  // Vlastní jednoduchý Tooltip komponent – renderuje přes portal na document.body,
+  // takže není oříznutý žádným overflow-x-auto kontejnerem.
   const CustomTooltip = ({ children, title, methodName }) => {
-    const tooltipRef = useRef(null);
+    const triggerRef = useRef(null);
+    const tooltipNodeRef = useRef(null);
     const { activeTooltip, setActiveTooltip, isLocked, setIsLocked } = useContext(TooltipContext);
     const isVisible = activeTooltip === methodName;
+    const [coords, setCoords] = useState({ top: 0, left: 0, arrowTop: 0, side: 'right' });
 
-    // Přidáme event listener pro kliknutí mimo tooltip
+    // Spočítat polohu tooltippu podle triggeru
+    const recalcCoords = useCallback(() => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const tooltipW = 300;
+      const viewportW = window.innerWidth;
+      // Preferovat pravou stranu; pokud se nevejde, jít doleva
+      const spaceRight = viewportW - rect.right;
+      const side = spaceRight >= tooltipW + 12 ? 'right' : 'left';
+      const left = side === 'right'
+        ? rect.right + 8
+        : rect.left - tooltipW - 8;
+      // Vertikálně zarovnat na střed triggeru, nepřetékat přes viewport
+      const centerY = rect.top + rect.height / 2;
+      const tooltipH = tooltipNodeRef.current?.offsetHeight || 200;
+      const maxTop = window.innerHeight - tooltipH - 8;
+      const top = Math.max(8, Math.min(centerY - tooltipH / 2, maxTop));
+      // Šipka: relativní pozice od top tooltipu ke středu triggeru
+      const arrowTop = centerY - top;
+      setCoords({ top, left, arrowTop, side });
+    }, []);
+
+    // Přepočítat při každém otevření a při scrollu/resize
     useEffect(() => {
-      const handleClickOutside = (event) => {
-        if (tooltipRef.current && !tooltipRef.current.contains(event.target)) {
+      if (!isVisible) return;
+      recalcCoords();
+      window.addEventListener('scroll', recalcCoords, true);
+      window.addEventListener('resize', recalcCoords);
+      return () => {
+        window.removeEventListener('scroll', recalcCoords, true);
+        window.removeEventListener('resize', recalcCoords);
+      };
+    }, [isVisible, recalcCoords]);
+
+    // Zavřít při kliknutí mimo
+    useEffect(() => {
+      if (!isVisible || !isLocked) return;
+      const handleClickOutside = (e) => {
+        const clickedTrigger = triggerRef.current?.contains(e.target);
+        const clickedTooltip = tooltipNodeRef.current?.contains(e.target);
+        if (!clickedTrigger && !clickedTooltip) {
           setActiveTooltip(null);
           setIsLocked(false);
         }
       };
-
-      if (isVisible && isLocked) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
-
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isVisible, isLocked, setActiveTooltip, setIsLocked]);
 
     const handleClick = (e) => {
@@ -3597,76 +3644,85 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     };
 
     const handleMouseEnter = () => {
-      if (!isLocked) {
-        setActiveTooltip(methodName);
-      }
+      if (!isLocked) setActiveTooltip(methodName);
     };
 
-    const handleMouseLeave = () => {
-      if (!isLocked) {
-        setActiveTooltip(null);
-      }
+    const handleMouseLeave = (e) => {
+      if (isLocked) return;
+      // Nekrýt pokud kurzor přešel na samotný tooltip
+      const related = e.relatedTarget;
+      if (tooltipNodeRef.current?.contains(related)) return;
+      setActiveTooltip(null);
     };
+
+    const tooltipContent = isVisible ? ReactDOM.createPortal(
+      <div
+        ref={tooltipNodeRef}
+        onMouseLeave={() => { if (!isLocked) setActiveTooltip(null); }}
+        style={{
+          position: 'fixed',
+          top: coords.top,
+          left: coords.left,
+          width: 300,
+          zIndex: 9999,
+        }}
+      >
+        <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200">
+          {/* Šipka */}
+          <div
+            style={{
+              position: 'absolute',
+              top: Math.max(8, coords.arrowTop - 8),
+              ...(coords.side === 'right'
+                ? { left: -8, borderRight: '8px solid white', borderTop: '8px solid transparent', borderBottom: '8px solid transparent', width: 0, height: 0 }
+                : { right: -8, borderLeft: '8px solid white', borderTop: '8px solid transparent', borderBottom: '8px solid transparent', width: 0, height: 0 }
+              ),
+            }}
+          />
+          {/* Nadpis */}
+          <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+            <h3 className="text-gray-800 font-semibold tracking-wide text-sm">{methodName}</h3>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActiveTooltip(null); setIsLocked(false); }}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          {/* Obsah */}
+          <div className="p-4">
+            <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
+              {title.split('**').map((part, index) => {
+                if (index % 2 === 1) {
+                  return <strong key={index} className="font-semibold text-gray-800">{part}</strong>;
+                }
+                return <span key={index}>{part}</span>;
+              })}
+            </div>
+          </div>
+          {/* Reference */}
+          {(methodName === 'LTP1' || methodName === 'LTP2') && (
+            <div className="px-4 py-2 bg-gray-50 border-t border-gray-200">
+              <p className="text-xs text-gray-500 italic">Reference: Hofmann & Tschakert, 2017</p>
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    ) : null;
 
     return (
-      <div 
-        ref={tooltipRef}
+      <div
+        ref={triggerRef}
         className="relative cursor-pointer"
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
         {children}
-        {isVisible && (
-          <div className="absolute left-full ml-0 top-0 z-50 w-[300px]">
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-              {/* Nadpis */}
-              <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-gray-800 font-semibold tracking-wide">{methodName}</h3>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveTooltip(null);
-                    setIsLocked(false);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-              {/* Obsah */}
-              <div className="p-4">
-                <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
-                  {title.split('**').map((part, index) => {
-                    if (index % 2 === 1) {
-                      // Bold text between **
-                      return <strong key={index} className="font-semibold text-gray-800">{part}</strong>;
-                    }
-                    return <span key={index}>{part}</span>;
-                  })}
-                </div>
-              </div>
-              {/* Reference pokud existuje */}
-              {(methodName === 'LTP1' || methodName === 'LTP2') && (
-                <div className="px-4 py-2 bg-gray-50 border-t border-gray-200">
-                  <p className="text-xs text-gray-500 italic">
-                    Reference: Hofmann & Tschakert, 2017
-                  </p>
-                </div>
-              )}
-              {/* Šipka */}
-              <div 
-                className="absolute left-0 top-4 -ml-2 w-0 h-0 
-                border-t-[8px] border-t-transparent 
-                border-r-[8px] border-r-white
-                border-b-[8px] border-b-transparent
-                filter drop-shadow-sm"
-              />
-            </div>
-          </div>
-        )}
+        {tooltipContent}
       </div>
     );
   };
@@ -3854,10 +3910,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
             </>
           )}
           
-          <div className="w-full">
+          <div className="w-full overflow-x-auto -mx-1 px-1">
+            <div style={{ minWidth: '280px' }}>
             <div className="grid grid-cols-4">
               {columns.map((column, colIndex) => (
-                <div key={`hdr-${colIndex}`} className="md:w-[100px] sm:w-[100px]">
+                <div key={`hdr-${colIndex}`} className="min-w-[64px]">
                   <TableCell isHeader>{column.header}</TableCell>
                 </div>
               ))}
@@ -3869,23 +3926,24 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
               const laValue = columns[3]?.data?.[rowIndex] ?? 'N/A';
               return (
                 <div key={`row-${method}-${rowIndex}`} className="grid grid-cols-4">
-                  <div className="md:w-[100px] sm:w-[100px]">
+                  <div className="min-w-[64px]">
                     <TableCell description={methodDescription} methodName={method}>
                       {method}
                     </TableCell>
                   </div>
-                  <div className="md:w-[100px] sm:w-[100px]">
+                  <div className="min-w-[64px]">
                     <TableCell>{pwrValue}</TableCell>
                   </div>
-                  <div className="md:w-[100px] sm:w-[100px]">
+                  <div className="min-w-[64px]">
                     <TableCell>{hrValue}</TableCell>
                   </div>
-                  <div className="md:w-[100px] sm:w-[100px]">
+                  <div className="min-w-[64px]">
                     <TableCell>{laValue}</TableCell>
                   </div>
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       </TooltipProvider>
@@ -3961,6 +4019,11 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
     const distinctX = new Set(xVals).size;
     if (distinctX < 4) return []; // cubic needs at least 4 distinct x values
 
+    // Log-linear transform: fit cubic polynomial on log(lactate) for better accuracy.
+    // Lactate curves are exponential in nature — log-space fit avoids overshoot artefacts.
+    const allPositive = yVals.every(v => v > 0);
+    const fitYVals = allPositive ? yVals.map(v => Math.log(v)) : yVals;
+
     try {
     const polyRegression = (() => {
       const n = xVals.length;
@@ -3968,17 +4031,19 @@ const interpolate = (x0, y0, x1, y1, targetY) => {
       const Y = [];
       for (let i = 0; i < n; i++) {
         X.push([1, xVals[i], Math.pow(xVals[i], 2), Math.pow(xVals[i], 3)]);
-        Y.push(yVals[i]);
+        Y.push(fitYVals[i]);
       }
       const XT = math.transpose(X);
       const XTX = math.multiply(XT, X);
       const XTY = math.multiply(XT, Y);
       const coefficients = math.lusolve(XTX, XTY).flat();
-      return (x) =>
+      const rawFn = (x) =>
         coefficients[0] +
         coefficients[1] * x +
         coefficients[2] * Math.pow(x, 2) +
         coefficients[3] * Math.pow(x, 3);
+      // Back-transform from log space if we fitted on log(lactate)
+      return allPositive ? (x) => Math.exp(rawFn(x)) : rawFn;
     })();
 
     const minPower = Math.min(...xVals);

@@ -321,8 +321,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         borderColor: "#3F8CFE",
         backgroundColor: "#3F8CFE",
         pointStyle: "circle",
-        pointRadius: 5,
-        pointHoverRadius: 8,
+        pointRadius: isMobile ? 4 : 5,
+        pointHoverRadius: isMobile ? 7 : 8,
         pointBackgroundColor: "#3F8CFE",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         spanGaps: false,
@@ -333,8 +333,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         borderColor: "#E7515A",
         backgroundColor: "#E7515A",
         pointStyle: "circle",
-        pointRadius: 5,
-        pointHoverRadius: 8,
+        pointRadius: isMobile ? 4 : 5,
+        pointHoverRadius: isMobile ? 7 : 8,
         pointBackgroundColor: "#E7515A",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y1",
@@ -350,8 +350,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         borderColor: "#f59e0b",
         backgroundColor: "#f59e0b",
         pointStyle: "circle",
-        pointRadius: 5,
-        pointHoverRadius: 8,
+        pointRadius: isMobile ? 4 : 5,
+        pointHoverRadius: isMobile ? 7 : 8,
         pointBackgroundColor: "#f59e0b",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y", // Same axis as Lactate
@@ -367,8 +367,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         borderColor: "#8b5cf6",
         backgroundColor: "#8b5cf6",
         pointStyle: "circle",
-        pointRadius: 5,
-        pointHoverRadius: 8,
+        pointRadius: isMobile ? 4 : 5,
+        pointHoverRadius: isMobile ? 7 : 8,
         pointBackgroundColor: "#8b5cf6",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y3",
@@ -385,8 +385,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         borderColor: "#10b981",
         backgroundColor: "#10b981",
         pointStyle: "circle",
-        pointRadius: 5,
-        pointHoverRadius: 8,
+        pointRadius: isMobile ? 4 : 5,
+        pointHoverRadius: isMobile ? 7 : 8,
         pointBackgroundColor: "#10b981",
         hitRadius: isMobile ? 20 : 10, // Larger hit radius on mobile
         yAxisID: "y2",
@@ -423,8 +423,10 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           labels: {
             usePointStyle: true,
             pointStyle: "circle",
-            pointRadius: 4,
-            font: { size: 12 },
+            pointRadius: isMobile ? 3 : 4,
+            font: { size: isMobile ? 10 : 12 },
+            boxWidth: isMobile ? 8 : 10,
+            padding: isMobile ? 8 : 10,
           },
           onClick: (e, legendItem, legend) => {
             const index = legendItem.datasetIndex;
@@ -460,12 +462,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         tooltip: {
           enabled: true,
           mode: 'nearest',
-          intersect: true,
+          intersect: !isMobile, // On mobile use non-intersect for easier touch
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           titleColor: '#111827',
-          titleFont: { weight: 'bold', size: 14 },
+          titleFont: { weight: 'bold', size: isMobile ? 12 : 14 },
           bodyColor: '#111827',
-          bodyFont: { size: 13 },
+          bodyFont: { size: isMobile ? 11 : 13 },
           borderColor: '#F3F4F6',
           borderWidth: 1,
           padding: 12,
@@ -528,13 +530,13 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
       },
       scales: {
         y: {
-          title: { display: true, text: "Lactate (mmol/L)" },
+          title: { display: !isMobile, text: "Lactate (mmol/L)" },
           min: 0,
           max: (() => {
             const maxLactate = Math.max(...lactateData.filter((v) => v != null), 0);
             return Math.ceil(maxLactate + 1);
           })(),
-          ticks: { display: true },
+          ticks: { display: true, font: { size: isMobile ? 9 : 11 } },
           position: "left",
           border: { dash: [6, 6] },
           grid: {
@@ -544,12 +546,12 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
           },
         },
         y1: {
-          title: { display: true, text: "Heart Rate (BPM)" },
+          title: { display: !isMobile, text: "Heart Rate (BPM)" },
           // Start slightly below the minimum entered HR, but never below 0
           min: Math.max(0, Math.floor(minHeartRate - 10)),
           max: maxHeartRate > 0 ? Math.ceil(maxHeartRate + 10) : 200,
           position: "right",
-          ticks: { display: true },
+          ticks: { display: true, font: { size: isMobile ? 9 : 11 } },
           grid: {
             drawOnChartArea: true,
             color: "rgba(0, 0, 0, 0)",
@@ -604,8 +606,8 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
         } : {}),
         x: {
           title: {
-            display: true,
-            text: mockData.sport === 'bike' ? "Power (W)" : 
+            display: !isMobile,
+            text: mockData.sport === 'bike' ? "Power (W)" :
                   mockData.sport === 'swim' ? 
                     (inputMode === 'pace' ? 
                       (unitSystem === 'imperial' ? "Pace (min/100yd)" : "Pace (min/100m)") :
@@ -622,31 +624,38 @@ const LactateCurve = ({ mockData, demoMode = false }) => {
             borderDash: [4, 4],
           },
           ticks: {
+            maxRotation: isMobile ? 45 : 0,
+            font: { size: isMobile ? 9 : 11 },
             callback: function(value, index) {
               const power = powerData[index];
               if (mockData.sport === 'bike') {
-                return `${power}W`;
+                // On mobile omit the "W" suffix to save space
+                return isMobile ? `${power}` : `${power}W`;
               } else if (mockData.sport === 'swim') {
                 if (inputMode === 'pace') {
                   const minutes = Math.floor(power / 60);
                   const seconds = Math.floor(power % 60);
+                  const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                  if (isMobile) return timeStr;
                   const unit = unitSystem === 'imperial' ? '/100yd' : '/100m';
-                  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
+                  return `${timeStr}${unit}`;
                 } else {
                   const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
-                  return `${speed.toFixed(1)} ${unit}`;
+                  return isMobile ? `${speed.toFixed(1)}` : `${speed.toFixed(1)} ${unit}`;
                 }
               } else {
                 if (inputMode === 'pace') {
                   const minutes = Math.floor(power / 60);
                   const seconds = Math.floor(power % 60);
+                  const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                  if (isMobile) return timeStr;
                   const unit = unitSystem === 'imperial' ? '/mile' : '/km';
-                  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}${unit}`;
+                  return `${timeStr}${unit}`;
                 } else {
                   const speed = convertSecondsToSpeed(power, unitSystem, mockData.sport);
                   const unit = unitSystem === 'imperial' ? 'mph' : 'km/h';
-                  return `${speed.toFixed(1)} ${unit}`;
+                  return isMobile ? `${speed.toFixed(1)}` : `${speed.toFixed(1)} ${unit}`;
                 }
               }
             }

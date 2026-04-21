@@ -54,6 +54,14 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   const [lactateModalOpen, setLactateModalOpen] = useState(false);
   const [initialLapIndex, setInitialLapIndex] = useState(null);
   const [lactateSaved, setLactateSaved] = useState(false);
+  // Internal selection state — owns selection when parent doesn't provide a handler,
+  // and mirrors parent selection when it does (so the scroll effect always works).
+  const [internalSelectedLap, setInternalSelectedLap] = useState(null);
+  const effectiveSelectedLap = selectedLapNumber ?? internalSelectedLap;
+  const handleSelectLap = (lapNumber) => {
+    setInternalSelectedLap(lapNumber);   // always update local (drives scroll effect)
+    onSelectLapNumber?.(lapNumber);      // also propagate to parent if connected
+  };
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -155,17 +163,17 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   const tableContainerRef = useRef(null);
 
   useEffect(() => {
-    if (selectedLapNumber == null) return;
-    const el = lapRefs.current[selectedLapNumber];
+    if (effectiveSelectedLap == null) return;
+    const el = lapRefs.current[effectiveSelectedLap];
     const container = tableContainerRef.current;
     if (!el || !container) return;
-    // Manual scroll: center the selected row within the scrollable container
+    // Scroll to center the selected row inside the scrollable container
     const elRect = el.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
     const relativeTop = elRect.top - containerRect.top;
     const centerOffset = relativeTop - container.clientHeight / 2 + elRect.height / 2;
     container.scrollBy({ top: centerOffset, behavior: 'smooth' });
-  }, [selectedLapNumber]);
+  }, [effectiveSelectedLap]);
 
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
 
@@ -213,19 +221,21 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           </div>
         </div>
 
-        {/* Lap bar overview */}
-        <LapsBarChart
-          laps={uniqueLaps}
-          selectedLapNumber={selectedLapNumber}
-          onSelect={onSelectLapNumber}
-          sport={training?.sport}
-        />
+        {/* Lap bar overview — sticky so it stays visible while scrolling laps */}
+        <div className="sticky top-0 z-10 bg-white pb-2 -mx-1 px-1">
+          <LapsBarChart
+            laps={uniqueLaps}
+            selectedLapNumber={effectiveSelectedLap}
+            onSelect={handleSelectLap}
+            sport={training?.sport}
+          />
+        </div>
 
         <div ref={tableContainerRef} className={`${scrollClass} rounded-xl border border-gray-200 bg-white`}>
           <div className="divide-y divide-gray-100">
             {uniqueLaps.map((lap, index) => {
               const lapNumber = lap?.lapNumber ?? (index + 1);
-              const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+              const isSelected = effectiveSelectedLap != null && String(lapNumber) === String(effectiveSelectedLap);
               const time = formatDuration(lap.moving_time || lap.totalTimerTime || lap.totalElapsedTime || lap.elapsed_time);
               const distanceMeters =
                 lap.totalDistance ?? lap.total_distance ?? lap.distance ?? lap.distanceMeters ?? lap.distance_meters ?? 0;
@@ -264,7 +274,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
                 <button
                   key={index}
                   ref={el => { lapRefs.current[lapNumber] = el; }}
-                  onClick={() => onSelectLapNumber && onSelectLapNumber(isSelected ? null : lapNumber)}
+                  onClick={() => handleSelectLap(isSelected ? null : lapNumber)}
                   className={`w-full text-left px-3 py-3.5 flex items-center gap-3 transition-colors touch-manipulation ${
                     isSelected
                       ? 'bg-primary/10 border-l-[3px] border-primary'
@@ -368,8 +378,8 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
       {/* Lap bar overview */}
       <LapsBarChart
         laps={uniqueLaps}
-        selectedLapNumber={selectedLapNumber}
-        onSelect={onSelectLapNumber}
+        selectedLapNumber={effectiveSelectedLap}
+        onSelect={handleSelectLap}
         sport={training?.sport}
       />
 
@@ -400,7 +410,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
           <tbody className="bg-white/40 backdrop-blur-sm divide-y divide-gray-200/30">
             {uniqueLaps.map((lap, index) => {
               const lapNumber = lap?.lapNumber ?? (index + 1);
-              const isSelected = selectedLapNumber != null && String(lapNumber) === String(selectedLapNumber);
+              const isSelected = effectiveSelectedLap != null && String(lapNumber) === String(effectiveSelectedLap);
 
               const distanceMeters =
                 lap.totalDistance ??
@@ -458,7 +468,7 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
               return (
               <tr
                 key={index}
-                onClick={() => onSelectLapNumber && onSelectLapNumber(lapNumber)}
+                onClick={() => handleSelectLap(isSelected ? null : lapNumber)}
                 ref={(el) => { if (el) lapRefs.current[lapNumber] = el; }}
                 className={`transition-colors hover:bg-white/60 cursor-pointer ${lap.lactate ? 'bg-primary/10' : ''} ${isSelected ? 'ring-2 ring-primary/30 bg-primary/5' : ''}`}
               >

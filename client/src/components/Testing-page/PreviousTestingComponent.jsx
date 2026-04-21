@@ -473,12 +473,12 @@ const PreviousTestingComponent = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="flex flex-col lg:flex-row justify-center gap-6 mt-5"
+            className="flex flex-col lg:flex-row justify-center gap-4 lg:gap-6 mt-4 sm:mt-5"
           >
             <div className={`${glucoseColumnHidden ? 'lg:flex-[2]' : 'lg:flex-[2.5]'} w-full`}>
               <LactateCurve mockData={currentTest} />
             </div>
-            <div className={`lg:flex-1 w-full bg-white rounded-2xl shadow-lg md:p-6 sm:p-2 min-h-[420px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden`}>
+            <div className={`lg:flex-1 w-full bg-white rounded-2xl shadow-lg p-1 sm:p-2 md:p-6 min-h-[380px] sm:min-h-[500px] lg:h-[600px] flex flex-col overflow-hidden`}>
               <TestingForm
                 testData={currentTest}
                 onSave={handleTestUpdate}

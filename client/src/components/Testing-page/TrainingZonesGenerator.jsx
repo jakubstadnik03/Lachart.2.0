@@ -19,6 +19,8 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
   const [showGlossary, setShowGlossary] = useState(false);
   const [ltValues, setLtValues] = useState({ lt1: null, lt2: null });
   const [testZoneOverrides, setTestZoneOverrides] = useState(null);
+  /** Zone model: '5zone' (classic LT-based) or 'seiler' (polarized 3-zone) */
+  const [zoneModel, setZoneModel] = useState('5zone');
 
   const getLocalTestOverrides = (testId) => {
     if (!testId) return null;
@@ -400,6 +402,83 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     }
     }
     
+    // ── Seiler polarized 3-zone model ──────────────────────────────────────
+    if (zoneModel === 'seiler') {
+      const isPace = sport === 'run' || sport === 'swim';
+      const fmt = s => formatPace(s);
+
+      // Bike: Z1 up to LT1, Z2 LT1→LT2, Z3 above LT2
+      // Run/swim: pace inverted (LT1 > LT2 in seconds)
+      const seilerZones = isPace ? {
+        pace: {
+          zone1: {
+            min: fmt(lt1_value / 0.50),
+            max: fmt(lt1_value / 1.00),
+            description: 'Polarized Base (< LT1)',
+            hr: hasHR ? `${Math.round(hr1 * 0.50)}–${Math.round(hr1 * 1.00)} BPM` : 'N/A',
+            percent: '< LT1',
+            lactate: lt1_lactate ? `< ${Number(lt1_lactate).toFixed(1)}` : '-',
+          },
+          zone2: {
+            min: fmt(lt1_value / 1.00),
+            max: fmt(lt2_value / 1.00),
+            description: 'Tempo / Threshold (LT1–LT2)',
+            hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+            percent: 'LT1–LT2',
+            lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+          },
+          zone3: {
+            min: fmt(lt2_value / 1.00),
+            max: fmt(lt2_value / 1.20),
+            description: 'High Intensity (> LT2)',
+            hr: hasHR ? `> ${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+            percent: '> LT2',
+            lactate: lt2_lactate ? `> ${Number(lt2_lactate).toFixed(1)}` : '-',
+          },
+        },
+        heartRate: hasHR ? {
+          zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 1.00) },
+          zone2: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 1.00) },
+          zone3: { min: Math.round(hr2 * 1.00), max: Math.round(hr2 * 1.15) },
+        } : null,
+      } : {
+        power: {
+          zone1: {
+            min: Math.round(lt1_value * 0.50),
+            max: Math.round(lt1_value * 1.00),
+            description: 'Polarized Base (< LT1)',
+            hr: hasHR ? `${Math.round(hr1 * 0.50)}–${Math.round(hr1 * 1.00)} BPM` : 'N/A',
+            percent: '< LT1',
+            lactate: lt1_lactate ? `< ${Number(lt1_lactate).toFixed(1)}` : '-',
+          },
+          zone2: {
+            min: Math.round(lt1_value * 1.00),
+            max: Math.round(lt2_value * 1.00),
+            description: 'Tempo / Threshold (LT1–LT2)',
+            hr: hasHR ? `${Math.round(hr1 * 1.00)}–${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+            percent: 'LT1–LT2',
+            lactate: (lt1_lactate && lt2_lactate) ? `${Number(lt1_lactate).toFixed(1)}–${Number(lt2_lactate).toFixed(1)}` : '-',
+          },
+          zone3: {
+            min: Math.round(lt2_value * 1.00),
+            max: Math.round(lt2_value * 1.20),
+            description: 'High Intensity (> LT2)',
+            hr: hasHR ? `> ${Math.round(hr2 * 1.00)} BPM` : 'N/A',
+            percent: '> LT2',
+            lactate: lt2_lactate ? `> ${Number(lt2_lactate).toFixed(1)}` : '-',
+          },
+        },
+        heartRate: hasHR ? {
+          zone1: { min: Math.round(hr1 * 0.50), max: Math.round(hr1 * 1.00) },
+          zone2: { min: Math.round(hr1 * 1.00), max: Math.round(hr2 * 1.00) },
+          zone3: { min: Math.round(hr2 * 1.00), max: Math.round(hr2 * 1.15) },
+        } : null,
+      };
+      setZones(seilerZones);
+      return;
+    }
+    // ── End Seiler 3-zone ───────────────────────────────────────────────────
+
     // Pro bike: použít power hodnoty (watty), pro run/swim: použít tempo (sekundy)
     if (sport === 'bike') {
       // Pro bike jsou LTP1 a LTP2 už v power hodnotách (watty)
@@ -651,7 +730,7 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
     };
     setZones(applyTestZoneOverrides(calculated, sport));
     }
-  }, [mockData, applyTestZoneOverrides]);
+  }, [mockData, applyTestZoneOverrides, zoneModel]);
 
   useEffect(() => {
     if (mockData && mockData.results && mockData.results.length > 0) {
@@ -748,14 +827,33 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                 <InformationCircleIcon className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            {!demoMode && (
-              <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
-              >
-                Set Zones
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Zone model toggle */}
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium shadow-sm">
+                <button
+                  onClick={() => setZoneModel('5zone')}
+                  className={`px-2.5 py-1.5 transition-colors ${zoneModel === '5zone' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  title="Classic 5-zone LT-based model"
+                >
+                  5-Zone
+                </button>
+                <button
+                  onClick={() => setZoneModel('seiler')}
+                  className={`px-2.5 py-1.5 border-l border-gray-200 transition-colors ${zoneModel === 'seiler' ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  title="Seiler polarized 3-zone model"
+                >
+                  Seiler 3
+                </button>
+              </div>
+              {!demoMode && (
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm hover:shadow-md text-sm font-medium"
+                >
+                  Set Zones
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto -mx-2 sm:mx-0 px-2 sm:px-0 max-w-[320px] sm:max-w-full mx-auto">
@@ -800,22 +898,28 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
                       `transition-all duration-200 ` +
                       'hover:bg-white/40 hover:backdrop-blur pb-1 '
                     }
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.09 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: index * 0.07, duration: 0.25 }}
                   >
                     {/* ZONE NUMBER + DOT */}
                     <td className="px-1 sm:px-3 md:px-6 py-2 sm:py-3 md:py-4 border-r border-white/20">
                       <div className="flex items-center">
                         <span className={
                           `w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 rounded-full mr-1 sm:mr-2 md:mr-3 inline-block border border-white/70 shadow ` +
-                          [
-                            'bg-[#22c55e]/60', // 1 Bright Green - Recovery (matches LactateCurveCalculator)
-                            'bg-[#3b82f6]/60', // 2 Blue - Aerobic (matches LactateCurveCalculator)
-                            'bg-[#fbbf24]/60', // 3 Amber/Yellow - Tempo (matches LactateCurveCalculator)
-                            'bg-[#ef4444]/60', // 4 Red - Threshold (matches LactateCurveCalculator)
-                            'bg-[#8b5cf6]/60', // 5 Purple - VO2max (matches LactateCurveCalculator)
-                          ][zoneNumber - 1] || 'bg-gray-200/60'
+                          (zoneModel === 'seiler'
+                            ? [
+                                'bg-blue-400/70',   // Z1 Base – modrá (klid)
+                                'bg-amber-400/70',  // Z2 Tempo – oranžová
+                                'bg-red-500/70',    // Z3 High – červená
+                              ][zoneNumber - 1] || 'bg-gray-200/60'
+                            : [
+                                'bg-blue-400/70',   // Z1 Recovery – modrá
+                                'bg-green-400/70',  // Z2 Base – zelená
+                                'bg-yellow-400/70', // Z3 Tempo – žlutá
+                                'bg-orange-400/70', // Z4 Threshold – oranžová
+                                'bg-red-500/70',    // Z5 VO2max – červená
+                              ][zoneNumber - 1] || 'bg-gray-200/60')
                         } />
                         <span className="text-xs sm:text-sm md:text-base font-semibold text-gray-900 tracking-wide drop-shadow-[0_0.5px_2px_rgba(0,0,20,0.06)]">
                           {zoneNumber}
@@ -891,13 +995,21 @@ const TrainingZonesGenerator = ({ mockData, demoMode = false }) => {
       {/* Recommendations - minimalist card only */}
       <div className="rounded-xl sm:rounded-xl px-3 sm:px-4 py-3 sm:py-4 bg-white/40 backdrop-blur-sm mt-4 shadow text-gray-700">
         <h4 className="text-sm sm:text-base font-semibold text-blue-900 mb-2">Training Zone Reference</h4>
-        <ul className="text-xs sm:text-sm pl-2 sm:pl-3 space-y-1.5 sm:space-y-1">
-          <li><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline">&lt;90% LT1 : </span>Long easy runs &amp; recovery</li>
-          <li><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline">90–100% LT1 : </span>Aerobic base building</li>
-          <li><span className="font-medium text-gray-900">Zone 3 (Tempo):</span> <span className="hidden sm:inline">LT1–LT2 : </span>Marathon/sweet spot/steady state</li>
-          <li><span className="font-medium text-gray-900">Zone 4 (Threshold):</span> <span className="hidden sm:inline">~LT2 : </span>Threshold/interval, high aerobic</li>
-          <li><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline">&gt;105% LT2 : </span>Fast repeats, <b>max</b> zone</li>
-        </ul>
+        {zoneModel === 'seiler' ? (
+          <ul className="text-xs sm:text-sm space-y-1.5 sm:space-y-1">
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 1 (Polarized Base):</span> <span className="hidden sm:inline text-gray-500">&lt; LT1 · </span>Easy aerobic — bulk of training volume (≥80%)</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-amber-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 2 (Tempo):</span> <span className="hidden sm:inline text-gray-500">LT1–LT2 · </span>Threshold work — use sparingly (~5%)</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-red-500/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 3 (High Intensity):</span> <span className="hidden sm:inline text-gray-500">&gt; LT2 · </span>VO₂max intervals — targeted quality (~15%)</span></li>
+          </ul>
+        ) : (
+          <ul className="text-xs sm:text-sm space-y-1.5 sm:space-y-1">
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 1 (Recovery/Easy):</span> <span className="hidden sm:inline text-gray-500">&lt;90% LT1 · </span>Long easy runs &amp; recovery</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-green-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 2 (Base):</span> <span className="hidden sm:inline text-gray-500">90–100% LT1 · </span>Aerobic base building</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-yellow-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 3 (Tempo):</span> <span className="hidden sm:inline text-gray-500">LT1–LT2 · </span>Marathon / sweet spot</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-orange-400/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 4 (Threshold):</span> <span className="hidden sm:inline text-gray-500">~LT2 · </span>Threshold / interval, high aerobic</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 w-2.5 h-2.5 rounded-full bg-red-500/70 border border-white/70 shadow flex-shrink-0" /><span><span className="font-medium text-gray-900">Zone 5 (VO2max+):</span> <span className="hidden sm:inline text-gray-500">&gt;105% LT2 · </span>Fast repeats, <b>max</b> zone</span></li>
+          </ul>
+        )}
       </div>
 
      

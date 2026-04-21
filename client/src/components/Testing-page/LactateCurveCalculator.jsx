@@ -635,15 +635,18 @@ const lactateZoneLtpOverlayPlugin = {
       if (labels.length > 0) {
         ctx.save();
 
-        const padXBox = 10;
-        const padYBox = 7;
-        const lineGap = 3;
-        const fontPrimary =
-          '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
-        const fontSecondary =
-          '10px system-ui, -apple-system, "Segoe UI", sans-serif';
-        const topMargin = 6;
-        const accentStripH = 3;
+        const mobileMode = opts.isMobile === true;
+        const padXBox = mobileMode ? 6 : 10;
+        const padYBox = mobileMode ? 4 : 7;
+        const lineGap = mobileMode ? 2 : 3;
+        const fontPrimary = mobileMode
+          ? '600 9px system-ui, -apple-system, "Segoe UI", sans-serif'
+          : '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        const fontSecondary = mobileMode
+          ? '8px system-ui, -apple-system, "Segoe UI", sans-serif'
+          : '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+        const topMargin = mobileMode ? 4 : 6;
+        const accentStripH = mobileMode ? 2 : 3;
 
         const drawTooltip = (labelData, boxTop) => {
           const isLt1 = labelData.label === 'LT1';
@@ -790,7 +793,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
   const [allPrevTests, setAllPrevTests] = useState([]);       // all previous same-sport tests (desc)
   const [selectedCompareIds, setSelectedCompareIds] = useState([]); // up to 2 test IDs for PDF comparison
   const [zoneOverride, setZoneOverride] = useState(null);
-  const [showDataTable, setShowDataTable] = useState(true); // Toggle for showing/hiding DataTable
+  const [showDataTable, setShowDataTable] = useState(window.innerWidth >= 768); // Hidden by default on mobile
   const [zonesVisible, setZonesVisible] = useState(true); // Toggle for showing/hiding zone colors
   const zonesVisibleRef = useRef(true); // Ref for plugin access
   const ltpLinesVisibleRef = useRef(true); // Ref for plugin access to ltpLinesVisible state
@@ -2113,6 +2116,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
     isSwimming,
     unitSystem,
     testRunPerMileStorage,
+    isMobile,
   };
   
   const options = {
@@ -2568,15 +2572,15 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
       <UpgradeModal {...UpgradeModalProps} />
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg sm:text-xl font-bold">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <h2 className="text-base sm:text-xl font-bold truncate">
               Lactate Curve
               {trainingTitle && (
-                <span className="text-base sm:text-lg text-gray-800 ml-2">
+                <span className="text-sm sm:text-lg text-gray-800 ml-1 sm:ml-2">
                   {trainingTitle}
                 </span>
               )}
-              <span className="text-base sm:text-lg text-gray-600 ml-2">({formatDate(mockData.date)})</span>
+              <span className="text-sm sm:text-lg text-gray-600 ml-1 sm:ml-2">({formatDate(mockData.date)})</span>
             </h2>
             <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50" role="group">
               <button
@@ -2610,7 +2614,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
             </button>
             <button
               onClick={() => setShowDataTable(!showDataTable)}
-              className="min-h-[44px] min-w-[44px] hidden sm:flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors touch-manipulation"
               aria-label={showDataTable ? "Expand curve" : "Show table"}
               title={showDataTable ? "Expand curve to full width" : "Show data table"}
             >
@@ -2635,7 +2639,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   title="Send report to email"
                 >
                   <EnvelopeIcon className="w-4 h-4 flex-shrink-0" />
-                  {sendingEmail ? 'Sending…' : 'Email'}
+                  <span className="hidden sm:inline">{sendingEmail ? 'Sending…' : 'Email'}</span>
                 </button>
                 {emailStatus?.message && (
                   <div className={`text-xs ${emailStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2655,7 +2659,7 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                   title="Preview and download full report as PDF"
                 >
                   <DocumentArrowDownIcon className="w-4 h-4 flex-shrink-0" />
-                  {pdfPreviewLoading ? 'Preparing…' : 'PDF'}
+                  <span className="hidden sm:inline">{pdfPreviewLoading ? 'Preparing…' : 'PDF'}</span>
                 </button>
                 {pdfStatus?.message && (
                   <div className={`text-xs ${pdfStatus.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -2728,6 +2732,27 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
               )}
               <div className="w-full lg:w-[400px] shrink-0">
                 <DataTable mockData={mockData} />
+                {Number.isFinite(thresholds?.confidence) && (
+                  <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-100 bg-white/60 text-xs text-gray-600">
+                    <span className="font-medium text-gray-700">Threshold confidence:</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          thresholds.confidence >= 65 ? 'bg-emerald-500' :
+                          thresholds.confidence >= 40 ? 'bg-amber-400' : 'bg-rose-400'
+                        }`}
+                        style={{ width: `${thresholds.confidence}%` }}
+                      />
+                    </div>
+                    <span className={`font-semibold tabular-nums ${
+                      thresholds.confidence >= 65 ? 'text-emerald-700' :
+                      thresholds.confidence >= 40 ? 'text-amber-600' : 'text-rose-600'
+                    }`}>
+                      {thresholds.confidence}
+                    </span>
+                    <span className="text-gray-400">/100</span>
+                  </div>
+                )}
               </div>
             </>
           )}

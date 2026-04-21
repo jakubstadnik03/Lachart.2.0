@@ -1,69 +1,49 @@
 "use client";
-import React, { useEffect, useState } from 'react';
-import { getMockTests } from '../../mock/mockApi';
+import React from 'react';
+
+const SPORT_LABELS = {
+  all: 'All',
+  run: 'Running',
+  bike: 'Cycling',
+  swim: 'Swimming',
+};
 
 function SportButton({ sport, isSelected, onClick }) {
-  // Převod názvu sportu na správný formát
-  const formatSportName = (sport) => {
-    if (sport === 'all') return 'All Sports';
-    const sportNames = {
-      'run': 'Running',
-      'bike': 'Cycling',
-      'swim': 'Swimming'
-    };
-    return sportNames[sport] || sport;
-  };
-
+  const label = SPORT_LABELS[sport] || sport;
   return (
-    <div
-      className="flex-1 sm:flex-none px-2 sm:px-3 py-1.5 text-xs sm:text-sm rounded-md cursor-pointer text-center"
+    <button
+      type="button"
+      className="flex-shrink-0 px-3 py-1.5 text-xs sm:text-sm rounded-md cursor-pointer whitespace-nowrap transition-colors"
       onClick={() => onClick(sport)}
-      tabIndex={0}
-      role="button"
       aria-pressed={isSelected}
       style={{
-          backgroundColor: isSelected ? "#FCFCFC" : "#F3F3F3",
-          color: "#686868",
+        backgroundColor: isSelected ? '#FCFCFC' : 'transparent',
+        color: isSelected ? '#111827' : '#686868',
+        boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
       }}
     >
-      {formatSportName(sport)}
-    </div>
+      {label}
+    </button>
   );
 }
 
-const SportsSelector = ({ onSportChange }) => {
-  const [availableSports, setAvailableSports] = useState([]);
-  const [selectedSport, setSelectedSport] = useState("all");
-
-  useEffect(() => {
-    const allTests = getMockTests();
-    // Získej unikátní sporty z testů a seřaď je podle preferovaného pořadí
-    const uniqueSports = [...new Set(allTests.map(test => test.sport))];
-    const orderedSports = ['all'];
-    
-    // Přidej sporty v požadovaném pořadí, pokud existují v datech
-    ['bike', 'run', 'swim'].forEach(sport => {
-      if (uniqueSports.includes(sport)) {
-        orderedSports.push(sport);
-      }
-    });
-    
-    setAvailableSports(orderedSports);
-  }, []);
-
-  const handleSportSelect = (sport) => {
-    setSelectedSport(sport);
-    onSportChange(sport);
-  };
+const SportsSelector = ({ sports = [], selectedSport = 'all', onSportChange }) => {
+  // Derive sport IDs — accept both {id, name} objects and plain strings
+  const sportIds = sports.map(s => (typeof s === 'string' ? s : s.id));
 
   return (
-    <div className="flex gap-1 sm:gap-1.5 items-center p-1.5 rounded-md bg-zinc-100 w-full sm:w-auto min-w-[240px] text-stone-500">
-      {availableSports.map((sport) => (
+    <div
+      className="flex gap-1 items-center p-1 rounded-lg bg-zinc-100 text-stone-500 overflow-x-auto"
+      style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
+    >
+      {/* Hide native scrollbar on WebKit */}
+      <style>{`.sports-selector-scroll::-webkit-scrollbar{display:none}`}</style>
+      {sportIds.map((id) => (
         <SportButton
-          key={sport}
-          sport={sport}
-          isSelected={selectedSport === sport}
-          onClick={handleSportSelect}
+          key={id}
+          sport={id}
+          isSelected={selectedSport === id}
+          onClick={onSportChange}
         />
       ))}
     </div>

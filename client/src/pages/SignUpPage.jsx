@@ -134,8 +134,222 @@ const SignUpPage = () => {
     }
   };
 
+  // ── Native iOS layout ──────────────────────────────────────────
+  if (isCapacitorNative()) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+
+        {/* Navigation back to Sign In */}
+        <div className="px-4 pt-3 pb-1">
+          <button
+            type="button"
+            onClick={() => navigate('/login')}
+            className="flex items-center gap-1 text-primary text-sm font-medium active:opacity-60"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Sign In
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 pb-8">
+          {/* Title */}
+          <div className="mt-4 mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Create Account</h1>
+            <p className="mt-1.5 text-base text-gray-500">Join LaChart to start tracking</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Name row */}
+            <div className="flex gap-3">
+              <input
+                type="text"
+                autoComplete="given-name"
+                required
+                placeholder="First Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="flex-1 min-w-0 px-4 py-4 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+              />
+              <input
+                type="text"
+                autoComplete="family-name"
+                required
+                placeholder="Last Name"
+                value={formData.surname}
+                onChange={(e) => setFormData({ ...formData, surname: e.target.value })}
+                className="flex-1 min-w-0 px-4 py-4 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+              />
+            </div>
+
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              placeholder="Email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full px-4 py-4 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors"
+            />
+
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                placeholder="Password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="w-full px-4 py-4 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-12"
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                {showPassword
+                  ? <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  : <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                }
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                placeholder="Confirm Password"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                className="w-full px-4 py-4 bg-gray-100 rounded-2xl text-base text-gray-900 placeholder-gray-400 outline-none focus:bg-gray-200 transition-colors pr-12"
+              />
+              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                {showConfirmPassword
+                  ? <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  : <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                }
+              </button>
+            </div>
+
+            {/* Role segmented control */}
+            <div className="bg-gray-100 rounded-2xl p-1 flex mt-1">
+              {['athlete', 'coach'].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, role: r })}
+                  className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all capitalize ${
+                    formData.role === r
+                      ? 'bg-white shadow text-gray-900'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+
+            {/* Terms checkbox */}
+            <div className="flex items-start gap-3 py-2">
+              <input
+                type="checkbox"
+                id="nativeAcceptTerms"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-primary shrink-0"
+                required
+              />
+              <label htmlFor="nativeAcceptTerms" className="text-sm text-gray-500 leading-snug">
+                I agree to the{' '}
+                <button type="button" onClick={() => setShowTermsModal(true)} className="text-primary font-medium">
+                  Terms &amp; Conditions
+                </button>{' '}
+                and{' '}
+                <a href="https://lachart.net/privacy" target="_blank" rel="noopener noreferrer" className="text-primary font-medium">
+                  Privacy Policy
+                </a>
+              </label>
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-2xl px-4 py-3">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={!acceptedTerms}
+              className="w-full py-4 rounded-2xl bg-primary text-white text-base font-semibold disabled:opacity-40 active:opacity-70 transition-opacity"
+            >
+              Create Account
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-sm text-gray-500">
+            Already have an account?{' '}
+            <Link to="/login" className="font-semibold text-primary">Sign In</Link>
+          </p>
+        </div>
+
+        {/* Safe-area footer */}
+        <div className="px-6 py-4 border-t border-gray-100 text-center" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}>
+          <div className="flex items-center justify-center gap-4 text-xs text-gray-400">
+            <a href="https://lachart.net/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+            <span>·</span>
+            <a href="/terms">Terms of Use</a>
+          </div>
+        </div>
+
+        {/* Terms modal */}
+        <AnimatePresence>
+          {showTermsModal && (
+            <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100000] bg-black/50 flex items-end justify-center"
+              onClick={() => setShowTermsModal(false)}
+            >
+              <m.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                className="bg-white w-full max-h-[85vh] rounded-t-3xl p-6 overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                <h2 className="text-xl font-bold mb-4 text-gray-900">Terms &amp; Conditions</h2>
+                <div className="text-sm text-gray-600 space-y-3 mb-6">
+                  <p><strong>Welcome to LaChart!</strong> To use our application, you must accept the following Terms and Privacy Policy.</p>
+                  <ol className="list-decimal ml-5 space-y-2">
+                    <li><strong>Data Storage:</strong> Your account and test entries are stored securely.</li>
+                    <li><strong>Privacy:</strong> See our <a href="/privacy" className="text-primary underline">Privacy Policy</a> for full details.</li>
+                    <li><strong>Usage:</strong> You agree to use the application for lawful purposes only.</li>
+                    <li><strong>Account:</strong> You are responsible for keeping your password safe.</li>
+                    <li><strong>Analytics:</strong> The app collects anonymous usage stats to improve the product.</li>
+                    <li><strong>Consent:</strong> By signing up, you consent to receive transactional emails.</li>
+                  </ol>
+                  <p>Contact: <a href="mailto:lachart@lachart.net" className="text-primary underline">lachart@lachart.net</a></p>
+                </div>
+                <button
+                  className="w-full py-4 rounded-2xl bg-primary text-white font-semibold"
+                  onClick={() => { setAcceptedTerms(true); setShowTermsModal(false); }}
+                >
+                  I Accept
+                </button>
+                <button className="w-full py-3 mt-2 text-sm text-gray-500" onClick={() => setShowTermsModal(false)}>
+                  Close
+                </button>
+              </m.div>
+            </m.div>
+          )}
+        </AnimatePresence>
+
+        {/* Strava modal */}
+        <StravaConnectModal
+          isOpen={showStravaModal}
+          onClose={() => { setShowStravaModal(false); navigate('/dashboard', { replace: true }); }}
+          onSkip={() => { setShowStravaModal(false); navigate('/dashboard', { replace: true }); }}
+        />
+      </div>
+    );
+  }
+
+  // ── Web layout ──────────────────────────────────────────────────
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}

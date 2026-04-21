@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -28,6 +28,13 @@ const TestComparison = ({ tests = [] }) => {
   const chartRef = useRef(null);
   const [showThresholdPoints, setShowThresholdPoints] = useState(true);
   const [showHeartRateGraph, setShowHeartRateGraph] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Early return if no tests or tests array is empty
   if (!tests || !Array.isArray(tests) || tests.length === 0) {
@@ -300,9 +307,9 @@ const TestComparison = ({ tests = [] }) => {
         max: showHeartRateGraph ? axisLimitsHRY.max : undefined,
         grid: { color: "rgba(0, 0, 0, 0.1)", borderDash: [5, 5] },
         title: {
-          display: true,
-          text: showHeartRateGraph ? "Heart rate (bpm) / Tepy" : "Lactate (mmol/L)",
-          font: { size: 14 }
+          display: !isMobile,
+          text: showHeartRateGraph ? "Heart rate (bpm)" : "Lactate (mmol/L)",
+          font: { size: isMobile ? 11 : 13 }
         },
         ticks: showHeartRateGraph ? { callback: (value) => Math.round(value) } : undefined
       },
@@ -313,9 +320,9 @@ const TestComparison = ({ tests = [] }) => {
         reverse: !showHeartRateGraph && !isBikeSport,
         grid: { color: "rgba(0, 0, 0, 0.1)", borderDash: [5, 5] },
         title: {
-          display: true,
+          display: !isMobile,
           text: showHeartRateGraph ? "Lactate (mmol/L)" : (isBikeSport ? "Power (W)" : "Pace (min/km)"),
-          font: { size: 14 }
+          font: { size: isMobile ? 11 : 13 }
         },
         ticks: {
           callback: function(value) {
@@ -394,7 +401,7 @@ const TestComparison = ({ tests = [] }) => {
           }`}
           title={showHeartRateGraph ? 'Switch to power/pace vs lactate' : 'Switch to heart rate vs lactate'}
         >
-          {showHeartRateGraph ? 'Show power/pace graph' : 'Show heart rate graph'}
+          {showHeartRateGraph ? <span><span className="hidden sm:inline">Show </span>Power/pace</span> : <span><span className="hidden sm:inline">Show </span>HR graph</span>}
         </button>
         <button
           type="button"
@@ -406,12 +413,12 @@ const TestComparison = ({ tests = [] }) => {
           }`}
           title={showThresholdPoints ? 'Hide LTP1, LTP2, OBLA, etc. and show only curves and data points' : 'Show threshold points again'}
         >
-          {showThresholdPoints ? 'Hide threshold points' : 'Show threshold points'}
+          {showThresholdPoints ? <span><span className="hidden sm:inline">Hide </span>Thresholds</span> : <span><span className="hidden sm:inline">Show </span>Thresholds</span>}
         </button>
       </div>
       {/* Horizontal scroll only around the chart — avoid root overflow-x-auto (forces overflow-y: auto and can clip content below). */}
       <div className="relative w-full min-h-0 overflow-x-auto -mx-1 px-1">
-      <div className="relative w-full h-[350px] sm:h-[500px] md:h-[450px] min-w-[280px]">
+      <div className="relative w-full h-[300px] sm:h-[450px] md:h-[450px] min-w-[280px]">
         {showHeartRateGraph && !hasAnyHRData ? (
           <div className="h-full flex items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-center p-6">
             <p className="text-gray-600">No heart rate data in selected tests. Add HR (bpm) to at least 2 steps per test to see heart rate vs lactate.</p>
@@ -454,15 +461,19 @@ const TestComparison = ({ tests = [] }) => {
                     ctx.lineTo(xPixel, chartArea.bottom);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    const valueText = isBikeSport ? `Power: ${Math.round(ltp.value)}W` : convertPowerToPace(ltp.value, sport);
-                    const lactateText = ltp.lactate != null ? `${Number(ltp.lactate).toFixed(2)} mmol/L` : '';
-                    ctx.font = '11px sans-serif';
+                    const valueText = isBikeSport ? `${Math.round(ltp.value)}W` : convertPowerToPace(ltp.value, sport);
+                    const lactateText = ltp.lactate != null ? `${Number(ltp.lactate).toFixed(1)}` : '';
+                    const mobileMode = chart.width < 480;
+                    ctx.font = mobileMode ? '9px sans-serif' : '11px sans-serif';
                     ctx.fillStyle = '#1f2937';
                     ctx.textAlign = 'left';
                     ctx.textBaseline = 'middle';
-                    const labelX = xPixel + 8;
-                    const labelY = chartArea.top + 15 + testIndex * 28 + i * 14;
-                    const fullLabel = testDate ? `${ltp.label} (${testDate}): ${valueText}${lactateText ? ' | ' + lactateText : ''}` : `${ltp.label}: ${valueText}${lactateText ? ' | ' + lactateText : ''}`;
+                    const labelX = xPixel + 5;
+                    const rowH = mobileMode ? 20 : 28;
+                    const labelY = chartArea.top + 12 + testIndex * rowH + i * (mobileMode ? 10 : 14);
+                    const fullLabel = mobileMode
+                      ? `${ltp.label}: ${valueText}${lactateText ? ' ' + lactateText : ''}`
+                      : testDate ? `${ltp.label} (${testDate}): ${valueText}${lactateText ? ' | ' + lactateText + ' mmol/L' : ''}` : `${ltp.label}: ${valueText}${lactateText ? ' | ' + lactateText + ' mmol/L' : ''}`;
                     ctx.fillText(fullLabel, labelX, labelY);
                     ctx.restore();
                   }

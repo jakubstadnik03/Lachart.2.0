@@ -1,2075 +1,1328 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
-import DeviceConnectionPanel from '../components/LactateTesting/DeviceConnectionPanel';
-import IntervalManager from '../components/LactateTesting/IntervalManager';
-import LiveDashboard from '../components/LactateTesting/LiveDashboard';
-import LactateEntryModal from '../components/LactateTesting/LactateEntryModal';
 import LactateChart from '../components/LactateTesting/LactateChart';
+import LiveDashboard from '../components/LactateTesting/LiveDashboard';
 import ProtocolEditModal from '../components/LactateTesting/ProtocolEditModal';
-import { saveLactateSession, getLactateSessions, getLactateSessionById, completeLactateSession, downloadLactateSessionFit } from '../services/api';
-import { scheduleLactateTestLocalNotifications } from '../utils/lactateTestLocalNotifications';
+import {
+  saveLactateSession, getLactateSessions, getLactateSessionById,
+  completeLactateSession, downloadLactateSessionFit,
+} from '../services/api';
 import deviceConnectivity from '../services/deviceConnectivity';
 import { useTrainer } from '../trainer/react/useTrainer.js';
 import { TrainerConnectModal } from '../trainer/react/TrainerConnectModal.jsx';
 import {
-  PlayIcon,
-  PauseIcon,
-  StopIcon,
-  ClockIcon,
-  ChartBarIcon,
-  PlusIcon,
-  ArrowDownTrayIcon as DownloadIcon,
-  TrashIcon
+  PlayIcon, PauseIcon, StopIcon, ChartBarIcon,
+  ArrowDownTrayIcon as DownloadIcon, TrashIcon, HeartIcon,
+  CheckCircleIcon, Cog6ToothIcon, ArrowPathIcon,
 } from '@heroicons/react/24/outline';
+import { CheckCircleIcon as CheckCircleSolid, BoltIcon as BoltSolid } from '@heroicons/react/24/solid';
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+const fmtTime = (s) => {
+  if (!s && s !== 0) return '—';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+const BORG_LABELS = {
+  6: 'No exertion', 7: 'Extremely light', 9: 'Very light',
+  11: 'Light', 13: 'Somewhat hard', 15: 'Hard',
+  17: 'Very hard', 19: 'Extremely hard', 20: 'Maximal',
+};
+
+// ─────────────────────────────────────────────────────────────
+// TrainerStatusBadge
+// ─────────────────────────────────────────────────────────────
+const TrainerStatusBadge = ({ status }) => {
+  const cfg = {
+    disconnected: { bg: 'bg-gray-100 text-gray-500',   dot: 'bg-gray-400',                  label: 'Disconnected' },
+    scanning:     { bg: 'bg-blue-100 text-blue-600',   dot: 'bg-blue-400 animate-pulse',    label: 'Scanning…'    },
+    connecting:   { bg: 'bg-amber-100 text-amber-600', dot: 'bg-amber-400 animate-pulse',   label: 'Connecting…'  },
+    ready:        { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500',            label: 'Connected'    },
+    controlled:   { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500',            label: 'ERG Mode'     },
+    erg_active:   { bg: 'bg-green-100 text-green-700', dot: 'bg-green-500 animate-pulse',   label: 'ERG Active'   },
+    error:        { bg: 'bg-red-100 text-red-600',     dot: 'bg-red-500',                   label: 'Error'        },
+  };
+  const c = cfg[status] ?? cfg.disconnected;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${c.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
+      {c.label}
+    </span>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// StepProgressBar
+// ─────────────────────────────────────────────────────────────
+const StepProgressBar = ({ steps, currentStep, lactateValues }) => (
+  <div className="flex items-end gap-1 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+    {steps.map((step, idx) => {
+      const done   = idx < currentStep;
+      const active = idx === currentStep;
+      const lv     = lactateValues.find(l => l.step === idx + 1);
+      return (
+        <React.Fragment key={idx}>
+          <div className={`
+            flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all duration-200
+            ${active ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105 ring-2 ring-primary/30'
+              : done  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              :         'bg-white/60 text-gray-400 border border-gray-100'}
+          `}>
+            {done
+              ? <CheckCircleSolid className="w-3.5 h-3.5 text-emerald-500" />
+              : <span className={`text-xs font-bold leading-none ${active ? 'text-white' : 'text-gray-400'}`}>{idx + 1}</span>
+            }
+            <span className={`text-[11px] font-semibold leading-none ${active ? 'text-white' : done ? 'text-emerald-600' : 'text-gray-400'}`}>
+              {step.targetPower}W
+            </span>
+            {lv && (
+              <span className={`text-[10px] font-medium leading-none ${active ? 'text-white/80' : 'text-emerald-600'}`}>
+                {lv.lactate.toFixed(1)}
+              </span>
+            )}
+          </div>
+          {idx < steps.length - 1 && (
+            <div className={`flex-shrink-0 w-3 h-px mb-3 ${idx < currentStep ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────
 const LactateTestingPage = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
 
-  // New Trainer Connectivity System (FTMS/Companion)
+  // ── Trainer ───────────────────────────────────────────────
   const trainer = useTrainer();
   const [showTrainerModal, setShowTrainerModal] = useState(false);
+  const [showProtocolEdit, setShowProtocolEdit] = useState(false);
 
-  // Test state
-  const [testState, setTestState] = useState('idle'); // idle, running, paused, completed
-  const [currentStep, setCurrentStep] = useState(0);
+  // ── Test state ────────────────────────────────────────────
+  const [testState,     setTestState]     = useState('idle');
+  const [currentStep,   setCurrentStep]   = useState(0);
   const [intervalTimer, setIntervalTimer] = useState(0);
   const [totalTestTime, setTotalTestTime] = useState(0);
-  const [phase, setPhase] = useState('work'); // 'work', 'recovery', 'countdown'
-  const [countdown, setCountdown] = useState(0); // Countdown before interval start (3, 2, 1, 0)
-  const [recoveryTimer, setRecoveryTimer] = useState(0); // Recovery timer (counts up during recovery)
+  const [phase,         setPhase]         = useState('work');
+  const [countdown,     setCountdown]     = useState(0);
+  const [recoveryTimer, setRecoveryTimer] = useState(0);
 
-  // Device connections
+  // ── Devices ───────────────────────────────────────────────
   const [devices, setDevices] = useState({
     bikeTrainer: { connected: false, data: null },
-    heartRate: { connected: false, data: null },
-    moxy: { connected: false, data: null },
-    coreTemp: { connected: false, data: null },
-    vo2master: { connected: false, data: null }
+    heartRate:   { connected: false, data: null },
+    moxy:        { connected: false, data: null },
+    coreTemp:    { connected: false, data: null },
+    vo2master:   { connected: false, data: null },
   });
 
-  // Real-time data streams
+  // ── Live data ─────────────────────────────────────────────
   const [liveData, setLiveData] = useState({
-    power: 0,
-    cadence: 0,
-    heartRate: 0,
-    smo2: 0,
-    thb: 0,
-    coreTemp: 0,
-    vo2: 0,
-    vco2: 0,
-    ventilation: 0,
-    speed: 0,
-    timestamp: Date.now()
+    power: 0, cadence: 0, heartRate: 0, smo2: 0, thb: 0,
+    coreTemp: 0, vo2: 0, vco2: 0, ventilation: 0, speed: 0,
+    timestamp: Date.now(),
   });
-  
-  // Interval protocol
+
+  // ── Protocol ──────────────────────────────────────────────
   const [protocol, setProtocol] = useState({
-    workDuration: 360, // seconds
-    recoveryDuration: 60, // seconds
-    steps: [],
-    startPower: 100, // watts
-    powerIncrement: 20, // watts per step
-    maxSteps: 8
+    workDuration: 360, recoveryDuration: 60,
+    steps: [], startPower: 100, powerIncrement: 20, maxSteps: 8,
   });
 
-  // Keep refs in sync with state
-  useEffect(() => {
-    liveDataRef.current = liveData;
-  }, [liveData]);
-  
-  useEffect(() => {
-    currentStepRef.current = currentStep;
-  }, [currentStep]);
-  
-  useEffect(() => {
-    intervalTimerRef2.current = intervalTimer;
-  }, [intervalTimer]);
-  
-  useEffect(() => {
-    totalTestTimeRef.current = totalTestTime;
-  }, [totalTestTime]);
-
-  useEffect(() => {
-    testStateRef.current = testState;
-  }, [testState]);
-
-  const protocolRef = useRef(protocol);
-  useEffect(() => {
-    protocolRef.current = protocol;
-  }, [protocol]);
-
-  // Historical data for charts
+  // ── Historical & lactate ──────────────────────────────────
   const [historicalData, setHistoricalData] = useState([]);
-  const [lactateValues, setLactateValues] = useState([]); // [{step, power, lactate, borg, time}]
+  const [lactateValues,  setLactateValues]  = useState([]);
 
-  const handleProtocolSubmit = useCallback((nextProtocol) => {
-    setProtocol(nextProtocol);
-    setTimeout(() => {
-      addNotification('Interval protocol updated', 'success');
-    }, 0);
-  }, [addNotification]);
+  // ── Inline lactate form ───────────────────────────────────
+  const [lactateInput, setLactateInput] = useState('');
+  const [borgInput,    setBorgInput]    = useState('');
+  const lactateInputRef = useRef(null);
 
-  // UI state
-  const [showLactateModal, setShowLactateModal] = useState(false);
-  const [showCalibration, setShowCalibration] = useState(false);
-  const [showProtocolEdit, setShowProtocolEdit] = useState(false);
-  const [mockDataMode, setMockDataMode] = useState(false); // Mock data mode for testing
-  // Always use new trainer system - old system removed
-
-  // Previous Lactate Sessions
-  const [previousSessions, setPreviousSessions] = useState([]);
-  const [selectedSessionId, setSelectedSessionId] = useState('');
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [loadingSessions, setLoadingSessions] = useState(false);
-
-  // Refs for intervals
-  const intervalTimerRef = useRef(null);
-  const dataCollectionIntervalRef = useRef(null);
-  const testTimerRef = useRef(null);
-  const countdownRef = useRef(null);
-  const recoveryTimerRef = useRef(null);
-  const liveDataRef = useRef(liveData);
-  const currentStepRef = useRef(currentStep);
-  const intervalTimerRef2 = useRef(intervalTimer);
-  const totalTestTimeRef = useRef(totalTestTime);
-  const testStateRef = useRef(testState);
-  const phaseRef = useRef(phase);
-  const mockDeviceIntervalsRef = useRef({}); // For mock data generation per device
+  // ── Timer refs ────────────────────────────────────────────
+  const intervalTimerRef       = useRef(null);
+  const dataCollectionRef      = useRef(null);
+  const testTimerRef           = useRef(null);
+  const countdownRef           = useRef(null);
+  const recoveryTimerRef       = useRef(null);
+  const liveDataRef            = useRef(liveData);
+  const currentStepRef         = useRef(currentStep);
+  const intervalTimerRef2      = useRef(intervalTimer);
+  const totalTestTimeRef       = useRef(totalTestTime);
+  const testStateRef           = useRef(testState);
+  const phaseRef               = useRef(phase);
+  const protocolRef            = useRef(protocol);
   const handleStartIntervalRef = useRef(null);
-  
-  // Keep phase ref in sync
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
 
-  // Update bikeTrainer device state when trainer connects/disconnects
+  // Keep refs in sync
+  useEffect(() => { liveDataRef.current       = liveData;      }, [liveData]);
+  useEffect(() => { currentStepRef.current    = currentStep;   }, [currentStep]);
+  useEffect(() => { intervalTimerRef2.current = intervalTimer; }, [intervalTimer]);
+  useEffect(() => { totalTestTimeRef.current  = totalTestTime; }, [totalTestTime]);
+  useEffect(() => { testStateRef.current      = testState;     }, [testState]);
+  useEffect(() => { phaseRef.current          = phase;         }, [phase]);
+  useEffect(() => { protocolRef.current       = protocol;      }, [protocol]);
+
+  // ── Initialize protocol steps ─────────────────────────────
   useEffect(() => {
-    if (trainer.connectedDevice && trainer.status !== 'disconnected') {
-      // Update bikeTrainer to show as connected immediately
-      setDevices(prev => ({
-        ...prev,
-        bikeTrainer: {
-          connected: true,
-          name: trainer.connectedDevice.name, // Store trainer name
-          data: prev.bikeTrainer?.data || {
-            power: null,
-            cadence: null,
-            speed: null,
+    const steps = Array.from({ length: protocol.maxSteps }, (_, i) => ({
+      stepNumber:      i + 1,
+      targetPower:     protocol.startPower + i * protocol.powerIncrement,
+      duration:        protocol.workDuration,
+      recoveryDuration: protocol.recoveryDuration,
+    }));
+    setProtocol(prev => ({ ...prev, steps }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [protocol.startPower, protocol.powerIncrement, protocol.maxSteps, protocol.workDuration, protocol.recoveryDuration]);
+
+  // ── Trainer → bikeTrainer device sync ─────────────────────
+  useEffect(() => {
+    const connected = !!trainer.connectedDevice && trainer.status !== 'disconnected';
+    setDevices(prev => ({
+      ...prev,
+      bikeTrainer: connected
+        ? {
+            connected: true,
+            name: trainer.connectedDevice?.name,
+            data: {
+              power:   trainer.telemetry?.power   ?? null,
+              cadence: trainer.telemetry?.cadence ?? null,
+              speed:   trainer.telemetry?.speed   ?? null,
+            },
           }
-        }
-      }));
-    } else if (trainer.status === 'disconnected' || !trainer.connectedDevice) {
-      // Disconnect bikeTrainer when trainer disconnects
-      setDevices(prev => ({
-        ...prev,
-        bikeTrainer: { connected: false, data: null, name: null }
-      }));
-    }
-  }, [trainer.connectedDevice, trainer.status]);
+        : { connected: false, data: null },
+    }));
+  }, [trainer.connectedDevice, trainer.status, trainer.telemetry]);
 
-  // Integrate trainer system telemetry
+  // ── Trainer telemetry → liveData ──────────────────────────
   useEffect(() => {
     if (!trainer.telemetry) return;
+    const t = trainer.telemetry;
+    setLiveData(prev => {
+      const upd = { ...prev, timestamp: Date.now() };
+      if (phaseRef.current === 'recovery') {
+        upd.power = 0; upd.cadence = 0; upd.speed = 0;
+      } else {
+        if (t.power   != null) upd.power   = t.power;
+        if (t.cadence != null) upd.cadence = t.cadence;
+        if (t.speed   != null) upd.speed   = t.speed;
+      }
+      liveDataRef.current = upd;
+      return upd;
+    });
+  }, [trainer.telemetry]);
 
-    const telemetry = trainer.telemetry;
-    const currentPhase = phaseRef.current;
-    
-    // Update bikeTrainer device state with telemetry data
-    if (trainer.connectedDevice && trainer.status !== 'disconnected') {
-      setDevices(prev => ({
-        ...prev,
-        bikeTrainer: {
-          connected: true,
-          data: {
-            power: telemetry.power || null,
-            cadence: telemetry.cadence || null,
-            speed: telemetry.speed || null,
-          }
-        }
-      }));
-
-      // Update liveData with trainer telemetry
-      setLiveData(prev => {
-        const updated = { ...prev, timestamp: Date.now() };
-        
-        // During recovery phase, force power/cadence/speed to 0
-        if (currentPhase === 'recovery') {
-          updated.power = 0;
-          updated.cadence = 0;
-          updated.speed = 0;
-        } else {
-          if (telemetry.power !== undefined && telemetry.power !== null) {
-            updated.power = telemetry.power;
-          }
-          if (telemetry.cadence !== undefined && telemetry.cadence !== null) {
-            updated.cadence = telemetry.cadence;
-          }
-          if (telemetry.speed !== undefined && telemetry.speed !== null) {
-            updated.speed = telemetry.speed;
-          }
-        }
-        
-        liveDataRef.current = updated;
-        return updated;
-      });
-    }
-  }, [trainer.telemetry, trainer.connectedDevice, trainer.status]);
-
-  // Auto-request control and start when trainer connects
+  // ── Auto-request ERG control when trainer connects ─────────
   useEffect(() => {
-    if (trainer.status === 'ready' && trainer.requestControl && trainer.start) {
-      const setupTrainer = async () => {
+    if (trainer.status === 'ready' && trainer.requestControl) {
+      (async () => {
         try {
           await trainer.requestControl();
-          await trainer.start();
-          addNotification('Trainer control granted and started', 'success');
+          if (trainer.start) await trainer.start();
+          addNotification('Trainer ERG control established ✓', 'success');
         } catch (err) {
-          console.error('Failed to setup trainer:', err);
-          addNotification('Failed to setup trainer control', 'warning');
+          console.error('Trainer control failed:', err);
+          addNotification('Could not get ERG control', 'warning');
         }
-      };
-      setupTrainer();
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainer.status]);
 
-  // Initialize protocol steps
-  useEffect(() => {
-    const steps = [];
-    for (let i = 0; i < protocol.maxSteps; i++) {
-      steps.push({
-        stepNumber: i + 1,
-        targetPower: protocol.startPower + (i * protocol.powerIncrement),
-        phase: 'work', // 'work' or 'recovery'
-        duration: i === 0 ? protocol.workDuration : protocol.workDuration,
-        recoveryDuration: protocol.recoveryDuration
-      });
-    }
-    setProtocol(prev => ({ ...prev, steps }));
-  }, [protocol.startPower, protocol.powerIncrement, protocol.maxSteps, protocol.workDuration, protocol.recoveryDuration]);
-
-  // Data collection - collect data every second from test start
-  // This function MUST be called every second to save all data
+  // ── Data collection ────────────────────────────────────────
   const collectDataPoint = useCallback(() => {
-    // Always collect data when called - save EVERY value, even if 0 or null
-    const currentLiveData = liveDataRef.current;
-    const currentTotalTime = totalTestTimeRef.current;
-    const currentStep = currentStepRef.current;
-    const currentIntervalTime = intervalTimerRef2.current;
-    
-    // Create data point with ALL values - save everything every second
-    const dataPoint = {
-      power: currentLiveData.power !== undefined ? currentLiveData.power : null,
-      cadence: currentLiveData.cadence !== undefined ? currentLiveData.cadence : null,
-      speed: currentLiveData.speed !== undefined ? currentLiveData.speed : null,
-      heartRate: currentLiveData.heartRate !== undefined ? currentLiveData.heartRate : null,
-      smo2: currentLiveData.smo2 !== undefined ? currentLiveData.smo2 : null,
-      thb: currentLiveData.thb !== undefined ? currentLiveData.thb : null,
-      coreTemp: currentLiveData.coreTemp !== undefined ? currentLiveData.coreTemp : null,
-      vo2: currentLiveData.vo2 !== undefined ? currentLiveData.vo2 : null,
-      vco2: currentLiveData.vco2 !== undefined ? currentLiveData.vco2 : null,
-      ventilation: currentLiveData.ventilation !== undefined ? currentLiveData.ventilation : null,
-      timestamp: Date.now(),
-      step: currentStep,
-      intervalTime: currentIntervalTime,
-      totalTime: currentTotalTime
+    const d = liveDataRef.current;
+    setHistoricalData(prev => [...prev, {
+      power:        d.power        ?? null,
+      cadence:      d.cadence      ?? null,
+      speed:        d.speed        ?? null,
+      heartRate:    d.heartRate    ?? null,
+      smo2:         d.smo2         ?? null,
+      thb:          d.thb          ?? null,
+      coreTemp:     d.coreTemp     ?? null,
+      vo2:          d.vo2          ?? null,
+      vco2:         d.vco2         ?? null,
+      ventilation:  d.ventilation  ?? null,
+      timestamp:    Date.now(),
+      step:         currentStepRef.current,
+      intervalTime: intervalTimerRef2.current,
+      totalTime:    totalTestTimeRef.current,
+    }]);
+  }, []);
+
+  // ── Recovery timer (auto-started when phase → 'recovery') ──
+  useEffect(() => {
+    if (phase !== 'recovery' || testState !== 'running') return;
+    if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
+    setRecoveryTimer(0);
+    setTimeout(() => lactateInputRef.current?.focus(), 300);
+
+    recoveryTimerRef.current = setInterval(() => {
+      setRecoveryTimer(prev => {
+        const dur = protocolRef.current.recoveryDuration || 60;
+        if (prev + 1 >= dur) {
+          clearInterval(recoveryTimerRef.current);
+          recoveryTimerRef.current = null;
+          setTimeout(() => handleStartIntervalRef.current?.(), 100);
+          return dur;
+        }
+        return prev + 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (recoveryTimerRef.current) { clearInterval(recoveryTimerRef.current); recoveryTimerRef.current = null; }
     };
-    
-    // Always add to historical data - save every second
-    setHistoricalData(prev => {
-      const newData = [...prev, dataPoint];
-      
-      // Log every point for first 20, then every 10
-      if (newData.length <= 20 || newData.length % 10 === 0) {
-        console.log(`[collectDataPoint] ✅ #${newData.length} | Time: ${currentTotalTime}s | Power: ${dataPoint.power ?? 'null'}W | HR: ${dataPoint.heartRate ?? 'null'} | Cadence: ${dataPoint.cadence?.toFixed(0) ?? 'null'}rpm | Speed: ${dataPoint.speed?.toFixed(1) ?? 'null'}km/h`);
-      }
-      
-      return newData;
-    });
-  }, []); // No dependencies - uses refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, testState]);
 
-  const stopMockDeviceStream = useCallback((deviceType) => {
-    const intervals = mockDeviceIntervalsRef.current;
-    if (intervals[deviceType]) {
-      clearInterval(intervals[deviceType]);
-      delete intervals[deviceType];
-    }
-  }, []);
-
-  const stopAllMockDeviceStreams = useCallback(() => {
-    const intervals = mockDeviceIntervalsRef.current;
-    Object.keys(intervals).forEach((deviceType) => {
-      clearInterval(intervals[deviceType]);
-      delete intervals[deviceType];
-    });
-  }, []);
-
-  const updateDeviceData = useCallback((deviceType, data) => {
-    setDevices(prev => ({
-      ...prev,
-      [deviceType]: {
-        ...prev[deviceType],
-        connected: true,
-        data
-      }
-    }));
-
-    setLiveData(prev => {
-      const updated = {
-        ...prev,
-        timestamp: Date.now()
-      };
-      
-      if (deviceType === 'bikeTrainer') {
-        // During recovery phase, force power/cadence/speed to 0
-        if (phase === 'recovery') {
-          updated.power = 0;
-          updated.cadence = 0;
-          updated.speed = 0;
-        } else {
-          if (data.power !== null && data.power !== undefined) {
-            updated.power = data.power;
-          }
-          if (data.cadence !== null && data.cadence !== undefined) {
-            updated.cadence = data.cadence;
-          }
-          if (data.speed !== null && data.speed !== undefined) {
-            updated.speed = data.speed;
-          }
-        }
-      }
-      
-      if (deviceType === 'heartRate') {
-        // During recovery, simulate gradually decreasing HR
-        if (phase === 'recovery' && data.heartRate !== null && data.heartRate !== undefined) {
-          // Gradually decrease HR during recovery (about 1-2 bpm per 10 seconds)
-          const decreaseRate = recoveryTimer / 10; // Decrease by ~1 bpm per 10 seconds
-          updated.heartRate = Math.max(data.heartRate - decreaseRate, data.heartRate * 0.85); // Don't go below 85% of current HR
-        } else {
-          if (data.heartRate !== null && data.heartRate !== undefined) updated.heartRate = data.heartRate;
-        }
-      } else {
-        // For other devices, update normally
-        if (data.smo2 !== null && data.smo2 !== undefined) updated.smo2 = data.smo2;
-        if (data.thb !== null && data.thb !== undefined) updated.thb = data.thb;
-        if (data.coreTemp !== null && data.coreTemp !== undefined) updated.coreTemp = data.coreTemp;
-        if (data.vo2 !== null && data.vo2 !== undefined) updated.vo2 = data.vo2;
-        if (data.vco2 !== null && data.vco2 !== undefined) updated.vco2 = data.vco2;
-        if (data.ventilation !== null && data.ventilation !== undefined) updated.ventilation = data.ventilation;
-      }
-      
-      liveDataRef.current = updated;
-      
-      if (deviceType === 'bikeTrainer' && (data.power !== null || data.cadence !== null || data.speed !== null)) {
-        if (Math.random() < 0.1) {
-          console.log(`[updateDeviceData] bikeTrainer: Power=${updated.power ?? 'null'}W, Cadence=${updated.cadence?.toFixed(0) ?? 'null'}rpm, Speed=${updated.speed?.toFixed(1) ?? 'null'}km/h (phase: ${phase})`);
-        }
-      }
-      
-      return updated;
-    });
-  }, [phase, recoveryTimer]);
-
-  const startMockDeviceStream = useCallback((deviceType) => {
-    if (!mockDataMode) return;
-    stopMockDeviceStream(deviceType);
-    const intervals = mockDeviceIntervalsRef.current;
-
-    if (deviceType === 'bikeTrainer') {
-      setDevices(prev => ({
-        ...prev,
-        bikeTrainer: {
-          connected: true,
-          data: prev.bikeTrainer?.data || { power: 0, cadence: 0, speed: 0 }
-        }
-      }));
-
-      let mockPower = 0;
-      let mockCadence = 0;
-      let mockSpeed = 0;
-
-      intervals[deviceType] = setInterval(() => {
-        const currentPhase = phaseRef.current;
-        const isRunning = testStateRef.current === 'running';
-        
-        // During recovery phase, generate 0W (not pedaling)
-        if (isRunning && currentPhase === 'recovery') {
-          // Gradually decrease power, cadence, speed to 0
-          mockPower = mockPower * 0.9; // Decay to 0
-          mockPower = Math.max(0, mockPower);
-          
-          mockCadence = mockCadence * 0.9; // Decay to 0
-          mockCadence = Math.max(0, mockCadence);
-          
-          mockSpeed = mockSpeed * 0.9; // Decay to 0
-          mockSpeed = Math.max(0, mockSpeed);
-
-          updateDeviceData('bikeTrainer', {
-            power: Math.round(mockPower),
-            cadence: Math.round(mockCadence),
-            speed: Math.round(mockSpeed * 10) / 10
-          });
-          return;
-        }
-
-        // During work phase, generate normal power
-        const currentProtocol = protocolRef.current;
-        const steps = currentProtocol?.steps || [];
-        const currentStepValue = currentStepRef.current;
-        const currentStepData = steps[currentStepValue];
-        const targetPower = currentStepData?.targetPower || currentProtocol?.startPower || 100;
-
-        const powerDiff = targetPower - mockPower;
-        mockPower = mockPower + (powerDiff * 0.1) + ((Math.random() - 0.5) * 10);
-        mockPower = Math.max(0, mockPower);
-
-        mockCadence = 70 + (Math.random() * 20) + (mockPower / 10);
-        mockCadence = Math.min(105, Math.max(60, mockCadence));
-
-        mockSpeed = (mockPower / 10) + (mockCadence / 3) + (Math.random() * 2);
-        mockSpeed = Math.max(10, Math.min(40, mockSpeed));
-
-        updateDeviceData('bikeTrainer', {
-          power: Math.round(mockPower),
-          cadence: Math.round(mockCadence),
-          speed: Math.round(mockSpeed * 10) / 10
-        });
-      }, 500);
-      return;
-    }
-
-    if (deviceType === 'heartRate') {
-      setDevices(prev => ({
-        ...prev,
-        heartRate: {
-          connected: true,
-          data: prev.heartRate?.data || { heartRate: 0 }
-        }
-      }));
-
-      let mockHeartRate = 120;
-      intervals[deviceType] = setInterval(() => {
-        const targetPower = liveDataRef.current.power || 120;
-        const hrTrend = targetPower / 2;
-        mockHeartRate += (hrTrend - mockHeartRate) * 0.05 + (Math.random() - 0.5) * 4;
-        mockHeartRate = Math.min(190, Math.max(80, mockHeartRate));
-
-        updateDeviceData('heartRate', { heartRate: Math.round(mockHeartRate) });
-      }, 700);
-      return;
-    }
-
-    if (deviceType === 'moxy') {
-      setDevices(prev => ({
-        ...prev,
-        moxy: {
-          connected: true,
-          data: prev.moxy?.data || { smo2: 0, thb: 0 }
-        }
-      }));
-
-      let mockSmo2 = 70;
-      let mockThb = 12;
-      intervals[deviceType] = setInterval(() => {
-        const loadFactor = (liveDataRef.current.power || 100) / 300;
-        mockSmo2 += ((65 - (loadFactor * 10)) - mockSmo2) * 0.05 + (Math.random() - 0.5);
-        mockSmo2 = Math.min(80, Math.max(55, mockSmo2));
-
-        mockThb += (Math.random() - 0.5) * 0.1;
-        mockThb = Math.min(13.5, Math.max(10, mockThb));
-
-        updateDeviceData('moxy', {
-          smo2: Math.round(mockSmo2 * 10) / 10,
-          thb: Math.round(mockThb * 10) / 10
-        });
-      }, 900);
-      return;
-    }
-
-    if (deviceType === 'coreTemp') {
-      setDevices(prev => ({
-        ...prev,
-        coreTemp: {
-          connected: true,
-          data: prev.coreTemp?.data || { coreTemp: 37.0 }
-        }
-      }));
-
-      let mockCoreTemp = 37.0;
-      intervals[deviceType] = setInterval(() => {
-        const loadFactor = (liveDataRef.current.power || 100) / 300;
-        // Core temp increases with load, typically 37-39°C range
-        const targetTemp = 37.0 + (loadFactor * 1.5);
-        mockCoreTemp += (targetTemp - mockCoreTemp) * 0.02 + (Math.random() - 0.5) * 0.1;
-        mockCoreTemp = Math.min(39.5, Math.max(36.5, mockCoreTemp));
-
-        updateDeviceData('coreTemp', {
-          coreTemp: Math.round(mockCoreTemp * 10) / 10
-        });
-      }, 2000);
-      return;
-    }
-
-    if (deviceType === 'vo2master') {
-      setDevices(prev => ({
-        ...prev,
-        vo2master: {
-          connected: true,
-          data: prev.vo2master?.data || { vo2: 30, vco2: 25, ventilation: 60 }
-        }
-      }));
-
-      let mockVo2 = 30;
-      let mockVco2 = 25;
-      let mockVentilation = 60;
-      intervals[deviceType] = setInterval(() => {
-        const loadFactor = (liveDataRef.current.power || 100) / 300;
-        const hrFactor = (liveDataRef.current.heartRate || 120) / 180;
-        
-        // VO2 increases with load (typically 20-60 ml/kg/min)
-        const targetVo2 = 20 + (loadFactor * 40);
-        mockVo2 += (targetVo2 - mockVo2) * 0.05 + (Math.random() - 0.5) * 2;
-        mockVo2 = Math.min(65, Math.max(20, mockVo2));
-
-        // VCO2 is typically 0.8-1.0x VO2 (RER)
-        const targetVco2 = mockVo2 * 0.9;
-        mockVco2 += (targetVco2 - mockVco2) * 0.05 + (Math.random() - 0.5) * 1.5;
-        mockVco2 = Math.min(65, Math.max(20, mockVco2));
-
-        // Ventilation increases with load and HR (typically 40-150 L/min)
-        const targetVentilation = 40 + (loadFactor * 80) + (hrFactor * 30);
-        mockVentilation += (targetVentilation - mockVentilation) * 0.05 + (Math.random() - 0.5) * 5;
-        mockVentilation = Math.min(160, Math.max(35, mockVentilation));
-
-        updateDeviceData('vo2master', {
-          vo2: Math.round(mockVo2 * 10) / 10,
-          vco2: Math.round(mockVco2 * 10) / 10,
-          ventilation: Math.round(mockVentilation * 10) / 10
-        });
-      }, 1500);
-      return;
-    }
-  }, [mockDataMode, stopMockDeviceStream, setDevices, updateDeviceData]);
-
-  // Start interval timer for current phase
+  // ── Interval timer ─────────────────────────────────────────
   const startIntervalTimer = useCallback(() => {
-    if (intervalTimerRef.current) {
-      clearInterval(intervalTimerRef.current);
-    }
-    
+    if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
     intervalTimerRef.current = setInterval(() => {
       setIntervalTimer(prev => {
-        const currentStepData = protocol.steps[currentStep];
-        const maxTime = currentStepData?.duration || 360;
-        
+        const maxTime = protocolRef.current.steps[currentStepRef.current]?.duration || 360;
         if (prev + 1 >= maxTime) {
-          // Interval finished, move to recovery
-          setPhase('recovery');
+          clearInterval(intervalTimerRef.current);
+          intervalTimerRef.current = null;
           setIntervalTimer(0);
-          setRecoveryTimer(0);
-          
-          // Set power to 0 W on trainer during recovery
-          if (devices.bikeTrainer?.connected) {
-            setTimeout(async () => {
-              try {
-                if (trainer.setErgWatts && trainer.status === 'controlled') {
-                  await trainer.setErgWatts(0);
-                  console.log('✅ Power set to 0W during recovery');
-                }
-              } catch (err) {
-                console.error('Failed to set power to 0 during recovery:', err);
-              }
-            }, 100);
+          setPhase('recovery');
+          if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+            setTimeout(() => trainer.setErgWatts(0).catch(console.error), 100);
           }
-          
-          // Start recovery timer with auto-start next interval
-          if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
-          recoveryTimerRef.current = setInterval(() => {
-            setRecoveryTimer(prev => {
-              const recoveryDuration = protocol.recoveryDuration || 60;
-              // Auto-start next interval when recovery duration is reached
-              if (prev + 1 >= recoveryDuration) {
-                if (recoveryTimerRef.current) {
-                  clearInterval(recoveryTimerRef.current);
-                  recoveryTimerRef.current = null;
-                }
-                // Automatically start next interval
-                setTimeout(() => {
-                  if (handleStartIntervalRef.current) {
-                    handleStartIntervalRef.current();
-                  }
-                }, 100);
-                return recoveryDuration;
-              }
-              return prev + 1;
-            });
-          }, 1000);
-          
-          // Automatically open lactate entry modal
-          setTimeout(() => {
-            setShowLactateModal(true);
-            addNotification('Interval completed. Enter lactate value.', 'info');
-          }, 0);
           return 0;
         }
         return prev + 1;
       });
     }, 1000);
-  }, [currentStep, protocol.steps, protocol.recoveryDuration, devices.bikeTrainer?.connected, addNotification, trainer]);
+  }, [trainer]);
 
-  // Start test
-  const handleStartTest = () => {
-    if (testState === 'idle' && showCalibration) {
-      setShowCalibration(false);
-    }
-
-    // Reset all state
-    setCurrentStep(0);
-    currentStepRef.current = 0; // Update ref immediately
-    setIntervalTimer(0);
-    intervalTimerRef2.current = 0; // Update ref immediately
-    setTotalTestTime(0);
-    totalTestTimeRef.current = 0; // Update ref immediately
-    setHistoricalData([]);
-    setLactateValues([]);
-    setPhase('work');
-    setCountdown(0);
-    
-    console.log('[handleStartTest] 🔄 Starting test, resetting all state...');
-    
-    // Update testStateRef FIRST, before setting state (React state is async)
-    testStateRef.current = 'running';
-    setTestState('running');
-    
-    console.log('[handleStartTest] ✅ Test state set to running, testStateRef:', testStateRef.current);
-
-    // Auto-connect mock devices if mock mode is enabled
-    if (mockDataMode) {
-      if (!devices.bikeTrainer?.connected) {
-        startMockDeviceStream('bikeTrainer');
-      }
-      if (!devices.heartRate?.connected) {
-        startMockDeviceStream('heartRate');
-      }
-      if (!devices.moxy?.connected) {
-        startMockDeviceStream('moxy');
-      }
-      if (!devices.coreTemp?.connected) {
-        startMockDeviceStream('coreTemp');
-      }
-      if (!devices.vo2master?.connected) {
-        startMockDeviceStream('vo2master');
-      }
-    }
-
-    // Start total test timer FIRST
-    if (testTimerRef.current) {
-      clearInterval(testTimerRef.current);
-    }
-    testTimerRef.current = setInterval(() => {
-      setTotalTestTime(prev => {
-        const newTime = prev + 1;
-        totalTestTimeRef.current = newTime; // Update ref immediately
-        if (newTime % 10 === 0) {
-          console.log(`[Test Timer] ⏱️ Total time: ${newTime}s`);
-        }
-        return newTime;
-      });
-    }, 1000);
-    console.log('[handleStartTest] ✅ Test timer started, interval ID:', testTimerRef.current);
-
-    // Start data collection interval
-    if (dataCollectionIntervalRef.current) {
-      clearInterval(dataCollectionIntervalRef.current);
-      dataCollectionIntervalRef.current = null;
-    }
-    
-    // Collect first data point immediately (at time 0)
-    setTimeout(() => {
-      console.log('[handleStartTest] 🔄 Collecting first data point, testStateRef:', testStateRef.current);
-      collectDataPoint();
-      console.log('[handleStartTest] ✅ First data point collected, totalTestTime:', totalTestTimeRef.current);
-    }, 500);
-    
-    // Start interval for continuous data collection
-    // Clear any existing interval first
-    if (dataCollectionIntervalRef.current) {
-      clearInterval(dataCollectionIntervalRef.current);
-      dataCollectionIntervalRef.current = null;
-    }
-    
-    // Start data collection interval - MUST run every second to save all data
-    // Clear any existing interval first
-    if (dataCollectionIntervalRef.current) {
-      clearInterval(dataCollectionIntervalRef.current);
-      dataCollectionIntervalRef.current = null;
-    }
-    
-    // Start interval immediately - collect data every second
-    console.log('[handleStartTest] 🔄 Starting data collection interval (every 1 second)...');
-    
-    dataCollectionIntervalRef.current = setInterval(() => {
-      // Always check if test is running
-      if (testStateRef.current === 'running') {
-        // Collect data point - this saves ALL values every second
-        collectDataPoint();
-      }
-    }, 1000); // Every 1000ms = 1 second
-    
-    console.log('[handleStartTest] ✅ Data collection interval started, ID:', dataCollectionIntervalRef.current);
-    console.log('[handleStartTest] 📝 Data will be saved every second while test is running');
-    
-    // Start interval timer
-    startIntervalTimer();
-
-    // Set initial power target on trainer
-    const firstStep = protocol.steps[0];
-    if (firstStep && devices.bikeTrainer?.connected) {
-      // Wait a bit for connection to stabilize, then set power
-      setTimeout(async () => {
-        try {
-          if (trainer.setErgWatts && trainer.status === 'controlled') {
-            await trainer.setErgWatts(firstStep.targetPower);
-            console.log(`✅ Initial power set to ${firstStep.targetPower}W on trainer`);
-            setTimeout(() => {
-              addNotification(`Initial power set to ${firstStep.targetPower}W`, 'info');
-            }, 0);
-          }
-        } catch (err) {
-          console.error('Failed to set initial power on trainer:', err);
-          setTimeout(() => {
-            addNotification(`Failed to set initial power: ${err.message}`, 'warning');
-          }, 0);
-        }
-      }, 2000); // Increased delay to ensure connection is stable
-    }
-    
-    console.log('[handleStartTest] ✅ Test started, testStateRef:', testStateRef.current, 'Total time:', totalTestTimeRef.current);
-
-    // Use setTimeout to avoid setState during render
-    setTimeout(() => {
-      addNotification('Test started', 'success');
-    }, 0);
-  };
-
-  // Pause test
-  const handlePauseTest = () => {
-    setTestState('paused');
-    if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
-    if (testTimerRef.current) clearInterval(testTimerRef.current);
-    if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
-    setTimeout(() => {
-      addNotification('Test paused', 'info');
-    }, 0);
-  };
-
-  // Resume test
-  const handleResumeTest = () => {
-    setTestState('running');
-    
-    // Resume interval timer if in work phase
-    if (phase === 'work') {
-      startIntervalTimer();
-    }
-    
-    // Always resume total test timer
-    testTimerRef.current = setInterval(() => {
-      setTotalTestTime(prev => prev + 1);
-    }, 1000);
-    
-    // Resume data collection (collect every second from test start)
-    dataCollectionIntervalRef.current = setInterval(() => {
-      // Collect data throughout the entire test
-      collectDataPoint();
-    }, 1000);
-    
-    setTimeout(() => {
-      addNotification('Test resumed', 'success');
-    }, 0);
-  };
-
-  // Stop test
-  const handleStopTest = () => {
-    setTestState('completed');
-    setPhase('work');
-    setCountdown(0);
-    if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
-    if (testTimerRef.current) clearInterval(testTimerRef.current);
-    if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    setTimeout(() => {
-      addNotification('Test completed', 'success');
-    }, 0);
-  };
-
-  // Clear/Reset test data
-  const handleClearTest = () => {
-    // Confirm before clearing
-    if (!window.confirm('Are you sure you want to clear all test data? This action cannot be undone.')) {
-      return;
-    }
-
-    // Stop all timers
-    if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
-    if (testTimerRef.current) clearInterval(testTimerRef.current);
-    if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    if (recoveryTimerRef.current) clearInterval(recoveryTimerRef.current);
-
-    // Reset all state
-    setTestState('idle');
-    setCurrentStep(0);
-    setIntervalTimer(0);
-    setTotalTestTime(0);
-    setPhase('work');
-    setCountdown(0);
-    setRecoveryTimer(0);
-    setHistoricalData([]);
-    setLactateValues([]);
-    setLiveData({
-      power: 0,
-      cadence: 0,
-      heartRate: 0,
-      smo2: 0,
-      thb: 0,
-      coreTemp: 0,
-      vo2: 0,
-      vco2: 0,
-      ventilation: 0,
-      speed: 0,
-      timestamp: Date.now()
-    });
-
-    // Reset refs
-    liveDataRef.current = {
-      power: 0,
-      cadence: 0,
-      heartRate: 0,
-      smo2: 0,
-      thb: 0,
-      coreTemp: 0,
-      vo2: 0,
-      vco2: 0,
-      ventilation: 0,
-      speed: 0,
-      timestamp: Date.now()
-    };
-    currentStepRef.current = 0;
-    intervalTimerRef2.current = 0;
-    totalTestTimeRef.current = 0;
-    testStateRef.current = 'idle';
-
-    setTimeout(() => {
-      addNotification('Test data cleared', 'success');
-    }, 0);
-  };
-
-  // Add lactate value and BORG
-  const handleAddLactate = (lactateValue, borgValue, manualPower = null) => {
-    const currentStepData = protocol.steps[currentStep];
-    const avgPower = historicalData
-      .filter(d => d.step === currentStep)
-      .reduce((sum, d) => sum + (d.power || 0), 0) / (historicalData.filter(d => d.step === currentStep).length || 1);
-
-    // Use manual power if provided, otherwise use average from historical data, otherwise use target power
-    const finalPower = manualPower !== null ? manualPower : (avgPower || currentStepData?.targetPower || 0);
-
-    setLactateValues(prev => [...prev, {
-      step: currentStep + 1,
-      power: finalPower,
-      lactate: parseFloat(lactateValue),
-      borg: borgValue ? parseFloat(borgValue) : null,
-      time: totalTestTime
-    }]);
-
-    setShowLactateModal(false);
-    
-    // Stay in recovery phase after saving lactate
-    // Set power to 0 W on trainer during recovery
-    if (devices.bikeTrainer?.connected) {
-      setTimeout(async () => {
-        try {
-          if (trainer.setErgWatts && trainer.status === 'controlled') {
-            await trainer.setErgWatts(0);
-            console.log('✅ Power set to 0W during recovery');
-          }
-        } catch (err) {
-          console.error('Failed to set power to 0 during recovery:', err);
-        }
-      }, 100);
-    }
-    
-    // Ensure recovery phase is active and recovery timer is running
-    if (phase !== 'recovery') {
-      setPhase('recovery');
-    }
-    
-    // Ensure recovery timer is running (restart if needed)
-    if (testState === 'running') {
-      // Stop existing recovery timer if running
-      if (recoveryTimerRef.current) {
-        clearInterval(recoveryTimerRef.current);
-        recoveryTimerRef.current = null;
-      }
-      
-      // Reset recovery timer to 0 and start it
-      setRecoveryTimer(0);
-      recoveryTimerRef.current = setInterval(() => {
-        setRecoveryTimer(prev => {
-          const recoveryDuration = protocol.recoveryDuration || 60;
-          // Auto-start next interval when recovery duration is reached
-          if (prev + 1 >= recoveryDuration) {
-            if (recoveryTimerRef.current) {
-              clearInterval(recoveryTimerRef.current);
-              recoveryTimerRef.current = null;
-            }
-            // Automatically start next interval
-            setTimeout(() => {
-              if (handleStartIntervalRef.current) {
-                handleStartIntervalRef.current();
-              }
-            }, 100);
-            return recoveryDuration;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    
-    setTimeout(() => {
-      addNotification('Lactate value and BORG added. Recovery phase active.', 'success');
-    }, 0);
-  };
-
-  // Skip/End current interval early
-  const handleSkipInterval = () => {
-    if (testState !== 'running' || phase !== 'work') return;
-    
-    // Stop current interval timer
-    if (intervalTimerRef.current) {
-      clearInterval(intervalTimerRef.current);
-      intervalTimerRef.current = null;
-    }
-    
-    // Switch to recovery phase (data collection continues)
-    setPhase('recovery');
-    setIntervalTimer(0);
-    
-    // Show lactate entry modal
-    setTimeout(() => {
-      setShowLactateModal(true);
-      addNotification('Interval ended. Enter lactate value.', 'info');
-    }, 0);
-  };
-
-  // Start next interval (after recovery)
+  // ── Start next interval (after recovery) ───────────────────
   const handleStartInterval = useCallback(() => {
-    if (testState !== 'running' || phase !== 'recovery') return;
-    
-    // Stop any recovery timer
-    if (recoveryTimerRef.current) {
-      clearInterval(recoveryTimerRef.current);
-      recoveryTimerRef.current = null;
-    }
-    if (intervalTimerRef.current) {
-      clearInterval(intervalTimerRef.current);
-      intervalTimerRef.current = null;
-    }
+    if (testStateRef.current !== 'running') return;
+    if (recoveryTimerRef.current) { clearInterval(recoveryTimerRef.current); recoveryTimerRef.current = null; }
+    if (intervalTimerRef.current) { clearInterval(intervalTimerRef.current); intervalTimerRef.current = null; }
     setRecoveryTimer(0);
-    
-    // Start 3-second countdown
+    setLactateInput('');
+    setBorgInput('');
     setPhase('countdown');
     setCountdown(3);
     setIntervalTimer(0);
-    
+
     countdownRef.current = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          // Countdown finished, start interval
-          if (countdownRef.current) {
-            clearInterval(countdownRef.current);
-            countdownRef.current = null;
-          }
-          
-          // Move to next step if available, otherwise stay on current
-          if (currentStep < protocol.steps.length - 1) {
-            setCurrentStep(prevStep => {
-              const newStep = prevStep + 1;
-              // Set power target on trainer when step changes
-              const nextStepData = protocol.steps[newStep];
-              if (nextStepData && devices.bikeTrainer?.connected) {
-                // Wait a bit longer to ensure previous commands are processed
-                setTimeout(async () => {
-                  try {
-                    if (trainer.setErgWatts && trainer.status === 'controlled') {
-                      await trainer.setErgWatts(nextStepData.targetPower);
-                      console.log(`✅ Power set to ${nextStepData.targetPower}W for step ${newStep + 1}`);
-                    } else {
-                      // Double-check connection before setting power
-                      if (!deviceConnectivity.isDeviceConnected('bikeTrainer')) {
-                        console.warn('Trainer not connected, skipping power set');
-                        return;
-                      }
-                      
-                      if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
-                        await deviceConnectivity.setPower('bikeTrainer', nextStepData.targetPower);
-                        console.log(`✅ Power set to ${nextStepData.targetPower}W for step ${newStep + 1} (old system)`);
-                      }
-                    }
-                  } catch (err) {
-                    console.error('Failed to set power on trainer:', err);
-                    addNotification(`Failed to set power: ${err.message}`, 'warning');
-                  }
-                }, 1000); // Increased delay to avoid conflicts
-              }
-              return newStep;
-            });
-          }
-          
-          // Start work phase
+          clearInterval(countdownRef.current); countdownRef.current = null;
+          setCurrentStep(prevStep => {
+            const next = prevStep + 1 < protocolRef.current.steps.length ? prevStep + 1 : prevStep;
+            currentStepRef.current = next;
+            const targetPower = protocolRef.current.steps[next]?.targetPower;
+            if (targetPower && trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+              setTimeout(() => trainer.setErgWatts(targetPower).catch(console.error), 500);
+            }
+            return next;
+          });
           setPhase('work');
           setIntervalTimer(0);
-          
-          // Start interval timer
           startIntervalTimer();
-          
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    
-    setTimeout(() => {
-      addNotification('Starting interval in 3 seconds...', 'info');
-    }, 0);
-  }, [testState, phase, currentStep, protocol.steps, devices.bikeTrainer?.connected, addNotification, startIntervalTimer, trainer]);
-  
-  // Store handleStartInterval in ref
-  useEffect(() => {
-    handleStartIntervalRef.current = handleStartInterval;
-  }, [handleStartInterval]);
 
-  // Save test session
-  const handleSaveTest = async () => {
-    try {
-      if (!user?._id) {
-        addNotification('You must be logged in to save a test', 'error');
-        return;
-      }
+    setTimeout(() => addNotification('Starting in 3…', 'info'), 0);
+  }, [trainer, startIntervalTimer, addNotification]);
 
-      if (historicalData.length === 0) {
-        addNotification('No data to save. Please run a test first.', 'warning');
-        return;
-      }
+  useEffect(() => { handleStartIntervalRef.current = handleStartInterval; }, [handleStartInterval]);
 
-      console.log('[handleSaveTest] Starting save...', {
-        dataPoints: historicalData.length,
-        totalTime: totalTestTime,
-        userId: user._id
-      });
+  // ── Start test ─────────────────────────────────────────────
+  const handleStartTest = () => {
+    setCurrentStep(0); currentStepRef.current = 0;
+    setIntervalTimer(0); intervalTimerRef2.current = 0;
+    setTotalTestTime(0); totalTestTimeRef.current = 0;
+    setHistoricalData([]); setLactateValues([]);
+    setPhase('work'); setCountdown(0);
+    setLactateInput(''); setBorgInput('');
+    testStateRef.current = 'running';
+    setTestState('running');
 
-      const startTime = new Date(Date.now() - totalTestTime * 1000);
-      const endTime = new Date();
-      
-      // Generate FIT file data from historical data
-      const fitFileData = {
-        sport: 'bike', // Default to bike, could be determined from protocol
-        totalElapsedTime: totalTestTime,
-        totalDistance: historicalData.reduce((sum, d) => sum + (d.speed || 0), 0) * (totalTestTime / historicalData.length) || 0,
-        avgSpeed: historicalData.length > 0 
-          ? historicalData.reduce((sum, d) => sum + (d.speed || 0), 0) / historicalData.length 
-          : 0,
-        maxSpeed: historicalData.length > 0 
-          ? Math.max(...historicalData.map(d => d.speed || 0)) 
-          : 0,
-        avgHeartRate: historicalData.length > 0 
-          ? historicalData.reduce((sum, d) => sum + (d.heartRate || 0), 0) / historicalData.length 
-          : 0,
-        maxHeartRate: historicalData.length > 0 
-          ? Math.max(...historicalData.map(d => d.heartRate || 0)) 
-          : 0,
-        avgPower: historicalData.length > 0 
-          ? historicalData.reduce((sum, d) => sum + (d.power || 0), 0) / historicalData.length 
-          : 0,
-        maxPower: historicalData.length > 0 
-          ? Math.max(...historicalData.map(d => d.power || 0)) 
-          : 0,
-        // Save ALL data points - every value that was recorded
-        records: historicalData.map((m, index) => ({
-          timestamp: new Date(startTime.getTime() + (m.totalTime || index) * 1000),
-          // Core metrics
-          power: m.power !== null && m.power !== undefined ? m.power : null,
-          heartRate: m.heartRate !== null && m.heartRate !== undefined ? m.heartRate : null,
-          speed: m.speed !== null && m.speed !== undefined ? m.speed : null,
-          cadence: m.cadence !== null && m.cadence !== undefined ? m.cadence : null,
-          // Additional metrics
-          smo2: m.smo2 !== null && m.smo2 !== undefined ? m.smo2 : null,
-          thb: m.thb !== null && m.thb !== undefined ? m.thb : null,
-          coreTemp: m.coreTemp !== null && m.coreTemp !== undefined ? m.coreTemp : null,
-          vo2: m.vo2 !== null && m.vo2 !== undefined ? m.vo2 : null,
-          vco2: m.vco2 !== null && m.vco2 !== undefined ? m.vco2 : null,
-          ventilation: m.ventilation !== null && m.ventilation !== undefined ? m.ventilation : null,
-          // Test metadata
-          step: m.step !== null && m.step !== undefined ? m.step : null,
-          intervalTime: m.intervalTime !== null && m.intervalTime !== undefined ? m.intervalTime : null,
-          totalTime: m.totalTime !== null && m.totalTime !== undefined ? m.totalTime : null,
-          lactate: m.lactate || null
-        })),
-        laps: protocol.steps.map((step, index) => {
-          const stepData = historicalData.filter(d => d.step === index);
-          const stepLactate = lactateValues.find(lv => lv.step === index + 1);
-          return {
-            lapNumber: index + 1,
-            startTime: new Date(startTime.getTime() + (stepData[0]?.totalTime || index * protocol.workDuration) * 1000),
-            totalElapsedTime: stepData.length > 0 ? stepData.length : protocol.workDuration,
-            totalDistance: stepData.reduce((sum, d) => sum + (d.speed || 0), 0) || 0,
-            avgSpeed: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.speed || 0), 0) / stepData.length : 0,
-            avgHeartRate: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.heartRate || 0), 0) / stepData.length : 0,
-            avgPower: stepData.length > 0 ? stepData.reduce((sum, d) => sum + (d.power || 0), 0) / stepData.length : step.targetPower,
-            lactate: stepLactate ? stepLactate.lactate : null
-          };
-        })
-      };
+    if (testTimerRef.current) clearInterval(testTimerRef.current);
+    testTimerRef.current = setInterval(() => {
+      setTotalTestTime(prev => { totalTestTimeRef.current = prev + 1; return prev + 1; });
+    }, 1000);
 
-      const sessionData = {
-        athleteId: user._id,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        protocol: protocol,
-        measurements: historicalData,
-        lactateValues: lactateValues,
-        testDuration: totalTestTime,
-        currentStep: currentStep,
-        status: 'completed',
-        sport: 'bike', // Required by backend
-        title: `Lactate Test - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}` // Required by backend
-      };
+    if (dataCollectionRef.current) clearInterval(dataCollectionRef.current);
+    setTimeout(() => collectDataPoint(), 500);
+    dataCollectionRef.current = setInterval(() => {
+      if (testStateRef.current === 'running') collectDataPoint();
+    }, 1000);
 
-      console.log('[handleSaveTest] Session data prepared:', {
-        measurements: sessionData.measurements.length,
-        lactateValues: sessionData.lactateValues.length,
-        testDuration: sessionData.testDuration,
-        fitRecords: fitFileData.records.length,
-        fitLaps: fitFileData.laps.length
-      });
-      
-      // Log first few records to verify data
-      if (fitFileData.records.length > 0) {
-        console.log('[handleSaveTest] ✅ First 3 FIT records:', fitFileData.records.slice(0, 3));
-        console.log('[handleSaveTest] ✅ Last 3 FIT records:', fitFileData.records.slice(-3));
-      } else {
-        console.warn('[handleSaveTest] ⚠️ No FIT records to save!');
-      }
+    startIntervalTimer();
 
-      // First create the session
+    const firstPower = protocol.steps[0]?.targetPower ?? protocol.startPower;
+    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
       setTimeout(() => {
-        addNotification('Saving test session...', 'info');
-      }, 0);
+        trainer.setErgWatts(firstPower).catch(console.error);
+        addNotification(`ERG set to ${firstPower}W`, 'info');
+      }, 1000);
+    }
+    setTimeout(() => addNotification('Test started!', 'success'), 0);
+  };
 
-      const response = await saveLactateSession(sessionData);
-      console.log('[handleSaveTest] Save response:', response);
-      
-      const sessionId = response?.data?.session?._id || response?.data?._id || response?.session?._id || response?._id;
+  // ── Pause ──────────────────────────────────────────────────
+  const handlePauseTest = () => {
+    setTestState('paused'); testStateRef.current = 'paused';
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+      .forEach(r => { if (r) clearInterval(r); });
+    setTimeout(() => addNotification('Test paused', 'info'), 0);
+  };
 
+  // ── Resume ─────────────────────────────────────────────────
+  const handleResumeTest = () => {
+    setTestState('running'); testStateRef.current = 'running';
+    if (phaseRef.current === 'work') startIntervalTimer();
+    testTimerRef.current = setInterval(() => setTotalTestTime(p => p + 1), 1000);
+    dataCollectionRef.current = setInterval(() => {
+      if (testStateRef.current === 'running') collectDataPoint();
+    }, 1000);
+    setTimeout(() => addNotification('Test resumed', 'success'), 0);
+  };
+
+  // ── Stop ───────────────────────────────────────────────────
+  const handleStopTest = () => {
+    setTestState('completed'); testStateRef.current = 'completed';
+    setPhase('work');
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+      .forEach(r => { if (r) clearInterval(r); });
+    if (trainer.setErgWatts) trainer.setErgWatts(0).catch(console.error);
+    setTimeout(() => addNotification('Test complete ✓', 'success'), 0);
+  };
+
+  // ── End interval early ─────────────────────────────────────
+  const handleSkipInterval = () => {
+    if (testStateRef.current !== 'running' || phaseRef.current !== 'work') return;
+    if (intervalTimerRef.current) { clearInterval(intervalTimerRef.current); intervalTimerRef.current = null; }
+    setIntervalTimer(0);
+    setPhase('recovery');
+    if (trainer.setErgWatts && (trainer.status === 'controlled' || trainer.status === 'erg_active')) {
+      trainer.setErgWatts(0).catch(console.error);
+    }
+    setTimeout(() => addNotification('Interval ended. Enter lactate.', 'info'), 0);
+  };
+
+  // ── Add lactate (inline form) ──────────────────────────────
+  const handleAddLactate = () => {
+    const val = parseFloat(lactateInput);
+    if (!val || isNaN(val) || val <= 0) { addNotification('Enter a valid lactate value', 'error'); return; }
+    const sh = historicalData.filter(d => d.step === currentStep);
+    const avgPower = sh.length
+      ? Math.round(sh.reduce((s, d) => s + (d.power || 0), 0) / sh.length)
+      : protocol.steps[currentStep]?.targetPower ?? 0;
+    setLactateValues(prev => [...prev, {
+      step:    currentStep + 1,
+      power:   avgPower,
+      lactate: val,
+      borg:    borgInput ? parseFloat(borgInput) : null,
+      time:    totalTestTime,
+    }]);
+    setTimeout(() => addNotification('Lactate recorded ✓', 'success'), 0);
+  };
+
+  // ── Clear ──────────────────────────────────────────────────
+  const handleClearTest = () => {
+    if (!window.confirm('Clear all test data? This cannot be undone.')) return;
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+      .forEach(r => { if (r) clearInterval(r); });
+    setTestState('idle'); setCurrentStep(0); setIntervalTimer(0); setTotalTestTime(0);
+    setPhase('work'); setCountdown(0); setRecoveryTimer(0);
+    setHistoricalData([]); setLactateValues([]);
+    setLactateInput(''); setBorgInput('');
+    testStateRef.current = 'idle'; currentStepRef.current = 0;
+    totalTestTimeRef.current = 0; intervalTimerRef2.current = 0;
+    setTimeout(() => addNotification('Test cleared', 'info'), 0);
+  };
+
+  // ── Save ───────────────────────────────────────────────────
+  const handleSaveTest = async () => {
+    if (!user?._id)            { addNotification('Login required', 'error');    return; }
+    if (!historicalData.length){ addNotification('No data to save', 'warning'); return; }
+    try {
+      addNotification('Saving…', 'info');
+      const startTime = new Date(Date.now() - totalTestTime * 1000);
+      const sessionData = {
+        athleteId:    user._id,
+        startTime:    startTime.toISOString(),
+        endTime:      new Date().toISOString(),
+        protocol,     measurements: historicalData,
+        lactateValues, testDuration: totalTestTime,
+        currentStep,  status: 'completed',
+        sport:        'bike',
+        title:        `Lactate Test – ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+      };
+      const response  = await saveLactateSession(sessionData);
+      const sessionId = response?.data?.session?._id ?? response?.data?._id ?? response?._id;
       if (sessionId) {
-        console.log('[handleSaveTest] Session created with ID:', sessionId);
-        // Then complete the session with FIT file data
-        try {
-          await completeLactateSession(sessionId, { fitFileData });
-          scheduleLactateTestLocalNotifications(user?.notifications);
-          setTimeout(() => {
-            addNotification('Test session saved successfully with FIT file', 'success');
-          }, 0);
-        } catch (fitError) {
-          console.error('[handleSaveTest] Error saving FIT file:', fitError);
-          setTimeout(() => {
-            addNotification('Test session saved, but FIT file generation failed', 'warning');
-          }, 0);
-        }
-      } else {
-        console.warn('[handleSaveTest] No session ID returned:', response);
-        setTimeout(() => {
-          addNotification('Test session saved, but no session ID returned', 'warning');
-        }, 0);
+        const fitData = {
+          sport:            'bike',
+          totalElapsedTime: totalTestTime,
+          records:          historicalData.map((m, i) => ({
+            timestamp:    new Date(startTime.getTime() + (m.totalTime ?? i) * 1000),
+            power:        m.power,       heartRate: m.heartRate,
+            speed:        m.speed,       cadence:   m.cadence,
+            smo2:         m.smo2,        thb:       m.thb,
+            coreTemp:     m.coreTemp,    vo2:       m.vo2,
+            step:         m.step,        intervalTime: m.intervalTime,
+            totalTime:    m.totalTime,
+          })),
+          laps: protocol.steps.map((step, idx) => {
+            const sd = historicalData.filter(d => d.step === idx);
+            const lv = lactateValues.find(l => l.step === idx + 1);
+            return {
+              lapNumber:        idx + 1,
+              totalElapsedTime: sd.length || protocol.workDuration,
+              avgPower:         sd.length ? Math.round(sd.reduce((s, d) => s + (d.power || 0), 0) / sd.length) : step.targetPower,
+              avgHeartRate:     sd.filter(d => d.heartRate).length
+                ? Math.round(sd.filter(d => d.heartRate).reduce((s, d) => s + d.heartRate, 0) / sd.filter(d => d.heartRate).length)
+                : null,
+              lactate: lv?.lactate ?? null,
+            };
+          }),
+        };
+        await completeLactateSession(sessionId, { fitFileData: fitData });
+        addNotification('Test saved ✓', 'success');
       }
-    } catch (error) {
-      console.error('Error saving test:', error);
-      const backendMessage = error.response?.data?.message || error.response?.data?.error;
-      if (error.response) {
-        console.error('Backend error detail:', error.response.data);
-      }
-      addNotification(backendMessage ? `Failed to save test: ${backendMessage}` : 'Failed to save test session', 'error');
+    } catch (err) {
+      console.error('Save error:', err);
+      addNotification(err?.response?.data?.message ?? 'Failed to save test', 'error');
     }
   };
 
-  // Previous Lactate Sessions
+  // ── Cleanup on unmount ─────────────────────────────────────
+  useEffect(() => () => {
+    [intervalTimerRef.current, testTimerRef.current, dataCollectionRef.current, countdownRef.current, recoveryTimerRef.current]
+      .forEach(r => { if (r) clearInterval(r); });
+  }, []);
+
+  // ── Other devices ──────────────────────────────────────────
+  const connectOtherDevice = async (key, label) => {
+    if (!navigator.bluetooth) { addNotification('Web Bluetooth not supported. Use Chrome or Edge.', 'error'); return; }
+    try {
+      addNotification(`Connecting ${label}…`, 'info');
+      await deviceConnectivity.connectWebBluetooth(key, (data) => {
+        setDevices(prev => ({ ...prev, [key]: { connected: true, data } }));
+        setLiveData(prev => { const upd = { ...prev, ...data, timestamp: Date.now() }; liveDataRef.current = upd; return upd; });
+      });
+      addNotification(`${label} connected ✓`, 'success');
+    } catch (err) { addNotification(`Failed to connect ${label}: ${err.message}`, 'error'); }
+  };
+
+  const disconnectOtherDevice = async (key) => {
+    try {
+      await deviceConnectivity.disconnectDevice(key);
+      setDevices(prev => ({ ...prev, [key]: { connected: false, data: null } }));
+    } catch (err) { console.error(err); }
+  };
+
+  // ── Previous sessions ──────────────────────────────────────
+  const [previousSessions, setPreviousSessions] = useState([]);
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [selectedSession,   setSelectedSession]   = useState(null);
+  const [loadingSessions,   setLoadingSessions]   = useState(false);
+
   useEffect(() => {
-    // Load all lactate sessions for user
-    const loadSessions = async () => {
-      if (!user?._id) return;
+    if (!user?._id) return;
+    (async () => {
       try {
         setLoadingSessions(true);
         const resp = await getLactateSessions(user._id);
-        const list = Array.isArray(resp.data) ? resp.data : (resp.data?.sessions || resp.data || []);
+        const list = Array.isArray(resp.data) ? resp.data : (resp.data?.sessions ?? []);
         setPreviousSessions(list);
-        if (list.length > 0) setSelectedSessionId(list[0]._id);
-      } catch (e) {
-        setPreviousSessions([]);
-      } finally {
-        setLoadingSessions(false);
-      }
-    };
-    loadSessions();
+        if (list.length) setSelectedSessionId(list[0]._id);
+      } catch { setPreviousSessions([]); }
+      finally { setLoadingSessions(false); }
+    })();
   }, [user?._id]);
 
   useEffect(() => {
-    // Load details for selected session
-    const loadSession = async () => {
-      if (!selectedSessionId) return setSelectedSession(null);
+    if (!selectedSessionId) return setSelectedSession(null);
+    (async () => {
       try {
         setLoadingSessions(true);
         const resp = await getLactateSessionById(selectedSessionId);
-        setSelectedSession(resp.data || resp);
-      } catch(e) {
-        setSelectedSession(null);
-      } finally {
-        setLoadingSessions(false);
-      }
-    };
-    loadSession();
+        setSelectedSession(resp.data ?? resp);
+      } catch { setSelectedSession(null); }
+      finally { setLoadingSessions(false); }
+    })();
   }, [selectedSessionId]);
 
-  // Helper: transform lactate session to chart data
-  const transformSessionToChartData = (session) => {
-    const empty = { historical: [], lactateValues: [], laps: [] };
-    if (!session) return empty;
+  // ── Derived ────────────────────────────────────────────────
+  const currentStepData   = protocol.steps[currentStep] ?? {};
+  const targetPower       = currentStepData.targetPower ?? 0;
+  const actualPower       = Math.round(liveData.power ?? 0);
+  const powerDelta        = actualPower - targetPower;
+  const trainerConnected  = ['ready', 'controlled', 'erg_active'].includes(trainer.status);
+  const ergActive         = ['controlled', 'erg_active'].includes(trainer.status);
+  const stepProgress      = Math.min(intervalTimer / (currentStepData.duration || 360), 1);
+  const recoveryProgress  = Math.min(recoveryTimer   / (protocol.recoveryDuration   || 60),  1);
+  const stepLactateEntered = lactateValues.some(l => l.step === currentStep + 1);
+  const stepHistorical    = historicalData.filter(d => d.step === currentStep);
+  const avgStepPower      = stepHistorical.length
+    ? Math.round(stepHistorical.reduce((s, d) => s + (d.power || 0), 0) / stepHistorical.length) : null;
+  const hrPoints          = stepHistorical.filter(d => d.heartRate && d.heartRate > 0);
+  const avgStepHR         = hrPoints.length
+    ? Math.round(hrPoints.reduce((s, d) => s + d.heartRate, 0) / hrPoints.length) : null;
 
-    const normalizeRecord = (record, index, startTimestamp) => {
-      const ts = record.timestamp ? new Date(record.timestamp).getTime() : startTimestamp ? startTimestamp + index * 1000 : Date.now();
-      const time = startTimestamp ? Math.max(0, (ts - startTimestamp) / 1000) : index;
-      const toNumber = (value) => (value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value));
-      return {
-        timestamp: ts,
-        time,
-        power: toNumber(record.power),
-        heartRate: toNumber(record.heartRate),
-        cadence: toNumber(record.cadence),
-        speed: toNumber(record.speed),
-        smo2: toNumber(record.smo2),
-        vo2: toNumber(record.vo2),
-        thb: toNumber(record.thb),
-        ventilation: toNumber(record.ventilation),
-        step: toNumber(record.step),
-        intervalTime: toNumber(record.intervalTime),
-        totalTime: toNumber(record.totalTime)
-      };
-    };
-
-    // Prefer FIT data if available
-    if (session?.fitFile?.fitData) {
-      const fit = session.fitFile.fitData;
-      const records = Array.isArray(fit.records) ? fit.records : [];
-      const startTimestamp = records.length > 0 && records[0].timestamp ? new Date(records[0].timestamp).getTime() : null;
-      const fitHistorical = records.map((record, index) => normalizeRecord(record, index, startTimestamp));
-
-      const fitLaps = Array.isArray(fit.laps)
-        ? fit.laps.map((lap, idx) => ({
-            lapNumber: lap.lapNumber || idx + 1,
-            startTime: lap.startTime ? new Date(lap.startTime).toLocaleTimeString() : null,
-            totalElapsedTime: lap.totalElapsedTime || lap.duration || lap.total_timer_time || lap.totalTimerTime || null,
-            totalDistance: lap.totalDistance || lap.total_distance || null,
-            avgPower: lap.avgPower || lap.averagePower || null,
-            avgHeartRate: lap.avgHeartRate || lap.averageHeartRate || null,
-            avgCadence: lap.avgCadence || lap.averageCadence || null,
-            lactate: typeof lap.lactate === 'number' ? lap.lactate : null
-          }))
-        : [];
-
-      const fitLactate = fitLaps
-        .filter((lap) => typeof lap.lactate === 'number')
-        .map((lap, i) => ({
-          step: lap.lapNumber || i + 1,
-          power: lap.avgPower || 0,
-          lactate: lap.lactate,
-          time: lap.totalElapsedTime || 0
-        }));
-
-      return {
-        historical: fitHistorical,
-        lactateValues: fitLactate,
-        laps: fitLaps
-      };
-    }
-
-    // Fallback to stored realtime measurements
-    if (Array.isArray(session?.measurements) && session.measurements.length > 0) {
-      const measurements = session.measurements.map((measurement, index) =>
-        normalizeRecord(measurement, index, measurement.timestamp ? new Date(measurement.timestamp).getTime() : null)
-      );
-
-      let mesLactate = session.measurements
-        .filter((m) => typeof m.lactate === 'number')
-        .map((m, i) => ({
-          step: m.interval || i + 1,
-          power: m.power,
-          lactate: m.lactate,
-          time: m.timestamp ? new Date(m.timestamp).getTime() : i * 60
-        }));
-      if (Array.isArray(session.lactateValues)) mesLactate = session.lactateValues;
-
-      const laps = Array.isArray(session.laps)
-        ? session.laps
-        : (session.protocol?.steps || []).map((step, idx) => ({
-            lapNumber: idx + 1,
-            avgPower: step.targetPower || step.power || null,
-            avgHeartRate: null,
-            totalElapsedTime: step.duration || session.protocol.workDuration,
-            lactate: mesLactate[idx]?.lactate ?? null
-          }));
-
-      return {
-        historical: measurements,
-        lactateValues: mesLactate,
-        laps
-      };
-    }
-
-    return empty;
-  };
-
-  // Update data collection based on test state
-  // Note: Data collection is started in handleStartTest and handleResumeTest
-  // This effect only handles cleanup when test stops (paused, completed, idle)
-  useEffect(() => {
-    // Only clean up if test is explicitly stopped (not running)
-    // Don't clean up during state transitions
-    if (testState === 'paused' || testState === 'completed' || testState === 'idle') {
-      if (dataCollectionIntervalRef.current) {
-        console.log('[useEffect] 🛑 Stopping data collection, test state:', testState);
-        clearInterval(dataCollectionIntervalRef.current);
-        dataCollectionIntervalRef.current = null;
-      }
-    }
-  }, [testState]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
-      if (testTimerRef.current) clearInterval(testTimerRef.current);
-      if (dataCollectionIntervalRef.current) clearInterval(dataCollectionIntervalRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, []);
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const currentStepData = protocol.steps[currentStep] || {};
-
+  // ─────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-pink-50 p-6">
-      <div className=" mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Lactate Threshold Testing</h1>
-          <p className="text-gray-600">Real-time testing with connected sensors and devices</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 pb-20">
+
+      {/* ── Modals ─────────────────────────────────────────── */}
+      {showTrainerModal && (
+        <TrainerConnectModal isOpen={showTrainerModal} onClose={() => setShowTrainerModal(false)} />
+      )}
+      {showProtocolEdit && (
+        <ProtocolEditModal
+          isOpen={showProtocolEdit}
+          onClose={() => setShowProtocolEdit(false)}
+          protocol={protocol}
+          onProtocolUpdate={(p) => { setProtocol(p); setShowProtocolEdit(false); addNotification('Protocol updated', 'success'); }}
+          testState={testState}
+          currentStep={currentStep}
+        />
+      )}
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+
+        {/* ── Page header ─────────────────────────────────── */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
+              🧪 Lactate Threshold Testing
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {testState === 'idle'
+                ? 'Configure your step protocol and connect devices'
+                : testState === 'completed'
+                ? `Test complete · ${fmtTime(totalTestTime)} · ${lactateValues.length} lactate samples`
+                : `Running · ${fmtTime(totalTestTime)} elapsed`}
+            </p>
+          </div>
+          {testState === 'running' && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full flex-shrink-0">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs font-semibold text-red-600">REC</span>
+            </div>
+          )}
         </div>
 
-        {/* Test Controls */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 mb-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <ClockIcon className="w-5 h-5 text-gray-600" />
-                <span className="text-lg font-semibold">Total Time: {formatTime(totalTestTime)}</span>
+        {/* ══════════════════════════════════════════════════ */}
+        {/* SETUP VIEW                                        */}
+        {/* ══════════════════════════════════════════════════ */}
+        {testState === 'idle' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            {/* Protocol Setup */}
+            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                  <span className="w-7 h-7 bg-primary/10 rounded-lg flex items-center justify-center text-sm">📋</span>
+                  Protocol Setup
+                </h2>
+                {protocol.steps.length > 0 && (
+                  <button onClick={() => setShowProtocolEdit(true)}
+                    className="text-xs text-primary hover:text-primary/70 flex items-center gap-1 transition-colors">
+                    <Cog6ToothIcon className="w-3.5 h-3.5" /> Edit steps
+                  </button>
+                )}
               </div>
-              {testState !== 'idle' && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Step {currentStep + 1}/{protocol.steps.length}</span>
-                  <span className="text-sm text-gray-600">•</span>
-                  {phase === 'countdown' ? (
-                    <span className="text-sm font-bold text-primary">Starting in {countdown}...</span>
-                  ) : phase === 'recovery' ? (
-                    <span className="text-sm text-gray-600">Recovery (data recording)</span>
-                  ) : (
-                    <span className="text-sm text-gray-600">Interval: {formatTime(intervalTimer)}</span>
-                  )}
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Start Power',     key: 'startPower',       unit: 'W',   min: 20,  max: 500  },
+                  { label: 'Power Increment', key: 'powerIncrement',   unit: 'W',   min: 5,   max: 100  },
+                  { label: 'Work Duration',   key: 'workDuration',     unit: 'sec', min: 60,  max: 1200 },
+                  { label: 'Recovery',        key: 'recoveryDuration', unit: 'sec', min: 0,   max: 600  },
+                  { label: 'Max Steps',       key: 'maxSteps',         unit: '',    min: 1,   max: 20   },
+                ].map(({ label, key, unit, min, max }) => (
+                  <div key={key} className={key === 'maxSteps' ? 'col-span-2 sm:col-span-1' : ''}>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number" min={min} max={max}
+                        value={protocol[key]}
+                        onChange={e => setProtocol(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none"
+                      />
+                      {unit && <span className="text-xs text-gray-400 flex-shrink-0">{unit}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Protocol Preview */}
+              {protocol.steps.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Preview</div>
+                  <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                    {protocol.steps.map((step, idx) => (
+                      <div key={idx} className="flex items-center gap-3 px-3 py-2 bg-gray-50 hover:bg-gray-100/80 rounded-xl text-sm transition-colors">
+                        <span className="w-6 h-6 bg-primary/10 text-primary rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">{idx + 1}</span>
+                        <span className="font-semibold text-gray-800 flex-1">{step.targetPower} W</span>
+                        <span className="text-xs text-gray-400">{fmtTime(step.duration)}</span>
+                        {idx > 0 && <span className="text-xs text-emerald-600 font-medium">+{protocol.powerIncrement}W</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 text-right mt-1.5">
+                    ~{fmtTime(protocol.steps.length * (protocol.workDuration + protocol.recoveryDuration))} estimated
+                  </p>
                 </div>
+              )}
+
+              <button
+                onClick={handleStartTest}
+                className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md shadow-primary/20"
+              >
+                <PlayIcon className="w-5 h-5" /> Start Test
+              </button>
+
+              {!trainerConnected && (
+                <p className="text-xs text-amber-600 text-center">⚠ Connect trainer for automatic ERG control</p>
               )}
             </div>
 
-            <div className="flex gap-2">
-              {testState === 'idle' && (
-                <>
-                  <button
-                    onClick={() => setShowCalibration(true)}
-                    className="px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white/90 border border-white/40 shadow"
-                  >
-                    Calibrate
-                  </button>
-                  <button
-                    onClick={handleStartTest}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
-                  >
-                    <PlayIcon className="w-5 h-5" />
-                    Start Test
-                  </button>
-                </>
-              )}
-              {testState === 'running' && phase === 'work' && (
-                <>
-                  <button
-                    onClick={handlePauseTest}
-                    className="px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 flex items-center gap-2 shadow"
-                  >
-                    <PauseIcon className="w-5 h-5" />
-                    Pause
-                  </button>
-                  <button
-                    onClick={handleSkipInterval}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 flex items-center gap-2 shadow"
-                  >
-                    <StopIcon className="w-5 h-5" />
-                    End Interval
-                  </button>
-                  <button
-                    onClick={() => setShowLactateModal(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 flex items-center gap-2 shadow"
-                  >
-                    <PlusIcon className="w-5 h-5" />
-                    Add Lactate
-                  </button>
-                  <button
-                    onClick={handleStopTest}
-                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
-                  >
-                    <StopIcon className="w-5 h-5" />
-                    Stop Test
-                  </button>
-                </>
-              )}
-              {testState === 'running' && phase === 'recovery' && (
-                <>
-                  <button
-                    onClick={handleStartInterval}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
-                  >
-                    <PlayIcon className="w-5 h-5" />
-                    Start Interval
-                  </button>
-                  <button
-                    onClick={() => setShowLactateModal(true)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 flex items-center gap-2 shadow"
-                  >
-                    <PlusIcon className="w-5 h-5" />
-                    Add Lactate
-                  </button>
-                  <button
-                    onClick={handlePauseTest}
-                    className="px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 flex items-center gap-2 shadow"
-                  >
-                    <PauseIcon className="w-5 h-5" />
-                    Pause
-                  </button>
-                  <button
-                    onClick={handleStopTest}
-                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
-                  >
-                    <StopIcon className="w-5 h-5" />
-                    Stop Test
-                  </button>
-                </>
-              )}
-              {testState === 'running' && phase === 'countdown' && (
-                <>
-                  <div className="px-4 py-2 bg-primary text-white rounded-xl flex items-center gap-2 text-xl font-bold shadow">
-                    Starting in {countdown}...
+            {/* Device Connections */}
+            <div className="space-y-3">
+
+              {/* Smart Trainer */}
+              <div className={`bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border p-5 transition-all duration-300 ${
+                ergActive        ? 'border-emerald-300 bg-emerald-50/30' :
+                trainerConnected ? 'border-blue-200 bg-blue-50/20'       :
+                                   'border-white/60'
+              }`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">🚴</div>
+                    <div>
+                      <div className="font-semibold text-gray-900 text-sm">Smart Trainer</div>
+                      <div className="text-xs text-gray-500">Bluetooth FTMS · ERG Mode</div>
+                    </div>
                   </div>
-                  <button
-                    onClick={handleStopTest}
-                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
-                  >
-                    <StopIcon className="w-5 h-5" />
-                    Stop Test
-                  </button>
-                </>
-              )}
-              {testState === 'paused' && (
-                <>
-                  <button
-                    onClick={handleResumeTest}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
-                  >
-                    <PlayIcon className="w-5 h-5" />
-                    Resume
-                  </button>
-                  <button
-                    onClick={handleStopTest}
-                    className="px-4 py-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 flex items-center gap-2 shadow"
-                  >
-                    <StopIcon className="w-5 h-5" />
-                    Stop
-                  </button>
-                </>
-              )}
-              {testState === 'completed' && (
-                <>
-                  <button
-                    onClick={handleSaveTest}
-                    className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
-                  >
-                    <ChartBarIcon className="w-5 h-5" />
-                    Save Test
-                  </button>
-                  <button
-                    onClick={handleClearTest}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-xl hover:bg-gray-700 flex items-center gap-2 shadow"
-                  >
-                    <TrashIcon className="w-5 h-5" />
-                    Clear Test
-                  </button>
-                </>
-              )}
+                  <TrainerStatusBadge status={trainer.status} />
+                </div>
+
+                {trainerConnected && (
+                  <div className="mb-3 p-3 bg-white/70 rounded-xl border border-white/50">
+                    <div className="text-xs text-gray-500 mb-2 font-medium">
+                      {trainer.connectedDevice?.name ?? 'Connected Device'}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      {[
+                        { label: 'Power',   val: trainer.telemetry?.power   != null ? `${Math.round(trainer.telemetry.power)}W`    : '—', color: 'text-primary' },
+                        { label: 'Cadence', val: trainer.telemetry?.cadence != null ? `${Math.round(trainer.telemetry.cadence)}`    : '—', color: 'text-gray-700' },
+                        { label: 'Speed',   val: trainer.telemetry?.speed   != null ? `${(Math.round(trainer.telemetry.speed * 10) / 10).toFixed(1)}` : '—', color: 'text-gray-700' },
+                      ].map(m => (
+                        <div key={m.label}>
+                          <div className={`text-xl font-black tabular-nums ${m.color}`}>{m.val}</div>
+                          <div className="text-[10px] text-gray-400">{m.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {ergActive && (
+                      <div className="mt-2 flex items-center justify-center gap-1.5 text-xs text-emerald-700 font-semibold">
+                        <BoltSolid className="w-3.5 h-3.5 text-emerald-500" /> ERG control active
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {trainer.error && (
+                  <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600">{trainer.error}</div>
+                )}
+
+                <button
+                  onClick={() => setShowTrainerModal(true)}
+                  className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${
+                    trainerConnected
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-primary text-white hover:bg-primary/90 shadow-sm shadow-primary/20'
+                  }`}
+                >
+                  {trainerConnected ? '⚙ Manage Trainer' : '🔗 Connect Trainer'}
+                </button>
+              </div>
+
+              {/* Other sensors */}
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Additional Sensors</h3>
+                <div className="space-y-2">
+                  {[
+                    { key: 'heartRate', icon: '💓', label: 'Heart Rate Monitor', val: devices.heartRate?.data?.heartRate, unit: 'bpm'         },
+                    { key: 'moxy',      icon: '📊', label: 'Moxy (SmO₂ / tHb)',  val: devices.moxy?.data?.smo2,          unit: '% SmO₂'       },
+                    { key: 'coreTemp',  icon: '🌡',  label: 'Core Temperature',   val: devices.coreTemp?.data?.coreTemp,  unit: '°C'           },
+                    { key: 'vo2master', icon: '💨', label: 'VO₂ Master',          val: devices.vo2master?.data?.vo2,      unit: 'ml/kg/min'    },
+                  ].map(({ key, icon, label, val, unit }) => {
+                    const conn = devices[key]?.connected;
+                    return (
+                      <div key={key} className={`flex items-center justify-between p-2.5 rounded-xl transition-colors ${conn ? 'bg-emerald-50/60 border border-emerald-100' : 'bg-gray-50/60'}`}>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{icon}</span>
+                          <div>
+                            <div className="text-xs font-medium text-gray-700">{label}</div>
+                            {conn && val != null && (
+                              <div className="text-xs text-emerald-600 font-semibold">{Math.round(val * 10) / 10} {unit}</div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => conn ? disconnectOtherDevice(key) : connectOtherDevice(key, label)}
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors flex-shrink-0 ${
+                            conn ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                          }`}
+                        >
+                          {conn ? 'Disconnect' : 'Connect'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Current Step Info */}
-          {testState !== 'idle' && currentStepData && (
-            <div className="mt-4 p-4 bg-white/70 backdrop-blur rounded-2xl border border-white/40">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-                <div>
-                  <div className="text-xs sm:text-sm text-gray-600">Current Phase</div>
-                  <div className="text-base sm:text-lg font-semibold text-primary">
-                    {phase === 'countdown' ? 'Countdown' : phase === 'recovery' ? 'Recovery' : 'Work'}
-                  </div>
+        {/* ══════════════════════════════════════════════════ */}
+        {/* ACTIVE TEST VIEW                                  */}
+        {/* ══════════════════════════════════════════════════ */}
+        {(testState === 'running' || testState === 'paused') && (
+          <div className="space-y-4">
+
+            {/* Step progress */}
+            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 px-4 pt-3 pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Step {currentStep + 1} / {protocol.steps.length}
+                </span>
+                <div className="flex items-center gap-3 text-xs">
+                  {ergActive && (
+                    <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                      <BoltSolid className="w-3 h-3" /> ERG {targetPower}W
+                    </span>
+                  )}
+                  <span className="text-gray-400">{fmtTime(totalTestTime)} elapsed</span>
                 </div>
-                <div>
-                  <div className="text-xs sm:text-sm text-gray-600">Target Power</div>
-                  <div className="text-base sm:text-lg font-semibold text-primary">
-                    {currentStepData.targetPower} W
+              </div>
+              <StepProgressBar steps={protocol.steps} currentStep={currentStep} lactateValues={lactateValues} />
+            </div>
+
+            {/* Phase panels */}
+            <AnimatePresence mode="wait">
+
+              {/* WORK */}
+              {phase === 'work' && (
+                <motion.div key="work"
+                  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    {testState === 'running'
+                      ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                      : <span className="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0" />
+                    }
+                    <span className={`text-xs font-black uppercase tracking-widest ${testState === 'running' ? 'text-red-600' : 'text-amber-600'}`}>
+                      {testState === 'running' ? 'Work Interval' : 'Paused'}
+                    </span>
+                    <span className="ml-auto text-xs text-gray-400">
+                      Next: {protocol.steps[currentStep + 1]?.targetPower ? `${protocol.steps[currentStep + 1].targetPower}W` : 'Last step'}
+                    </span>
                   </div>
-                  {/* Show actual power vs target power if bikeTrainer is connected */}
-                  {devices.bikeTrainer?.connected && devices.bikeTrainer?.data?.power !== null && devices.bikeTrainer?.data?.power !== undefined && (
-                    <div className="text-xs mt-1">
-                      <span className={Math.abs((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower) <= 30 
-                        ? 'text-green-600' 
-                        : 'text-orange-600'}>
-                        Actual: {Math.round(devices.bikeTrainer.data.power)}W
-                        {Math.abs((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower) <= 30 
-                          ? ' ✅' 
-                          : ` (${Math.round((devices.bikeTrainer.data.power || 0) - currentStepData.targetPower)}W)`}
+
+                  {/* Big metrics */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {/* Target */}
+                    <div className="bg-primary/8 border border-primary/20 rounded-2xl p-4 text-center">
+                      <div className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-1">Target</div>
+                      <div className="text-4xl sm:text-5xl font-black text-primary tabular-nums leading-none">{targetPower}</div>
+                      <div className="text-xs text-primary/50 mt-1.5">watts</div>
+                    </div>
+                    {/* Actual */}
+                    <div className={`rounded-2xl p-4 text-center border transition-colors ${
+                      !trainerConnected                  ? 'bg-gray-50 border-gray-100' :
+                      Math.abs(powerDelta) <= 15         ? 'bg-emerald-50 border-emerald-200' :
+                      Math.abs(powerDelta) <= 30         ? 'bg-amber-50 border-amber-200' :
+                                                           'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Actual</div>
+                      <div className={`text-4xl sm:text-5xl font-black tabular-nums leading-none ${
+                        !trainerConnected          ? 'text-gray-300' :
+                        Math.abs(powerDelta) <= 15 ? 'text-emerald-600' :
+                        Math.abs(powerDelta) <= 30 ? 'text-amber-600' : 'text-red-500'
+                      }`}>{trainerConnected ? actualPower : '—'}</div>
+                      {trainerConnected && (
+                        <div className={`text-xs mt-1.5 font-bold ${
+                          Math.abs(powerDelta) <= 5 ? 'text-gray-400' :
+                          powerDelta > 0            ? 'text-emerald-600' : 'text-red-500'
+                        }`}>
+                          {powerDelta > 0 ? `+${powerDelta}W` : powerDelta < 0 ? `${powerDelta}W` : '±0W'}
+                        </div>
+                      )}
+                    </div>
+                    {/* HR */}
+                    <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-center">
+                      <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 flex items-center justify-center gap-0.5">
+                        <HeartIcon className="w-3 h-3" /> HR
+                      </div>
+                      <div className="text-4xl sm:text-5xl font-black text-rose-600 tabular-nums leading-none">
+                        {devices.heartRate?.connected && liveData.heartRate > 0 ? Math.round(liveData.heartRate) : '—'}
+                      </div>
+                      <div className="text-xs text-rose-300 mt-1.5">bpm</div>
+                    </div>
+                    {/* Cadence */}
+                    <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 text-center">
+                      <div className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Cadence</div>
+                      <div className="text-4xl sm:text-5xl font-black text-sky-600 tabular-nums leading-none">
+                        {trainerConnected && liveData.cadence > 0 ? Math.round(liveData.cadence) : '—'}
+                      </div>
+                      <div className="text-xs text-sky-300 mt-1.5">rpm</div>
+                    </div>
+                  </div>
+
+                  {/* Interval progress bar */}
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                      <span className="font-medium">Interval progress</span>
+                      <span className="font-bold text-gray-600 tabular-nums">
+                        {fmtTime(intervalTimer)} / {fmtTime(currentStepData.duration || 360)}
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-primary rounded-full"
+                        animate={{ width: `${stepProgress * 100}%` }}
+                        transition={{ duration: 0.8, ease: 'linear' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Controls */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {testState === 'running' ? (
+                      <button onClick={handlePauseTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-200 transition-colors">
+                        <PauseIcon className="w-4 h-4" /> Pause
+                      </button>
+                    ) : (
+                      <button onClick={handleResumeTest} className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                        <PlayIcon className="w-4 h-4" /> Resume
+                      </button>
+                    )}
+                    <button onClick={handleSkipInterval} className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-100 text-orange-700 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors">
+                      <StopIcon className="w-4 h-4" /> End Early
+                    </button>
+                    <button onClick={handleStopTest} className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
+                      <StopIcon className="w-4 h-4" /> Stop Test
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* COUNTDOWN */}
+              {phase === 'countdown' && (
+                <motion.div key="countdown"
+                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-primary/8 backdrop-blur-lg rounded-2xl shadow-sm border border-primary/20 py-12 text-center"
+                >
+                  <div className="text-9xl font-black text-primary leading-none mb-3">{countdown}</div>
+                  <div className="text-sm font-bold text-primary/70">Next interval starting…</div>
+                  <div className="text-xs text-gray-500 mt-1.5">
+                    Step {currentStep + 1}: <span className="font-bold">{protocol.steps[currentStep]?.targetPower}W</span>
+                    {' · '}{fmtTime(protocol.workDuration)}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* RECOVERY */}
+              {phase === 'recovery' && (
+                <motion.div key="recovery"
+                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                  className="bg-sky-50/80 backdrop-blur-lg rounded-2xl shadow-sm border border-sky-200 p-5 space-y-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
+                    <span className="text-xs font-black text-sky-700 uppercase tracking-widest">Recovery</span>
+                    <span className="ml-auto text-sm font-black text-sky-700 tabular-nums">
+                      {fmtTime(recoveryTimer)} / {fmtTime(protocol.recoveryDuration)}
+                    </span>
+                  </div>
+
+                  <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
+                    <motion.div className="h-full bg-sky-400 rounded-full"
+                      animate={{ width: `${recoveryProgress * 100}%` }}
+                      transition={{ duration: 0.8, ease: 'linear' }}
+                    />
+                  </div>
+
+                  {/* Interval summary */}
+                  <div className="flex items-center gap-4 p-3 bg-white/70 rounded-xl text-sm flex-wrap">
+                    <span className="text-gray-500 font-medium">Interval {currentStep + 1} complete</span>
+                    {avgStepPower != null && <span className="font-bold text-gray-800">⚡ {avgStepPower}W avg</span>}
+                    {avgStepHR   != null && <span className="font-bold text-rose-600">❤ {avgStepHR} bpm</span>}
+                  </div>
+
+                  {/* Lactate entry */}
+                  {!stepLactateEntered ? (
+                    <div className="space-y-3">
+                      <div className="text-sm font-bold text-gray-700">Enter Lactate Value</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">
+                            Lactate <span className="text-gray-400">(mmol/L)</span>
+                          </label>
+                          <input
+                            ref={lactateInputRef}
+                            type="number" step="0.1" min="0.1" max="25"
+                            value={lactateInput}
+                            onChange={e => setLactateInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
+                            placeholder="e.g. 2.4"
+                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">
+                            BORG <span className="text-gray-400">(6–20, optional)</span>
+                          </label>
+                          <input
+                            type="number" min="6" max="20" step="1"
+                            value={borgInput}
+                            onChange={e => setBorgInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && lactateInput && handleAddLactate()}
+                            placeholder="6–20"
+                            className="w-full px-3 py-2.5 text-xl font-black bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none tabular-nums"
+                          />
+                          {borgInput && BORG_LABELS[borgInput] && (
+                            <p className="text-xs text-gray-400 mt-1 truncate">{BORG_LABELS[borgInput]}</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleAddLactate}
+                        disabled={!lactateInput}
+                        className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-sm shadow-primary/20"
+                      >
+                        <CheckCircleIcon className="w-4 h-4" /> Save Lactate Value
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                      <CheckCircleSolid className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                      <span className="text-sm text-emerald-700">
+                        Recorded: <strong>{lactateValues.find(l => l.step === currentStep + 1)?.lactate.toFixed(1)} mmol/L</strong>
+                        {lactateValues.find(l => l.step === currentStep + 1)?.borg && (
+                          <span className="text-emerald-600"> · BORG {lactateValues.find(l => l.step === currentStep + 1)?.borg}</span>
+                        )}
                       </span>
                     </div>
                   )}
+
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={handleStartInterval}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                      <PlayIcon className="w-4 h-4" /> Start Next Interval
+                    </button>
+                    <button onClick={handleStopTest}
+                      className="flex items-center gap-1.5 px-3 py-2.5 bg-rose-100 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-200 transition-colors">
+                      <StopIcon className="w-4 h-4" /> Finish Test
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Device status chips */}
+            <div className="flex flex-wrap gap-2">
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${trainerConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                🚴 {trainerConnected ? (trainer.connectedDevice?.name ?? 'Trainer') : 'No Trainer'}
+                {ergActive && <span className="ml-1">· ERG ✓</span>}
+              </div>
+              {devices.heartRate?.connected && liveData.heartRate > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-rose-100 text-rose-700">
+                  💓 {Math.round(liveData.heartRate)} bpm
                 </div>
+              )}
+              {devices.moxy?.connected && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-100 text-blue-700">
+                  📊 SmO₂ {liveData.smo2 != null ? liveData.smo2.toFixed(1) : '—'}%
+                </div>
+              )}
+              {devices.coreTemp?.connected && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-100 text-orange-700">
+                  🌡 {liveData.coreTemp != null ? liveData.coreTemp.toFixed(1) : '—'}°C
+                </div>
+              )}
+            </div>
+
+            {/* Live dashboard chart */}
+            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+              <LiveDashboard
+                liveData={liveData}
+                devices={devices}
+                testState={testState}
+                historicalData={historicalData}
+                intervalTimer={intervalTimer}
+                protocol={protocol}
+                currentStep={currentStep}
+              />
+            </div>
+
+            {/* Live lactate curve */}
+            {lactateValues.length > 0 && (
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-4">
+                <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve (Live)
+                </div>
+                <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════ */}
+        {/* COMPLETED VIEW                                    */}
+        {/* ══════════════════════════════════════════════════ */}
+        {testState === 'completed' && (
+          <div className="space-y-5">
+
+            <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
+              <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
-                  <div className="text-xs sm:text-sm text-gray-600">Step Duration</div>
-                  <div className="text-base sm:text-lg font-semibold text-primary">
-                    {formatTime(currentStepData.duration)}
-                  </div>
+                  <h2 className="text-xl font-bold text-gray-900">Test Complete 🎉</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {new Date().toLocaleDateString()} · {fmtTime(totalTestTime)} total
+                  </p>
                 </div>
-              </div>
-              {phase === 'countdown' && (
-                <div className="mt-2 text-center">
-                  <div className="text-4xl font-bold text-primary">{countdown}</div>
-                  <div className="text-sm text-gray-600">Starting interval...</div>
-                </div>
-              )}
-              {phase === 'recovery' && (
-                <div className="mt-2 text-center">
-                  <div className="text-sm text-emerald-600">✓ Recording data during recovery</div>
-                </div>
-              )}
-            </div>
-          )}
-        </motion.div>
-
-        {/* Device Connection Panel & Interval Protocol - Top, Collapsible */}
-        <div className="mb-6 space-y-4">
-          {/* Trainer Connection & Mock Data Mode */}
-          <div className="bg-white/80 backdrop-blur rounded-xl border border-gray-200 p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {(trainer.connectedDevice || (trainer.status !== 'disconnected' && trainer.status !== 'error')) ? (
-                  <>
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                    <span className="text-sm font-medium text-gray-700">
-                      🚴 Trainer: <span className="font-semibold text-green-600">
-                        {trainer.connectedDevice?.name || 'Connected'}
-                      </span>
-                    </span>
-                    {trainer.telemetry && (
-                      <span className="text-xs text-gray-500">
-                        {trainer.telemetry.power !== undefined && `${Math.round(trainer.telemetry.power)}W`}
-                        {trainer.telemetry.cadence !== undefined && ` • ${Math.round(trainer.telemetry.cadence)}rpm`}
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-                    <span className="text-sm font-medium text-gray-700">🚴 Trainer: Not Connected</span>
-                  </>
-                )}
-              </div>
-              <button
-                onClick={() => setShowTrainerModal(true)}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium"
-              >
-                {trainer.connectedDevice ? 'Manage Trainer' : 'Connect Trainer'}
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={mockDataMode}
-                  onChange={(e) => {
-                    setMockDataMode(e.target.checked);
-                    if (e.target.checked) {
-                      setTimeout(() => {
-                        addNotification('Mock data mode enabled. Connect bike trainer to use mock data.', 'info');
-                      }, 0);
-                      startMockDeviceStream('bikeTrainer');
-                      startMockDeviceStream('heartRate');
-                      startMockDeviceStream('moxy');
-                      startMockDeviceStream('coreTemp');
-                      startMockDeviceStream('vo2master');
-                    } else {
-                      stopAllMockDeviceStreams();
-                      setDevices(prev => ({
-                        ...prev,
-                        bikeTrainer: { connected: false, data: null },
-                        heartRate: { connected: false, data: null },
-                        moxy: { connected: false, data: null },
-                        coreTemp: { connected: false, data: null },
-                        vo2master: { connected: false, data: null }
-                      }));
-                    }
-                  }}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span>🔧 Mock Data Mode (for testing without real trainer)</span>
-              </label>
-            </div>
-          </div>
-          
-          <DeviceConnectionPanel
-            devices={devices}
-            onDeviceConnect={async (deviceType) => {
-                console.log('Connecting to device:', deviceType);
-                
-                // Always use trainer modal for bikeTrainer
-                if (deviceType === 'bikeTrainer') {
-                  setShowTrainerModal(true);
-                  return;
-                }
-                
-                // Mock data mode for supported devices
-                if (mockDataMode && ['bikeTrainer', 'heartRate', 'moxy', 'coreTemp', 'vo2master'].includes(deviceType)) {
-                  startMockDeviceStream(deviceType);
-                  setTimeout(() => {
-                    addNotification(`${deviceType} connected in mock mode`, 'info');
-                  }, 0);
-                  return;
-                }
-                
-                // Check if Web Bluetooth is available
-                if (!navigator.bluetooth) {
-                  // Web Bluetooth not supported
-                  console.log('Web Bluetooth not available');
-                  addNotification('Web Bluetooth not supported. Please use Chrome, Edge, or Opera browser.', 'error');
-                  return;
-                }
-                
-                // Try real Web Bluetooth connection
-                try {
-                  addNotification(`Connecting to ${deviceType}...`, 'info');
-                  const connected = await deviceConnectivity.connectWebBluetooth(deviceType, (data) => {
-                    updateDeviceData(deviceType, data);
-                    
-                    // Check if power is missing for bikeTrainer
-                    if (deviceType === 'bikeTrainer' && (data.power === null || data.power === undefined)) {
-                      // Power is not available - this is expected for some Tacx trainers that only have CSC Service
-                      // We'll show a one-time warning
-                      if (!devices.bikeTrainer?.powerWarningShown) {
-                        console.warn('Power data is not available from this trainer. Only speed and cadence are available via Bluetooth.');
-                        // Note: We'll show this in console, but won't spam notifications
-                      }
-                    }
-                  });
-                  
-                  if (connected) {
-                    setTimeout(() => {
-                      addNotification(`${deviceType} connected successfully`, 'success');
-                    }, 0);
-                    
-                    // For bikeTrainer, connection is handled via trainer modal
-                    if (deviceType === 'bikeTrainer') {
-                      // This should not happen as bikeTrainer is redirected to trainer modal
-                      return;
-                    }
-                    
-                    // Old code for other devices (kept for reference but bikeTrainer is handled separately)
-                    if (false && deviceType === 'bikeTrainer') {
-                      // Give it a moment to establish connection, then try to set ERGO mode
-                      setTimeout(async () => {
-                        try {
-                          // Check if we can control the trainer (FE-C support)
-                          if (deviceConnectivity.supportsErgoMode('bikeTrainer')) {
-                            // Trainer supports FE-C control - we can set power
-                            setTimeout(() => {
-                              addNotification('Trainer supports ERGO mode control. Power can be set from the app.', 'success');
-                            }, 0);
-                            
-                            // Set initial power if test is running or if we have a protocol
-                            // Wait a bit longer to ensure connection is fully established
-                            if (protocol.steps.length > 0 && testState === 'running') {
-                              const initialPower = protocol.steps[0]?.targetPower || protocol.startPower || 100;
-                              // Wait a bit more before setting power
-                              setTimeout(async () => {
-                                try {
-                                  await deviceConnectivity.setPower('bikeTrainer', initialPower);
-                                  setTimeout(() => {
-                                    addNotification(`Initial power set to ${initialPower}W`, 'info');
-                                  }, 0);
-                                } catch (err) {
-                                  console.error('Failed to set initial power:', err);
-                                }
-                              }, 500);
-                            }
-                          } else {
-                            // Trainer doesn't support FE-C control, but check if power reading is available
-                            setTimeout(() => {
-                              const trainerData = devices.bikeTrainer?.data;
-                              if (trainerData && (trainerData.power === null || trainerData.power === undefined)) {
-                                addNotification('Note: This trainer does not support ERGO mode control. Power cannot be set automatically. You may need to set it manually on the trainer or use a separate power meter.', 'warning');
-                              } else if (trainerData && trainerData.power !== null && trainerData.power !== undefined) {
-                                addNotification(`Power reading available: ${trainerData.power.toFixed(0)}W`, 'success');
-                              }
-                            }, 2000);
-                          }
-                        } catch (error) {
-                          console.error('Error setting up trainer control:', error);
-                          setTimeout(() => {
-                            addNotification(`Warning: Could not set up trainer control: ${error.message}`, 'warning');
-                          }, 0);
-                        }
-                      }, 1500); // Increased delay to ensure connection is stable
-                    }
-                  } else {
-                    // Connection failed
-                    console.log('Web Bluetooth connection failed');
-                    setTimeout(() => {
-                      addNotification('Failed to connect to device. Please check if your device is turned on and in pairing mode.', 'error');
-                    }, 0);
-                  }
-                } catch (error) {
-                  console.error('Error connecting to device:', error);
-                  setTimeout(() => {
-                    addNotification(`Failed to connect: ${error.message}`, 'error');
-                  }, 0);
-                }
-              }}
-              onDeviceDisconnect={async (deviceType) => {
-                try {
-                  // Handle trainer system disconnect
-                  if (deviceType === 'bikeTrainer' && trainer.connectedDevice) {
-                    await trainer.disconnect();
-                    setTimeout(() => {
-                      addNotification('Trainer disconnected', 'success');
-                    }, 0);
-                    return;
-                  }
-                  
-                  stopMockDeviceStream(deviceType);
-                  
-                  // Stop simulated data first
-                  deviceConnectivity.stopSimulatedData(deviceType);
-                  
-                  // Then disconnect real device
-                  await deviceConnectivity.disconnectDevice(deviceType);
-                  
-                  // Update UI state
-                  setDevices(prev => ({
-                    ...prev,
-                    [deviceType]: { connected: false, data: null }
-                  }));
-                  
-                  setTimeout(() => {
-                    addNotification(`${deviceType} disconnected`, 'success');
-                  }, 0);
-                } catch (error) {
-                  console.error('Error disconnecting device:', error);
-                  setTimeout(() => {
-                    addNotification(`Error disconnecting ${deviceType}`, 'error');
-                  }, 0);
-                }
-              }}
-          />
-          
-          <IntervalManager
-            protocol={protocol}
-            onProtocolSubmit={handleProtocolSubmit}
-            testState={testState}
-            onEditProtocol={() => setShowProtocolEdit(true)}
-          />
-        </div>
-
-        {/* Main Content - Live Dashboard & Charts */}
-        <div className="space-y-6">
-            <LiveDashboard
-              liveData={liveData}
-              devices={devices}
-              testState={testState}
-              historicalData={historicalData}
-              intervalTimer={intervalTimer}
-              protocol={protocol}
-              currentStep={currentStep}
-            />
-
-            <LactateChart
-              lactateValues={lactateValues}
-              historicalData={historicalData}
-              protocol={protocol}
-            />
-        </div>
-
-        {/* Lactate Entry Modal */}
-        {showLactateModal && (
-          <LactateEntryModal
-            isOpen={showLactateModal}
-            onClose={() => setShowLactateModal(false)}
-            onSubmit={handleAddLactate}
-            currentStep={currentStep + 1}
-            suggestedPower={currentStepData?.targetPower || 0}
-            allowManualPower={devices.bikeTrainer?.connected && (devices.bikeTrainer?.data?.power === null || devices.bikeTrainer?.data?.power === undefined)}
-            actualPower={historicalData
-              .filter(d => d.step === currentStep)
-              .reduce((sum, d) => sum + (d.power || 0), 0) / (historicalData.filter(d => d.step === currentStep).length || 1) || null}
-            currentHeartRate={liveData.heartRate || devices.heartRate?.data?.heartRate || null}
-            recoveryTime={recoveryTimer}
-            onStartNextInterval={handleStartInterval}
-            testState={testState}
-            phase={phase}
-            onCompleteInterval={() => {
-              // Move to next step after adding lactate
-              if (currentStep < protocol.steps.length - 1) {
-                setCurrentStep(prev => prev + 1);
-                setIntervalTimer(0);
-              } else {
-                handleStopTest();
-              }
-            }}
-          />
-        )}
-
-        {/* Protocol Edit Modal */}
-        {showProtocolEdit && (
-          <ProtocolEditModal
-            isOpen={showProtocolEdit}
-            onClose={() => setShowProtocolEdit(false)}
-            protocol={protocol}
-            onProtocolUpdate={(updatedProtocol) => {
-              // Update protocol
-              setProtocol(updatedProtocol);
-              
-              // If test is running and we're beyond the protocol, adjust current step
-              if (testState === 'running' && currentStep >= updatedProtocol.steps.length) {
-                setCurrentStep(updatedProtocol.steps.length - 1);
-              }
-              
-              // If interval timer is running, check if we need to adjust based on new duration
-              if (testState === 'running' && intervalTimerRef.current) {
-                const currentStepData = updatedProtocol.steps[currentStep];
-                if (currentStepData) {
-                  const maxTime = currentStepData.phase === 'work' 
-                    ? currentStepData.duration 
-                    : currentStepData.recoveryDuration || 60;
-                  
-                  // Reset timer if current interval time exceeds new duration
-                  if (intervalTimer >= maxTime) {
-                    setIntervalTimer(maxTime - 1);
-                  }
-                }
-              }
-              
-              setShowProtocolEdit(false);
-              addNotification('Protocol updated successfully', 'success');
-            }}
-            testState={testState}
-            currentStep={currentStep}
-          />
-        )}
-
-        {/* Calibration Modal */}
-        {showCalibration && testState === 'idle' && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
-            >
-              <h2 className="text-xl font-bold mb-4">Device Calibration</h2>
-              <p className="text-gray-600 mb-4">
-                Calibrate your devices before starting the test. Ensure all sensors are properly positioned and functioning.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowCalibration(false)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowCalibration(false);
-                    handleStartTest();
-                  }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex-1"
-                >
-                  Start Test
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-
-        {/* Previous Testing Section */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white/60 backdrop-blur-lg rounded-3xl border border-white/30 shadow-xl p-6 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold text-gray-900">Previous Lactate Sessions</h2>
-            <select className="px-3 py-2 bg-white/80 border border-gray-200 rounded-xl text-sm" value={selectedSessionId} onChange={e => setSelectedSessionId(e.target.value)}>
-              {previousSessions.map(s => (
-                <option key={s._id} value={s._id}>
-                  {new Date(s.completedAt || s.createdAt || s.date).toLocaleString()} • {s.sport || 'test'}
-                </option>
-              ))}
-            </select>
-          </div>
-          {loadingSessions && <div className="text-sm text-gray-600">Loading previous session…</div>}
-          {!loadingSessions && selectedSession && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                    <div className="text-sm text-gray-600">Sport</div>
-                    <div className="text-xl font-semibold text-primary">{selectedSession.sport ?? '—'}</div>
-                  </div>
-                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                    <div className="text-sm text-gray-600">Délka</div>
-                    <div className="text-xl font-semibold text-primary">{selectedSession.duration ? `${Math.round(selectedSession.duration/60)} min` : '—'}</div>
-                  </div>
-                  <div className="bg-white/70 rounded-2xl border border-white/40 p-4">
-                    <div className="text-sm text-gray-600">Datum</div>
-                    <div className="text-xl font-semibold text-primary">{selectedSession.completedAt ? new Date(selectedSession.completedAt).toLocaleString() : (selectedSession.createdAt ? new Date(selectedSession.createdAt).toLocaleString() : '—')}</div>
-                  </div>
-                </div>
-                {selectedSession.fitFile && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        const blob = await downloadLactateSessionFit(selectedSession._id);
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = selectedSession.fitFile.originalName || `lactate-session-${selectedSession._id}.fit`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                        addNotification('FIT file downloaded successfully', 'success');
-                      } catch (error) {
-                        console.error('Error downloading FIT file:', error);
-                        addNotification('Failed to download FIT file', 'error');
-                      }
-                    }}
-                    className="ml-4 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 flex items-center gap-2 shadow"
-                  >
-                    <DownloadIcon className="w-5 h-5" />
-                    Download FIT
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={handleSaveTest}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20">
+                    <ChartBarIcon className="w-4 h-4" /> Save
                   </button>
-                )}
+                  <button onClick={handleClearTest}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition-colors">
+                    <TrashIcon className="w-4 h-4" /> Clear
+                  </button>
+                </div>
               </div>
-              <div className="mt-2 space-y-6">
-                {/* Transform session data for chart rendering */}
-                {(() => {
-                  const { historical, lactateValues, laps } = transformSessionToChartData(selectedSession);
-                  const hasLaps = Array.isArray(laps) && laps.length > 0;
 
-                  return (
-                    <>
-                      <LactateChart
-                        lactateValues={lactateValues}
-                        historicalData={historical}
-                        laps={laps}
-                      />
-
-                      {hasLaps && (
-                        <div>
-                          <h3 className="text-sm font-semibold text-gray-700 mb-2">Lap Summary</h3>
-                          <div className="overflow-x-auto bg-white/60 backdrop-blur rounded-2xl border border-white/40">
-                            <table className="min-w-full divide-y divide-gray-200 text-sm">
-                              <thead className="bg-white/70 text-gray-600">
-                                <tr>
-                                  <th className="px-4 py-2 text-left font-medium">Lap</th>
-                                  <th className="px-4 py-2 text-left font-medium">Duration</th>
-                                  <th className="px-4 py-2 text-left font-medium">Avg Power</th>
-                                  <th className="px-4 py-2 text-left font-medium">Avg HR</th>
-                                  <th className="px-4 py-2 text-left font-medium">Avg Cadence</th>
-                                  <th className="px-4 py-2 text-left font-medium">Lactate</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {laps.map((lap) => (
-                                  <tr key={`lap-${lap.lapNumber}`}>
-                                    <td className="px-4 py-2 font-semibold text-gray-900">#{lap.lapNumber}</td>
-                                    <td className="px-4 py-2 text-gray-700">{formatTime(lap.totalElapsedTime)}</td>
-                                    <td className="px-4 py-2 text-gray-700">{lap.avgPower ? `${Math.round(lap.avgPower)} W` : '—'}</td>
-                                    <td className="px-4 py-2 text-gray-700">{lap.avgHeartRate ? `${Math.round(lap.avgHeartRate)} bpm` : '—'}</td>
-                                    <td className="px-4 py-2 text-gray-700">{lap.avgCadence ? `${Math.round(lap.avgCadence)} rpm` : '—'}</td>
-                                    <td className="px-4 py-2 text-gray-700">
-                                      {lap.lactate !== null && lap.lactate !== undefined ? `${Number(lap.lactate).toFixed(2)} mmol/L` : '—'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Duration',       val: fmtTime(totalTestTime),                              unit: '' },
+                  { label: 'Samples',        val: lactateValues.length,                                 unit: 'lactate' },
+                  { label: 'Peak Lactate',   val: lactateValues.length ? Math.max(...lactateValues.map(l => l.lactate)).toFixed(1) : '—', unit: 'mmol/L' },
+                  { label: 'Avg Heart Rate', val: hrPoints.length ? Math.round(hrPoints.reduce((s, d) => s + d.heartRate, 0) / hrPoints.length) : '—', unit: 'bpm' },
+                ].map(({ label, val, unit }) => (
+                  <div key={label} className="bg-gray-50 rounded-2xl p-3 text-center">
+                    <div className="text-2xl font-black text-gray-900 tabular-nums leading-none">{val}</div>
+                    {unit && <div className="text-xs text-gray-400 mt-0.5">{unit}</div>}
+                    <div className="text-xs text-gray-500 mt-1">{label}</div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
-          {!loadingSessions && previousSessions.length === 0 && <div className="text-sm text-gray-600">No previous sessions found.</div>}
-        </motion.div>
 
-        {/* Trainer Connect Modal */}
-        {showTrainerModal && (
-          <TrainerConnectModal
-            isOpen={showTrainerModal}
-            onClose={() => setShowTrainerModal(false)}
-          />
+            {/* Interval table */}
+            {lactateValues.length > 0 && (
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Interval Summary</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs font-bold text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                        <th className="text-left py-2 pr-4">Step</th>
+                        <th className="text-right py-2 pr-4">Target</th>
+                        <th className="text-right py-2 pr-4">Avg Power</th>
+                        <th className="text-right py-2 pr-4">Avg HR</th>
+                        <th className="text-right py-2">Lactate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {protocol.steps.map((step, idx) => {
+                        const lv = lactateValues.find(l => l.step === idx + 1);
+                        const sh = historicalData.filter(d => d.step === idx);
+                        const ap = sh.length ? Math.round(sh.reduce((s, d) => s + (d.power || 0), 0) / sh.length) : null;
+                        const hh = sh.filter(d => d.heartRate && d.heartRate > 0);
+                        const ahr = hh.length ? Math.round(hh.reduce((s, d) => s + d.heartRate, 0) / hh.length) : null;
+                        if (!lv && !ap) return null;
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                            <td className="py-2.5 pr-4 font-bold text-gray-800">
+                              <span className="inline-flex items-center gap-1.5">
+                                <CheckCircleSolid className="w-4 h-4 text-emerald-400" /> #{idx + 1}
+                              </span>
+                            </td>
+                            <td className="py-2.5 pr-4 text-right text-gray-500">{step.targetPower}W</td>
+                            <td className="py-2.5 pr-4 text-right font-semibold text-gray-700">{ap ? `${ap}W` : '—'}</td>
+                            <td className="py-2.5 pr-4 text-right text-gray-600">{ahr ? `${ahr} bpm` : '—'}</td>
+                            <td className="py-2.5 text-right">
+                              {lv
+                                ? <span className="font-black text-primary text-base">{lv.lactate.toFixed(1)}<span className="text-xs font-normal text-gray-400 ml-0.5">mmol/L</span></span>
+                                : <span className="text-gray-300">—</span>
+                              }
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Lactate curve */}
+            {lactateValues.length > 0 && (
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <ChartBarIcon className="w-4 h-4 text-primary" /> Lactate Curve Analysis
+                </h3>
+                <LactateChart lactateValues={lactateValues} historicalData={historicalData} />
+              </div>
+            )}
+
+            {/* Full session metrics */}
+            {historicalData.length > 0 && (
+              <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Session Metrics</h3>
+                <LiveDashboard
+                  liveData={liveData}
+                  devices={devices}
+                  testState="completed"
+                  historicalData={historicalData}
+                  intervalTimer={0}
+                  protocol={protocol}
+                  currentStep={currentStep}
+                />
+              </div>
+            )}
+          </div>
         )}
+
+        {/* ══════════════════════════════════════════════════ */}
+        {/* PREVIOUS SESSIONS                                 */}
+        {/* ══════════════════════════════════════════════════ */}
+        <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-sm border border-white/60 p-5">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+              <span className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center text-sm">📁</span>
+              Previous Sessions
+            </h2>
+            {previousSessions.length > 0 && (
+              <select
+                value={selectedSessionId}
+                onChange={e => setSelectedSessionId(e.target.value)}
+                className="text-sm px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none max-w-[240px]"
+              >
+                {previousSessions.map(s => (
+                  <option key={s._id} value={s._id}>
+                    {new Date(s.completedAt ?? s.createdAt).toLocaleDateString()} · {s.sport ?? 'test'}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {loadingSessions && (
+            <div className="flex items-center gap-2 text-sm text-gray-400 py-3">
+              <ArrowPathIcon className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          )}
+          {!loadingSessions && previousSessions.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-8">No previous sessions yet.</p>
+          )}
+
+          {!loadingSessions && selectedSession && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {[
+                  { label: 'Sport',    val: selectedSession.sport ?? '—' },
+                  { label: 'Duration', val: selectedSession.duration ? `${Math.round(selectedSession.duration / 60)} min` : '—' },
+                  { label: 'Date',     val: new Date(selectedSession.completedAt ?? selectedSession.createdAt).toLocaleString() },
+                ].map(({ label, val }) => (
+                  <div key={label} className="bg-gray-50 rounded-xl p-3">
+                    <div className="text-xs text-gray-400 font-medium mb-0.5">{label}</div>
+                    <div className="text-sm font-semibold text-gray-800">{val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedSession.fitFile && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const blob = await downloadLactateSessionFit(selectedSession._id);
+                      const url  = URL.createObjectURL(blob);
+                      const a    = Object.assign(document.createElement('a'), {
+                        href:     url,
+                        download: selectedSession.fitFile.originalName ?? `lactate-${selectedSession._id}.fit`,
+                      });
+                      document.body.appendChild(a); a.click();
+                      URL.revokeObjectURL(url); document.body.removeChild(a);
+                      addNotification('FIT file downloaded', 'success');
+                    } catch { addNotification('Download failed', 'error'); }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors w-fit shadow-sm"
+                >
+                  <DownloadIcon className="w-4 h-4" /> Download FIT File
+                </button>
+              )}
+
+              {/* Session chart */}
+              {(() => {
+                const normRec = (r, idx, t0) => {
+                  const ts  = r.timestamp ? new Date(r.timestamp).getTime() : (t0 ? t0 + idx * 1000 : Date.now());
+                  const toN = v => (v == null || isNaN(Number(v)) ? null : Number(v));
+                  return {
+                    timestamp: ts,
+                    time:      t0 ? Math.max(0, (ts - t0) / 1000) : idx,
+                    power: toN(r.power), heartRate: toN(r.heartRate), cadence: toN(r.cadence),
+                    speed: toN(r.speed), smo2:      toN(r.smo2),     thb:     toN(r.thb),
+                    vo2:   toN(r.vo2),   step:      toN(r.step),
+                  };
+                };
+                let hist = [], lvs = [];
+                const fit = selectedSession?.fitFile?.fitData;
+                if (fit?.records?.length) {
+                  const t0 = fit.records[0]?.timestamp ? new Date(fit.records[0].timestamp).getTime() : null;
+                  hist = fit.records.map((r, i) => normRec(r, i, t0));
+                  lvs  = (fit.laps ?? []).filter(l => typeof l.lactate === 'number')
+                    .map((l, i) => ({ step: l.lapNumber ?? i + 1, power: l.avgPower ?? 0, lactate: l.lactate }));
+                } else if (Array.isArray(selectedSession?.measurements) && selectedSession.measurements.length > 0) {
+                  hist = selectedSession.measurements.map((m, i) => normRec(m, i, null));
+                  lvs  = Array.isArray(selectedSession.lactateValues) ? selectedSession.lactateValues : [];
+                }
+                if (!lvs.length && !hist.length) return null;
+                return <LactateChart lactateValues={lvs} historicalData={hist} />;
+              })()}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
 };
 
 export default LactateTestingPage;
-

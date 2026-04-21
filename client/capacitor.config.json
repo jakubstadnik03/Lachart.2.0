@@ -16,6 +16,14 @@
       "launchAutoHide": false,
       "backgroundColor": "#ffffff",
       "androidScaleType": "CENTER_CROP"
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon_config_sample",
+      "iconColor": "#767EB5",
+      "sound": "beep.wav"
     }
   }
 }

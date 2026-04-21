@@ -2,1194 +2,492 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu } from "../DropDownMenu";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
-import { formatDistanceForUser, formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
+import { formatSpeedForUser, resolveDistanceUnitSystem } from "../../utils/unitsConverter";
 
-const maxGraphHeight = 200;
+const GRAPH_H = 200;
 
-/** Y from top of graph (px) where tick i of `count` should sit — matches bar scale (max at top, min at bottom). */
-function axisTickYPx(index, count, height = maxGraphHeight) {
-  if (count <= 1) return height / 2;
-  return (index / (count - 1)) * height;
+/* ── tiny helpers ──────────────────────────────────────────────────────────── */
+function axisTickY(i, n, h = GRAPH_H) {
+  return n <= 1 ? h / 2 : (i / (n - 1)) * h;
+}
+function trainingResultsOf(t) {
+  return Array.isArray(t?.results) ? t.results : [];
+}
+function parsePaceSecs(v) {
+  if (!v) return null;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const p = v.split(":");
+    if (p.length === 2) {
+      const m = parseInt(p[0], 10), s = parseInt(p[1], 10);
+      if (!isNaN(m) && !isNaN(s)) return m * 60 + s;
+    }
+    const n = Number(v);
+    if (!isNaN(n)) return n;
+  }
+  return null;
+}
+function parseDistMeters(d) {
+  if (!d) return 0;
+  if (typeof d === "number") return d > 100 ? d : d * 1000;
+  const s = String(d).trim().toLowerCase();
+  const km = s.match(/^([\d.]+)\s*km$/); if (km) return parseFloat(km[1]) * 1000;
+  const m  = s.match(/^([\d.]+)\s*m$/);  if (m)  return parseFloat(m[1]);
+  const n = parseFloat(s);
+  if (!isNaN(n)) return n > 100 && n % 1 === 0 && !s.includes(".") ? n : n * 1000;
+  return 0;
+}
+function parseDurationSecs(r) {
+  if (!r || typeof r !== "object") return 0;
+  for (const k of ["moving_time","totalTimerTime","total_timer_time","totalElapsedTime","total_elapsed_time","elapsed_time","duration"]) {
+    const v = r[k];
+    if (v == null) continue;
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      if (v.includes(":")) {
+        const p = v.split(":").map(Number);
+        if (p.length === 2) return p[0]*60+p[1];
+        if (p.length === 3) return p[0]*3600+p[1]*60+p[2];
+      }
+      const n = parseFloat(v);
+      if (!isNaN(n) && n > 0) return n;
+    }
+  }
+  return 0;
 }
 
-/** Interval rows for a training — API or merged objects may omit `results`. */
-function trainingResultsOf(training) {
-  return Array.isArray(training?.results) ? training.results : [];
-}
+/* ── Bar tooltip ───────────────────────────────────────────────────────────── */
+function BarTooltip({ barRef, visible, index, power, heartRate, lactate, duration, durationType, distance, sport, user }) {
+  const [pos, setPos] = useState({ top: 0, left: 0, above: true });
+  const unitSystem = resolveDistanceUnitSystem(user, "metric");
 
-function StatCard({ stats }) {
+  useEffect(() => {
+    if (!visible || !barRef.current) return;
+    const upd = () => {
+      const r = barRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const above = r.top > 130;
+      setPos({ top: above ? r.top - 8 : r.bottom + 8, left: r.left + r.width / 2, above });
+    };
+    upd();
+    window.addEventListener("scroll", upd, true);
+    window.addEventListener("resize", upd);
+    return () => { window.removeEventListener("scroll", upd, true); window.removeEventListener("resize", upd); };
+  }, [visible, barRef]);
+
+  if (!visible || !pos.top) return null;
+
+  const fmtDur = (v) => {
+    if (!v) return null;
+    if (typeof v === "string" && /[km]/i.test(v)) return v;
+    const n = Number(v);
+    if (isNaN(n)) return String(v);
+    return `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}`;
+  };
+  const fmtPace = (v) => {
+    const s = parsePaceSecs(v);
+    if (!s) return null;
+    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
+    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
+  };
+  const fmtDist = (v) => {
+    const m = parseDistMeters(v);
+    if (!m) return null;
+    return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}km`;
+  };
+
+  const rows = [
+    { label: `Interval #${index + 1}`, value: null, header: true },
+    durationType === "distance" && duration ? { label: "Distance", value: fmtDist(duration) } : null,
+    durationType !== "distance" && duration ? { label: "Time", value: fmtDur(duration) } : null,
+    distance && durationType !== "distance" ? { label: "Distance", value: fmtDist(distance) } : null,
+    sport === "run" && power ? { label: "Pace", value: fmtPace(power) } : null,
+    sport !== "run" && power ? { label: "Power", value: `${power} W` } : null,
+    heartRate ? { label: "HR", value: `${heartRate} bpm` } : null,
+    lactate ? { label: "Lactate", value: `${lactate} mmol/L` } : null,
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-col text-[10px] sm:text-xs rounded-none max-w-[160px] sm:max-w-[192px]" >
-      <div className="flex z-10 flex-col justify-center items-center px-2 sm:px-3 py-1.5 sm:py-2 text-center bg-white rounded-lg border border-solid border-slate-100 shadow-[0px_12px_20px_rgba(0,0,0,0.1)] text-stone-500">
-        {stats
-          .filter(stat => stat.value && stat.value !== "-")
-          .map((stat, index) => (
-            <div
-              key={`stat-${index}`}
-              className={stat.unit === "W" ? "font-semibold text-gray-900" : ""}
-            >
-              {stat.label}: {stat.value} {stat.unit}
-            </div>
-          ))}
-          
+    <div
+      className="pointer-events-none fixed z-[99999]"
+      style={{
+        top: `${pos.top}px`,
+        left: `${pos.left}px`,
+        transform: pos.above ? "translate(-50%,-100%)" : "translate(-50%,0)",
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-xl border border-gray-100 px-3 py-2 text-xs min-w-[130px]">
+        {rows.map((row, i) => (
+          <div
+            key={i}
+            className={`flex justify-between gap-4 ${
+              row.header
+                ? "font-semibold text-gray-900 pb-1 mb-1 border-b border-gray-100"
+                : "text-gray-500 leading-relaxed"
+            }`}
+          >
+            <span>{row.label}</span>
+            {row.value && <span className="font-medium text-gray-800">{row.value}</span>}
+          </div>
+        ))}
       </div>
-      <div className="flex shrink-0 self-center mt-2 sm:mt-3 w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 bg-violet-500 rounded-full border-solid border-[2px] sm:border-[3px] border-zinc-50" />
     </div>
   );
 }
 
-function VerticalBar({ height, color, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, totalTrainings, visibleTrainings, minPower, maxPower, minPace, maxPace, containerWidth, selectedTraining, displayCount, isFullWidth, sport, user = null, widthPercent = null, trainingResults = null }) {
+/* ── VerticalBar ───────────────────────────────────────────────────────────── */
+// Violet shades from darkest (rank 0 = highest value) to lightest
+const BAR_COLORS = ["#4c1d95","#5b21b6","#6d28d9","#7c3aed","#8b5cf6","#a78bfa","#c4b5fd"];
+
+function VerticalBar({ height, colorIdx, power, pace, distance, heartRate, lactate, duration, durationType, index, isHovered, onHover, sport, user = null, widthPercent = null }) {
   const barRef = useRef(null);
-  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0, showAbove: true });
-  const getWidth = () => {
-    // If widthPercent is provided, we'll use it as percentage in flexbox (handled in style)
-    // This function is kept for backward compatibility with old logic
-    // Otherwise, use the old complex logic (for backward compatibility)
-    // Funkce pro převod duration na číselnou hodnotu (normalizovanou pro porovnání)
-    const parseDurationToNumber = (dur, durType) => {
-      if (!dur) return 0;
-      
-      // Pokud je durationType 'distance', parsujeme jako vzdálenost v km
-      if (durType === 'distance') {
-        if (typeof dur === 'string') {
-          // Parsování stringu s jednotkami (např. "2.01km", "1000m", "1.5 km")
-          const match = dur.match(/^([\d.]+)\s*(km|m)$/i);
-          if (match) {
-            const value = parseFloat(match[1]);
-            const unit = match[2].toLowerCase();
-            return unit === 'km' ? value : value / 1000;
-          }
-          // Pokud je to číslo jako string bez jednotek, předpokládáme km
-          const numValue = parseFloat(dur);
-          if (!isNaN(numValue)) return numValue;
-        }
-        // Pokud je to číslo, předpokládáme km
-        return typeof dur === 'number' ? dur : parseFloat(dur) || 0;
-      } else {
-        // Pokud je durationType 'time', parsujeme jako čas v sekundách
-        if (typeof dur === 'string') {
-          // Parsování MM:SS nebo HH:MM:SS formátu
-          if (dur.includes(':')) {
-            const parts = dur.split(':').map(Number);
-            if (parts.length === 2) {
-              return parts[0] * 60 + parts[1];
-            } else if (parts.length === 3) {
-              return parts[0] * 3600 + parts[1] * 60 + parts[2];
-            }
-          }
-          // Pokud je to číslo jako string, předpokládáme sekundy
-          const numValue = parseFloat(dur);
-          if (!isNaN(numValue)) return numValue;
-        }
-        // Pokud je to číslo, předpokládáme sekundy
-        return typeof dur === 'number' ? dur : parseFloat(dur) || 0;
-      }
-    };
+  const bg = BAR_COLORS[Math.min(Math.max(colorIdx, 0), BAR_COLORS.length - 1)];
 
-    // Funkce pro parsování vzdálenosti na km (podobná parseDistanceToKm, ale vrací číslo)
-    const parseDistanceToKmNumber = (value) => {
-      if (!value) return null;
-      
-      if (typeof value === 'number') {
-        if (value > 100 && value % 1 === 0) {
-          return value / 1000;
-        }
-        return value;
-      }
-      
-      if (typeof value === 'string') {
-        const cleanValue = value.trim().toLowerCase();
-        const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
-        if (kmMatch) {
-          return parseFloat(kmMatch[1]);
-        }
-        const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
-        if (mMatch) {
-          return parseFloat(mMatch[1]) / 1000;
-        }
-        const numValue = parseFloat(cleanValue);
-        if (!isNaN(numValue)) {
-          // Pokud je to celé číslo > 100 bez desetinné tečky, pravděpodobně metry
-          if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
-            return numValue / 1000;
-          }
-          return numValue;
-        }
-      }
-      
-      return null;
-    };
-
-    // Funkce pro získání "velikosti" intervalu - buď vzdálenost (priorita), nebo čas
-    const getIntervalSize = (r) => {
-      // Pokud je durationType 'distance', zkusíme najít vzdálenost v různých polích
-      if (r.durationType === 'distance') {
-        // Zkusíme duration (může být číslo v km nebo string)
-        if (r.duration !== undefined && r.duration !== null) {
-          return { value: parseDurationToNumber(r.duration, 'distance'), type: 'distance' };
-        }
-        // Zkusíme durationSeconds (pokud je to vzdálenost, může být v km)
-        if (r.durationSeconds !== undefined && r.durationSeconds !== null) {
-          // Pokud je durationSeconds číslo, předpokládáme, že je to v km pro distance type
-          return { value: typeof r.durationSeconds === 'number' ? r.durationSeconds : parseFloat(r.durationSeconds) || 0, type: 'distance' };
-        }
-        // Zkusíme samostatné distance pole
-        if (r.distance) {
-          const distKm = parseDistanceToKmNumber(r.distance);
-          if (distKm !== null) {
-            return { value: distKm, type: 'distance' };
-          }
-        }
-        // Pokud není žádná vzdálenost, ale durationType je 'distance', vrátíme null
-        // aby se to nepovažovalo za čas
-        return { value: null, type: 'distance' };
-      }
-      // Pokud je k dispozici samostatné distance pole (i když durationType není 'distance')
-      if (r.distance) {
-        const distKm = parseDistanceToKmNumber(r.distance);
-        if (distKm !== null) {
-          return { value: distKm, type: 'distance' };
-        }
-      }
-      // Jinak použijeme duration jako čas
-      // Pokud duration není definováno, zkusíme durationSeconds
-      const durValue = r.duration !== undefined && r.duration !== null 
-        ? parseDurationToNumber(r.duration, r.durationType || 'time')
-        : (r.durationSeconds !== undefined && r.durationSeconds !== null 
-          ? (typeof r.durationSeconds === 'number' ? r.durationSeconds : parseFloat(r.durationSeconds) || 0)
-          : 0);
-      return { value: durValue, type: 'time' };
-    };
-
-    // Najdeme všechny tréninky stejného typu
-    const sameTypeTrainings = visibleTrainings.filter(t => t.title === selectedTraining);
-    
-    // Najdeme všechny velikosti intervalů (vzdálenost nebo čas) napříč všemi tréninky stejného typu
-    const allSizes = sameTypeTrainings.flatMap((t) =>
-      trainingResultsOf(t).map((r) => getIntervalSize(r))
-    );
-    
-    // Rozdělíme na vzdálenosti a časy, filtrujeme null hodnoty
-    const distances = allSizes.filter(s => s.type === 'distance' && s.value !== null && s.value !== undefined).map(s => s.value);
-    const times = allSizes.filter(s => s.type === 'time' && s.value !== null && s.value !== undefined).map(s => s.value);
-    
-    // Pokud máme alespoň jednu vzdálenost, použijeme vzdálenosti pro výpočet
-    // Jinak použijeme časy
-    const useDistance = distances.length > 0;
-    const allValues = useDistance ? distances : times;
-    const maxSize = allValues.length > 0 ? Math.max(...allValues) : 1;
-    const minSize = allValues.length > 0 ? Math.min(...allValues) : 0;
-    const sizeRange = maxSize - minSize;
-
-    // Získáme velikost aktuálního intervalu
-    const currentSize = getIntervalSize({ duration, durationType, distance });
-    const currentValue = currentSize.value;
-    
-    // Celkový počet intervalů napříč všemi zobrazenými tréninky
-    const totalIntervals = visibleTrainings.reduce(
-      (sum, t) => sum + trainingResultsOf(t).length,
-      0
-    );
-    
-    // Vypočítáme dostupnou šířku pro celý graf (s rezervou pro padding a mezery)
-    const availableWidth = containerWidth * 0.95; // 95% pro sloupce, 5% pro padding
-    
-    // Základní šířka - závisí na celkovém počtu intervalů
-    // Čím více intervalů, tím užší základní šířka
-    let baseWidth, maxWidth;
-    
-    // Vypočítáme optimální šířku na základě celkového počtu intervalů
-    // Čím více intervalů, tím užší sloupce
-    const optimalWidthPerInterval = availableWidth / totalIntervals;
-    
-    // Minimální a maximální šířka podle počtu intervalů
-    let minWidth, calculatedMaxWidth;
-    
-    if (window.innerWidth < 640) {
-      // Mobilní zařízení
-      if (totalIntervals <= 5) {
-        minWidth = 6;
-        calculatedMaxWidth = 12;
-      } else if (totalIntervals <= 10) {
-        minWidth = 4;
-        calculatedMaxWidth = 8;
-      } else if (totalIntervals <= 20) {
-        minWidth = 3;
-        calculatedMaxWidth = 6;
-      } else {
-        minWidth = 2;
-        calculatedMaxWidth = 4;
-      }
-    } else {
-      // Desktop
-      if (totalIntervals <= 5) {
-        minWidth = 10;
-        calculatedMaxWidth = 20;
-      } else if (totalIntervals <= 10) {
-        minWidth = 8;
-        calculatedMaxWidth = 16;
-      } else if (totalIntervals <= 20) {
-        minWidth = 6;
-        calculatedMaxWidth = 12;
-      } else if (totalIntervals <= 30) {
-        minWidth = 4;
-        calculatedMaxWidth = 8;
-      } else {
-        minWidth = 3;
-        calculatedMaxWidth = 6;
-      }
-    }
-    
-    // Pokud currentValue je null nebo undefined, použijeme stejnou šířku pro všechny
-    if (currentValue === null || currentValue === undefined) {
-      const uniformWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval));
-      return uniformWidth;
-    }
-    
-    // Použijeme normalizovaný poměr: (currentValue - minSize) / (maxSize - minSize)
-    // Tím zajistíme, že nejmenší interval má poměr 0 a největší má poměr 1
-    // Použijeme to jak pro distance, tak pro time (duration)
-    const sizeRatio = sizeRange > 0 
-      ? (currentValue - minSize) / sizeRange 
-      : 0.5; // Pokud není žádný rozsah, použijeme 0.5 pro stejnou šířku
-    
-    // Základní šířka pro nejkratší/nejmenší interval
-    baseWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 0.5));
-    
-    // Maximální šířka pro nejdelší/největší interval - větší rozsah pro výraznější rozdíly
-    maxWidth = Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval * 3.0));
-    
-    // Upravíme šířku podle poměru velikosti intervalu (vzdálenost nebo čas)
-    // Delší/větší intervaly jsou výrazně širší
-    // Použijeme mírně nelineární funkci pro výraznější rozdíly (exponent 0.6 pro větší rozdíly)
-    const adjustedWidth = baseWidth + (Math.pow(sizeRatio, 0.6) * (maxWidth - baseWidth));
-    
-    // Zajistíme, že se všechny sloupce vejdou
-    // Vypočítáme celkovou šířku všech intervalů v nejdelším tréninku s jejich poměrovými šířkami
-    const longestTraining =
-      sameTypeTrainings.length > 0
-        ? sameTypeTrainings.reduce(
-            (longest, t) =>
-              trainingResultsOf(t).length > trainingResultsOf(longest).length ? t : longest,
-            sameTypeTrainings[0]
-          )
-        : { results: [] };
-
-    if (trainingResultsOf(longestTraining).length > 0) {
-      // Vypočítáme šířky pro všechny intervaly v nejdelším tréninku
-      const widths = trainingResultsOf(longestTraining).map((r) => {
-        const rSize = getIntervalSize(r);
-        // Pokud je hodnota null nebo undefined, použijeme stejnou šířku
-        if (rSize.value === null || rSize.value === undefined) {
-          return Math.max(minWidth, Math.min(calculatedMaxWidth, optimalWidthPerInterval));
-        }
-        // Použijeme normalizovanou logiku pro distance nebo time
-        const rRatio = sizeRange > 0 
-          ? (rSize.value - minSize) / sizeRange 
-          : 0.5;
-        return baseWidth + (Math.pow(rRatio, 0.6) * (maxWidth - baseWidth));
-      });
-      
-      const totalWidthNeeded = widths.reduce((sum, w) => sum + w, 0);
-      
-      // Pokud by celková šířka přesáhla dostupnou, škálujeme všechny šířky
-      // Ale zachováme poměry mezi nimi
-      const scaleFactor = totalWidthNeeded > availableWidth ? availableWidth / totalWidthNeeded : 1;
-      
-      // Vypočítáme škálovanou šířku pro aktuální interval
-      const scaledWidth = adjustedWidth * scaleFactor;
-      
-      // Po škálování musíme zajistit, že šířka není menší než minWidth
-      // Ale zachováme poměry - použijeme relativní škálování
-      const scaledBaseWidth = baseWidth * scaleFactor;
-      const scaledMaxWidth = maxWidth * scaleFactor;
-      
-      // Pokud je scaledBaseWidth menší než minWidth, upravíme všechny šířky tak, aby minimální byla minWidth
-      // a zachováme poměry
-      if (scaledBaseWidth < minWidth) {
-        // Vypočítáme poměr aktuální šířky v rámci rozsahu
-        const ratioInRange = (scaledWidth - scaledBaseWidth) / (scaledMaxWidth - scaledBaseWidth);
-        // Aplikujeme tento poměr na nový rozsah od minWidth
-        const newMaxWidth = Math.min(calculatedMaxWidth, minWidth + (scaledMaxWidth - scaledBaseWidth));
-        const finalWidth = minWidth + ratioInRange * (newMaxWidth - minWidth);
-        return Math.min(finalWidth, calculatedMaxWidth);
-      }
-      
-      // Pokud je scaledMaxWidth větší než calculatedMaxWidth, ořízneme, ale zachováme poměr
-      if (scaledMaxWidth > calculatedMaxWidth) {
-        const ratioInRange = (scaledWidth - scaledBaseWidth) / (scaledMaxWidth - scaledBaseWidth);
-        const newBaseWidth = Math.max(minWidth, scaledBaseWidth);
-        const newMaxWidth = calculatedMaxWidth;
-        const finalWidth = newBaseWidth + ratioInRange * (newMaxWidth - newBaseWidth);
-        return Math.max(minWidth, Math.min(finalWidth, calculatedMaxWidth));
-      }
-      
-      // Normální případ - škálovaná šířka je v rozsahu
-      return Math.max(minWidth, Math.min(scaledWidth, calculatedMaxWidth));
-    }
-    
-    // Fallback pro prázdný trénink
-    return Math.max(minWidth, Math.min(adjustedWidth, maxWidth));
-  };
-
-  const width = getWidth();
-  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
-
-  const formatPace = (seconds) => {
-    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
-    const minutes = Math.floor(secPerUnit / 60);
-    const remainingSeconds = Math.round(secPerUnit % 60);
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
-  };
-
-  // Parse distance from various formats (1km, 1000m, etc.) to km
-  const parseDistanceToKm = (value) => {
-    if (!value) return null;
-    
-    if (typeof value === 'number') {
-      if (value > 100 && value % 1 === 0) {
-        return value / 1000;
-      }
-      return value;
-    }
-    
-    // If it's a string with units
-    if (typeof value === 'string') {
-      // Remove whitespace and convert to lowercase
-      const cleanValue = value.trim().toLowerCase();
-      
-      // Match patterns like "1km", "1 km", "1000m", "1000 m", "1.5km", etc.
-      const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
-      if (kmMatch) {
-        return parseFloat(kmMatch[1]);
-      }
-      
-      const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
-      if (mMatch) {
-        return parseFloat(mMatch[1]) / 1000; // Convert meters to km
-      }
-      
-      // Try to parse as number
-      // Only assume meters if it's a whole number > 100 and looks like meters (no decimals)
-      const numValue = parseFloat(cleanValue);
-      if (!isNaN(numValue)) {
-        // If it's a whole number > 100 with no decimal point, likely meters
-        if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
-          return numValue / 1000;
-        }
-        // Otherwise assume km (could be 1.5, 2.3, etc. or already in km)
-        return numValue;
-      }
-    }
-    
-    return null;
-  };
-
-  const formatDistance = (value) => {
-    if (!value) return null;
-    
-    // Parse to km first
-    const kmValue = parseDistanceToKm(value);
-    if (kmValue === null) return null;
-    
-    // Use user's units preference if available
-    if (user) {
-      // Convert km to meters for formatDistanceForUser
-      const meters = kmValue * 1000;
-      return formatDistanceForUser(meters, user);
-    }
-    
-    // Fallback to metric
-    // If it's already a string with units, return it as is (but normalized)
-    if (typeof value === 'string' && (value.includes('km') || value.includes('m'))) {
-      // Normalize: if less than 1km, show in meters, otherwise in km
-      if (kmValue < 1) {
-        return `${Math.round(kmValue * 1000)}m`;
-      }
-      return `${kmValue.toFixed(1)}km`;
-    }
-    
-    // If it's a number or parsed value
-    if (kmValue < 1) {
-      return `${Math.round(kmValue * 1000)}m`;
-    }
-    return `${kmValue.toFixed(1)}km`;
-  };
-
-  const formatDurationDisplay = (durationValue) => {
-    if (!durationValue) return null;
-    // If it's already a string with units (e.g., "1 km"), return it as is
-    if (typeof durationValue === 'string' && (durationValue.includes('km') || durationValue.includes('m'))) {
-      return durationValue;
-    }
-    // If it's a number, format as time
-    const numValue = Number(durationValue);
-    if (!isNaN(numValue)) {
-      const minutes = Math.floor(numValue / 60);
-      const remainingSeconds = numValue % 60;
-      return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-    }
-    return durationValue;
-  };
-
-  // If widthPercent is provided, use it as percentage for flexbox
-  // Otherwise, use the old pixel-based width
-  // Ensure minimum width for visibility, especially on mobile
-  const minWidthPx = window.innerWidth < 640 ? 3 : 2; // Slightly larger on mobile
-  const barStyle = widthPercent !== null && widthPercent !== undefined
-    ? {
-        flexBasis: `${Math.max(widthPercent, 0.5)}%`, // Use flexBasis for better flexbox gap handling
-        width: `${Math.max(widthPercent, 0.5)}%`, // Also set width for compatibility
-        minWidth: `${minWidthPx}px`, // Ensure minimum visibility in pixels
-        flexShrink: 1, // Allow shrinking if needed to fit in narrow containers
-        flexGrow: 0
-      }
-    : {
-        width: `${Math.max(width, minWidthPx)}px`,
-        flexShrink: 1, // Allow shrinking if needed
-        flexGrow: 0
-      };
-
-  // Calculate tooltip position when hovered - update whenever bar position changes
-  useEffect(() => {
-    if (isHovered && barRef.current) {
-      const updatePosition = () => {
-        if (!barRef.current) return;
-        
-        const rect = barRef.current.getBoundingClientRect();
-        const tooltipHeight = 120; // Approximate tooltip height
-        const tooltipWidth = 180; // Approximate tooltip width
-        const margin = 8;
-        
-        // The bar is positioned at bottom-0, so its top is at rect.bottom - height
-        // Calculate the actual top of the bar (not the container)
-        const barTop = rect.bottom - height + 4; // height is the actual bar height in pixels
-        
-        // Try to position above the bar first (touching the top of the bar)
-        let top = barTop; // Touch the top of the actual bar
-        let showAbove = true;
-        
-        // Check if tooltip would go off the top of the screen
-        if (top - tooltipHeight < margin) {
-          // Position below the bar instead (touching the bottom of the bar)
-          top = rect.bottom; // Touch the bottom of the bar
-          showAbove = false;
-        }
-        
-        // Center horizontally on the bar
-        let left = rect.left + rect.width / 2;
-        
-        // Check if tooltip would go off the left of the screen
-        if (left - tooltipWidth / 2 < margin) {
-          left = tooltipWidth / 2 + margin;
-        }
-        
-        // Check if tooltip would go off the right of the screen
-        if (left + tooltipWidth / 2 > window.innerWidth - margin) {
-          left = window.innerWidth - tooltipWidth / 2 - margin;
-        }
-        
-        setTooltipPosition({
-          top: top,
-          left: left,
-          showAbove: showAbove
-        });
-      };
-      
-      updatePosition();
-      
-      // Update on scroll and resize to keep tooltip aligned with bar
-      window.addEventListener('scroll', updatePosition, true);
-      window.addEventListener('resize', updatePosition);
-      
-      return () => {
-        window.removeEventListener('scroll', updatePosition, true);
-        window.removeEventListener('resize', updatePosition);
-      };
-    }
-  }, [isHovered, height]);
+  const style = widthPercent != null
+    ? { flexBasis: `${Math.max(widthPercent, 0.3)}%`, width: `${Math.max(widthPercent, 0.3)}%`, minWidth: "2px", flexShrink: 1, flexGrow: 0 }
+    : { flex: "1 1 0", minWidth: "2px" };
 
   return (
     <>
       <div
         ref={barRef}
-        className="relative flex justify-center shrink-0 h-full"
-        style={barStyle}
+        className="relative h-full shrink-0 cursor-pointer"
+        style={style}
         onMouseEnter={() => onHover(true)}
         onMouseLeave={() => onHover(false)}
       >
-      <div
-        className={`w-full rounded-sm ${color} transition-all duration-200 absolute bottom-0 cursor-pointer hover:opacity-90`}
-        style={{ 
-          height: `${Math.max(height, 3)}px`,
-          opacity: isHovered ? 1 : 0.7,
-          zIndex: 20
-        }}
-      />
-      
-      </div>
-      {isHovered && tooltipPosition.top > 0 && (
-        <div 
-          className="pointer-events-none"
+        <div
+          className="absolute bottom-0 w-full rounded-t-sm"
           style={{
-            position: 'fixed',
-            top: `${tooltipPosition.top}px`,
-            left: `${tooltipPosition.left}px`,
-            transform: tooltipPosition.showAbove 
-              ? 'translate(-50%, -100%)' // Above bar
-              : 'translate(-50%, 0)', // Below bar
-            minWidth: "140px",
-            zIndex: 99999,
-            pointerEvents: 'none'
-          }}  
-        >
-          <StatCard
-            stats={[
-              { label: "Interval", value: `#${index + 1}`, unit: "" },
-              // Show Distance or Duration based on durationType
-              ...(duration && durationType === 'distance'
-                ? [{ label: "Distance", value: formatDistance(duration), unit: "" }]
-                : []),
-              ...(duration && durationType !== 'distance'
-                ? [{ label: "Duration", value: formatDurationDisplay(duration), unit: "" }]
-                : []),
-              // For run sport, show Pace instead of Power
-              ...(sport === 'run' && power ? [{ label: "Pace", value: typeof power === 'string' ? `${power}${unitSystem === 'imperial' ? '/mile' : '/km'}` : formatPace(power), unit: "" }] : []),
-              // For other sports, show Power
-              ...(sport !== 'run' && power ? [{ label: "Power", value: power, unit: "W" }] : []),
-              // Also show distance if explicitly provided (separate from duration)
-              ...(distance && durationType !== 'distance' ? [{ label: "Distance", value: formatDistance(distance), unit: "" }] : []),
-              ...(heartRate ? [{ label: "Heart Rate", value: heartRate, unit: "Bpm" }] : []),
-              ...(lactate ? [{ label: "Lactate", value: lactate, unit: "mmol/L" }] : []),
-            ]}
-          />
-        </div>
-      )}
+            height: `${Math.max(height, 3)}px`,
+            backgroundColor: bg,
+            opacity: isHovered ? 1 : 0.75,
+            transition: "opacity 0.15s",
+          }}
+        />
+      </div>
+      <BarTooltip
+        barRef={barRef}
+        visible={isHovered}
+        index={index}
+        power={power}
+        heartRate={heartRate}
+        lactate={lactate}
+        duration={duration}
+        durationType={durationType}
+        distance={distance}
+        sport={sport}
+        user={user}
+      />
     </>
   );
 }
 
-function Scale({ values, unit, formatValue, isPace = false, graphHeight = maxGraphHeight }) {
-  const n = values.length;
-
+/* ── Y-axis scale ──────────────────────────────────────────────────────────── */
+function Scale({ values, formatValue }) {
   return (
-    <div
-      className="relative shrink-0 w-8 sm:w-12 text-[10px] sm:text-sm text-right whitespace-nowrap text-zinc-500"
-      style={{ height: graphHeight, minHeight: graphHeight, maxHeight: graphHeight }}
-    >
-      {values.map((value, index) => {
-        const y = axisTickYPx(index, n, graphHeight);
-        return (
-          <div
-            key={`scale-${unit}-${index}`}
-            className="absolute right-0 left-0 flex items-center justify-end pr-0.5 sm:pr-1"
-            style={{ top: `${y}px`, transform: 'translateY(-50%)' }}
-          >
-            <span className="relative z-10 bg-white pl-0.5 sm:pl-1">
-              {formatValue ? formatValue(value) : `${value}${unit}`}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TrainingComparison({ training, previousTraining, sport, onTrainingClick, user = null }) {
-  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
-  const getAveragePower = (results) => {
-    const powers = results.map(r => Number(r.power)).filter(p => !isNaN(p) && p > 0);
-    return powers.length > 0 ? Math.round(powers.reduce((a, b) => a + b) / powers.length) : 0;
-  };
-
-  const getAveragePace = (results) => {
-    // Power u běhu je pace v mm:ss formátu
-    const parsePaceToSeconds = (paceValue) => {
-      if (!paceValue) return null;
-      if (typeof paceValue === 'number') return paceValue;
-      if (typeof paceValue === 'string') {
-        const parts = paceValue.split(':');
-        if (parts.length === 2) {
-          const minutes = parseInt(parts[0], 10);
-          const seconds = parseInt(parts[1], 10);
-          if (!isNaN(minutes) && !isNaN(seconds)) {
-            return minutes * 60 + seconds;
-          }
-        }
-        const num = Number(paceValue);
-        if (!isNaN(num)) return num;
-      }
-      return null;
-    };
-    const paces = results.map(r => parsePaceToSeconds(r.power)).filter(p => p !== null && p > 0);
-    return paces.length > 0 ? Math.round(paces.reduce((a, b) => a + b) / paces.length) : 0;
-  };
-
-  const formatPace = (seconds) => {
-    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
-    const minutes = Math.floor(secPerUnit / 60);
-    const remainingSeconds = Math.round(secPerUnit % 60);
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
-  };
-
-  const currentAvgPower = getAveragePower(trainingResultsOf(training));
-  const previousAvgPower = previousTraining
-    ? getAveragePower(trainingResultsOf(previousTraining))
-    : 0;
-  const powerDiff = currentAvgPower - previousAvgPower;
-
-  const currentAvgPace = getAveragePace(trainingResultsOf(training));
-  const previousAvgPace = previousTraining
-    ? getAveragePace(trainingResultsOf(previousTraining))
-    : 0;
-  const paceDiff = currentAvgPace - previousAvgPace;
-
-  // For bike/ride: show Avg speed instead of Avg power in header
-  const sportLower = (sport || '').toLowerCase();
-  const isBike =
-    sportLower.includes('bike') ||
-    sportLower.includes('ride') ||
-    sportLower.includes('cycle') ||
-    sportLower === 'cycling';
-
-  const avgSpeedMps = Number(training.avgSpeed || 0);
-  const hasAvgSpeed = isBike && avgSpeedMps > 0;
-  
-  const getTrendIcon = (diff, isPace = false) => {
-    // Pro pace: nižší pace (rychlejší) = lepší, takže opačně
-    if (isPace) {
-      if (diff < 0) return "↑"; // Rychlejší = lepší
-      if (diff > 0) return "↓"; // Pomalejší = horší
-      return "→";
-    }
-    // Pro power: vyšší = lepší
-    if (diff > 0) return "↑";
-    if (diff < 0) return "↓";
-    return "→";
-  };
-
-  const getTrendColor = (diff, isPace = false) => {
-    // Pro pace: nižší pace (rychlejší) = lepší, takže opačně
-    if (isPace) {
-      if (diff < 0) return "text-green-500"; // Rychlejší = lepší
-      if (diff > 0) return "text-red-500"; // Pomalejší = horší
-      return "text-gray-500";
-    }
-    // Pro power: vyšší = lepší
-    if (diff > 0) return "text-green-500";
-    if (diff < 0) return "text-red-500";
-    return "text-gray-500";
-  };
-
-  const handleDateClick = () => {
-    if (onTrainingClick) {
-      onTrainingClick(training);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1.5 sm:gap-2 py-1 sm:py-1.5 px-2 sm:px-3 bg-gray-50 rounded-lg">
-      <div className="flex-1">
-        <div 
-          onClick={handleDateClick}
-          className="text-xs sm:text-sm font-medium text-gray-900 cursor-pointer hover:text-primary hover:underline transition-colors duration-200"
-          title="Click to view training details"
+    <div className="relative shrink-0 w-8 sm:w-10 text-right" style={{ height: GRAPH_H }}>
+      {values.map((v, i) => (
+        <div
+          key={i}
+          className="absolute right-0 left-0 flex items-center justify-end pr-1"
+          style={{ top: `${axisTickY(i, values.length)}px`, transform: "translateY(-50%)" }}
         >
-          {new Date(training.date).toLocaleDateString('en-US', {
-            day: 'numeric',
-            month: 'numeric',
-            year: '2-digit'
-          })}
+          <span className="text-[9px] text-gray-400 bg-white pl-0.5 leading-none whitespace-nowrap">
+            {formatValue ? formatValue(v) : v}
+          </span>
         </div>
-        <div className="text-[10px] sm:text-xs text-gray-500 truncate max-w-[120px] sm:max-w-[150px]">{training.title}</div>
-      </div>
-      <div className="flex items-center gap-2 sm:gap-4">
-        <div className="text-xs sm:text-sm whitespace-nowrap">
-          <span className="text-gray-500">Avg: </span>
-          {sport === 'run' ? (
-            <>
-              <span className="font-medium">{formatPace(currentAvgPace)}</span>
-              {previousTraining && (
-                <span className={`ml-1 sm:ml-2 ${getTrendColor(paceDiff, true)}`}>
-                  {getTrendIcon(paceDiff, true)} {formatPace(Math.abs(paceDiff))}
-                </span>
-              )}
-            </>
-          ) : hasAvgSpeed ? (
-            <>
-              <span className="font-medium">{formatSpeedForUser(avgSpeedMps, user)}</span>
-            </>
-          ) : (
-            <>
-              <span className="font-medium">{currentAvgPower}W</span>
-              {previousTraining && (
-                <span className={`ml-1 sm:ml-2 ${getTrendColor(powerDiff)}`}>
-                  {getTrendIcon(powerDiff)} {Math.abs(powerDiff)}W
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
 
+/* ── Training comparison row ───────────────────────────────────────────────── */
+function TrainingComparison({ training, previousTraining, sport, onTrainingClick, user }) {
+  const unitSystem = resolveDistanceUnitSystem(user, "metric");
+  const results    = trainingResultsOf(training);
+  const prevRes    = trainingResultsOf(previousTraining);
+
+  const isRun  = (sport || "").toLowerCase() === "run";
+  const isBike = ["bike","ride","cycle","cycling"].some(s => (sport || "").toLowerCase().includes(s));
+
+  const avg = (arr, fn) => {
+    const vals = arr.map(fn).filter(x => x != null && x > 0);
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b) / vals.length) : 0;
+  };
+
+  const curPow  = avg(results,  r => { const p = Number(r.power); return isNaN(p) ? null : p; });
+  const prevPow = avg(prevRes,   r => { const p = Number(r.power); return isNaN(p) ? null : p; });
+  const curPace  = avg(results, r => parsePaceSecs(r.power));
+  const prevPace = avg(prevRes,  r => parsePaceSecs(r.power));
+
+  const fmtPace = (s) => {
+    if (!s) return "—";
+    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
+    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}${unitSystem === "imperial" ? "/mi" : "/km"}`;
+  };
+
+  const avgSpeed = Number(training.avgSpeed || 0);
+  const metricStr = isRun
+    ? fmtPace(curPace)
+    : isBike && avgSpeed > 0
+      ? formatSpeedForUser(avgSpeed, user)
+      : `${curPow} W`;
+
+  const rawDiff  = isRun ? (prevPace ? curPace - prevPace : null) : (prevPow ? curPow - prevPow : null);
+  const improved = rawDiff == null ? null : isRun ? rawDiff < 0 : rawDiff > 0;
+  const icon     = rawDiff == null || rawDiff === 0 ? null : improved ? "↑" : "↓";
+  const iconCls  = improved == null ? "" : improved ? "text-green-500" : "text-red-400";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onTrainingClick?.(training)}
+      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-gray-50 transition-colors"
+    >
+      <span className="shrink-0 text-[11px] text-gray-400 w-14 tabular-nums">
+        {new Date(training.date).toLocaleDateString("en-US", { day: "numeric", month: "numeric", year: "2-digit" })}
+      </span>
+      <span className="flex-1 min-w-0 text-[11px] text-gray-600 truncate">{training.title}</span>
+      <span className="shrink-0 text-[11px] font-semibold text-gray-800 flex items-center gap-0.5">
+        {metricStr}
+        {icon && <span className={`text-[10px] ${iconCls}`}>{icon}</span>}
+      </span>
+    </button>
+  );
+}
+
+/* ── Main component ────────────────────────────────────────────────────────── */
 export function TrainingStats({
-  trainings,
-  selectedSport,
-  onSportChange,
-  selectedTitle,
-  setSelectedTitle,
-  selectedTrainingId,
-  setSelectedTrainingId,
-  isFullWidth = false,
-  user = null,
-  /** When true, omits the compact “Training Progress” list (use with full Training Comparison on the same page). */
-  hideTrainingProgress = false,
+  trainings, selectedSport, onSportChange,
+  selectedTitle, setSelectedTitle,
+  selectedTrainingId, setSelectedTrainingId,
+  isFullWidth = false, user = null,
 }) {
-  const navigate = useNavigate();
-  const unitSystem = resolveDistanceUnitSystem(user, 'metric');
+  const navigate   = useNavigate();
+  const unitSystem = resolveDistanceUnitSystem(user, "metric");
+
   const trainingsList = useMemo(
     () => (Array.isArray(trainings) ? trainings : []),
     [trainings]
   );
-  // Get available sports from trainings
-  const availableSports = [...new Set(trainingsList.map((t) => t.sport))].filter(Boolean);
-  
-  // Initialize selectedSport with localStorage or default to 'all' if not provided
+
+  const availableSports = [...new Set(trainingsList.map(t => t.sport))].filter(Boolean);
+
   const [internalSelectedSport, setInternalSelectedSport] = useState(() => {
-    if (selectedSport !== undefined && selectedSport !== null) return selectedSport;
-    const saved = localStorage.getItem('trainingStats_selectedSport');
-    return saved || 'all';
+    if (selectedSport != null) return selectedSport;
+    return localStorage.getItem("trainingStats_selectedSport") || "all";
   });
-  
-  // Use external selectedSport if provided, otherwise use internal
-  const currentSelectedSport = selectedSport !== undefined && selectedSport !== null ? selectedSport : internalSelectedSport;
-  
-  // Fallback pro onSportChange, pokud není poskytnut
+  const currentSelectedSport = selectedSport != null ? selectedSport : internalSelectedSport;
+
   const handleSportChange = (sport) => {
-    // Save to localStorage only when uncontrolled (otherwise parent decides persistence)
-    if (selectedSport === undefined || selectedSport === null) {
-      localStorage.setItem('trainingStats_selectedSport', sport);
-    }
-    // Update internal state if not controlled by parent
-    if (selectedSport === undefined || selectedSport === null) {
+    if (selectedSport == null) {
+      localStorage.setItem("trainingStats_selectedSport", sport);
       setInternalSelectedSport(sport);
     }
-    // Call parent callback if provided
-    if (onSportChange) {
-      onSportChange(sport);
-    } else {
-      console.warn('onSportChange not provided, sport change ignored:', sport);
-    }
+    onSportChange?.(sport);
   };
-  
-  // Use external selectedTitle if provided, otherwise use internal state
+
   const [internalSelectedTitle, setInternalSelectedTitle] = useState(null);
-  const currentSelectedTitle = selectedTitle !== undefined ? selectedTitle : internalSelectedTitle;
+  const currentSelectedTitle  = selectedTitle  !== undefined ? selectedTitle  : internalSelectedTitle;
   const setCurrentSelectedTitle = setSelectedTitle || setInternalSelectedTitle;
-  const [hoveredBar, setHoveredBar] = useState(null);
+
+  const [hoveredBar,          setHoveredBar]          = useState(null);
   const [visibleTrainingIndex, setVisibleTrainingIndex] = useState(0);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [displayCount, setDisplayCount] = useState(() => {
-    // Set default to 3 on mobile devices
-    return window.innerWidth < 768 ? 3 : 6;
-  });
-  const [progressIndex, setProgressIndex] = useState(0);
-  const settingsRef = useRef(null);
+  const [isSettingsOpen,      setIsSettingsOpen]      = useState(false);
+  const [displayCount,        setDisplayCount]        = useState(() => window.innerWidth < 768 ? 3 : 6);
+  const [progressIndex,       setProgressIndex]       = useState(0);
+
+  const settingsRef  = useRef(null);
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
+  /* close settings on outside click */
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-        setIsSettingsOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const h = (e) => { if (settingsRef.current && !settingsRef.current.contains(e.target)) setIsSettingsOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  /* auto-select first title when sport/trainings change */
   useEffect(() => {
-    if (trainingsList.length > 0) {
-      const relevantTrainings = currentSelectedSport === 'all' 
-        ? trainingsList 
-        : trainingsList.filter(t => t.sport === currentSelectedSport);
-      if (relevantTrainings.length > 0) {
-        const firstTitle = relevantTrainings[0].title;
-        if (!currentSelectedTitle || !relevantTrainings.some(t => t.title === currentSelectedTitle)) {
-          setCurrentSelectedTitle(firstTitle);
-          // Najdeme nejnovější trénink s tímto názvem
-          const trainingsWithTitle = relevantTrainings
-            .filter(t => t.title === firstTitle)
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
-          if (trainingsWithTitle.length > 0 && setSelectedTrainingId) {
-            setSelectedTrainingId(trainingsWithTitle[0]._id);
-          }
-        }
-      }
+    if (!trainingsList.length) return;
+    const rel = currentSelectedSport === "all" ? trainingsList : trainingsList.filter(t => t.sport === currentSelectedSport);
+    if (!rel.length) return;
+    const first = rel[0].title;
+    if (!currentSelectedTitle || !rel.some(t => t.title === currentSelectedTitle)) {
+      setCurrentSelectedTitle(first);
+      const newest = rel.filter(t => t.title === first).sort((a,b) => new Date(b.date)-new Date(a.date));
+      if (newest.length && setSelectedTrainingId) setSelectedTrainingId(newest[0]._id);
     }
   }, [trainingsList, currentSelectedSport, currentSelectedTitle, setCurrentSelectedTitle, setSelectedTrainingId]);
 
   const trainingOptions = useMemo(() => {
-    const uniqueTitles = [...new Set(
+    const titles = [...new Set(
       trainingsList
-        .filter(t => currentSelectedSport === 'all' || t.sport === currentSelectedSport)
+        .filter(t => currentSelectedSport === "all" || t.sport === currentSelectedSport)
         .map(t => t.title)
     )];
-
-    return uniqueTitles.map(title => ({
-      value: title,
-      label: title
-    }));
+    return titles.map(t => ({ value: t, label: t }));
   }, [trainingsList, currentSelectedSport]);
 
-  const filteredTrainings = useMemo(() => {
-    // Filter trainings by sport and title
-    const filtered = trainingsList
-      .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === currentSelectedTitle)
-      // Sort by date from newest to oldest
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    return filtered;
-  }, [trainingsList, currentSelectedSport, currentSelectedTitle]);
+  const filteredTrainings = useMemo(() =>
+    trainingsList
+      .filter(t => (currentSelectedSport === "all" || t.sport === currentSelectedSport) && t.title === currentSelectedTitle)
+      .sort((a, b) => new Date(b.date) - new Date(a.date)),
+    [trainingsList, currentSelectedSport, currentSelectedTitle]
+  );
 
-  // Reset progress index when filtered trainings or selected title changes
-  useEffect(() => {
-    setProgressIndex(0);
-  }, [filteredTrainings.length, currentSelectedTitle]);
-  
-  // Handler pro změnu názvu tréninku - synchronizace s TrainingGraph
-  const handleTrainingTitleChange = (newTitle) => {
-    setCurrentSelectedTitle(newTitle);
-    // Najdeme nejnovější trénink s tímto názvem
-    const trainingsWithTitle = trainingsList
-      .filter(t => (currentSelectedSport === 'all' || t.sport === currentSelectedSport) && t.title === newTitle)
+  useEffect(() => { setProgressIndex(0); }, [filteredTrainings.length, currentSelectedTitle]);
+
+  const handleTitleChange = (title) => {
+    setCurrentSelectedTitle(title);
+    const newest = trainingsList
+      .filter(t => (currentSelectedSport === "all" || t.sport === currentSelectedSport) && t.title === title)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (trainingsWithTitle.length > 0 && setSelectedTrainingId) {
-      setSelectedTrainingId(trainingsWithTitle[0]._id);
-    }
+    if (newest.length && setSelectedTrainingId) setSelectedTrainingId(newest[0]._id);
   };
 
-  const visibleTrainings = useMemo(() => {
-    return filteredTrainings.slice(visibleTrainingIndex, visibleTrainingIndex + displayCount);
-  }, [filteredTrainings, visibleTrainingIndex, displayCount]);
+  const visibleTrainings = useMemo(
+    () => filteredTrainings.slice(visibleTrainingIndex, visibleTrainingIndex + displayCount),
+    [filteredTrainings, visibleTrainingIndex, displayCount]
+  );
 
+  /* measure container width */
   useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
-      }
-    };
-
-    updateWidth();
+    const upd = () => { if (containerRef.current) setContainerWidth(containerRef.current.clientWidth); };
+    upd();
     const el = containerRef.current;
-    const ro = typeof ResizeObserver !== 'undefined' && el
-      ? new ResizeObserver(() => updateWidth())
-      : null;
-    if (ro && el) {
-      ro.observe(el);
-    }
-    window.addEventListener('resize', updateWidth);
-    return () => {
-      window.removeEventListener('resize', updateWidth);
-      if (ro && el) {
-        ro.unobserve(el);
-      }
-    };
+    const ro = typeof ResizeObserver !== "undefined" && el ? new ResizeObserver(upd) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", upd);
+    return () => { window.removeEventListener("resize", upd); ro?.unobserve(el); };
   }, [visibleTrainings.length, filteredTrainings.length, visibleTrainingIndex, displayCount]);
 
-  const canNavigateLeft = visibleTrainingIndex > 0;
-  const canNavigateRight = visibleTrainingIndex + displayCount < filteredTrainings.length;
+  /* navigation */
+  const canLeft  = visibleTrainingIndex > 0;
+  const canRight = visibleTrainingIndex + displayCount < filteredTrainings.length;
+  const canProgL = progressIndex > 0;
+  const canProgR = progressIndex + 2 < filteredTrainings.length;
 
-  const handleNavigateLeft = () => {
-    if (canNavigateLeft) {
-      setVisibleTrainingIndex(prev => Math.max(0, prev - 1));
-    }
+  /* scale values */
+  const hasRunTrainings = filteredTrainings.some(t => t.sport === "run");
+  const isRun = currentSelectedSport === "run" || (currentSelectedSport === "all" && hasRunTrainings);
+
+  const formatPaceVal = (s) => {
+    const adj = unitSystem === "imperial" ? s * 1.60934 : s;
+    return `${Math.floor(adj / 60)}:${String(Math.round(adj % 60)).padStart(2, "0")}`;
   };
-
-  const handleNavigateRight = () => {
-    if (canNavigateRight) {
-      setVisibleTrainingIndex(prev => prev + 1);
-    }
-  };
-
-  // Show 2 trainings at a time in Training Progress section
-  const progressItemsPerPage = 2;
-  const canNavigateProgressLeft = progressIndex > 0;
-  const canNavigateProgressRight = progressIndex + progressItemsPerPage < filteredTrainings.length;
-
-  const handleProgressNavigateLeft = () => {
-    if (canNavigateProgressLeft) {
-      setProgressIndex(prev => Math.max(0, prev - progressItemsPerPage));
-    }
-  };
-
-  const handleProgressNavigateRight = () => {
-    if (canNavigateProgressRight) {
-      setProgressIndex(prev => Math.min(filteredTrainings.length - progressItemsPerPage, prev + progressItemsPerPage));
-    }
-  };
-
-  const formatPaceValue = (seconds) => {
-    const secPerUnit = unitSystem === 'imperial' ? seconds * 1.60934 : seconds;
-    const minutes = Math.floor(secPerUnit / 60);
-    const secs = Math.round(secPerUnit % 60);
-    return `${minutes}:${String(secs).padStart(2, '0')}${unitSystem === 'imperial' ? '/mile' : '/km'}`;
-  };
-
-  // Parse pace from mm:ss format to seconds
-  const parsePaceToSeconds = (paceValue) => {
-    if (!paceValue) return null;
-    // If it's already a number (seconds), return it
-    if (typeof paceValue === 'number') return paceValue;
-    // If it's a string in mm:ss format
-    if (typeof paceValue === 'string') {
-      const parts = paceValue.split(':');
-      if (parts.length === 2) {
-        const minutes = parseInt(parts[0], 10);
-        const seconds = parseInt(parts[1], 10);
-        if (!isNaN(minutes) && !isNaN(seconds)) {
-          return minutes * 60 + seconds;
-        }
-      }
-      // Try to parse as number
-      const num = Number(paceValue);
-      if (!isNaN(num)) return num;
-    }
-    return null;
-  };
-
-  // Determine if we should show pace (for run) or power (for other sports)
-  // For 'all' sport, check if there are any run trainings in the filtered data
-  const hasRunTrainings = filteredTrainings.some(t => t.sport === 'run');
-  const isRun = currentSelectedSport === 'run' || (currentSelectedSport === 'all' && hasRunTrainings);
 
   const { powerValues, paceValues, minPower, maxPower, minPace, maxPace } = useMemo(() => {
-    if (filteredTrainings.length === 0) return { 
-      powerValues: [], 
-      paceValues: [],
-      heartRateValues: [], 
-      minPower: 0, 
-      maxPower: 100,
-      minPace: 0,
-      maxPace: 600,
-      minHeartRate: 0, 
-      maxHeartRate: 200,
-      averageHeartRate: []
-    };
-  
+    if (!filteredTrainings.length) return { powerValues:[], paceValues:[], minPower:0, maxPower:100, minPace:0, maxPace:600 };
+
     if (isRun) {
-      // Pro běh: používáme pace z power pole (uložené jako mm:ss string)
-      const allPaces = filteredTrainings.flatMap((t) =>
-        trainingResultsOf(t).map((r) => {
-          // Power u běhu je pace v mm:ss formátu
-          const paceSeconds = parsePaceToSeconds(r.power);
-          return paceSeconds !== null && paceSeconds > 0 ? paceSeconds : null;
-        })
-      ).filter(p => p !== null);
-
-      const allHeartRates = filteredTrainings.flatMap((t) =>
-        trainingResultsOf(t).map((r) => {
-          const hr = Number(r.heartRate);
-          return !isNaN(hr) && hr > 0 ? hr : null;
-        })
-      ).filter(hr => hr !== null);
-
-      const actualMinPace = allPaces.length > 0 ? Math.min(...allPaces) : 180; // 3:00/km
-      const actualMaxPace = allPaces.length > 0 ? Math.max(...allPaces) : 600; // 10:00/km
-      
-      // Zaokrouhlíme na pěkné hodnoty (po 30 sekundách)
-      const minPace = Math.floor(actualMinPace / 30) * 30;
-      const maxPace = Math.ceil((actualMaxPace + 30) / 30) * 30;
-
-      const rawMinHR = 0;
-      const rawMaxHR = allHeartRates.length > 0 ? Math.max(...allHeartRates) : 200;
-      const hrRange = rawMaxHR - rawMinHR;
-      const hrPadding = hrRange * 0.2;
-      
-      const minHeartRate = 0;
-      const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
-
-      const averageHeartRate = filteredTrainings.map((training) => {
-        const hrs = trainingResultsOf(training)
-          .map((r) => Number(r.heartRate))
-          .filter((hr) => !isNaN(hr) && hr > 0);
-        return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
-      });
-
-      // Pro pace: nejrychlejší (nejmenší hodnota) nahoře, nejpomalejší (největší hodnota) dole
-      // Takže reverse() není potřeba - minPace je nahoře, maxPace je dole
+      const allPaces = filteredTrainings.flatMap(t =>
+        trainingResultsOf(t).map(r => parsePaceSecs(r.power))
+      ).filter(p => p != null && p > 0);
+      const rawMin = allPaces.length ? Math.min(...allPaces) : 180;
+      const rawMax = allPaces.length ? Math.max(...allPaces) : 600;
+      const minP = Math.floor(rawMin / 30) * 30;
+      const maxP = Math.ceil((rawMax + 30) / 30) * 30;
       return {
         powerValues: [],
-        paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minPace + (i * (maxPace - minPace)) / 5)),
-        heartRateValues: Array.from({ length: 6 }, (_, i) => Math.round(minHeartRate + (i * (maxHeartRate - minHeartRate)) / 5)).reverse(),
-        minPower: 0,
-        maxPower: 100,
-        minPace,
-        maxPace,
-        minHeartRate,
-        maxHeartRate,
-        averageHeartRate
+        paceValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)),
+        minPower: 0, maxPower: 100, minPace: minP, maxPace: maxP,
       };
     } else {
-      // Pro ostatní sporty: používáme power
-      const allPowers = filteredTrainings.flatMap((t) =>
-        trainingResultsOf(t).map((r) => {
-          const power = Number(r.power);
-          return !isNaN(power) && power > 0 ? power : null;
-        })
-      ).filter(p => p !== null);
-
-      const allHeartRates = filteredTrainings.flatMap((t) =>
-        trainingResultsOf(t).map((r) => {
-          const hr = Number(r.heartRate);
-          return !isNaN(hr) && hr > 0 ? hr : null;
-        })
-      ).filter(hr => hr !== null);
-    
-      const actualMinPower = allPowers.length > 0 ? Math.min(...allPowers) : 0;
-      const actualMaxPower = allPowers.length > 0 ? Math.max(...allPowers) : 100;
-      
-      const minPower = Math.max(0, Math.floor((actualMinPower - 50) / 10) * 10);
-      const maxPower = Math.ceil((actualMaxPower + 15) / 10) * 10;
-
-      const rawMinHR = 0;
-      const rawMaxHR = allHeartRates.length > 0 ? Math.max(...allHeartRates) : 200;
-      const hrRange = rawMaxHR - rawMinHR;
-      const hrPadding = hrRange * 0.2;
-      
-      const minHeartRate = 0;
-      const maxHeartRate = Math.ceil((rawMaxHR + hrPadding) / 10) * 10;
-
-      const averageHeartRate = filteredTrainings.map((training) => {
-        const hrs = trainingResultsOf(training)
-          .map((r) => Number(r.heartRate))
-          .filter((hr) => !isNaN(hr) && hr > 0);
-        return hrs.length > 0 ? hrs.reduce((a, b) => a + b) / hrs.length : null;
-      });
-    
+      const allPowers = filteredTrainings.flatMap(t =>
+        trainingResultsOf(t).map(r => { const p = Number(r.power); return !isNaN(p) && p > 0 ? p : null; })
+      ).filter(Boolean);
+      const rawMin = allPowers.length ? Math.min(...allPowers) : 0;
+      const rawMax = allPowers.length ? Math.max(...allPowers) : 100;
+      const minP = Math.max(0, Math.floor((rawMin - 50) / 10) * 10);
+      const maxP = Math.ceil((rawMax + 15) / 10) * 10;
       return {
-        powerValues: Array.from({ length: 6 }, (_, i) => Math.round(minPower + (i * (maxPower - minPower)) / 5)).reverse(),
+        powerValues: Array.from({ length: 6 }, (_, i) => Math.round(minP + (i * (maxP - minP)) / 5)).reverse(),
         paceValues: [],
-        heartRateValues: Array.from({ length: 6 }, (_, i) => Math.round(minHeartRate + (i * (maxHeartRate - minHeartRate)) / 5)).reverse(),
-        minPower,
-        maxPower,
-        minPace: 0,
-        maxPace: 600,
-        minHeartRate,
-        maxHeartRate,
-        averageHeartRate
+        minPower: minP, maxPower: maxP, minPace: 0, maxPace: 600,
       };
     }
   }, [filteredTrainings, isRun]);
-  
-  const barColors = ["bg-violet-700", "bg-violet-600", "bg-violet-500", "bg-violet-400", "bg-violet-300"];
 
-  const chartColumnCount = Math.max(visibleTrainings.length, 1);
-  const chartInnerWidthPx = containerWidth > 0 ? containerWidth : 320;
-  const perColumnInnerWidthPx = Math.max(
-    36,
-    chartInnerWidthPx / chartColumnCount - (chartColumnCount > 1 ? 6 : 0)
-  );
+  /* per-column width in px */
+  const colCount         = Math.max(visibleTrainings.length, 1);
+  const chartInnerPx     = containerWidth > 0 ? containerWidth : 320;
+  const perColPx         = Math.max(36, chartInnerPx / colCount - (colCount > 1 ? 6 : 0));
 
+  /* navigate to training detail */
+  const handleTrainingClick = (t) => {
+    if (t.type === "fit" && t._id)               return navigate(`/training-calendar/${encodeURIComponent(`fit-${t._id}`)}`);
+    if (t.type === "strava" && (t.stravaId||t.id)) return navigate(`/training-calendar/${encodeURIComponent(`strava-${t.stravaId||t.id}`)}`);
+    if (t.type === "regular" && t._id)           return navigate(`/training-calendar/${encodeURIComponent(`regular-${t._id}`)}`);
+    if (t.stravaId || t.id)                      return navigate(`/training-calendar/${encodeURIComponent(`strava-${t.stravaId||t.id}`)}`);
+    if (t._id)                                   return navigate(`/training-calendar/${encodeURIComponent(`training-${t._id}`)}`);
+  };
+
+  /* ── render ── */
   return (
-    <div className="flex flex-col p-3 sm:p-5 bg-white relative h-full bg-white rounded-2xl p-4 shadow-lg">
-      <div className="flex  flex-row  justify-between items-start sm:items-center gap-2 sm:gap-0 mb-3 sm:mb-4">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <h2 className="text-base sm:text-xl font-semibold text-zinc-900">
-            Last {filteredTrainings.length} trainings
+    <div className="flex flex-col p-4 sm:p-5 bg-white rounded-2xl shadow-sm border border-gray-100 h-full gap-4">
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900 leading-none">
+            Training History
           </h2>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              onClick={handleNavigateLeft}
-              disabled={!canNavigateLeft}
-              className={`p-1.5 sm:p-2 rounded-full ${canNavigateLeft ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+          {filteredTrainings.length > 0 && (
+            <span className="text-[11px] text-gray-400 font-normal">({filteredTrainings.length})</span>
+          )}
+          {/* chart navigation */}
+          <div className="flex items-center gap-0.5 ml-1">
+            <button onClick={() => canLeft && setVisibleTrainingIndex(i => Math.max(0, i-1))} disabled={!canLeft}
+              className={`p-1 rounded-full transition-colors ${canLeft ? "hover:bg-gray-100 text-gray-600" : "text-gray-300 cursor-not-allowed"}`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
             </button>
-            <button
-              onClick={handleNavigateRight}
-              disabled={!canNavigateRight}
-              className={`p-1.5 sm:p-2 rounded-full ${canNavigateRight ? 'hover:bg-gray-100' : 'opacity-50 cursor-not-allowed'}`}
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+            <button onClick={() => canRight && setVisibleTrainingIndex(i => i+1)} disabled={!canRight}
+              className={`p-1 rounded-full transition-colors ${canRight ? "hover:bg-gray-100 text-gray-600" : "text-gray-300 cursor-not-allowed"}`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4">
+
+        <div className="flex items-center gap-2">
           <DropdownMenu
             selectedValue={currentSelectedTitle}
             options={trainingOptions}
-            onChange={handleTrainingTitleChange}
+            onChange={handleTitleChange}
             displayKey="label"
             valueKey="value"
           />
+          {/* settings gear */}
           <div className="relative" ref={settingsRef}>
-            <button
-              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full"
-            >
-              <EllipsisVerticalIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+            <button onClick={() => setIsSettingsOpen(o => !o)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
+              <EllipsisVerticalIcon className="w-4 h-4 text-gray-500" />
             </button>
-            
             {isSettingsOpen && (
-              <div className="absolute right-0 mt-2 w-40 sm:w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="p-2">
-                  <div className="mb-2 sm:mb-3">
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Sport</label>
-                    <div className="relative">
-                      <select 
-                        className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        value={currentSelectedSport || 'all'}
-                        onChange={(e) => handleSportChange(e.target.value)}
-                      >
-                        <option value="all">All Sports</option>
-                        {availableSports.map((sport) => (
-                          <option key={sport} value={sport}>
-                            {sport.charAt(0).toUpperCase() + sport.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Number of trainings</label>
-                    <div className="relative">
-                      <select 
-                        className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1 text-gray-600 text-xs sm:text-sm bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary pr-8"
-                        style={{ WebkitAppearance: 'none', appearance: 'none' }}
-                        value={displayCount}
-                        onChange={(e) => {
-                          setDisplayCount(Number(e.target.value));
-                          setVisibleTrainingIndex(0);
-                        }}
-                      >
-                        {[1, 3, 6, 9, 12].map((count) => (
-                          <option key={count} value={count}>
-                            {count} {count === 1 ? 'training' : 'trainings'}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
+              <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-gray-100 z-50 p-3 flex flex-col gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Sport</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    value={currentSelectedSport || "all"}
+                    onChange={e => handleSportChange(e.target.value)}
+                  >
+                    <option value="all">All Sports</option>
+                    {availableSports.map(s => (
+                      <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1 uppercase tracking-wide">Visible</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    value={displayCount}
+                    onChange={e => { setDisplayCount(Number(e.target.value)); setVisibleTrainingIndex(0); }}
+                  >
+                    {[1,3,6,9,12].map(n => <option key={n} value={n}>{n} training{n!==1?"s":""}</option>)}
+                  </select>
                 </div>
               </div>
             )}
@@ -1197,267 +495,107 @@ export function TrainingStats({
         </div>
       </div>
 
-      <div
-        className="flex gap-1 sm:gap-2 items-stretch w-full min-w-0"
-        style={{ minHeight: `${maxGraphHeight + 28}px` }}
-      >
-        {isRun ? (
-          <Scale values={paceValues} unit="" formatValue={formatPaceValue} isPace={true} graphHeight={maxGraphHeight} />
-        ) : (
-          <Scale values={powerValues} unit="W" formatValue={null} graphHeight={maxGraphHeight} />
-        )}
-        
-        <div
-          ref={containerRef}
-          className="relative flex min-w-0 flex-1 flex-col"
-          style={{ overflow: 'visible' }}
-        >
-          {/* Only the graph band (maxGraphHeight) — not the date row — so lines match Scale + bar tops */}
-          <div
-            className="pointer-events-none absolute left-0 right-0 top-0 z-0"
-            style={{ height: maxGraphHeight }}
-          >
-            {(isRun ? paceValues : powerValues).map((_, index, arr) => {
-              const y = axisTickYPx(index, arr.length, maxGraphHeight);
-              return (
-                <div
-                  key={`grid-line-${index}`}
-                  className="absolute left-0 right-0 border-t border-dashed border-gray-200"
-                  style={{ top: `${y}px`, height: 0 }}
-                />
-              );
-            })}
+      {/* Chart */}
+      <div className="flex gap-1 sm:gap-2 items-stretch w-full min-w-0" style={{ minHeight: `${GRAPH_H + 24}px` }}>
+        <Scale
+          values={isRun ? paceValues : powerValues}
+          formatValue={isRun ? formatPaceVal : null}
+        />
+
+        <div ref={containerRef} className="relative flex flex-1 min-w-0 flex-col" style={{ overflow: "visible" }}>
+          {/* grid lines */}
+          <div className="pointer-events-none absolute left-0 right-0 top-0 z-0" style={{ height: GRAPH_H }}>
+            {(isRun ? paceValues : powerValues).map((_, i, arr) => (
+              <div
+                key={i}
+                className="absolute left-0 right-0 border-t border-gray-100"
+                style={{ top: `${axisTickY(i, arr.length)}px` }}
+              />
+            ))}
           </div>
 
-          {/* Bars: equal flex columns; date labels sit below this row without stretching the grid */}
+          {/* bar columns */}
           <div
             className="relative z-10 flex w-full items-stretch gap-1 sm:gap-1.5"
-            style={{ minHeight: `${maxGraphHeight}px`, overflow: 'visible' }}
+            style={{ minHeight: `${GRAPH_H}px`, overflow: "visible" }}
           >
-            {visibleTrainings.map((training, trainingIndex) => {
+            {visibleTrainings.map((training, tIdx) => {
               const results = trainingResultsOf(training);
 
+              /* compute proportional widths for intervals within column */
+              const hasDistData = results.some(r => {
+                const d = r.distance || (r.durationType === "distance" ? r.duration : null);
+                return d && parseDistMeters(d) > 0;
+              });
+              const totalDist = results.reduce((s, r) => {
+                const d = r.distance || (r.durationType === "distance" ? r.duration : null);
+                return s + parseDistMeters(d);
+              }, 0);
+              const totalDur = results.reduce((s, r) => s + parseDurationSecs(r), 0);
+              const useDist  = hasDistData && totalDist > 0;
+              const totalVal = useDist ? totalDist : totalDur;
+
+              const gapPx    = 3;
+              const gapCnt   = Math.max(0, results.length - 1);
+              const gapPct   = perColPx > 0 && gapCnt > 0 ? Math.min(35, (gapCnt * gapPx / perColPx) * 100) : 0;
+              const availPct = Math.max(55, 100 - gapPct);
+              const equalShare = availPct / Math.max(results.length, 1);
+
+              const intervalWidths = results.map(r => {
+                const d  = r.distance || (r.durationType === "distance" ? r.duration : null);
+                const val = useDist ? parseDistMeters(d) : parseDurationSecs(r);
+                return totalVal > 0 ? (val / totalVal) * availPct : equalShare;
+              });
+
+              /* color ranking: highest power/pace = darkest */
+              const powerPaceVals = results.map((r, i) => ({
+                val: isRun ? parsePaceSecs(r.power) : Number(r.power),
+                i,
+              })).filter(x => x.val != null && x.val > 0);
+              if (isRun) powerPaceVals.sort((a,b) => a.val - b.val); // lowest pace = fastest = darkest
+              else       powerPaceVals.sort((a,b) => b.val - a.val); // highest power = darkest
+              const colorMap = new Map(powerPaceVals.map((x, rank) => [x.i, rank]));
+
               return (
-                <div
-                  key={`training-${training._id || training.id || trainingIndex}`}
-                  className="flex min-w-0 flex-1 basis-0 flex-col items-stretch overflow-visible"
-                >
+                <div key={training._id || tIdx} className="flex flex-1 basis-0 min-w-0 flex-col items-stretch overflow-visible">
                   <div
-                    className="relative flex w-full min-w-0 items-end"
-                    style={{
-                      height: `${maxGraphHeight}px`,
-                      minHeight: `${maxGraphHeight}px`,
-                      gap: '3px',
-                      overflowX: 'hidden',
-                      overflowY: 'visible'
-                    }}
+                    className="relative flex w-full min-w-0 items-end overflow-visible"
+                    style={{ height: GRAPH_H, minHeight: GRAPH_H, gap: `${gapPx}px` }}
                   >
-                    {(() => {
-                      // Helper function to get "moving" duration in seconds
-                      // Prefer moving time (exclude stopped time) so duration reflects only active time
-                      const parseDuration = (result) => {
-                        if (!result || typeof result !== 'object') return 0;
-
-                        const candidates = [
-                          result.moving_time,
-                          result.totalTimerTime,
-                          result.total_timer_time,
-                          result.totalElapsedTime,
-                          result.total_elapsed_time,
-                          result.elapsed_time,
-                          result.duration
-                        ];
-
-                        for (const candidate of candidates) {
-                          if (candidate === undefined || candidate === null) continue;
-                          if (typeof candidate === 'number') return candidate;
-                          if (typeof candidate === 'string') {
-                            if (candidate.includes(':')) {
-                              const parts = candidate.split(':').map(Number);
-                              if (parts.length === 2) {
-                                return (parts[0] || 0) * 60 + (parts[1] || 0);
-                              }
-                              if (parts.length === 3) {
-                                return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
-                              }
-                            }
-                            const num = parseFloat(candidate);
-                            if (!Number.isNaN(num) && num > 0) return num;
-                          }
-                        }
-
-                        return 0;
-                      };
-
-                      // Helper function to parse distance to meters
-                      const parseDistanceToMeters = (dist) => {
-                        if (!dist) return 0;
-                        if (typeof dist === 'string') {
-                          const cleanValue = dist.trim().toLowerCase();
-                          // Match "2 km", "2km", "2.5 km", etc.
-                          const kmMatch = cleanValue.match(/^([\d.]+)\s*km$/);
-                          if (kmMatch) return parseFloat(kmMatch[1]) * 1000; // Convert to meters
-                          // Match "1000 m", "1000m", etc.
-                          const mMatch = cleanValue.match(/^([\d.]+)\s*m$/);
-                          if (mMatch) return parseFloat(mMatch[1]);
-                          // Try to parse as number
-                          const numValue = parseFloat(cleanValue);
-                          if (!isNaN(numValue)) {
-                            // If it's a whole number > 100 without decimal, assume meters
-                            if (numValue > 100 && numValue % 1 === 0 && !cleanValue.includes('.')) {
-                              return numValue;
-                            }
-                            // Otherwise assume km (e.g., "2" means 2km = 2000m)
-                            return numValue * 1000;
-                          }
-                        }
-                        // If it's a number
-                        if (typeof dist === 'number') {
-                          // If > 100, assume meters; otherwise assume km
-                          return dist > 100 ? dist : dist * 1000;
-                        }
-                        return 0;
-                      };
-
-                      // Check if results have distance data (for distance-based intervals)
-                      const hasDistanceData = results.some((r) => {
-                        const dist = r.distance || (r.durationType === 'distance' ? r.duration : null);
-                        return dist && parseDistanceToMeters(dist) > 0;
-                      });
-
-                      // Calculate total duration or distance for this training
-                      const totalDuration = results.reduce((sum, result) => {
-                        return sum + parseDuration(result);
-                      }, 0);
-
-                      const totalDistance = results.reduce((sum, result) => {
-                        const dist = result.distance || (result.durationType === 'distance' ? result.duration : null);
-                        return sum + parseDistanceToMeters(dist);
-                      }, 0);
-
-                      // Use distance if available, otherwise use duration
-                      const useDistance = hasDistanceData && totalDistance > 0;
-                      const totalValue = useDistance ? totalDistance : totalDuration;
-
-                      // Widths within each column sum to 100% of the column (minus flex gaps): shorter
-                      // trainings no longer leave empty space on the right; proportions between intervals stay.
-                      const numIntervals = results.length;
-
-                      const columnWidthPx = perColumnInnerWidthPx;
-                      const gapSizePx = 3;
-                      const gapCount = Math.max(0, numIntervals - 1);
-                      const totalGapWidthPx = gapCount * gapSizePx;
-                      const gapPercent = columnWidthPx > 0 && gapCount > 0
-                        ? Math.min(35, (totalGapWidthPx / columnWidthPx) * 100)
-                        : 0;
-                      const availableWidthPercent = Math.max(55, 100 - gapPercent);
-
-                      const equalShare = availableWidthPercent / Math.max(results.length, 1);
-                      const intervalPositions = results.map((result) => {
-                        const durationValue = parseDuration(result);
-                        const distanceValue = result.distance || (result.durationType === 'distance' ? result.duration : null);
-                        const parsedDistance = parseDistanceToMeters(distanceValue);
-
-                        const value = useDistance ? parsedDistance : durationValue;
-                        const widthPercent = totalValue > 0
-                          ? (value / totalValue) * availableWidthPercent
-                          : equalShare;
-                        return { widthPercent };
-                      });
-
-                      // Vypočítáme hodnoty power/pace pro všechny intervaly a seřadíme je
-                      // Pro běh: nejrychlejší pace (nejmenší číslo) = nejtmavší
-                      // Pro ostatní: nejvyšší power = nejtmavší
-                      const powerPaceValues = results.map((r, idx) => {
-                        if (isRun) {
-                          const paceSeconds = parsePaceToSeconds(r.power);
-                          return { value: paceSeconds, index: idx };
-                        } else {
-                          const powerValue = Number(r.power);
-                          return { value: isNaN(powerValue) ? 0 : powerValue, index: idx };
-                        }
-                      }).filter(p => p.value !== null && p.value > 0);
-                      
-                      // Seřadíme podle hodnoty (pro běh: vzestupně = nejrychlejší první, pro ostatní: sestupně = nejvyšší první)
+                    {results.map((r, rIdx) => {
+                      let height = 0;
                       if (isRun) {
-                        powerPaceValues.sort((a, b) => a.value - b.value); // Vzestupně - nejrychlejší první
+                        const pace = parsePaceSecs(r.power);
+                        if (pace && pace > 0) height = ((maxPace - pace) / (maxPace - minPace)) * GRAPH_H;
                       } else {
-                        powerPaceValues.sort((a, b) => b.value - a.value); // Sestupně - nejvyšší první
+                        const pow = Number(r.power);
+                        if (!isNaN(pow) && pow > 0) height = ((pow - minPower) / (maxPower - minPower)) * GRAPH_H;
                       }
-                      
-                      // Vytvoříme mapu: index intervalu -> pozice v seřazeném seznamu (0 = nejtmavší)
-                      const colorIndexMap = new Map();
-                      powerPaceValues.forEach((item, sortedIndex) => {
-                        colorIndexMap.set(item.index, sortedIndex);
-                      });
-                      
-                      return (
-                        <>
-                          {results.map((result, resultIndex) => {
-                        let height = 0;
-                        if (isRun) {
-                          // Power u běhu je pace v mm:ss formátu
-                          const paceSeconds = parsePaceToSeconds(result.power);
-                          if (paceSeconds !== null && paceSeconds > 0) {
-                            // Pro pace: rychlejší pace (menší číslo) = vyšší sloupec = nahoře
-                            // minPace je nahoře (rychlejší), maxPace je dole (pomalejší)
-                            // Výška = (maxPace - paceSeconds) / (maxPace - minPace) * maxGraphHeight
-                            // Rychlejší pace (menší) = větší rozdíl od maxPace = vyšší sloupec
-                            height = ((maxPace - paceSeconds) / (maxPace - minPace)) * maxGraphHeight;
-                          }
-                        } else {
-                          const powerValue = Number(result.power);
-                          if (!isNaN(powerValue) && powerValue > 0) {
-                            height = ((powerValue - minPower) / (maxPower - minPower)) * maxGraphHeight;
-                          }
-                        }
-                        
-                        // Získáme index barvy podle power/pace hodnoty
-                        const colorIndex = colorIndexMap.get(resultIndex) ?? resultIndex;
-                        const color = barColors[Math.min(colorIndex, barColors.length - 1)];
 
-                        return (
-                          <VerticalBar
-                            key={`result-${training._id || training.id || trainingIndex}-${resultIndex}`}
-                            height={height}
-                            color={color}
-                          power={result.power}
-                          pace={currentSelectedSport === 'run' ? result.power : result.pace}
-                          distance={result.distance || (currentSelectedSport === 'run' && result.durationType === 'distance' ? result.duration : null)}
-                          lactate={result.lactate}
-                          heartRate={result.heartRate}
-                          duration={result.duration}
-                          durationType={result.durationType || 'time'}
-                          index={resultIndex}
-                          isHovered={hoveredBar?.trainingIndex === trainingIndex && hoveredBar?.intervalIndex === resultIndex}
-                          onHover={(isHovered) => setHoveredBar(isHovered ? { trainingIndex, intervalIndex: resultIndex } : null)}
-                          totalTrainings={displayCount}
-                          visibleTrainings={visibleTrainings}
-                          minPower={minPower}
-                          maxPower={maxPower}
-                          minPace={minPace}
-                          maxPace={maxPace}
-                          containerWidth={containerWidth}
-                          selectedTraining={currentSelectedTitle}
-                          displayCount={displayCount}
-                          isFullWidth={isFullWidth}
-                          sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
+                      return (
+                        <VerticalBar
+                          key={`${training._id||tIdx}-${rIdx}`}
+                          height={height}
+                          colorIdx={colorMap.get(rIdx) ?? rIdx}
+                          power={r.power}
+                          pace={isRun ? r.power : r.pace}
+                          distance={r.distance || (isRun && r.durationType === "distance" ? r.duration : null)}
+                          lactate={r.lactate}
+                          heartRate={r.heartRate}
+                          duration={r.duration}
+                          durationType={r.durationType || "time"}
+                          index={rIdx}
+                          isHovered={hoveredBar?.tIdx === tIdx && hoveredBar?.rIdx === rIdx}
+                          onHover={h => setHoveredBar(h ? { tIdx, rIdx } : null)}
+                          sport={currentSelectedSport === "all" ? (training.sport || "bike") : currentSelectedSport}
                           user={user}
-                          widthPercent={intervalPositions[resultIndex]?.widthPercent}
-                          trainingResults={results}
+                          widthPercent={intervalWidths[rIdx]}
                         />
                       );
-                          })}
-                        </>
-                      );
-                    })()}
-                  </div>
-                  <div className="mt-1 w-full shrink-0 px-0.5 text-center text-[10px] sm:text-xs text-zinc-500 leading-tight">
-                    {new Date(training.date).toLocaleDateString('en-US', {
-                      day: 'numeric',
-                      month: 'numeric',
-                      year: '2-digit'
                     })}
+                  </div>
+                  <div className="mt-1 w-full shrink-0 text-center text-[10px] text-gray-400 tabular-nums leading-tight">
+                    {new Date(training.date).toLocaleDateString("en-US", { day:"numeric", month:"numeric", year:"2-digit" })}
                   </div>
                 </div>
               );
@@ -1466,78 +604,42 @@ export function TrainingStats({
         </div>
       </div>
 
-      {!hideTrainingProgress && (
-        <div className="mt-2 sm:mt-3">
-          <div className="flex items-center justify-between mb-1 sm:mb-1.5">
-            <div className="text-xs sm:text-sm font-medium text-gray-900">
-              Training Progress
-              {filteredTrainings.length > progressItemsPerPage && (
-                <span className="ml-2 text-gray-500 text-[10px] sm:text-xs font-normal">
-                  ({progressIndex + 1}-{Math.min(progressIndex + progressItemsPerPage, filteredTrainings.length)} of {filteredTrainings.length})
+      {/* Training Progress */}
+      {filteredTrainings.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-semibold text-gray-700">
+              Progress
+              {filteredTrainings.length > 2 && (
+                <span className="ml-1.5 text-[11px] font-normal text-gray-400">
+                  {progressIndex + 1}–{Math.min(progressIndex + 2, filteredTrainings.length)} of {filteredTrainings.length}
                 </span>
               )}
-            </div>
-            {filteredTrainings.length > progressItemsPerPage && (
-              <div className="flex items-center gap-1 sm:gap-2">
-                <button
-                  onClick={handleProgressNavigateLeft}
-                  disabled={!canNavigateProgressLeft}
-                  className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressLeft ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  title="Previous trainings"
-                >
-                  <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
+            </span>
+            {filteredTrainings.length > 2 && (
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => canProgL && setProgressIndex(i => Math.max(0,i-2))} disabled={!canProgL}
+                  className={`p-1 rounded transition-colors ${canProgL ? "hover:bg-gray-100 text-gray-500" : "text-gray-300 cursor-not-allowed"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
                 </button>
-                <button
-                  onClick={handleProgressNavigateRight}
-                  disabled={!canNavigateProgressRight}
-                  className={`p-1 rounded hover:bg-gray-100 transition-colors ${!canNavigateProgressRight ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  title="Next trainings"
-                >
-                  <svg className="w-3 h-3 sm:w-4 sm:h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                <button onClick={() => canProgR && setProgressIndex(i => Math.min(filteredTrainings.length-2,i+2))} disabled={!canProgR}
+                  className={`p-1 rounded transition-colors ${canProgR ? "hover:bg-gray-100 text-gray-500" : "text-gray-300 cursor-not-allowed"}`}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
                 </button>
               </div>
             )}
           </div>
-          <div className="space-y-1">
-            {filteredTrainings
-              .slice(progressIndex, progressIndex + progressItemsPerPage)
-              .map((training, index) => {
-                const handleTrainingClick = (trainingData) => {
-                  // Navigate to FitAnalysisPage with canonical URL format
-                  // Training objects from DashboardPage may have 'type' property or not
-                  // Try to determine type from available properties
-                  if (trainingData.type === 'fit' && trainingData._id) {
-                    navigate(`/training-calendar/${encodeURIComponent(`fit-${trainingData._id}`)}`);
-                  } else if (trainingData.type === 'strava' && (trainingData.stravaId || trainingData.id)) {
-                    const stravaId = trainingData.stravaId || trainingData.id;
-                    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
-                  } else if (trainingData.type === 'regular' && trainingData._id) {
-                    navigate(`/training-calendar/${encodeURIComponent(`regular-${trainingData._id}`)}`);
-                  } else if (trainingData.stravaId || trainingData.id) {
-                    // Strava activity (without explicit type)
-                    const stravaId = trainingData.stravaId || trainingData.id;
-                    navigate(`/training-calendar/${encodeURIComponent(`strava-${stravaId}`)}`);
-                  } else if (trainingData._id) {
-                    // Regular training (Training model) - most common case
-                    navigate(`/training-calendar/${encodeURIComponent(`training-${trainingData._id}`)}`);
-                  }
-                };
-
-                return (
-                  <TrainingComparison
-                    key={training._id || training.id || index}
-                    training={training}
-                    previousTraining={index < filteredTrainings.length - 1 ? filteredTrainings[progressIndex + index + 1] : null}
-                    sport={currentSelectedSport === 'all' ? (training.sport || 'bike') : currentSelectedSport}
-                    onTrainingClick={handleTrainingClick}
-                    user={user}
-                  />
-                );
-              })}
+          <div className="divide-y divide-gray-50">
+            {filteredTrainings.slice(progressIndex, progressIndex + 2).map((t, i) => (
+              <TrainingComparison
+                key={t._id || t.id || i}
+                training={t}
+                previousTraining={filteredTrainings[progressIndex + i + 1] ?? null}
+                sport={currentSelectedSport === "all" ? (t.sport || "bike") : currentSelectedSport}
+                onTrainingClick={handleTrainingClick}
+                user={user}
+              />
+            ))}
           </div>
         </div>
       )}

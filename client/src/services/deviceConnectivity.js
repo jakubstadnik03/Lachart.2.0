@@ -1,7 +1,22 @@
 /**
  * Device Connectivity Service
- * Handles Web Bluetooth API and WebSocket connections for real-time sensor data
+ * Handles Web Bluetooth API and WebSocket connections for real-time sensor data.
+ * On iOS/Android (Capacitor native) the @capacitor-community/bluetooth-le plugin
+ * is used instead of Web Bluetooth API, which is blocked by Apple in WKWebView.
  */
+
+import { Capacitor } from '@capacitor/core';
+
+// Lazy-load BleClient so the web build doesn't crash when the plugin is absent
+let _BleClient = null;
+const loadBleClient = async () => {
+  if (!_BleClient) {
+    const mod = await import('@capacitor-community/bluetooth-le');
+    _BleClient = mod.BleClient;
+    await _BleClient.initialize({ androidNeverForLocation: true });
+  }
+  return _BleClient;
+};
 
 // Configuration: Set to false to disable simulated/mock data
 // When false, devices will only work with real Web Bluetooth connections
@@ -30,6 +45,11 @@ class DeviceConnectivityService {
    * @returns {Promise<boolean>} - Success status
    */
   async connectWebBluetooth(deviceType, onData) {
+    // On native iOS/Android use the Capacitor BLE plugin (Web Bluetooth is blocked on iOS)
+    if (Capacitor.isNativePlatform()) {
+      return this.connectNativeBluetooth(deviceType, onData);
+    }
+
     if (!navigator.bluetooth) {
       console.warn('Web Bluetooth API not supported in this browser');
       throw new Error('Web Bluetooth API not supported in this browser. Please use Chrome, Edge, or Opera.');
@@ -458,6 +478,248 @@ class DeviceConnectivityService {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Native Bluetooth (iOS/Android via @capacitor-community/bluetooth-le)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Connect to a BLE device using the native Capacitor plugin.
+   * Called automatically on iOS/Android instead of connectWebBluetooth().
+   */
+  async connectNativeBluetooth(deviceType, onData) {
+    const BleClient = await loadBleClient();
+
+    // Build the device scan filter
+    let requestOptions = {};
+    if (deviceType === 'bikeTrainer') {
+      requestOptions = {
+        // Advertise at least one of these services to appear in the picker
+        services: [
+          '00001818-0000-1000-8000-00805f9b34fb', // CPS – Cycling Power Service
+          '00001826-0000-1000-8000-00805f9b34fb', // FTMS – Fitness Machine Service
+        ],
+        optionalServices: [
+          '00001816-0000-1000-8000-00805f9b34fb', // CSC – Speed & Cadence
+          '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
+        ],
+      };
+    } else if (deviceType === 'heartRate') {
+      requestOptions = { services: ['0000180d-0000-1000-8000-00805f9b34fb'] };
+    } else if (deviceType === 'moxy') {
+      requestOptions = { services: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e'] };
+    } else if (deviceType === 'coreTemp') {
+      requestOptions = { services: ['00001809-0000-1000-8000-00805f9b34fb'] };
+    } else {
+      const info = this.getDeviceServiceInfo(deviceType);
+      requestOptions = { services: [info.serviceUUID] };
+    }
+
+    let device;
+    try {
+      device = await BleClient.requestDevice(requestOptions);
+    } catch (err) {
+      if (/cancel|dismiss/i.test(err.message || '')) {
+        throw new Error('Device selection cancelled.');
+      }
+      throw err;
+    }
+
+    const deviceId = device.deviceId;
+
+    // Connect + set disconnect handler
+    await BleClient.connect(deviceId, () => {
+      console.log(`[Native BLE] ${deviceType} disconnected`);
+      this.connections.delete(deviceType);
+      this.dataCallbacks.delete(deviceType);
+      this.cscPreviousValues.delete(deviceType);
+      this.powerPreviousValues.delete(deviceType);
+    });
+
+    console.log(`[Native BLE] Connected to ${device.name || deviceId}`);
+
+    // ── bikeTrainer: subscribe to power + CSC ──────────────────
+    if (deviceType === 'bikeTrainer') {
+      this.combinedTrainerData = { power: null, cadence: null, speed: null };
+
+      let powerServiceUUID = null;
+      let cscServiceUUID = null;
+      let controlPointType = null;
+
+      // Try Cycling Power Service (CPS)
+      try {
+        await BleClient.startNotifications(
+          deviceId,
+          '00001818-0000-1000-8000-00805f9b34fb',
+          '00002a63-0000-1000-8000-00805f9b34fb',
+          (value) => {
+            const data = this.parseCharacteristicData(deviceType, value, 'power');
+            if (data.power != null) this.combinedTrainerData.power = data.power;
+            if (data.cadence != null) this.combinedTrainerData.cadence = data.cadence;
+            if (onData) onData({ ...this.combinedTrainerData });
+          }
+        );
+        powerServiceUUID = '00001818-0000-1000-8000-00805f9b34fb';
+        console.log('[Native BLE] ✅ CPS power notifications started');
+      } catch (e) {
+        console.warn('[Native BLE] CPS not available, trying FTMS…', e.message);
+        try {
+          await BleClient.startNotifications(
+            deviceId,
+            '00001826-0000-1000-8000-00805f9b34fb',
+            '00002ad9-0000-1000-8000-00805f9b34fb',
+            (value) => {
+              const data = this.parseCharacteristicData(deviceType, value, 'ftms');
+              if (data.power != null) this.combinedTrainerData.power = data.power;
+              if (onData) onData({ ...this.combinedTrainerData });
+            }
+          );
+          powerServiceUUID = '00001826-0000-1000-8000-00805f9b34fb';
+          controlPointType = 'ftms';
+          console.log('[Native BLE] ✅ FTMS power notifications started');
+        } catch (e2) {
+          console.warn('[Native BLE] FTMS also not available:', e2.message);
+        }
+      }
+
+      // Try CSC Service (speed + cadence)
+      try {
+        await BleClient.startNotifications(
+          deviceId,
+          '00001816-0000-1000-8000-00805f9b34fb',
+          '00002a5b-0000-1000-8000-00805f9b34fb',
+          (value) => {
+            const data = this.parseCharacteristicData(deviceType, value, 'csc');
+            if (data.speed != null) this.combinedTrainerData.speed = data.speed;
+            if (data.cadence != null) this.combinedTrainerData.cadence = data.cadence;
+            if (onData) onData({ ...this.combinedTrainerData });
+          }
+        );
+        cscServiceUUID = '00001816-0000-1000-8000-00805f9b34fb';
+        if (!controlPointType) controlPointType = 'fec'; // FE-C control via CSC
+        console.log('[Native BLE] ✅ CSC speed/cadence notifications started');
+      } catch (e) {
+        console.warn('[Native BLE] CSC not available:', e.message);
+      }
+
+      // Determine ERG control route
+      let controlServiceUUID = null;
+      let controlCharUUID = null;
+      if (controlPointType === 'fec') {
+        controlServiceUUID = '00001816-0000-1000-8000-00805f9b34fb';
+        controlCharUUID   = '00002a55-0000-1000-8000-00805f9b34fb'; // SC Control Point
+      } else if (controlPointType === 'ftms') {
+        controlServiceUUID = '00001826-0000-1000-8000-00805f9b34fb';
+        controlCharUUID   = '00002ad9-0000-1000-8000-00805f9b34fb'; // FTMS Control Point
+      }
+
+      if (onData) this.dataCallbacks.set(deviceType, onData);
+      this.connections.set(deviceType, {
+        nativeConnected: true,
+        deviceId,
+        deviceName: device.name || deviceType,
+        powerServiceUUID,
+        cscServiceUUID,
+        controlServiceUUID,
+        controlCharUUID,
+        controlPointType,
+        controlRequested: false,
+        ergoModeSet: false,
+        lastErgoSetTime: 0,
+        targetPower: null,
+        lastPowerSetTime: 0,
+      });
+      return true;
+    }
+
+    // ── Other device types ──────────────────────────────────────
+    const info = this.getDeviceServiceInfo(deviceType);
+    const svc  = info.serviceUUID;
+    const chr  = info.characteristics[0].uuid;
+
+    await BleClient.startNotifications(deviceId, svc, chr, (value) => {
+      const data = this.parseCharacteristicData(deviceType, value, 'default');
+      if (onData) onData(data);
+    });
+
+    if (onData) this.dataCallbacks.set(deviceType, onData);
+    this.connections.set(deviceType, {
+      nativeConnected: true,
+      deviceId,
+      deviceName: device.name || deviceType,
+    });
+    return true;
+  }
+
+  /**
+   * Set target power on a natively-connected trainer (ERG mode).
+   * Mirrors setPower() but uses BleClient.write() instead of GATT characteristic.writeValue().
+   */
+  async setPowerNative(deviceType, powerWatts) {
+    const connection = this.connections.get(deviceType);
+    if (!connection?.nativeConnected) {
+      throw new Error(`Device ${deviceType} is not connected natively`);
+    }
+
+    const BleClient = await loadBleClient();
+    const { deviceId, controlServiceUUID, controlCharUUID, controlPointType } = connection;
+
+    if (!controlServiceUUID || !controlCharUUID) {
+      throw new Error('No ERG control characteristic available – trainer may not support ERG mode');
+    }
+
+    const write = async (bytes) => {
+      await BleClient.write(deviceId, controlServiceUUID, controlCharUUID, new DataView(bytes.buffer));
+    };
+
+    if (controlPointType === 'ftms') {
+      // FTMS Set Target Power (opcode 0x33)
+      const pTenths = Math.round(powerWatts * 10);
+      await write(new Uint8Array([0x33, 0x00, pTenths & 0xFF, (pTenths >> 8) & 0xFF]));
+      connection.targetPower = powerWatts;
+      connection.lastPowerSetTime = Date.now();
+      console.log(`[Native FTMS] ✅ Set power ${powerWatts}W`);
+      return true;
+    }
+
+    // FE-C protocol via CSC Control Point
+    // Step 1: Request Control (once)
+    if (!connection.controlRequested) {
+      try {
+        await write(new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+        await new Promise(r => setTimeout(r, 300));
+      } catch (e) { console.warn('[Native FE-C] Request control skipped:', e.message); }
+      connection.controlRequested = true;
+    }
+
+    // Step 2: Set ERGO mode (opcode 0x05, value 0x04)
+    const now = Date.now();
+    if (now - (connection.lastErgoSetTime || 0) > 500) {
+      try {
+        await write(new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]));
+        await new Promise(r => setTimeout(r, 800));
+      } catch (e) { console.warn('[Native FE-C] Set ERGO mode skipped:', e.message); }
+      connection.ergoModeSet = true;
+      connection.lastErgoSetTime = now;
+    }
+
+    // Step 3: Set Target Power (opcode 0x01)
+    const pTenths = Math.round(powerWatts * 10);
+    connection.targetPower = powerWatts;
+    connection.lastPowerSetTime = Date.now();
+    await write(new Uint8Array([0x01, 0x00, 0x00, 0x00, pTenths & 0xFF, (pTenths >> 8) & 0xFF]));
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Step 4: Re-confirm ERGO mode
+    try {
+      await write(new Uint8Array([0x05, 0x00, 0x00, 0x00, 0x04, 0x00]));
+      await new Promise(r => setTimeout(r, 500));
+      connection.lastErgoSetTime = Date.now();
+    } catch (e) { console.warn('[Native FE-C] Reconfirm ERGO skipped:', e.message); }
+
+    console.log(`[Native FE-C] ✅ Set power ${powerWatts}W`);
+    return true;
+  }
+
   /**
    * Connect via WebSocket for devices that require server-side handling
    */
@@ -506,24 +768,31 @@ class DeviceConnectivityService {
         if (connection.simulated && connection.intervalId) {
           clearInterval(connection.intervalId);
         }
-        
-        // Disconnect real Bluetooth device
-        if (connection.device && connection.device.gatt?.connected) {
+
+        // Native BLE disconnect
+        if (connection.nativeConnected) {
+          try {
+            const BleClient = await loadBleClient();
+            await BleClient.disconnect(connection.deviceId);
+          } catch (e) {
+            console.warn('[Native BLE] Disconnect error (non-critical):', e.message);
+          }
+        } else if (connection.device && connection.device.gatt?.connected) {
+          // Web Bluetooth disconnect
           await connection.device.gatt.disconnect();
         }
-        
+
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
-        this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
-        this.powerPreviousValues.delete(deviceType); // Clear Power Service tracking data
+        this.cscPreviousValues.delete(deviceType);
+        this.powerPreviousValues.delete(deviceType);
         return true;
       } catch (error) {
         console.error(`Error disconnecting ${deviceType}:`, error);
-        // Still clean up local state
         this.connections.delete(deviceType);
         this.dataCallbacks.delete(deviceType);
-        this.cscPreviousValues.delete(deviceType); // Clear CSC tracking data
-        this.powerPreviousValues.delete(deviceType); // Clear Power Service tracking data
+        this.cscPreviousValues.delete(deviceType);
+        this.powerPreviousValues.delete(deviceType);
         return false;
       }
     }
@@ -1005,21 +1274,19 @@ class DeviceConnectivityService {
    */
   isDeviceConnected(deviceType) {
     const connection = this.connections.get(deviceType);
-    if (!connection) {
-      return false;
-    }
-    
-    // Check if it's a real Bluetooth connection
+    if (!connection) return false;
+
+    // Native BLE connection
+    if (connection.nativeConnected) return true;
+
+    // Web Bluetooth connection
     if (connection.device && connection.device.gatt) {
       return connection.device.gatt.connected;
     }
-    
-    // Check if it's a simulated connection
-    if (connection.simulated) {
-      return true;
-    }
-    
-    // Fallback: if connection exists, assume connected
+
+    // Simulated connection
+    if (connection.simulated) return true;
+
     return true;
   }
 
@@ -1053,6 +1320,12 @@ class DeviceConnectivityService {
    * @returns {Promise<boolean>} - Success status
    */
   async setPower(deviceType, powerWatts) {
+    // On native platform delegate to the native BLE implementation
+    const earlyConn = this.connections.get(deviceType);
+    if (earlyConn?.nativeConnected) {
+      return this.setPowerNative(deviceType, powerWatts);
+    }
+
     return this.queueGattOperation(deviceType, async () => {
       const connection = this.connections.get(deviceType);
       if (!connection) {

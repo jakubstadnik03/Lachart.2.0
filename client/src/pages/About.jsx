@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef, Suspense } from 'react';
+import { Navigate } from 'react-router-dom';
 import { trackEvent } from '../utils/analytics';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Helmet } from 'react-helmet';
 import ContactUs from '../components/ContactUs';
+import { isCapacitorNative } from '../utils/isNativeApp';
 
 const AboutGallerySection = React.lazy(() => import('../components/About/AboutGallerySection'));
 
@@ -642,6 +644,9 @@ const About = () => {
       ? { initial: false, animate: whileInView, transition: { duration: 0.2 } }
       : { initial, whileInView, transition, viewport }
   );
+
+  // About is web-only – redirect to login on native iOS/Android
+  if (isCapacitorNative()) return <Navigate to="/login" replace />;
 
   return (
     <main className="min-h-screen bg-white">
