@@ -9,7 +9,7 @@
  *   • Profile sheet (slides up from bottom)
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
@@ -186,7 +186,6 @@ function NativeAthleteBar({ athletes, effectiveAthleteId, onSelect, statuses }) 
 // ─── Profile Sheet ─────────────────────────────────────────────────────────────
 function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
   const isAdmin = user?.admin;
-  const isCoach = ['coach', 'tester', 'testing'].includes(user?.role);
 
   const go = (path) => { onClose(); navigate(path); };
 
@@ -272,7 +271,6 @@ function NativeProfileSheet({ open, onClose, user, logout, navigate }) {
 const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId, onAthleteSelect }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [showProfile, setShowProfile] = useState(false);
 
   const isCoach = ['coach', 'tester', 'testing'].includes(user?.role);
