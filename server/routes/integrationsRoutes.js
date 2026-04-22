@@ -22,8 +22,10 @@ async function resolveIntegrationTargetUserId(req) {
 
   let targetUserId = userId;
   const requesterRole = String(user.role || '').toLowerCase();
+  const isCoachLikeRequester = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) ||
+    (user.admin === true && requesterRole !== 'athlete');
   if (req.query.athleteId) {
-    if (['coach', 'tester', 'testing'].includes(requesterRole)) {
+    if (isCoachLikeRequester) {
       if (String(req.query.athleteId) === String(userId)) {
         targetUserId = userId;
       } else {
@@ -31,7 +33,8 @@ async function resolveIntegrationTargetUserId(req) {
         if (!athlete) {
           return { ok: false, status: 404, error: 'Athlete not found' };
         }
-        if (!athleteHasCoachUser(athlete, userId)) {
+        // Admin can access any athlete; coaches/testers must be linked
+        if (requesterRole !== 'admin' && !athleteHasCoachUser(athlete, userId)) {
           return { ok: false, status: 403, error: 'This athlete does not belong to your team' };
         }
         targetUserId = req.query.athleteId;
@@ -77,7 +80,12 @@ const activitiesCacheMiddleware = (req, res, next) => {
   // Store original json method
   const originalJson = res.json.bind(res);
   res.json = (body) => {
-    activitiesCache.set(cacheKey, body);
+    // Only cache successful responses — never cache 4xx/5xx or error bodies
+    const isErrorStatus = res.statusCode < 200 || res.statusCode >= 300;
+    const isErrorBody = body && typeof body === 'object' && (body.error || body.errors);
+    if (!isErrorStatus && !isErrorBody) {
+      activitiesCache.set(cacheKey, body);
+    }
     res.set('X-Cache', 'MISS');
     res.set('Cache-Control', 'private, max-age=120');
     return originalJson(body);
@@ -1718,13 +1726,15 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
     }
 
     const requesterRole = String(user.role || '').toLowerCase();
+    const isCoachLikeActivities = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) ||
+      (user.admin === true && requesterRole !== 'athlete');
 
     // Determine which userId to use
     let targetUserId = userId;
     if (req.query.athleteId) {
       // If query parameter is provided, validate access
-      if (['coach', 'tester', 'testing'].includes(requesterRole)) {
-        // Coach / tester: own or linked athletes' activities
+      if (isCoachLikeActivities) {
+        // Coach / tester / admin: own or linked athletes' activities
         if (req.query.athleteId === userId.toString()) {
           targetUserId = userId;
         } else {
@@ -1732,7 +1742,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athleteHasCoachUser(athlete, userId)) {
+          // Admin can access any athlete; coaches/testers must be linked
+          if (requesterRole !== 'admin' && !athleteHasCoachUser(athlete, userId)) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetUserId = req.query.athleteId;
@@ -1965,11 +1976,13 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       id = id.replace(/^strava-/i, '');
     }
     const detailRequesterRole = String(user.role || '').toLowerCase();
-    
+    const isCoachLikeDetail = ['coach', 'tester', 'testing', 'admin'].includes(detailRequesterRole) ||
+      (user.admin === true && detailRequesterRole !== 'athlete');
+
     // Determine which userId to use (for coach viewing athlete's activities)
     let targetUserId = user._id.toString();
     if (req.query.athleteId) {
-      if (['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
+      if (isCoachLikeDetail) {
         if (req.query.athleteId === user._id.toString()) {
           targetUserId = user._id.toString();
         } else {
@@ -1977,7 +1990,8 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
           if (!athlete) {
             return res.status(404).json({ error: 'Athlete not found' });
           }
-          if (!athleteHasCoachUser(athlete, user._id)) {
+          // Admin can access any athlete; coaches/testers must be linked
+          if (detailRequesterRole !== 'admin' && !athleteHasCoachUser(athlete, user._id)) {
             return res.status(403).json({ error: 'This athlete does not belong to your team' });
           }
           targetUserId = req.query.athleteId;
@@ -1990,7 +2004,7 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
       }
     } else if (detailRequesterRole === 'athlete') {
       targetUserId = user._id.toString();
-    } else if (['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
+    } else if (isCoachLikeDetail) {
       // Coach without athleteId query param - try to determine from activity
       // First try to find the activity to see which userId it belongs to
       const mongoose = require('mongoose');
@@ -2036,11 +2050,14 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         return res.status(404).json({ error: 'Strava activity not found' });
       }
       
-      // Verify access for coach
-      if (['coach', 'tester', 'testing'].includes(detailRequesterRole) && savedActivity.userId.toString() !== user._id.toString()) {
-        const activityOwner = await User.findById(savedActivity.userId);
-        if (!activityOwner || !athleteHasCoachUser(activityOwner, user._id)) {
-          return res.status(403).json({ error: 'You are not authorized to view this activity' });
+      // Verify access for coach/admin
+      if (isCoachLikeDetail && savedActivity.userId.toString() !== user._id.toString()) {
+        // Admin can view any activity; coaches/testers must be linked to the athlete
+        if (detailRequesterRole !== 'admin') {
+          const activityOwner = await User.findById(savedActivity.userId);
+          if (!activityOwner || !athleteHasCoachUser(activityOwner, user._id)) {
+            return res.status(403).json({ error: 'You are not authorized to view this activity' });
+          }
         }
         // Update targetUserId to activity owner
         targetUserId = savedActivity.userId.toString();
@@ -2059,8 +2076,8 @@ router.get('/strava/activities/:id', verifyToken, async (req, res) => {
         stravaId: stravaId 
       });
       
-      // If not found and we're a coach, try to find the activity and verify it belongs to coach or their athlete
-      if (!savedActivity && ['coach', 'tester', 'testing'].includes(detailRequesterRole)) {
+      // If not found and we're a coach/admin, try to find the activity and verify it belongs to coach or their athlete
+      if (!savedActivity && isCoachLikeDetail) {
         const foundActivity = await StravaActivity.findOne({ stravaId: stravaId });
         if (foundActivity) {
           const activityOwner = await User.findById(foundActivity.userId);

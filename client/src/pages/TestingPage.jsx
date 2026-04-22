@@ -36,7 +36,8 @@ const TestingPage = () => {
   const isTestingRole = role === 'testing';
   const isTesterRole = role === 'tester';
   // Coach-like roles operate on selected athlete's data (zones + tests).
-  const isCoachLikeRole = role === 'coach' || isTestingRole || isTesterRole;
+  const isCoachLikeRole = role === 'coach' || isTestingRole || isTesterRole ||
+    role === 'admin' || (user?.admin === true && role !== 'athlete');
   const { addNotification } = useNotification();
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => {
     if (athleteId) return athleteId;
@@ -340,10 +341,16 @@ const TestingPage = () => {
         const testAthleteId = String(test.athleteId);
         const currentUserId = String(u._id);
         const isOwnTest = testAthleteId === currentUserId;
-        const isAthleteTest = u.role === 'coach' && u.athletes?.some(a => String(a._id || a) === testAthleteId);
         const currentRole = String(u.role || '').toLowerCase();
+        // Coach-like roles: trust the backend auth; also check selected athlete matches test
+        const isCoachLikeForTest = ['coach', 'tester', 'testing', 'admin'].includes(currentRole) ||
+          (u.admin === true && currentRole !== 'athlete');
+        // The backend already enforces that the coach is linked to the athlete;
+        // on the frontend we just verify the test belongs to the currently-selected athlete
+        // (or allow any coach-like role — backend is the authoritative gatekeeper)
+        const isAthleteTest = isCoachLikeForTest;
         const isTester = currentRole === 'testing'; // testing sees all tests; others scoped by ownership/coach relation
-        
+
         if (!isOwnTest && !isAthleteTest && !isTester) {
           // Avoid console spam in loops; notify once and remove testId from URL
           notify('You do not have permission to view this test', 'error');

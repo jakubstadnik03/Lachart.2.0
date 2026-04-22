@@ -322,8 +322,11 @@ router.post("/push-test", verifyToken, async (req, res) => {
 router.get("/coach/athletes", verifyToken, async (req, res) => {
     try {
         const coach = await userDao.findById(req.user.userId);
-        
-        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+        const coachRole = String(coach?.role || '').toLowerCase();
+        const isCoachLikeUser = ['coach', 'tester', 'testing', 'admin'].includes(coachRole) ||
+          (coach?.admin === true && coachRole !== 'athlete');
+
+        if (!coach || !isCoachLikeUser) {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
@@ -384,7 +387,10 @@ router.post("/coach/add-athlete", verifyToken, async (req, res) => {
         console.log("Looking up coach with ID:", req.user.userId);
         const coach = await userDao.findById(req.user.userId);
         
-        if (!coach || !['coach', 'tester', 'testing'].includes(coach.role)) {
+        const addAthleteRole = String(coach?.role || '').toLowerCase();
+        const isCoachLikeAdd = ['coach', 'tester', 'testing', 'admin'].includes(addAthleteRole) ||
+          (coach?.admin === true && addAthleteRole !== 'athlete');
+        if (!coach || !isCoachLikeAdd) {
             console.log("User is not in coach-like role:", coach);
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }

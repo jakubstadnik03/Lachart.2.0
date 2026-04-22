@@ -2,6 +2,7 @@ const testAbl = require('../abl/testAbl');
 const { sendLactateTestReportEmail } = require('../services/lactateTestReportEmailService');
 const { sendDemoTestEmail } = require('../services/demoTestEmailService');
 const { generateTestReportPdf } = require('../services/lactateTestPdfService');
+const { athleteHasCoachUser } = require('../utils/athleteCoachAccess');
 const fs = require('fs');
 const path = require('path');
 
@@ -99,8 +100,8 @@ const testController = {
             // Coach/tester/testing can view tests only for their own athletes; admin can view all.
             let isAthleteTest = false;
             if (isCoachLike && !isOwnTest) {
-                const athlete = await User.findById(testAthleteId);
-                if (athlete && athlete.coachId && String(athlete.coachId) === currentUserId) {
+                const athlete = await User.findById(testAthleteId).select('coachId coachIds');
+                if (athlete && athleteHasCoachUser(athlete, currentUserId)) {
                     isAthleteTest = true;
                 }
             }
