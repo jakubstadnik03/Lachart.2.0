@@ -8,6 +8,8 @@ const KM_TO_MILES = 0.621371;
 const KG_TO_LBS = 2.20462;
 const LBS_TO_KG = 0.453592;
 const METERS_TO_FEET = 3.28084;
+const CM_TO_INCHES = 0.393701;
+const CELSIUS_TO_FAHRENHEIT = (c) => (c * 9/5) + 32;
 
 /**
  * Get user's units preference from user object or localStorage
@@ -222,5 +224,90 @@ export const formatSpeedForUser = (mps, user) => {
 export const formatElevationForUser = (meters, user) => {
   const units = getUserUnits(user);
   return formatElevation(meters, units.distance).formatted;
+};
+
+/**
+ * Format height from cm to user's preferred unit
+ * @param {Number} cm - Height in centimeters
+ * @param {String} unitSystem - 'metric' or 'imperial'
+ * @returns {String} e.g. "178 cm" or "5'10\""
+ */
+export const formatHeight = (cm, unitSystem = 'metric') => {
+  if (!cm && cm !== 0) return '—';
+  if (unitSystem === 'imperial') {
+    const totalInches = cm * CM_TO_INCHES;
+    const feet = Math.floor(totalInches / 12);
+    const inches = Math.round(totalInches % 12);
+    return `${feet}'${inches}"`;
+  }
+  return `${Math.round(cm)} cm`;
+};
+
+/**
+ * Returns the label for height input based on unit system
+ * @param {String} unitSystem - 'metric' or 'imperial'
+ * @returns {String} "cm" or "inches (e.g. 71 for 5'11\")"
+ */
+export const heightLabel = (unitSystem = 'metric') =>
+  unitSystem === 'imperial' ? 'inches (e.g. 71 for 5\'11")' : 'cm';
+
+/**
+ * Returns the label for weight input based on unit system
+ * @param {String} unitSystem - 'metric' or 'imperial'
+ * @returns {String}
+ */
+export const weightLabel = (unitSystem = 'metric') =>
+  unitSystem === 'imperial' ? 'lbs' : 'kg';
+
+/**
+ * Convert temperature from Celsius to user's preferred unit
+ * @param {Number} celsius
+ * @param {String} unitSystem - 'celsius' or 'fahrenheit'
+ * @returns {String} e.g. "36.5°C" or "97.7°F"
+ */
+export const formatTemperature = (celsius, unitSystem = 'celsius') => {
+  if (celsius === null || celsius === undefined) return '—';
+  if (unitSystem === 'fahrenheit') {
+    return `${CELSIUS_TO_FAHRENHEIT(celsius).toFixed(1)}°F`;
+  }
+  return `${Number(celsius).toFixed(1)}°C`;
+};
+
+/**
+ * Returns pace unit string based on distance unit system and sport
+ * @param {String} unitSystem - 'metric' or 'imperial'
+ * @param {String} sport - 'run'|'running'|'swim'|'swimming'|'bike'|'cycling'
+ * @returns {String}
+ */
+export const paceUnit = (unitSystem = 'metric', sport = 'running') => {
+  const s = String(sport).toLowerCase();
+  if (s === 'swim' || s === 'swimming') {
+    return unitSystem === 'imperial' ? 'min/100y' : 'min/100m';
+  }
+  return unitSystem === 'imperial' ? 'min/mi' : 'min/km';
+};
+
+/**
+ * Format height using user object
+ */
+export const formatHeightForUser = (cm, user) => {
+  const sys = resolveDistanceUnitSystem(user);
+  return formatHeight(cm, sys);
+};
+
+/**
+ * Format temperature using user object
+ */
+export const formatTemperatureForUser = (celsius, user) => {
+  const units = getUserUnits(user);
+  return formatTemperature(celsius, units.temperature || 'celsius');
+};
+
+/**
+ * Get pace unit string using user object
+ */
+export const paceUnitForUser = (user, sport = 'running') => {
+  const sys = resolveDistanceUnitSystem(user);
+  return paceUnit(sys, sport);
 };
 

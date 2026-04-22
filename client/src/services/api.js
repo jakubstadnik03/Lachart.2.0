@@ -787,9 +787,10 @@ export const sendStravaReminderEmail = async (userId) => {
 };
 
 // Send custom coach outreach email to arbitrary contact (admin only)
-export const sendCoachOutreachEmail = async ({ name, email }) => {
+// preview: true → delivers to admin's own email and skips lead tracking
+export const sendCoachOutreachEmail = async ({ name, email, subject, body, preview = false }) => {
   try {
-    const response = await api.post('/user/admin/send-coach-outreach-email', { name, email });
+    const response = await api.post('/user/admin/send-coach-outreach-email', { name, email, subject, body, preview });
     return response.data;
   } catch (error) {
     console.error('Error sending coach outreach email:', error);

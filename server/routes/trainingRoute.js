@@ -64,8 +64,20 @@ router.get("/title/:title", verifyToken, async (req, res) => {
 });
 
 // Get all trainings for an athlete - MUST be before /:id route
+// H3 — only self, coach, or admin may fetch another user's trainings
 router.get("/athlete/:athleteId", verifyToken, async (req, res) => {
   try {
+    const requesterId  = String(req.user.userId);
+    const targetId     = String(req.params.athleteId);
+    const User         = require('../models/UserModel');
+    const requester    = await User.findById(requesterId).lean();
+    const role         = String(requester?.role || '').toLowerCase();
+    const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+    if (!isPrivileged && requesterId !== targetId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const trainings = await TrainingAbl.getTrainingsByAthlete(req.params.athleteId);
     res.status(200).json(trainings);
   } catch (error) {

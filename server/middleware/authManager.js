@@ -1,17 +1,41 @@
-// authManager.js
+/**
+ * Token blacklist backed by MongoDB.
+ * Persists across server restarts and works in multi-process deploys.
+ * Documents are auto-deleted by a TTL index once the token expires.
+ */
+const BlacklistedToken = require('../models/BlacklistedToken');
+const jwt = require('jsonwebtoken');
 
-// Initialize the token blacklist as a Set
-const tokenBlacklist = new Set();
-
-// Function to add a token to the blacklist
-function blacklistToken(token) {
-  tokenBlacklist.add(token);
+/**
+ * Add a token to the persistent blacklist.
+ * @param {string} token - Raw JWT string
+ */
+async function blacklistToken(token) {
+    try {
+        const decoded = jwt.decode(token);
+        const expiresAt = decoded?.exp
+            ? new Date(decoded.exp * 1000)
+            : new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await BlacklistedToken.create({ token, expiresAt });
+    } catch (e) {
+        if (e.code === 11000) return; // already blacklisted
+        console.error('Error blacklisting token:', e.message);
+    }
 }
 
-// Function to check if a token is blacklisted
-function isTokenBlacklisted(token) {
-  return tokenBlacklist.has(token);
+/**
+ * Check whether a token has been blacklisted.
+ * @param {string} token - Raw JWT string
+ * @returns {Promise<boolean>}
+ */
+async function isTokenBlacklisted(token) {
+    try {
+        const entry = await BlacklistedToken.findOne({ token }).lean();
+        return !!entry;
+    } catch (e) {
+        console.error('Error checking token blacklist:', e.message);
+        return false; // fail-open so a DB hiccup doesn't lock everyone out
+    }
 }
 
-// Export the functionalities
-module.exports = { tokenBlacklist, blacklistToken, isTokenBlacklisted };
+module.exports = { blacklistToken, isTokenBlacklisted };

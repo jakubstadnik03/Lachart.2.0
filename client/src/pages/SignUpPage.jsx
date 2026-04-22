@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register } from '../services/api';
 import { GoogleLogin } from '@react-oauth/google';
@@ -40,6 +40,21 @@ const SignUpPage = () => {
   const { addNotification } = useNotification();
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Lock body scroll on native so WKWebView doesn't rubber-band
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -154,7 +169,18 @@ const SignUpPage = () => {
   // ── Native iOS layout ──────────────────────────────────────────
   if (isCapacitorNative()) {
     return (
-      <div className="bg-white flex flex-col" style={{ position: 'fixed', inset: 0, paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'white', overflow: 'hidden' }}>
+        {/* Inner layer: scrollable with rubber-band contained, respects safe areas */}
+        <div style={{
+          height: '100%',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
 
         {/* Navigation back to Sign In */}
         <div className="px-4 pt-2 pb-0">
@@ -170,7 +196,7 @@ const SignUpPage = () => {
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col justify-center px-6">
+        <div className="flex-1 flex flex-col justify-center px-6" style={{ minHeight: 0 }}>
           {/* Title */}
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Create Account</h1>
@@ -327,12 +353,13 @@ const SignUpPage = () => {
           </p>
 
           {/* Privacy & Terms inline */}
-          <div className="mt-3 flex items-center justify-center gap-3 text-xs text-gray-400">
+          <div className="mt-3 mb-2 flex items-center justify-center gap-3 text-xs text-gray-400">
             <a href="https://lachart.net/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             <span>·</span>
             <a href="/terms">Terms of Use</a>
           </div>
         </div>
+        </div>{/* end scrollable */}
 
         {/* Terms modal */}
         <AnimatePresence>

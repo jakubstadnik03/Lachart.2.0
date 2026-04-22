@@ -1,5 +1,7 @@
 import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../context/AuthProvider';
+import { getUserUnits } from '../../utils/unitsConverter';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   BoltIcon,
@@ -29,6 +31,7 @@ const DEFAULT_VISIBLE_METRICS = {
 };
 
 const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalTimer, protocol, currentStep }) => {
+  const { user } = useAuth();
   const isActive = testState === 'running';
   const chartKeyRef = useRef(0);
   const [chartLayout, setChartLayout] = useState('single'); // single | grid
@@ -229,7 +232,11 @@ const LiveDashboard = ({ liveData, devices, testState, historicalData, intervalT
     additionalMetrics.push({ label: 'THb', value: (liveData.thb || 0).toFixed(1), unit: 'μM' });
   }
   if (hasCoreTemp && hasValidData(liveData.coreTemp)) {
-    additionalMetrics.push({ label: 'Core Temp', value: (liveData.coreTemp || 0).toFixed(1), unit: '°C' });
+    const tempUnits = getUserUnits(user);
+    const isImperialTemp = tempUnits.temperature === 'fahrenheit';
+    const tempValue = isImperialTemp ? ((liveData.coreTemp || 0) * 9 / 5 + 32).toFixed(1) : (liveData.coreTemp || 0).toFixed(1);
+    const tempUnit = isImperialTemp ? '°F' : '°C';
+    additionalMetrics.push({ label: 'Core Temp', value: tempValue, unit: tempUnit });
   }
   if (hasVo2Master && hasValidData(liveData.vo2)) {
     additionalMetrics.push({ label: 'VO2', value: (liveData.vo2 || 0).toFixed(1), unit: 'ml/min/kg' });

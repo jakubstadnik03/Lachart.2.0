@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthProvider';
+import { resolveDistanceUnitSystem, paceUnit } from '../utils/unitsConverter';
 import { motion } from 'framer-motion';
 import { Line } from 'react-chartjs-2';
 import { getTrainingsByTitle, getTrainingTitles, deleteTraining, updateTraining } from '../services/api';
@@ -30,6 +32,9 @@ ChartJS.register(
 const TrainingHistory = () => {
   const { title } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const runPaceUnit = paceUnit(unitSystem, 'running');
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -205,7 +210,7 @@ const TrainingHistory = () => {
     labels: progress ? progress.dates : trainings.map(t => formatDate(t.date)),
     datasets: [
       {
-        label: progress?.isPaceSport ? 'Pace (min/km)' : 'Power (W)',
+        label: progress?.isPaceSport ? `Pace (${runPaceUnit})` : 'Power (W)',
         data: progress ? progress.powerData : trainings.map(t => {
           const validPowers = t.results.filter(r => r.power > 0).map(r => r.power);
           if (validPowers.length === 0) return null;
@@ -299,7 +304,7 @@ const TrainingHistory = () => {
       y: {
         title: { 
           display: true, 
-          text: progress?.isPaceSport ? 'Pace (min/km)' : 'Power (W)' 
+          text: progress?.isPaceSport ? `Pace (${runPaceUnit})` : 'Power (W)'
         },
         min: 0,
         max: progress?.isPaceSport 
@@ -398,7 +403,7 @@ const TrainingHistory = () => {
         <div className="font-bold text-gray-900 mb-1">{date}</div>
         <div className="flex items-center gap-2 text-blue-600">
           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-          {progress?.isPaceSport ? 'Pace' : 'Power'}: {power} {progress?.isPaceSport ? 'min/km' : 'W'}
+          {progress?.isPaceSport ? 'Pace' : 'Power'}: {power} {progress?.isPaceSport ? runPaceUnit : 'W'}
         </div>
         <div className="flex items-center gap-2 text-red-600">
           <span className="w-2 h-2 rounded-full bg-red-500"></span>
@@ -632,7 +637,7 @@ const TrainingHistory = () => {
                 <span className="text-2xl font-bold text-blue-600">
                   {progress.isPaceSport 
                     ? secondsToPace(progress.powerData[progress.powerData.length - 1] || 0) 
-                    : (progress.powerData[progress.powerData.length - 1] || '-')} {progress.isPaceSport ? 'min/km' : 'W'}
+                    : (progress.powerData[progress.powerData.length - 1] || '-')} {progress.isPaceSport ? runPaceUnit : 'W'}
                 </span>
                 {progress.powerProgress && (
                   <span className={`text-sm font-medium ${progress.powerProgress > 0 ? 'text-green-600' : 'text-red-600'}`}>

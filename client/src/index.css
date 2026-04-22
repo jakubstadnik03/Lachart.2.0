@@ -38,6 +38,13 @@ html.capacitor-native .custom-padding {
     padding-bottom: 0.25rem;
 }
 
+/* Prevent iOS auto-zoom when focusing inputs with font-size < 16px */
+html.capacitor-native input,
+html.capacitor-native select,
+html.capacitor-native textarea {
+    font-size: 16px !important;
+}
+
 /* iOS momentum scrolling on all scroll containers */
 .overflow-y-auto,
 .overflow-x-auto,

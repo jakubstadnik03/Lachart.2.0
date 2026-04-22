@@ -112,6 +112,11 @@ class ForgotPasswordAbl {
                 return res.status(400).json({ error: "Neplatný token pro reset hesla" });
             }
 
+            // M9 — enforce minimum password length on reset
+            if (!newPassword || newPassword.length < 8) {
+                return res.status(400).json({ error: "Nové heslo musí mít alespoň 8 znaků" });
+            }
+
             // Hash nového hesla
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(newPassword, salt);

@@ -72,12 +72,24 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Middleware
-// Configure Helmet to not interfere with CORS
+// Configure Helmet to not interfere with CORS (M5 — CSP enabled)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
-  // Don't override CORS headers
-  contentSecurityPolicy: false, // Disable CSP for now to avoid conflicts
+  // Restrictive CSP — allows Swagger UI CDN scripts and inline styles
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:  ["'self'"],
+      scriptSrc:   ["'self'", "cdn.jsdelivr.net", "'unsafe-inline'"],
+      styleSrc:    ["'self'", "'unsafe-inline'"],
+      imgSrc:      ["'self'", "data:", "https:"],
+      connectSrc:  ["'self'"],
+      fontSrc:     ["'self'", "data:"],
+      objectSrc:   ["'none'"],
+      frameSrc:    ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
 }));
 
 // Ensure CORS headers are set correctly after Helmet (must mirror corsOptions logic)
@@ -144,13 +156,13 @@ if (process.env.NODE_ENV === 'production') {
   app.use(limiter);
 }
 
-// Dedicated limiter for login to prevent abuse but allow normal usage
+// Dedicated limiter for login — 5 attempts per 15 minutes per IP (M6)
 const loginLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // up to 30 login attempts per minute per IP
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // max 5 login attempts per window per IP
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many login attempts, please try again later.',
+  message: { error: 'Too many login attempts. Please wait 15 minutes before trying again.' },
   skip: (req) => req.method === 'OPTIONS'
 });
 app.use('/user/login', loginLimiter);
@@ -216,46 +228,6 @@ startLactateTestFollowUpScheduler();
 
 // Retention & lifecycle emails (weekly progress, monthly reports, milestones, re-engagement)
 startRetentionScheduler();
-
-// Simple trainer test API (demo - no auth required)
-// In-memory storage for demo purposes
-const trainerTests = new Map();
-
-app.post("/api/tests", (req, res) => {
-  try {
-    const { startedAt, samples } = req.body;
-    const id = require("crypto").randomUUID();
-    
-    const record = { 
-      id, 
-      startedAt, 
-      samples,
-      createdAt: new Date().toISOString()
-    };
-    
-    trainerTests.set(id, record);
-    
-    console.log(`Test saved: ${id} with ${samples?.length || 0} samples`);
-    
-    res.json({ id });
-  } catch (error) {
-    console.error("Error saving test:", error);
-    res.status(500).json({ error: "Failed to save test" });
-  }
-});
-
-app.get("/api/tests/:id", (req, res) => {
-  try {
-    const test = trainerTests.get(req.params.id);
-    if (!test) {
-      return res.status(404).json({ error: "Test not found" });
-    }
-    res.json(test);
-  } catch (error) {
-    console.error("Error fetching test:", error);
-    res.status(500).json({ error: "Failed to fetch test" });
-  }
-});
 
 // Apply cache middleware to routes that can be cached (reduced cache time for better data freshness)
 app.use('/api/training', cacheMiddleware(60), trainingRoute);
@@ -387,8 +359,28 @@ The following endpoints are available in the API.
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
-// Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+// Swagger UI — restricted to admin users only (M4)
+const verifyToken = require('./middleware/verifyToken');
+const swaggerAdminGuard = async (req, res, next) => {
+  // Allow static asset requests (CSS, JS, images) through without auth
+  if (req.path !== '/' && !req.path.endsWith('.json') && !req.path.endsWith('.yaml')) {
+    return next();
+  }
+  try {
+    await new Promise((resolve, reject) => {
+      verifyToken(req, res, (err) => (err ? reject(err) : resolve()));
+    });
+  } catch {
+    return; // verifyToken already sent the 401 response
+  }
+  const role = req.user?.role;
+  const isAdmin = role === 'admin' || req.user?.admin === true;
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'Admin access required for API docs' });
+  }
+  next();
+};
+app.use('/api-docs', swaggerAdminGuard, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: "LaChart API Documentation",

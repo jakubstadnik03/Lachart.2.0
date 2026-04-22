@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
   const isTestingRole = role === 'testing' || role === 'tester';
-  const isCoachLikeRole = role === 'coach' || role === 'testing' || role === 'tester';
+  const isCoachLikeRole = role === 'admin' || user?.admin === true || role === 'coach' || role === 'testing' || role === 'tester';
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);
@@ -679,7 +679,7 @@ export default function DashboardPage() {
     }
   }, [user?._id, selectedAthleteId, user?.role, isCoachLikeRole]);
 
-  // Listen for athlete change from Menu (for immediate update before URL changes)
+  // Listen for athlete change from any source (Menu desktop, CoachAthleteBar, native bar)
   useEffect(() => {
     const handleAthleteChange = (event) => {
       const { athleteId: newAthleteId } = event.detail;
@@ -689,8 +689,15 @@ export default function DashboardPage() {
       }
     };
 
-    window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
+    // 3 event names used across different dispatchers — listen to all of them
+    window.addEventListener('athleteChanged', handleAthleteChange);       // desktop Menu
+    window.addEventListener('athleteSelected', handleAthleteChange);      // native NativeLayout
+    window.addEventListener('globalAthleteChanged', handleAthleteChange); // desktop CoachAthleteBar
+    return () => {
+      window.removeEventListener('athleteChanged', handleAthleteChange);
+      window.removeEventListener('athleteSelected', handleAthleteChange);
+      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
+    };
   }, [selectedAthleteId]);
 
   // Track last loaded athleteId to prevent duplicate loads

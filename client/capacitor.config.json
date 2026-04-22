@@ -6,7 +6,7 @@
     "androidScheme": "https"
   },
   "ios": {
-    "contentInset": "automatic"
+    "contentInset": "never"
   },
   "android": {
     "allowMixedContent": false
@@ -14,6 +14,7 @@
   "plugins": {
     "GoogleAuth": {
       "scopes": ["profile", "email"],
+      "iosClientId": "962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a.apps.googleusercontent.com",
       "serverClientId": "962857277252-hjuh1309cikav924lsp4r3et8k3sj6lk.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
     },

@@ -51,6 +51,21 @@ const LoginPage = () => {
   const from = location.state?.from?.pathname || "/dashboard";
 
   // Check for invitation token in URL
+  // Lock body scroll on native so WKWebView doesn't rubber-band
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   useEffect(() => {
     // Nejprve zkusit získat token z query stringu
     const urlParams = new URLSearchParams(window.location.search);
@@ -373,8 +388,19 @@ const LoginPage = () => {
   // ── Native iOS layout ──────────────────────────────────────────
   if (isCapacitorNative()) {
     return (
-      <div className="bg-white flex flex-col" style={{ position: 'fixed', inset: 0, paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', overflow: 'hidden' }}>
-        <div className="flex-1 flex flex-col justify-center px-6">
+      <div style={{ position: 'fixed', inset: 0, background: 'white', overflow: 'hidden' }}>
+        {/* Inner layer: scrollable with rubber-band contained, respects safe areas */}
+        <div style={{
+          height: '100%',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+        <div className="flex-1 flex flex-col justify-center px-6" style={{ minHeight: '100%' }}>
 
           {/* Logo */}
           <div className="mb-8 text-center">
@@ -487,12 +513,13 @@ const LoginPage = () => {
           </p>
 
           {/* Privacy & Terms inline */}
-          <div className="mt-4 flex items-center justify-center gap-3 text-xs text-gray-400">
+          <div className="mt-4 mb-2 flex items-center justify-center gap-3 text-xs text-gray-400">
             <a href="https://lachart.net/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             <span>·</span>
             <a href="/terms">Terms of Use</a>
           </div>
         </div>
+        </div>{/* end scrollable */}
 
         {/* Onboarding modals (same as web) */}
         {loggedInUser && (

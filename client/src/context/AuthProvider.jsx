@@ -74,16 +74,23 @@ export const AuthProvider = ({ children }) => {
           key.startsWith('trainingComparison_') ||
           key === 'weeklyCalendar_activities' ||
           key === 'weeklyCalendar_cacheTime' ||
+          key.startsWith('weeklyCalendar_activities_') ||
+          key.startsWith('weeklyCalendar_cacheTime_') ||
           key === 'profileModalLastShown' ||
           key === 'lactateCurve_lastTest' ||
           key.startsWith('global_selectedAthleteId') ||
+          key === 'trainingCalendar_selectedAthleteId' ||
           key.startsWith('testing_recommendations_open_') ||
           key === 'lachart:lastTestId' ||
           key.startsWith('lachart:lastTestId:') ||
           key.startsWith('strava_modal_dismissed_') ||
           key === 'fitAnalysis_selectedStravaId' ||
           key === 'fitAnalysis_selectedTrainingId' ||
-          key === 'fitAnalysis_selectedTrainingModelId'
+          key === 'fitAnalysis_selectedTrainingModelId' ||
+          key === 'lastCheckedUserId' ||
+          key.startsWith('basicProfileModalDone_') ||
+          key.startsWith('unitsPreferencesModalDone_') ||
+          key.startsWith('trainingZonesModalDone_')
         ) {
           keysToRemove.push(key);
         }
@@ -102,10 +109,13 @@ export const AuthProvider = ({ children }) => {
 
     // Vyčistit axios defaults a cache
     delete api.defaults.headers.common["Authorization"];
-    
+
     // Vyčistit API cache
     clearApiCache();
-    
+
+    // Notify all components to flush any in-memory cached data for the previous user
+    try { window.dispatchEvent(new CustomEvent('userLoggedOut')); } catch {}
+
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);

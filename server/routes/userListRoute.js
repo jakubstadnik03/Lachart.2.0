@@ -1,6 +1,17 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const mongoose = require("mongoose");
+
+// H6 — 5 requests per 15 minutes for password/verification endpoints
+const authActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait 15 minutes before trying again.' },
+  skip: (req) => req.method === 'OPTIONS',
+});
 const registerAbl = require("../abl/user-abl/register-abl");
 const loginAbl = require("../abl/user-abl/login-abl");
 const verifyToken = require("../middleware/verifyToken");
@@ -174,8 +185,8 @@ router.get("/verify-email/:token", async (req, res) => {
     }
 });
 
-// Resend verification email endpoint
-router.post("/resend-verification-email", async (req, res) => {
+// Resend verification email endpoint — rate limited (H6)
+router.post("/resend-verification-email", authActionLimiter, async (req, res) => {
     try {
         const { email } = req.body;
         
@@ -1171,8 +1182,8 @@ router.get("/athlete/:athleteId/tests", verifyToken, async (req, res) => {
     }
 });
 
-// Forgot password endpoint
-router.post("/forgot-password", async (req, res) => {
+// Forgot password endpoint — rate limited (H6)
+router.post("/forgot-password", authActionLimiter, async (req, res) => {
     try {
         await forgotPasswordAbl.forgotPassword(req, res);
     } catch (error) {
@@ -1649,10 +1660,19 @@ router.delete("/athlete/remove-coach", verifyToken, async (req, res) => {
     }
 });
 
-// Get user by ID
+// Get user by ID — M1: only self, coach, or admin may fetch a user profile
 router.get("/user/:userId", verifyToken, async (req, res) => {
     try {
         const { userId } = req.params;
+        const requesterId  = String(req.user.userId);
+        const requesterDoc = await userDao.findById(requesterId);
+        const role         = String(requesterDoc?.role || '').toLowerCase();
+        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requesterDoc?.admin === true;
+
+        if (!isPrivileged && requesterId !== String(userId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const user = await userDao.findById(userId);
 
         if (!user) {
@@ -2112,9 +2132,9 @@ router.post("/change-password", verifyToken, async (req, res) => {
             return res.status(400).json({ error: "Current password and new password are required" });
         }
 
-        // Validate password length
-        if (newPassword.length < 6) {
-            return res.status(400).json({ error: "New password must be at least 6 characters long" });
+        // Validate password length (M9 — minimum 8 characters)
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: "New password must be at least 8 characters long" });
         }
 
         // Find user
@@ -3531,6 +3551,10 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
 
         const rawName = (req.body?.name || "").toString().trim();
         const rawEmail = (req.body?.email || "").toString().trim().toLowerCase();
+        const customSubject = (req.body?.subject || "").toString().trim();
+        const customBody = (req.body?.body || "").toString().trim(); // plain text → converted to HTML paragraphs
+        const isPreview = req.body?.preview === true; // send to admin's own email, skip lead tracking
+
         if (!rawEmail) {
             return res.status(400).json({ error: "Email is required." });
         }
@@ -3539,37 +3563,55 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
             return res.status(400).json({ error: "Invalid email format." });
         }
 
+        // In preview mode, deliver to the requesting admin's own address
+        const deliveryEmail = isPreview ? currentUser.email : rawEmail;
+        if (!deliveryEmail) {
+            return res.status(400).json({ error: "Admin account has no email address." });
+        }
+
         const contactName = rawName || "";
         const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
         const clientUrl = getClientUrl() || 'https://lachart.net';
         const imageUrl = `${clientUrl}/images/lactate_testing.png`;
 
-        const subject = "Free tool for lactate testing coaches - LaChart";
-        const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
-        const content = `
-            <p>${greeting}</p>
-            <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
-            <p style="margin-top: 20px;">
-                LaChart helps you:
-            </p>
-            <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
-                <li>log lactate step tests quickly,</li>
-                <li>auto-calculate <strong>LT1 / LT2</strong> and training zones,</li>
-                <li>generate and send a clear <strong>PDF report</strong>,</li>
-                <li>manage athletes and keep test history in one place.</li>
-            </ul>
-            <p style="margin-top: 20px;">
-                <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
-            </p>
-            <p style="margin-top: 20px;">
-                If this could be useful for your coaching/testing workflow, I would love your feedback.
-            </p>
-            <p style="margin-top: 20px;">
-                You can try it here: <a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a>
-            </p>
-            <p style="margin-top: 26px;">Best regards,</p>
-            <p><strong>Jakub Stadnik</strong><br/>Creator of LaChart</p>
-        `;
+        let subject, content;
+
+        if (customSubject && customBody) {
+            // Custom personalised email — convert plain text to HTML paragraphs
+            subject = customSubject;
+            const htmlParagraphs = customBody
+                .split(/\n{2,}/)
+                .map(block => `<p style="margin-top:14px;line-height:1.6;">${block.replace(/\n/g, '<br/>')}</p>`)
+                .join('\n');
+            content = `
+                ${htmlParagraphs}
+                <p style="margin-top: 20px;">
+                    <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                </p>
+            `;
+        } else {
+            // Default generic template
+            subject = "Free tool for lactate testing coaches - LaChart";
+            const greeting = contactName ? `Hi ${contactName},` : `Hi,`;
+            content = `
+                <p>${greeting}</p>
+                <p>I am building <strong>LaChart</strong>, a free web app for lactate testing coaches and testers.</p>
+                <p style="margin-top: 20px;">LaChart helps you:</p>
+                <ul style="margin: 15px 0; padding-left: 20px; line-height: 1.8;">
+                    <li>log lactate step tests quickly,</li>
+                    <li>auto-calculate <strong>LT1 / LT2</strong> and training zones,</li>
+                    <li>generate and send a clear <strong>PDF report</strong>,</li>
+                    <li>manage athletes and keep test history in one place.</li>
+                </ul>
+                <p style="margin-top: 20px;">
+                    <img src="${imageUrl}" alt="LaChart Lactate Testing" style="max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0;" />
+                </p>
+                <p style="margin-top: 20px;">If this could be useful for your coaching/testing workflow, I would love your feedback.</p>
+                <p style="margin-top: 20px;">You can try it here: <a href="https://lachart.net" style="color: #767EB5;">https://lachart.net</a></p>
+                <p style="margin-top: 26px;">Best regards,</p>
+                <p><strong>Jakub Stadnik</strong><br/>Creator of LaChart</p>
+            `;
+        }
 
         const transporter = createEmailTransporter();
         if (!transporter) {
@@ -3584,35 +3626,49 @@ router.post("/admin/send-coach-outreach-email", verifyToken, async (req, res) =>
                 name: 'Jakub - LaChart',
                 address: process.env.EMAIL_USER
             },
-            to: rawEmail,
-            subject,
+            to: deliveryEmail,
+            subject: isPreview ? `[PREVIEW] ${subject}` : subject,
             html: generateEmailTemplate({
-                title: 'Free Lactate Testing App for Coaches',
-                content,
+                title: 'LaChart — Lactate Analysis Tool',
+                content: isPreview
+                    ? `<p style="background:#fef9c3;border:1px solid #fde047;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:18px;">
+                        📧 <strong>Preview mode</strong> — this is how the email will look when sent to <em>${rawEmail}</em>. Lead tracking was NOT updated.
+                       </p>${content}`
+                    : content,
                 buttonText: 'Open LaChart',
                 buttonUrl: 'https://lachart.net',
-                footerText: 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
+                footerText: isPreview
+                    ? `This is a preview sent to you (${deliveryEmail}). The actual email will go to ${rawEmail}.`
+                    : 'You are receiving this message because we are reaching out to coaches and lactate testers who may benefit from LaChart.'
             })
         });
 
-        const now = new Date();
-        await CoachOutreachLead.findOneAndUpdate(
-            { email: rawEmail },
-            {
-                $set: {
-                    name: contactName,
-                    lastSentAt: now,
-                    lastUpdatedBy: currentUser._id
+        // Only update lead tracking when NOT in preview mode
+        if (!isPreview) {
+            const now = new Date();
+            await CoachOutreachLead.findOneAndUpdate(
+                { email: rawEmail },
+                {
+                    $set: {
+                        name: contactName,
+                        lastSentAt: now,
+                        lastUpdatedBy: currentUser._id
+                    },
+                    $setOnInsert: {
+                        createdBy: currentUser._id
+                    },
+                    $inc: { sentCount: 1 }
                 },
-                $setOnInsert: {
-                    createdBy: currentUser._id
-                },
-                $inc: { sentCount: 1 }
-            },
-            { upsert: true, new: true }
-        );
+                { upsert: true, new: true }
+            );
+        }
 
-        return res.status(200).json({ ok: true, message: "Coach outreach email sent successfully." });
+        return res.status(200).json({
+            ok: true,
+            message: isPreview
+                ? `Preview sent to ${deliveryEmail}`
+                : "Coach outreach email sent successfully."
+        });
     } catch (error) {
         console.error("Error sending coach outreach email:", error);
         const rawMessage = (error && (error.message || error.reason || String(error))) || "Send failed.";

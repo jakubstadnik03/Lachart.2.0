@@ -11,10 +11,13 @@ import { motion } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useNotification } from '../context/NotificationContext';
 import { getAthleteAvatar } from '../utils/avatarUtils';
+import { formatHeight, formatWeight, resolveDistanceUnitSystem, getUserUnits } from '../utils/unitsConverter';
 
 export default function AthleteProfile() {
   const { athleteId } = useParams();
   const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user);
+  const userUnits = getUserUnits(user);
   const [athlete, setAthlete] = useState(null);
   const [trainings, setTrainings] = useState([]);
   const [tests, setTests] = useState([]);
@@ -289,7 +292,7 @@ export default function AthleteProfile() {
                       </div>
                       <div className="bg-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-4">
                         <div className="text-base sm:text-xl font-semibold text-primary">{formatDate(athlete.dateOfBirth)}</div>
-                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{`${athlete.height || '0'} cm ${athlete.weight || '0'} kg`}</div>
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{athlete.height ? formatHeight(athlete.height, unitSystem) : '—'} · {athlete.weight ? formatWeight(athlete.weight, userUnits.weight).formatted : '—'}</div>
                       </div>
                     </div>
                   </div>

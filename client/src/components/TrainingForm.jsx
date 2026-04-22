@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import { getTrainingTitles } from "../services/api";
 import { useNotification } from '../context/NotificationContext';
 import { mapSportForTrainingForm } from "../utils/trainingLactateModal";
@@ -499,7 +500,15 @@ const TrainingForm = ({
   );
 
   return (
-    <div className="bg-white rounded-2xl w-full max-w-2xl flex flex-col max-h-[95dvh] relative shadow-xl overflow-hidden">
+    <div
+      className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl flex flex-col relative shadow-xl overflow-hidden"
+      style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}
+    >
+
+      {/* Drag handle — mobile only */}
+      <div className="flex justify-center pt-2.5 pb-0 sm:hidden shrink-0" aria-hidden="true">
+        <div className="h-1 w-10 rounded-full bg-gray-300" />
+      </div>
 
       {/* ── Header (always visible) ── */}
       <div className="flex-shrink-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 z-20">
@@ -530,13 +539,14 @@ const TrainingForm = ({
                   ? "bg-primary text-white shadow-sm"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
             >
               <img
                 src={activity.icon}
                 alt=""
                 className={`w-4 h-4 ${formData.sport === activity.id ? "brightness-0 invert" : ""}`}
               />
-              <span className="hidden sm:inline">{activity.label}</span>
+              <span>{activity.label}</span>
             </button>
           ))}
         </div>
@@ -928,19 +938,19 @@ const TrainingForm = ({
                           </button>
                         </div>
 
-                        {/* Fields grid */}
-                        <div className={`grid gap-px bg-gray-100 rounded-b-xl overflow-hidden grid-cols-3`}>
+                        {/* Fields grid — 2 cols on mobile, 3 on sm+ */}
+                        <div className="grid gap-px bg-gray-100 rounded-b-xl overflow-hidden grid-cols-2 sm:grid-cols-3">
                           {/* Power / Pace */}
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>{formData.sport === "bike" ? "Power W" : formData.sport === "swim" ? "Pace /100m" : "Pace /km"}</label>
                             {formData.sport === "bike" ? (
                               <input type="number" inputMode="numeric" placeholder="—" value={interval.power}
                                 onChange={(e) => { const r=[...formData.results]; r[index].power=e.target.value; setFormData(p=>({...p,results:r})); }}
-                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                             ) : (
                               <input type="text" inputMode="numeric" placeholder="MM:SS" value={interval.power}
                                 onChange={(e) => handlePaceChange(index, e.target.value)}
-                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                                className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                             )}
                           </div>
                           {/* HR */}
@@ -948,21 +958,21 @@ const TrainingForm = ({
                             <label className={labelBase}>HR bpm</label>
                             <input type="number" inputMode="numeric" placeholder="—" value={interval.heartRate}
                               onChange={(e) => { const r=[...formData.results]; r[index].heartRate=e.target.value; setFormData(p=>({...p,results:r})); }}
-                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
                           {/* Lactate */}
-                          <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary">
+                          <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary sm:border-l-2">
                             <label className={`${labelBase} text-primary`}>Lactate</label>
                             <input id={`training-form-lactate-${index}`} type="number" inputMode="decimal" placeholder="—" value={interval.lactate}
                               onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}
-                              className="w-full text-sm bg-transparent outline-none placeholder-gray-300 min-h-[28px] font-semibold text-primary" />
+                              className="w-full text-sm bg-transparent outline-none placeholder-gray-300 min-h-[36px] font-semibold text-primary" />
                           </div>
                           {/* RPE */}
                           <div className="bg-white px-3 py-2.5">
                             <label className={labelBase}>RPE</label>
                             <input type="number" inputMode="numeric" placeholder="—" value={interval.RPE}
                               onChange={(e) => { const r=[...formData.results]; r[index].RPE=e.target.value; setFormData(p=>({...p,results:r})); }}
-                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
                           {/* Duration */}
                           <div className="bg-white px-3 py-2.5">
@@ -975,7 +985,7 @@ const TrainingForm = ({
                                 r[index].duration=v; r[index].durationType='time';
                                 setFormData(p=>({...p,results:r}));
                               }}
-                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
                           {/* Distance */}
                           <div className="bg-white px-3 py-2.5">
@@ -988,7 +998,7 @@ const TrainingForm = ({
                                 r[index].distanceMeters=v?parseFloat(v)||undefined:undefined;
                                 setFormData(p=>({...p,results:r}));
                               }}
-                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[28px]" />
+                              className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
                         </div>
                       </>
@@ -1010,12 +1020,16 @@ const TrainingForm = ({
       </div>
 
       {/* ── Sticky footer ── */}
-      <div className="sticky bottom-0 z-10 bg-white border-t border-gray-100 px-4 py-3 flex gap-3">
+      <div
+        className="shrink-0 bg-white border-t border-gray-100 px-4 flex gap-3"
+        style={{ paddingTop: '0.75rem', paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+      >
         <button
           type="button"
           onClick={onClose}
           disabled={isLoading}
           className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors min-h-[44px]"
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         >
           Cancel
         </button>
@@ -1024,16 +1038,21 @@ const TrainingForm = ({
           form="training-form"
           disabled={isLoading}
           className="flex-1 px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors min-h-[44px]"
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
         >
           {isLoading ? "Saving…" : isEditing ? "Update" : "Save Training"}
         </button>
       </div>
 
-      {/* ── Repeat-count modal ── */}
-      {editingIntervalIndex !== null && (
-        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-xs shadow-xl">
-            <div className="px-5 pt-5 pb-4">
+      {/* ── Repeat-count modal — portaled so it appears above tab bar ── */}
+      {editingIntervalIndex !== null && ReactDOM.createPortal(
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[9999] p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xs shadow-xl">
+            {/* Drag handle */}
+            <div className="flex justify-center pt-2.5 pb-0 sm:hidden">
+              <div className="h-1 w-10 rounded-full bg-gray-300" />
+            </div>
+            <div className="px-5 pt-4 pb-4">
               <h3 className="text-base font-semibold text-gray-900 mb-4">Repeat count</h3>
               <label className={labelBase}>Number of repetitions</label>
               <input
@@ -1046,11 +1065,15 @@ const TrainingForm = ({
                 autoFocus
               />
             </div>
-            <div className="flex gap-2 px-5 pb-5">
+            <div
+              className="flex gap-2 px-5"
+              style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 0px))' }}
+            >
               <button
                 type="button"
                 onClick={handleCancelEditRepeatCount}
                 className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 min-h-[44px]"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
                 Cancel
               </button>
@@ -1058,12 +1081,14 @@ const TrainingForm = ({
                 type="button"
                 onClick={handleSaveRepeatCount}
                 className="flex-1 px-4 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 min-h-[44px]"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

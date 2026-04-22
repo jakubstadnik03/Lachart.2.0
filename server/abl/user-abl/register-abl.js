@@ -29,6 +29,13 @@ class RegisterAbl {
                 });
             }
 
+            // M9 — enforce minimum password length
+            if (password.length < 8) {
+                return res.status(400).json({
+                    error: "Heslo musí mít alespoň 8 znaků"
+                });
+            }
+
             // Kontrola, zda uživatel již neexistuje
             const existingUser = await this.userDao.findByEmail(email);
             if (existingUser) {

@@ -100,7 +100,15 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved,
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative z-10 w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90dvh]">
+      <div
+        className="relative z-10 w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col"
+        style={{ maxHeight: 'calc(90vh - env(safe-area-inset-top, 0px))' }}
+      >
+
+        {/* Drag handle — mobile only */}
+        <div className="flex justify-center pt-2.5 pb-0 sm:hidden shrink-0" aria-hidden="true">
+          <div className="h-1 w-10 rounded-full bg-gray-300" />
+        </div>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
@@ -211,7 +219,10 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved,
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-100 shrink-0 flex flex-col gap-2">
+        <div
+          className="px-5 border-t border-gray-100 shrink-0 flex flex-col gap-2"
+          style={{ paddingTop: '1rem', paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+        >
           {error && (
             <p className="text-xs text-red-500 text-center">{error}</p>
           )}
@@ -219,6 +230,7 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved,
             <button
               onClick={onClose}
               className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
             >
               Cancel
             </button>
@@ -226,6 +238,7 @@ export default function LactateModal({ isOpen, onClose, training, user, onSaved,
               onClick={handleSave}
               disabled={saving || filledCount === 0}
               className="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium shadow-md hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
             >
               {saving ? 'Saving…' : saved ? '✓ Saved!' : `Save ${filledCount > 0 ? `(${filledCount})` : ''}`}
             </button>

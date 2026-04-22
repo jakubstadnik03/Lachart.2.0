@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import Modal from '../Modal';
 
 const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testState, currentStep = 0 }) => {
   const [editedSteps, setEditedSteps] = useState([]);
@@ -15,173 +15,183 @@ const ProtocolEditModal = ({ isOpen, onClose, protocol, onProtocolUpdate, testSt
     const updated = [...editedSteps];
     updated[index] = {
       ...updated[index],
-      [field]: typeof value === 'string' ? (field === 'targetPower' || field === 'duration' || field === 'recoveryDuration' ? parseInt(value) || 0 : value) : value
+      [field]:
+        typeof value === 'string' &&
+        (field === 'targetPower' || field === 'duration' || field === 'recoveryDuration')
+          ? parseInt(value) || 0
+          : value,
     };
     setEditedSteps(updated);
   };
 
   const handleAddStep = () => {
     const lastStep = editedSteps[editedSteps.length - 1];
-    const newPower = lastStep ? lastStep.targetPower + protocol.powerIncrement : protocol.startPower;
-    const newStep = {
-      stepNumber: editedSteps.length + 1,
-      targetPower: newPower,
-      phase: 'work',
-      duration: protocol.workDuration,
-      recoveryDuration: protocol.recoveryDuration
-    };
-    setEditedSteps([...editedSteps, newStep]);
+    const newPower = lastStep
+      ? lastStep.targetPower + protocol.powerIncrement
+      : protocol.startPower;
+    setEditedSteps([
+      ...editedSteps,
+      {
+        stepNumber: editedSteps.length + 1,
+        targetPower: newPower,
+        phase: 'work',
+        duration: protocol.workDuration,
+        recoveryDuration: protocol.recoveryDuration,
+      },
+    ]);
   };
 
   const handleRemoveStep = (index) => {
-    if (editedSteps.length <= 1) return; // Keep at least one step
-    const updated = editedSteps.filter((_, i) => i !== index).map((step, i) => ({
-      ...step,
-      stepNumber: i + 1
-    }));
-    setEditedSteps(updated);
+    if (editedSteps.length <= 1) return;
+    setEditedSteps(
+      editedSteps
+        .filter((_, i) => i !== index)
+        .map((step, i) => ({ ...step, stepNumber: i + 1 }))
+    );
   };
 
   const handleSave = () => {
-    const updatedProtocol = {
-      ...protocol,
-      steps: editedSteps,
-      maxSteps: editedSteps.length
-    };
-    onProtocolUpdate(updatedProtocol);
+    onProtocolUpdate({ ...protocol, steps: editedSteps, maxSteps: editedSteps.length });
     onClose();
   };
 
-
-
-  if (!isOpen) return null;
+  const inputClass =
+    'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400';
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          className="bg-white/70 backdrop-blur-lg rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/40 shadow-xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Edit Protocol Steps</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700"
+    <Modal isOpen={isOpen} onClose={onClose} title="Edit Protocol Steps">
+      <div className="space-y-3">
+        {editedSteps.map((step, index) => {
+          const completed = testState === 'running' && index < currentStep;
+          const active = testState === 'running' && index === currentStep;
+
+          return (
+            <div
+              key={index}
+              className={`rounded-xl border p-3 sm:p-4 ${
+                active
+                  ? 'border-orange-200 bg-orange-50'
+                  : completed
+                  ? 'border-gray-200 bg-gray-50 opacity-60'
+                  : 'border-gray-200 bg-white'
+              }`}
             >
-              <XMarkIcon className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="space-y-4 mb-4">
-            {editedSteps.map((step, index) => (
-              <div key={index} className="p-4 border border-white/40 bg-white/60 backdrop-blur rounded-xl">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-gray-700">Step {step.stepNumber}</span>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      step.phase === 'work' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    }`}>
-                      {step.phase === 'work' ? 'Work' : 'Recovery'}
-                    </span>
-                  </div>
-                  {editedSteps.length > 1 && (
-                    <button
-                      onClick={() => handleRemoveStep(index)}
-                      className="text-rose-600 hover:text-rose-700"
-                    >
-                      <TrashIcon className="w-5 h-5" />
-                    </button>
-                  )}
+              {/* Step header */}
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-gray-700">
+                    Step {step.stepNumber}
+                  </span>
+                  <span
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      step.phase === 'work'
+                        ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                        : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}
+                  >
+                    {step.phase === 'work' ? 'Work' : 'Recovery'}
+                  </span>
                 </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Target Power (W)
-                    </label>
-                    <input
-                      type="number"
-                      value={step.targetPower}
-                      onChange={(e) => handleStepChange(index, 'targetPower', e.target.value)}
-                      disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
-                    />
-                    {testState === 'running' && index < currentStep && (
-                      <p className="text-xs text-gray-500 mt-1">Already completed</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Work Duration (s)
-                    </label>
-                    <input
-                      type="number"
-                      value={step.duration}
-                      onChange={(e) => handleStepChange(index, 'duration', e.target.value)}
-                      disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Recovery Duration (s)
-                    </label>
-                    <input
-                      type="number"
-                      value={step.recoveryDuration}
-                      onChange={(e) => handleStepChange(index, 'recoveryDuration', e.target.value)}
-                      disabled={testState === 'running' && index < currentStep}
-                      className="w-full px-3 py-2 border border-white/40 bg-white/70 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-gray-100"
-                    />
-                  </div>
-                </div>
-                {testState === 'running' && index === currentStep && (
-                  <p className="text-xs text-orange-600 mt-2">⚠️ Current step - changes will affect active interval</p>
+                {editedSteps.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveStep(index)}
+                    className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                    style={{ touchAction: 'manipulation' }}
+                    aria-label="Remove step"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
 
-          <div className="flex gap-2 justify-between">
-            <button
-              onClick={handleAddStep}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow"
-            >
-              <PlusIcon className="w-5 h-5" />
-              Add Step
-            </button>
-            <div className="flex gap-2">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 bg-white/70 text-gray-700 rounded-xl hover:bg-white border border-white/40 shadow"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 shadow"
-              >
-                Save Changes
-              </button>
+              {/* Fields */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Power (W)
+                  </label>
+                  <input
+                    type="number"
+                    value={step.targetPower}
+                    onChange={(e) => handleStepChange(index, 'targetPower', e.target.value)}
+                    disabled={completed}
+                    className={inputClass}
+                  />
+                  {completed && (
+                    <p className="text-xs text-gray-400">Completed</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Work (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={step.duration}
+                    onChange={(e) => handleStepChange(index, 'duration', e.target.value)}
+                    disabled={completed}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-600">
+                    Recovery (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={step.recoveryDuration}
+                    onChange={(e) =>
+                      handleStepChange(index, 'recoveryDuration', e.target.value)
+                    }
+                    disabled={completed}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              {active && (
+                <p className="mt-2 text-xs text-orange-600">
+                  ⚠️ Current step — changes affect the active interval
+                </p>
+              )}
             </div>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+          );
+        })}
+
+        {/* Add step */}
+        <button
+          type="button"
+          onClick={handleAddStep}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-300 py-2.5 text-sm font-semibold text-emerald-700 transition-all hover:border-emerald-400 hover:bg-emerald-50"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <PlusIcon className="h-4 w-4" />
+          Add Step
+        </button>
+
+        {/* Footer */}
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:justify-end sm:gap-3 sm:pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 sm:w-auto sm:px-6 sm:py-3"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg sm:w-auto sm:px-6 sm:py-3"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 };
 
 export default ProtocolEditModal;
-

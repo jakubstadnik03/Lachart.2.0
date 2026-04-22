@@ -206,88 +206,161 @@ export default function CoachAthleteOverview({ athletes }) {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Mobile card list — visible only on small screens */}
       {sorted.length === 0 ? (
         <div className="px-5 py-10 text-center text-sm text-gray-400">No athletes match this filter.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Athlete</th>
-                <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Sport</th>
-                <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Last Test</th>
-                <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">LT2 est.</th>
-                <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {sorted.map((athlete, idx) => (
-                <motion.tr
+        <>
+          {/* ── Mobile cards (hidden on sm+) ── */}
+          <div className="sm:hidden divide-y divide-gray-50">
+            {sorted.map((athlete, idx) => {
+              const loading = athleteData[athlete._id] === undefined;
+              const statusLabel = athlete.status === 'green' ? 'Active' : athlete.status === 'yellow' ? 'Due soon' : 'Overdue';
+              return (
+                <motion.div
                   key={athlete._id}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: idx * 0.03 }}
-                  className="hover:bg-gray-50 transition-colors group"
+                  className="px-4 py-3 hover:bg-gray-50 transition-colors"
                 >
-                  <td className="px-5 py-3">
-                    <span
-                      className="font-medium text-gray-800 cursor-pointer hover:text-[#767EB5] transition-colors"
-                      onClick={() => navigate(`/athlete/${athlete._id}`)}
-                    >
-                      {athlete.name} {athlete.surname}
-                    </span>
-                    {athlete.email && (
-                      <p className="text-xs text-gray-400">{athlete.email}</p>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    <SportBadge sport={athlete.sport} />
-                  </td>
-                  <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
-                    {athleteData[athlete._id] === undefined ? (
-                      <span className="inline-block w-20 h-3 bg-gray-200 rounded animate-pulse" />
-                    ) : (
-                      formatDate(athlete.lastTestDate)
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    {athleteData[athlete._id] === undefined ? (
-                      <span className="inline-block w-12 h-3 bg-gray-200 rounded animate-pulse" />
-                    ) : athlete.lt2 ? (
-                      <span className="text-[#767EB5] font-medium">{athlete.lt2}</span>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <StatusDot status={athlete.status} />
-                      <span className="text-xs text-gray-500 capitalize">{athlete.status === 'green' ? 'Active' : athlete.status === 'yellow' ? 'Due soon' : 'Overdue'}</span>
+                  {/* Top row: name + status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <button
+                        onClick={() => navigate(`/athlete/${athlete._id}`)}
+                        className="font-semibold text-gray-800 text-sm hover:text-primary text-left leading-tight"
+                        style={{ touchAction: 'manipulation' }}
+                      >
+                        {athlete.name} {athlete.surname}
+                      </button>
+                      {athlete.email && (
+                        <p className="text-xs text-gray-400 truncate mt-0.5">{athlete.email}</p>
+                      )}
                     </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                      <StatusDot status={athlete.status} />
+                      <span className="text-xs text-gray-500">{statusLabel}</span>
+                    </div>
+                  </div>
+
+                  {/* Bottom row: sport · last test · LT2 · actions */}
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <SportBadge sport={athlete.sport} />
+                      <span className="text-xs text-gray-400">
+                        {loading ? (
+                          <span className="inline-block w-16 h-2.5 bg-gray-200 rounded animate-pulse" />
+                        ) : (
+                          formatDate(athlete.lastTestDate)
+                        )}
+                      </span>
+                      {!loading && athlete.lt2 && (
+                        <span className="text-xs text-primary font-medium">{athlete.lt2}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
                       <button
                         onClick={() => navigate(`/dashboard/${athlete._id}`)}
-                        className="text-xs text-[#767EB5] hover:underline font-medium whitespace-nowrap"
+                        className="text-xs text-primary font-medium"
+                        style={{ touchAction: 'manipulation' }}
                       >
                         Dashboard
                       </button>
                       <button
                         onClick={() => navigate(`/testing/${athlete._id}`)}
-                        className="text-xs text-gray-500 hover:underline whitespace-nowrap"
+                        className="text-xs text-gray-500"
+                        style={{ touchAction: 'manipulation' }}
                       >
                         Tests
                       </button>
                     </div>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+
+          {/* ── Desktop table (hidden on mobile) ── */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-50">
+                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Athlete</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Sport</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Last Test</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">LT2 est.</th>
+                  <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {sorted.map((athlete, idx) => (
+                  <motion.tr
+                    key={athlete._id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.03 }}
+                    className="hover:bg-gray-50 transition-colors group"
+                  >
+                    <td className="px-5 py-3">
+                      <span
+                        className="font-medium text-gray-800 cursor-pointer hover:text-[#767EB5] transition-colors"
+                        onClick={() => navigate(`/athlete/${athlete._id}`)}
+                      >
+                        {athlete.name} {athlete.surname}
+                      </span>
+                      {athlete.email && (
+                        <p className="text-xs text-gray-400">{athlete.email}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <SportBadge sport={athlete.sport} />
+                    </td>
+                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      {athleteData[athlete._id] === undefined ? (
+                        <span className="inline-block w-20 h-3 bg-gray-200 rounded animate-pulse" />
+                      ) : (
+                        formatDate(athlete.lastTestDate)
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {athleteData[athlete._id] === undefined ? (
+                        <span className="inline-block w-12 h-3 bg-gray-200 rounded animate-pulse" />
+                      ) : athlete.lt2 ? (
+                        <span className="text-[#767EB5] font-medium">{athlete.lt2}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <StatusDot status={athlete.status} />
+                        <span className="text-xs text-gray-500 capitalize">{athlete.status === 'green' ? 'Active' : athlete.status === 'yellow' ? 'Due soon' : 'Overdue'}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => navigate(`/dashboard/${athlete._id}`)}
+                          className="text-xs text-[#767EB5] hover:underline font-medium whitespace-nowrap"
+                        >
+                          Dashboard
+                        </button>
+                        <button
+                          onClick={() => navigate(`/testing/${athlete._id}`)}
+                          className="text-xs text-gray-500 hover:underline whitespace-nowrap"
+                        >
+                          Tests
+                        </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </motion.div>
   );

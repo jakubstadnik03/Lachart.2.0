@@ -47,9 +47,8 @@
 	<true/>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>LaChart uses notifications to remind you about training sessions, lactate test intervals, and recovery periods.</string>
+	<!-- NSBluetoothAlwaysUsageDescription only (NSBluetoothPeripheralUsageDescription is deprecated since iOS 13) -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>LaChart connects to your smart trainer, heart rate monitor, and other training sensors via Bluetooth to record power, cadence, heart rate, and other metrics.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>LaChart connects to your smart trainer, heart rate monitor, and other training sensors via Bluetooth to record power, cadence, heart rate, and other metrics.</string>
 	<key>UIBackgroundModes</key>
 	<array>
@@ -82,11 +81,11 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Allow navigation to external sites used by the app (Strava, Render API) -->
+	<!-- ATS: all API and asset traffic is HTTPS — no arbitrary loads needed -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
 	</dict>
 </dict>
 </plist>

@@ -511,12 +511,7 @@ exports.getPortalUrl = async (req, res) => {
  * Protected by ADMIN_SECRET header.
  */
 exports.sendPromoEmail = async (req, res) => {
-  // Simple admin protection via secret header
-  const adminSecret = req.headers['x-admin-secret'];
-  if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
+  // Auth is enforced by verifyToken + admin check in subscriptionRoutes.js (M3)
   const { promoCode, subject, dryRun = false } = req.body;
   if (!promoCode) return res.status(400).json({ error: 'promoCode is required' });
 

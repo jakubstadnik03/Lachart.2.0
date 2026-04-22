@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { EllipsisVerticalIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem, paceUnit } from '../../utils/unitsConverter';
 
 const isCyclingSport = (sportRaw) => {
   const sport = String(sportRaw || '').toLowerCase();
@@ -129,7 +131,7 @@ function TableHeader({ selectedSport }) {
   ));
 }
 
-function convertPowerToPace(seconds, sport) {
+function convertPowerToPace(seconds, sport, unitSystem = 'metric') {
   if (!sport) return `${seconds}`;
   
   const sportLower = sport.toLowerCase();
@@ -148,21 +150,24 @@ function convertPowerToPace(seconds, sport) {
   const formattedPace = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 
   if (sportLower === "running" || sportLower === "run") {
-    return `${formattedPace} min/km`; // Pro běh
+    return `${formattedPace} ${paceUnit(unitSystem, sportLower)}`; // Pro běh
   } else if (sportLower === "swimming" || sportLower === "swim") {
-    return `${formattedPace} min/100m`; // Pro plavání
+    return `${formattedPace} ${paceUnit(unitSystem, sportLower)}`; // Pro plavání
   } else {
     return formattedPace; // Default pro jiné sporty
   }
 }
 
-export default function TrainingTable({ 
-  trainings = [], 
-  calendarData = [], 
-  selectedSport = 'all', 
+export default function TrainingTable({
+  trainings = [],
+  calendarData = [],
+  selectedSport = 'all',
   onSportChange,
-  onActivitySelect 
+  onActivitySelect
 }) {
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user);
+
   // Normalize sport names - map different variants to unified names
   const normalizeSport = (sport) => {
     if (!sport) return null;
@@ -536,7 +541,7 @@ export default function TrainingTable({
 
     // Format pace/power for display
     // Only format if we have a valid value
-    const pace = averageValue > 0 ? convertPowerToPace(averageValue, item.sport) : '-';
+    const pace = averageValue > 0 ? convertPowerToPace(averageValue, item.sport, unitSystem) : '-';
 
     return {
       training: item.title || item.name || 'Untitled',

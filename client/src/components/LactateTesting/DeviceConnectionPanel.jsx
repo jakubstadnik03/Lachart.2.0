@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../context/AuthProvider';
+import { formatTemperature, getUserUnits } from '../../utils/unitsConverter';
 import {
   SignalIcon,
   SignalSlashIcon,
@@ -9,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect }) => {
+  const { user } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const deviceList = [
     {
@@ -152,7 +155,7 @@ const DeviceConnectionPanel = ({ devices, onDeviceConnect, onDeviceDisconnect })
                       </>
                     )}
                     {device.key === 'coreTemp' && (
-                      <div>Temp: <span className="font-semibold">{deviceState.data.coreTemp?.toFixed(1)}°C</span></div>
+                      <div>Temp: <span className="font-semibold">{formatTemperature(deviceState.data.coreTemp, getUserUnits(user).temperature)}</span></div>
                     )}
                     {device.key === 'vo2master' && (
                       <>

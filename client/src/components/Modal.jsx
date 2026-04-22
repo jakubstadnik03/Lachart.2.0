@@ -1,12 +1,13 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }) => {
   if (!isOpen) return null;
 
-  return (
+  return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9999] flex items-end justify-center p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
@@ -19,9 +20,17 @@ const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }
       />
 
       <div
-        className="relative z-10 flex max-h-[min(92dvh,100vh-0.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-h-[min(90vh,56rem)] sm:rounded-2xl"
+        className="relative z-10 flex w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl"
+        style={{
+          maxHeight: 'calc(92vh - env(safe-area-inset-top, 0px))',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle — visible on mobile only */}
+        <div className="flex shrink-0 justify-center pt-2.5 pb-0 sm:hidden" aria-hidden="true">
+          <div className="h-1 w-10 rounded-full bg-gray-300" />
+        </div>
+
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:items-center sm:px-6 sm:py-4">
           <h3
             id="modal-title"
@@ -34,6 +43,7 @@ const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }
             onClick={onClose}
             className="shrink-0 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
             aria-label="Close"
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
           >
             <XMarkIcon className="h-6 w-6" />
           </button>
@@ -42,7 +52,10 @@ const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             ref={bodyRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:pt-5 sm:pb-[max(1.25rem,env(safe-area-inset-bottom,0px))]"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pt-4 sm:px-6 sm:pt-5"
+            style={{
+              paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
+            }}
           >
             {children}
           </div>
@@ -54,7 +67,8 @@ const Modal = ({ isOpen, onClose, title, children, bodyRef, bottomFade = false }
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

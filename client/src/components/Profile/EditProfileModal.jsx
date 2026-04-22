@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Modal from '../Modal';
+import { heightLabel, weightLabel, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = false }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
   const [selectedSport, setSelectedSport] = useState('cycling'); // cycling or running
+
+  const unitSystem = resolveDistanceUnitSystem({ units: formData.units || userData?.units });
 
   const formatDateForInput = (dateString) => {
     if (!dateString) return '';
@@ -591,8 +594,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
     setError('');
   };
 
-  // Get unitSystem from userData
-  const unitSystem = userData?.units?.distance === 'imperial' ? 'imperial' : 'metric';
+  // unitSystem is derived at the top of the component (line 10) from formData.units
   
   // Format pace for display (seconds to mm:ss)
   const formatPace = (seconds) => {
@@ -612,14 +614,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={zonesOnly ? "Set Training Zones" : "Edit Profile"}>
-      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+      <form onSubmit={handleSubmit} className="w-full min-w-0 space-y-4 overflow-x-hidden sm:space-y-6">
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 sm:p-4 sm:text-sm">
             {error}
           </div>
         )}
 
-        {!zonesOnly && <div className="grid grid-cols-1 gap-3 min-w-0 md:grid-cols-2 md:gap-6">
+        {!zonesOnly && <div className="grid grid-cols-1 gap-3 min-w-0 sm:grid-cols-2 sm:gap-6">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Date of Birth</label>
             <input
@@ -653,7 +655,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Height (cm)</label>
+            <label className="block text-sm font-semibold text-gray-700">{`Height (${heightLabel(unitSystem)})`}</label>
             <input
               type="number"
               value={formData.height || ''}
@@ -665,7 +667,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Weight (kg)</label>
+            <label className="block text-sm font-semibold text-gray-700">{`Weight (${weightLabel(unitSystem)})`}</label>
             <input
               type="number"
               value={formData.weight || ''}
@@ -714,7 +716,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             />
           </div>
 
-          <div className="space-y-2 md:col-span-2">
+          <div className="min-w-0 space-y-2 sm:col-span-2">
             <label className="block text-sm font-semibold text-gray-700">Bio</label>
             <textarea
               value={formData.bio || ''}
@@ -728,7 +730,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
 
         {!zonesOnly && <div className="mt-6 border-t border-gray-200 pt-4 sm:mt-8 sm:pt-6">
           <h3 className="mb-4 text-lg font-bold text-gray-900 sm:mb-6 sm:text-xl">Units Preferences</h3>
-          <div className="grid grid-cols-1 gap-4 min-w-0 md:grid-cols-3 md:gap-6">
+          <div className="grid grid-cols-1 gap-4 min-w-0 sm:grid-cols-3 sm:gap-6">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Distance</label>
               <div className="flex flex-col gap-2">
@@ -884,11 +886,14 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
           
           <div className="space-y-4 sm:space-y-6">
             {/* LTP1, LTP2 and Max Heart Rate */}
-            <div className="grid grid-cols-1 gap-3 min-w-0 md:grid-cols-3 md:gap-4">
+            <div className="grid grid-cols-1 gap-3 min-w-0 sm:grid-cols-3 sm:gap-4">
               <div className="min-w-0 space-y-2">
-                <label className="block text-sm font-semibold leading-snug text-gray-700 break-words">
-                  LTP1 {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 240 for 4:00/km)' : '(seconds per 100m, e.g., 90 for 1:30/100m)'}
+                <label className="block text-sm font-semibold leading-snug text-gray-700">
+                  LTP1 {selectedSport === 'cycling' ? '(W)' : '(sec)'}
                 </label>
+                <p className="text-xs text-gray-500 -mt-1">
+                  {selectedSport === 'running' ? 'e.g. 240 = 4:00/km' : selectedSport === 'swimming' ? 'e.g. 90 = 1:30/100m' : null}
+                </p>
                 <input
                   type="number"
                   value={formData.powerZones?.[selectedSport]?.lt1 || ''}
@@ -917,9 +922,12 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                 )}
               </div>
               <div className="min-w-0 space-y-2">
-                <label className="block text-sm font-semibold leading-snug text-gray-700 break-words">
-                  LTP2 (Threshold) {selectedSport === 'cycling' ? '(W)' : selectedSport === 'running' ? '(seconds, e.g., 200 for 3:20/km)' : '(seconds per 100m, e.g., 75 for 1:15/100m)'}
+                <label className="block text-sm font-semibold leading-snug text-gray-700">
+                  LTP2 (Threshold) {selectedSport === 'cycling' ? '(W)' : '(sec)'}
                 </label>
+                <p className="text-xs text-gray-500 -mt-1">
+                  {selectedSport === 'running' ? 'e.g. 200 = 3:20/km' : selectedSport === 'swimming' ? 'e.g. 75 = 1:15/100m' : null}
+                </p>
                 <input
                   type="number"
                   value={formData.powerZones?.[selectedSport]?.lt2 || ''}
@@ -971,7 +979,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             </div>
 
             {/* Generate Zones Buttons */}
-            <div className="grid grid-cols-1 gap-2 min-w-0 md:grid-cols-2 md:gap-4">
+            <div className="grid grid-cols-1 gap-2 min-w-0 sm:grid-cols-2 sm:gap-4">
               <button
                 type="button"
                 onClick={() => generateZones(selectedSport)}
@@ -992,8 +1000,8 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
             <div className="space-y-1">
               {[1, 2, 3, 4, 5].map(zoneNum => (
                 <div key={zoneNum} className="rounded-lg border border-gray-200 bg-gray-50 p-2 sm:rounded-md">
-                  <div className="flex flex-col gap-2 min-[400px]:flex-row min-[400px]:items-start min-[400px]:gap-3">
-                    <span className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center self-start rounded-full text-xs font-bold min-[400px]:mt-1 ${
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
+                    <span className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center self-start rounded-full text-xs font-bold sm:mt-1 ${
                       zoneNum === 1 ? 'bg-blue-100 text-blue-700' :
                       zoneNum === 2 ? 'bg-green-100 text-green-700' :
                       zoneNum === 3 ? 'bg-yellow-100 text-yellow-700' :
@@ -1002,7 +1010,7 @@ const EditProfileModal = ({ isOpen, onClose, onSubmit, userData, zonesOnly = fal
                     }`}>
                       {zoneNum}
                     </span>
-                    <div className="min-w-0 flex-1 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+                    <div className="min-w-0 flex-1 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                       {/* Power/Pace Zones */}
                       <div className="space-y-2">
                         <div className="text-xs font-semibold text-gray-700 mb-1">

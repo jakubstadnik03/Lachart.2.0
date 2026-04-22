@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getEventStats } from '../utils/eventLogger';
 import { getAdminUsers, getAdminStats, getCoachAthletesPage, updateUserAdmin, deleteUserAdmin, deleteAthleteWithTests, sendReactivationEmail, sendThankYouEmail, sendThankYouEmailToAll, sendFeatureAnnouncementEmail, sendStravaReminderEmail, sendCoachOutreachEmail, getCoachOutreachLeads, updateCoachOutreachLead, impersonateUser, sendRetentionEmailPreview } from '../services/api';
 import { useAuth } from '../context/AuthProvider';
 import { useNotification } from '../context/NotificationContext';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { OUTREACH_CONTACTS, buildOutreachEmail, ALL_COUNTRIES } from '../data/outreachContacts';
 
 const AdminDashboard = () => {
   const { user: currentUser, loading, login: authLogin } = useAuth();
@@ -40,6 +41,15 @@ const AdminDashboard = () => {
   const [outreachLeads, setOutreachLeads] = useState([]);
   const [outreachLeadsLoading, setOutreachLeadsLoading] = useState(false);
   const [outreachLeadUpdatingId, setOutreachLeadUpdatingId] = useState(null);
+  // Outreach contacts CRM
+  const [outreachFilter, setOutreachFilter] = useState('all'); // all | lab | coach | priority | email-only
+  const [outreachCountry, setOutreachCountry] = useState('');
+  const [outreachSearch, setOutreachSearch] = useState('');
+  const [composeContact, setComposeContact] = useState(null); // contact being composed
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeSending, setComposeSending] = useState(false);
+  const [composePreviewSending, setComposePreviewSending] = useState(false);
 
   // ── Retention email preview ──────────────────────────────────────────────────
   const [retentionSearch,    setRetentionSearch]    = useState('');
@@ -730,6 +740,100 @@ const AdminDashboard = () => {
       setOutreachLeadUpdatingId(null);
     }
   };
+
+  // Open compose modal for a contact
+  const openCompose = (contact) => {
+    const { subject, body } = buildOutreachEmail(contact);
+    setComposeContact(contact);
+    setComposeSubject(subject);
+    setComposeBody(body);
+  };
+
+  const closeCompose = () => {
+    setComposeContact(null);
+    setComposeSubject('');
+    setComposeBody('');
+    setComposeSending(false);
+    setComposePreviewSending(false);
+  };
+
+  const handlePreviewSend = async () => {
+    if (!composeContact?.email || composePreviewSending) return;
+    try {
+      setComposePreviewSending(true);
+      const result = await sendCoachOutreachEmail({
+        name: composeContact.name,
+        email: composeContact.email,
+        subject: composeSubject,
+        body: composeBody,
+        preview: true,
+      });
+      addNotification(result?.message || `Preview sent to your email`, 'success');
+    } catch (err) {
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed'}: ${data.reason}` : (data?.error || 'Failed to send preview');
+      addNotification(message, 'error');
+    } finally {
+      setComposePreviewSending(false);
+    }
+  };
+
+  const handleComposeSend = async () => {
+    if (!composeContact?.email || composeSending) return;
+    try {
+      setComposeSending(true);
+      await sendCoachOutreachEmail({
+        name: composeContact.name,
+        email: composeContact.email,
+        subject: composeSubject,
+        body: composeBody,
+      });
+      // Refresh leads to reflect new sentCount
+      const leads = await getCoachOutreachLeads();
+      setOutreachLeads(Array.isArray(leads) ? leads : []);
+      addNotification(`Email sent to ${composeContact.email}`, 'success');
+      closeCompose();
+    } catch (err) {
+      const data = err?.response?.data;
+      const message = data?.reason ? `${data.error || 'Failed'}: ${data.reason}` : (data?.error || 'Failed to send email');
+      addNotification(message, 'error');
+    } finally {
+      setComposeSending(false);
+    }
+  };
+
+  // Build filtered contacts list (merge static data with DB lead status)
+  const filteredContacts = useMemo(() => {
+    const leadByEmail = {};
+    outreachLeads.forEach(l => { leadByEmail[l.email] = l; });
+
+    return OUTREACH_CONTACTS
+      .filter(c => {
+        if (outreachFilter === 'lab') return c.category === 'lab';
+        if (outreachFilter === 'coach') return c.category === 'coach';
+        if (outreachFilter === 'priority') return c.priority;
+        if (outreachFilter === 'email-only') return !!c.email;
+        if (outreachFilter === 'not-contacted') return !leadByEmail[c.email];
+        return true;
+      })
+      .filter(c => !outreachCountry || c.country === outreachCountry)
+      .filter(c => {
+        if (!outreachSearch) return true;
+        const q = outreachSearch.toLowerCase();
+        return c.name.toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q) || c.country.toLowerCase().includes(q);
+      })
+      .map(c => ({ ...c, lead: leadByEmail[c.email] || null }));
+  }, [outreachLeads, outreachFilter, outreachCountry, outreachSearch]);
+
+  const outreachStats = useMemo(() => {
+    const leadByEmail = {};
+    outreachLeads.forEach(l => { leadByEmail[l.email] = l; });
+    const withEmail = OUTREACH_CONTACTS.filter(c => c.email);
+    const contacted = withEmail.filter(c => leadByEmail[c.email]?.sentCount > 0);
+    const responded = outreachLeads.filter(l => l.responded);
+    const registered = outreachLeads.filter(l => l.registered);
+    return { total: OUTREACH_CONTACTS.length, withEmail: withEmail.length, contacted: contacted.length, responded: responded.length, registered: registered.length };
+  }, [outreachLeads]);
 
   if (loading) return null;
   if (!currentUser?.admin) {
@@ -2366,108 +2470,291 @@ const AdminDashboard = () => {
         )}
 
         {activeTab === 'outreach' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-4 sm:space-y-6"
-          >
-            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Quick Coach Outreach</h3>
-              <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                Send outreach email and track follow-up status (responded / registered).
-              </p>
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={outreachName}
-                  onChange={(e) => setOutreachName(e.target.value)}
-                  placeholder="Coach name (optional)"
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <input
-                  type="email"
-                  value={outreachEmail}
-                  onChange={(e) => setOutreachEmail(e.target.value)}
-                  placeholder="coach@example.com"
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <button
-                  type="button"
-                  onClick={handleSendCoachOutreachEmail}
-                  disabled={outreachSending || !outreachEmail.trim()}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    outreachSending || !outreachEmail.trim()
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-primary text-white hover:bg-primary-dark'
-                  }`}
-                >
-                  {outreachSending ? 'Sending…' : 'Send Outreach Email'}
-                </button>
-              </div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 sm:space-y-6">
+
+            {/* Stats bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {[
+                { label: 'Total Contacts', value: outreachStats.total, color: 'bg-gray-50 text-gray-700' },
+                { label: 'Have Email', value: outreachStats.withEmail, color: 'bg-blue-50 text-blue-700' },
+                { label: 'Contacted', value: outreachStats.contacted, color: 'bg-yellow-50 text-yellow-700' },
+                { label: 'Responded', value: outreachStats.responded, color: 'bg-green-50 text-green-700' },
+                { label: 'Registered', value: outreachStats.registered, color: 'bg-purple-50 text-purple-700' },
+              ].map(s => (
+                <div key={s.label} className={`rounded-xl p-3 sm:p-4 ${s.color}`}>
+                  <div className="text-2xl font-bold">{s.value}</div>
+                  <div className="text-xs font-medium mt-0.5 opacity-70">{s.label}</div>
+                </div>
+              ))}
             </div>
 
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Outreach Sent List</h3>
-                <span className="text-xs sm:text-sm text-gray-500">{outreachLeads.length} leads</span>
+            {/* Filters */}
+            <div className="bg-white rounded-xl shadow p-4 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'all', label: '🌍 All' },
+                  { key: 'priority', label: '⭐ Top 10' },
+                  { key: 'email-only', label: '📧 Has email' },
+                  { key: 'not-contacted', label: '🕐 Not contacted' },
+                  { key: 'lab', label: '🔬 Labs' },
+                  { key: 'coach', label: '🏊 Coaches' },
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setOutreachFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      outreachFilter === f.key ? 'bg-primary text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+                <select
+                  value={outreachCountry}
+                  onChange={e => setOutreachCountry(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-gray-200 text-gray-600 focus:outline-none focus:ring-1 focus:ring-primary ml-auto"
+                >
+                  <option value="">All Countries</option>
+                  {ALL_COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Sent</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responded</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {outreachLeadsLoading ? (
-                      <tr>
-                        <td colSpan="6" className="px-4 py-8 text-center text-gray-500">Loading outreach leads...</td>
-                      </tr>
-                    ) : outreachLeads.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="px-4 py-8 text-center text-gray-500">No outreach leads yet.</td>
-                      </tr>
-                    ) : (
-                      outreachLeads.map((lead) => (
-                        <tr key={lead._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">{lead.name || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{lead.email}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{lead.sentCount || 0}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            {lead.lastSentAt ? new Date(lead.lastSentAt).toLocaleString() : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(lead.responded)}
-                              disabled={outreachLeadUpdatingId === `${lead._id}:responded`}
-                              onChange={(e) => handleOutreachLeadToggle(lead._id, 'responded', e.target.checked)}
-                              className="rounded border-gray-300 text-primary focus:ring-primary"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(lead.registered)}
-                              disabled={outreachLeadUpdatingId === `${lead._id}:registered`}
-                              onChange={(e) => handleOutreachLeadToggle(lead._id, 'registered', e.target.checked)}
-                              className="rounded border-gray-300 text-primary focus:ring-primary"
-                            />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <input
+                type="text"
+                value={outreachSearch}
+                onChange={e => setOutreachSearch(e.target.value)}
+                placeholder="Search by name, email, country…"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <p className="text-xs text-gray-400">{filteredContacts.length} contacts shown</p>
+            </div>
+
+            {/* Contacts list */}
+            <div className="bg-white rounded-xl shadow overflow-hidden">
+              {outreachLeadsLoading ? (
+                <div className="py-12 text-center text-gray-400 text-sm">Loading status…</div>
+              ) : filteredContacts.length === 0 ? (
+                <div className="py-12 text-center text-gray-400 text-sm">No contacts match your filters.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {filteredContacts.map(contact => {
+                    const lead = contact.lead;
+                    const isSent = lead?.sentCount > 0;
+                    const isResponded = lead?.responded;
+                    const isRegistered = lead?.registered;
+                    const statusBadge = isRegistered
+                      ? { label: 'Registered 🎉', cls: 'bg-purple-100 text-purple-700' }
+                      : isResponded
+                      ? { label: 'Responded ✅', cls: 'bg-green-100 text-green-700' }
+                      : isSent
+                      ? { label: `Sent ×${lead.sentCount}`, cls: 'bg-yellow-100 text-yellow-700' }
+                      : { label: 'Not contacted', cls: 'bg-gray-100 text-gray-500' };
+
+                    return (
+                      <div key={contact.id} className={`px-4 py-3 hover:bg-gray-50 flex items-start gap-3 ${
+                        isRegistered ? 'border-l-2 border-purple-400' :
+                        isResponded  ? 'border-l-2 border-green-400' :
+                        isSent       ? 'border-l-2 border-yellow-400' : ''
+                      }`}>
+                        {/* Category icon */}
+                        <div className="flex-shrink-0 mt-0.5 text-lg">{contact.category === 'lab' ? '🔬' : '🏊'}</div>
+
+                        {/* Main info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-sm text-gray-900 truncate">{contact.name}</span>
+                            {contact.priority && <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium">⭐ Top</span>}
+                            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{contact.country}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge.cls}`}>{statusBadge.label}</span>
+                          </div>
+                          {contact.email
+                            ? <p className="text-xs text-primary mt-0.5">{contact.email}</p>
+                            : <p className="text-xs text-gray-400 mt-0.5">Contact via {contact.contactMethod === 'form' ? 'web form' : contact.contactMethod}</p>
+                          }
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{contact.note}</p>
+                          {isSent && lead.lastSentAt && (
+                            <p className="text-xs text-gray-400 mt-0.5">Last sent: {new Date(lead.lastSentAt).toLocaleDateString()}</p>
+                          )}
+                          {/* Follow-up toggles */}
+                          {isSent && lead?._id && (
+                            <div className="flex gap-3 mt-1.5">
+                              <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(lead.responded)}
+                                  disabled={outreachLeadUpdatingId === `${lead._id}:responded`}
+                                  onChange={e => handleOutreachLeadToggle(lead._id, 'responded', e.target.checked)}
+                                  className="rounded border-gray-300 text-green-600"
+                                />
+                                Responded
+                              </label>
+                              <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(lead.registered)}
+                                  disabled={outreachLeadUpdatingId === `${lead._id}:registered`}
+                                  onChange={e => handleOutreachLeadToggle(lead._id, 'registered', e.target.checked)}
+                                  className="rounded border-gray-300 text-purple-600"
+                                />
+                                Registered
+                              </label>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                          {contact.email ? (
+                            <button
+                              onClick={() => openCompose(contact)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors whitespace-nowrap"
+                            >
+                              {isSent ? '↩ Follow-up' : '✉ Send'}
+                            </button>
+                          ) : (
+                            <a
+                              href={contact.website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors whitespace-nowrap text-center"
+                            >
+                              🌐 Form
+                            </a>
+                          )}
+                          <a
+                            href={contact.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-center text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            Website ↗
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
+
+        {/* Compose Email Modal */}
+        <AnimatePresence>
+          {composeContact && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[9999] bg-black/50"
+                onClick={closeCompose}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none"
+              >
+                <div
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col pointer-events-auto"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="flex items-start justify-between p-5 border-b border-gray-100">
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-lg">Compose Email</h3>
+                      <p className="text-sm text-gray-500 mt-0.5">To: <span className="font-medium text-primary">{composeContact.name}</span> · {composeContact.email}</p>
+                    </div>
+                    <button onClick={closeCompose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Subject</label>
+                      <input
+                        type="text"
+                        value={composeSubject}
+                        onChange={e => setComposeSubject(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Body <span className="font-normal text-gray-400">(personalize the "[I saw your work...]" line)</span></label>
+                      <textarea
+                        value={composeBody}
+                        onChange={e => setComposeBody(e.target.value)}
+                        rows={16}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                      />
+                    </div>
+                    {composeContact.note && (
+                      <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
+                        <span className="font-semibold">Context:</span> {composeContact.note}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="border-t border-gray-100 px-5 py-4 space-y-3">
+                    {/* Lead history row */}
+                    {composeContact.lead?.sentCount > 0 && (
+                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                        <span>📬</span>
+                        <span>
+                          Already sent <strong>×{composeContact.lead.sentCount}</strong>
+                          {composeContact.lead.lastSentAt && (
+                            <> · last on <strong>{new Date(composeContact.lead.lastSentAt).toLocaleDateString()}</strong></>
+                          )}
+                          {composeContact.lead.responded && <> · <span className="text-green-700 font-semibold">Responded ✓</span></>}
+                          {composeContact.lead.registered && <> · <span className="text-purple-700 font-semibold">Registered 🎉</span></>}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Actions row */}
+                    <div className="flex items-center justify-between gap-3">
+                      <a href={composeContact.website} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-primary transition-colors truncate max-w-[180px]">
+                        {composeContact.website} ↗
+                      </a>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={closeCompose}
+                          className="px-3 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handlePreviewSend}
+                          disabled={composePreviewSending || !composeSubject.trim() || !composeBody.trim()}
+                          title={`Send preview to ${currentUser?.email}`}
+                          className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors border ${
+                            composePreviewSending || !composeSubject.trim() || !composeBody.trim()
+                              ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shadow-sm'
+                          }`}
+                        >
+                          {composePreviewSending ? '⏳ Sending…' : '👁 Preview to me'}
+                        </button>
+                        <button
+                          onClick={handleComposeSend}
+                          disabled={composeSending || !composeSubject.trim() || !composeBody.trim()}
+                          className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                            composeSending || !composeSubject.trim() || !composeBody.trim()
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-primary text-white hover:bg-primary-dark shadow-sm'
+                          }`}
+                        >
+                          {composeSending ? 'Sending…' : (composeContact.lead?.sentCount > 0 ? '↩ Send Follow-up' : '✉ Send Email')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {activeTab === 'analytics' && (
           <motion.div

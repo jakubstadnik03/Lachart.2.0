@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, memo, lazy, Suspense, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthProvider";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Header from "./Header/Header";
 import Menu from "./Menu";
 import Footer from "./Footer";
@@ -29,6 +29,7 @@ const MemoizedFooter = memo(Footer);
 const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user, premiumPreviewNoAccess } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
   const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
@@ -44,7 +45,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [athleteStatuses, setAthleteStatuses] = useState({});
 
   const loadNativeAthletes = useCallback(async () => {
-    if (!["coach", "tester", "testing"].includes(user?.role)) return;
+    if (user?.role !== 'admin' && !user?.admin && !["coach", "tester", "testing"].includes(user?.role)) return;
     try {
       const response = await api.get('/user/coach/athletes');
       const list = response.data || [];
@@ -69,7 +70,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     } catch (err) {
       console.error('Native: Error loading athletes:', err);
     }
-  }, [user?.role]);
+  }, [user?.role, user?.admin]);
 
   useEffect(() => {
     if (isCapacitorNative() && user) loadNativeAthletes();
@@ -86,23 +87,48 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     };
   }, [loadNativeAthletes]);
 
-  // effectiveAthleteId for native coach view (no URL param – use global localStorage key)
-  const nativeEffectiveAthleteId = useMemo(() => {
-    const isCoach = ["coach", "tester", "testing"].includes(user?.role);
+  // effectiveAthleteId for native coach view — useState so it actually updates on selection
+  const [nativeEffectiveAthleteId, setNativeEffectiveAthleteId] = useState(() => {
+    const isCoach = user?.role === 'admin' || user?.admin === true || ["coach", "tester", "testing"].includes(user?.role);
     if (!isCoach) return null;
     try {
       return localStorage.getItem('global_selectedAthleteId') || user?._id || null;
     } catch {
       return user?._id || null;
     }
-  }, [user?.role, user?._id]);
+  });
+
+  // Sync effectiveAthleteId when user loads (initial render may have no user yet)
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const isCoach = user?.role === 'admin' || user?.admin === true || ["coach", "tester", "testing"].includes(user?.role);
+    if (!isCoach) return;
+    try {
+      const saved = localStorage.getItem('global_selectedAthleteId');
+      setNativeEffectiveAthleteId(saved || user._id);
+    } catch {
+      setNativeEffectiveAthleteId(user?._id || null);
+    }
+  }, [user?.role, user?._id, user?.admin]);
 
   const handleNativeAthleteSelect = useCallback((athleteId) => {
     try { localStorage.setItem('global_selectedAthleteId', athleteId); } catch {}
+    setNativeEffectiveAthleteId(athleteId);  // ← state update → UI reflects immediately
     window.dispatchEvent(new CustomEvent('athleteSelected', { detail: { athleteId } }));
-    // Refresh so tabs update their paths
-    setAthletes(prev => [...prev]); // trigger re-render so getTabsForRole re-runs
-  }, []);
+    // Also update trainingCalendar_selectedAthleteId so FitAnalysisPage reacts
+    try { localStorage.setItem('trainingCalendar_selectedAthleteId', athleteId); } catch {}
+
+    // Navigate so page re-renders with new athlete URL param (useParams() in each page)
+    const path = location.pathname;
+    const athleteRoutes = ['dashboard', 'testing', 'training', 'fit-analysis', 'training-calendar'];
+    for (const base of athleteRoutes) {
+      if (path === `/${base}` || path.startsWith(`/${base}/`)) {
+        navigate(`/${base}/${athleteId}`, { replace: true });
+        return;
+      }
+    }
+    // For calendar / athletes / other routes the event + localStorage is enough
+  }, [navigate, location.pathname]);
   // ────────────────────────────────────────────────────────────────────────────
 
   // Memoize menu and header props to prevent unnecessary re-renders

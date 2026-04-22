@@ -1561,11 +1561,26 @@ const About = () => {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div {...revealProps({ opacity: 0, y: 30 }, { opacity: 1, y: 0 }, { duration: 0.5 }, { once: true, margin: '-60px' })} className="text-center mb-12">
             <p className="text-primary font-semibold tracking-widest text-xs uppercase mb-3">Pricing</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Start free, upgrade when you're ready</h2>
-            <p className="text-gray-500 max-w-xl mx-auto">Every paid plan comes with a <span className="font-semibold text-gray-700">30-day free trial</span>. No charge today, cancel anytime.</p>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Currently completely free</h2>
+            <p className="text-gray-500 max-w-xl mx-auto">
+              LaChart is in <span className="font-semibold text-gray-700">early access</span> — everything is free while we build and improve. Paid plans are planned for the future.
+            </p>
           </motion.div>
 
-          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Early access banner */}
+          <motion.div {...revealProps({ opacity: 0, y: 16 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.05 }, { once: true, margin: '-40px' })}
+            className="mb-8 rounded-2xl bg-gradient-to-r from-primary/10 via-purple-50 to-primary/5 border border-primary/20 p-5 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            <div className="text-4xl shrink-0">🎉</div>
+            <div>
+              <p className="font-bold text-gray-900 text-base">Free during demo &amp; early access</p>
+              <p className="text-sm text-gray-600 mt-0.5">All features — lactate testing, FIT analysis, Strava sync, coaching tools — are fully available at no cost. When paid plans launch, existing users will get a generous discount.</p>
+            </div>
+            <a href="/signup" className="shrink-0 px-5 py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm whitespace-nowrap">
+              Sign up free →
+            </a>
+          </motion.div>
+
+          <motion.div {...revealProps({ opacity: 0, y: 20 }, { opacity: 1, y: 0 }, { duration: 0.5, delay: 0.1 }, { once: true, margin: '-40px' })} className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-70">
             {/* Free */}
             <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
               <div>
@@ -1582,56 +1597,62 @@ const About = () => {
                   </li>
                 ))}
               </ul>
-              <a href="/register" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
+              <a href="/signup" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
                 Get started free
               </a>
             </div>
 
             {/* Pro */}
-            <div className="relative rounded-2xl border-2 border-primary bg-white p-6 flex flex-col gap-4 shadow-lg">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-primary text-white rounded-full whitespace-nowrap">Most popular</span>
+            <div className="relative rounded-2xl border-2 border-gray-200 bg-white p-6 flex flex-col gap-4">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-gray-400 text-white rounded-full whitespace-nowrap">Coming soon</span>
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">Pro</h3>
+                <h3 className="font-bold text-gray-500 text-lg">Pro</h3>
                 <div className="mt-2 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900">$9.99</span>
-                  <span className="text-gray-400 text-sm mb-1">/ month</span>
+                  <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$9.99</span>
+                  <span className="text-gray-300 text-sm mb-1">/ month</span>
                 </div>
-                <p className="text-xs text-primary font-medium mt-1">🎁 First month free</p>
+                <p className="text-xs text-primary font-medium mt-1">✨ Free during early access</p>
               </div>
               <ul className="space-y-2 flex-1">
                 {['Unlimited lactate tests', 'FIT analysis — intervals & power charts', 'Advanced analytics', 'PDF report export', 'Population comparison', 'Priority support'].map(f => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
-                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
+                  <li key={f} className="flex items-start gap-2 text-sm text-gray-400">
+                    <span className="text-primary/60 mt-0.5 shrink-0">✓</span>{f}
                   </li>
                 ))}
               </ul>
-              <a href="/register" className="block text-center py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm">
-                Try Pro free for 1 month
+              <a href="/signup" className="block text-center py-2.5 rounded-xl bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm">
+                Access free now
               </a>
             </div>
 
             {/* Coach */}
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
+            <div className="relative rounded-2xl border border-gray-200 bg-white p-6 flex flex-col gap-4">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 text-[11px] font-bold bg-gray-400 text-white rounded-full whitespace-nowrap">Coming soon</span>
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">Coach</h3>
+                <h3 className="font-bold text-gray-500 text-lg">Coach</h3>
                 <div className="mt-2 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900">$19.99</span>
-                  <span className="text-gray-400 text-sm mb-1">/ month</span>
+                  <span className="text-4xl font-extrabold text-gray-400 line-through decoration-gray-400">$19.99</span>
+                  <span className="text-gray-300 text-sm mb-1">/ month</span>
                 </div>
-                <p className="text-xs text-primary font-medium mt-1">🎁 First month free</p>
+                <p className="text-xs text-primary font-medium mt-1">✨ Free during early access</p>
               </div>
               <ul className="space-y-2 flex-1">
                 {['Everything in Pro', 'Manage up to 10 athletes', 'Coach dashboard', 'Athlete performance overview', 'Bulk data export'].map(f => (
-                  <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
-                    <span className="text-primary mt-0.5 shrink-0">✓</span>{f}
+                  <li key={f} className="flex items-start gap-2 text-sm text-gray-400">
+                    <span className="text-primary/60 mt-0.5 shrink-0">✓</span>{f}
                   </li>
                 ))}
               </ul>
-              <a href="/register" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
-                Try Coach free for 1 month
+              <a href="/signup" className="block text-center py-2.5 rounded-xl border border-gray-200 text-gray-500 font-semibold text-sm hover:bg-gray-50 transition-colors">
+                Access free now
               </a>
             </div>
           </motion.div>
+
+          <motion.p {...revealProps({ opacity: 0 }, { opacity: 1 }, { duration: 0.4, delay: 0.3 }, { once: true })}
+            className="text-center text-xs text-gray-400 mt-6">
+            Paid plans are planned for later. Early users will be notified and offered a discount before anything changes.
+          </motion.p>
         </div>
       </section>
 

@@ -652,15 +652,25 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }, [currentWeek]);
 
-  // Load activities from localStorage on mount
+  // Flush in-memory cache when a different user logs in
+  useEffect(() => {
+    const handleLogout = () => setCachedActivities([]);
+    window.addEventListener('userLoggedOut', handleLogout);
+    return () => window.removeEventListener('userLoggedOut', handleLogout);
+  }, []);
+
+  // Load activities from localStorage on mount (scoped to the current athlete so switching athletes
+  // never shows stale data from a different user)
   useEffect(() => {
     const loadCachedActivities = () => {
       try {
-        const cached = localStorage.getItem('weeklyCalendar_activities');
+        const cacheKey = `weeklyCalendar_activities_${selectedAthleteId || 'self'}`;
+        const cacheTimeKey = `weeklyCalendar_cacheTime_${selectedAthleteId || 'self'}`;
+        const cached = localStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
           // Check if cache is not too old (e.g., 1 hour)
-          const cacheTime = localStorage.getItem('weeklyCalendar_cacheTime');
+          const cacheTime = localStorage.getItem(cacheTimeKey);
           if (cacheTime && Date.now() - parseInt(cacheTime) < 3600000) {
             setCachedActivities(parsed);
           }
@@ -670,22 +680,24 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
       }
     };
     loadCachedActivities();
-  }, []);
+  }, [selectedAthleteId]); // re-run when athlete switches so we load correct athlete's cache
 
-  // Save activities to localStorage when they change
+  // Save activities to localStorage when they change (scoped per athlete)
   useEffect(() => {
     if (activities && activities.length > 0) {
       try {
+        const cacheKey = `weeklyCalendar_activities_${selectedAthleteId || 'self'}`;
+        const cacheTimeKey = `weeklyCalendar_cacheTime_${selectedAthleteId || 'self'}`;
         // Match dashboard calendar cap so week navigation into history still has data offline
         const limited = activities.slice(0, 2000);
-        localStorage.setItem('weeklyCalendar_activities', JSON.stringify(limited));
-        localStorage.setItem('weeklyCalendar_cacheTime', Date.now().toString());
+        localStorage.setItem(cacheKey, JSON.stringify(limited));
+        localStorage.setItem(cacheTimeKey, Date.now().toString());
         setCachedActivities(limited);
       } catch (error) {
         console.error('Error saving activities to cache:', error);
       }
     }
-  }, [activities]);
+  }, [activities, selectedAthleteId]);
 
   // Use activities prop directly (don't use cache if activities are provided)
   // Cache is only used as fallback when activities prop is empty

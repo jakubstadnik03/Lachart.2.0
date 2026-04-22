@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import { getAthleteAvatar } from '../utils/avatarUtils';
 
-const COACH_ROLES = ['coach', 'tester', 'testing'];
+const COACH_ROLES = ['coach', 'tester', 'testing', 'admin'];
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
 
@@ -39,19 +39,38 @@ export default function CoachAthleteBar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isCoach = COACH_ROLES.includes(user?.role);
+  const isCoach = COACH_ROLES.includes(user?.role) || user?.admin === true;
 
-  // Resolve current athleteId: URL segment 2 takes priority, then localStorage
-  const urlAthleteId = (() => {
+  // Resolve initial athleteId: URL segment 2 takes priority, then localStorage, then self
+  const resolveAthleteId = useCallback(() => {
     const seg = location.pathname.split('/')[2];
-    // Only treat as athleteId if it looks like a MongoDB ObjectId or similar (not a route word)
     if (seg && /^[a-f0-9]{24}$/.test(seg)) return seg;
-    return null;
-  })();
-  const storedAthleteId = (() => {
-    try { return localStorage.getItem('global_selectedAthleteId'); } catch { return null; }
-  })();
-  const selectedAthleteId = urlAthleteId || storedAthleteId || user?._id;
+    try { return localStorage.getItem('global_selectedAthleteId') || user?._id || null; } catch { return user?._id || null; }
+  }, [location.pathname, user?._id]);
+
+  const [selectedAthleteId, setSelectedAthleteId] = useState(resolveAthleteId);
+
+  // Keep ring in sync when URL changes (e.g. navigating to /dashboard/:athleteId)
+  useEffect(() => {
+    setSelectedAthleteId(resolveAthleteId());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // Keep ring in sync when athlete is switched via any event source
+  useEffect(() => {
+    const handleAthleteEvent = (e) => {
+      const id = e.detail?.athleteId;
+      if (id) setSelectedAthleteId(id);
+    };
+    window.addEventListener('athleteSelected', handleAthleteEvent);
+    window.addEventListener('athleteChanged', handleAthleteEvent);
+    window.addEventListener('globalAthleteChanged', handleAthleteEvent);
+    return () => {
+      window.removeEventListener('athleteSelected', handleAthleteEvent);
+      window.removeEventListener('athleteChanged', handleAthleteEvent);
+      window.removeEventListener('globalAthleteChanged', handleAthleteEvent);
+    };
+  }, []);
 
   const [athletes, setAthletes] = useState([]);
   const [statuses, setStatuses] = useState({});

@@ -7,6 +7,7 @@ import {
   Document, Page, View, Text, Svg, Path, Line, Rect, Circle,
   StyleSheet, Image, pdf,
 } from '@react-pdf/renderer';
+import { formatHeight, formatWeight, resolveDistanceUnitSystem, getUserUnits } from '../../utils/unitsConverter';
 
 // ── Logo URL (client-side, resolved at runtime) ────────────────────────────────
 const LOGO_URL = (() => {
@@ -593,8 +594,8 @@ export default function LactateReportPdf({ test, athlete, thresholds, zones, pre
                 ['Name',   athleteName],
                 ['Email',  athlete?.email || '—'],
                 ['Sport',  sportLabel(athlete?.sport || sport)],
-                ['Weight', athlete?.weight ? `${athlete.weight} kg` : '—'],
-                ['Height', athlete?.height ? `${athlete.height} cm` : '—'],
+                ['Weight', athlete?.weight ? formatWeight(athlete.weight, getUserUnits(athlete).weight).formatted : '—'],
+                ['Height', athlete?.height ? formatHeight(athlete.height, resolveDistanceUnitSystem(athlete)) : '—'],
               ].map(([k,v]) => (
                 <View key={k} style={s.cardRow}>
                   <Text style={s.cardKey}>{k}</Text>

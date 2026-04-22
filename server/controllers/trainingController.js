@@ -1,4 +1,6 @@
 const TrainingAbl = require('../abl/trainingAbl');
+const Training    = require('../models/Training');
+const User        = require('../models/UserModel');
 
 const trainingController = {
     // Get all training sessions for the authenticated user
@@ -59,6 +61,20 @@ const trainingController = {
     // Update a training session
     updateTraining: async (req, res) => {
         try {
+            // H2 — ownership check
+            const training = await Training.findById(req.params.id).lean();
+            if (!training) return res.status(404).json({ error: 'Training not found' });
+
+            const requesterId  = String(req.user.userId);
+            const ownerId      = String(training.athleteId);
+            const requester    = await User.findById(requesterId).lean();
+            const role         = String(requester?.role || '').toLowerCase();
+            const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+            if (!isPrivileged && requesterId !== ownerId) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+
             const updatedTraining = await TrainingAbl.updateTraining(req.params.id, req.body);
             if (!updatedTraining) {
                 return res.status(404).json({ error: 'Training not found' });
@@ -72,6 +88,20 @@ const trainingController = {
     // Delete a training session
     deleteTraining: async (req, res) => {
         try {
+            // H2 — ownership check
+            const training = await Training.findById(req.params.id).lean();
+            if (!training) return res.status(404).json({ error: 'Training not found' });
+
+            const requesterId  = String(req.user.userId);
+            const ownerId      = String(training.athleteId);
+            const requester    = await User.findById(requesterId).lean();
+            const role         = String(requester?.role || '').toLowerCase();
+            const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+            if (!isPrivileged && requesterId !== ownerId) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+
             const result = await TrainingAbl.deleteTraining(req.params.id);
             if (!result) {
                 return res.status(404).json({ error: 'Training not found' });

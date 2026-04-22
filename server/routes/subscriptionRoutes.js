@@ -59,9 +59,14 @@ router.get('/portal', verifyToken, subscriptionController.getPortalUrl);
 /**
  * POST /api/subscription/send-promo-email
  * Admin-only: send promo code email to all registered users.
- * Requires header: x-admin-secret: <ADMIN_SECRET from .env>
+ * M3: protected by JWT auth + admin role check (replaces static x-admin-secret header)
  * Body: { promoCode: "LACHART3FREE", subject?: "...", dryRun?: true }
  */
-router.post('/send-promo-email', subscriptionController.sendPromoEmail);
+router.post('/send-promo-email', verifyToken, (req, res, next) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || req.user?.admin === true;
+  if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+  next();
+}, subscriptionController.sendPromoEmail);
 
 module.exports = router;

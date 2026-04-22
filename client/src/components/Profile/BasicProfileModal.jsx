@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import Modal from '../Modal';
+import { useAuth } from '../../context/AuthProvider';
+import { heightLabel, weightLabel, resolveDistanceUnitSystem } from '../../utils/unitsConverter';
 
 const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user);
   const [formData, setFormData] = useState({});
   const [error, setError] = useState('');
 
@@ -124,7 +128,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Height (cm)</label>
+            <label className="block text-sm font-semibold text-gray-700">{`Height (${heightLabel(unitSystem)})`}</label>
             <input
               type="number"
               value={formData.height || ''}
@@ -136,7 +140,7 @@ const BasicProfileModal = ({ isOpen, onClose, onSubmit, userData }) => {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-gray-700">Weight (kg)</label>
+            <label className="block text-sm font-semibold text-gray-700">{`Weight (${weightLabel(unitSystem)})`}</label>
             <input
               type="number"
               value={formData.weight || ''}

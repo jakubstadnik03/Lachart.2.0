@@ -7,6 +7,8 @@ import {
   Dot,
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../context/AuthProvider';
+import { resolveDistanceUnitSystem, paceUnit } from '../../utils/unitsConverter';
 
 const PRIMARY = '#767EB5';
 
@@ -16,7 +18,7 @@ const PRIMARY = '#767EB5';
  * Strategy 2 – 50% rise heuristic: first stage where lactate increases by > 50% vs previous.
  * Returns { value, unit } or null if not determinable.
  */
-function estimateLT2(results, sport) {
+function estimateLT2(results, sport, unitSystem = 'metric') {
   if (!Array.isArray(results) || results.length < 2) return null;
 
   // Filter stages that have lactate readings
@@ -31,7 +33,7 @@ function estimateLT2(results, sport) {
     return Number(stage.interval) || Number(stage.pace) || Number(stage.power) || null;
   };
 
-  const unit = sport === 'bike' ? 'W' : 'min/km';
+  const unit = sport === 'bike' ? 'W' : paceUnit(unitSystem, sport);
 
   // Strategy 1: OBLA (lactate >= 4.0)
   for (const stage of stages) {
@@ -98,6 +100,9 @@ function availableSports(tests) {
 }
 
 export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
+  const { user } = useAuth();
+  const unitSystem = resolveDistanceUnitSystem(user);
+
   // When parent says 'all', let the user pick inside the card
   const sports = useMemo(() => availableSports(tests), [tests]);
   const [activeSport, setActiveSport] = React.useState(() => {
@@ -121,14 +126,14 @@ export default function LT2TrendSparkline({ tests = [], sport = 'all' }) {
     const filtered = filterAndSortTests(tests, activeSport);
     return filtered
       .map((t) => {
-        const lt2 = estimateLT2(t.results, t.sport);
+        const lt2 = estimateLT2(t.results, t.sport, unitSystem);
         if (!lt2) return null;
         const date = new Date(t.date);
         const label = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
         return { label, value: lt2.value, unit: lt2.unit, date };
       })
       .filter(Boolean);
-  }, [tests, activeSport]);
+  }, [tests, activeSport, unitSystem]);
 
   const hasData = chartData.length >= 2;
 

@@ -1,8 +1,21 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const testAbl = require("../abl/testAbl");
 const verifyToken = require("../middleware/verifyToken");
 const testController = require('../controllers/testController');
+const Test = require('../models/test');
+const User = require('../models/UserModel');
+
+// H4 — 3 demo emails per hour per IP
+const demoEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many demo email requests. Please try again later.' },
+  skip: (req) => req.method === 'OPTIONS',
+});
 
 /**
  * @swagger
@@ -212,10 +225,10 @@ router.get('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
 router.post('/:id/report-pdf', verifyToken, testController.getTestReportPdf);
 
 /**
- * Send demo test results to email (no authentication required)
+ * Send demo test results to email — rate-limited (H4)
  * POST /test/send-demo-email
  */
-router.post('/send-demo-email', testController.sendDemoTestEmail);
+router.post('/send-demo-email', demoEmailLimiter, testController.sendDemoTestEmail);
 
 // Compatibility alias: GET /test/list/:athleteId to fetch tests by athlete
 router.get('/list/:athleteId', verifyToken, async (req, res) => {
@@ -377,6 +390,20 @@ router.post("/", verifyToken, async (req, res) => {
  */
 router.put("/:id", verifyToken, async (req, res) => {
     try {
+        // H1 — ownership check: only the test owner (or coach/admin) may update
+        const test = await Test.findById(req.params.id).lean();
+        if (!test) return res.status(404).json({ error: 'Test nenalezen' });
+
+        const requesterId = String(req.user.userId);
+        const ownerId     = String(test.athleteId);
+        const requester   = await User.findById(requesterId).lean();
+        const role        = String(requester?.role || '').toLowerCase();
+        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+        if (!isPrivileged && requesterId !== ownerId) {
+            return res.status(403).json({ error: 'Nemáte oprávnění upravit tento test' });
+        }
+
         const updatedTest = await testAbl.updateTest(req.params.id, req.body);
         if (!updatedTest) {
             return res.status(404).json({ error: 'Test nenalezen' });
@@ -412,6 +439,20 @@ router.put("/:id", verifyToken, async (req, res) => {
  */
 router.delete("/:id", verifyToken, async (req, res) => {
     try {
+        // H1 — ownership check: only the test owner (or coach/admin) may delete
+        const test = await Test.findById(req.params.id).lean();
+        if (!test) return res.status(404).json({ error: 'Test nenalezen' });
+
+        const requesterId = String(req.user.userId);
+        const ownerId     = String(test.athleteId);
+        const requester   = await User.findById(requesterId).lean();
+        const role        = String(requester?.role || '').toLowerCase();
+        const isPrivileged = ['admin', 'coach', 'tester', 'testing'].includes(role) || requester?.admin === true;
+
+        if (!isPrivileged && requesterId !== ownerId) {
+            return res.status(403).json({ error: 'Nemáte oprávnění smazat tento test' });
+        }
+
         const result = await testAbl.deleteTest(req.params.id);
         if (!result) {
             return res.status(404).json({ error: 'Test nenalezen' });

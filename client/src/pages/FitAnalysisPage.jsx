@@ -2802,16 +2802,18 @@ const FitAnalysisPage = () => {
 
 
 
-  // Initialize selectedAthleteId on mount for coach or when returning to page
+  // Initialize selectedAthleteId on mount for coach/admin or when returning to page
   useEffect(() => {
-    if (user?.role === 'coach') {
+    const isCoachLike = user?.role === 'coach' || user?.role === 'admin' || user?.admin === true ||
+      user?.role === 'tester' || user?.role === 'testing';
+    if (isCoachLike) {
       // Always check localStorage first when component mounts or when location changes (returning to page)
       const savedAthleteId = localStorage.getItem('trainingCalendar_selectedAthleteId');
       if (savedAthleteId) {
         // Always use saved value if it exists
         setSelectedAthleteId(savedAthleteId);
       } else {
-        // If no saved athleteId, default to coach's own ID
+        // If no saved athleteId, default to own ID
         setSelectedAthleteId(user._id);
         localStorage.setItem('trainingCalendar_selectedAthleteId', user._id);
       }
@@ -2819,7 +2821,7 @@ const FitAnalysisPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, location.pathname]); // Run when user changes or when pathname changes (returning to page)
 
-  // Listen for athlete selection from Menu (when on training-calendar page)
+  // Listen for athlete selection from any source (native bar, desktop Menu, desktop CoachAthleteBar)
   useEffect(() => {
     const handleAthleteSelected = (event) => {
       const { athleteId } = event.detail;
@@ -2829,14 +2831,21 @@ const FitAnalysisPage = () => {
       }
     };
 
-    window.addEventListener('athleteSelected', handleAthleteSelected);
-    return () => window.removeEventListener('athleteSelected', handleAthleteSelected);
+    // 3 event names used across different dispatchers — listen to all of them
+    window.addEventListener('athleteSelected', handleAthleteSelected);      // native NativeLayout
+    window.addEventListener('athleteChanged', handleAthleteSelected);       // desktop Menu
+    window.addEventListener('globalAthleteChanged', handleAthleteSelected); // desktop CoachAthleteBar
+    return () => {
+      window.removeEventListener('athleteSelected', handleAthleteSelected);
+      window.removeEventListener('athleteChanged', handleAthleteSelected);
+      window.removeEventListener('globalAthleteChanged', handleAthleteSelected);
+    };
   }, [selectedAthleteId]);
 
   useEffect(() => {
     const loadCoachAthletes = async () => {
       const role = String(user?.role || '').toLowerCase();
-      if (role !== 'coach' && role !== 'tester' && role !== 'testing') return;
+      if (role !== 'admin' && !user?.admin && role !== 'coach' && role !== 'tester' && role !== 'testing') return;
       try {
         const response = await api.get('/user/coach/athletes');
         const list = Array.isArray(response?.data) ? response.data : [];
@@ -2849,7 +2858,7 @@ const FitAnalysisPage = () => {
       }
     };
     loadCoachAthletes();
-  }, [user?.role]);
+  }, [user?.role, user?.admin]);
 
   useEffect(() => {
     const role = String(user?.role || '').toLowerCase();

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import { motion, AnimatePresence } from 'framer-motion';
+import Modal from '../Modal';
 import api from '../../services/api';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -23,10 +22,7 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
 
   const handleAthleteInputChange = (e) => {
     const { name, value } = e.target;
-    setAthleteData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setAthleteData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleCreateAthlete = async () => {
@@ -40,43 +36,30 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
       const response = await api.post('/user/coach/add-athlete', athleteData);
       const athleteId = response.data.athlete?._id || response.data._id;
       const athlete = response.data.athlete || response.data;
-      
+
       addNotification('Athlete created successfully!', 'success');
-      
-      // Inform all AthleteSelector components to reload list FIRST
-      // Use setTimeout to ensure event listeners are ready
+
       setTimeout(() => {
         try {
-          const event = new CustomEvent('athleteListUpdated', { 
+          const event = new CustomEvent('athleteListUpdated', {
             detail: { athlete, athleteId },
-            bubbles: true 
+            bubbles: true
           });
-          console.log('Dispatching athleteListUpdated event', event);
           window.dispatchEvent(event);
           window.dispatchEvent(new CustomEvent('coachAthletesUpdated', { detail: { athlete, athleteId } }));
         } catch (e) {
           console.warn('Failed to dispatch athleteListUpdated event', e);
         }
       }, 10);
-      
-      // Then notify parent component (so it can select athlete and open test form)
-      // Delay to ensure AthleteSelector has updated its list before selecting
+
       setTimeout(() => {
-        if (onAthleteCreated) {
-          onAthleteCreated(athleteId, athlete);
-        }
+        if (onAthleteCreated) onAthleteCreated(athleteId, athlete);
       }, 200);
-      
-      // Then reset form and close modal (small delay to ensure callback completes)
-      setTimeout(() => {
-        handleClose();
-      }, 150);
+
+      setTimeout(() => handleClose(), 150);
     } catch (error) {
       console.error('Error creating athlete:', error);
-      addNotification(
-        error.response?.data?.error || 'Failed to create athlete',
-        'error'
-      );
+      addNotification(error.response?.data?.error || 'Failed to create athlete', 'error');
     } finally {
       setLoading(false);
     }
@@ -84,217 +67,171 @@ const AddAthleteAndTestModal = ({ isOpen, onClose, onAthleteCreated }) => {
 
   const handleClose = () => {
     setAthleteData({
-      name: '',
-      surname: '',
-      email: '',
-      dateOfBirth: '',
-      phone: '',
-      address: '',
-      height: '',
-      weight: '',
-      sport: '',
-      specialization: '',
-      gender: 'male'
+      name: '', surname: '', email: '', dateOfBirth: '', phone: '',
+      address: '', height: '', weight: '', sport: '', specialization: '', gender: 'male'
     });
     onClose();
   };
 
-  if (!isOpen) return null;
+  const inputClass =
+    'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary';
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-        >
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Add New Athlete
-            </h2>
-            <button
-              onClick={handleClose}
-              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-              aria-label="Close"
+    <Modal isOpen={isOpen} onClose={handleClose} title="Add New Athlete">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 sm:p-4 sm:text-sm">
+          After creating the athlete you can immediately create a test for them using the normal test form.
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Name *</label>
+            <input
+              type="text"
+              name="name"
+              value={athleteData.name}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Surname *</label>
+            <input
+              type="text"
+              name="surname"
+              value={athleteData.surname}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Email</label>
+            <input
+              type="email"
+              name="email"
+              value={athleteData.email}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Date of Birth</label>
+            <input
+              type="date"
+              name="dateOfBirth"
+              value={athleteData.dateOfBirth}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Phone</label>
+            <input
+              type="tel"
+              name="phone"
+              value={athleteData.phone}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              placeholder="+420 123 456 789"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Address</label>
+            <input
+              type="text"
+              name="address"
+              value={athleteData.address}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Height (cm)</label>
+            <input
+              type="number"
+              name="height"
+              value={athleteData.height}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              placeholder="175"
+              min="0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Weight (kg)</label>
+            <input
+              type="number"
+              name="weight"
+              value={athleteData.weight}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              placeholder="70"
+              min="0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Sport</label>
+            <select
+              name="sport"
+              value={athleteData.sport}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
             >
-              <XMarkIcon className="w-6 h-6 text-gray-500" />
-            </button>
+              <option value="">Select sport</option>
+              <option value="run">Running</option>
+              <option value="bike">Cycling</option>
+              <option value="swim">Swimming</option>
+              <option value="triathlon">Triathlon</option>
+            </select>
           </div>
-
-          <div className="p-6">
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                After creating the athlete, you'll be able to create a test for them using the normal test form.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={athleteData.name}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Surname *
-                  </label>
-                  <input
-                    type="text"
-                    name="surname"
-                    value={athleteData.surname}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={athleteData.email}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date of Birth
-                  </label>
-                  <input
-                    type="date"
-                    name="dateOfBirth"
-                    value={athleteData.dateOfBirth}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={athleteData.phone}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Address
-                  </label>
-                  <input
-                    type="text"
-                    name="address"
-                    value={athleteData.address}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Height (cm)
-                  </label>
-                  <input
-                    type="number"
-                    name="height"
-                    value={athleteData.height}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Weight (kg)
-                  </label>
-                  <input
-                    type="number"
-                    name="weight"
-                    value={athleteData.weight}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sport
-                  </label>
-                  <select
-                    name="sport"
-                    value={athleteData.sport}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select sport</option>
-                    <option value="run">Running</option>
-                    <option value="bike">Cycling</option>
-                    <option value="swim">Swimming</option>
-                    <option value="triathlon">Triathlon</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Gender
-                  </label>
-                  <select
-                    name="gender"
-                    value={athleteData.gender}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Specialization
-                  </label>
-                  <input
-                    type="text"
-                    name="specialization"
-                    value={athleteData.specialization}
-                    onChange={handleAthleteInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  onClick={handleClose}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateAthlete}
-                  disabled={loading || !athleteData.name || !athleteData.surname}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {loading ? 'Creating...' : 'Create Athlete'}
-                </button>
-              </div>
-            </div>
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">Gender</label>
+            <select
+              name="gender"
+              value={athleteData.gender}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
           </div>
-        </motion.div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700">Specialization</label>
+            <input
+              type="text"
+              name="specialization"
+              value={athleteData.specialization}
+              onChange={handleAthleteInputChange}
+              className={inputClass}
+              placeholder="e.g. Long distance, Sprint..."
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-3 sm:flex-row sm:justify-end sm:gap-3 sm:pt-4">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-full rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-50 sm:w-auto sm:px-6 sm:py-3"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleCreateAthlete}
+            disabled={loading || !athleteData.name || !athleteData.surname}
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-primary-dark hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6 sm:py-3"
+            style={{ touchAction: 'manipulation' }}
+          >
+            {loading ? 'Creating…' : 'Create Athlete'}
+          </button>
+        </div>
       </div>
-    </AnimatePresence>
+    </Modal>
   );
 };
 
