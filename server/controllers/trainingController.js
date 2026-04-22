@@ -1,6 +1,9 @@
 const TrainingAbl = require('../abl/trainingAbl');
-const Training    = require('../models/Training');
+const mongoose    = require('mongoose');
 const User        = require('../models/UserModel');
+// Use the already-compiled model (loaded by trainingDao via ../models/training)
+// Avoids Mongoose OverwriteModelError from case-mismatch on macOS module cache
+const getTraining = () => mongoose.models.Training || require('../models/training');
 
 const trainingController = {
     // Get all training sessions for the authenticated user
@@ -62,6 +65,7 @@ const trainingController = {
     updateTraining: async (req, res) => {
         try {
             // H2 — ownership check
+            const Training = getTraining();
             const training = await Training.findById(req.params.id).lean();
             if (!training) return res.status(404).json({ error: 'Training not found' });
 
@@ -89,6 +93,7 @@ const trainingController = {
     deleteTraining: async (req, res) => {
         try {
             // H2 — ownership check
+            const Training = getTraining();
             const training = await Training.findById(req.params.id).lean();
             if (!training) return res.status(404).json({ error: 'Training not found' });
 
