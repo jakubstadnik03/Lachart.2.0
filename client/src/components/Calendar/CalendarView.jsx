@@ -12,6 +12,7 @@ import {
 import api from '../../services/api';
 import { formatDistanceForUser } from '../../utils/unitsConverter';
 import { useCategories, hexToRgba } from '../../context/CategoryContext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function startOfWeek(date) {
   const d = new Date(date);
@@ -324,6 +325,7 @@ export default function CalendarView({
   }, [view, anchorDate, isMobile]);
 
   const prev = () => {
+    setDirection(-1);
     if (isMobile && view === 'week') {
       setAnchorDate(d => addDays(d, -7));
     } else if (view === 'week' && !isMobile) {
@@ -333,6 +335,7 @@ export default function CalendarView({
     }
   };
   const next = () => {
+    setDirection(1);
     if (isMobile && view === 'week') {
       setAnchorDate(d => addDays(d, 7));
     } else if (view === 'week' && !isMobile) {
@@ -344,6 +347,7 @@ export default function CalendarView({
   const today = () => setAnchorDate(new Date());
   
   const [selectedDay, setSelectedDay] = useState(null); // YYYY-MM-DD key of selected day on mobile
+  const [direction, setDirection] = useState(0); // -1 = going back, 1 = going forward
 
   // Handle day click on mobile - select day and show activities below
   const handleDayClick = (dayDate) => {
@@ -532,7 +536,7 @@ export default function CalendarView({
   };
 
   return (
-    <div className={`${isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6'} overflow-hidden`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }} className={`${isMobile ? 'bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-3' : 'bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5 mb-4 md:mb-6'} overflow-hidden`}>
       {/* Header */}
       {isMobile ? (
         <div className="flex items-center justify-between mb-2 px-1">
@@ -606,7 +610,15 @@ export default function CalendarView({
       {isMobile ? (
         <div>
           {/* Compact month grid */}
-          <div className="grid grid-cols-7 gap-0">
+          <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={anchorDate.toISOString().slice(0, 7)}
+            initial={{ opacity: 0, x: direction * 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: direction * -30 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="grid grid-cols-7 gap-0"
+          >
             {/* Day name headers */}
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
               <div key={i} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
@@ -629,8 +641,11 @@ export default function CalendarView({
               });
 
               return (
-                <button
+                <motion.button
                   key={dayIdx}
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.18, delay: dayIdx * 0.008 }}
                   onClick={() => {
                     handleDayClick(dayDate);
                     if (acts.length === 1) {
@@ -659,10 +674,11 @@ export default function CalendarView({
                       ))}
                     </div>
                   )}
-                </button>
+                </motion.button>
               );
             })}
-          </div>
+          </motion.div>
+          </AnimatePresence>
 
           {/* Selected day activities - show below calendar */}
           {selectedDay && (() => {
@@ -672,7 +688,7 @@ export default function CalendarView({
             const dayLabel = dayDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
             return (
-              <div className="mt-3 space-y-2">
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mt-3 space-y-2">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">{dayLabel}</div>
                 {dayActs.map((a, i) => {
                   const activityId = a.id || a._id;
@@ -730,13 +746,22 @@ export default function CalendarView({
                     </div>
                   );
                 })}
-              </div>
+              </motion.div>
             );
           })()}
         </div>
       ) : (
         /* Desktop: Original grid layout */
-        <div className={`grid gap-px bg-gray-100 rounded-xl overflow-hidden`} style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}>
+        <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={anchorDate.toISOString().slice(0, 7)}
+          initial={{ opacity: 0, x: direction * 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: direction * -30 }}
+          transition={{ duration: 0.22, ease: 'easeInOut' }}
+          className={`grid gap-px bg-gray-100 rounded-xl overflow-hidden`}
+          style={{ gridTemplateColumns: view==='week' ? 'repeat(7, 1fr) 1fr' : 'repeat(7, 1fr) 1fr' }}
+        >
         {['Mon','Tue','Wed','Thu','Fri','Sat','Sun', 'Summary'].map((d) => (
           <div key={d} className="bg-gray-50 text-xs md:text-sm font-medium p-1 md:p-3 text-center text-gray-600">{d}</div>
         ))}
@@ -779,8 +804,16 @@ export default function CalendarView({
                   });
                 };
                 
+                const cellIdx = weekIdx * 7 + dayIdx;
                 return (
-                  <div key={`day-${weekIdx}-${dayIdx}`} className={`bg-white p-1 md:p-2.5 min-h-[80px] md:min-h-[90px] transition-all ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'}`} style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                  <motion.div
+                    key={`day-${weekIdx}-${dayIdx}`}
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.18, delay: cellIdx * 0.008 }}
+                    className={`bg-white p-1 md:p-2.5 min-h-[80px] md:min-h-[90px] transition-all ${isCurrentMonth ? '' : 'opacity-40'} ${isToday ? 'ring-2 ring-primary/30 ring-inset bg-primary/5' : 'hover:bg-gray-50'}`}
+                    style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}
+                  >
                     <div className={`text-xs md:text-sm font-semibold mb-1.5 ${isToday ? 'text-primary font-bold' : 'text-gray-700'}`}>
                       {dayDate.getDate()}
                     </div>
@@ -850,7 +883,7 @@ export default function CalendarView({
                         </button>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
                 );
               }),
               // Week summary column - smaller and more compact
@@ -943,8 +976,9 @@ export default function CalendarView({
             ].filter(Boolean);
           });
         })()}
-      </div>
+      </motion.div>
+      </AnimatePresence>
       )}
-    </div>
+    </motion.div>
   );
 }

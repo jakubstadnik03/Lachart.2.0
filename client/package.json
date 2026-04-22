@@ -12,6 +12,7 @@
     "@capacitor/push-notifications": "^6.0.5",
     "@capacitor/splash-screen": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",
+    "@codetrix-studio/capacitor-google-auth": "^3.3.6",
     "@emailjs/browser": "^4.4.1",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
@@ -104,6 +105,7 @@
     "eslint-plugin-react": "^7.37.5",
     "postcss": "^8.4.49",
     "source-map-explorer": "^2.5.3",
-    "tailwindcss": "^3.4.16"
+    "tailwindcss": "^3.4.16",
+    "typescript": "^6.0.3"
   }
 }

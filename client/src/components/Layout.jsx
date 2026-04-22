@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from "react";
+import React, { useEffect, useState, useMemo, memo, lazy, Suspense, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthProvider";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header/Header";
@@ -9,6 +9,8 @@ import { maybeNotifyStravaActivitiesImported } from "../utils/stravaImportLocalN
 import { useNotification } from "../context/NotificationContext";
 import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
+import { isCapacitorNative } from "../utils/isNativeApp";
+import NativeLayout from "./native/NativeLayout";
 
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
@@ -36,6 +38,72 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const [profileForModal, setProfileForModal] = useState(null); // fresh profile when showing BasicProfileModal
   const { addNotification } = useNotification();
+
+  // ── Native: athletes for coach athlete bar ──────────────────────────────────
+  const [athletes, setAthletes] = useState([]);
+  const [athleteStatuses, setAthleteStatuses] = useState({});
+
+  const loadNativeAthletes = useCallback(async () => {
+    if (!["coach", "tester", "testing"].includes(user?.role)) return;
+    try {
+      const response = await api.get('/user/coach/athletes');
+      const list = response.data || [];
+      setAthletes(list);
+      if (list.length > 0) {
+        Promise.allSettled(
+          list.slice(0, 15).map(a =>
+            api.get(`/test/list/${a._id}`).then(r => ({ id: a._id, tests: r.data || [] }))
+          )
+        ).then(results => {
+          const statuses = {};
+          results.forEach(r => {
+            if (r.status === 'fulfilled') {
+              const { id, tests } = r.value;
+              const sorted = [...tests].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+              statuses[id] = sorted[0]?.date || sorted[0]?.createdAt || null;
+            }
+          });
+          setAthleteStatuses(statuses);
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error('Native: Error loading athletes:', err);
+    }
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (isCapacitorNative() && user) loadNativeAthletes();
+  }, [loadNativeAthletes, user]);
+
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const refresh = () => loadNativeAthletes();
+    window.addEventListener('coachAthletesUpdated', refresh);
+    window.addEventListener('athleteListUpdated', refresh);
+    return () => {
+      window.removeEventListener('coachAthletesUpdated', refresh);
+      window.removeEventListener('athleteListUpdated', refresh);
+    };
+  }, [loadNativeAthletes]);
+
+  // effectiveAthleteId for native coach view (no URL param – use global localStorage key)
+  const nativeEffectiveAthleteId = useMemo(() => {
+    const isCoach = ["coach", "tester", "testing"].includes(user?.role);
+    if (!isCoach) return null;
+    try {
+      return localStorage.getItem('global_selectedAthleteId') || user?._id || null;
+    } catch {
+      return user?._id || null;
+    }
+  }, [user?.role, user?._id]);
+
+  const handleNativeAthleteSelect = useCallback((athleteId) => {
+    try { localStorage.setItem('global_selectedAthleteId', athleteId); } catch {}
+    window.dispatchEvent(new CustomEvent('athleteSelected', { detail: { athleteId } }));
+    // Refresh so tabs update their paths
+    setAthletes(prev => [...prev]); // trigger re-render so getTabsForRole re-runs
+  }, []);
+  // ────────────────────────────────────────────────────────────────────────────
 
   // Memoize menu and header props to prevent unnecessary re-renders
   // Must be called before any early returns (React hooks rules)
@@ -305,6 +373,130 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       </Suspense>
     );
   }
+
+  // ── Native iOS/Android shell ─────────────────────────────────────────────────
+  if (isCapacitorNative()) {
+    return (
+      <>
+        <NativeLayout
+          athletes={athletes}
+          athleteStatuses={athleteStatuses}
+          effectiveAthleteId={nativeEffectiveAthleteId}
+          onAthleteSelect={handleNativeAthleteSelect}
+        />
+        {/* Onboarding modals still work on native */}
+        <Suspense fallback={null}>
+          {user && (
+            <BasicProfileModal
+              isOpen={showBasicProfileModal}
+              onClose={() => {
+                if (user?._id) {
+                  localStorage.setItem(`basicProfileModalDone_${user._id}`, 'true');
+                  api.put('/user/edit-profile', { onboarding: { basicProfileDone: true } })
+                    .then(res => res.data && window.dispatchEvent(new CustomEvent('userUpdated', { detail: res.data })))
+                    .catch(() => {});
+                }
+                setProfileForModal(null);
+                setShowBasicProfileModal(false);
+              }}
+              onSubmit={async (formData) => {
+                try {
+                  const response = await api.put('/user/edit-profile', { ...formData, onboarding: { basicProfileDone: true } });
+                  if (response.data) {
+                    if (response.data._id) localStorage.setItem(`basicProfileModalDone_${response.data._id}`, 'true');
+                    setProfileForModal(null);
+                    window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                    setShowBasicProfileModal(false);
+                    addNotification('Profile updated successfully', 'success');
+                  }
+                } catch {
+                  addNotification('Error updating profile', 'error');
+                }
+              }}
+              userData={profileForModal || user}
+            />
+          )}
+          {user && (
+            <UnitsPreferencesModal
+              isOpen={showUnitsPreferencesModal}
+              onClose={() => {
+                if (user?._id) {
+                  localStorage.setItem(`unitsPreferencesModalDone_${user._id}`, 'true');
+                  api.put('/user/edit-profile', { onboarding: { unitsDone: true } })
+                    .then(res => res.data && window.dispatchEvent(new CustomEvent('userUpdated', { detail: res.data })))
+                    .catch(() => {});
+                }
+                setShowUnitsPreferencesModal(false);
+              }}
+              onSubmit={async (formData) => {
+                try {
+                  const response = await api.put('/user/edit-profile', { ...formData, onboarding: { unitsDone: true } });
+                  if (response.data) {
+                    localStorage.setItem(`unitsPreferencesModalDone_${response.data._id}`, 'true');
+                    window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                    setShowUnitsPreferencesModal(false);
+                    addNotification('Units saved', 'success');
+                  }
+                } catch {
+                  addNotification('Error updating units', 'error');
+                }
+              }}
+              userData={user}
+            />
+          )}
+          {user && (
+            <TrainingZonesModal
+              isOpen={showTrainingZonesModal}
+              onClose={() => {
+                if (user?._id) {
+                  localStorage.setItem(`trainingZonesModalDone_${user._id}`, 'true');
+                  api.put('/user/edit-profile', { onboarding: { trainingZonesDone: true } })
+                    .then(res => res.data && window.dispatchEvent(new CustomEvent('userUpdated', { detail: res.data })))
+                    .catch(() => {});
+                }
+                setShowTrainingZonesModal(false);
+              }}
+              onSubmit={async (formData) => {
+                try {
+                  const response = await api.put('/user/edit-profile', { ...formData, onboarding: { trainingZonesDone: true } });
+                  if (response.data) {
+                    window.dispatchEvent(new CustomEvent('userUpdated', { detail: response.data }));
+                    setShowTrainingZonesModal(false);
+                    addNotification('Training zones updated successfully', 'success');
+                  }
+                } catch {
+                  addNotification('Error updating training zones', 'error');
+                }
+              }}
+              userData={user}
+            />
+          )}
+          {user && (
+            <StravaConnectModal
+              isOpen={showStravaModal}
+              onClose={() => {
+                setShowStravaModal(false);
+                if (user?._id) localStorage.setItem(`stravaConnectModalDone_${user._id}`, 'true');
+              }}
+              onSuccess={() => {
+                setShowStravaModal(false);
+                if (user?._id) localStorage.setItem(`stravaConnectModalDone_${user._id}`, 'true');
+                addNotification('Strava connected successfully', 'success');
+              }}
+            />
+          )}
+          {user && (
+            <ProductWalkthrough
+              open={showWalkthrough}
+              onClose={() => setShowWalkthrough(false)}
+              userRole={user.role}
+            />
+          )}
+        </Suspense>
+      </>
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-dvh max-h-dvh min-h-0 w-full overflow-hidden bg-gray-100">

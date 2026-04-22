@@ -12,6 +12,11 @@
     "allowMixedContent": false
   },
   "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "962857277252-hjuh1309cikav924lsp4r3et8k3sj6lk.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    },
     "SplashScreen": {
       "launchAutoHide": false,
       "backgroundColor": "#ffffff",

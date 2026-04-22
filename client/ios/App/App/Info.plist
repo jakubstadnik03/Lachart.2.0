@@ -58,7 +58,11 @@
 	<!-- Export compliance: app uses only standard HTTPS – no custom encryption -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<!-- Strava OAuth callback URL scheme -->
+	<!-- Google Sign-In iOS client ID -->
+	<key>GIDClientID</key>
+	<string>962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a.apps.googleusercontent.com</string>
+
+	<!-- URL schemes: Strava OAuth + Google Sign-In reversed client ID -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -67,6 +71,14 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.lachart.app</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>GoogleSignIn</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.962857277252-7g2sbol9ucvl0unvr4m573ud2njuqt7a</string>
 			</array>
 		</dict>
 	</array>

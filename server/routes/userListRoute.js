@@ -1984,11 +1984,18 @@ router.post("/google-auth", async (req, res) => {
         }
 
         const normalizedRole = role && ['coach', 'athlete'].includes(role) ? role : 'athlete';
-        
+
+        // Accept both web and iOS client IDs as valid audiences
+        // iOS native sign-in produces tokens with the iOS client ID as `aud`
+        const validAudiences = [googleClientId];
+        if (process.env.GOOGLE_IOS_CLIENT_ID) {
+            validAudiences.push(process.env.GOOGLE_IOS_CLIENT_ID);
+        }
+
         // Verify Google token
         const ticket = await client.verifyIdToken({
             idToken: credential,
-            audience: googleClientId
+            audience: validAudiences
         });
         
         const payload = ticket.getPayload();

@@ -3572,10 +3572,10 @@ const FitAnalysisPage = () => {
 
 
   return (
-    <div className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className={`min-h-screen ${isMobile ? 'p-0' : 'px-2 sm:px-4 py-4 md:p-6'}`}>
       <UpgradeModal {...UpgradeModalProps} />
       <div className={`${isMobile ? 'w-full' : 'max-w-[1600px]'} mx-auto`}>
-        {!isMobile && <h1 className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</h1>}
+        {!isMobile && <motion.h1 initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="text-2xl md:text-3xl mb-4 md:mb-6 font-bold text-gray-900 tracking-tight">Training Calendar</motion.h1>}
         {isMobile && !(selectedTraining || selectedStrava) && (
           <div className="px-4 pt-4 pb-2">
             <h1 className="text-xl font-bold text-gray-900">Training Calendar</h1>
@@ -3593,7 +3593,7 @@ const FitAnalysisPage = () => {
           )}
 
         {/* Calendar Section - hidden on mobile when training detail is open */}
-        <div className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'px-2' : ''}`}>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }} className={`${isMobile && (selectedTraining || selectedStrava) ? 'hidden' : ''} ${isMobile ? 'px-2' : ''}`}>
         <CalendarView
           activities={calendarMergedActivities}
           selectedActivityId={
@@ -3621,17 +3621,19 @@ const FitAnalysisPage = () => {
           onVisiblePeriodChange={handleCalendarPeriodChange}
           user={user}
         />
-        </div>
+        </motion.div>
 
         {!selectedTraining && !selectedStrava && !detailLoading && calendarPeriod && (
-          <CalendarPeriodStats
-            activities={calendarMergedActivities}
-            period={calendarPeriod}
-            user={user}
-            userProfile={userProfile}
-            isMobile={isMobile}
-            onSelectActivity={handleCalendarActivitySelect}
-          />
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
+            <CalendarPeriodStats
+              activities={calendarMergedActivities}
+              period={calendarPeriod}
+              user={user}
+              userProfile={userProfile}
+              isMobile={isMobile}
+              onSelectActivity={handleCalendarActivitySelect}
+            />
+          </motion.div>
         )}
 
         {/* Training Detail and Charts - Full Width */}
@@ -3672,7 +3674,7 @@ const FitAnalysisPage = () => {
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.3, type: 'spring', stiffness: 280, damping: 25 }}
                   className={`bg-white ${isMobile ? 'rounded-none border-0' : 'rounded-2xl border border-gray-200 shadow-sm'} ${isMobile ? 'p-4' : 'p-5 md:p-8'} ${isMobile ? 'space-y-4' : 'space-y-5 md:space-y-8'}`}
                 >
                   {/* Header Stats */}
@@ -5650,7 +5652,7 @@ const FitAnalysisPage = () => {
         </div>
       )}
 
-    </div>
+    </motion.div>
   );
 };
 
