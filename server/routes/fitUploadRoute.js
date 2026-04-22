@@ -98,7 +98,12 @@ const routeCacheMiddleware = (req, res, next) => {
 
   const originalJson = res.json.bind(res);
   res.json = (body) => {
-    routeCache.set(cacheKey, body);
+    // Never cache error responses or clearly incomplete payloads — a failed
+    // Strava/FIT fetch should not pollute the cache for subsequent requests.
+    const isError = body && (typeof body.error === 'string' && body.error);
+    if (!isError) {
+      routeCache.set(cacheKey, body);
+    }
     res.set('X-Cache', 'MISS');
     return originalJson(body);
   };

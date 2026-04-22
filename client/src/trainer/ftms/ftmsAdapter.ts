@@ -18,6 +18,9 @@ import {
   CPS_MEASUREMENT_UUID_STRING,
   CPS_CONTROL_POINT_UUID_STRING,
   CSC_MEASUREMENT_UUID_STRING,
+  TACX_FEC_SERVICE_UUID,
+  TACX_FEC_TX_CHAR_UUID,
+  TACX_FEC_RX_CHAR_UUID,
   FTMS_OPCODE_REQUEST_CONTROL,
   FTMS_OPCODE_SET_TARGET_POWER,
 } from './ftmsUuids.ts';
@@ -43,8 +46,9 @@ export class FTMSAdapter implements TrainerAdapter {
   private powerMeasurementChar: BluetoothRemoteGATTCharacteristic | null = null; // CPS measurement
   private cscMeasurementChar: BluetoothRemoteGATTCharacteristic | null = null; // CSC measurement
   private controlPointChar: BluetoothRemoteGATTCharacteristic | null = null;
-  private cpsControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // FE-C control via CPS
-  private cscControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // FE-C control via CSC
+  private cpsControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // CPS Control Point (calibration only — NOT for ERG)
+  private cscControlPointChar: BluetoothRemoteGATTCharacteristic | null = null; // CSC Control Point
+  private tacxFecTxChar: BluetoothRemoteGATTCharacteristic | null = null;       // Tacx FE-C proprietary write channel
   private state: TrainerState = 'disconnected';
   private capabilities: TrainerCapabilities | null = null;
   private telemetryCallbacks: Set<(t: Telemetry) => void> = new Set();
@@ -62,53 +66,29 @@ export class FTMSAdapter implements TrainerAdapter {
     logger.info('Scanning for FTMS trainers...');
     logger.info('Note: Web Bluetooth will show a device selection dialog. Please select your trainer.');
 
-    try {
-      // Web Bluetooth API limitation: requestDevice() opens a user dialog
-      // We can't scan without user interaction, so we request device with FTMS service filter
-      // If that doesn't work, we try with acceptAllDevices as fallback
-      let device: BluetoothDevice | null = null;
+    // IMPORTANT: the browser allows only ONE requestDevice() call per user gesture.
+    // A second call after the first resolves/rejects will throw SecurityError.
+    // We therefore make a single call using acceptAllDevices so the picker always
+    // opens, regardless of which services the device advertises.
+    const optionalServices = options?.optionalServices ?? [
+      FTMS_SERVICE_UUID_STRING,
+      FTMS_FEATURE_UUID_STRING,
+      FTMS_POWER_RANGE_UUID_STRING,
+      FTMS_CONTROL_POINT_UUID_STRING,
+      FTMS_RESISTANCE_RANGE_UUID_STRING,
+      CYCLING_POWER_SERVICE_UUID_STRING,
+      CYCLING_SPEED_CADENCE_SERVICE_UUID_STRING,
+      CPS_MEASUREMENT_UUID_STRING,
+      CPS_CONTROL_POINT_UUID_STRING,
+      CSC_MEASUREMENT_UUID_STRING,
+      TACX_FEC_SERVICE_UUID,   // Tacx/Garmin proprietary FE-C BLE service
+    ];
 
-      // First try with FTMS service filter
-      try {
-        device = await navigator.bluetooth.requestDevice({
-          filters: options?.filters || [{ services: [FTMS_SERVICE_UUID_STRING] }],
-          optionalServices: options?.optionalServices || [
-            FTMS_SERVICE_UUID_STRING,
-            FTMS_FEATURE_UUID_STRING,
-            FTMS_POWER_RANGE_UUID_STRING,
-            FTMS_CONTROL_POINT_UUID_STRING,
-            FTMS_RESISTANCE_RANGE_UUID_STRING,
-            CYCLING_POWER_SERVICE_UUID_STRING,
-            CYCLING_SPEED_CADENCE_SERVICE_UUID_STRING,
-            CPS_MEASUREMENT_UUID_STRING,
-            CPS_CONTROL_POINT_UUID_STRING,
-            CSC_MEASUREMENT_UUID_STRING,
-          ],
-        });
-      } catch (firstError: any) {
-        // If service filter fails, try accepting all devices (user can still filter in dialog)
-        logger.warn('Service filter failed, trying acceptAllDevices:', firstError.message);
-        try {
-          device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [
-              FTMS_SERVICE_UUID_STRING,
-              FTMS_FEATURE_UUID_STRING,
-              FTMS_POWER_RANGE_UUID_STRING,
-              FTMS_CONTROL_POINT_UUID_STRING,
-              FTMS_RESISTANCE_RANGE_UUID_STRING,
-              CYCLING_POWER_SERVICE_UUID_STRING,
-              CYCLING_SPEED_CADENCE_SERVICE_UUID_STRING,
-              CPS_MEASUREMENT_UUID_STRING,
-              CPS_CONTROL_POINT_UUID_STRING,
-              CSC_MEASUREMENT_UUID_STRING,
-            ],
-          });
-        } catch (secondError: any) {
-          logger.error('Both scan attempts failed:', secondError);
-          throw secondError;
-        }
-      }
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices,
+      });
 
       if (!device) {
         logger.warn('No device returned from requestDevice');
@@ -122,19 +102,20 @@ export class FTMSAdapter implements TrainerAdapter {
         id: device.id,
         name: device.name || 'Unknown Trainer',
         transport: 'ftms-ble',
-        rssi: undefined, // Web Bluetooth doesn't provide RSSI
+        rssi: undefined, // Web Bluetooth doesn't expose RSSI
       };
 
       logger.info('Found device:', deviceInfo.name, deviceInfo.id);
       return [deviceInfo];
     } catch (error: any) {
       if (error.name === 'NotFoundError') {
-        logger.warn('No device selected by user');
+        // User dismissed the picker — not an error, just return empty
+        logger.info('No device selected by user');
         return [];
       }
       if (error.name === 'SecurityError') {
-        logger.warn('Permission denied or security error:', error.message);
-        throw new Error('Bluetooth permission denied. Please allow access and try again.');
+        logger.warn('Bluetooth permission denied:', error.message);
+        throw new Error('Bluetooth permission denied. Please allow Bluetooth access in your browser settings and try again.');
       }
       logger.error('Scan error:', error);
       throw error;
@@ -161,7 +142,7 @@ export class FTMSAdapter implements TrainerAdapter {
         // If no scanned device or ID mismatch, request device again
         logger.info('Requesting device again (not found in scan cache)');
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [FTMS_SERVICE_UUID_STRING] }],
+          acceptAllDevices: true,
           optionalServices: [
             FTMS_SERVICE_UUID_STRING,
             FTMS_FEATURE_UUID_STRING,
@@ -172,6 +153,7 @@ export class FTMSAdapter implements TrainerAdapter {
             CPS_MEASUREMENT_UUID_STRING,
             CPS_CONTROL_POINT_UUID_STRING,
             CSC_MEASUREMENT_UUID_STRING,
+            TACX_FEC_SERVICE_UUID,
           ],
         });
 
@@ -273,20 +255,31 @@ export class FTMSAdapter implements TrainerAdapter {
             indicate: properties.indicate
           });
 
-          // Try to get FE-C Control Point
+          // Try Tacx proprietary FE-C BLE service for ERG control
+          // (0x2A66 CPS Control Point is NOT for ERG — writing to it causes trainer disconnect)
           try {
-            this.cpsControlPointChar = await this.powerService.getCharacteristic(CPS_CONTROL_POINT_UUID_STRING);
-            logger.info('FE-C Control Point found via Cycling Power Service');
-          } catch (e) {
-            logger.warn('FE-C Control Point not available via CPS');
+            const tacxFecService = await this.server!.getPrimaryService(TACX_FEC_SERVICE_UUID);
+            this.tacxFecTxChar = await tacxFecService.getCharacteristic(TACX_FEC_TX_CHAR_UUID);
+            // Subscribe to trainer responses on RX characteristic
+            try {
+              const tacxFecRxChar = await tacxFecService.getCharacteristic(TACX_FEC_RX_CHAR_UUID);
+              await tacxFecRxChar.startNotifications();
+              tacxFecRxChar.addEventListener('characteristicvaluechanged', (event: any) => {
+                const val: DataView = event.target.value;
+                logger.debug('Tacx FE-C response:', Array.from(new Uint8Array(val.buffer)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+              });
+            } catch (_) { /* RX optional */ }
+            logger.info('Tacx FE-C service found — ERG control available');
+          } catch (_) {
+            logger.info('Tacx FE-C service not available — ERG control not supported on this connection');
           }
 
           // Set basic capabilities
           this.capabilities = {
-            erg: !!this.cpsControlPointChar,
+            erg: !!this.tacxFecTxChar,  // ERG only via Tacx FE-C service, not CPS Control Point
             resistance: false,
             slope: false,
-            supportsControlPoint: !!this.cpsControlPointChar,
+            supportsControlPoint: !!this.tacxFecTxChar,
             telemetry: {
               power: true,
               cadence: false,
@@ -296,7 +289,7 @@ export class FTMSAdapter implements TrainerAdapter {
           };
 
           this.state = 'ready';
-          logger.info('Cycling Power Service adapter connected and ready');
+          logger.info('Cycling Power Service adapter connected' + (this.tacxFecTxChar ? ' (ERG via Tacx FE-C)' : ' (read-only, no ERG)'));
           
           // Send initial telemetry update to indicate connection
           this.telemetryCallbacks.forEach(cb => {
@@ -418,6 +411,10 @@ export class FTMSAdapter implements TrainerAdapter {
       this.cscMeasurementChar = null;
     }
 
+    this.tacxFecTxChar = null;
+    this.cpsControlPointChar = null;
+    this.cscControlPointChar = null;
+
     if (this.device?.gatt?.connected) {
       this.device.gatt.disconnect();
     }
@@ -494,95 +491,45 @@ export class FTMSAdapter implements TrainerAdapter {
 
         this.state = 'erg_active';
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
-      } else if (this.cpsControlPointChar) {
-        // Use FE-C control via Cycling Power Service
-        // FE-C protocol for Tacx trainers:
-        // 1. Set Training Mode to ERGO (opcode 0x05, value 0x04)
-        // 2. Set Target Power (opcode 0x01, power in 0.1W units)
-        
-        // Step 1: Set ERGO mode
-        try {
-          const setErgoMode = new Uint8Array([
-            0x05,        // Opcode: Set Training Mode
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x04,        // Training Mode: 0x04 = ERGO mode
-            0x00         // Reserved
-          ]);
-          await this.cpsControlPointChar.writeValueWithResponse(setErgoMode);
-          await new Promise(resolve => setTimeout(resolve, 200));
-          logger.debug('Set training mode to ERGO (FE-C via CPS)');
-        } catch (e) {
-          logger.warn('Set training mode skipped or failed, continuing...', e);
-        }
-
-        // Step 2: Set Target Power
-        // FE-C Set Target Power: Opcode 0x01, power in 0.1W units (little-endian)
-        const powerInTenths = Math.round(clampedWatts * 10);
-        const powerLow = powerInTenths & 0xFF;
-        const powerHigh = (powerInTenths >> 8) & 0xFF;
-        
-        const fecCommand = new Uint8Array([
-          0x01,        // Opcode: Set Target Power (ERGO mode)
-          0x00,        // Reserved
-          0x00,        // Reserved
-          0x00,        // Reserved
-          powerLow,    // Power low byte (0.1W units)
-          powerHigh    // Power high byte (0.1W units)
+      } else if (this.tacxFecTxChar) {
+        // Tacx proprietary FE-C BLE service — ANT+ page 49 (Set Target Power)
+        // Resolution: 0.25 W/bit, unused bytes = 0xFF (per ANT+ FE-C spec)
+        const powerInQuarterWatts = Math.round(clampedWatts * 4);
+        const fecPage49 = new Uint8Array([
+          0x31,                                   // Data page 49: Set Target Power
+          0xFF, 0xFF, 0xFF, 0xFF,                 // Not used
+          powerInQuarterWatts & 0xFF,             // Target power LSB
+          (powerInQuarterWatts >> 8) & 0xFF,      // Target power MSB
+          0xFF,                                   // Not used
         ]);
-        
-        logger.info(`Sending FE-C command: Set Target Power ${clampedWatts}W (${powerInTenths} x 0.1W)`);
-        logger.debug('FE-C command bytes:', Array.from(fecCommand).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-        
-        await this.cpsControlPointChar.writeValueWithResponse(fecCommand);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
+
+        logger.info(`Sending FE-C page 49: Set Target Power ${clampedWatts}W (${powerInQuarterWatts} × 0.25 W, Tacx FE-C service)`);
+        await this.tacxFecTxChar.writeValueWithoutResponse(fecPage49);
+
         this.state = 'erg_active';
-        logger.info(`✅ ERG power set to ${clampedWatts}W (FE-C via CPS, ${powerInTenths} x 0.1W)`);
+        logger.info(`ERG power set to ${clampedWatts}W (Tacx FE-C service)`);
       } else if (this.cscControlPointChar) {
-        // Use FE-C control via CSC Service
-        // FE-C protocol for Tacx trainers:
-        // 1. Set Training Mode to ERGO (opcode 0x05, value 0x04)
-        // 2. Set Target Power (opcode 0x01, power in 0.1W units)
-        
-        // Step 1: Set ERGO mode
+        // ANT+ FE-C page 49 (0x31) — Set Target Power (CSC fallback path)
+        const powerInQuarterWatts = Math.round(clampedWatts * 4);
+        const fecPage49 = new Uint8Array([
+          0x31,
+          0xFF, 0xFF, 0xFF, 0xFF,
+          powerInQuarterWatts & 0xFF,
+          (powerInQuarterWatts >> 8) & 0xFF,
+          0xFF,
+        ]);
+
+        logger.info(`Sending FE-C page 49: Set Target Power ${clampedWatts}W (${powerInQuarterWatts} × 0.25 W, via CSC)`);
+
         try {
-          const setErgoMode = new Uint8Array([
-            0x05,        // Opcode: Set Training Mode
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x00,        // Reserved
-            0x04,        // Training Mode: 0x04 = ERGO mode
-            0x00         // Reserved
-          ]);
-          await this.cscControlPointChar.writeValueWithResponse(setErgoMode);
-          await new Promise(resolve => setTimeout(resolve, 200));
-          logger.debug('Set training mode to ERGO (FE-C via CSC)');
-        } catch (e) {
-          logger.warn('Set training mode skipped or failed, continuing...', e);
+          await this.cscControlPointChar.writeValueWithResponse(fecPage49);
+        } catch (writeErr: any) {
+          logger.warn('writeValueWithResponse failed, retrying without response:', writeErr.message);
+          await this.cscControlPointChar.writeValueWithoutResponse(fecPage49);
         }
 
-        // Step 2: Set Target Power
-        // FE-C Set Target Power: Opcode 0x01, power in 0.1W units (little-endian)
-        const powerInTenths = Math.round(clampedWatts * 10);
-        const powerLow = powerInTenths & 0xFF;
-        const powerHigh = (powerInTenths >> 8) & 0xFF;
-        
-        const fecCommand = new Uint8Array([
-          0x01,        // Opcode: Set Target Power (ERGO mode)
-          0x00,        // Reserved
-          0x00,        // Reserved
-          0x00,        // Reserved
-          powerLow,    // Power low byte (0.1W units)
-          powerHigh    // Power high byte (0.1W units)
-        ]);
-        
-        await this.cscControlPointChar.writeValueWithResponse(fecCommand);
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
         this.state = 'erg_active';
-        logger.info(`ERG power set to ${clampedWatts}W (FE-C via CSC, ${powerInTenths} x 0.1W)`);
+        logger.info(`ERG power set to ${clampedWatts}W (FE-C page 49 via CSC)`);
       } else {
         throw new Error('No control point available for ERG mode');
       }

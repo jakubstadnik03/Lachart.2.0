@@ -5,7 +5,12 @@ import { useAuth } from '../context/AuthProvider';
 import api from '../services/api';
 import { getAthleteAvatar } from '../utils/avatarUtils';
 
-const COACH_ROLES = ['coach', 'tester', 'testing', 'admin'];
+// Admin sees coach UI only when their role is not 'athlete'.
+// An admin who set role='athlete' should see athlete UI, not coach UI.
+const isCoachRole = (user) =>
+  ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
+  (user?.admin === true && user?.role !== 'athlete');
+
 const SIX_WEEKS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
 
@@ -39,7 +44,7 @@ export default function CoachAthleteBar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isCoach = COACH_ROLES.includes(user?.role) || user?.admin === true;
+  const isCoach = isCoachRole(user);
 
   // Resolve initial athleteId: URL segment 2 takes priority, then localStorage, then self
   const resolveAthleteId = useCallback(() => {

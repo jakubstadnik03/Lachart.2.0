@@ -18,6 +18,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthProvider';
 import { getAvatarBySportAndGender } from '../../utils/avatarUtils';
 
+// Admin sees coach UI only when their role is not 'athlete'.
+const isCoachRole = (user) =>
+  ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
+  (user?.admin === true && user?.role !== 'athlete');
+
 const SIX_WEEKS_MS   = 6  * 7 * 24 * 60 * 60 * 1000;
 const TWELVE_WEEKS_MS = 12 * 7 * 24 * 60 * 60 * 1000;
 function statusColor(lastTest) {
@@ -53,8 +58,7 @@ const ICONS = {
 
 // ─── Tab definitions ───────────────────────────────────────────────────────────
 function getTabsForRole(user, effectiveAthleteId) {
-  const isAdmin = user?.role === 'admin' || user?.admin === true;
-  const isCoach = isAdmin || ['coach', 'tester', 'testing'].includes(user?.role);
+  const isCoach = isCoachRole(user);
   const ap = (base) => effectiveAthleteId ? `/${base}/${effectiveAthleteId}` : `/${base}`;
 
   if (isCoach) {
@@ -307,8 +311,7 @@ const NativeLayout = ({ athletes = [], athleteStatuses = {}, effectiveAthleteId,
     };
   }, []);
 
-  const isAdmin = user?.role === 'admin' || user?.admin === true;
-  const isCoach = isAdmin || ['coach', 'tester', 'testing'].includes(user?.role);
+  const isCoach = isCoachRole(user);
   const tabs = getTabsForRole(user, effectiveAthleteId);
 
   return (

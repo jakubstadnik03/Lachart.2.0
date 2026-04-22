@@ -117,7 +117,7 @@ export function TrainerConnectModal({ isOpen, onClose, options }) {
             </button>
           </div>
           <p className="text-xs text-gray-600">
-            Note: Web Bluetooth will open a device selection dialog. Make sure your trainer is turned on and in pairing mode, then select it from the list.
+            A device picker will open — turn on your trainer and select it from the list. If you don't see it, make sure it's powered on and not already connected to another app.
           </p>
         </div>
 

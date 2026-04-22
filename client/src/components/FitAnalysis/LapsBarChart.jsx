@@ -70,6 +70,16 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     return km % 1 === 0 ? `${km}km` : `${km.toFixed(1)}km`;
   };
 
+  const fmtDuration = (seconds) => {
+    if (!seconds || seconds <= 0) return '0:00';
+    const s = Math.round(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
   const activeEntries = useMemo(() => entries.filter(e => !e.isPause), [entries]);
   const maxVal = useMemo(() => Math.max(...activeEntries.map(e => e.value), 1), [activeEntries]);
   const minVal = useMemo(() => {
@@ -77,9 +87,16 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     return vals.length > 0 ? Math.min(...vals) : 0;
   }, [activeEntries]);
 
+  const skipZoom = useMemo(() => {
+    const totalDuration = activeEntries.reduce((s, e) => s + e.duration, 0);
+    const maxDuration = activeEntries.reduce((max, e) => Math.max(max, e.duration), 0);
+    return (
+      activeEntries.length <= 6 ||
+      (totalDuration > 0 && maxDuration / totalDuration > 0.40)
+    );
+  }, [activeEntries]);
 
   const ZOOM_BAR_W = 36; // px per bar in zoomed mode
-  const NORMAL_BAR_MIN_W = 10; // minimum px per bar in normal mode (enables scroll for many laps)
   const PAUSE_BAR_W = 8; // px for pause/rest bars in zoom mode
   const PAUSE_BAR_W_NORMAL = 5; // px for pause/rest bars in normal mode
 
@@ -89,9 +106,10 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     return () => cancelAnimationFrame(raf);
   }, [entries, selectedLapNumber]);
 
-  // Scroll selected bar into centre when zoomed — math-based, no DOM measurement
+  // Scroll selected bar into centre when zoomed — math-based, no DOM measurement.
+  // Skip entirely in skipZoom mode (bars stay at full proportional width, no scroll needed).
   useEffect(() => {
-    if (selectedLapNumber == null || !scrollRef.current) return;
+    if (selectedLapNumber == null || !scrollRef.current || skipZoom) return;
     const container = scrollRef.current;
     let leftOffset = 4; // px-1 padding
     for (const entry of entries) {
@@ -103,7 +121,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     requestAnimationFrame(() => {
       container.scrollTo({ left: Math.max(0, scrollTarget), behavior: 'smooth' });
     });
-  }, [selectedLapNumber, entries]);
+  }, [selectedLapNumber, entries, skipZoom]);
 
   const barColor = (entry, isSelected) => {
     if (entry.isPause) return '#d1d5db';
@@ -138,44 +156,58 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     return `${Math.round(entry.hr)} bpm`;
   };
 
-  // Y-axis label for the max value
-  const fmtYMax = () => {
-    if (!firstActive) return '';
+  // Format a raw value (same unit as entry.value) as a short Y-axis label
+  const fmtYValue = (val, withUnit = false) => {
+    if (!firstActive || val <= 0) return '0';
     const m = firstActive.metric;
-    if (m === 'power') return `${Math.round(maxVal)}W`;
-    if (m === 'speed') { // run: value = speedMps * 100
-      const mps = maxVal / 100;
-      const sec = 1000 / mps;
-      return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
-    }
-    if (m === 'pace') { // swim: value = speedMps
-      const sec = 100 / maxVal;
-      return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
-    }
-    return `${Math.round(maxVal)}`;
-  };
-
-  // Y-axis label for the min value (bottom of meaningful range)
-  const fmtYMin = () => {
-    if (!firstActive || minVal === 0) return '0';
-    const m = firstActive.metric;
-    if (m === 'power') return `${Math.round(minVal)}W`;
+    if (m === 'power') return withUnit ? `${Math.round(val)}W` : `${Math.round(val)}`;
     if (m === 'speed') {
-      const mps = minVal / 100;
+      const mps = val / 100;
+      if (mps <= 0) return '—';
       const sec = 1000 / mps;
       return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
     }
     if (m === 'pace') {
-      const sec = 100 / minVal;
+      const mps = val;
+      if (mps <= 0) return '—';
+      const sec = 100 / mps;
       return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
     }
-    return `${Math.round(minVal)}`;
+    return withUnit ? `${Math.round(val)}` : `${Math.round(val)}`;
   };
+
+  // Y-axis: 4 evenly-spaced ticks from maxVal (top) down to ~0
+  // Positions as percentages from the top of the h-32 container
+  const yTicks = useMemo(() => {
+    if (!activeEntries.length) return [];
+    // Use minVal as the floor so the range is meaningful (not down to 0 for HR/pace)
+    const floor = minVal > 0 ? minVal * 0.9 : 0;
+    const ticks = [];
+    const steps = 3; // 0%, 33%, 67%, 100% → 4 labels
+    for (let i = 0; i <= steps; i++) {
+      const frac = i / steps; // 0 = top, 1 = bottom
+      // height fraction of bar at this y position: 1 - frac
+      const barHeightFrac = 1 - frac;
+      // corresponding value: barHeightFrac = value / maxVal  → value = barHeightFrac * maxVal
+      // But we want the label to be relative to the actual range [floor, maxVal]
+      const val = floor + (maxVal - floor) * barHeightFrac;
+      ticks.push({ topPct: frac * 100, val });
+    }
+    return ticks;
+  }, [activeEntries, maxVal, minVal]);
 
   if (entries.length === 0) return null;
 
-  const isZoomed = selectedLapNumber != null;
+  // Don't switch to fixed-width zoomed layout when there are few laps or when one lap
+  // dominates the chart — the fixed 36 px bars would make a single bar appear tiny.
+  // Same heuristic as IntervalChart: ≤ 6 active bars, or the widest bar > 40 % of total duration.
+  const isZoomed = selectedLapNumber != null && !skipZoom;
   const firstActive = activeEntries[0];
+
+  // Selected entry data for the info row
+  const selectedEntry = selectedLapNumber != null
+    ? entries.find(e => String(e.lapNumber) === String(selectedLapNumber) && !e.isPause)
+    : null;
 
   const handleDoubleClick = () => {
     if (onSelect) onSelect(null);
@@ -185,10 +217,20 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
     <div className="w-full mb-3">
       {/* Chart area with Y-axis */}
       <div className="flex gap-1 items-stretch">
-        {/* Y-axis labels */}
-        <div className="flex flex-col justify-between flex-shrink-0 w-9 h-32 py-0.5">
-          <span className="text-[8px] text-gray-400 leading-none text-right truncate">{fmtYMax()}</span>
-          <span className="text-[8px] text-gray-400 leading-none text-right">{fmtYMin()}</span>
+        {/* Y-axis — 4 evenly-spaced absolute labels */}
+        <div className="relative flex-shrink-0 w-10 h-32">
+          {yTicks.map((tick, i) => (
+            <span
+              key={i}
+              className="absolute right-0 text-[8px] text-gray-400 leading-none text-right"
+              style={{
+                top: `${tick.topPct}%`,
+                transform: tick.topPct === 0 ? 'translateY(0)' : tick.topPct === 100 ? 'translateY(-100%)' : 'translateY(-50%)',
+              }}
+            >
+              {fmtYValue(tick.val, i === 0)}
+            </span>
+          ))}
         </div>
 
         {/* Bars + lap labels */}
@@ -223,8 +265,9 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                 }
                 const rawPct = Math.max((entry.value / maxVal) * 100, 8);
                 const heightPct = isZoomed
-                  ? isSelected ? 100 : Math.max((entry.value / maxVal) * 82, 6)
-                  : rawPct;
+                  ? (isSelected ? 100 : Math.max((entry.value / maxVal) * 82, 6))
+                  // skipZoom: give selected bar a subtle 8 % height boost so it stands out
+                  : (skipZoom && isSelected ? Math.min(rawPct * 1.08, 100) : rawPct);
 
                 return (
                   <button
@@ -236,7 +279,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                     className="flex flex-col items-center justify-end group relative focus:outline-none"
                     style={isZoomed
                       ? { width: `${ZOOM_BAR_W}px`, minWidth: `${ZOOM_BAR_W}px`, height: '100%', flexShrink: 0 }
-                      : { flex: `${entry.duration} 0 ${NORMAL_BAR_MIN_W}px`, height: '100%' }}
+                      : { flex: `${entry.duration} 1 0%`, minWidth: '2px', height: '100%' }}
                   >
                     {/* Bar — label + lactate dot live inside */}
                     <div
@@ -244,7 +287,9 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                       style={{
                         height: `${heightPct}%`,
                         backgroundColor: barColor(entry, isSelected),
-                        opacity: isZoomed ? (isSelected ? 1 : 0.55) : isSelected ? 1 : 0.75,
+                        opacity: isZoomed
+                          ? (isSelected ? 1 : 0.55)
+                          : (selectedLapNumber != null ? (isSelected ? 1 : 0.60) : 0.75),
                         boxShadow: isSelected
                           ? `0 0 0 2px ${barColor(entry, true)}, 0 2px 8px ${barColor(entry, true)}60`
                           : 'none',
@@ -298,7 +343,7 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
                     className="text-center overflow-visible relative"
                     style={isZoomed
                       ? { width: `${ZOOM_BAR_W}px`, flexShrink: 0 }
-                      : { flex: `${entry.duration} 0 ${NORMAL_BAR_MIN_W}px` }}
+                      : { flex: `${entry.duration} 1 0%`, minWidth: '2px' }}
                   >
                     {showLabel && (
                       <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] leading-none font-medium ${isSelected ? 'text-primary' : 'text-gray-400'}`}>
@@ -323,6 +368,39 @@ export default function LapsBarChart({ laps = [], selectedLapNumber = null, onSe
           )}
         </div>
       </div>
+
+      {/* Selected interval info row */}
+      {selectedEntry && (
+        <div className="flex items-center gap-2 px-1 mt-1.5 py-1 rounded-lg bg-gray-50 border border-gray-100">
+          <span
+            className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: `${barColor(selectedEntry, true)}22`, color: barColor(selectedEntry, true) }}
+          >
+            Lap {selectedEntry.lapNumber}
+          </span>
+          <span className="text-[10px] text-gray-700 font-medium leading-none">
+            {fmtDuration(selectedEntry.duration)}
+          </span>
+          {selectedEntry.distanceM > 0 && (
+            <span className="text-[10px] text-gray-500 leading-none">
+              {fmtDist(selectedEntry.distanceM)}
+            </span>
+          )}
+          <span className="text-[10px] font-semibold leading-none" style={{ color: barColor(selectedEntry, true) }}>
+            {fmtLabel(selectedEntry)}
+          </span>
+          {selectedEntry.lactate != null && (
+            <span className="text-[10px] text-violet-600 leading-none font-medium">
+              La {selectedEntry.lactate.toFixed(1)}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => onSelect && onSelect(null)}
+            className="ml-auto text-[10px] text-gray-400 hover:text-gray-600 leading-none font-semibold px-1"
+          >✕</button>
+        </div>
+      )}
 
       {/* Legend row */}
       <div className="flex items-center justify-between px-1 mt-1">

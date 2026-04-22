@@ -2804,8 +2804,8 @@ const FitAnalysisPage = () => {
 
   // Initialize selectedAthleteId on mount for coach/admin or when returning to page
   useEffect(() => {
-    const isCoachLike = user?.role === 'coach' || user?.role === 'admin' || user?.admin === true ||
-      user?.role === 'tester' || user?.role === 'testing';
+    const isCoachLike = ['coach', 'admin', 'tester', 'testing'].includes(user?.role) ||
+      (user?.admin === true && user?.role !== 'athlete');
     if (isCoachLike) {
       // Always check localStorage first when component mounts or when location changes (returning to page)
       const savedAthleteId = localStorage.getItem('trainingCalendar_selectedAthleteId');
@@ -2845,7 +2845,9 @@ const FitAnalysisPage = () => {
   useEffect(() => {
     const loadCoachAthletes = async () => {
       const role = String(user?.role || '').toLowerCase();
-      if (role !== 'admin' && !user?.admin && role !== 'coach' && role !== 'tester' && role !== 'testing') return;
+      const isCoachLike = ['admin', 'coach', 'tester', 'testing'].includes(role) ||
+        (user?.admin === true && role !== 'athlete');
+      if (!isCoachLike) return;
       try {
         const response = await api.get('/user/coach/athletes');
         const list = Array.isArray(response?.data) ? response.data : [];

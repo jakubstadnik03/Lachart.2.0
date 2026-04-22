@@ -366,9 +366,10 @@ export default function AthleteProfile() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.6 }}
           >
-            <SpiderChart 
+            <SpiderChart
               trainings={trainings}
               selectedSport={selectedSport}
+              athleteId={athleteId}
               className="w-[400px]"
             />
           </motion.div>

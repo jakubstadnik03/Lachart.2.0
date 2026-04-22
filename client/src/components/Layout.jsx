@@ -12,6 +12,11 @@ import CoachAthleteBar from "./CoachAthleteBar";
 import { isCapacitorNative } from "../utils/isNativeApp";
 import NativeLayout from "./native/NativeLayout";
 
+// Admin sees coach UI only when their role is not 'athlete'.
+const isCoachRole = (user) =>
+  ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
+  (user?.admin === true && user?.role !== 'athlete');
+
 const WALKTHROUGH_DISMISSED_KEY = 'lachart:walkthroughDismissed';
 
 const BasicProfileModal = lazy(() => import("./Profile/BasicProfileModal"));
@@ -45,7 +50,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const [athleteStatuses, setAthleteStatuses] = useState({});
 
   const loadNativeAthletes = useCallback(async () => {
-    if (user?.role !== 'admin' && !user?.admin && !["coach", "tester", "testing"].includes(user?.role)) return;
+    if (!isCoachRole(user)) return;
     try {
       const response = await api.get('/user/coach/athletes');
       const list = response.data || [];
@@ -70,7 +75,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     } catch (err) {
       console.error('Native: Error loading athletes:', err);
     }
-  }, [user?.role, user?.admin]);
+  }, [user]);
 
   useEffect(() => {
     if (isCapacitorNative() && user) loadNativeAthletes();
@@ -89,7 +94,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
 
   // effectiveAthleteId for native coach view — useState so it actually updates on selection
   const [nativeEffectiveAthleteId, setNativeEffectiveAthleteId] = useState(() => {
-    const isCoach = user?.role === 'admin' || user?.admin === true || ["coach", "tester", "testing"].includes(user?.role);
+    const isCoach = isCoachRole(user);
     if (!isCoach) return null;
     try {
       return localStorage.getItem('global_selectedAthleteId') || user?._id || null;
@@ -101,7 +106,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   // Sync effectiveAthleteId when user loads (initial render may have no user yet)
   useEffect(() => {
     if (!isCapacitorNative()) return;
-    const isCoach = user?.role === 'admin' || user?.admin === true || ["coach", "tester", "testing"].includes(user?.role);
+    const isCoach = isCoachRole(user);
     if (!isCoach) return;
     try {
       const saved = localStorage.getItem('global_selectedAthleteId');
@@ -109,7 +114,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     } catch {
       setNativeEffectiveAthleteId(user?._id || null);
     }
-  }, [user?.role, user?._id, user?.admin]);
+  }, [user]);
 
   const handleNativeAthleteSelect = useCallback((athleteId) => {
     try { localStorage.setItem('global_selectedAthleteId', athleteId); } catch {}

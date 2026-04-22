@@ -58,7 +58,9 @@ export default function DashboardPage() {
   const { user, isAuthenticated } = useAuth();
   const role = String(user?.role || '').toLowerCase();
   const isTestingRole = role === 'testing' || role === 'tester';
-  const isCoachLikeRole = role === 'admin' || user?.admin === true || role === 'coach' || role === 'testing' || role === 'tester';
+  // Admin with role='athlete' should see athlete UI, not coach UI
+  const isCoachLikeRole = ['admin', 'coach', 'testing', 'tester'].includes(role) ||
+    (user?.admin === true && role !== 'athlete');
   const { addNotification } = useNotification();
   const [stravaConnected, setStravaConnected] = useState(false);
   const [showStravaBanner, setShowStravaBanner] = useState(false);

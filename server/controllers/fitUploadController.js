@@ -2777,14 +2777,17 @@ async function getPowerMetrics(req, res) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Check if coach/tester is accessing athlete data
+    // Check if coach/tester/admin is accessing athlete data
     const requesterRole = String(user.role || '').toLowerCase();
-    if (['coach', 'tester', 'testing'].includes(requesterRole) && String(athleteId) !== String(userId)) {
+    const isCoachLike = ['coach', 'tester', 'testing', 'admin'].includes(requesterRole) ||
+      (user.admin === true && requesterRole !== 'athlete');
+    if (isCoachLike && String(athleteId) !== String(userId)) {
       const athlete = await User.findById(athleteId);
       if (!athlete) {
         return res.status(404).json({ error: 'Athlete not found' });
       }
-      if (!athlete.coachId || athlete.coachId.toString() !== userId.toString()) {
+      // Admins may view any athlete; coaches/testers must own the coachId link
+      if (requesterRole !== 'admin' && (!athlete.coachId || athlete.coachId.toString() !== userId.toString())) {
         return res.status(403).json({ error: 'Access denied' });
       }
     }

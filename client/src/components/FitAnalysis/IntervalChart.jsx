@@ -424,6 +424,23 @@ const IntervalChart = ({
     return chartData.bars.findIndex(b => String(b.lapNumber) === String(selectedLapNumber));
   }, [chartData, selectedLapNumber]);
 
+  // Count of real (non-pause) bars — used to decide whether auto-zoom makes sense.
+  const nonPauseBarCount = useMemo(() => {
+    return chartData?.bars?.filter(b => !b.isPause).length || 0;
+  }, [chartData]);
+
+  // True when zoom would be counterproductive:
+  //   • ≤ 6 bars  → bars are already wide, zoom just scrolls them off-screen
+  //   • any single bar is > 40% of total distance → it would overflow the viewport after 2.4× zoom
+  const skipAutoZoom = useMemo(() => {
+    if (nonPauseBarCount <= 6) return true;
+    if (!chartData?.totalDistance || chartData.totalDistance === 0) return nonPauseBarCount <= 6;
+    const widestFraction = (chartData.bars || [])
+      .filter(b => !b.isPause)
+      .reduce((max, b) => Math.max(max, b.distance / chartData.totalDistance), 0);
+    return widestFraction > 0.40;
+  }, [nonPauseBarCount, chartData]);
+
   // Auto-highlight best bar when coming from Power Radar / SpiderChart
   useEffect(() => {
     if (!highlightMetric || !chartData || !chartData.bars || chartData.bars.length === 0) return;
@@ -492,12 +509,26 @@ const IntervalChart = ({
     if (idx === -1 || idx == null) return;
     setClickedBarIndex(idx);
     setHoveredBar({ bar: chartData.bars[idx], index: idx, widthPercent: 0 });
-    setXZoomScale(2.4);
-  }, [selectedLapNumber, chartData]);
+    // Don't auto-zoom when bars are few/wide — they should stay stretched to full width
+    if (!skipAutoZoom) {
+      setXZoomScale(2.4);
+    }
+  }, [selectedLapNumber, chartData, skipAutoZoom]);
 
   useEffect(() => {
     if (clickedBarIndex == null) {
       setXZoomScale(1);
+      return;
+    }
+
+    // Few / wide bars: always keep zoom at 1 so bars stay stretched to full width.
+    // Actively reset in case xZoomScale was left at 2.4 from a previous workout.
+    if (skipAutoZoom) {
+      setXZoomScale(1);
+      // Also scroll back to the start so nothing appears "cut off"
+      if (chartScrollRef.current) {
+        chartScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+      }
       return;
     }
 
@@ -519,7 +550,18 @@ const IntervalChart = ({
       left: Math.max(0, targetLeft),
       behavior: 'smooth'
     });
-  }, [clickedBarIndex, xZoomScale]);
+  }, [clickedBarIndex, xZoomScale, skipAutoZoom]);
+
+  // When the chart switches to "few bars" mode (e.g. user opens a different workout that
+  // has only 1–6 laps while the component was already zoomed in), immediately reset the
+  // zoom so the bars stay stretched rather than appearing narrow.
+  useEffect(() => {
+    if (!skipAutoZoom) return;
+    setXZoomScale(1);
+    if (chartScrollRef.current) {
+      chartScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+  }, [skipAutoZoom]);
 
   // Close "locked" tooltip when clicking/tapping outside the chart
   useEffect(() => {

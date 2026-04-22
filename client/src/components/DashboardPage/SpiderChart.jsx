@@ -35,7 +35,11 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   const [refreshing, setRefreshing] = useState(false);
   
   // Determine target athlete ID for API calls
-  const targetAthleteId = user?.role === 'coach' && athleteId ? athleteId : null;
+  // Must match isCoachRole pattern: admin/coach/tester/testing can all view athlete data
+  const isCoachLike =
+    ['coach', 'tester', 'testing', 'admin'].includes(user?.role) ||
+    (user?.admin === true && user?.role !== 'athlete');
+  const targetAthleteId = isCoachLike && athleteId ? athleteId : null;
 
   // Load comparePeriod from localStorage or default to '90days'
   const [comparePeriod, setComparePeriod] = useState(() => {
@@ -105,6 +109,9 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
   const allTimeRequestIdRef = useRef(0);
 
   useEffect(() => {
+    // Reset stale normalization data when the viewed athlete changes
+    setAllTimeRef(null);
+
     const loadAllTimeRef = async () => {
       const reqId = ++allTimeRequestIdRef.current;
       const CACHE_DURATION = 60 * 60 * 1000; // 1h

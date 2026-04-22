@@ -39,6 +39,13 @@ export const CPS_CONTROL_POINT_UUID_STRING = '00002a66-0000-1000-8000-00805f9b34
 export const CSC_MEASUREMENT_UUID_STRING = '00002a5b-0000-1000-8000-00805f9b34fb';
 export const CSC_CONTROL_POINT_UUID_STRING = '00002a5b-0000-1000-8000-00805f9b34fb'; // Same as measurement for some devices
 
+// Tacx/Garmin proprietary FE-C over BLE service
+// Used when FTMS is not available (older firmware or non-training-mode startup).
+// Protocol: write raw 8-byte ANT+ FE-C data pages to TX char; responses on RX char.
+export const TACX_FEC_SERVICE_UUID   = '6e40fec1-b5a3-f393-e0a9-e50e24dcca9e';
+export const TACX_FEC_TX_CHAR_UUID   = '6e40fec2-b5a3-f393-e0a9-e50e24dcca9e'; // write → trainer
+export const TACX_FEC_RX_CHAR_UUID   = '6e40fec3-b5a3-f393-e0a9-e50e24dcca9e'; // notify ← trainer
+
 // Control Point Opcodes
 export const FTMS_OPCODE_REQUEST_CONTROL = 0x00;
 export const FTMS_OPCODE_RESET = 0x01;
