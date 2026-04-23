@@ -782,11 +782,14 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
         totalSec += sec;
         totalDist += dist;
 
-        const label = String(act.sport || 'Other').trim() || 'Other';
-        if (!sportMap.has(label)) {
-          sportMap.set(label, { sport: label, count: 0, tss: 0, sec: 0, dist: 0 });
+        const rawLabel = String(act.sport || 'Other').trim() || 'Other';
+        // Normalise key to lowercase so "Swim" and "swim" merge into one row
+        const mapKey = rawLabel.toLowerCase();
+        const displayLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+        if (!sportMap.has(mapKey)) {
+          sportMap.set(mapKey, { sport: displayLabel, count: 0, tss: 0, sec: 0, dist: 0 });
         }
-        const row = sportMap.get(label);
+        const row = sportMap.get(mapKey);
         row.count += 1;
         row.tss += tss;
         row.sec += sec;

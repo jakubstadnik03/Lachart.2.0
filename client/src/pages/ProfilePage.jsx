@@ -922,7 +922,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="min-w-0 overflow-hidden"
+          className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100"
         >
           <SpiderChart
             trainings={trainings}
@@ -934,7 +934,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
-          className="min-w-0 overflow-hidden"
+          className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100"
         >
           <TrainingGraph
             trainingList={trainings}
@@ -952,7 +952,7 @@ const [selectedTitle, setSelectedTitle] = useState(null);
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="min-w-0 overflow-hidden"
+        className="min-w-0 overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100"
       >
         <WeeklyCalendar
           activities={calendarActivities}

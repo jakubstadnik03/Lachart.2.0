@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthProvider';
 import { resolveDistanceUnitSystem } from '../../utils/unitsConverter';
@@ -124,6 +125,9 @@ const TrainingComparison = ({ trainings }) => {
   });  const [trainingMeta, setTrainingMeta] = useState({});
   const [showAllTrainings, setShowAllTrainings] = useState(false);
   const [filterWorkOnly, setFilterWorkOnly] = useState(true);
+  // barTooltip: { iv, durLabel, valLabel, x, y } — null = hidden
+  const [barTooltip, setBarTooltip] = useState(null);
+  const barTooltipTimeout = useRef(null);
 
   // ── Derived lists ───────────────────────────────────────────────────────────
   const categories = useMemo(() => {
@@ -939,27 +943,52 @@ const TrainingComparison = ({ trainings }) => {
                               : null;
                             const valLabel = iv.val !== null ? formatMetricValue(iv.val, selectedMetric) : null;
 
-                            return (
-                              /* Outer wrapper = group anchor for tooltip; NO overflow-hidden so tooltip can escape */
-                              <div key={ivIdx} className="relative group flex shrink-0" style={{ width: `${barWidth + restWidth}%`, minWidth: 4 }}>
+                            const showTooltip = (e) => {
+                              clearTimeout(barTooltipTimeout.current);
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setBarTooltip({
+                                iv, durLabel, valLabel,
+                                x: rect.left + rect.width / 2,
+                                y: rect.top,
+                              });
+                            };
+                            const hideTooltip = () => {
+                              barTooltipTimeout.current = setTimeout(() => setBarTooltip(null), 120);
+                            };
+                            const toggleTooltip = (e) => {
+                              e.stopPropagation();
+                              if (barTooltip?.iv === iv) {
+                                setBarTooltip(null);
+                              } else {
+                                showTooltip(e);
+                              }
+                            };
 
-                                {/* Work bar — overflow-hidden only here so labels stay clipped */}
+                            return (
+                              <div
+                                key={ivIdx}
+                                className="relative flex shrink-0"
+                                style={{ width: `${barWidth + restWidth}%`, minWidth: 4 }}
+                              >
+                                {/* Work bar */}
                                 <div
-                                  className="relative flex items-center justify-center h-full overflow-hidden transition-opacity hover:opacity-90 cursor-default"
+                                  className="relative flex items-center justify-center h-full overflow-hidden transition-opacity active:opacity-75 cursor-default select-none"
                                   style={{
                                     width: restWidth > 0 ? `${(barWidth / (barWidth + restWidth)) * 100}%` : '100%',
                                     backgroundColor: bgColor,
                                     minWidth: 4,
                                   }}
+                                  onMouseEnter={showTooltip}
+                                  onMouseLeave={hideTooltip}
+                                  onClick={toggleTooltip}
                                 >
-                                  {/* Value label — only if bar is wide enough */}
+                                  {/* Value label */}
                                   {barWidth > 6 && valLabel && (
-                                    <span className="text-[8px] sm:text-[9px] font-semibold text-white drop-shadow select-none pointer-events-none leading-none px-0.5 truncate">
+                                    <span className="text-[8px] sm:text-[9px] font-semibold text-white drop-shadow pointer-events-none leading-none px-0.5 truncate">
                                       {valLabel}
                                     </span>
                                   )}
-
-                                  {/* Lactate badge — shows "La X.X" on the bar when wide enough, else just dot */}
+                                  {/* Lactate badge */}
                                   {iv.lactate !== null && iv.lactate !== undefined && (
                                     barWidth > 10 ? (
                                       <div className="absolute top-0.5 right-0.5 flex items-center gap-0.5 bg-white/90 rounded px-0.5 pointer-events-none z-10"
@@ -972,78 +1001,7 @@ const TrainingComparison = ({ trainings }) => {
                                     )
                                   )}
                                 </div>
-
-                                {/* Hover tooltip — lives outside overflow-hidden so it renders above the bar strip */}
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30 hidden group-hover:block pointer-events-none">
-                                  <div className="bg-gray-900 text-white text-[10px] rounded-lg px-2.5 py-2 whitespace-nowrap shadow-xl min-w-[120px]">
-                                    {/* Header */}
-                                    <div className="flex items-center justify-between gap-3 mb-1 pb-1 border-b border-gray-700">
-                                      <span className="font-semibold text-white">Int {iv.idx + 1}</span>
-                                      {iv.lactate !== null && iv.lactate !== undefined && (
-                                        <span className="flex items-center gap-1 text-red-400 font-bold">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
-                                          La {iv.lactate} mmol
-                                        </span>
-                                      )}
-                                    </div>
-                                    {/* Duration */}
-                                    {durLabel && (
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="text-gray-400">Duration</span>
-                                        <span className="text-white font-medium">{durLabel}</span>
-                                      </div>
-                                    )}
-                                    {/* Distance */}
-                                    {iv.dist !== null && iv.dist !== undefined && (
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="text-gray-400">Distance</span>
-                                        <span className="text-white font-medium">
-                                          {iv.dist >= 1000
-                                            ? `${(iv.dist / 1000).toFixed(2)} km`
-                                            : `${Math.round(iv.dist)} m`}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {/* Pace / Power / HR — the selected metric */}
-                                    {valLabel && (
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="text-gray-400">
-                                          {snapshotShowsPaceAxis ? 'Pace' : selectedMetric === 'power' ? 'Power' : 'HR'}
-                                        </span>
-                                        <span className="text-white font-medium">{valLabel}</span>
-                                      </div>
-                                    )}
-                                    {/* HR when metric is not HR */}
-                                    {iv.heartRate !== null && iv.heartRate !== undefined && selectedMetric !== 'heartRate' && (
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="text-gray-400">HR</span>
-                                        <span className="text-white font-medium">{Math.round(iv.heartRate)} bpm</span>
-                                      </div>
-                                    )}
-                                    {/* Power when metric is not power */}
-                                    {iv.power !== null && iv.power !== undefined && selectedMetric !== 'power' && (
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="text-gray-400">Power</span>
-                                        <span className="text-white font-medium">{Math.round(iv.power)} W</span>
-                                      </div>
-                                    )}
-                                    {/* Rest */}
-                                    {iv.restSec > 0 && (
-                                      <div className="flex items-center justify-between gap-3 mt-0.5 pt-0.5 border-t border-gray-700">
-                                        <span className="text-gray-400">Rest</span>
-                                        <span className="text-gray-300">
-                                          {iv.restSec < 60
-                                            ? `${iv.restSec}s`
-                                            : `${Math.floor(iv.restSec/60)}:${String(iv.restSec%60).padStart(2,'0')}`}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {/* Arrow */}
-                                  <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
-                                </div>
-
-                                {/* Rest gap bar */}
+                                {/* Rest gap */}
                                 {restWidth > 0 && (
                                   <div
                                     className="h-full bg-gray-200"
@@ -1309,6 +1267,116 @@ const TrainingComparison = ({ trainings }) => {
         )}
         </AnimatePresence>
       </div>
+
+      {/* ── Bar tooltip portal — renders into body, bypasses all overflow-hidden ── */}
+      {barTooltip && ReactDOM.createPortal(
+        <div
+          className="fixed z-[9999] cursor-default"
+          style={{
+            left: barTooltip.x,
+            top: barTooltip.y - 10,
+            transform: 'translate(-50%, -100%)',
+          }}
+          onMouseEnter={() => clearTimeout(barTooltipTimeout.current)}
+          onMouseLeave={() => setBarTooltip(null)}
+        >
+          {/* Card */}
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden"
+               style={{ minWidth: 160 }}>
+
+            {/* Coloured header strip */}
+            <div className="px-3 pt-2.5 pb-2 border-b border-gray-100"
+                 style={{ background: 'linear-gradient(135deg,#f5f3ff 0%,#ede9fe 100%)' }}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-indigo-700">
+                  Interval {barTooltip.iv.idx + 1}
+                </span>
+                {barTooltip.iv.lactate != null && (
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-red-500 bg-red-50 rounded-full px-2 py-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block shrink-0" />
+                    La {barTooltip.iv.lactate} mmol
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Rows */}
+            <div className="px-3 py-2 space-y-1.5 text-[12px]">
+              {/* Distance — prominent, shown first if present */}
+              {barTooltip.iv.dist != null && (
+                <div className="flex items-center justify-between gap-6">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    Distance
+                  </span>
+                  <span className="font-semibold text-gray-900">
+                    {barTooltip.iv.dist >= 1000
+                      ? `${(barTooltip.iv.dist / 1000).toFixed(barTooltip.iv.dist % 1000 === 0 ? 0 : 2)} km`
+                      : `${Math.round(barTooltip.iv.dist)} m`}
+                  </span>
+                </div>
+              )}
+              {/* Duration */}
+              {barTooltip.durLabel && (
+                <div className="flex items-center justify-between gap-6">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2"/></svg>
+                    Duration
+                  </span>
+                  <span className="font-semibold text-gray-900">{barTooltip.durLabel}</span>
+                </div>
+              )}
+              {/* Pace / Power / HR — selected metric */}
+              {barTooltip.valLabel && (
+                <div className="flex items-center justify-between gap-6">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    {snapshotShowsPaceAxis ? 'Pace' : selectedMetric === 'power' ? 'Power' : 'HR'}
+                  </span>
+                  <span className="font-semibold text-gray-900">{barTooltip.valLabel}</span>
+                </div>
+              )}
+              {/* HR when metric ≠ heartRate */}
+              {barTooltip.iv.heartRate != null && selectedMetric !== 'heartRate' && (
+                <div className="flex items-center justify-between gap-6">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+                    HR
+                  </span>
+                  <span className="font-semibold text-gray-900">{Math.round(barTooltip.iv.heartRate)} bpm</span>
+                </div>
+              )}
+              {/* Power when metric ≠ power */}
+              {barTooltip.iv.power != null && selectedMetric !== 'power' && (
+                <div className="flex items-center justify-between gap-6">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Power
+                  </span>
+                  <span className="font-semibold text-gray-900">{Math.round(barTooltip.iv.power)} W</span>
+                </div>
+              )}
+              {/* Rest */}
+              {barTooltip.iv.restSec > 0 && (
+                <div className="flex items-center justify-between gap-6 pt-1.5 mt-0.5 border-t border-gray-100">
+                  <span className="text-gray-400 flex items-center gap-1">
+                    <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Rest
+                  </span>
+                  <span className="font-semibold text-gray-500">
+                    {barTooltip.iv.restSec < 60
+                      ? `${barTooltip.iv.restSec}s`
+                      : `${Math.floor(barTooltip.iv.restSec / 60)}:${String(barTooltip.iv.restSec % 60).padStart(2, '0')}`}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Arrow pointing down */}
+          <div className="w-3 h-3 bg-white border-r border-b border-gray-200 rotate-45 mx-auto -mt-1.5" />
+        </div>,
+        document.body
+      )}
     </motion.div>
   );
 };

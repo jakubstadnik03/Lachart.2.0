@@ -719,7 +719,17 @@ const TrainingForm = ({
 
               {/* Training title */}
               <div>
-                <label className={labelBase}>Training title</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={labelBase} style={{ marginBottom: 0 }}>Training title</label>
+                  {!formData.title && !formData.customTitle && (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 animate-pulse">
+                      <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+                      </svg>
+                      Set a title
+                    </span>
+                  )}
+                </div>
                 {!isCustomTitle ? (
                   <div className="relative">
                     <select
@@ -731,9 +741,9 @@ const TrainingForm = ({
                           setFormData(prev => ({ ...prev, title: e.target.value }));
                         }
                       }}
-                      className={selectBase}
+                      className={`${selectBase} ${!formData.title ? 'border-amber-300 ring-1 ring-amber-200 focus:ring-primary focus:border-primary' : ''}`}
                     >
-                      <option value="">Select training</option>
+                      <option value="">Select training…</option>
                       {trainingTitles.map((title) => (
                         <option key={title} value={title}>{title}</option>
                       ))}
@@ -954,6 +964,20 @@ const TrainingForm = ({
           {/* ── Interval cards ── */}
           <div className="px-4 pt-4 pb-4 space-y-3">
 
+              {/* Title nudge banner — only when intervals exist but title is still empty */}
+              {formData.results.length > 0 && !formData.title && !formData.customTitle && (
+                <button
+                  type="button"
+                  onClick={() => scrollBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-[12px] font-medium hover:bg-amber-100 transition-colors text-left"
+                >
+                  <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                  </svg>
+                  <span>Don't forget to set a training title ↑</span>
+                </button>
+              )}
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-gray-700">Intervals</h3>
@@ -1020,6 +1044,7 @@ const TrainingForm = ({
                   <div
                     key={index}
                     ref={el => { intervalRefs.current[index] = el; }}
+                    onFocus={() => setSelectedChartLap(index + 1)}
                     className={`rounded-xl border transition-all ${
                       !isWork
                         ? `border-dashed ${tc.border} bg-gray-50/40`

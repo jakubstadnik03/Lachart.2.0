@@ -276,7 +276,8 @@ export default function CalendarView({
 
   const uniqueSports = useMemo(() => {
     const set = new Set();
-    activities.forEach(a => { if (a?.sport) set.add(String(a.sport)); });
+    // Normalise to lowercase so "Swim" and "swim" don't produce duplicate filter options
+    activities.forEach(a => { if (a?.sport) set.add(String(a.sport).toLowerCase()); });
     return ['all', ...Array.from(set).sort()];
   }, [activities]);
 
@@ -289,7 +290,8 @@ export default function CalendarView({
 
   const filteredActivities = useMemo(() => {
     if (sportFilter === 'all') return activities;
-    return activities.filter(a => String(a.sport) === sportFilter);
+    // Case-insensitive match so "Swim" and "swim" both match the "swim" filter key
+    return activities.filter(a => String(a.sport).toLowerCase() === sportFilter);
   }, [activities, sportFilter]);
 
   const activitiesByDay = useMemo(() => {
