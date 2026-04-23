@@ -223,19 +223,23 @@ const LactateTestingPage = () => {
   }, [trainer.telemetry]);
 
   // ── Auto-request ERG control when trainer connects ─────────
+  // useTrainer.connect() already calls requestControl() automatically.
+  // This effect is a safety-net: if somehow status is still 'ready' after connect
+  // (e.g. control request timed out silently), retry here once.
   useEffect(() => {
-    if (trainer.status === 'ready' && trainer.requestControl) {
-      (async () => {
-        try {
-          await trainer.requestControl();
-          if (trainer.start) await trainer.start();
-          addNotification('Trainer ERG control established ✓', 'success');
-        } catch (err) {
-          console.error('Trainer control failed:', err);
-          addNotification('Could not get ERG control', 'warning');
-        }
-      })();
-    }
+    if (trainer.status !== 'ready') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (trainer.requestControl) await trainer.requestControl();
+        if (!cancelled && trainer.start) await trainer.start();
+        if (!cancelled) addNotification('Trainer ERG control established ✓', 'success');
+      } catch (err) {
+        if (!cancelled) console.warn('Trainer control retry failed:', err);
+        // Don't show error notification — useTrainer already handles error state
+      }
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainer.status]);
 

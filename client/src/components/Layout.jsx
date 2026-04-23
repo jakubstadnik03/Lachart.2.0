@@ -11,6 +11,7 @@ import { LAYOUT_DESKTOP_MIN_PX } from "../constants/layoutBreakpoints";
 import CoachAthleteBar from "./CoachAthleteBar";
 import { isCapacitorNative } from "../utils/isNativeApp";
 import NativeLayout from "./native/NativeLayout";
+import { shouldShowOnboarding } from "./Onboarding/OnboardingFlow";
 
 // Admin sees coach UI only when their role is not 'athlete'.
 const isCoachRole = (user) =>
@@ -25,6 +26,7 @@ const TrainingZonesModal = lazy(() => import("./Profile/TrainingZonesModal"));
 const StravaConnectModal = lazy(() => import("./Onboarding/StravaConnectModal"));
 const ProductWalkthrough = lazy(() => import("./Onboarding/ProductWalkthrough"));
 const TestingWithoutLogin = lazy(() => import("../pages/TestingWithoutLogin"));
+const OnboardingFlow = lazy(() => import("./Onboarding/OnboardingFlow"));
 
 // Memoize heavy components to prevent unnecessary re-renders
 const MemoizedMenu = memo(Menu);
@@ -35,6 +37,7 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
   const { user, premiumPreviewNoAccess } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showBasicProfileModal, setShowBasicProfileModal] = useState(false);
   const [showUnitsPreferencesModal, setShowUnitsPreferencesModal] = useState(false);
   const [showTrainingZonesModal, setShowTrainingZonesModal] = useState(false);
@@ -151,6 +154,21 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
     }
   }, [user, setIsMenuOpen]);
 
+  // ── New Onboarding Flow (replaces the old individual modals for new users) ───
+  useEffect(() => {
+    if (!user?._id) return;
+    if (location.pathname === '/lactate-guide') return;
+    // Small delay so the rest of the UI loads first
+    const t = setTimeout(() => {
+      if (shouldShowOnboarding(user)) {
+        setShowOnboarding(true);
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  // Re-check only when the user object identity or key onboarding fields change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id, user?.onboarding?.basicProfileDone, user?.onboarding?.unitsDone]);
+
   // Check if user profile is incomplete or Strava is not connected
   // Only for athletes, not coaches
   // Show modals progressively: Basic Profile -> Training Zones -> Strava
@@ -173,8 +191,8 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       return;
     }
 
-    // Only show onboarding modals for athletes, not coaches
-    if (user.role === 'coach' || user.role === 'admin') {
+    // Only show old onboarding modals for athletes who are NOT going through the new flow
+    if (isCoachRole(user) || shouldShowOnboarding(user)) {
       setHasCheckedProfile(true);
       if (user._id) {
         localStorage.setItem('lastCheckedUserId', user._id);
@@ -417,7 +435,12 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         />
         {/* Onboarding modals still work on native */}
         <Suspense fallback={null}>
-          {user && (
+          {/* New guided onboarding flow */}
+          {user && showOnboarding && (
+            <OnboardingFlow onDismiss={() => setShowOnboarding(false)} />
+          )}
+
+          {user && !showOnboarding && (
             <BasicProfileModal
               isOpen={showBasicProfileModal}
               onClose={() => {
@@ -580,8 +603,15 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
       )}
 
       <Suspense fallback={null}>
+      {/* New guided onboarding flow — shown to new users before the old modal chain */}
+      {user && showOnboarding && (
+        <OnboardingFlow
+          onDismiss={() => setShowOnboarding(false)}
+        />
+      )}
+
       {/* Basic Profile Modal - first step */}
-      {user && (
+      {user && !showOnboarding && (
         <BasicProfileModal
           isOpen={showBasicProfileModal}
           onClose={() => {

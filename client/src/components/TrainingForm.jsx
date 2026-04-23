@@ -56,6 +56,93 @@ const formatSecondsToMMSS = (seconds) => {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 };
 
+/** Interval type config — used in auto-detection and interval cards UI */
+const INTERVAL_TYPES = [
+  { id: 'work',     label: 'Work',      shortLabel: 'Work', icon: '⚡', bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+  { id: 'warmup',   label: 'Warm-up',   shortLabel: 'WU',   icon: '↑',  bg: 'bg-amber-100',  text: 'text-amber-700',  border: 'border-amber-200' },
+  { id: 'cooldown', label: 'Cool-down', shortLabel: 'CD',   icon: '↓',  bg: 'bg-sky-100',    text: 'text-sky-700',    border: 'border-sky-200' },
+  { id: 'recovery', label: 'Rest',      shortLabel: 'Rest', icon: '↩',  bg: 'bg-gray-100',   text: 'text-gray-500',   border: 'border-gray-200' },
+];
+
+/** Parse raw seconds from a form result (durationSeconds or MM:SS string). */
+function parseIntervalDurSec(r) {
+  if (!r) return 0;
+  const ds = Number(r.durationSeconds);
+  if (ds > 0) return ds;
+  if (!r.duration) return 0;
+  if (typeof r.duration === 'number') return r.duration;
+  const parts = String(r.duration).split(':');
+  if (parts.length === 2) return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
+  if (parts.length === 3) return (parseInt(parts[0], 10) || 0) * 3600 + (parseInt(parts[1], 10) || 0) * 60 + (parseFloat(parts[2]) || 0);
+  return parseFloat(String(r.duration)) || 0;
+}
+
+/**
+ * Auto-classify results into warmup / work / recovery / cooldown.
+ * Only sets intervalType on rows that don't already have it set.
+ * Migrates legacy isRecovery:true → intervalType:'recovery'.
+ */
+function autoDetectIntervalTypes(results) {
+  if (!results || results.length === 0) return results;
+
+  // Migrate legacy isRecovery and keep manually-set types
+  const migrated = results.map(r => ({
+    ...r,
+    intervalType: r.intervalType || (r.isRecovery ? 'recovery' : undefined),
+  }));
+
+  // If everything is already classified don't touch it
+  if (migrated.every(r => r.intervalType)) return migrated;
+
+  // ── Distance clustering (best for swim/run by distance) ─────────────────
+  const withDist = migrated.map((r, i) => {
+    const raw = r.distanceMeters ?? r.distance;
+    const n = Number(raw);
+    return { i, dist: Number.isFinite(n) && n > 0 ? n : null };
+  });
+  const distVals = withDist.map(x => x.dist).filter(Boolean);
+  let workSet = new Set();
+
+  if (distVals.length >= 2) {
+    const sorted = [...distVals].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const matched = withDist.filter(x => x.dist && Math.abs(x.dist - median) / median <= 0.25);
+    if (matched.length >= 2 && matched.length < migrated.length) {
+      matched.forEach(x => workSet.add(x.i));
+    }
+  }
+
+  // ── Duration clustering fallback ─────────────────────────────────────────
+  if (workSet.size === 0) {
+    const withDur = migrated.map((r, i) => ({ i, dur: parseIntervalDurSec(r) }));
+    const durVals = withDur.map(x => x.dur).filter(d => d > 0);
+    if (durVals.length >= 2) {
+      const sorted = [...durVals].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      const matched = withDur.filter(x => x.dur > 0 && Math.abs(x.dur - median) / median <= 0.35);
+      if (matched.length >= 2 && matched.length < migrated.length) {
+        matched.forEach(x => workSet.add(x.i));
+      }
+    }
+  }
+
+  // No cluster found → all work
+  if (workSet.size === 0) {
+    return migrated.map(r => ({ ...r, intervalType: r.intervalType || 'work' }));
+  }
+
+  const firstWork = Math.min(...workSet);
+  const lastWork  = Math.max(...workSet);
+
+  return migrated.map((r, i) => {
+    if (r.intervalType) return r;                           // already set manually
+    if (workSet.has(i)) return { ...r, intervalType: 'work' };
+    if (i < firstWork)  return { ...r, intervalType: 'warmup' };
+    if (i > lastWork)   return { ...r, intervalType: 'cooldown' };
+    return { ...r, intervalType: 'recovery' };
+  });
+}
+
 const TrainingForm = ({
   onClose,
   onSubmit,
@@ -91,6 +178,7 @@ const TrainingForm = ({
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [specificsOpen, setSpecificsOpen] = useState(false);
   const [selectedChartLap, setSelectedChartLap] = useState(null);
+  const [typePickerOpenIdx, setTypePickerOpenIdx] = useState(null);
   const intervalRefs = useRef([]);
   const scrollBodyRef = useRef(null);
   const chartPanelRef = useRef(null);
@@ -182,7 +270,10 @@ const TrainingForm = ({
         };
       }),
     };
-    setFormData(formattedData);
+    setFormData({
+      ...formattedData,
+      results: autoDetectIntervalTypes(formattedData.results),
+    });
   }, [initialData]);
 
   const handlePaceChange = (index, value) => {
@@ -326,6 +417,14 @@ const TrainingForm = ({
         dataToSubmit._id = initialData._id;
       }
 
+      // Sync isRecovery from intervalType for server compatibility
+      if (dataToSubmit.results) {
+        dataToSubmit.results = dataToSubmit.results.map(interval => ({
+          ...interval,
+          isRecovery: interval.intervalType === 'recovery',
+        }));
+      }
+
       // Duration default + elevation (one pass so elevation is never skipped)
       if (dataToSubmit.results) {
         dataToSubmit.results = dataToSubmit.results.map((interval) => {
@@ -373,6 +472,7 @@ const TrainingForm = ({
         ...prev.results,
         {
           interval: prev.results.length + 1,
+          intervalType: 'work',
           power: "",
           heartRate: "",
           lactate: "",
@@ -483,6 +583,20 @@ const TrainingForm = ({
         });
       }
     }
+  };
+
+  /** Change one interval type and keep legacy isRecovery in sync. */
+  const handleSetIntervalType = (index, type) => {
+    const nextResults = [...formData.results];
+    nextResults[index] = { ...nextResults[index], intervalType: type, isRecovery: type === 'recovery' };
+    setFormData((prev) => ({ ...prev, results: nextResults }));
+    setTypePickerOpenIdx(null);
+  };
+
+  /** Re-run interval type auto-detection from scratch. */
+  const handleAutoDetect = () => {
+    const cleared = formData.results.map((r) => ({ ...r, intervalType: undefined, isRecovery: false }));
+    setFormData((prev) => ({ ...prev, results: autoDetectIntervalTypes(cleared) }));
   };
 
   // Shared input classes
@@ -841,7 +955,19 @@ const TrainingForm = ({
           <div className="px-4 pt-4 pb-4 space-y-3">
 
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-700">Intervals</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Intervals</h3>
+                  {formData.results.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={handleAutoDetect}
+                      title="Auto-detect warmup / work / recovery / cooldown"
+                      className="text-[11px] px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors font-medium"
+                    >
+                      Auto-detect
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handleAddInterval}
@@ -855,28 +981,63 @@ const TrainingForm = ({
               </div>
 
               {formData.results.map((interval, index) => {
-                const isRecovery = interval.isRecovery === true;
+                const itype = interval.intervalType || (interval.isRecovery ? 'recovery' : 'work');
+                const tc = INTERVAL_TYPES.find(t => t.id === itype) || INTERVAL_TYPES[0];
+                const isWork = itype === 'work';
                 const isChartSelected = selectedChartLap === index + 1;
+                const isPickerOpen = typePickerOpenIdx === index;
+
+                /* Shared type-picker dropdown rendered inline */
+                const TypePicker = () => (
+                  <div className="relative" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setTypePickerOpenIdx(isPickerOpen ? null : index); }}
+                      className={`text-[10px] px-2 py-0.5 rounded-lg font-semibold transition-colors ${tc.bg} ${tc.text}`}
+                    >
+                      {tc.icon} {tc.shortLabel} ▾
+                    </button>
+                    {isPickerOpen && (
+                      <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-1 flex flex-col gap-0.5 min-w-[120px]">
+                        {INTERVAL_TYPES.map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); handleSetIntervalType(index, t.id); }}
+                            className={`text-left text-[11px] px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-colors ${itype === t.id ? `${t.bg} ${t.text}` : 'text-gray-600 hover:bg-gray-50'}`}
+                          >
+                            <span>{t.icon}</span>
+                            <span>{t.label}</span>
+                            {itype === t.id && <span className="ml-auto opacity-50 text-[9px]">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+
                 return (
                   <div
                     key={index}
                     ref={el => { intervalRefs.current[index] = el; }}
                     className={`rounded-xl border transition-all ${
-                      isRecovery
-                        ? "border-dashed border-gray-200 bg-gray-50/60"
+                      !isWork
+                        ? `border-dashed ${tc.border} bg-gray-50/40`
                         : isChartSelected
                           ? "border-primary bg-white shadow-md ring-2 ring-primary/20"
                           : "border-gray-200 bg-white shadow-sm"
                     }`}
                   >
-                    {isRecovery ? (
-                      /* ── Compact recovery row ── */
+                    {!isWork ? (
+                      /* ── Compact row: warmup / cooldown / recovery ── */
                       <div className="flex items-center gap-2 px-3 py-1.5">
-                        <span className="text-amber-400 text-xs shrink-0">↩</span>
-                        <span className="text-[11px] text-gray-400 font-medium shrink-0">Rec {index + 1}</span>
-                        {/* Duration inline */}
+                        <span className={`text-xs shrink-0 ${tc.text}`}>{tc.icon}</span>
+                        <span className={`text-[11px] font-medium shrink-0 ${tc.text}`}>
+                          {tc.label} {index + 1}
+                        </span>
+                        {/* Duration */}
                         <div className="flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
-                          <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">time</span>
+                          <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">dur</span>
                           <input
                             type="text" inputMode="numeric" placeholder="MM:SS"
                             value={interval.duration || ''}
@@ -890,7 +1051,7 @@ const TrainingForm = ({
                             className="w-12 text-[11px] text-gray-700 bg-transparent outline-none placeholder-gray-300"
                           />
                         </div>
-                        {/* HR inline */}
+                        {/* HR */}
                         <div className="flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5">
                           <span className="text-[9px] text-gray-400 uppercase leading-none shrink-0">hr</span>
                           <input
@@ -901,21 +1062,17 @@ const TrainingForm = ({
                           />
                         </div>
                         <div className="flex-1" />
-                        <button
-                          type="button"
-                          onClick={() => { const r=[...formData.results]; r[index].isRecovery=false; r[index].isSelected=true; setFormData(p=>({...p,results:r})); }}
-                          className="text-[10px] px-2 py-0.5 rounded-lg font-semibold bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors"
-                        >Rec</button>
+                        <TypePicker />
                         <button type="button" onClick={() => { setFormData(p=>({...p,results:p.results.filter((_,i)=>i!==index)})); }}
-                          className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors">
+                          className="w-5 h-5 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors ml-1">
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                         </button>
                       </div>
                     ) : (
                       <>
-                        {/* Card header */}
+                        {/* ── Full work card ── */}
                         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
-                          <span className={`flex-1 text-xs font-semibold ${isRecovery ? "text-gray-400" : "text-gray-700"}`}>
+                          <span className="flex-1 text-xs font-semibold text-gray-700">
                             Interval {index + 1}
                             {interval.durationSeconds > 0 && (
                               <span className="text-gray-400 font-normal ml-1.5">{fmtDur(interval.durationSeconds)}</span>
@@ -924,11 +1081,7 @@ const TrainingForm = ({
                               <span className="text-gray-400 font-normal ml-1.5">· {interval.distanceMeters}m</span>
                             )}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => { const r=[...formData.results]; r[index].isRecovery=true; r[index].isSelected=false; setFormData(p=>({...p,results:r})); }}
-                            className="text-[10px] px-2 py-0.5 rounded-lg font-semibold transition-colors bg-gray-100 text-gray-400 hover:bg-gray-200"
-                          >Rec</button>
+                          <TypePicker />
                           <button type="button" onClick={() => handleEditRepeatCount(index)}
                             className={`text-[10px] px-2 py-0.5 rounded-lg font-semibold ${interval.repeatCount > 1 ? "bg-primary text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
                           >×{interval.repeatCount > 1 ? interval.repeatCount : 1}</button>
@@ -938,7 +1091,7 @@ const TrainingForm = ({
                           </button>
                         </div>
 
-                        {/* Fields grid — 2 cols on mobile, 3 on sm+ */}
+                        {/* Fields grid — 2 cols mobile, 3 on sm+ */}
                         <div className="grid gap-px bg-gray-100 rounded-b-xl overflow-hidden grid-cols-2 sm:grid-cols-3">
                           {/* Power / Pace */}
                           <div className="bg-white px-3 py-2.5">
@@ -961,7 +1114,7 @@ const TrainingForm = ({
                               className="w-full text-sm text-gray-900 bg-transparent outline-none placeholder-gray-300 min-h-[36px]" />
                           </div>
                           {/* Lactate */}
-                          <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary sm:border-l-2">
+                          <div className="px-3 py-2.5 bg-primary/5 border-l-2 border-primary">
                             <label className={`${labelBase} text-primary`}>Lactate</label>
                             <input id={`training-form-lactate-${index}`} type="number" inputMode="decimal" placeholder="—" value={interval.lactate}
                               onChange={(e) => { const r=[...formData.results]; r[index].lactate=e.target.value; setFormData(p=>({...p,results:r})); }}

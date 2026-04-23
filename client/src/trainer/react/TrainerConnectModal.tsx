@@ -45,11 +45,9 @@ export function TrainerConnectModal({ isOpen, onClose, options }: TrainerConnect
 
   const handleConnect = async (deviceId: string) => {
     try {
+      // connect() already handles requestControl() internally — no need to call again
       await connect(deviceId);
-      // Auto-request control and start
-      if (requestControl) {
-        await requestControl();
-      }
+      // Send start/resume command so the trainer begins broadcasting
       if (start) {
         await start();
       }

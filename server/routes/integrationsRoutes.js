@@ -1095,11 +1095,13 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
 // POST /api/integrations/garmin/disconnect - remove Garmin credentials & disable auto-sync
 router.post('/garmin/disconnect', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    user.garmin = undefined;
-    await user.save();
+    // Use $unset to cleanly remove the garmin subdocument from MongoDB.
+    // Setting user.garmin = undefined via save() may leave the field in the DB.
+    await User.findByIdAndUpdate(
+      req.user.userId,
+      { $unset: { garmin: '' } },
+      { new: true }
+    );
 
     res.json({ success: true, message: 'Garmin disconnected' });
   } catch (error) {
@@ -1373,6 +1375,10 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
     console.log(`Starting Garmin sync for user ${user._id}, found ${activities.length} activities`);
     const { imported, updated, total } = await upsertGarminActivities(user, activities);
     console.log(`Garmin sync completed: imported ${imported}, updated ${updated}, total ${total}`);
+
+    // Always stamp the sync date so the frontend can show "last synced at"
+    await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
     console.error('Garmin sync error:', err);
@@ -1957,7 +1963,12 @@ router.get('/status', verifyToken, activitiesCacheMiddleware, async (req, res) =
     const user = await User.findById(req.user.userId);
     const stravaConnected = Boolean(user?.strava?.accessToken);
     const garminConnected = Boolean(user?.garmin?.accessToken);
-    res.json({ stravaConnected, garminConnected });
+    res.json({
+      stravaConnected,
+      garminConnected,
+      garminAutoSync: Boolean(user?.garmin?.autoSync),
+      garminLastSync: user?.garmin?.lastSyncDate || null,
+    });
   } catch (e) {
     res.status(500).json({ error: 'status_failed' });
   }

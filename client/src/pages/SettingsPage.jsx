@@ -7,7 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -90,6 +90,8 @@ const SettingsPage = () => {
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [isTogglingStravaAutoSync, setIsTogglingStravaAutoSync] = useState(false);
   const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
+  const [isSyncingGarminHistory, setIsSyncingGarminHistory] = useState(false);
+  const [garminLastSync, setGarminLastSync] = useState(null);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -235,9 +237,11 @@ const SettingsPage = () => {
           const status = await getIntegrationStatus();
           const wasConnected = stravaConnected;
           const isNowConnected = Boolean(status.stravaConnected);
-          
+
           setStravaConnected(isNowConnected);
           setGarminConnected(Boolean(status.garminConnected));
+          if (status.garminLastSync) setGarminLastSync(status.garminLastSync);
+          if (status.garminAutoSync !== undefined) setGarminAutoSync(Boolean(status.garminAutoSync));
           
           // If Strava connection status changed (from not connected to connected), reload user profile
           if (!wasConnected && isNowConnected && user) {
@@ -456,20 +460,19 @@ const SettingsPage = () => {
   // Load Garmin auto-sync setting from user profile
   useEffect(() => {
     if (user?.garmin) {
-      if (user.garmin.autoSync !== undefined) {
-        setGarminAutoSync(user.garmin.autoSync);
-      } else {
-        setGarminAutoSync(false);
-      }
+      setGarminAutoSync(user.garmin.autoSync !== undefined ? user.garmin.autoSync : false);
+      setGarminLastSync(user.garmin.lastSyncDate || null);
     } else {
       setGarminAutoSync(false);
+      setGarminLastSync(null);
     }
-  }, [user?.garmin?.autoSync, user?.garmin]);
+  }, [user?.garmin?.autoSync, user?.garmin?.lastSyncDate, user?.garmin]);
   
   // Listen for user updates from AuthProvider
   useEffect(() => {
     const handleUserUpdate = (event) => {
       const updatedUser = event.detail;
+      // Strava
       if (updatedUser?.strava) {
         console.log('User updated event received, autoSync:', updatedUser.strava.autoSync);
         if (updatedUser.strava.autoSync !== undefined) {
@@ -480,8 +483,17 @@ const SettingsPage = () => {
         setStravaConnected(false);
         setStravaAutoSync(false);
       }
+      // Garmin — update state directly from the event so stale cache can't overwrite it
+      if (updatedUser?.garmin?.accessToken) {
+        setGarminConnected(true);
+        setGarminAutoSync(Boolean(updatedUser.garmin.autoSync));
+      } else if (updatedUser) {
+        // user object present but no garmin → disconnected
+        setGarminConnected(false);
+        setGarminAutoSync(false);
+      }
     };
-    
+
     window.addEventListener('userUpdated', handleUserUpdate);
     return () => window.removeEventListener('userUpdated', handleUserUpdate);
   }, []);
@@ -791,12 +803,33 @@ const SettingsPage = () => {
       setIsSyncingGarmin(true);
       const res = await syncGarminActivities();
       addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
+      setGarminLastSync(new Date().toISOString());
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin sync error:', e);
       addNotification('Failed to sync Garmin activities', 'error');
     } finally {
       setIsSyncingGarmin(false);
+    }
+  };
+
+  // Sync all historical Garmin data (no date filter — downloads everything)
+  const handleSyncGarminHistory = async () => {
+    if (isSyncingGarminHistory || isSyncingGarmin) return;
+    const ok = window.confirm('This will download your full Garmin activity history. This may take a few minutes for large libraries. Continue?');
+    if (!ok) return;
+    try {
+      setIsSyncingGarminHistory(true);
+      // Pass null to skip the 'since' filter → backend fetches all activities
+      const res = await syncGarminActivities(null);
+      addNotification(`History import: ${res.imported || 0} new, ${res.updated || 0} updated`, 'success');
+      setGarminLastSync(new Date().toISOString());
+      await handleSyncComplete();
+    } catch (e) {
+      console.error('Garmin history sync error:', e);
+      addNotification('Failed to import Garmin history', 'error');
+    } finally {
+      setIsSyncingGarminHistory(false);
     }
   };
 
@@ -816,17 +849,26 @@ const SettingsPage = () => {
         const result = await response.json();
         setGarminAutoSync(result.autoSync);
         addNotification(`Garmin auto-sync ${enabled ? 'enabled' : 'disabled'}`, 'success');
-        
+
         // Reload user profile
         const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+          headers: { 'Authorization': `Bearer ${token}` }
         });
         if (profileResponse.ok) {
           const updatedUser = await profileResponse.json();
           saveUserToStorage(updatedUser);
           window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+
+        // Trigger an immediate background sync when enabling — mirrors Strava behaviour
+        if (enabled) {
+          autoSyncGarminActivities()
+            .then(r => {
+              if ((r?.imported || 0) + (r?.updated || 0) > 0) {
+                addNotification(`Garmin: imported ${r.imported || 0}, updated ${r.updated || 0}`, 'success');
+              }
+            })
+            .catch(() => {});
         }
       } else {
         addNotification('Failed to update Garmin auto-sync setting', 'error');
@@ -843,6 +885,15 @@ const SettingsPage = () => {
       if (!ok) return;
 
       const token = getStoredAuthToken();
+
+      // Invalidate the integration status cache BEFORE anything else so the
+      // checkIntegrationStatus effect can't overwrite our state with a stale cached response.
+      invalidateCache('/api/integrations/status');
+
+      // Update UI immediately — don't wait for profile re-fetch
+      setGarminConnected(false);
+      setGarminAutoSync(false);
+
       const resp = await fetch(`${API_BASE_URL}/api/integrations/garmin/disconnect`, {
         method: 'POST',
         headers: {
@@ -853,23 +904,21 @@ const SettingsPage = () => {
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
+        // Revert UI on failure
+        setGarminConnected(true);
         throw new Error(data.error || 'Failed to disconnect Garmin');
       }
 
+      // Reload profile so AuthProvider and userUpdated listeners reflect the change
       const profileResponse = await fetch(`${API_BASE_URL}/user/profile`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
       if (profileResponse.ok) {
         const updatedUser = await profileResponse.json();
         saveUserToStorage(updatedUser);
         window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
       }
 
-      setGarminConnected(false);
-      setGarminAutoSync(false);
       addNotification('Garmin disconnected successfully', 'success');
     } catch (e) {
       console.error('Disconnect Garmin error:', e);
@@ -2493,31 +2542,49 @@ const SettingsPage = () => {
                   )}
                   
                   {(user?.admin || user?.role === 'admin') ? (
-                    <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'gap-2'}`}>
-                      <button
-                        onClick={handleConnectGarmin}
-                        className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
-                      >
-                        {garminConnected ? 'Reconnect' : 'Connect'}
-                      </button>
-                      {garminConnected && (
-                        <button
-                          onClick={handleSyncGarmin}
-                          disabled={isSyncingGarmin}
-                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
-                        >
-                          {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
-                        </button>
+                    <>
+                      {/* Last sync info */}
+                      {garminConnected && garminLastSync && (
+                        <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-400 mb-2`}>
+                          Last sync: {new Date(garminLastSync).toLocaleString()}
+                        </p>
                       )}
-                      {garminConnected && (
+                      <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'flex-wrap gap-2'}`}>
                         <button
-                          onClick={handleDisconnectGarmin}
-                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                          onClick={handleConnectGarmin}
+                          className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
                         >
-                          Disconnect Garmin
+                          {garminConnected ? 'Reconnect' : 'Connect'}
                         </button>
-                      )}
-                    </div>
+                        {garminConnected && (
+                          <button
+                            onClick={handleSyncGarmin}
+                            disabled={isSyncingGarmin || isSyncingGarminHistory}
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            {isSyncingGarmin ? 'Syncing...' : 'Sync Now'}
+                          </button>
+                        )}
+                        {garminConnected && (
+                          <button
+                            onClick={handleSyncGarminHistory}
+                            disabled={isSyncingGarminHistory || isSyncingGarmin}
+                            title="Download full Garmin activity history (all time)"
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            {isSyncingGarminHistory ? 'Importing...' : 'Import History'}
+                          </button>
+                        )}
+                        {garminConnected && (
+                          <button
+                            onClick={handleDisconnectGarmin}
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-red-700`}
+                          >
+                            Disconnect
+                          </button>
+                        )}
+                      </div>
+                    </>
                   ) : (
                     <button
                       type="button"

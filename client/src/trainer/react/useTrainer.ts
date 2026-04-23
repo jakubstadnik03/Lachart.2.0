@@ -109,12 +109,23 @@ export function useTrainer(options: TrainerClientOptions = {}): UseTrainerReturn
       setError(null);
       setStatus('connecting');
       await adapterRef.current.connect(deviceId);
-      
+
       const device = devices.find(d => d.id === deviceId) || { id: deviceId, name: 'Unknown', transport: 'ftms-ble' as const };
       setConnectedDevice(device);
       setCapabilities(adapterRef.current.getCapabilities());
       setStatus('ready');
       logger.info('Connected to device:', device.name);
+
+      // Automatically request control right after connecting so the caller
+      // doesn't have to do it separately (and to avoid double-requesting).
+      try {
+        await adapterRef.current.requestControl();
+        setStatus('controlled');
+        logger.info('Control auto-granted after connect');
+      } catch (ctrlErr: any) {
+        // Non-fatal: log but don't fail the whole connect
+        logger.warn('Auto requestControl after connect failed:', ctrlErr.message);
+      }
     } catch (err: any) {
       setError(err.message || 'Connection failed');
       setStatus('error');

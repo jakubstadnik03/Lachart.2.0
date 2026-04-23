@@ -20,6 +20,55 @@ import {
 
 const SERIES_COLORS = ['#6366F1', '#22C55E', '#F97316', '#06B6D4', '#EF4444', '#A855F7', '#0EA5E9'];
 
+/** Parse seconds from a raw result — used outside the component too */
+function parseResultDurationSec(result) {
+  if (!result) return 0;
+  if (result.durationSeconds > 0) return result.durationSeconds;
+  if (result.durationType === 'time' && typeof result.duration === 'number' && result.duration > 0) return result.duration;
+  if (result.duration && typeof result.duration === 'string') {
+    const parts = result.duration.split(':');
+    if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    if (parts.length === 3) return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+  }
+  return 0;
+}
+
+/**
+ * From a results array, return only the "work" intervals by clustering on
+ * distance (preferred) or duration.  Returns [{result, originalIdx}] so
+ * callers can always show the original interval number.
+ * If no meaningful filtering is possible the full array is returned as-is.
+ */
+function detectWorkIntervals(results) {
+  if (!results || results.length <= 2) return results.map((r, i) => ({ result: r, originalIdx: i }));
+
+  // ── distance clustering (best for swim / run by distance) ───────────────
+  const withDist = results.map((r, i) => {
+    const raw = r.distanceMeters ?? r.distance;
+    const n = Number(raw);
+    return { result: r, originalIdx: i, dist: Number.isFinite(n) && n > 0 ? n : null };
+  });
+  const distValues = withDist.map(x => x.dist).filter(Boolean);
+  if (distValues.length >= Math.ceil(results.length * 0.5)) {
+    const sorted = [...distValues].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const matched = withDist.filter(x => x.dist !== null && Math.abs(x.dist - median) / median <= 0.25);
+    if (matched.length >= 2 && matched.length < results.length) return matched;
+  }
+
+  // ── duration clustering (fallback for time-based intervals) ────────────
+  const withDur = results.map((r, i) => ({ result: r, originalIdx: i, dur: parseResultDurationSec(r) }));
+  const durValues = withDur.map(x => x.dur).filter(d => d > 0);
+  if (durValues.length >= 2) {
+    const sorted = [...durValues].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const matched = withDur.filter(x => x.dur > 0 && Math.abs(x.dur - median) / median <= 0.35);
+    if (matched.length >= 2 && matched.length < results.length) return matched;
+  }
+
+  return results.map((r, i) => ({ result: r, originalIdx: i }));
+}
+
 function navigateTrainingToCalendar(trainingData, navigate) {
   if (!trainingData || !navigate) return;
   if (trainingData.type === 'fit' && trainingData._id) {
@@ -74,6 +123,7 @@ const TrainingComparison = ({ trainings }) => {
     return {};
   });  const [trainingMeta, setTrainingMeta] = useState({});
   const [showAllTrainings, setShowAllTrainings] = useState(false);
+  const [filterWorkOnly, setFilterWorkOnly] = useState(true);
 
   // ── Derived lists ───────────────────────────────────────────────────────────
   const categories = useMemo(() => {
@@ -309,18 +359,37 @@ const TrainingComparison = ({ trainings }) => {
 
   const snapshotShowsPaceAxis = selectedMetric === 'power' && snapshotSelectedTrainings.length > 0 && !snapshotSelectedTrainings.some(t => isBikeSport(t.sport)) && snapshotSelectedTrainings.some(t => isPaceSport(t.sport));
 
+  /**
+   * For each selected training, returns the (possibly filtered) interval items:
+   *   [{ result, originalIdx }]
+   * When filterWorkOnly=true, warmup/cooldown/odd-duration laps are excluded.
+   */
+  const filteredIntervalSets = useMemo(() => {
+    const map = new Map();
+    snapshotSelectedTrainings.forEach(training => {
+      const uid = getTrainingUid(training);
+      const raw = training.results || [];
+      map.set(uid, filterWorkOnly ? detectWorkIntervals(raw) : raw.map((r, i) => ({ result: r, originalIdx: i })));
+    });
+    return map;
+  }, [snapshotSelectedTrainings, filterWorkOnly]);
+
   const sameTrainingSnapshot = useMemo(() => {
     if (snapshotSelectedTrainings.length < 2) return null;
     const firstTraining = snapshotSelectedTrainings[0];
     const lastTraining = snapshotSelectedTrainings[snapshotSelectedTrainings.length - 1];
     if (!firstTraining || !lastTraining) return null;
-    const firstResults = firstTraining.results || [];
-    const lastResults = lastTraining.results || [];
-    const maxIntervals = Math.max(firstResults.length, lastResults.length);
+
+    const firstItems = filteredIntervalSets.get(getTrainingUid(firstTraining)) || [];
+    const lastItems  = filteredIntervalSets.get(getTrainingUid(lastTraining))  || [];
+    const maxLen = Math.max(firstItems.length, lastItems.length);
+
     const rows = [];
-    for (let i = 0; i < maxIntervals; i++) {
-      const firstVal = normalizeMetricValue(firstResults[i], selectedMetric);
-      const lastVal = normalizeMetricValue(lastResults[i], selectedMetric);
+    for (let i = 0; i < maxLen; i++) {
+      const fi = firstItems[i];
+      const li = lastItems[i];
+      const firstVal = normalizeMetricValue(fi?.result, selectedMetric);
+      const lastVal  = normalizeMetricValue(li?.result, selectedMetric);
       if (firstVal === null && lastVal === null) continue;
       let deltaPct = null;
       let trend = 'same';
@@ -328,12 +397,20 @@ const TrainingComparison = ({ trainings }) => {
         deltaPct = snapshotShowsPaceAxis ? ((firstVal - lastVal) / firstVal) * 100 : ((lastVal - firstVal) / firstVal) * 100;
         trend = deltaPct > 0 ? 'up' : deltaPct < 0 ? 'down' : 'same';
       }
-      rows.push({ interval: i + 1, firstVal, lastVal, deltaPct, trend });
+      // Keep original interval number (from first training if available) for display
+      const displayNum = (fi?.originalIdx ?? li?.originalIdx ?? i) + 1;
+      rows.push({ interval: displayNum, matchIdx: i + 1, firstVal, lastVal, deltaPct, trend });
     }
     const comparedRows = rows.filter(r => r.deltaPct !== null);
     const avgProgress = comparedRows.length ? comparedRows.reduce((sum, r) => sum + r.deltaPct, 0) / comparedRows.length : null;
-    return { firstTraining, lastTraining, rows, avgProgress };
-  }, [selectedMetric, snapshotSelectedTrainings, snapshotShowsPaceAxis]);
+
+    // How many intervals were excluded by the work-only filter
+    const totalFirst = firstTraining.results?.length || 0;
+    const totalLast  = lastTraining.results?.length  || 0;
+    const excludedCount = Math.max(0, Math.max(totalFirst, totalLast) - maxLen);
+
+    return { firstTraining, lastTraining, rows, avgProgress, excludedCount };
+  }, [selectedMetric, snapshotSelectedTrainings, snapshotShowsPaceAxis, filteredIntervalSets]);
 
   const snapshotSeries = useMemo(() => snapshotSelectedTrainings.map((training, idx) => {
     const date = getTrainingDate(training);
@@ -343,13 +420,17 @@ const TrainingComparison = ({ trainings }) => {
 
   const sameTrainingChartData = useMemo(() => {
     if (!snapshotSeries.length) return [];
-    const maxIntervals = Math.max(...snapshotSeries.map(s => s.training?.results?.length || 0));
-    return Array.from({ length: maxIntervals }, (_, i) => {
+    const itemsPerSeries = snapshotSeries.map(s => filteredIntervalSets.get(getTrainingUid(s.training)) || []);
+    const maxLen = Math.max(...itemsPerSeries.map(items => items.length), 0);
+    return Array.from({ length: maxLen }, (_, i) => {
       const row = { interval: i + 1 };
-      snapshotSeries.forEach(series => { row[series.key] = normalizeMetricValue(series.training?.results?.[i], selectedMetric); });
+      snapshotSeries.forEach((series, sIdx) => {
+        const item = itemsPerSeries[sIdx]?.[i];
+        row[series.key] = normalizeMetricValue(item?.result, selectedMetric);
+      });
       return row;
     });
-  }, [snapshotSeries, selectedMetric]);
+  }, [snapshotSeries, selectedMetric, filteredIntervalSets]);
 
   const snapshotYDomain = useMemo(() => {
     if (!sameTrainingChartData.length || !snapshotSeries.length) return [0, 'auto'];
@@ -454,6 +535,79 @@ const TrainingComparison = ({ trainings }) => {
   // ── Series toggle ───────────────────────────────────────────────────────────
   const toggleSeries = (label) => setActiveSeries(prev => ({ ...prev, [label]: !prev[label] }));
   const setAllSeriesVisible = (visible) => setActiveSeries(prev => { const next = { ...prev }; Object.keys(trainingMeta).forEach(label => { next[label] = visible; }); return next; });
+
+  // ── Interval Timeline helpers ───────────────────────────────────────────────
+  /** Parse seconds from a result object — same logic as chartData builder */
+  const parseResultDurationSeconds = (result) => {
+    if (!result) return 0;
+    if (result.durationSeconds && result.durationSeconds > 0) return result.durationSeconds;
+    if (result.durationType === 'time' && typeof result.duration === 'number' && result.duration > 0) return result.duration;
+    if (result.duration && typeof result.duration === 'string') {
+      const parts = result.duration.split(':');
+      if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      if (parts.length === 3) return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+    }
+    return 0;
+  };
+
+  /** Linear interpolation between two hex colours (0–1 factor) */
+  const lerpColor = (hexA, hexB, t) => {
+    const h = (hex) => [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+    const a = h(hexA), b = h(hexB);
+    const r = Math.round(a[0] + (b[0]-a[0])*t);
+    const g = Math.round(a[1] + (b[1]-a[1])*t);
+    const bl = Math.round(a[2] + (b[2]-a[2])*t);
+    return `rgb(${r},${g},${bl})`;
+  };
+
+  /** Map a 0–1 intensity to a blue → indigo → red colour ramp */
+  const intensityColor = (t) => {
+    if (t <= 0.5) return lerpColor('#60A5FA', '#6366F1', t * 2);   // blue → indigo
+    return lerpColor('#6366F1', '#EF4444', (t - 0.5) * 2);         // indigo → red
+  };
+
+  /** Timeline data for currently selected snapshot trainings */
+  const timelineData = useMemo(() => {
+    if (!snapshotSelectedTrainings.length) return null;
+
+    const rows = snapshotSelectedTrainings.map((training, tIdx) => {
+      const d = getTrainingDate(training);
+      const label = Number.isNaN(d.getTime()) ? `#${tIdx+1}` : d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+      // Use filtered items so timeline respects the work-interval filter
+      const items = filteredIntervalSets.get(getTrainingUid(training)) || (training.results || []).map((r, i) => ({ result: r, originalIdx: i }));
+
+      const intervals = items.map(({ result: r, originalIdx }) => {
+        const dur = parseResultDurationSeconds(r);
+        const val = normalizeMetricValue(r, selectedMetric);
+        let restSec = 0;
+        if (r.rest && typeof r.rest === 'string') {
+          const rp = r.rest.split(':');
+          if (rp.length === 2) restSec = parseInt(rp[0]) * 60 + parseInt(rp[1]);
+          else if (rp.length === 3) restSec = parseInt(rp[0]) * 3600 + parseInt(rp[1]) * 60 + parseInt(rp[2]);
+        }
+        // Distance (metres) for tooltip
+        const rawDist = r.distanceMeters ?? r.distance;
+        const distM = Number(rawDist);
+        const dist = Number.isFinite(distM) && distM > 0 ? distM : null;
+        // Lactate recorded?
+        const lactate = (r.lactate !== undefined && r.lactate !== null && r.lactate !== 0) ? Number(r.lactate) : null;
+        const heartRate = (r.heartRate !== undefined && r.heartRate !== null) ? Number(r.heartRate) : null;
+        const power = r.power !== undefined ? r.power : null;
+        return { idx: originalIdx, dur, val, restSec, dist, lactate, heartRate, power };
+      });
+      const totalDur = intervals.reduce((s, iv) => s + iv.dur + iv.restSec, 0);
+      return { label, training, color: SERIES_COLORS[tIdx % SERIES_COLORS.length], intervals, totalDur };
+    });
+
+    // global value range for colour mapping
+    const allVals = rows.flatMap(r => r.intervals.map(iv => iv.val)).filter(v => v !== null && Number.isFinite(v));
+    const minVal = allVals.length ? Math.min(...allVals) : 0;
+    const maxVal = allVals.length ? Math.max(...allVals) : 1;
+    const maxTotalDur = Math.max(...rows.map(r => r.totalDur), 1);
+
+    return { rows, minVal, maxVal, maxTotalDur };
+  }, [snapshotSelectedTrainings, selectedMetric, filteredIntervalSets]);
 
   // ── Interval formatters ─────────────────────────────────────────────────────
   const formatIntervalDuration = (result) => {
@@ -636,12 +790,19 @@ const TrainingComparison = ({ trainings }) => {
 
             {/* Training selector */}
             <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-y-1.5">
                 <p className="text-xs font-semibold text-gray-700">Select trainings to compare</p>
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 flex-wrap">
                   <button onClick={() => setSnapshotSelectedIds(snapshotOptions.map(o => o.id))} className="text-[11px] px-2 py-0.5 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100">All</button>
                   <button onClick={() => setSnapshotSelectedIds(snapshotOptions.slice(Math.max(0, snapshotOptions.length - 2)).map(o => o.id))} className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Latest 2</button>
                   <button onClick={() => setSnapshotSelectedIds([])} className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100">Clear</button>
+                  <button
+                    onClick={() => setFilterWorkOnly(v => !v)}
+                    title="Match only work intervals of similar duration/distance — skips warmup, cooldown, recovery"
+                    className={`text-[11px] px-2 py-0.5 rounded-full border transition-all ${filterWorkOnly ? 'border-primary/50 bg-primary/10 text-primary font-semibold' : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    {filterWorkOnly ? '✓ Work laps' : 'Work laps'}
+                  </button>
                 </div>
               </div>
 
@@ -734,6 +895,206 @@ const TrainingComparison = ({ trainings }) => {
               </div>
             )}
 
+            {/* ── Interval Timeline (duration bars) ── */}
+            {timelineData && timelineData.rows.length > 0 && timelineData.rows.some(r => r.intervals.some(iv => iv.dur > 0)) && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-700">Interval duration breakdown</p>
+                  <span className="text-[11px] text-gray-400">bar width = duration</span>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-2.5">
+                  {timelineData.rows.map((row, rowIdx) => {
+                    const hasDuration = row.intervals.some(iv => iv.dur > 0);
+
+                    return (
+                      <div key={rowIdx} className="flex items-center gap-2">
+                        {/* Date label */}
+                        <div className="w-14 shrink-0 text-[10px] text-right text-gray-500 leading-tight font-medium"
+                             style={{ color: row.color }}>
+                          {row.label}
+                        </div>
+
+                        {/* Bar strip */}
+                        <div className="flex-1 flex h-9 rounded-lg overflow-hidden gap-px bg-gray-200">
+                          {row.intervals.map((iv, ivIdx) => {
+                            const barWidth = hasDuration
+                              ? (iv.dur / timelineData.maxTotalDur) * 100
+                              : (1 / row.intervals.length) * 100;
+                            const restWidth = hasDuration && iv.restSec > 0
+                              ? (iv.restSec / timelineData.maxTotalDur) * 100
+                              : 0;
+
+                            // colour based on value intensity
+                            // For pace sports: lower value = faster = more intense → invert the scale
+                            const range = timelineData.maxVal - timelineData.minVal;
+                            const rawIntensity = range > 0 && iv.val !== null
+                              ? Math.max(0, Math.min(1, (iv.val - timelineData.minVal) / range))
+                              : 0.5;
+                            const intensity = snapshotShowsPaceAxis ? 1 - rawIntensity : rawIntensity;
+                            const bgColor = iv.val !== null ? intensityColor(intensity) : '#D1D5DB';
+
+                            const durLabel = iv.dur > 0
+                              ? (iv.dur < 60 ? `${iv.dur}s` : `${Math.floor(iv.dur/60)}:${String(Math.round(iv.dur%60)).padStart(2,'0')}`)
+                              : null;
+                            const valLabel = iv.val !== null ? formatMetricValue(iv.val, selectedMetric) : null;
+
+                            return (
+                              /* Outer wrapper = group anchor for tooltip; NO overflow-hidden so tooltip can escape */
+                              <div key={ivIdx} className="relative group flex shrink-0" style={{ width: `${barWidth + restWidth}%`, minWidth: 4 }}>
+
+                                {/* Work bar — overflow-hidden only here so labels stay clipped */}
+                                <div
+                                  className="relative flex items-center justify-center h-full overflow-hidden transition-opacity hover:opacity-90 cursor-default"
+                                  style={{
+                                    width: restWidth > 0 ? `${(barWidth / (barWidth + restWidth)) * 100}%` : '100%',
+                                    backgroundColor: bgColor,
+                                    minWidth: 4,
+                                  }}
+                                >
+                                  {/* Value label — only if bar is wide enough */}
+                                  {barWidth > 6 && valLabel && (
+                                    <span className="text-[8px] sm:text-[9px] font-semibold text-white drop-shadow select-none pointer-events-none leading-none px-0.5 truncate">
+                                      {valLabel}
+                                    </span>
+                                  )}
+
+                                  {/* Lactate badge — shows "La X.X" on the bar when wide enough, else just dot */}
+                                  {iv.lactate !== null && iv.lactate !== undefined && (
+                                    barWidth > 10 ? (
+                                      <div className="absolute top-0.5 right-0.5 flex items-center gap-0.5 bg-white/90 rounded px-0.5 pointer-events-none z-10"
+                                           style={{ fontSize: 7, lineHeight: '11px', color: '#dc2626', fontWeight: 700 }}>
+                                        <span className="w-1 h-1 rounded-full bg-red-500 inline-block shrink-0" />
+                                        {iv.lactate}
+                                      </div>
+                                    ) : (
+                                      <div className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-white border border-red-500 pointer-events-none z-10" />
+                                    )
+                                  )}
+                                </div>
+
+                                {/* Hover tooltip — lives outside overflow-hidden so it renders above the bar strip */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30 hidden group-hover:block pointer-events-none">
+                                  <div className="bg-gray-900 text-white text-[10px] rounded-lg px-2.5 py-2 whitespace-nowrap shadow-xl min-w-[120px]">
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between gap-3 mb-1 pb-1 border-b border-gray-700">
+                                      <span className="font-semibold text-white">Int {iv.idx + 1}</span>
+                                      {iv.lactate !== null && iv.lactate !== undefined && (
+                                        <span className="flex items-center gap-1 text-red-400 font-bold">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
+                                          La {iv.lactate} mmol
+                                        </span>
+                                      )}
+                                    </div>
+                                    {/* Duration */}
+                                    {durLabel && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-gray-400">Duration</span>
+                                        <span className="text-white font-medium">{durLabel}</span>
+                                      </div>
+                                    )}
+                                    {/* Distance */}
+                                    {iv.dist !== null && iv.dist !== undefined && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-gray-400">Distance</span>
+                                        <span className="text-white font-medium">
+                                          {iv.dist >= 1000
+                                            ? `${(iv.dist / 1000).toFixed(2)} km`
+                                            : `${Math.round(iv.dist)} m`}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {/* Pace / Power / HR — the selected metric */}
+                                    {valLabel && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-gray-400">
+                                          {snapshotShowsPaceAxis ? 'Pace' : selectedMetric === 'power' ? 'Power' : 'HR'}
+                                        </span>
+                                        <span className="text-white font-medium">{valLabel}</span>
+                                      </div>
+                                    )}
+                                    {/* HR when metric is not HR */}
+                                    {iv.heartRate !== null && iv.heartRate !== undefined && selectedMetric !== 'heartRate' && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-gray-400">HR</span>
+                                        <span className="text-white font-medium">{Math.round(iv.heartRate)} bpm</span>
+                                      </div>
+                                    )}
+                                    {/* Power when metric is not power */}
+                                    {iv.power !== null && iv.power !== undefined && selectedMetric !== 'power' && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-gray-400">Power</span>
+                                        <span className="text-white font-medium">{Math.round(iv.power)} W</span>
+                                      </div>
+                                    )}
+                                    {/* Rest */}
+                                    {iv.restSec > 0 && (
+                                      <div className="flex items-center justify-between gap-3 mt-0.5 pt-0.5 border-t border-gray-700">
+                                        <span className="text-gray-400">Rest</span>
+                                        <span className="text-gray-300">
+                                          {iv.restSec < 60
+                                            ? `${iv.restSec}s`
+                                            : `${Math.floor(iv.restSec/60)}:${String(iv.restSec%60).padStart(2,'0')}`}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Arrow */}
+                                  <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
+                                </div>
+
+                                {/* Rest gap bar */}
+                                {restWidth > 0 && (
+                                  <div
+                                    className="h-full bg-gray-200"
+                                    style={{ width: `${(restWidth / (barWidth + restWidth)) * 100}%`, minWidth: 2 }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Total duration */}
+                        {hasDuration && (
+                          <div className="w-10 shrink-0 text-[10px] text-gray-400 text-left leading-tight tabular-nums">
+                            {row.totalDur >= 3600
+                              ? `${Math.floor(row.totalDur/3600)}h${String(Math.floor((row.totalDur%3600)/60)).padStart(2,'0')}m`
+                              : `${Math.floor(row.totalDur/60)}:${String(Math.round(row.totalDur%60)).padStart(2,'0')}`}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Colour scale legend */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                    {/* For pace: max value (slow) on the left = blue, min value (fast) on the right = red */}
+                    <span className="text-[10px] text-gray-400 shrink-0">
+                      {formatMetricValue(snapshotShowsPaceAxis ? timelineData.maxVal : timelineData.minVal, selectedMetric)}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full" style={{
+                      background: snapshotShowsPaceAxis
+                        ? 'linear-gradient(to right, #60A5FA, #6366F1, #EF4444)'   // slow(blue)→fast(red) — same gradient, labels flipped
+                        : 'linear-gradient(to right, #60A5FA, #6366F1, #EF4444)',
+                    }} />
+                    <span className="text-[10px] text-gray-400 shrink-0">
+                      {formatMetricValue(snapshotShowsPaceAxis ? timelineData.minVal : timelineData.maxVal, selectedMetric)}
+                    </span>
+                    {snapshotShowsPaceAxis && (
+                      <span className="text-[10px] text-indigo-500 font-medium ml-1">(faster = redder)</span>
+                    )}
+                    {timelineData.rows.some(r => r.intervals.some(iv => iv.restSec > 0)) && (
+                      <div className="flex items-center gap-1 ml-2">
+                        <div className="w-3 h-3 rounded-sm bg-gray-200" />
+                        <span className="text-[10px] text-gray-400">rest</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Avg progress badge ── */}
             {sameTrainingSnapshot && sameTrainingSnapshot.avgProgress !== null && (
               <div className="mb-4 flex items-center gap-2 flex-wrap">
@@ -749,6 +1110,14 @@ const TrainingComparison = ({ trainings }) => {
             {/* ── Interval delta table ── */}
             {sameTrainingSnapshot && sameTrainingSnapshot.rows.length > 0 && (
               <div className="overflow-x-auto rounded-xl border border-gray-100">
+                {/* Filtered intervals info banner */}
+                {filterWorkOnly && sameTrainingSnapshot.excludedCount > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-700">
+                    <span>✦</span>
+                    <span>Showing <strong>{sameTrainingSnapshot.rows.length}</strong> work laps · <strong>{sameTrainingSnapshot.excludedCount}</strong> warmup/recovery laps excluded</span>
+                    <button onClick={() => setFilterWorkOnly(false)} className="ml-auto underline hover:no-underline">Show all</button>
+                  </div>
+                )}
                 <table className="w-full text-sm min-w-[320px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">

@@ -31,21 +31,29 @@ export function calculateBackoffDelay(attempt, baseDelay = 1000) {
 }
 
 /**
- * Debounce function
+ * Debounce function — returns the promise from the wrapped async fn so callers
+ * can await / catch errors. Each call resets the timer; the latest call wins.
  */
 export function debounce(func, wait) {
   let timeout = null;
-  
+  let resolvePending = null;
+
   return function executedFunction(...args) {
-    const later = () => {
-      timeout = null;
-      func(...args);
-    };
-    
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(later, wait);
+    // Return a promise that resolves/rejects when the debounced fn finally runs
+    return new Promise((resolve, reject) => {
+      // Cancel previous pending call's promise (resolve it as a no-op)
+      if (resolvePending) resolvePending();
+
+      resolvePending = resolve;
+
+      if (timeout) clearTimeout(timeout);
+
+      timeout = setTimeout(() => {
+        timeout = null;
+        resolvePending = null;
+        Promise.resolve(func(...args)).then(resolve, reject);
+      }, wait);
+    });
   };
 }
 

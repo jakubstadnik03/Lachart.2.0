@@ -58,6 +58,12 @@ export class FTMSAdapter implements TrainerAdapter {
   private useFTMS: boolean = false; // Track which service we're using
   private cscPreviousValues: { wheelRevolutions: number | null; lastWheelTime: number | null; crankRevolutions: number | null; lastCrankTime: number | null; timestamp: number } | null = null;
 
+  // Pending promise callbacks for FTMS control-point responses
+  private pendingControlResolve: (() => void) | null = null;
+  private pendingControlReject: ((err: Error) => void) | null = null;
+  private pendingErgResolve: (() => void) | null = null;
+  private pendingErgReject: ((err: Error) => void) | null = null;
+
   async scan(options?: ScanOptions): Promise<DeviceInfo[]> {
     if (!navigator.bluetooth) {
       throw new Error('Web Bluetooth not available. Use Chrome, Edge, or Opera.');
@@ -213,14 +219,17 @@ export class FTMSAdapter implements TrainerAdapter {
 
         this.state = 'ready';
         logger.info('FTMS adapter connected and ready');
-        
+
         // Send initial telemetry update to indicate connection
         this.telemetryCallbacks.forEach(cb => {
           cb({ ts: Date.now(), connected: true });
         });
 
-        // Request control
-        await this.requestControl();
+        // NOTE: requestControl() is NOT called here automatically.
+        // The caller (useTrainer → TrainerConnectModal or LactateTestingPage) is
+        // responsible for calling it once after connect() resolves.  Calling it
+        // inside connect() caused the state to regress back to 'ready' in useTrainer
+        // and triggered multiple redundant control requests.
       } catch (ftmsError: any) {
         // FTMS not available, try Cycling Power Service or CSC Service
         logger.warn('FTMS service not available, trying alternative services:', ftmsError.message);
@@ -472,22 +481,32 @@ export class FTMSAdapter implements TrainerAdapter {
           throw new Error('Control not granted. Call requestControl() first.');
         }
 
-        const command = buildSetTargetPowerCommand(clampedWatts);
-        await this.controlPointChar.writeValueWithResponse(command);
-        
-        // Wait for response (handled in handleControlResponse)
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Timeout waiting for control response'));
+        // Set up the response promise BEFORE writing
+        const ergResponsePromise = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.pendingErgResolve = null;
+            this.pendingErgReject = null;
+            // Treat as success on timeout — trainer may not send a response for every power update
+            resolve();
           }, 3000);
 
-          const checkResponse = () => {
-            clearTimeout(timeout);
-            setTimeout(resolve, 500);
+          this.pendingErgResolve = () => {
+            clearTimeout(timer);
+            this.pendingErgResolve = null;
+            this.pendingErgReject = null;
+            resolve();
           };
-
-          checkResponse();
+          this.pendingErgReject = (err: Error) => {
+            clearTimeout(timer);
+            this.pendingErgResolve = null;
+            this.pendingErgReject = null;
+            reject(err);
+          };
         });
+
+        const command = buildSetTargetPowerCommand(clampedWatts);
+        await this.controlPointChar.writeValueWithResponse(command);
+        await ergResponsePromise;
 
         this.state = 'erg_active';
         logger.info(`ERG power set to ${clampedWatts}W (FTMS)`);
@@ -540,29 +559,50 @@ export class FTMSAdapter implements TrainerAdapter {
   }
 
   async requestControl(): Promise<void> {
+    // Already controlled — no need to request again
+    if (this.state === 'controlled' || this.state === 'erg_active') {
+      logger.info('Already controlled, skipping requestControl');
+      return;
+    }
+
     // For FTMS, request control via FTMS Control Point
     if (this.useFTMS && this.controlPointChar) {
       logger.info('Requesting control (FTMS)...');
 
       try {
-        const command = buildRequestControlCommand();
-        await this.controlPointChar.writeValueWithResponse(command);
-        
-        // Wait for response
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Timeout waiting for control response'));
-          }, 3000);
-
-          setTimeout(() => {
-            clearTimeout(timeout);
+        // Set up the response promise BEFORE writing (so we never miss the notification)
+        const responsePromise = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.pendingControlResolve = null;
+            this.pendingControlReject = null;
+            // If we timed out but controlRequested is already set (response arrived just
+            // before the timer fired), treat it as success.
             if (this.controlRequested) {
               resolve();
             } else {
-              reject(new Error('Control not granted'));
+              reject(new Error('Timeout waiting for FTMS control response (5 s)'));
             }
-          }, 1000);
+          }, 5000);
+
+          this.pendingControlResolve = () => {
+            clearTimeout(timer);
+            this.pendingControlResolve = null;
+            this.pendingControlReject = null;
+            resolve();
+          };
+          this.pendingControlReject = (err: Error) => {
+            clearTimeout(timer);
+            this.pendingControlResolve = null;
+            this.pendingControlReject = null;
+            reject(err);
+          };
         });
+
+        const command = buildRequestControlCommand();
+        await this.controlPointChar.writeValueWithResponse(command);
+
+        // Now wait for the trainer's FTMS indication/notification
+        await responsePromise;
 
         this.state = 'controlled';
         logger.info('Control granted (FTMS)');
@@ -570,10 +610,9 @@ export class FTMSAdapter implements TrainerAdapter {
         logger.error('Failed to request control:', error);
         throw new Error(`Failed to request control: ${error.message}`);
       }
-    } else if (this.cpsControlPointChar || this.cscControlPointChar) {
-      // For FE-C, control is typically granted automatically or via different protocol
-      // Some trainers don't require explicit control request for FE-C
-      logger.info('FE-C control - control may be granted automatically');
+    } else if (this.tacxFecTxChar || this.cpsControlPointChar || this.cscControlPointChar) {
+      // For FE-C / Tacx, control is granted automatically — no explicit request needed
+      logger.info('FE-C / Tacx control — granted automatically');
       this.controlRequested = true;
       this.state = 'controlled';
     } else {
@@ -866,20 +905,22 @@ export class FTMSAdapter implements TrainerAdapter {
           this.controlRequested = true;
           this.state = 'controlled';
           logger.info('Control granted');
+          this.pendingControlResolve?.();
         } else {
           this.controlRequested = false;
           const errorMsg = getResponseErrorMessage(response);
           logger.error('Control not granted:', errorMsg);
-          // Don't throw - just log the error to prevent disconnection
+          this.pendingControlReject?.(new Error(`Control not granted: ${errorMsg}`));
         }
       } else if (response.opcode === FTMS_OPCODE_SET_TARGET_POWER) {
         if (response.success) {
           this.state = 'erg_active';
           logger.info('Target power set successfully');
+          this.pendingErgResolve?.();
         } else {
           const errorMsg = getResponseErrorMessage(response);
           logger.error('Failed to set target power:', errorMsg);
-          // Don't throw - just log the error to prevent disconnection
+          this.pendingErgReject?.(new Error(`Set target power failed: ${errorMsg}`));
         }
       }
     } catch (error: any) {
