@@ -7,7 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, connectGarminCredentials, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -94,9 +94,6 @@ const SettingsPage = () => {
   const [garminLastSync, setGarminLastSync] = useState(null);
   const [garminTestResult, setGarminTestResult] = useState(null); // { ok, error, athleteId }
   const [isTestingGarmin, setIsTestingGarmin] = useState(false);
-  const [showGarminLoginForm, setShowGarminLoginForm] = useState(false);
-  const [garminLoginForm, setGarminLoginForm] = useState({ username: '', password: '' });
-  const [isConnectingGarmin, setIsConnectingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -799,24 +796,6 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Garmin connect error:', e);
       addNotification(e.response?.data?.error || e.message || 'Failed to start Garmin connection', 'error');
-    }
-  };
-
-  const handleConnectGarminCredentials = async (e) => {
-    e.preventDefault();
-    if (!garminLoginForm.username || !garminLoginForm.password) return;
-    setIsConnectingGarmin(true);
-    try {
-      await connectGarminCredentials(garminLoginForm.username, garminLoginForm.password);
-      setShowGarminLoginForm(false);
-      setGarminLoginForm({ username: '', password: '' });
-      setGarminConnected(true);
-      invalidateCache('/api/integrations/status');
-      addNotification('Garmin account connected successfully', 'success');
-    } catch (err) {
-      addNotification(err?.response?.data?.error || err.message || 'Invalid Garmin credentials', 'error');
-    } finally {
-      setIsConnectingGarmin(false);
     }
   };
 
