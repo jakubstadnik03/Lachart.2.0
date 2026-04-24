@@ -537,13 +537,7 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
     },
     plugins: {
       legend: {
-        position: 'bottom',
-        labels: {
-            font: { size: 10 },
-          usePointStyle: true,
-          padding: 2,
-            boxWidth: 6
-          }
+        display: false,
       },
       tooltip: {
         mode: 'index',
@@ -780,10 +774,10 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
           </div>
         )}
         {/* Radar Chart */}
-        <div className="w-full relative" style={{ height: '350px' }}>
+        <div className="w-full relative" style={{ height: '320px' }}>
           {chartData && chartOptions ? (
-            <Radar 
-              data={chartData} 
+            <Radar
+              data={chartData}
               options={chartOptions}
             />
           ) : (
@@ -796,6 +790,21 @@ export default function SpiderChart({ trainings = [], userTrainings = [], select
             </div>
           )}
         </div>
+
+        {/* Custom legend — stacked vertically */}
+        {chartData && (
+          <div className="flex flex-col items-center gap-1 pb-1">
+            {chartData.datasets.map((ds, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: ds.borderColor }}
+                />
+                <span className="text-xs text-gray-600">{ds.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
 
         {/* Power Table - Collapsible */}

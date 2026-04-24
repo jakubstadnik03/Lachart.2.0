@@ -344,14 +344,16 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
           </div>
         </div>
 
-        <motion.div 
+        <motion.div
           initial={false}
           animate={{ opacity: 1 }}
           transition={{ duration: 0 }}
-          className="p-3 pt-0 sm:p-4 sm:pt-0 flex-1 lg:flex-[3] overflow-y-auto min-h-0 [touch-action:pan-y]"
-          style={{ 
+          className="p-3 pt-0 sm:p-4 sm:pt-0 flex-1 lg:flex-[3] overflow-y-auto min-h-0 [touch-action:pan-y] scrollbar-thin"
+          style={{
             WebkitOverflowScrolling: 'touch',
-            overscrollBehavior: 'contain'
+            overscrollBehavior: 'contain',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#D1D5DB transparent',
           }}
         >
           <h2 className="mb-2 pt-2 text-base text-gray-700 sm:mb-3 sm:pt-4 sm:text-lg">Menu</h2>
@@ -454,10 +456,12 @@ const Menu = ({ isMenuOpen, setIsMenuOpen, user: propUser, token: propToken }) =
         {["coach", "tester", "testing"].includes(user?.role) && (
           <div
             data-tour="tour-athletes-sidebar"
-            className="p-3 pt-0 sm:p-4 border-t border-gray-200 max-lg:max-h-[min(32vh,14rem)] max-lg:flex-none lg:flex-1 lg:flex-[2] overflow-y-auto min-h-0 lg:max-h-none [touch-action:pan-y]"
-            style={{ 
+            className="p-3 pt-0 sm:p-4 border-t border-gray-200 max-lg:max-h-[min(32vh,14rem)] max-lg:flex-none lg:flex-1 lg:flex-[2] overflow-y-auto min-h-0 lg:max-h-none [touch-action:pan-y] scrollbar-thin"
+            style={{
               WebkitOverflowScrolling: 'touch',
-              overscrollBehavior: 'contain'
+              overscrollBehavior: 'contain',
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#D1D5DB transparent',
             }}
           >
             <h2 className="mb-3 pt-4 text-sm font-bold text-gray-700">Athletes</h2>

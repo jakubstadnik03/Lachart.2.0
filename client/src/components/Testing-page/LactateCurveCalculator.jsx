@@ -2735,6 +2735,16 @@ const LactateCurveCalculator = ({ mockData, demoMode = false }) => {
                 {Number.isFinite(thresholds?.confidence) && (
                   <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-100 bg-white/60 text-xs text-gray-600">
                     <span className="font-medium text-gray-700">Threshold confidence:</span>
+                    <span
+                      className="relative group inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 cursor-help text-[10px] font-bold flex-shrink-0"
+                      tabIndex={0}
+                    >
+                      ?
+                      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-xl bg-gray-900 px-3 py-2 text-white text-[11px] leading-snug opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity z-50 shadow-xl">
+                        Score 0–100 reflecting the quality of lactate data. Based on number of data points, consistency of the lactate curve, and how clearly the inflection points are defined. Higher = more reliable thresholds.
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                      </span>
+                    </span>
                     <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${

@@ -299,6 +299,12 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
+  // Clear stale cache immediately when the viewed athlete changes
+  const prevAthleteIdRef = React.useRef(selectedAthleteId);
+  if (prevAthleteIdRef.current !== selectedAthleteId) {
+    prevAthleteIdRef.current = selectedAthleteId;
+    if (cachedActivities.length > 0) setCachedActivities([]);
+  }
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');

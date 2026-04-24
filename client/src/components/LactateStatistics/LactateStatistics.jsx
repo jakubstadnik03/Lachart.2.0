@@ -552,8 +552,9 @@ const LactateStatistics = ({ selectedAthleteId = null }) => {
       <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 shadow-md p-3">
         <h2 className="text-sm font-semibold text-text mb-2">Lactate Statistics</h2>
         <div className="text-center py-6 text-lighterText text-sm">
-          <p>No trainings with lactate values found.</p>
-          <p className="text-xs mt-1">Add lactate values to your training intervals to see statistics here.</p>
+          <p className="text-2xl mb-2">🩸</p>
+          <p className="font-medium text-gray-600">No lactate data yet</p>
+          <p className="text-xs mt-1 text-gray-400">Open a training, go to "Add lactate" and enter values for your intervals — they'll appear here automatically.</p>
         </div>
       </div>
     );
