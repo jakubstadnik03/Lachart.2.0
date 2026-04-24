@@ -136,12 +136,11 @@ function createPkcePair() {
 }
 
 function getFrontendBaseUrl() {
-  // FRONTEND_URL is the explicit override (set in Render env vars).
-  // Fall back to RENDER_EXTERNAL_URL which Render sets automatically,
-  // then to localhost for local dev.
+  // FRONTEND_URL must be set explicitly in Render env vars to your frontend domain
+  // (e.g. https://lachart.net). RENDER_EXTERNAL_URL is the BACKEND URL — do NOT
+  // use it here or OAuth redirects will land on the API server instead of the React app.
   const url =
     process.env.FRONTEND_URL ||
-    process.env.RENDER_EXTERNAL_URL ||
     'http://localhost:3000';
   return url.replace(/\/$/, '');
 }
@@ -2063,8 +2062,8 @@ router.get('/activities', verifyToken, activitiesCacheMiddleware, async (req, re
   }
 });
 
-// Connection status (cached for 2 minutes)
-router.get('/status', verifyToken, activitiesCacheMiddleware, async (req, res) => {
+// Connection status — NOT cached (connect/disconnect must be reflected immediately)
+router.get('/status', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     const stravaConnected = Boolean(user?.strava?.accessToken);
