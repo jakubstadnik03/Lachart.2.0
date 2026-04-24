@@ -1119,71 +1119,67 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null) {
   // ── OAuth path ────────────────────────────────────────────────────────────
-  // Errors here are intentionally NOT caught so they propagate to the route
-  // handler, which can return a meaningful HTTP error to the frontend.
+  // Garmin Health API max window per request = 86400 seconds (1 day).
+  // We loop through 1-day chunks from startSec → nowSec.
   if (user?.garmin?.refreshToken) {
-    const tokenData = await getValidGarminToken(user);
-    const headers = {
-      Authorization: `${tokenData.tokenType} ${tokenData.accessToken}`
-    };
-    // Garmin Health API requires BOTH uploadStartTimeInSeconds AND uploadEndTimeInSeconds.
-    // Default start = 30 days ago when no since date is provided (regular "Sync Now").
+    const CHUNK_SEC = 86400; // Garmin API hard limit: 1 day per request
     const nowSec = Math.floor(Date.now() / 1000);
-    let startSec = nowSec - 30 * 24 * 3600; // default: 30 days ago
+    let startSec = nowSec - 7 * 24 * 3600; // default: last 7 days for "Sync Now"
     if (since) {
       const d = new Date(since);
       if (!Number.isNaN(d.getTime())) {
         startSec = Math.floor(d.getTime() / 1000);
       }
     }
-    const params = {
-      uploadStartTimeInSeconds: startSec,
-      uploadEndTimeInSeconds: nowSec
-    };
 
     const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
-    console.log(`Garmin OAuth: fetching activities from ${activitiesUrl}`, params);
-    let resp;
-    try {
-      // Garmin Health API activities live under wellness-api, not activity-api
-      resp = await axios.get(activitiesUrl, {
-        headers,
-        params,
-        timeout: 30000
-      });
-    } catch (apiErr) {
-      const status = apiErr.response?.status;
-      const body   = apiErr.response?.data;
-      console.error(`Garmin activity API error ${status}:`, body || apiErr.message);
+    const allActivities = [];
+    let cursor = startSec;
 
-      // Build a human-readable message to surface to the user
-      if (status === 401 || status === 403) {
+    while (cursor < nowSec) {
+      const windowEnd = Math.min(cursor + CHUNK_SEC, nowSec);
+      const tokenData = await getValidGarminToken(user); // refreshes token if needed
+      console.log(`Garmin OAuth: fetching activities ${new Date(cursor * 1000).toISOString().slice(0,10)} → ${new Date(windowEnd * 1000).toISOString().slice(0,10)}`);
+
+      let resp;
+      try {
+        resp = await axios.get(activitiesUrl, {
+          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          params: {
+            uploadStartTimeInSeconds: cursor,
+            uploadEndTimeInSeconds: windowEnd
+          },
+          timeout: 15000
+        });
+      } catch (apiErr) {
+        const status = apiErr.response?.status;
+        const body   = apiErr.response?.data;
+        console.error(`Garmin activity API error ${status}:`, body || apiErr.message);
+        if (status === 401 || status === 403) {
+          throw new Error(
+            `Garmin API access denied (${status}). The app may not be approved for ` +
+            `activity data access. Try reconnecting your Garmin account, or contact support.`
+          );
+        }
         throw new Error(
-          `Garmin API access denied (${status}). The app may not be approved for ` +
-          `activity data access. Try disconnecting and reconnecting your account, ` +
-          `or contact support.`
+          `Garmin API returned ${status || 'network error'}: ${
+            (typeof body === 'object' ? JSON.stringify(body) : body) || apiErr.message
+          }`
         );
       }
-      if (status === 404) {
-        throw new Error(
-          `Garmin activity endpoint not found (404). The API path may have changed.`
-        );
-      }
-      throw new Error(
-        `Garmin API returned ${status || 'network error'}: ${
-          (typeof body === 'object' ? JSON.stringify(body) : body) || apiErr.message
-        }`
-      );
+
+      const batch = Array.isArray(resp.data)
+        ? resp.data
+        : Array.isArray(resp.data?.activities)
+          ? resp.data.activities
+          : [];
+
+      allActivities.push(...batch);
+      cursor = windowEnd;
     }
 
-    const activities = Array.isArray(resp.data)
-      ? resp.data
-      : Array.isArray(resp.data?.activities)
-        ? resp.data.activities
-        : [];
-
-    console.log(`Fetched ${activities.length} Garmin OAuth activities`);
-    return activities;
+    console.log(`Garmin OAuth: fetched ${allActivities.length} activities total`);
+    return allActivities;
   }
 
   // ── Username/password path (legacy garmin-connect library) ────────────────
@@ -1423,8 +1419,7 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
 });
 
 // POST /api/integrations/garmin/sync-history
-// Full history import: paginates through 90-day chunks from yearsBack to now.
-// OAuth path only — the garmin-connect library handles its own pagination.
+// Full history import: 2 years back, OAuth path loops in 1-day chunks (Garmin API max = 86400s).
 router.post('/garmin/sync-history', verifyToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -1432,66 +1427,22 @@ router.post('/garmin/sync-history', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Garmin not connected' });
     }
 
-    // Only OAuth path needs chunked pagination; username/password path has its own loop
-    if (!user.garmin?.refreshToken) {
-      // Fall back to single call (garmin-connect library handles pagination internally)
-      let activities;
-      try {
-        activities = await getGarminActivities(user, null);
-      } catch (apiErr) {
-        return res.status(502).json({ error: 'Garmin API error', message: apiErr.message });
-      }
-      const { imported, updated, total } = await upsertGarminActivities(user, activities);
-      await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
-      return res.json({ imported, updated, totalFetched: total, status: 'ok' });
+    // Start from 2 years ago — getGarminActivities handles 1-day chunk looping for OAuth
+    const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 3600 * 1000);
+
+    let activities;
+    try {
+      activities = await getGarminActivities(user, twoYearsAgo);
+    } catch (apiErr) {
+      console.error('Garmin history sync API error:', apiErr.message);
+      return res.status(502).json({ error: 'Garmin API error', message: apiErr.message });
     }
 
-    // OAuth: loop through 90-day windows from 5 years ago → now
-    const CHUNK_DAYS = 90;
-    const yearsBack = 5;
-    const nowMs = Date.now();
-    const startMs = nowMs - yearsBack * 365 * 24 * 3600 * 1000;
-
-    let totalImported = 0;
-    let totalUpdated = 0;
-    let totalFetched = 0;
-    let chunkStart = startMs;
-
-    while (chunkStart < nowMs) {
-      const chunkEnd = Math.min(chunkStart + CHUNK_DAYS * 24 * 3600 * 1000, nowMs);
-      try {
-        const tokenData = await getValidGarminToken(user);
-        const params = {
-          uploadStartTimeInSeconds: Math.floor(chunkStart / 1000),
-          uploadEndTimeInSeconds: Math.floor(chunkEnd / 1000)
-        };
-        const resp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/activities`, {
-          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
-          params,
-          timeout: 30000
-        });
-        const batch = Array.isArray(resp.data)
-          ? resp.data
-          : Array.isArray(resp.data?.activities)
-            ? resp.data.activities
-            : [];
-        console.log(`Garmin history chunk ${new Date(chunkStart).toISOString().slice(0,10)} → ${new Date(chunkEnd).toISOString().slice(0,10)}: ${batch.length} activities`);
-        if (batch.length > 0) {
-          const { imported, updated, total } = await upsertGarminActivities(user, batch);
-          totalImported += imported;
-          totalUpdated += updated;
-          totalFetched += total;
-        }
-      } catch (chunkErr) {
-        console.error(`Garmin history chunk error (${new Date(chunkStart).toISOString().slice(0,10)}):`, chunkErr.response?.data || chunkErr.message);
-        // Continue to next chunk — don't abort the whole import on one chunk failure
-      }
-      chunkStart = chunkEnd;
-    }
-
+    console.log(`Garmin history: fetched ${activities.length} activities over 2 years`);
+    const { imported, updated, total } = await upsertGarminActivities(user, activities);
     await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
-    console.log(`Garmin history import done: ${totalImported} imported, ${totalUpdated} updated, ${totalFetched} total`);
-    res.json({ imported: totalImported, updated: totalUpdated, totalFetched, status: 'ok' });
+    console.log(`Garmin history done: ${imported} imported, ${updated} updated`);
+    res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
     console.error('Garmin history sync error:', err);
     res.status(500).json({ error: 'Garmin history sync failed', message: err.message });
@@ -1612,13 +1563,17 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
         };
       }
 
-      // 2. Test activities endpoint (the one sync uses)
+      // 2. Test activities endpoint — must send BOTH params, max window = 86400s (1 day)
       const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
+      const nowSec = Math.floor(Date.now() / 1000);
       let activitiesResult = { ok: false, status: null, body: null };
       try {
         const r = await axios.get(activitiesUrl, {
           headers: authHeader,
-          params: { uploadStartTimeInSeconds: Math.floor((Date.now() - 86400000) / 1000) },
+          params: {
+            uploadStartTimeInSeconds: nowSec - 86400,
+            uploadEndTimeInSeconds: nowSec
+          },
           timeout: 15000
         });
         const count = Array.isArray(r.data) ? r.data.length
