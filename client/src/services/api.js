@@ -1153,6 +1153,12 @@ export const autoSyncStravaActivities = async () => {
   }
 };
 
+// Connect Garmin via username + password (garmin-connect library, no partner approval needed)
+export const connectGarminCredentials = async (username, password) => {
+  const { data } = await api.post('/api/integrations/garmin/login', { username, password });
+  return data;
+};
+
 export const syncGarminActivities = async (since=null) => {
   const { data } = await api.post('/api/integrations/garmin/sync', { since }, {
     timeout: 600000 // 10 minutes timeout for large syncs

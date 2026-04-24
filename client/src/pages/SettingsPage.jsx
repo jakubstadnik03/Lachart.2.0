@@ -7,7 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, connectGarminCredentials, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -94,6 +94,9 @@ const SettingsPage = () => {
   const [garminLastSync, setGarminLastSync] = useState(null);
   const [garminTestResult, setGarminTestResult] = useState(null); // { ok, error, athleteId }
   const [isTestingGarmin, setIsTestingGarmin] = useState(false);
+  const [showGarminLoginForm, setShowGarminLoginForm] = useState(false);
+  const [garminLoginForm, setGarminLoginForm] = useState({ username: '', password: '' });
+  const [isConnectingGarmin, setIsConnectingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -796,6 +799,24 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Garmin connect error:', e);
       addNotification(e.response?.data?.error || e.message || 'Failed to start Garmin connection', 'error');
+    }
+  };
+
+  const handleConnectGarminCredentials = async (e) => {
+    e.preventDefault();
+    if (!garminLoginForm.username || !garminLoginForm.password) return;
+    setIsConnectingGarmin(true);
+    try {
+      await connectGarminCredentials(garminLoginForm.username, garminLoginForm.password);
+      setShowGarminLoginForm(false);
+      setGarminLoginForm({ username: '', password: '' });
+      setGarminConnected(true);
+      invalidateCache('/api/integrations/status');
+      addNotification('Garmin account connected successfully', 'success');
+    } catch (err) {
+      addNotification(err?.response?.data?.error || err.message || 'Invalid Garmin credentials', 'error');
+    } finally {
+      setIsConnectingGarmin(false);
     }
   };
 
@@ -2589,9 +2610,41 @@ const SettingsPage = () => {
                           Last sync: {new Date(garminLastSync).toLocaleString()}
                         </p>
                       )}
+                      {/* Garmin login form */}
+                      {showGarminLoginForm && (
+                        <form onSubmit={handleConnectGarminCredentials} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                          <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-600 font-medium`}>Enter your Garmin Connect credentials</p>
+                          <input
+                            type="email"
+                            placeholder="Garmin email"
+                            value={garminLoginForm.username}
+                            onChange={e => setGarminLoginForm(f => ({ ...f, username: e.target.value }))}
+                            className={`w-full border border-gray-300 rounded px-2 py-1.5 ${isMobile ? 'text-[10px]' : 'text-xs'} focus:outline-none focus:ring-1 focus:ring-primary`}
+                            required
+                          />
+                          <input
+                            type="password"
+                            placeholder="Garmin password"
+                            value={garminLoginForm.password}
+                            onChange={e => setGarminLoginForm(f => ({ ...f, password: e.target.value }))}
+                            className={`w-full border border-gray-300 rounded px-2 py-1.5 ${isMobile ? 'text-[10px]' : 'text-xs'} focus:outline-none focus:ring-1 focus:ring-primary`}
+                            required
+                          />
+                          <div className="flex gap-2">
+                            <button type="submit" disabled={isConnectingGarmin}
+                              className={`flex-1 ${isMobile ? 'text-[10px] py-1' : 'text-xs py-1.5'} bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-60`}>
+                              {isConnectingGarmin ? 'Connecting…' : 'Connect'}
+                            </button>
+                            <button type="button" onClick={() => { setShowGarminLoginForm(false); setGarminLoginForm({ username: '', password: '' }); }}
+                              className={`${isMobile ? 'text-[10px] py-1 px-2' : 'text-xs py-1.5 px-3'} bg-gray-200 text-gray-700 rounded hover:bg-gray-300`}>
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      )}
                       <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'flex-wrap gap-2'}`}>
                         <button
-                          onClick={handleConnectGarmin}
+                          onClick={() => setShowGarminLoginForm(v => !v)}
                           className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
                         >
                           {garminConnected ? 'Reconnect' : 'Connect'}
