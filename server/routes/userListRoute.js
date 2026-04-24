@@ -2351,6 +2351,7 @@ router.get("/admin/users", verifyToken, async (req, res) => {
                 name: user.name,
                 surname: user.surname,
                 email: user.email,
+                hasPassword: !!(user.password),
                 role: user.role,
                 admin: user.admin,
                 premium: user.premium === true,
