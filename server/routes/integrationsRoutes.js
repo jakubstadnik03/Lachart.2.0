@@ -136,7 +136,14 @@ function createPkcePair() {
 }
 
 function getFrontendBaseUrl() {
-  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+  // FRONTEND_URL is the explicit override (set in Render env vars).
+  // Fall back to RENDER_EXTERNAL_URL which Render sets automatically,
+  // then to localhost for local dev.
+  const url =
+    process.env.FRONTEND_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    'http://localhost:3000';
+  return url.replace(/\/$/, '');
 }
 
 function getGarminRedirectBase() {
@@ -435,7 +442,7 @@ router.get('/strava/callback', async (req, res) => {
     // Start full historical import in background (progressive batches, not one massive sync).
     startStravaHistoricalBackfill(user._id);
 
-    const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontend = getFrontendBaseUrl();
     // Redirect back to app with a flag
     return res.redirect(`${frontend}/training-calendar?strava=connected`);
   } catch (err) {
@@ -1128,9 +1135,12 @@ async function getGarminActivities(user, since = null) {
       }
     }
 
+    const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
+    console.log(`Garmin OAuth: fetching activities from ${activitiesUrl}`, params);
     let resp;
     try {
-      resp = await axios.get(`${getGarminActivityApiBaseUrl()}/rest/activities`, {
+      // Garmin Health API activities live under wellness-api, not activity-api
+      resp = await axios.get(activitiesUrl, {
         headers,
         params,
         timeout: 30000
