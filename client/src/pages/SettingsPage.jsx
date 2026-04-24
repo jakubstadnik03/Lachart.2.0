@@ -94,6 +94,7 @@ const SettingsPage = () => {
   const [garminLastSync, setGarminLastSync] = useState(null);
   const [garminTestResult, setGarminTestResult] = useState(null); // { ok, error, athleteId }
   const [isTestingGarmin, setIsTestingGarmin] = useState(false);
+  const [garminSyncError, setGarminSyncError] = useState(null); // persistent error shown in UI
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -812,12 +813,15 @@ const SettingsPage = () => {
   const handleSyncGarmin = async () => {
     if (isSyncingGarmin) return;
     let res;
+    setGarminSyncError(null);
     try {
       setIsSyncingGarmin(true);
       res = await syncGarminActivities();
       // The server may return { error, message } with HTTP 200 in auto-sync, or 502/500 (which throws)
       if (res?.error) {
-        addNotification(`Garmin sync error: ${res.message || res.error}`, 'error');
+        const msg = res.message || res.error;
+        addNotification(`Garmin sync error: ${msg}`, 'error');
+        setGarminSyncError(msg);
         return;
       }
       addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
@@ -825,7 +829,9 @@ const SettingsPage = () => {
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin sync error:', e);
-      addNotification(garminSyncErrorMessage(e, res), 'error');
+      const msg = garminSyncErrorMessage(e, res);
+      addNotification(msg, 'error');
+      setGarminSyncError(msg);
     } finally {
       setIsSyncingGarmin(false);
     }
@@ -837,11 +843,14 @@ const SettingsPage = () => {
     const ok = window.confirm('This will download your full Garmin activity history (up to 5 years). This may take several minutes. Continue?');
     if (!ok) return;
     let res;
+    setGarminSyncError(null);
     try {
       setIsSyncingGarminHistory(true);
       res = await syncGarminHistory(); // dedicated endpoint with 90-day chunk pagination
       if (res?.error) {
-        addNotification(`Garmin import error: ${res.message || res.error}`, 'error');
+        const msg = res.message || res.error;
+        addNotification(`Garmin import error: ${msg}`, 'error');
+        setGarminSyncError(msg);
         return;
       }
       addNotification(`History import: ${res.imported || 0} new, ${res.updated || 0} updated`, 'success');
@@ -849,7 +858,9 @@ const SettingsPage = () => {
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin history sync error:', e);
-      addNotification(garminSyncErrorMessage(e, res), 'error');
+      const msg = garminSyncErrorMessage(e, res);
+      addNotification(msg, 'error');
+      setGarminSyncError(msg);
     } finally {
       setIsSyncingGarminHistory(false);
     }
@@ -2639,6 +2650,27 @@ const SettingsPage = () => {
                           </button>
                         )}
                       </div>
+                      {/* Persistent sync error display */}
+                      {garminSyncError && (
+                        <div className="mt-2 rounded-lg px-3 py-2 text-xs bg-red-50 text-red-700 border border-red-200 space-y-1">
+                          <div className="font-semibold">Sync error:</div>
+                          <div className="font-mono break-all">{garminSyncError}</div>
+                          {garminSyncError.includes('InvalidPullTokenException') && (
+                            <div className="mt-1 text-red-600 font-medium">
+                              ⚠️ Your Garmin token doesn't have activity pull permissions.
+                              Fix: <strong>Disconnect</strong> then <strong>Reconnect</strong> and make sure
+                              to enable <strong>Activities</strong> + <strong>Historical Data</strong> toggles
+                              on the Garmin consent screen. If the problem persists, your Garmin Health API app
+                              may need SUMMARY_PULL enabled in the developer portal.
+                            </div>
+                          )}
+                          {garminSyncError.includes('401') || garminSyncError.includes('403') ? (
+                            <div className="mt-1 text-red-600 font-medium">
+                              ⚠️ Access denied. Try disconnecting and reconnecting your Garmin account.
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
                       {/* Test connection result */}
                       {garminTestResult && (
                         <div className={`mt-2 rounded-lg px-3 py-2 text-xs space-y-1 ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
@@ -2647,6 +2679,14 @@ const SettingsPage = () => {
                               <div>✓ Connection OK{garminTestResult.athleteId ? ` · Athlete ID: ${garminTestResult.athleteId}` : ''}</div>
                               {garminTestResult.activitiesEndpoint?.ok && (
                                 <div className="text-green-600">✓ Activities endpoint OK ({garminTestResult.activitiesEndpoint.count ?? 0} activities in last 24h)</div>
+                              )}
+                              {garminTestResult.activitiesEndpoint && !garminTestResult.activitiesEndpoint.ok && (
+                                <div className="text-red-600">
+                                  ✗ Activities endpoint: HTTP {garminTestResult.activitiesEndpoint.status} — {JSON.stringify(garminTestResult.activitiesEndpoint.body)}
+                                  {JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
+                                    <span> — Disconnect and reconnect with Activities + Historical Data enabled.</span>
+                                  )}
+                                </div>
                               )}
                             </>
                           ) : (
@@ -2660,6 +2700,9 @@ const SettingsPage = () => {
                               {garminTestResult.activitiesEndpoint && (
                                 <div>
                                   Activities endpoint: {garminTestResult.activitiesEndpoint.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.activitiesEndpoint.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint.body)}`}
+                                  {!garminTestResult.activitiesEndpoint.ok && JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
+                                    <span className="block font-medium mt-0.5">→ Disconnect and reconnect. Enable Activities + Historical Data on the Garmin page.</span>
+                                  )}
                                 </div>
                               )}
                             </>

@@ -1155,17 +1155,25 @@ async function getGarminActivities(user, since = null) {
       } catch (apiErr) {
         const status = apiErr.response?.status;
         const body   = apiErr.response?.data;
+        const bodyStr = typeof body === 'object' ? JSON.stringify(body) : (body || '');
         console.error(`Garmin activity API error ${status}:`, body || apiErr.message);
+        if (bodyStr.includes('InvalidPullTokenException')) {
+          throw new Error(
+            `InvalidPullTokenException: your Garmin OAuth token does not have activity pull permission. ` +
+            `Please disconnect and reconnect your Garmin account, and make sure to enable the ` +
+            `"Activities" and "Historical Data" toggles on the Garmin consent screen. ` +
+            `If this persists, your Garmin Health API app may need SUMMARY_PULL permission enabled ` +
+            `in the Garmin developer portal (health.developer.garmin.com).`
+          );
+        }
         if (status === 401 || status === 403) {
           throw new Error(
-            `Garmin API access denied (${status}). The app may not be approved for ` +
-            `activity data access. Try reconnecting your Garmin account, or contact support.`
+            `Garmin API access denied (${status}). Try reconnecting your Garmin account. ` +
+            `Error: ${bodyStr || apiErr.message}`
           );
         }
         throw new Error(
-          `Garmin API returned ${status || 'network error'}: ${
-            (typeof body === 'object' ? JSON.stringify(body) : body) || apiErr.message
-          }`
+          `Garmin API returned ${status || 'network error'}: ${bodyStr || apiErr.message}`
         );
       }
 
