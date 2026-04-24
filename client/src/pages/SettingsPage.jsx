@@ -7,7 +7,7 @@ import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
 import { User, UserPlus, UserMinus, Trash2, Settings, Bell, CreditCard, Link as LinkIcon, Compass, Globe, Tag, Database } from 'lucide-react';
 import FitUploadSection from '../components/FitAnalysis/FitUploadSection';
 import CategoryManager from '../components/Settings/CategoryManager';
-import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
+import { getIntegrationStatus, invalidateCache, listExternalActivities, uploadFitFile, getStravaAuthUrl, startGarminAuth, syncStravaActivities, autoSyncStravaActivities, updateAvatarFromStrava, syncGarminActivities, syncGarminHistory, autoSyncGarminActivities, fetchGdprExportJson, getCurrentSubscription, createCheckoutSession, getSubscriptionPortalUrl, cancelSubscription, reactivateSubscription } from '../services/api';
 import { saveUserToStorage } from '../utils/userStorage';
 import { isCapacitorNative } from '../utils/isNativeApp';
 import { maybeNotifyStravaActivitiesImported } from '../utils/stravaImportLocalNotification';
@@ -834,12 +834,12 @@ const SettingsPage = () => {
   // Sync all historical Garmin data (no date filter — downloads everything)
   const handleSyncGarminHistory = async () => {
     if (isSyncingGarminHistory || isSyncingGarmin) return;
-    const ok = window.confirm('This will download your full Garmin activity history. This may take a few minutes for large libraries. Continue?');
+    const ok = window.confirm('This will download your full Garmin activity history (up to 5 years). This may take several minutes. Continue?');
     if (!ok) return;
     let res;
     try {
       setIsSyncingGarminHistory(true);
-      res = await syncGarminActivities(null);
+      res = await syncGarminHistory(); // dedicated endpoint with 90-day chunk pagination
       if (res?.error) {
         addNotification(`Garmin import error: ${res.message || res.error}`, 'error');
         return;

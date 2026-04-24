@@ -1160,6 +1160,14 @@ export const syncGarminActivities = async (since=null) => {
   return data; // { imported, updated }
 };
 
+// Full history import — paginates 5 years in 90-day chunks on the server
+export const syncGarminHistory = async () => {
+  const { data } = await api.post('/api/integrations/garmin/sync-history', {}, {
+    timeout: 1800000 // 30 minutes — full history can be large
+  });
+  return data;
+};
+
 export const autoSyncGarminActivities = async () => {
   // Prevent multiple simultaneous syncs
   if (garminAutoSyncInFlight) {

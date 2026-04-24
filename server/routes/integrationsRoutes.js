@@ -1126,13 +1126,20 @@ async function getGarminActivities(user, since = null) {
     const headers = {
       Authorization: `${tokenData.tokenType} ${tokenData.accessToken}`
     };
-    const params = {};
+    // Garmin Health API requires BOTH uploadStartTimeInSeconds AND uploadEndTimeInSeconds.
+    // Default start = 30 days ago when no since date is provided (regular "Sync Now").
+    const nowSec = Math.floor(Date.now() / 1000);
+    let startSec = nowSec - 30 * 24 * 3600; // default: 30 days ago
     if (since) {
       const d = new Date(since);
       if (!Number.isNaN(d.getTime())) {
-        params.uploadStartTimeInSeconds = Math.floor(d.getTime() / 1000);
+        startSec = Math.floor(d.getTime() / 1000);
       }
     }
+    const params = {
+      uploadStartTimeInSeconds: startSec,
+      uploadEndTimeInSeconds: nowSec
+    };
 
     const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
     console.log(`Garmin OAuth: fetching activities from ${activitiesUrl}`, params);
@@ -1412,6 +1419,82 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
       error: 'Garmin sync failed',
       message: err.message
     });
+  }
+});
+
+// POST /api/integrations/garmin/sync-history
+// Full history import: paginates through 90-day chunks from yearsBack to now.
+// OAuth path only — the garmin-connect library handles its own pagination.
+router.post('/garmin/sync-history', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user || !user.garmin?.accessToken) {
+      return res.status(400).json({ error: 'Garmin not connected' });
+    }
+
+    // Only OAuth path needs chunked pagination; username/password path has its own loop
+    if (!user.garmin?.refreshToken) {
+      // Fall back to single call (garmin-connect library handles pagination internally)
+      let activities;
+      try {
+        activities = await getGarminActivities(user, null);
+      } catch (apiErr) {
+        return res.status(502).json({ error: 'Garmin API error', message: apiErr.message });
+      }
+      const { imported, updated, total } = await upsertGarminActivities(user, activities);
+      await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+      return res.json({ imported, updated, totalFetched: total, status: 'ok' });
+    }
+
+    // OAuth: loop through 90-day windows from 5 years ago → now
+    const CHUNK_DAYS = 90;
+    const yearsBack = 5;
+    const nowMs = Date.now();
+    const startMs = nowMs - yearsBack * 365 * 24 * 3600 * 1000;
+
+    let totalImported = 0;
+    let totalUpdated = 0;
+    let totalFetched = 0;
+    let chunkStart = startMs;
+
+    while (chunkStart < nowMs) {
+      const chunkEnd = Math.min(chunkStart + CHUNK_DAYS * 24 * 3600 * 1000, nowMs);
+      try {
+        const tokenData = await getValidGarminToken(user);
+        const params = {
+          uploadStartTimeInSeconds: Math.floor(chunkStart / 1000),
+          uploadEndTimeInSeconds: Math.floor(chunkEnd / 1000)
+        };
+        const resp = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/activities`, {
+          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          params,
+          timeout: 30000
+        });
+        const batch = Array.isArray(resp.data)
+          ? resp.data
+          : Array.isArray(resp.data?.activities)
+            ? resp.data.activities
+            : [];
+        console.log(`Garmin history chunk ${new Date(chunkStart).toISOString().slice(0,10)} → ${new Date(chunkEnd).toISOString().slice(0,10)}: ${batch.length} activities`);
+        if (batch.length > 0) {
+          const { imported, updated, total } = await upsertGarminActivities(user, batch);
+          totalImported += imported;
+          totalUpdated += updated;
+          totalFetched += total;
+        }
+      } catch (chunkErr) {
+        console.error(`Garmin history chunk error (${new Date(chunkStart).toISOString().slice(0,10)}):`, chunkErr.response?.data || chunkErr.message);
+        // Continue to next chunk — don't abort the whole import on one chunk failure
+      }
+      chunkStart = chunkEnd;
+    }
+
+    await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
+    console.log(`Garmin history import done: ${totalImported} imported, ${totalUpdated} updated, ${totalFetched} total`);
+    res.json({ imported: totalImported, updated: totalUpdated, totalFetched, status: 'ok' });
+  } catch (err) {
+    console.error('Garmin history sync error:', err);
+    res.status(500).json({ error: 'Garmin history sync failed', message: err.message });
   }
 });
 
