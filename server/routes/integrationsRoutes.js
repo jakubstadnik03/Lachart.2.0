@@ -995,6 +995,7 @@ router.get('/garmin/callback', async (req, res) => {
     });
 
     const tokenData = tokenResp.data || {};
+    console.log('Garmin OAuth token response keys:', Object.keys(tokenData));
     const accessToken = tokenData.access_token || tokenData.accessToken || null;
     const refreshToken = tokenData.refresh_token || tokenData.refreshToken || null;
     const expiresIn = Number(tokenData.expires_in || tokenData.expiresIn || 0) || null;
