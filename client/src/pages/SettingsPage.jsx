@@ -2636,10 +2636,29 @@ const SettingsPage = () => {
                       </div>
                       {/* Test connection result */}
                       {garminTestResult && (
-                        <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                          {garminTestResult.ok
-                            ? `✓ Connection OK${garminTestResult.athleteId ? ` · Athlete ID: ${garminTestResult.athleteId}` : ''}`
-                            : `✗ ${garminTestResult.error}`}
+                        <div className={`mt-2 rounded-lg px-3 py-2 text-xs space-y-1 ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          {garminTestResult.ok ? (
+                            <>
+                              <div>✓ Connection OK{garminTestResult.athleteId ? ` · Athlete ID: ${garminTestResult.athleteId}` : ''}</div>
+                              {garminTestResult.activitiesEndpoint?.ok && (
+                                <div className="text-green-600">✓ Activities endpoint OK ({garminTestResult.activitiesEndpoint.count ?? 0} activities in last 24h)</div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {garminTestResult.error && <div>✗ {garminTestResult.error}</div>}
+                              {garminTestResult.userIdEndpoint && (
+                                <div>
+                                  User/ID endpoint: {garminTestResult.userIdEndpoint.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.userIdEndpoint.status} — ${JSON.stringify(garminTestResult.userIdEndpoint.body)}`}
+                                </div>
+                              )}
+                              {garminTestResult.activitiesEndpoint && (
+                                <div>
+                                  Activities endpoint: {garminTestResult.activitiesEndpoint.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.activitiesEndpoint.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint.body)}`}
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
                     </>

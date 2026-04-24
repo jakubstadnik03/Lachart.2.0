@@ -1513,22 +1513,50 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
         return res.json({ ok: false, error: `Token refresh failed: ${tokenErr.message}` });
       }
 
+      const authHeader = { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` };
+
+      // 1. Test user/id (basic connectivity)
+      let userIdResult = { ok: false, status: null, body: null };
       try {
         const r = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
-          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          headers: authHeader, timeout: 15000
+        });
+        userIdResult = { ok: true, status: r.status, body: r.data };
+      } catch (e) {
+        userIdResult = {
+          ok: false,
+          status: e.response?.status || null,
+          body: e.response?.data || e.message
+        };
+      }
+
+      // 2. Test activities endpoint (the one sync uses)
+      const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
+      let activitiesResult = { ok: false, status: null, body: null };
+      try {
+        const r = await axios.get(activitiesUrl, {
+          headers: authHeader,
+          params: { uploadStartTimeInSeconds: Math.floor((Date.now() - 86400000) / 1000) },
           timeout: 15000
         });
-        return res.json({ ok: true, athleteId: r.data?.userId || r.data?.id || null, method: 'oauth' });
-      } catch (apiErr) {
-        return res.json({
+        const count = Array.isArray(r.data) ? r.data.length
+          : Array.isArray(r.data?.activities) ? r.data.activities.length : 0;
+        activitiesResult = { ok: true, status: r.status, count };
+      } catch (e) {
+        activitiesResult = {
           ok: false,
-          error: `Garmin API returned ${apiErr.response?.status || 'error'}: ${
-            JSON.stringify(apiErr.response?.data) || apiErr.message
-          }`,
-          status: apiErr.response?.status || null,
-          method: 'oauth'
-        });
+          status: e.response?.status || null,
+          body: e.response?.data || e.message
+        };
       }
+
+      return res.json({
+        ok: userIdResult.ok && activitiesResult.ok,
+        method: 'oauth',
+        athleteId: userIdResult.body?.userId || userIdResult.body?.id || null,
+        userIdEndpoint: userIdResult,
+        activitiesEndpoint: { url: activitiesUrl, ...activitiesResult }
+      });
     }
 
     // Username/password path — just check the token format
