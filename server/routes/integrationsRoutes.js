@@ -1070,7 +1070,7 @@ router.post('/garmin/login', verifyToken, async (req, res) => {
     
     // Test credentials by attempting login
     try {
-      const GarminConnect = require('garmin-connect');
+      const { GarminConnect } = require('garmin-connect');
       const testClient = new GarminConnect({
         username: username,
         password: password
@@ -1184,7 +1184,7 @@ async function getGarminActivities(user, since = null) {
 
   // ── Username/password path (legacy garmin-connect library) ────────────────
   try {
-    const GarminConnect = require('garmin-connect');
+    const { GarminConnect } = require('garmin-connect');
 
     // Decode credentials from base64
     const credentials = Buffer.from(user.garmin.accessToken, 'base64').toString('utf-8');
@@ -1205,7 +1205,7 @@ async function getGarminActivities(user, since = null) {
 
     while (hasMore) {
       try {
-        const batch = await garminClient.getActivities({ start, limit });
+        const batch = await garminClient.getActivities(start, limit);
 
         if (!batch || batch.length === 0) {
           hasMore = false;
