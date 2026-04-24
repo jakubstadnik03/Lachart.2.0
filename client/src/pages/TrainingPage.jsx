@@ -307,40 +307,38 @@ export default function TrainingPage() {
     String(user?.role || '').toLowerCase()
   );
 
-  // Posluchač pro změnu atleta
+  // Sync selectedAthleteId when URL param :athleteId changes (e.g. CoachAthleteBar navigates)
+  useEffect(() => {
+    if (athleteId && athleteId !== selectedAthleteId) {
+      setSelectedAthleteId(athleteId);
+    } else if (!athleteId && coachLike && user?._id && selectedAthleteId !== user._id) {
+      // No URL param → fall back to coach self
+      setSelectedAthleteId(user._id);
+    }
+  }, [athleteId, user?._id, coachLike]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Posluchač pro změnu atleta (z menu nebo CoachAthleteBar)
   useEffect(() => {
     const handleAthleteChange = (event) => {
-      const { athleteId, trainings } = event.detail;
-      setSelectedAthleteId(athleteId);
-      setTrainings(trainings);
-      navigate(`/testing/${athleteId}`, { replace: true });
-
-      // Nastavení výchozího vybraného tréninku pro nového atleta
-      if (trainings.length > 0) {
-      // Filter by sport and category
-      let filteredTrainings = trainings;
-      if (selectedSport !== 'all') {
-        filteredTrainings = filteredTrainings.filter(t => t.sport === selectedSport);
+      const { athleteId: newAthleteId, trainings: newTrainings } = event.detail;
+      if (!newAthleteId || newAthleteId === selectedAthleteId) return;
+      setSelectedAthleteId(newAthleteId);
+      // If trainings were bundled with the event (legacy menu dispatch), use them directly
+      if (Array.isArray(newTrainings) && newTrainings.length > 0) {
+        setTrainings(newTrainings);
       }
-      if (selectedCategory !== 'all') {
-        if (selectedCategory === 'uncategorized') {
-          filteredTrainings = filteredTrainings.filter(t => !t.category);
-        } else {
-          filteredTrainings = filteredTrainings.filter(t => t.category === selectedCategory);
-        }
-      }
-      
-      const sportTrainings = filteredTrainings;
-        if (sportTrainings.length > 0) {
-          setSelectedTitle(sportTrainings[0].title);
-          setSelectedTraining(sportTrainings[0]._id);
-        }
-      }
+      // Navigate so URL stays in sync (CoachAthleteBar already navigated, but legacy menu doesn't)
+      navigate(`/training/${newAthleteId}`, { replace: true });
     };
 
+    // globalAthleteChanged = CoachAthleteBar  |  athleteChanged = legacy desktop Menu
+    window.addEventListener('globalAthleteChanged', handleAthleteChange);
     window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, [navigate, selectedSport, selectedCategory]);
+    return () => {
+      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
+      window.removeEventListener('athleteChanged', handleAthleteChange);
+    };
+  }, [navigate, selectedAthleteId]);
 
   // Funkce pro přidání nového tréninku
   const handleAddTraining = async (formData) => {

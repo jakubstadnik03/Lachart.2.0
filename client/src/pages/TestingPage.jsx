@@ -1117,17 +1117,23 @@ const TestingPage = () => {
     }
   }, [athleteProfile, latestBySport, bikeFtpEstimate, runRecentPerf]);
 
-  // Posluchač pro změnu atleta z menu
+  // Posluchač pro změnu atleta z menu nebo CoachAthleteBar
   useEffect(() => {
     const handleAthleteChange = (event) => {
-      const { athleteId } = event.detail;
-      setSelectedAthleteId(athleteId);
-      navigate(`/testing/${athleteId}`, { replace: true });
+      const { athleteId: newAthleteId } = event.detail;
+      if (!newAthleteId || newAthleteId === selectedAthleteId) return;
+      setSelectedAthleteId(newAthleteId);
+      navigate(`/testing/${newAthleteId}`, { replace: true });
     };
 
+    // globalAthleteChanged = CoachAthleteBar  |  athleteChanged = legacy desktop Menu
+    window.addEventListener('globalAthleteChanged', handleAthleteChange);
     window.addEventListener('athleteChanged', handleAthleteChange);
-    return () => window.removeEventListener('athleteChanged', handleAthleteChange);
-  }, [navigate]);
+    return () => {
+      window.removeEventListener('globalAthleteChanged', handleAthleteChange);
+      window.removeEventListener('athleteChanged', handleAthleteChange);
+    };
+  }, [navigate, selectedAthleteId]);
 
   const handleAddTest = async (newTest) => {
     try {

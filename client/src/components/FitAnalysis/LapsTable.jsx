@@ -165,15 +165,24 @@ const LapsTable = ({ training, onUpdate, user, selectedLapNumber = null, onSelec
   useEffect(() => {
     if (effectiveSelectedLap == null) return;
     const el = lapRefs.current[effectiveSelectedLap];
-    const container = tableContainerRef.current;
-    if (!el || !container) return;
-    // Scroll to center the selected row inside the scrollable container
-    const elRect = el.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const relativeTop = elRect.top - containerRect.top;
-    const centerOffset = relativeTop - container.clientHeight / 2 + elRect.height / 2;
-    container.scrollBy({ top: centerOffset, behavior: 'smooth' });
-  }, [effectiveSelectedLap]);
+    if (!el) return;
+
+    if (fullHeight) {
+      // fullHeight mode: the inner div is not overflow-y scrollable;
+      // the outer sheet/page container is. scrollIntoView walks up the DOM
+      // to find the real scrollable ancestor automatically.
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      // Bounded inner container: scroll within the table's own overflow div
+      const container = tableContainerRef.current;
+      if (!container) return;
+      const elRect = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const relativeTop = elRect.top - containerRect.top;
+      const centerOffset = relativeTop - container.clientHeight / 2 + el.clientHeight / 2;
+      container.scrollBy({ top: centerOffset, behavior: 'smooth' });
+    }
+  }, [effectiveSelectedLap, fullHeight]);
 
   if (!training || !training.laps || uniqueLaps.length === 0) return null;
 

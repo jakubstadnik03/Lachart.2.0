@@ -990,7 +990,10 @@ const AdminDashboard = () => {
                   </div>
                   <div className="ml-3 sm:ml-4">
                     <p className="text-xs sm:text-sm font-medium text-gray-600">Total Users</p>
-                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats?.totalUsers || 0}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">{users.filter(u => u.email && u.hasPassword).length}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {stats?.totalUsers || 0} total accounts
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2038,7 +2041,8 @@ const AdminDashboard = () => {
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
                   <div className="text-xs text-gray-600">Total users</div>
-                  <div className="text-2xl font-bold text-gray-900 mt-1">{emailCampaignStats.totalUsers}</div>
+                  <div className="text-2xl font-bold text-gray-900 mt-1">{users.filter(u => u.email && u.hasPassword).length}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{emailCampaignStats.totalUsers} total accounts</div>
                 </div>
                 <div className="rounded-lg bg-gray-50 border border-gray-200 p-4">
                   <div className="text-xs text-gray-600">Email eligible users</div>

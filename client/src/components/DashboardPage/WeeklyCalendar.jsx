@@ -297,6 +297,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [trainingDetail, setTrainingDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedLapNumber, setSelectedLapNumber] = useState(null);
+  const lapsTableRef = useRef(null);
   const [userProfile, setUserProfile] = useState(null);
   const [cachedActivities, setCachedActivities] = useState([]);
   // Clear stale cache immediately when the viewed athlete changes
@@ -320,6 +321,12 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
   const [showRightScrollNoTraining, setShowRightScrollNoTraining] = useState(true);
   const scrollContainerRef = useRef(null);
   const scrollContainerNoTrainingRef = useRef(null);
+
+  // Scroll the laps table wrapper into view (desktop) when a bar is clicked
+  useEffect(() => {
+    if (selectedLapNumber == null || !lapsTableRef.current) return;
+    lapsTableRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedLapNumber]);
 
   // Open the full TrainingForm for lactate entry
   const handleOpenLactateForm = async (lapIndex) => {
@@ -1702,7 +1709,7 @@ const WeeklyCalendar = ({ activities = [], onSelectActivity, selectedActivityId,
 
                   {/* Laps Table */}
                   {trainingDetail.laps && trainingDetail.laps.length > 0 && (
-                    <div className="mt-3 sm:mt-4">
+                    <div className="mt-3 sm:mt-4" ref={lapsTableRef}>
                           <LapsTable
                             training={trainingDetail}
                             onUpdate={async () => {

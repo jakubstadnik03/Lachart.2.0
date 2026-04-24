@@ -149,14 +149,14 @@ export default function CoachAthleteBar() {
 
   if (loading && athletes.length === 0) {
     return (
-      <div className="shrink-0 border-b border-gray-100 bg-white px-3 sm:px-4 py-2 flex items-center gap-2">
+      <div className="shrink-0 border-b border-gray-100 bg-white px-3 sm:px-4 py-2 flex items-center gap-2 mt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:mt-0">
         {[1, 2, 3].map(i => <div key={i} className="w-10 h-10 rounded-full bg-gray-100 animate-pulse" />)}
       </div>
     );
   }
 
   return (
-    <div className="shrink-0 border-b border-gray-100 bg-white/95 backdrop-blur-sm px-3 sm:px-4 py-2 space-y-1.5">
+    <div className="shrink-0 border-b border-gray-100 bg-white/95 backdrop-blur-sm px-3 sm:px-4 py-2 space-y-1.5 mt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:mt-0">
       {/* Top row: stats + manage */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-gray-500">

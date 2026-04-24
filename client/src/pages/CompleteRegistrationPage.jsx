@@ -11,7 +11,11 @@ const CompleteRegistrationPage = () => {
     password: '',
     confirmPassword: '',
   });
-  const [error, setError] = useState(null);
+  // tokenError = fatal (link expired/invalid) → replaces the form
+  // formError  = inline (wrong passwords, API error) → shown inside the form
+  const [tokenError, setTokenError] = useState(null);
+  const [formError, setFormError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,8 +23,8 @@ const CompleteRegistrationPage = () => {
       try {
         await api.get(`/user/verify-registration-token/${token}`);
         setLoading(false);
-      } catch (error) {
-        setError('Invalid or expired registration link');
+      } catch {
+        setTokenError('This registration link is invalid or has expired.');
         setLoading(false);
       }
     };
@@ -28,23 +32,39 @@ const CompleteRegistrationPage = () => {
     verifyToken();
   }, [token]);
 
+  const handleChange = (field) => (e) => {
+    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    // Clear inline error as soon as the user starts typing
+    if (formError) setFormError(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError(null);
+
     if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
+      setFormError("Passwords do not match");
       return;
     }
+    if (formData.password.length < 8) {
+      setFormError("Password must be at least 8 characters");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       await api.post(`/user/complete-registration/${token}`, {
         password: formData.password
       });
-      navigate('/login', { 
-        state: { 
-          message: 'Registration completed successfully. You can now log in.' 
+      navigate('/login', {
+        state: {
+          message: 'Registration completed successfully. You can now log in.'
         }
       });
-    } catch (error) {
-      setError(error.response?.data?.message || 'Error completing registration');
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Error completing registration. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -59,13 +79,14 @@ const CompleteRegistrationPage = () => {
     );
   }
 
-  if (error) {
+  if (tokenError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#EEF2FF]">
-        <div className="text-center">
-          <div className="text-red text-xl mb-4">{error}</div>
-          <a href="/login" className="text-primary hover:text-primary-dark">
-            Go to login
+        <div className="text-center max-w-sm px-6">
+          <div className="text-red-600 text-lg font-medium mb-3">{tokenError}</div>
+          <p className="text-sm text-gray-500 mb-5">Ask your coach to resend the registration email.</p>
+          <a href="/login" className="text-primary hover:text-primary-dark text-sm font-medium">
+            Go to login →
           </a>
         </div>
       </div>
@@ -110,7 +131,7 @@ const CompleteRegistrationPage = () => {
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary"
                   placeholder="Password"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={handleChange('password')}
                 />
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
                   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -144,7 +165,7 @@ const CompleteRegistrationPage = () => {
                   className="appearance-none rounded-lg relative block w-full pl-10 pr-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary"
                   placeholder="Confirm password"
                   value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  onChange={handleChange('confirmPassword')}
                 />
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
                   <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -174,18 +195,22 @@ const CompleteRegistrationPage = () => {
               Password must be at least 8 characters long
             </p>
 
-            {error && (
-              <div className="text-red text-sm text-center">
-                {error}
+            {formError && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {formError}
               </div>
             )}
 
             <div>
               <button
                 type="submit"
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                disabled={isSubmitting}
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Complete Registration
+                {isSubmitting ? 'Setting password…' : 'Complete Registration'}
               </button>
             </div>
           </form>

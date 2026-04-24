@@ -92,6 +92,8 @@ const SettingsPage = () => {
   const [isSyncingGarmin, setIsSyncingGarmin] = useState(false);
   const [isSyncingGarminHistory, setIsSyncingGarminHistory] = useState(false);
   const [garminLastSync, setGarminLastSync] = useState(null);
+  const [garminTestResult, setGarminTestResult] = useState(null); // { ok, error, athleteId }
+  const [isTestingGarmin, setIsTestingGarmin] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -797,17 +799,33 @@ const SettingsPage = () => {
     }
   };
 
+  // Helper: extract a user-readable error from a Garmin sync response or thrown error
+  const garminSyncErrorMessage = (e, res) => {
+    // Server returned a 4xx/5xx with a message in the response body
+    const serverMsg = e?.response?.data?.message || res?.message;
+    if (serverMsg) return serverMsg;
+    // Network or other error
+    if (e?.message) return e.message;
+    return 'Garmin sync failed. Check the server logs for details.';
+  };
+
   const handleSyncGarmin = async () => {
     if (isSyncingGarmin) return;
+    let res;
     try {
       setIsSyncingGarmin(true);
-      const res = await syncGarminActivities();
+      res = await syncGarminActivities();
+      // The server may return { error, message } with HTTP 200 in auto-sync, or 502/500 (which throws)
+      if (res?.error) {
+        addNotification(`Garmin sync error: ${res.message || res.error}`, 'error');
+        return;
+      }
       addNotification(`Garmin sync: imported ${res.imported || 0}, updated ${res.updated || 0}`, 'success');
       setGarminLastSync(new Date().toISOString());
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin sync error:', e);
-      addNotification('Failed to sync Garmin activities', 'error');
+      addNotification(garminSyncErrorMessage(e, res), 'error');
     } finally {
       setIsSyncingGarmin(false);
     }
@@ -818,18 +836,40 @@ const SettingsPage = () => {
     if (isSyncingGarminHistory || isSyncingGarmin) return;
     const ok = window.confirm('This will download your full Garmin activity history. This may take a few minutes for large libraries. Continue?');
     if (!ok) return;
+    let res;
     try {
       setIsSyncingGarminHistory(true);
-      // Pass null to skip the 'since' filter → backend fetches all activities
-      const res = await syncGarminActivities(null);
+      res = await syncGarminActivities(null);
+      if (res?.error) {
+        addNotification(`Garmin import error: ${res.message || res.error}`, 'error');
+        return;
+      }
       addNotification(`History import: ${res.imported || 0} new, ${res.updated || 0} updated`, 'success');
       setGarminLastSync(new Date().toISOString());
       await handleSyncComplete();
     } catch (e) {
       console.error('Garmin history sync error:', e);
-      addNotification('Failed to import Garmin history', 'error');
+      addNotification(garminSyncErrorMessage(e, res), 'error');
     } finally {
       setIsSyncingGarminHistory(false);
+    }
+  };
+
+  const handleTestGarminConnection = async () => {
+    if (isTestingGarmin) return;
+    setIsTestingGarmin(true);
+    setGarminTestResult(null);
+    try {
+      const token = getStoredAuthToken();
+      const r = await fetch(`${API_BASE_URL}/api/integrations/garmin/test-connection`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await r.json();
+      setGarminTestResult(data);
+    } catch (e) {
+      setGarminTestResult({ ok: false, error: e.message });
+    } finally {
+      setIsTestingGarmin(false);
     }
   };
 
@@ -2575,6 +2615,16 @@ const SettingsPage = () => {
                             {isSyncingGarminHistory ? 'Importing...' : 'Import History'}
                           </button>
                         )}
+                          {garminConnected && (
+                          <button
+                            onClick={handleTestGarminConnection}
+                            disabled={isTestingGarmin || isSyncingGarmin || isSyncingGarminHistory}
+                            title="Test whether the Garmin API token is valid"
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-100 text-gray-800 ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            {isTestingGarmin ? 'Testing…' : 'Test Connection'}
+                          </button>
+                        )}
                         {garminConnected && (
                           <button
                             onClick={handleDisconnectGarmin}
@@ -2584,6 +2634,14 @@ const SettingsPage = () => {
                           </button>
                         )}
                       </div>
+                      {/* Test connection result */}
+                      {garminTestResult && (
+                        <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          {garminTestResult.ok
+                            ? `✓ Connection OK${garminTestResult.athleteId ? ` · Athlete ID: ${garminTestResult.athleteId}` : ''}`
+                            : `✗ ${garminTestResult.error}`}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <button

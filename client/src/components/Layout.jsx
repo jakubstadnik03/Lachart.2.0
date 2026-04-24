@@ -578,13 +578,15 @@ const Layout = ({ isMenuOpen, setIsMenuOpen }) => {
         <CoachAthleteBar />
 
         {/* Hlavní obsah s footerem */}
+        {/* On mobile the header is position:fixed. For athletes the main needs pt to clear it.
+            For coaches the CoachAthleteBar already carries that mt offset, so main needs pt-0. */}
         <main
-          className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2 sm:px-3 md:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-[calc(env(safe-area-inset-top,0px)+3.5rem)] lg:px-4 lg:pb-0 lg:pt-0`}
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-2 sm:px-3 md:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] lg:px-4 lg:pb-0 lg:pt-0 ${isCoachRole(user) ? 'pt-0' : 'pt-14'}`}
         >
-          <div className="mx-auto w-full max-w-[1600px] flex flex-col">
+          <div className="mx-auto w-full max-w-[1600px] flex flex-col flex-1">
             <Outlet /> {/* Zde se renderuje obsah vnořených rout */}
             {/* Footer na mobilu — scrolluje s obsahem, vždy na konci */}
-            <div className="pt-4 md:hidden">
+            <div className="pt-4 md:hidden mt-auto">
               <MemoizedFooter />
             </div>
           </div>

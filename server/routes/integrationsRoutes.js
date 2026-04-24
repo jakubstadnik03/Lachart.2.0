@@ -1112,118 +1112,128 @@ router.post('/garmin/disconnect', verifyToken, async (req, res) => {
 
 // Helper function to get Garmin activities using garmin-connect library
 async function getGarminActivities(user, since = null) {
-  try {
-    if (user?.garmin?.refreshToken) {
-      const tokenType = await getValidGarminToken(user);
-      const headers = {
-        Authorization: `${tokenType.tokenType} ${tokenType.accessToken}`
-      };
-      const params = {};
-      if (since) {
-        const d = new Date(since);
-        if (!Number.isNaN(d.getTime())) {
-          params.uploadStartTimeInSeconds = Math.floor(d.getTime() / 1000);
-        }
+  // ── OAuth path ────────────────────────────────────────────────────────────
+  // Errors here are intentionally NOT caught so they propagate to the route
+  // handler, which can return a meaningful HTTP error to the frontend.
+  if (user?.garmin?.refreshToken) {
+    const tokenData = await getValidGarminToken(user);
+    const headers = {
+      Authorization: `${tokenData.tokenType} ${tokenData.accessToken}`
+    };
+    const params = {};
+    if (since) {
+      const d = new Date(since);
+      if (!Number.isNaN(d.getTime())) {
+        params.uploadStartTimeInSeconds = Math.floor(d.getTime() / 1000);
       }
+    }
 
-      const resp = await axios.get(`${getGarminActivityApiBaseUrl()}/rest/activities`, {
+    let resp;
+    try {
+      resp = await axios.get(`${getGarminActivityApiBaseUrl()}/rest/activities`, {
         headers,
         params,
         timeout: 30000
       });
+    } catch (apiErr) {
+      const status = apiErr.response?.status;
+      const body   = apiErr.response?.data;
+      console.error(`Garmin activity API error ${status}:`, body || apiErr.message);
 
-      const activities = Array.isArray(resp.data)
-        ? resp.data
-        : Array.isArray(resp.data?.activities)
-          ? resp.data.activities
-          : [];
-
-      console.log(`Fetched ${activities.length} Garmin OAuth activities`);
-      return activities;
+      // Build a human-readable message to surface to the user
+      if (status === 401 || status === 403) {
+        throw new Error(
+          `Garmin API access denied (${status}). The app may not be approved for ` +
+          `activity data access. Try disconnecting and reconnecting your account, ` +
+          `or contact support.`
+        );
+      }
+      if (status === 404) {
+        throw new Error(
+          `Garmin activity endpoint not found (404). The API path may have changed.`
+        );
+      }
+      throw new Error(
+        `Garmin API returned ${status || 'network error'}: ${
+          (typeof body === 'object' ? JSON.stringify(body) : body) || apiErr.message
+        }`
+      );
     }
 
+    const activities = Array.isArray(resp.data)
+      ? resp.data
+      : Array.isArray(resp.data?.activities)
+        ? resp.data.activities
+        : [];
+
+    console.log(`Fetched ${activities.length} Garmin OAuth activities`);
+    return activities;
+  }
+
+  // ── Username/password path (legacy garmin-connect library) ────────────────
+  try {
     const GarminConnect = require('garmin-connect');
-    
+
     // Decode credentials from base64
     const credentials = Buffer.from(user.garmin.accessToken, 'base64').toString('utf-8');
     const [username, password] = credentials.split(':');
-    
+
     if (!username || !password) {
-      console.error('Invalid Garmin credentials format');
-      return [];
+      throw new Error('Invalid Garmin credentials format (base64 decode failed)');
     }
-    
-    // Create Garmin client
-    const garminClient = new GarminConnect({
-      username: username,
-      password: password
-    });
-    
-    // Login to Garmin
+
+    const garminClient = new GarminConnect({ username, password });
     await garminClient.login();
-    
-    // Get activities
+
     let activities = [];
     const startDate = since ? new Date(since) : null;
-    
-    // Fetch activities (Garmin API returns activities in batches)
     let start = 0;
     const limit = 100;
     let hasMore = true;
-    
+
     while (hasMore) {
       try {
         const batch = await garminClient.getActivities({ start, limit });
-        
+
         if (!batch || batch.length === 0) {
           hasMore = false;
           break;
         }
-        
-        // Filter by date if since is provided
+
         if (startDate) {
-          const filtered = batch.filter(activity => {
-            const activityDate = new Date(activity.startTimeGMT || activity.startTimeLocal);
-            return activityDate >= startDate;
+          const filtered = batch.filter(a => {
+            const d = new Date(a.startTimeGMT || a.startTimeLocal);
+            return d >= startDate;
           });
           activities = activities.concat(filtered);
-          
-          // If we got less than limit or all activities are before startDate, we're done
-          if (batch.length < limit || filtered.length < batch.length) {
-            hasMore = false;
-          }
+          if (batch.length < limit || filtered.length < batch.length) hasMore = false;
         } else {
           activities = activities.concat(batch);
         }
-        
-        // If we got less than limit, we've reached the end
+
         if (batch.length < limit) {
           hasMore = false;
         } else {
           start += limit;
         }
-        
-        // Safety limit: max 1000 activities per sync
-        if (activities.length >= 1000) {
-          hasMore = false;
-        }
+
+        // Safety cap
+        if (activities.length >= 1000) hasMore = false;
       } catch (batchError) {
         console.error('Error fetching Garmin activities batch:', batchError);
         hasMore = false;
       }
     }
-    
-    console.log(`Fetched ${activities.length} Garmin activities`);
+
+    console.log(`Fetched ${activities.length} Garmin activities (username/password)`);
     return activities;
   } catch (error) {
-    console.error('Error fetching Garmin activities:', error);
-    // If login fails, credentials might be invalid
-    if (error.message && error.message.includes('login')) {
-      // Clear invalid credentials
-      user.garmin = null;
-      await user.save();
+    console.error('Error fetching Garmin activities (username/password path):', error);
+    // If login fails, stored credentials are invalid — clear them
+    if (error.message && (error.message.includes('login') || error.message.includes('credentials'))) {
+      await User.findByIdAndUpdate(user._id, { $unset: { garmin: '' } });
     }
-    return [];
+    throw new Error(`Garmin login failed: ${error.message}`);
   }
 }
 
@@ -1364,25 +1374,32 @@ router.post('/garmin/sync', verifyToken, async (req, res) => {
     if (!user || !user.garmin?.accessToken) {
       return res.status(400).json({ error: 'Garmin not connected' });
     }
-    
-    // Optional: support 'since' parameter
-    const { since } = req.body || {};
-    
-    // Get activities from Garmin
-    // TODO: Implement actual Garmin API integration
-    const activities = await getGarminActivities(user, since);
-    
-    console.log(`Starting Garmin sync for user ${user._id}, found ${activities.length} activities`);
-    const { imported, updated, total } = await upsertGarminActivities(user, activities);
-    console.log(`Garmin sync completed: imported ${imported}, updated ${updated}, total ${total}`);
 
-    // Always stamp the sync date so the frontend can show "last synced at"
+    const { since } = req.body || {};
+
+    let activities;
+    try {
+      activities = await getGarminActivities(user, since);
+    } catch (apiErr) {
+      // Surface the real Garmin API error to the frontend
+      console.error('Garmin API error during sync:', apiErr.message);
+      return res.status(502).json({
+        error: 'Garmin API error',
+        message: apiErr.message
+      });
+    }
+
+    console.log(`Garmin sync: fetched ${activities.length} activities for user ${user._id}`);
+    const { imported, updated, total } = await upsertGarminActivities(user, activities);
+    console.log(`Garmin sync done: imported ${imported}, updated ${updated}, total ${total}`);
+
+    // Stamp sync date
     await User.findByIdAndUpdate(user._id, { 'garmin.lastSyncDate': new Date() });
 
     res.json({ imported, updated, totalFetched: total, status: 'ok' });
   } catch (err) {
     console.error('Garmin sync error:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Garmin sync failed',
       message: err.message
     });
@@ -1464,6 +1481,57 @@ router.put('/garmin/auto-sync', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error updating Garmin auto-sync setting:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/integrations/garmin/test-connection
+// Validates the stored Garmin token by calling the Wellness user-id endpoint.
+// Returns { ok: true, athleteId } or { ok: false, error, status }.
+router.get('/garmin/test-connection', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user?.garmin?.accessToken) {
+      return res.json({ ok: false, error: 'Garmin not connected' });
+    }
+
+    // OAuth path
+    if (user.garmin.refreshToken) {
+      let tokenData;
+      try {
+        tokenData = await getValidGarminToken(user);
+      } catch (tokenErr) {
+        return res.json({ ok: false, error: `Token refresh failed: ${tokenErr.message}` });
+      }
+
+      try {
+        const r = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/id`, {
+          headers: { Authorization: `${tokenData.tokenType} ${tokenData.accessToken}` },
+          timeout: 15000
+        });
+        return res.json({ ok: true, athleteId: r.data?.userId || r.data?.id || null, method: 'oauth' });
+      } catch (apiErr) {
+        return res.json({
+          ok: false,
+          error: `Garmin API returned ${apiErr.response?.status || 'error'}: ${
+            JSON.stringify(apiErr.response?.data) || apiErr.message
+          }`,
+          status: apiErr.response?.status || null,
+          method: 'oauth'
+        });
+      }
+    }
+
+    // Username/password path — just check the token format
+    try {
+      const creds = Buffer.from(user.garmin.accessToken, 'base64').toString('utf-8');
+      const [u] = creds.split(':');
+      return res.json({ ok: !!u, athleteId: u || null, method: 'username_password', note: 'Credential format OK — login tested on next sync' });
+    } catch {
+      return res.json({ ok: false, error: 'Invalid credential format', method: 'username_password' });
+    }
+  } catch (err) {
+    console.error('Garmin test-connection error:', err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
