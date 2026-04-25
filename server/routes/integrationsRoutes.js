@@ -1572,7 +1572,23 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
         };
       }
 
-      // 2. Test activities endpoint — must send BOTH params, max window = 86400s (1 day)
+      // 2. Check user permissions — shows exactly what this token is allowed to pull
+      let permissionsResult = { ok: false, status: null, permissions: null };
+      try {
+        const r = await axios.get(`${getGarminWellnessApiBaseUrl()}/rest/user/permissions`, {
+          headers: authHeader, timeout: 15000
+        });
+        permissionsResult = { ok: true, status: r.status, permissions: r.data };
+        console.log('Garmin user permissions:', JSON.stringify(r.data));
+      } catch (e) {
+        permissionsResult = {
+          ok: false,
+          status: e.response?.status || null,
+          body: e.response?.data || e.message
+        };
+      }
+
+      // 3. Test activities endpoint — must send BOTH params, max window = 86400s (1 day)
       const activitiesUrl = `${getGarminWellnessApiBaseUrl()}/rest/activities`;
       const nowSec = Math.floor(Date.now() / 1000);
       let activitiesResult = { ok: false, status: null, body: null };
@@ -1601,6 +1617,7 @@ router.get('/garmin/test-connection', verifyToken, async (req, res) => {
         method: 'oauth',
         athleteId: userIdResult.body?.userId || userIdResult.body?.id || null,
         userIdEndpoint: userIdResult,
+        permissionsEndpoint: permissionsResult,
         activitiesEndpoint: { url: activitiesUrl, ...activitiesResult }
       });
     }

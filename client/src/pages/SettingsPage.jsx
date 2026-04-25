@@ -2674,39 +2674,32 @@ const SettingsPage = () => {
                       {/* Test connection result */}
                       {garminTestResult && (
                         <div className={`mt-2 rounded-lg px-3 py-2 text-xs space-y-1 ${garminTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                          {garminTestResult.ok ? (
-                            <>
-                              <div>✓ Connection OK{garminTestResult.athleteId ? ` · Athlete ID: ${garminTestResult.athleteId}` : ''}</div>
-                              {garminTestResult.activitiesEndpoint?.ok && (
-                                <div className="text-green-600">✓ Activities endpoint OK ({garminTestResult.activitiesEndpoint.count ?? 0} activities in last 24h)</div>
-                              )}
-                              {garminTestResult.activitiesEndpoint && !garminTestResult.activitiesEndpoint.ok && (
-                                <div className="text-red-600">
-                                  ✗ Activities endpoint: HTTP {garminTestResult.activitiesEndpoint.status} — {JSON.stringify(garminTestResult.activitiesEndpoint.body)}
-                                  {JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
-                                    <span> — Disconnect and reconnect with Activities + Historical Data enabled.</span>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {garminTestResult.error && <div>✗ {garminTestResult.error}</div>}
-                              {garminTestResult.userIdEndpoint && (
-                                <div>
-                                  User/ID endpoint: {garminTestResult.userIdEndpoint.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.userIdEndpoint.status} — ${JSON.stringify(garminTestResult.userIdEndpoint.body)}`}
-                                </div>
-                              )}
-                              {garminTestResult.activitiesEndpoint && (
-                                <div>
-                                  Activities endpoint: {garminTestResult.activitiesEndpoint.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.activitiesEndpoint.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint.body)}`}
-                                  {!garminTestResult.activitiesEndpoint.ok && JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
-                                    <span className="block font-medium mt-0.5">→ Disconnect and reconnect. Enable Activities + Historical Data on the Garmin page.</span>
-                                  )}
-                                </div>
-                              )}
-                            </>
+                          <div>
+                            User/ID: {garminTestResult.userIdEndpoint?.ok ? '✓ OK' : `✗ HTTP ${garminTestResult.userIdEndpoint?.status} — ${JSON.stringify(garminTestResult.userIdEndpoint?.body)}`}
+                            {garminTestResult.athleteId ? ` (ID: ${garminTestResult.athleteId})` : ''}
+                          </div>
+                          {garminTestResult.permissionsEndpoint && (
+                            <div>
+                              Permissions: {garminTestResult.permissionsEndpoint.ok
+                                ? <span className="text-green-700 font-mono">{JSON.stringify(garminTestResult.permissionsEndpoint.permissions)}</span>
+                                : `✗ HTTP ${garminTestResult.permissionsEndpoint.status} — ${JSON.stringify(garminTestResult.permissionsEndpoint.body)}`
+                              }
+                            </div>
                           )}
+                          <div>
+                            Activities: {garminTestResult.activitiesEndpoint?.ok
+                              ? `✓ OK (${garminTestResult.activitiesEndpoint.count ?? 0} in last 24h)`
+                              : `✗ HTTP ${garminTestResult.activitiesEndpoint?.status} — ${JSON.stringify(garminTestResult.activitiesEndpoint?.body)}`
+                            }
+                          </div>
+                          {garminTestResult.activitiesEndpoint && !garminTestResult.activitiesEndpoint.ok && (
+                            JSON.stringify(garminTestResult.activitiesEndpoint.body).includes('InvalidPullToken') && (
+                              <div className="font-medium text-red-700 border-t border-red-200 pt-1 mt-1">
+                                → Your token is missing ACTIVITY pull permission. Disconnect and reconnect — enable <strong>Activities</strong> + <strong>Historical Data</strong> on the Garmin screen.
+                              </div>
+                            )
+                          )}
+                          {garminTestResult.error && <div>✗ {garminTestResult.error}</div>}
                         </div>
                       )}
                     </>
