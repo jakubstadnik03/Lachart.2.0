@@ -95,6 +95,9 @@ const SettingsPage = () => {
   const [garminTestResult, setGarminTestResult] = useState(null); // { ok, error, athleteId }
   const [isTestingGarmin, setIsTestingGarmin] = useState(false);
   const [garminSyncError, setGarminSyncError] = useState(null); // persistent error shown in UI
+  const [showGarminLoginForm, setShowGarminLoginForm] = useState(false);
+  const [garminLoginForm, setGarminLoginForm] = useState({ username: '', password: '' });
+  const [isConnectingGarminCreds, setIsConnectingGarminCreds] = useState(false);
   const [stravaLogoError, setStravaLogoError] = useState(false);
   const [garminLogoError, setGarminLogoError] = useState(false);
   const [polarConnected] = useState(false);
@@ -797,6 +800,31 @@ const SettingsPage = () => {
     } catch (e) {
       console.error('Garmin connect error:', e);
       addNotification(e.response?.data?.error || e.message || 'Failed to start Garmin connection', 'error');
+    }
+  };
+
+  const handleConnectGarminCredentials = async (e) => {
+    e.preventDefault();
+    if (!garminLoginForm.username || !garminLoginForm.password) return;
+    setIsConnectingGarminCreds(true);
+    try {
+      const token = getStoredAuthToken();
+      const resp = await fetch(`${API_BASE_URL}/api/integrations/garmin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username: garminLoginForm.username, password: garminLoginForm.password })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || data.message || 'Login failed');
+      addNotification('Garmin connected via credentials!', 'success');
+      setGarminConnected(true);
+      setShowGarminLoginForm(false);
+      setGarminLoginForm({ username: '', password: '' });
+      setGarminSyncError(null);
+    } catch (err) {
+      addNotification(`Garmin login failed: ${err.message}`, 'error');
+    } finally {
+      setIsConnectingGarminCreds(false);
     }
   };
 
@@ -2601,17 +2629,57 @@ const SettingsPage = () => {
                         </p>
                       )}
                       {!garminConnected && (
-                        <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mb-2`}>
-                          ⚠️ When connecting, make sure to enable <strong>Activities</strong> and <strong>Historical Data</strong> toggles on the Garmin page.
-                        </p>
+                        <div className="mb-2 space-y-1.5">
+                          <p className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5`}>
+                            ⚠️ OAuth Connect requires <strong>Health API</strong> access in your Garmin developer account. If you have an Evaluation tier, use <strong>Connect with credentials</strong> below instead.
+                          </p>
+                        </div>
+                      )}
+                      {/* Garmin credentials login form */}
+                      {showGarminLoginForm && !garminConnected && (
+                        <form onSubmit={handleConnectGarminCredentials} className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded space-y-2">
+                          <p className="text-xs text-gray-600 font-medium">Connect with Garmin Connect credentials:</p>
+                          <input
+                            type="text"
+                            placeholder="Garmin email"
+                            value={garminLoginForm.username}
+                            onChange={e => setGarminLoginForm(f => ({ ...f, username: e.target.value }))}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
+                            autoComplete="username"
+                          />
+                          <input
+                            type="password"
+                            placeholder="Garmin password"
+                            value={garminLoginForm.password}
+                            onChange={e => setGarminLoginForm(f => ({ ...f, password: e.target.value }))}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
+                            autoComplete="current-password"
+                          />
+                          <div className="flex gap-2">
+                            <button type="submit" disabled={isConnectingGarminCreds} className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-60">
+                              {isConnectingGarminCreds ? 'Connecting…' : 'Connect'}
+                            </button>
+                            <button type="button" onClick={() => setShowGarminLoginForm(false)} className="px-3 py-1.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
                       )}
                       <div className={`flex ${isMobile ? 'flex-col gap-1.5' : 'flex-wrap gap-2'}`}>
                         <button
                           onClick={handleConnectGarmin}
                           className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-primary text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-primary-dark`}
                         >
-                          {garminConnected ? 'Reconnect' : 'Connect'}
+                          {garminConnected ? 'Reconnect (OAuth)' : 'Connect (OAuth)'}
                         </button>
+                        {!garminConnected && (
+                          <button
+                            onClick={() => setShowGarminLoginForm(v => !v)}
+                            className={`${isMobile ? 'px-2.5 py-1.5 text-[10px] w-full' : 'px-3 py-2'} bg-gray-700 text-white ${isMobile ? 'rounded-md' : 'rounded'} hover:bg-gray-900`}
+                          >
+                            Connect with credentials
+                          </button>
+                        )}
                         {garminConnected && (
                           <button
                             onClick={handleSyncGarmin}
