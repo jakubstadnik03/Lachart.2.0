@@ -5165,13 +5165,18 @@ const FitAnalysisPage = () => {
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Distance</div>
                       <div className="text-sm font-semibold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
                     </div>
-                    {isStravaRun && avgPace && (
-                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Pace</div>
-                        <div className="text-sm font-semibold text-gray-900">{avgPace} /km</div>
-                        {maxPace && <div className="text-xs text-gray-400 mt-0.5">Max {maxPace} /km</div>}
-                      </div>
-                    )}
+                    {isStravaRun && stravaAvgSpeed > 0 && (() => {
+                      const fmtP = (s) => { if (!s || s <= 0) return null; const sec = Math.round(1000/s); return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`; };
+                      const ap = fmtP(stravaAvgSpeed);
+                      const mp = fmtP(selectedStrava?.max_speed);
+                      return ap ? (
+                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Pace</div>
+                          <div className="text-sm font-semibold text-gray-900">{ap} /km</div>
+                          {mp && <div className="text-xs text-gray-400 mt-0.5">Max {mp} /km</div>}
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg HR</div>
                       <div className="text-sm font-semibold text-gray-900">
