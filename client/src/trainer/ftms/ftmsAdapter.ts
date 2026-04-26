@@ -636,9 +636,9 @@ export class FTMSAdapter implements TrainerAdapter {
       }
     }
 
-    // For FE-C (CPS or CSC), start command is typically not needed
-    // The trainer starts automatically when target power is set
-    if (this.cpsControlPointChar || this.cscControlPointChar) {
+    // For FE-C (Tacx proprietary, CPS, or CSC), start command is not needed —
+    // the trainer begins responding to power commands as soon as target power is set.
+    if (this.tacxFecTxChar || this.cpsControlPointChar || this.cscControlPointChar) {
       logger.info('FE-C trainer - start command not required (trainer starts when power is set)');
       return;
     }
