@@ -1343,13 +1343,25 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
             return res.status(403).json({ error: "Access allowed only for coach/tester roles" });
         }
 
-        // Find athlete by email
-        const athlete = await userDao.findByEmail(email);
-        if (!athlete) {
-            return res.status(404).json({ error: "Athlete with this email not found" });
-        }
+        // Find athlete by email — if not found, create a stub pre-registered account
+        let athlete = await userDao.findByEmail(email);
+        let isNewUser = false;
 
-        if (athlete.role !== 'athlete') {
+        if (!athlete) {
+            // No account yet → create a pending stub so the invitation can be sent
+            isNewUser = true;
+            const salt = await bcrypt.genSalt(10);
+            const stubPassword = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), salt);
+            athlete = await User.create({
+                email: email.toLowerCase().trim(),
+                name: '',
+                surname: '',
+                role: 'athlete',
+                signupMethod: 'coach_invite',
+                password: stubPassword,
+                isPreRegistered: true,
+            });
+        } else if (athlete.role !== 'athlete') {
             return res.status(400).json({ error: "User with this email is not an athlete" });
         }
 
@@ -1379,29 +1391,33 @@ router.post("/coach/invite-athlete", verifyToken, async (req, res) => {
         const clientUrl = getClientUrl();
         const invitationLink = `${clientUrl}/accept-invitation/${invitationToken}`;
 
-        const emailContent = `
-            <p>Your coach <strong>${coach.name} ${coach.surname}</strong> has invited you to their team in LaChart.</p>
-            <p>To confirm the invitation, please click the button below.</p>
-        `;
+        // Different email copy for brand-new vs existing users
+        const emailContent = isNewUser
+            ? `
+                <p>Coach <strong>${coach.name} ${coach.surname}</strong> has invited you to join their team on LaChart — a platform for tracking training, lactate tests and athlete progress.</p>
+                <p>Click the button below to create your free account and connect with your coach. It takes less than a minute.</p>
+              `
+            : `
+                <p>Your coach <strong>${coach.name} ${coach.surname}</strong> has invited you to their team in LaChart.</p>
+                <p>To confirm the invitation, please click the button below.</p>
+              `;
 
         await transporter.sendMail({
-            from: {
-                name: 'LaChart',
-                address: process.env.EMAIL_USER
-            },
+            from: { name: 'LaChart', address: process.env.EMAIL_USER },
             to: email,
-            subject: 'Team Invitation in LaChart',
+            subject: isNewUser ? `${coach.name} ${coach.surname} invited you to LaChart` : 'Team Invitation in LaChart',
             html: generateEmailTemplate({
-                title: 'Team Invitation',
+                title: isNewUser ? 'You\'ve been invited to LaChart' : 'Team Invitation',
                 content: emailContent,
-                buttonText: 'Confirm Invitation',
+                buttonText: isNewUser ? 'Create account & join team' : 'Confirm Invitation',
                 buttonUrl: invitationLink,
                 footerText: 'This link is valid for 7 days.'
             })
         });
 
-        res.status(200).json({ 
+        res.status(200).json({
             message: "Invitation successfully sent",
+            isNewUser,
             athlete: {
                 _id: athlete._id,
                 name: athlete.name,
@@ -1539,14 +1555,107 @@ router.get("/verify-invitation-token/:token", async (req, res) => {
         }
 
         // Return only necessary information
+        // needsRegistration = true when this is a stub account (invited but no name yet)
         res.status(200).json({
             _id: athlete._id,
             email: athlete.email,
             name: athlete.name,
-            surname: athlete.surname
+            surname: athlete.surname,
+            needsRegistration: !!(athlete.isPreRegistered || (!athlete.name && !athlete.surname)),
         });
     } catch (error) {
         console.error("Error verifying invitation token:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Complete registration for a new user who was invited by a coach (no existing account)
+// POST /user/complete-registration/:token  { name, surname, password }
+router.post("/complete-registration/:token", async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { name, surname, password } = req.body;
+
+        if (!name || !surname || !password) {
+            return res.status(400).json({ error: "Name, surname and password are required" });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters" });
+        }
+
+        const athlete = await userDao.findByInvitationToken(token);
+        if (!athlete) {
+            return res.status(404).json({ error: "Invalid or expired invitation link" });
+        }
+        if (athlete.invitationTokenExpires < new Date()) {
+            return res.status(400).json({ error: "This invitation link has expired" });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Get the coach before clearing pendingCoachId
+        const coach = athlete.pendingCoachId ? await userDao.findById(athlete.pendingCoachId) : null;
+
+        // Activate the account + link coach
+        const mergedTeam = coach ? mergeCoachIds(athlete, coach._id) : { coachIds: athlete.coachIds || [], coachId: athlete.coachId || null };
+        await userDao.updateUser(athlete._id, {
+            name: name.trim(),
+            surname: surname.trim(),
+            password: hashedPassword,
+            isPreRegistered: false,
+            invitationToken: null,
+            invitationTokenExpires: null,
+            pendingCoachId: null,
+            coachIds: mergedTeam.coachIds,
+            coachId: mergedTeam.coachId,
+        });
+
+        if (coach) {
+            await userDao.addAthleteToCoach(coach._id, athlete._id);
+            await User.findByIdAndUpdate(coach._id, { $pull: { pendingAthleteIds: athlete._id } });
+
+            // Notify coach (best-effort)
+            try {
+                const { generateEmailTemplate, getClientUrl } = require('../utils/emailTemplate');
+                const transporter = createEmailTransporter();
+                if (transporter && coach.email) {
+                    await transporter.sendMail({
+                        from: { name: 'LaChart', address: process.env.EMAIL_USER },
+                        to: coach.email,
+                        subject: 'New athlete joined your team – LaChart',
+                        html: generateEmailTemplate({
+                            title: 'Athlete joined your team',
+                            content: `<p>Hi ${coach.name},</p><p><strong>${name.trim()} ${surname.trim()}</strong> accepted your invitation and created their LaChart account. They are now on your team.</p>`,
+                            loginButtonText: 'Open LaChart',
+                            loginButtonUrl: getClientUrl(),
+                        })
+                    });
+                }
+            } catch (_) { /* email is best-effort */ }
+        }
+
+        // Sign a JWT so the user is immediately logged in
+        const jwtToken = jwt.sign(
+            { userId: String(athlete._id), role: athlete.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.status(200).json({
+            message: "Registration complete",
+            token: jwtToken,
+            user: {
+                _id: athlete._id,
+                name: name.trim(),
+                surname: surname.trim(),
+                email: athlete.email,
+                role: athlete.role,
+            }
+        });
+    } catch (error) {
+        console.error("Error completing registration:", error);
         res.status(500).json({ error: error.message });
     }
 });

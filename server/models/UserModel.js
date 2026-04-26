@@ -104,6 +104,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  /** True for stub accounts created when a coach invites an email with no existing account. */
+  isPreRegistered: {
+    type: Boolean,
+    default: false
+  },
   pendingCoachId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
