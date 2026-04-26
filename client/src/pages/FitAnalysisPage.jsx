@@ -5116,6 +5116,8 @@ const FitAnalysisPage = () => {
                 }
                 
                 if (isStravaRun) {
+                  // On desktop the single 'Detailed Statistics' row shows everything.
+                  if (!isMobile) return null;
                   return (
                     <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
                       <div className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
@@ -5154,27 +5156,36 @@ const FitAnalysisPage = () => {
               {selectedStrava && !isMobile && (
                 <div className="w-full">
                   <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
-                    {!isStravaRun && (
-                      <>
-                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Duration</div>
-                          <div className="text-sm font-semibold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
-                        </div>
-                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Distance</div>
-                          <div className="text-sm font-semibold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
-                        </div>
-                        <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Heart Rate</div>
-                          <div className="text-sm font-semibold text-gray-900">
-                            {selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            {selectedStrava.max_heartrate ? `Max ${Math.round(selectedStrava.max_heartrate)} bpm` : '\u00A0'}
-                          </div>
-                        </div>
-                      </>
+                    {/* Core stats — always shown */}
+                    <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Duration</div>
+                      <div className="text-sm font-semibold text-gray-900">{formatDuration(selectedStrava.elapsed_time)}</div>
+                    </div>
+                    <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Distance</div>
+                      <div className="text-sm font-semibold text-gray-900">{formatDistance(selectedStrava.distance, user)}</div>
+                    </div>
+                    {isStravaRun && avgPace && (
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Pace</div>
+                        <div className="text-sm font-semibold text-gray-900">{avgPace} /km</div>
+                        {maxPace && <div className="text-xs text-gray-400 mt-0.5">Max {maxPace} /km</div>}
+                      </div>
                     )}
+                    <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg HR</div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {selectedStrava.average_heartrate ? `${Math.round(selectedStrava.average_heartrate)} bpm` : '-'}
+                      </div>
+                      {selectedStrava.max_heartrate && <div className="text-xs text-gray-400 mt-0.5">Max {Math.round(selectedStrava.max_heartrate)} bpm</div>}
+                    </div>
+                    {isStravaRun && (hasStravaElevation) && (
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Elevation</div>
+                        <div className="text-sm font-semibold text-gray-900">+{Math.round(stravaElevationGain)} m</div>
+                      </div>
+                    )}
+                    {/* Date & Sport — always shown */}
                     <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Date</div>
                       <div className="text-sm font-semibold text-gray-900">{formatDateTime(stravaActivityDate)}</div>
@@ -5183,6 +5194,14 @@ const FitAnalysisPage = () => {
                       <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Sport</div>
                       <div className="text-sm font-semibold text-gray-900">{stravaActivitySport || '-'}</div>
                     </div>
+                    {/* Bike-specific stats */}
+                    {!isStravaRun && stravaAvgSpeedKmh && (
+                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Speed</div>
+                        <div className="text-sm font-semibold text-gray-900">{stravaAvgSpeedKmh} km/h</div>
+                        {stravaMaxSpeedKmh && <div className="text-xs text-gray-400 mt-0.5">Max: {stravaMaxSpeedKmh} km/h</div>}
+                      </div>
+                    )}
                     {!isStravaRun && stravaWorkKj != null && (
                       <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Work</div>
@@ -5213,13 +5232,6 @@ const FitAnalysisPage = () => {
                         <div className="text-sm font-semibold text-gray-900">{Number(stravaEF).toFixed(2)}</div>
                       </div>
                     )}
-                    {!isStravaRun && stravaAvgSpeedKmh && (
-                      <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
-                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Speed</div>
-                        <div className="text-sm font-semibold text-gray-900">{stravaAvgSpeedKmh} km/h</div>
-                        {stravaMaxSpeedKmh && <div className="text-xs text-gray-400 mt-0.5">Max: {stravaMaxSpeedKmh} km/h</div>}
-                      </div>
-                    )}
                     {stravaAvgPower && (
                       <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Avg Power</div>
@@ -5246,7 +5258,7 @@ const FitAnalysisPage = () => {
                         {calculateStravaIF && <div className="text-xs text-gray-400 mt-0.5">IF: {calculateStravaIF}</div>}
                       </div>
                     )}
-                    {hasStravaElevation && (
+                    {!isStravaRun && hasStravaElevation && (
                       <div className="shrink-0 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm">
                         <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Elevation</div>
                         <div className="text-sm font-semibold text-gray-900">{Math.round(stravaElevationGain)} m</div>
