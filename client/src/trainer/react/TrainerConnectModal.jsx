@@ -6,7 +6,14 @@
 import React, { useState, useEffect } from 'react';
 import { useTrainer } from './useTrainer';
 
-export function TrainerConnectModal({ isOpen, onClose, options }) {
+/**
+ * TrainerConnectModal accepts an optional `trainer` prop.
+ * When provided the modal uses the caller's useTrainer instance so the
+ * connection persists after the modal closes.  When omitted it falls back
+ * to creating its own useTrainer (standalone / legacy usage).
+ */
+export function TrainerConnectModal({ isOpen, onClose, options, trainer: trainerProp }) {
+  const internalTrainer = useTrainer(trainerProp ? null : options);
   const {
     devices,
     connectedDevice,
@@ -20,7 +27,7 @@ export function TrainerConnectModal({ isOpen, onClose, options }) {
     setErgWatts,
     requestControl,
     start,
-  } = useTrainer(options);
+  } = trainerProp ?? internalTrainer;
 
   const [targetWatts, setTargetWatts] = useState(100);
   const [isScanning, setIsScanning] = useState(false);

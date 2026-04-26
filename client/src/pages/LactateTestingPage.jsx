@@ -595,7 +595,7 @@ const LactateTestingPage = () => {
 
       {/* ── Modals ─────────────────────────────────────────── */}
       {showTrainerModal && (
-        <TrainerConnectModal isOpen={showTrainerModal} onClose={() => setShowTrainerModal(false)} />
+        <TrainerConnectModal isOpen={showTrainerModal} onClose={() => setShowTrainerModal(false)} trainer={trainer} />
       )}
       {showProtocolEdit && (
         <ProtocolEditModal

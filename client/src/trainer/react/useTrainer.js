@@ -7,7 +7,9 @@ import { createTrainerClient } from '../index.ts';
 import { logger } from '../logger.js';
 import { debounce, clampWatts } from '../utils.js';
 
-export function useTrainer(options = {}) {
+export function useTrainer(options) {
+  // eslint-disable-next-line no-param-reassign
+  options = options ?? {};
   const [devices, setDevices] = useState([]);
   const [connectedDevice, setConnectedDevice] = useState(null);
   const [telemetry, setTelemetry] = useState(null);
